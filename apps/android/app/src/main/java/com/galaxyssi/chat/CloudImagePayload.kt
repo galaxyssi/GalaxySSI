@@ -26,14 +26,16 @@ internal data class CloudImagePayload(
 internal object CloudImagePayloadFactory {
     fun prepare(
         context: Context,
-        attachments: List<AgentInputAttachment>
+        attachments: List<AgentInputAttachment>,
+        taskId: String = ""
     ): List<CloudImagePayload> = attachments
         .filter(AgentInputAttachment::isImage)
         .map { attachment ->
             val encoded = AgentImagePipeline.encodeForTransport(
                 context = context,
                 attachment = attachment,
-                byteLimit = CloudImagePayload.MAX_BYTES
+                byteLimit = CloudImagePayload.MAX_BYTES,
+                taskId = taskId
             ) ?: error(context.getString(R.string.cloud_image_prepare_failed, attachment.displayName))
             CloudImagePayload(
                 displayName = encoded.transportName(attachment.displayName),

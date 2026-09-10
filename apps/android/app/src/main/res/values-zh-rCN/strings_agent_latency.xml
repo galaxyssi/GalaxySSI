@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_image_prepare">Agent 图片准备</string>
+    <string name="agent_latency_image_original_probe">原图大小探测与读取</string>
+    <string name="agent_latency_image_decode">图片解码与方向校正</string>
+    <string name="agent_latency_image_encode">图片压缩与编码</string>
     <string name="agent_latency_action_dispatch">动作派发与回执</string>
     <string name="agent_latency_screen_observe">执行后屏幕观察</string>
     <string name="agent_latency_receipt_observe">工具回执观察</string>

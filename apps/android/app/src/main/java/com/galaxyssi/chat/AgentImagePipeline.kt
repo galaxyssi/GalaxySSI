@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import com.galaxyssi.chat.metrics.AgentLatencyTelemetry
+import com.galaxyssi.chat.metrics.AgentRuntimeTiming
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -45,12 +47,27 @@ internal object AgentImagePipeline {
     fun encodeForTransport(
         context: Context,
         attachment: AgentInputAttachment,
-        byteLimit: Int = TARGET_TRANSPORT_BYTES
+        byteLimit: Int = TARGET_TRANSPORT_BYTES,
+        taskId: String = "",
+        timing: AgentRuntimeTiming = if (taskId.isBlank()) AgentRuntimeTiming.NONE else AgentLatencyTelemetry.runtime(context)
+    ): AgentTransportImage? = timing.measure(taskId, "image_prepare", { if (it == null) "failed" else "completed" }) {
+        prepareForTransport(context, attachment, byteLimit, taskId, timing)
+    }
+
+    private fun prepareForTransport(
+        context: Context,
+        attachment: AgentInputAttachment,
+        byteLimit: Int,
+        taskId: String,
+        timing: AgentRuntimeTiming
     ): AgentTransportImage? {
         val target = minOf(byteLimit, TARGET_TRANSPORT_BYTES)
         if (target < MIN_TRANSPORT_BUDGET) return null
 
-        readOriginalWithinLimit(context, attachment, target)?.let { original ->
+        // A probe miss is an ordinary transition to decoding, not a failed image request.
+        timing.measure(taskId, "image_original_probe", { "completed" }) {
+            readOriginalWithinLimit(context, attachment, target)
+        }?.let { original ->
             return AgentTransportImage(
                 bytes = original,
                 mimeType = attachment.mimeType.ifBlank { "image/jpeg" },
@@ -58,13 +75,16 @@ internal object AgentImagePipeline {
             )
         }
 
-        var working = decodeOriented(
-            context,
-            attachment.uri,
-            MAX_TRANSPORT_DIMENSION,
-            MAX_TRANSPORT_DIMENSION
-        ) ?: return null
-        working = flattenForJpeg(working)
+        val decoded = timing.measure(taskId, "image_decode", { if (it == null) "failed" else "completed" }) {
+            decodeOriented(context, attachment.uri, MAX_TRANSPORT_DIMENSION, MAX_TRANSPORT_DIMENSION)
+        } ?: return null
+        return timing.measure(taskId, "image_encode", { if (it == null) "failed" else "completed" }) {
+            compressForTransport(decoded, target)
+        }
+    }
+
+    private fun compressForTransport(decoded: Bitmap, target: Int): AgentTransportImage? {
+        var working = flattenForJpeg(decoded)
         try {
             var attempt = 0
             while (attempt < 8) {

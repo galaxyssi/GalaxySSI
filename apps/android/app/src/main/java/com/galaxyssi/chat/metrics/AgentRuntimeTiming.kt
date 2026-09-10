@@ -38,7 +38,8 @@ internal class AgentRuntimeTiming(
     }
 
     companion object {
-        val phases = setOf("action_dispatch", "screen_observe", "receipt_observe", "result_verify")
+        val phases = setOf("action_dispatch", "screen_observe", "receipt_observe", "result_verify",
+            "image_prepare", "image_original_probe", "image_decode", "image_encode")
         val NONE = AgentRuntimeTiming(null)
     }
 }

@@ -357,7 +357,8 @@ internal object AgentOutboundAttachmentTransferStore {
                 val encoded = AgentImagePipeline.encodeForTransport(
                     context,
                     attachment,
-                    mediaProfile.imageTargetBytes
+                    mediaProfile.imageTargetBytes,
+                    taskId = scope.taskId
                 ) ?: error("Image attachment could not be prepared")
                 require(encoded.bytes.isNotEmpty())
                 transportName = encoded.transportName(transportName)
