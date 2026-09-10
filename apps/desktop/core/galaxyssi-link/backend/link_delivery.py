@@ -98,6 +98,7 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
                 "ALTER TABLE outbound_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 50"
             )
         db.commit()
+    db.execute("CREATE INDEX IF NOT EXISTS outbound_messages_status_route ON outbound_messages(status,client_route_id)")
     db.execute(
         """CREATE TABLE IF NOT EXISTS delivery_metadata (
             key TEXT PRIMARY KEY,
@@ -526,6 +527,9 @@ def outbound_inflight_count(
     with _lock:
         db = _connect()
         try:
+            if awaiting_broker_only:
+                return _broker_inflight_count(db, normalized_route_id, broker_owned,
+                                              active_priorities or {}, observed_at, matches)
             query = "SELECT status,attempts,updated_at,client_route_id,message_id,priority FROM outbound_messages WHERE status IN ('sending','published')"
             arguments = []
             if normalized_route_id:
@@ -551,6 +555,30 @@ def outbound_inflight_count(
             return count
         finally:
             db.close()
+
+
+def _broker_inflight_count(db, route_id, broker_owned, priorities, observed_at, matches) -> int:
+    # PUBACK receipt debt can contain thousands of rows. Only physical owners and
+    # recent orphaned sends occupy slots; do not decrypt that unrelated backlog.
+    owners = {(_route(route), message): (route, message) for route, message in broker_owned}
+    count = 0
+    for sealed_key, key in owners.items():
+        row = db.execute("SELECT status,priority FROM outbound_messages WHERE client_route_id=? AND message_id=?",
+                         sealed_key).fetchone()
+        priority = (int(row[1]) if row and row[0] in {"sending", "published"}
+                    else priorities.get(key, int(row[1]) if row else OUTBOUND_PRIORITY_NORMAL))
+        if matches(priority):
+            count += 1
+    query = "SELECT client_route_id,message_id,attempts,updated_at,priority FROM outbound_messages WHERE status='sending'"
+    params = ()
+    if route_id:
+        query += " AND client_route_id=?"
+        params = (_route(route_id),)
+    for route, message, attempts, updated_at, priority in db.execute(query, params):
+        if ((route, message) not in owners and matches(int(priority))
+                and not _outbound_retry_due("sending", int(attempts), float(updated_at), observed_at)):
+            count += 1
+    return count
 
 
 def pending_outbound(
