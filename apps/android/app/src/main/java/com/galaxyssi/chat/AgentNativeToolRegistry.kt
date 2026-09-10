@@ -1086,8 +1086,31 @@ class AgentNativeToolRegistry(
             return result
         }
 
+        fun observedOutcome(observation: AgentNativeEffectClaim): AgentNativeToolResult {
+            if (observation.inputSha256 != digestOrEmpty(input)) {
+                return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
+                    "idempotency_key_conflict", "The effect key was already used with different input"))
+            }
+            val cached = observation.result ?: return finish(AgentNativeToolResultStatus.FAILED,
+                error = AgentNativeToolError("effect_outcome_unknown",
+                    "This effect was already started and has no durable outcome. Observe its existing execution " +
+                        "or reconcile the external state before deciding the next action; it was not executed again.",
+                    retryable = false, details = mapOf("original_invocation_id" to observation.invocationId,
+                        "effect_key" to effectiveKey, "input_sha256" to observation.inputSha256)))
+            return finish(status = cached.status, output = cached.output, message = cached.message,
+                metadata = cached.metadata, error = cached.error, verification = cached.verification,
+                replayed = true, originalInvocationId = cached.receipt.originalInvocationId ?: cached.receipt.invocationId)
+        }
+
         try {
             invocation.checkpoint()
+
+            val replayKey = effectiveKey?.let {
+                AgentNativeToolReplayKey(descriptor.id, descriptor.version, it, AgentNativeEffectScope.from(context))
+            }
+            // A committed observation does not depend on the tool still being online.
+            // Reading it must not acquire an effect or repeat availability/setup work.
+            replayKey?.let(replayStore::observe)?.let { return observedOutcome(it) }
 
             val availability = runCatching { definition.availabilityProvider.current(context) }
                 .getOrElse {
@@ -1135,11 +1158,7 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            val replayKey = idempotencyKey?.let {
-                AgentNativeToolReplayKey(descriptor.id, descriptor.version, it, AgentNativeEffectScope.from(context))
-            }
-            var cached = replayKey?.let(::cachedResult)
-            if (cached == null && replayKey != null &&
+            if (replayKey != null &&
                 descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENT) {
                 val claim = replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
                 if (claim.inputSha256 != digestOrEmpty(input)) {
@@ -1148,39 +1167,9 @@ class AgentNativeToolRegistry(
                 }
                 if (claim.acquired) {
                     claimedEffect = replayKey
-                } else if (claim.result != null) {
-                    cached = claim.result
                 } else {
-                    return finish(AgentNativeToolResultStatus.FAILED, error = AgentNativeToolError(
-                        "effect_outcome_unknown",
-                        "This effect was already started and has no durable outcome. Observe its existing execution " +
-                            "or reconcile the external state before deciding the next action; it was not executed again.",
-                        retryable = false, details = mapOf("original_invocation_id" to claim.invocationId,
-                            "effect_key" to replayKey.idempotencyKey, "input_sha256" to claim.inputSha256)))
+                    return observedOutcome(claim)
                 }
-            }
-            if (cached != null) {
-                val currentInputSha256 = digestOrEmpty(input)
-                if (cached.receipt.inputSha256 != currentInputSha256) {
-                    return finish(
-                        status = AgentNativeToolResultStatus.REJECTED,
-                        error = AgentNativeToolError(
-                            code = "idempotency_key_conflict",
-                            message = "The idempotency key was already used with different input"
-                        )
-                    )
-                }
-                return finish(
-                    status = cached.status,
-                    output = cached.output,
-                    message = cached.message,
-                    metadata = cached.metadata,
-                    error = cached.error,
-                    verification = cached.verification,
-                    replayed = true,
-                    originalInvocationId = cached.receipt.originalInvocationId
-                        ?: cached.receipt.invocationId
-                )
             }
 
             val guarded = AgentNativeToolExecutionGate.execute(descriptor, invocation) {
@@ -1278,9 +1267,6 @@ class AgentNativeToolRegistry(
             )
         }
     }
-
-    @Synchronized
-    private fun cachedResult(key: AgentNativeToolReplayKey): AgentNativeToolResult? = replayStore.get(key)
 
     @Synchronized
     private fun cacheResult(key: AgentNativeToolReplayKey, result: AgentNativeToolResult) {

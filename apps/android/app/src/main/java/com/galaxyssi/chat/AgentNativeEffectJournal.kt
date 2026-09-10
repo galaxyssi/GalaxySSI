@@ -10,10 +10,12 @@ class EncryptedAgentNativeToolReplayStore internal constructor(
 ) : AgentNativeToolReplayStore {
     constructor(context: Context) : this(AgentRunEventStore(context), LegacyAgentNativeToolReplayReader(context))
 
-    override fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult? {
+    override fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult? = observe(key)?.result
+
+    override fun observe(key: AgentNativeToolReplayKey): AgentNativeEffectClaim? {
         migrate()
         requireBoundLegacy(key)
-        return read(key)?.result
+        return read(key)
     }
 
     override fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim {

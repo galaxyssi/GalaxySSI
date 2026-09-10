@@ -13,6 +13,8 @@ data class AgentNativeToolReplayKey(
 
 interface AgentNativeToolReplayStore {
     fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult?
+    /** Reads the existing owner/outcome without acquiring or completing an effect. */
+    fun observe(key: AgentNativeToolReplayKey): AgentNativeEffectClaim?
     fun put(key: AgentNativeToolReplayKey, result: AgentNativeToolResult)
     fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim
     fun complete(key: AgentNativeToolReplayKey, invocationId: String, result: AgentNativeToolResult)
@@ -25,6 +27,11 @@ class InMemoryAgentNativeToolReplayStore : AgentNativeToolReplayStore {
 
     @Synchronized
     override fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult? = entries[key]
+
+    @Synchronized
+    override fun observe(key: AgentNativeToolReplayKey): AgentNativeEffectClaim? =
+        entries[key]?.let { AgentNativeEffectClaim(false, it.receipt.invocationId, it.receipt.inputSha256, it) }
+            ?: claims[key]?.copy(acquired = false)
 
     @Synchronized
     override fun put(key: AgentNativeToolReplayKey, result: AgentNativeToolResult) {
