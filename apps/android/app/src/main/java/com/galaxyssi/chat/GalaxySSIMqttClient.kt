@@ -738,7 +738,8 @@ object GalaxySSIMqttClient {
                     context,
                     attachments,
                     mediaProfile,
-                    MAX_INLINE_ATTACHMENT_BYTES
+                    MAX_INLINE_ATTACHMENT_BYTES,
+                    taskId = resolvedTaskId
                 )
                     .takeIf { it.length() > 0 }
                     ?.let { payload.put("attachments", it) }

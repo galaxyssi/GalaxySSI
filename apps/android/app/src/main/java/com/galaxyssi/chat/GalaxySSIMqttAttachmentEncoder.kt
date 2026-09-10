@@ -10,7 +10,8 @@ internal object GalaxySSIMqttAttachmentEncoder {
         context: Context,
         attachments: List<AgentInputAttachment>,
         mediaProfile: AgentMediaDeliveryProfile,
-        maximumBytes: Int
+        maximumBytes: Int,
+        taskId: String = ""
     ): JSONArray {
         var remaining = maximumBytes
         val result = JSONArray()
@@ -22,7 +23,8 @@ internal object GalaxySSIMqttAttachmentEncoder {
                 val encoded = AgentImagePipeline.encodeForTransport(
                     context,
                     attachment,
-                    minOf(remaining, mediaProfile.imageTargetBytes)
+                    minOf(remaining, mediaProfile.imageTargetBytes),
+                    taskId = taskId
                 )
                 try {
                     if (encoded != null && encoded.bytes.isNotEmpty() && encoded.bytes.size <= remaining) {

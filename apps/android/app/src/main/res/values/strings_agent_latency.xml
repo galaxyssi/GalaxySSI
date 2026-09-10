@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_image_prepare">Agent image preparation</string>
+    <string name="agent_latency_image_original_probe">Original image budget probe</string>
+    <string name="agent_latency_image_decode">Image decode and orientation</string>
+    <string name="agent_latency_image_encode">Image compression and encoding</string>
     <string name="agent_latency_action_dispatch">Action dispatch and receipt</string>
     <string name="agent_latency_screen_observe">Post-action screen observation</string>
     <string name="agent_latency_receipt_observe">Tool receipt observation</string>

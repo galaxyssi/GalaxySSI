@@ -1411,7 +1411,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 promptWithConversationContext(action, requestPrompt, cloud = true)
             }
             val cloudImages = runCatching {
-                CloudImagePayloadFactory.prepare(appContext, cloudImageAttachments)
+                CloudImagePayloadFactory.prepare(appContext, cloudImageAttachments, connectorTaskId)
             }
             var successfulReply = ""
             var successfulUsage = CloudModelUsage()

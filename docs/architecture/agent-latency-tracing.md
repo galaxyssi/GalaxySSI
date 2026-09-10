@@ -6,6 +6,11 @@ ASR/QNN scheduling, TTS, routing decisions, execution permissions and the Link
 wire protocol are unchanged. No diagnostic events are automatically sent to a
 phone, Desktop, provider or analytics service.
 
+Agent image preparation now records task-correlated probe, decode and encode
+stages. See [Android image stage tracing](android-image-stage-tracing.md) for
+scope, invariants and T575 measurements; preview rendering and network transfer
+are not part of those image preparation samples.
+
 ## Identity and Clocks
 
 - `trace_id`: SHA-256 of the existing task ID, never the prompt or conversation
