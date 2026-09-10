@@ -587,6 +587,18 @@ private fun MobileNativeAgent.executePendingPlanBatch(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiState {
+    // An empty ready set is normal while another node owns an execution or
+    // remote response. Keep its observation intact instead of inventing failure.
+    val inFlightPhase = when {
+        plan.actions.any { it.status == AgentActionStatus.RUNNING } -> AgentPhase.EXECUTING
+        plan.actions.any { it.status == AgentActionStatus.WAITING_RESPONSE } -> AgentPhase.WAITING_RESPONSE
+        else -> null
+    }
+    if (inFlightPhase != null) {
+        phase = inFlightPhase
+        persistSession()
+        return snapshot()
+    }
     val hasPending = plan.actions.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     }
