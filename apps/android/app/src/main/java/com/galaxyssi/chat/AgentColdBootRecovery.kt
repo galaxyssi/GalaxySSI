@@ -60,7 +60,8 @@ internal object AgentColdBootRecoveryPolicy {
         }
         return snapshot.copy(
             phase = AgentPhase.PAUSED,
-            currentPlan = snapshot.currentPlan?.recoverInterruptedExecution(),
+            currentPlan = if (snapshot.pendingPlanning?.isReplanning == true) snapshot.currentPlan
+                else snapshot.currentPlan?.recoverInterruptedExecution(),
             lastActionResult = snapshot.lastActionResult?.takeIf {
                 it.metadata["plan_node_recovery_error"] == "true" ||
                     it.metadata["active_plan_recovery_error"] == "true"
@@ -165,7 +166,8 @@ internal object AgentColdBootRecoveryCoordinator {
         if (!active && !force) return false
         store.save(
             AgentColdBootRecoveryPolicy.pauseSession(
-                snapshot = AgentPlanNodeRecovery.restoreOrReport(snapshot, journal),
+                snapshot = if (snapshot.pendingPlanning?.isReplanning == true) snapshot
+                    else AgentPlanNodeRecovery.restoreOrReport(snapshot, journal),
                 processInstanceId = processInstanceId,
                 nowMillis = nowMillis,
                 reason = reason

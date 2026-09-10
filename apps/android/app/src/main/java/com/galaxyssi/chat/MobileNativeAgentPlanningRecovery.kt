@@ -8,9 +8,9 @@ internal fun MobileNativeAgent.beginInitialPlanning(startedAt: Long): AgentUiSta
     activeConversationTurnId = activeConversationTurnId.ifBlank { sessionId }
     activeConversationContext = activeConversationContext.copy(
         conversationId = activeConversationContext.conversationId.ifBlank { sessionId })
-    val input = AgentInitialPlanningInput(currentGoal, activeConversationContext, activeConversationTurnId,
+    val input = AgentPlanningInput(currentGoal, activeConversationContext, activeConversationTurnId,
         activeRequestedMembers, activeTaskExecutionMode, spec)
-    return initialPlanningPersistence.begin(sessionId, input) { reference ->
+    return planningPersistence.begin(sessionId, input) { reference ->
         pendingPlanning = reference
         persistSession()
         check(sessionStore.load()?.pendingPlanning == reference) { "Initial planning reference was not committed" }
@@ -25,7 +25,8 @@ internal fun MobileNativeAgent.resumeInitialPlanning(): AgentUiState {
     if (reference.sessionId != sessionId || executionLoop.snapshot?.taskId != reference.turnId) {
         throw AgentModelLoopRecoveryException("initial_planning_session_mismatch")
     }
-    return initialPlanningPersistence.restore(reference) { input ->
+    return planningPersistence.restore(reference) { input ->
+        check(input.replan == null) { "Replanning must restore its original base plan" }
         val selected = planner.takeIf { it.recoverySpec() == input.planner }
             ?: input.planner.restore(appContext) { nativeToolRegistry }
         activeConversationContext = input.conversation
@@ -47,7 +48,7 @@ internal fun MobileNativeAgent.resumeInitialPlanning(): AgentUiState {
 internal object AgentInitialPlanningRecoveryPolicy {
     fun belongsTo(workspace: AgentWorkspace, session: AgentSessionSnapshot): Boolean {
         val reference = session.pendingPlanning ?: return false
-        return session.currentPlan == null && reference.sessionId == session.sessionId &&
+        return !reference.isReplanning && session.currentPlan == null && reference.sessionId == session.sessionId &&
             reference.conversationId == workspace.conversationId && reference.turnId == workspace.taskId &&
             session.executionLoopSnapshot?.taskId == reference.turnId &&
             session.executionLoopSnapshot.phase.isTerminal.not() &&

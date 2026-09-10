@@ -551,6 +551,7 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     if (session == null) return
     executionLoop = session.executionLoopSnapshot?.let(AgentExecutionLoop::restore)
         ?: AgentExecutionLoop.create()
+    if (restorePendingReplanningSession(session)) return
     val persistedTask = session.currentPlan?.planId?.let(taskStore::find)
     val lifecycleNormalization = AgentPlanLifecyclePolicy.normalize(session)
     val lifecycleSession = AgentPlanLifecyclePolicy.recoverCompletedConnector(

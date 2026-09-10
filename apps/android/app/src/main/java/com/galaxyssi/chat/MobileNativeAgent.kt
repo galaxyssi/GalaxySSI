@@ -354,9 +354,9 @@ class MobileNativeAgent(
     internal var currentGoal: String = ""
     internal var currentScreen: ScreenContext = ScreenContext(foregroundApp = "", pageTitle = "")
     internal var currentPlan: AgentPlan? = null
-    internal var pendingPlanning: AgentInitialPlanningReference? = null
-    internal val initialPlanningPersistence by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        AgentInitialPlanningJournal(appContext, initialPlanningJournal ?: EncryptedAgentModelLoopJournal(appContext))
+    internal var pendingPlanning: AgentPlanningReference? = null
+    internal val planningPersistence by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AgentPlanningJournal(appContext, initialPlanningJournal ?: EncryptedAgentModelLoopJournal(appContext))
     }
     internal var lastActionResult: AgentActionResult? = null
     internal var activeWorkflowExecutionId: String? = null

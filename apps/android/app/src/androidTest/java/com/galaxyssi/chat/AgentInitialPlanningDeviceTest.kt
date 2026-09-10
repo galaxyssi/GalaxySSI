@@ -27,14 +27,14 @@ class AgentInitialPlanningDeviceTest {
         val name = "test-initial-input-${UUID.randomUUID()}"
         val ledger = AgentRunEventStore(context, "$name.db")
         try {
-            val journal = AgentInitialPlanningJournal(context, EncryptedAgentModelLoopJournal(context, ledger))
+            val journal = AgentPlanningJournal(context, EncryptedAgentModelLoopJournal(context, ledger))
             val entry = AgentTranscriptEntry("entry", AgentTranscriptRole.USER, "\u4e0a\u6587".repeat(100_000), 1,
                 conversationId = name, turnId = "earlier", richOutputJson = "{\"file\":\"test-input.png\"}")
-            val input = AgentInitialPlanningInput(goal.repeat(3000), AgentConversationContext(name, "summary",
+            val input = AgentPlanningInput(goal.repeat(3000), AgentConversationContext(name, "summary",
                 listOf(entry), true, "private local context", true), name,
                 listOf(AgentRequestedMember("provider", "Provider", 2, "review")), AgentTaskExecutionMode.PLAN_ONLY,
                 spec.copy(action = action.copy(parameters = action.parameters + ("retained" to "x".repeat(40_000)))))
-            lateinit var ref: AgentInitialPlanningReference
+            lateinit var ref: AgentPlanningReference
             journal.begin(name, input) { ref = it }
             journal.restore(ref) { assertEquals(input, it) }
             val store = SharedPreferencesAgentSessionStore(context, name)

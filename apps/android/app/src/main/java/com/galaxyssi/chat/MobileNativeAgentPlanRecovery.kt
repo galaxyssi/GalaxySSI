@@ -49,6 +49,7 @@ internal fun MobileNativeAgent.assessRecoveredPlanNodes(plan: AgentPlan): AgentU
                 .joinToString("; ") { "${it.id}: ${it.result}" }
     if (!advanceExecutionLoop(AgentExecutionLoopPhase.REPLAN, reason)) return reconcileExecutionLoop(snapshot())
     val next = replanFromCurrentState(plan, reason, force = true)
+    if (planningWasStopped()) return snapshot()
     if (next == null) {
         phase = AgentPhase.WAITING_RESPONSE
         lastActionResult = lastActionResult?.copy(metadata = lastActionResult!!.metadata + mapOf(

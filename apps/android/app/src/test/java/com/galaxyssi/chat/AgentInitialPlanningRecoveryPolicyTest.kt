@@ -5,7 +5,7 @@ import org.junit.Test
 
 class AgentInitialPlanningRecoveryPolicyTest {
     private val workspace = AgentWorkspace("workspace", "owner", "conversation", "turn", status = AgentWorkspaceStatus.RUNNING)
-    private val reference = AgentInitialPlanningReference("runtime", "conversation", "turn", "hash")
+    private val reference = AgentPlanningReference("runtime", "conversation", "turn", "hash")
     private fun session() = AgentSessionSnapshot("runtime", AgentPhase.PLANNING, "Recover planning",
         ScreenContext("Test", pageTitle = "Test"), null, emptyList(), null,
         executionLoopSnapshot = AgentExecutionLoop.create().also { it.start("turn", AgentExecutionLoopBudget()) }.snapshot,

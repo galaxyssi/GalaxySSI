@@ -637,6 +637,7 @@ internal fun MobileNativeAgent.executeParallelActions(
     } else {
         updatedPlan
     }
+    if (planningWasStopped()) return snapshot()
     currentPlan = continuedPlan
     if (rollingBatchBoundary && continuedPlan === updatedPlan) {
         phase = AgentPhase.WAITING_RESPONSE
@@ -960,6 +961,7 @@ internal fun MobileNativeAgent.executePlannedAction(
     } else {
         updatedPlan
     }
+    if (planningWasStopped()) return snapshot()
     currentPlan = continuedPlan
     if (rollingBatchBoundary && continuedPlan === updatedPlan) {
         phase = AgentPhase.WAITING_RESPONSE
@@ -1509,6 +1511,7 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     } else {
         responsePlan
     }
+    if (planningWasStopped()) return snapshot()
     currentPlan = continuedPlan
     phase = if (safetySettingsStore.load().executionPaused) {
         AgentPhase.PAUSED
@@ -1687,6 +1690,7 @@ internal fun MobileNativeAgent.recoverAfterConnectorDeliveryFailure(
         else "connector_delivery_failed:${failureDomain.ifBlank { resourceId }}",
         force = true
     )
+    if (planningWasStopped()) return snapshot()
     if (replanned == null) {
         currentPlan = failedPlan
         lastActionResult = failedResult
@@ -2140,6 +2144,10 @@ internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
+    if (phase == AgentPhase.PAUSED && pendingPlanning?.isReplanning == true) {
+        if (safetySettingsStore.load().executionPaused) return snapshot()
+        return resumePendingReplanning()
+    }
     val recoveredNodes = if (phase == AgentPhase.PAUSED) resumePersistedPlanObservations() else false
     val savedPlan = currentPlan
     val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(
@@ -2378,6 +2386,7 @@ internal fun MobileNativeAgent.replanCurrentTask(): AgentUiState {
         return snapshot()
     }
     val replanned = replanFromCurrentState(plan, "user_requested_replan", force = true)
+    if (planningWasStopped()) return snapshot()
     if (replanned == null) {
         lastActionResult = AgentActionResult(
             actionId = "agent-replan-unavailable",
@@ -2474,6 +2483,7 @@ internal fun MobileNativeAgent.rollbackLastAction(): AgentUiState {
         return snapshot()
     }
     val replanned = replanFromCurrentState(rolledPlan, "user_requested_rollback", force = true)
+    if (planningWasStopped()) return snapshot()
     if (replanned == null) {
         phase = AgentPhase.PAUSED
         lastActionResult = lastActionResult?.copy(
