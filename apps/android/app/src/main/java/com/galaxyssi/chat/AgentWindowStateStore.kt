@@ -26,7 +26,9 @@ internal data class AgentWindowDraft(
 internal class AgentWindowStateStore(context: Context) {
     private val database = AgentEncryptedDatabase(context.applicationContext, "agent_window_state_v1")
 
-    fun select(window: String, conversation: String) = database.writeString("selected:$window", conversation)
+    fun select(window: String, conversation: String) = synchronized(AgentTranscriptWindowMutationLock) {
+        database.writeString("selected:$window", conversation)
+    }
     fun selected(window: String): String = database.readString("selected:$window", "")
     fun protectConversation(id: String) = database.writeString("window-conversation:$id", "1")
     fun isWindowConversation(id: String): Boolean = database.readString("window-conversation:$id", "") == "1"

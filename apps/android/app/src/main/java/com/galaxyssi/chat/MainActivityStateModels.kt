@@ -252,7 +252,6 @@ internal data class AgentInitialHydration(
     val state: AgentUiState,
     val conversation: AgentConversation,
     val transcriptPage: AgentTranscriptPage,
-    val insightCount: Int,
     val tasks: List<AgentTaskRecord>
 )
 
