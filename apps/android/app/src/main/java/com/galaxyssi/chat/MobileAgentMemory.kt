@@ -279,85 +279,17 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val cleanValue = item.value.trim()
         if (cleanValue.isBlank()) return AgentMemoryWriteResult(null)
         val normalizedKey = normalizeKey(item.key.ifBlank { inferKey(cleanValue) })
-        val nextItem = item.copy(
+        val prepared = item.copy(
             value = cleanValue,
             key = normalizedKey,
             status = AgentMemoryStatus.ACTIVE,
             conflictGroupId = ""
         )
-        val previous = loadItems()
-        val items = previous.toMutableList()
-        val sameValue = items.firstOrNull { existing ->
-            existing.status != AgentMemoryStatus.SUPERSEDED &&
-                AgentMemoryIdentity.sameKey(existing, nextItem) &&
-                existing.value.equals(nextItem.value, ignoreCase = true)
-        }
-        if (sameValue != null) {
-            val merged = sameValue.copy(
-                confidence = maxOf(sameValue.confidence, nextItem.confidence),
-                evidenceCount = (sameValue.evidenceCount + nextItem.evidenceCount).coerceAtMost(MAX_EVIDENCE_COUNT),
-                lastConfirmedAtMillis = maxOf(
-                    sameValue.lastConfirmedAtMillis,
-                    nextItem.lastConfirmedAtMillis,
-                    System.currentTimeMillis()
-                ),
-                expiresAtMillis = maxOf(sameValue.expiresAtMillis, nextItem.expiresAtMillis)
-            )
-            items[items.indexOfFirst { it.id == sameValue.id }] = merged
-            val stored = trimHistory(items)
-            saveItems(stored)
-            publishMutation(previous, stored)
-            return AgentMemoryWriteResult(merged, duplicate = true)
-        }
-        if (normalizedKey.isBlank()) {
-            items.add(nextItem)
-            val stored = trimHistory(items)
-            saveItems(stored)
-            publishMutation(previous, stored)
-            return AgentMemoryWriteResult(nextItem)
-        }
-
-        val competing = items.filter { existing ->
-            AgentMemoryIdentity.sameKey(existing, nextItem) &&
-                existing.status != AgentMemoryStatus.SUPERSEDED
-        }
-        if (competing.isEmpty()) {
-            items.add(nextItem)
-            val stored = trimHistory(items)
-            saveItems(stored)
-            publishMutation(previous, stored)
-            return AgentMemoryWriteResult(nextItem)
-        }
-
-        val groupId = competing.firstNotNullOfOrNull { candidate ->
-            candidate.conflictGroupId.takeIf { it.isNotBlank() }
-        }
-            ?: UUID.randomUUID().toString()
-        val latest = competing.maxByOrNull { it.version }
-        val maxVersion = competing.maxOfOrNull { it.version } ?: 0
-        competing.forEach { existing ->
-            val index = items.indexOfFirst { it.id == existing.id }
-            if (index >= 0) {
-                items[index] = existing.copy(
-                    status = AgentMemoryStatus.CONFLICTED,
-                    conflictGroupId = groupId
-                )
-            }
-        }
-        val conflictedItem = nextItem.copy(
-            version = maxVersion + 1,
-            supersedesId = latest?.id.orEmpty(),
-            status = AgentMemoryStatus.CONFLICTED,
-            conflictGroupId = groupId
-        )
-        items.add(conflictedItem)
-        val stored = trimHistory(items)
-        saveItems(stored)
-        publishMutation(previous, stored)
-        return AgentMemoryWriteResult(
-            item = conflictedItem,
-            conflict = buildConflict(groupId, items)
-        )
+        val nextItem = requireNotNull(AgentMemoryItemCodec.decode(AgentMemoryItemCodec.encode(prepared)))
+        val change = AgentMemoryRememberMutation.plan(nextItem, rows.candidates(nextItem), System.currentTimeMillis())
+        rows.applyRemember(change)
+        publishMutation(change.before, change.after)
+        return change.result
     }
 
     override fun recall(query: String): List<AgentMemoryItem> = synchronized(PROCESS_LOCK) {
@@ -685,21 +617,14 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     internal fun normalizeKey(value: String): String = AgentMemoryItemCodec.normalizeKey(value)
 
     internal fun trimHistory(items: List<AgentMemoryItem>): List<AgentMemoryItem> {
-        val unresolved = items.filter { it.status != AgentMemoryStatus.SUPERSEDED }
-        val historySlots = (MAX_ITEMS - unresolved.size).coerceAtLeast(0)
-        val history = items
-            .filter { it.status == AgentMemoryStatus.SUPERSEDED }
-            .sortedByDescending { it.timestampMillis }
-            .take(historySlots)
-        return (unresolved + history).sortedBy { it.timestampMillis }
+        // Retention is explicit; unrelated writes must never evict historical evidence.
+        return items.sortedBy { it.timestampMillis }
     }
 
     companion object {
         private val PROCESS_LOCK = AgentMemoryStorage.lock
         private const val DATABASE = AgentMemoryStorage.DATABASE
-        private const val MAX_ITEMS = 1_000
         private const val MAX_RECALL_ITEMS = 8
-        private const val MAX_EVIDENCE_COUNT = 10_000
         private const val MIN_TOKEN_LENGTH = 3
         private const val STRUCTURED_TOKEN_WEIGHT = 6.0
         private const val MAX_KEY_PREFIX_LENGTH = 64
