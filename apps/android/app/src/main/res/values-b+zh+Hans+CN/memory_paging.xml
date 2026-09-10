@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_memory_page_previous">上一页记忆</string>
+    <string name="agent_memory_page_next">下一页记忆</string>
+    <string name="agent_memory_browse_item_subtitle">%1$s · v%2$d · %3$s · 置信度 %4$d%% · %5$d 条证据 · %6$s</string>
+</resources>

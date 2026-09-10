@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_memory_page_previous">Previous memories</string>
+    <string name="agent_memory_page_next">Next memories</string>
+    <string name="agent_memory_browse_item_subtitle">%1$s · v%2$d · %3$s · %4$d%% confidence · %5$d evidence · %6$s</string>
+</resources>

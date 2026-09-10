@@ -225,7 +225,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal fun MainActivity.renderControlCenterMemoryPage() {
-    val snapshot = mobileNativeAgent.memorySnapshot()
+    showMemoryControlCenterAsync()
+}
+
+internal fun MainActivity.buildControlCenterMemoryPage(): ControlCenterPageSpec {
+    val byKind = mobileNativeAgent.memoryStore.browseKindCounts()
     val globalMemory = GlobalSuperAgentRuntime.get(this)
     val memoryInbox = globalMemory.memoryInboxSnapshot()
     val pendingCandidates = memoryInbox.pending()
@@ -241,12 +245,10 @@ internal fun MainActivity.renderControlCenterMemoryPage() {
     val pendingCount = temporal.count(GlobalMemoryTemporalState.PENDING)
     val conflictedCount = temporal.count(GlobalMemoryTemporalState.CONFLICTED)
     val captureEnabled = mobileNativeAgent.safetySettings().memoryCapture
-    val countFor: (Set<AgentMemoryKind>) -> Int = { kinds ->
-        snapshot.activeItems.count { it.kind in kinds }
+    val countFor: (Set<AgentMemoryKind>) -> Long = { kinds ->
+        kinds.sumOf { byKind[it] ?: 0L }
     }
-    showControlCenterFeature(
-        getString(R.string.cc_memory_title),
-        ControlCenterPageSpec(
+    return ControlCenterPageSpec(
             hero = ControlCenterHeroSpec(
                 title = getString(R.string.cc_memory_overview_title),
                 subtitle = getString(R.string.cc_memory_overview_subtitle),
@@ -419,7 +421,6 @@ internal fun MainActivity.renderControlCenterMemoryPage() {
                 )
             )
         )
-    )
 }
 
 internal fun MainActivity.showGlobalMemoryInboxPage(statusFilter: GlobalMemoryCandidateStatus? = null) {

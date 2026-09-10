@@ -7,6 +7,19 @@ import java.util.UUID
 
 /** Row payloads, ordering, counts and revisions are encrypted in the existing memory database. */
 internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatabase) {
+    private val browseIndex = AgentMemoryBrowseIndex(database)
+    fun browse(request: AgentMemoryBrowseRequest): AgentMemoryBrowsePage = synchronized(AgentMemoryStorage.lock) {
+        metadata()
+        AgentMemoryBrowseQuery(database).page(request)
+    }
+    fun browseCounts(kinds: Set<AgentMemoryKind>): AgentMemoryBrowseCounts = synchronized(AgentMemoryStorage.lock) {
+        metadata()
+        AgentMemoryBrowseQuery(database).counts(kinds)
+    }
+    fun browseKindCounts(): Map<AgentMemoryKind, Long> = synchronized(AgentMemoryStorage.lock) {
+        metadata()
+        AgentMemoryBrowseQuery(database).kindCounts()
+    }
     fun read(): List<JSONObject> = synchronized(AgentMemoryStorage.lock) {
         val metadata = metadata()
         val rows = mutableListOf<Pair<Long, JSONObject>>()
@@ -88,7 +101,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
                 .put("next_position", position).put("revision", UUID.randomUUID().toString())
             yield(META to meta.toString())
         }
-        database.mutateStreaming(writes) { emptySequence() }
+        database.mutateStreaming(writes, browseIndex.observer()) { emptySequence() }
     }
 
     private fun lookupMetadata(): JSONObject {
@@ -149,8 +162,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
         if (before != after) {
             row.put("item", AgentMemoryItemCodec.encode(after))
             meta.put("revision", UUID.randomUUID().toString())
-            // Flags do not alter identity, order, status or counts. Both rows commit together.
-            database.mutateStrings(mapOf(key(id) to row.toString(), META to meta.toString()))
+            // The flag diff is known; do not decrypt both old rows again to detect unchanged writes.
+            database.mutateStrings(mapOf(key(id) to row.toString(), META to meta.toString()), onMutation = browseIndex.observer())
         }
         before to after
     }
@@ -196,7 +209,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
     }
 
     private fun commit(items: Sequence<JSONObject>, additional: Map<String, String>) {
-        require(additional.keys.none { it == META || it == AgentMemoryStorage.ITEMS || it.startsWith(PREFIX) || it.startsWith(LOOKUP_PREFIX) })
+        require(additional.keys.none { it == META || it == AgentMemoryStorage.ITEMS || it == AgentMemoryBrowseIndex.MARKER ||
+            it.startsWith(PREFIX) || it.startsWith(LOOKUP_PREFIX) })
         val previousMeta = if (database.contains(META)) JSONObject(database.readString(META, "")) else null
         val keepLookup = previousMeta?.has("lookup_generation") == true
         if (keepLookup) validateLookupMetadata(previousMeta!!)
@@ -238,7 +252,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             addLookupMetadata(meta, generation, Math.addExact(previousPosition, 1))
             yield(META to meta.toString())
         }
-        database.mutateStreaming(writes) {
+        database.mutateStreaming(writes, browseIndex.observer()) {
             sequence {
                 var cursor = ""
                 while (true) {

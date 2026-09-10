@@ -51,6 +51,12 @@ interface AgentMemoryStore {
     fun rebindConversationScope(sourceConversationId: String, targetConversationId: String): Int
     fun delete(query: String): Int
     fun snapshot(): AgentMemorySnapshot
+    fun browse(request: AgentMemoryBrowseRequest): AgentMemoryBrowsePage = snapshot().browseInMemory(request)
+    fun browseCounts(kinds: Set<AgentMemoryKind> = emptySet()): AgentMemoryBrowseCounts = browse(AgentMemoryBrowseRequest(kinds = kinds, limit = 1)).counts
+    fun browseKindCounts(): Map<AgentMemoryKind, Long> = snapshot().activeItems.groupingBy { it.kind }.eachCount().mapValues { it.value.toLong() }
+    fun browseConflict(item: AgentMemoryItem): AgentMemoryConflict? = snapshot().conflicts.firstOrNull {
+        it.groupId == item.conflictGroupId && it.candidates.any { candidate -> candidate.id == item.id }
+    }
     fun update(itemId: String, value: String, key: String = ""): AgentMemoryWriteResult?
     fun deleteById(itemId: String): Boolean
     fun setImportant(itemId: String, important: Boolean): Boolean
@@ -319,10 +325,27 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     }
 
     override fun recent(limit: Int): List<AgentMemoryItem> = synchronized(PROCESS_LOCK) {
-        loadItems()
-            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory && !it.isExpired(System.currentTimeMillis()) }
-            .sortedWith(compareByDescending<AgentMemoryItem> { it.important }.thenByDescending { it.timestampMillis })
-            .take(limit.coerceAtLeast(0))
+        if (limit <= 0) return@synchronized emptyList()
+        val result = mutableListOf<AgentMemoryItem>()
+        var cursor: AgentMemoryBrowseCursor? = null
+        val now = System.currentTimeMillis()
+        do {
+            val page = rows.browse(AgentMemoryBrowseRequest(cursor = cursor, limit = minOf(100, limit - result.size),
+                publicOnly = true, nowMillis = now))
+            result += page.entries.map { it.item }
+            cursor = page.next
+        } while (cursor != null && result.size < limit)
+        result
+    }
+
+    override fun browse(request: AgentMemoryBrowseRequest): AgentMemoryBrowsePage = rows.browse(request)
+    override fun browseCounts(kinds: Set<AgentMemoryKind>): AgentMemoryBrowseCounts = rows.browseCounts(kinds)
+    override fun browseKindCounts(): Map<AgentMemoryKind, Long> = rows.browseKindCounts()
+    override fun browseConflict(item: AgentMemoryItem): AgentMemoryConflict? = synchronized(PROCESS_LOCK) {
+        rows.find(item.id)?.let { current ->
+            if (current.status != AgentMemoryStatus.CONFLICTED) null
+            else buildConflict(current.conflictGroupId, AgentMemoryBrowseQuery(database).conflictCandidates(current))
+        }
     }
 
     override fun count(): Int = synchronized(PROCESS_LOCK) {

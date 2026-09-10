@@ -460,102 +460,7 @@ internal fun MainActivity.showOnDeviceAgentFeaturePage() {
 }
 
 internal fun MainActivity.renderAgentMemoryPage(content: AgentMemoryPageContent, filterKinds: Set<AgentMemoryKind>) {
-    val snapshot = content.snapshot
-    featureContent.addView(featureHeroCard(
-        getString(R.string.agent_memory_hero_title),
-        getString(
-            R.string.agent_memory_hero_subtitle,
-            snapshot.activeCount,
-            snapshot.conflicts.size,
-            snapshot.historyCount
-        ),
-        R.drawable.ic_agent_node,
-        "#5B6CFF",
-        getString(
-            if (content.captureEnabled) R.string.common_on
-            else R.string.common_off
-        )
-    ))
-
-    addSectionTitle(getString(R.string.agent_memory_section_conflicts))
-    if (snapshot.conflicts.isEmpty()) {
-        featureContent.addView(featureRow(
-            getString(R.string.agent_memory_no_conflicts),
-            getString(R.string.agent_memory_no_conflicts_subtitle),
-            R.drawable.ic_security_shield,
-            ""
-        ))
-    } else {
-        snapshot.conflicts.forEach { conflict ->
-            featureContent.addView(featureRow(
-                conflict.key.ifBlank { memoryKindLabel(conflict.kind) },
-                getString(
-                    R.string.agent_memory_conflict_subtitle,
-                    memoryKindLabel(conflict.kind),
-                    conflict.candidates.size
-                ),
-                R.drawable.ic_security_shield,
-                getString(R.string.agent_memory_review)
-            ).apply {
-                setOnClickListener { showAgentMemoryConflictDialog(conflict, filterKinds) }
-            })
-        }
-    }
-
-    addSectionTitle(getString(R.string.agent_memory_section_saved))
-    if (snapshot.activeItems.isEmpty()) {
-        featureContent.addView(featureRow(
-            getString(R.string.agent_memory_empty),
-            getString(R.string.agent_memory_empty_subtitle),
-            R.drawable.ic_agent_node,
-            ""
-        ))
-    } else {
-        snapshot.activeItems.forEach { item ->
-            val key = item.key.ifBlank { getString(R.string.agent_memory_key_none) }
-            val action = getString(when {
-                item.privateMemory -> R.string.agent_memory_private
-                item.important -> R.string.agent_memory_pinned
-                else -> R.string.common_edit
-            })
-            featureContent.addView(featureRow(
-                item.value.replace(Regex("\\s+"), " ").take(80),
-                getString(
-                    R.string.agent_memory_trust_item_subtitle,
-                    memoryKindLabel(item.kind),
-                    item.version,
-                    memorySourceLabel(item.source),
-                    (item.confidence.coerceIn(0.0, 1.0) * 100).toInt(),
-                    item.evidenceCount,
-                    content.usageCounts[item.id] ?: 0,
-                    key
-                ),
-                R.drawable.ic_agent_node,
-                action
-            ).apply {
-                setOnClickListener { showAgentMemoryItemActions(item, filterKinds) }
-            })
-        }
-    }
-
-    if (snapshot.historyItems.isNotEmpty()) {
-        addSectionTitle(getString(R.string.agent_memory_section_history))
-        snapshot.historyItems.take(20).forEach { item ->
-            featureContent.addView(featureRow(
-                item.value.replace(Regex("\\s+"), " ").take(80),
-                getString(
-                    R.string.agent_memory_history_subtitle,
-                    memoryKindLabel(item.kind),
-                    item.version,
-                    memorySourceLabel(item.source)
-                ),
-                R.drawable.ic_protocol_link,
-                ""
-            ).apply {
-                setOnClickListener { showAgentMemoryItemActions(item, filterKinds) }
-            })
-        }
-    }
+    renderPagedAgentMemory(content, filterKinds)
 }
 
 internal fun MainActivity.showAgentAppAdaptersPage() {
@@ -934,7 +839,12 @@ internal fun MainActivity.showAgentMemoryItemActions(
     item: AgentMemoryItem,
     filterKinds: Set<AgentMemoryKind> = emptySet()
 ) {
-    val profile = AgentMemoryTrustStore(this).profile(item)
+    runAgentMemoryMutation({ AgentMemoryTrustStore(applicationContext).profile(item) }) { profile ->
+        renderAgentMemoryItemActions(item, filterKinds, profile)
+    }
+}
+
+private fun MainActivity.renderAgentMemoryItemActions(item: AgentMemoryItem, filterKinds: Set<AgentMemoryKind>, profile: AgentMemoryTrustProfile) {
     val usageSummary = profile.usages.take(5).joinToString("\n") { usage ->
         val time = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(usage.selectedAtMillis))
         val answer = usage.answerPreview.ifBlank { getString(R.string.agent_memory_trust_answer_pending) }

@@ -282,3 +282,9 @@ connects ordinary Agent memory creation and duplicate evidence to encrypted
 lookup membership and target-only transactions. It also removes the historical
 record-count retention budget. Whole-collection recall, backup and legacy
 migration, sharding, native search and the required 100M+ scale remain unfinished.
+
+The [keyset-page implementation](android-personal-memory-keyset-pages.md) moves
+personal-memory management and recent recall to indexed forward/backward pages,
+with bounded page bodies, maintained counts and mutation-coupled derived indexes.
+Its standard SQLite metadata exposure and cold migration cost are explicit;
+it does not complete full-page encryption, hybrid retrieval or 100M+ validation.
