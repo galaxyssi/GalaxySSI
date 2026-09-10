@@ -2441,7 +2441,7 @@ internal fun MobileNativeAgent.rollbackLastAction(): AgentUiState {
     val rollbackAction = checkpoint.rollbackAction ?: return snapshot()
     phase = AgentPhase.EXECUTING
     val beforeRollback = captureScreen()
-    lastActionResult = actionExecutor.execute(rollbackAction, beforeRollback)
+    lastActionResult = executeAction(rollbackAction, beforeRollback, userConfirmed = true)
     phase = AgentPhase.VERIFYING
     val observation = captureVerificationScreen(rollbackAction, beforeRollback, lastActionResult)
     currentScreen = observation.screen

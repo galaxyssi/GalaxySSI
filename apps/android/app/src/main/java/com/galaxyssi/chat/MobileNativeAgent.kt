@@ -330,7 +330,8 @@ class MobileNativeAgent(
     internal val screenObservationOverride: Boolean? = null,
     executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE,
     nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null,
-    initialPlanningJournal: AgentModelLoopJournal? = null
+    initialPlanningJournal: AgentModelLoopJournal? = null,
+    actionEffectReplayStore: AgentNativeToolReplayStore? = null
 ) {
     internal val appContext = context.applicationContext
     internal val preferenceModeStore = traceMobileAgentInitialization("preference_store") {
@@ -372,6 +373,9 @@ class MobileNativeAgent(
     internal val taskPersistenceGate = AgentTaskPersistenceGate()
     internal val planNodeJournal: AgentPlanNodeJournal by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         EncryptedAgentPlanNodeJournal(appContext)
+    }
+    internal val actionEffectExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AgentActionEffectExecutor(actionEffectReplayStore ?: EncryptedAgentNativeToolReplayStore(appContext))
     }
     internal val nativeToolRegistry: AgentNativeToolRegistry by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         nativeToolRegistryProvider?.invoke()

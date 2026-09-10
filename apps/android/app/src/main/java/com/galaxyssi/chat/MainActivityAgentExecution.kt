@@ -910,7 +910,8 @@ internal fun MainActivity.executeDirectSystemAction(
                     notifications.showResult(contextualAction, result)
                 }
             } else {
-                directAgentActionExecutor.execute(contextualAction, screen)
+                mobileNativeAgent.executeAction(contextualAction, screen, userConfirmed = true,
+                    conversationIdOverride = conversationId, turnIdOverride = turnId)
             }
         }
         Log.i(

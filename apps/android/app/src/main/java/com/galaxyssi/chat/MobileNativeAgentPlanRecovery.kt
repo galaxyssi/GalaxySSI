@@ -41,6 +41,7 @@ internal fun MobileNativeAgent.resumePersistedPlanObservations(): Boolean {
 }
 
 internal fun MobileNativeAgent.assessRecoveredPlanNodes(plan: AgentPlan): AgentUiState {
+    if (phase == AgentPhase.CANCELLED || PhoneExecutionAuthority.isCancelled(sessionId)) return snapshot()
     val rolling = AgentRollingPlanPolicy.shouldRequestNextBatch(plan, lastActionResult)
     val reason = if (rolling) AgentRollingPlanPolicy.reason(plan, lastActionResult) else
         "Recovered node observations contain failed or uncertain actions. Preserve completed nodes, " +
@@ -48,6 +49,8 @@ internal fun MobileNativeAgent.assessRecoveredPlanNodes(plan: AgentPlan): AgentU
             plan.actions.filter { it.status == AgentActionStatus.FAILED }
                 .joinToString("; ") { "${it.id}: ${it.result}" }
     if (!advanceExecutionLoop(AgentExecutionLoopPhase.REPLAN, reason)) return reconcileExecutionLoop(snapshot())
+    // A restored pause is the entry state, not a new pause requested during model assessment.
+    phase = AgentPhase.PLANNING
     val next = replanFromCurrentState(plan, reason, force = true)
     if (planningWasStopped()) return snapshot()
     if (next == null) {

@@ -11,6 +11,19 @@ internal object AgentConnectorFallbackAction {
         action.parameters[ACTION_ID_PARAMETER] == action.id &&
             action.parameters[ATTEMPTED_PARAMETER].orEmpty().isNotBlank()
 
+    fun effectAttemptKey(action: AgentAction): String {
+        val selected = action.parameters["connector_id"].orEmpty().trim()
+        if (action.kind != AgentActionKind.CALL_CONNECTOR || !hasActiveTrail(action) ||
+            action.parameters["manual_target_locked"] == "true" || selected.isBlank()) return action.id
+        // Persisted routing history distinguishes fallback attempts without hashing arbitrary action input.
+        val trail = AgentNativeJsonCodec.sha256(mapOf(
+            "resource_id" to selected,
+            "attempted" to AgentConnectorFallbackTrail.parse(action.parameters[ATTEMPTED_PARAMETER].orEmpty()).sorted(),
+            "retried" to AgentConnectorFallbackTrail.parse(action.parameters["routing_retried_resource_ids"].orEmpty()).sorted()
+        ))
+        return "${action.id}/fallback/$trail"
+    }
+
     fun forDispatch(action: AgentAction): AgentAction {
         val owner = action.parameters[ACTION_ID_PARAMETER] ?: return action
         if (owner == action.id) return action
