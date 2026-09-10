@@ -8,11 +8,12 @@ import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
     @Test
-    fun `advertises one atomic mutation action for independent exact edits`() {
+    fun `advertises batch exact edits with resource ordering`() {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 240)
 
         assertTrue(prompt.contains("galaxyssi.workspace.files.patch.exact.batch"))
-        assertTrue(prompt.contains("Batch exact multi-file edits atomically"))
+        assertTrue(prompt.contains("patches: galaxyssi.workspace.files.patch.exact.batch"))
+        assertTrue(prompt.contains("order conflicts/runtime/publication"))
     }
 
     @Test
@@ -30,8 +31,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
 
         assertTrue(prompt.contains(AgentMobileProjectNativeTools.OBSERVE))
-        assertTrue(prompt.contains("repository.observe once"))
-        assertTrue(prompt.contains("status + diff + history"))
+        assertTrue(prompt.contains("repository.observe for status/diff/history"))
     }
 
     @Test
@@ -52,15 +52,21 @@ class AgentSupervisedProjectPromptTemplateTest {
         val continuation = AgentSupervisedProjectPromptTemplate.render(context, true, 240)
 
         assertNotSame(planning, continuation)
-        assertTrue(planning.startsWith("Role: supervise one Android-initiated project step at a time."))
+        assertTrue(planning.startsWith("Plan the next Android tool graph."))
         assertTrue(continuation.startsWith("Continue the Android project from verified evidence."))
         assertTrue(planning.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
-        assertTrue(planning.contains("3-12 independent reads/disjoint mutations"))
-        assertTrue(continuation.contains("3-12 independent reads/disjoint mutations"))
-        assertTrue(planning.contains("Runtime total max 64 independent actions"))
-        assertTrue(continuation.contains("Runtime total max 64 independent actions"))
-        assertTrue(planning.contains("Never batch runtime, install"))
+        for (prompt in listOf(planning, continuation)) {
+            assertTrue(prompt.contains("Up to 64 actions per response, not lifetime"))
+            assertTrue(prompt.contains("Native depends_on uses earlier refs"))
+            assertTrue(prompt.contains("wait for the receipt; failure blocks dependents"))
+            assertTrue(prompt.contains("Native use_outputs_from=[]"))
+            assertTrue(prompt.contains("Independent reads/disjoint mutations may run concurrently"))
+            assertTrue(prompt.contains("order conflicts/runtime/publication"))
+            assertTrue(prompt.contains("Only last action may complete, depending on all others"))
+            assertFalse(prompt.contains("3-12 independent"))
+            assertFalse(prompt.contains("Never batch runtime, install"))
+        }
         assertTrue(planning.contains("start_line/max_lines"))
         assertTrue(continuation.contains("start_line/max_lines"))
     }
