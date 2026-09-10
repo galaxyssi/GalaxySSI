@@ -94,7 +94,9 @@ Local evidence: `build/memory-identity-final-build.log`,
 
 This is mutation isolation, not completion of Memory 2.0. Neural reranking,
 complete retrieval authorization, conflict/forgetting lifecycle acceptance,
-crash-atomic deletion, and durable uncapped deletion retention remain separate
-work. The existing deletion ledger still retains at most 2,000 tombstones and
-its decoder has per-record array limits. Those limits are not removed here.
+crash-atomic deletion, and durable uncapped deletion retention were separate
+work at the 1.1.56 acceptance point. That release retained at most 2,000
+tombstones and had per-record array limits. The subsequent storage transaction,
+retention, migration and backup changes are documented in
+[Durable personal-memory deletion](android-durable-memory-deletion.md).
 The separate knowledge store's vector/FTS implementation is unchanged.

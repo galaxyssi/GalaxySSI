@@ -5,7 +5,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object AgentBackupData {
-    private const val MEMORY_DATABASE = "galaxyssi_agent_memory_v2"
     private const val WORKFLOW_PREFS = "galaxyssi_agent_workflows"
     private const val SCHEDULE_PREFS = "galaxyssi_agent_workflow_schedules"
     private const val TRIGGER_PREFS = "galaxyssi_agent_workflow_triggers"
@@ -21,12 +20,13 @@ object AgentBackupData {
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
         val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
+        val memoryState = memoryDeletionIndex.exportState()
         return JSONObject()
             .put("version", 33)
             .put("interface_language", AppLanguage.current(context))
             .put("agent_preference_mode", preferenceMode.wireValue)
-            .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
-            .put("memory_deletion_index", memoryDeletionIndex.exportJson())
+            .put("memory", memoryState.getJSONArray("memory"))
+            .put("memory_deletion_index", memoryState.getJSONArray("memory_deletion_index"))
             .put("knowledge", SQLiteAgentKnowledgeStore(context).exportJson())
             .put("tasks", if (includeSessionHistory) SQLiteAgentTaskStore(context).exportJson() else JSONArray())
             .put("transcript", if (includeSessionHistory) readAgentTranscriptArray(context) else JSONArray())
@@ -116,7 +116,7 @@ object AgentBackupData {
 
     fun restore(context: Context, payload: JSONObject) {
         val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
-        memoryDeletionIndex.mergeBackup(payload.optJSONArray("memory_deletion_index"))
+        memoryDeletionIndex.restoreState(payload)
         if (payload.has("interface_language")) {
             AppLanguage.set(context, payload.optString("interface_language", AppLanguage.AUTO))
         }
@@ -124,11 +124,6 @@ object AgentBackupData {
             AgentPreferenceModeStore(context).save(
                 AgentPreferenceMode.fromWireValue(payload.optString("agent_preference_mode"))
             )
-        }
-        payload.optJSONArray("memory")?.let { input ->
-            val sanitized = sanitizeArray(input, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS)
-            AgentEncryptedDatabase(context, MEMORY_DATABASE)
-                .writeString(ITEMS_KEY, memoryDeletionIndex.filterBackupItems(sanitized).toString())
         }
         payload.optJSONArray("knowledge")?.let { input ->
             SQLiteAgentKnowledgeStore(context).replaceAllJson(input)
@@ -304,16 +299,6 @@ object AgentBackupData {
         return sanitizeArray(array, maxItems, maxItemCharacters)
     }
 
-    private fun readDatabaseArray(
-        context: Context,
-        databaseName: String,
-        maxItems: Int,
-        maxItemCharacters: Int
-    ): JSONArray {
-        val raw = AgentEncryptedDatabase(context, databaseName).readString(ITEMS_KEY, "[]")
-        return sanitizeArray(runCatching { JSONArray(raw) }.getOrDefault(JSONArray()), maxItems, maxItemCharacters)
-    }
-
     private fun readAgentConversationArray(context: Context): JSONArray {
         val raw = AgentEncryptedDatabase(context, TRANSCRIPT_PREFS)
             .readString(AgentTranscriptStore.KEY_CONVERSATIONS, "[]")
@@ -344,8 +329,6 @@ object AgentBackupData {
     private inline fun <reified T : Enum<T>> enumOrDefault(value: String, default: T): T =
         runCatching { enumValueOf<T>(value) }.getOrElse { default }
 
-    private const val MAX_MEMORY_ITEMS = 200
-    private const val MAX_MEMORY_ITEM_CHARACTERS = 24_000
     private const val MAX_WORKFLOW_ITEMS = 100
     private const val MAX_WORKFLOW_ITEM_CHARACTERS = 4_000
     private const val MAX_SCHEDULE_ITEMS = 100

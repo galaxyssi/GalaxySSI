@@ -1,6 +1,5 @@
 package com.galaxyssi.chat
 
-import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -43,22 +42,19 @@ object AgentMemoryCausalDeletionPolicy {
         .associateBy(AgentMemoryDeletionTombstone::id)
         .values
         .sortedBy(AgentMemoryDeletionTombstone::deletedAtMillis)
-        .takeLast(MAX_TOMBSTONES)
 
     fun filterRestoredItems(
         items: List<AgentMemoryItem>,
         tombstones: List<AgentMemoryDeletionTombstone>
-    ): List<AgentMemoryItem> = items.filterNot { item -> isSuppressed(item, tombstones) }
+    ): List<AgentMemoryItem> {
+        val index = SuppressionIndex().apply { tombstones.forEach(::add) }
+        return items.filterNot(index::isSuppressed)
+    }
 
     fun filterBackupItems(
         input: JSONArray,
         tombstones: List<AgentMemoryDeletionTombstone>
-    ): JSONArray = JSONArray().apply {
-        for (index in 0 until input.length()) {
-            val item = input.optJSONObject(index) ?: continue
-            if (!isSuppressed(item, tombstones)) put(item)
-        }
-    }
+    ): JSONArray = SuppressionIndex().apply { tombstones.forEach(::add) }.filter(input)
 
     fun retractionEvents(tombstone: AgentMemoryDeletionTombstone): List<GlobalConversationEvent> =
         tombstone.retractedEventIds.sorted().chunked(MAX_RETRACTIONS_PER_EVENT).mapIndexed { index, ids ->
@@ -93,11 +89,9 @@ object AgentMemoryCausalDeletionPolicy {
         val id = json.optString("id").trim()
         val deletedAtMillis = json.optLong("deleted_at_millis").coerceAtLeast(0L)
         if (id.isBlank() || deletedAtMillis <= 0L) return null
-        val memoryIds = json.optJSONArray("memory_ids").strings(MAX_IDS_PER_TOMBSTONE)
-        val semanticFingerprints = json.optJSONArray("semantic_fingerprints")
-            .strings(MAX_IDS_PER_TOMBSTONE)
-        val retractedEventIds = json.optJSONArray("retracted_event_ids")
-            .strings(MAX_RETRACTIONS_PER_TOMBSTONE)
+        val memoryIds = json.optJSONArray("memory_ids").strings() ?: return null
+        val semanticFingerprints = json.optJSONArray("semantic_fingerprints").strings() ?: return null
+        val retractedEventIds = json.optJSONArray("retracted_event_ids").strings() ?: return null
         if (id != tombstoneId(memoryIds, semanticFingerprints, retractedEventIds, deletedAtMillis)) return null
         return AgentMemoryDeletionTombstone(
             id = id,
@@ -116,39 +110,42 @@ object AgentMemoryCausalDeletionPolicy {
         scopeId = item.scopeId
     )
 
-    private fun isSuppressed(
-        item: AgentMemoryItem,
-        tombstones: List<AgentMemoryDeletionTombstone>
-    ): Boolean {
-        val fingerprint = semanticFingerprint(item)
-        val legacyFingerprint = semanticFingerprint(item.kind.name, item.key, item.value,
-            item.scope.name, item.scopeId, legacyScope = true)
-        return tombstones.any { tombstone ->
-            item.id in tombstone.memoryIds ||
-                (item.timestampMillis <= tombstone.deletedAtMillis &&
-                    (fingerprint in tombstone.semanticFingerprints || legacyFingerprint in tombstone.semanticFingerprints))
-        }
-    }
+    internal class SuppressionIndex {
+        private val memoryIds = hashSetOf<String>()
+        private val deletedThrough = hashMapOf<String, Long>()
 
-    private fun isSuppressed(
-        item: JSONObject,
-        tombstones: List<AgentMemoryDeletionTombstone>
-    ): Boolean {
-        val itemId = item.optString("id").trim()
-        val timestampMillis = item.optLong("timestamp_millis").coerceAtLeast(0L)
-        val fingerprint = semanticFingerprint(
-            kind = item.optString("kind"),
-            key = item.optString("key"),
-            value = item.optString("value"),
-            scope = item.optString("scope"),
-            scopeId = item.optString("scope_id")
-        )
-        val legacyFingerprint = semanticFingerprint(item.optString("kind"), item.optString("key"),
-            item.optString("value"), item.optString("scope"), item.optString("scope_id"), legacyScope = true)
-        return tombstones.any { tombstone ->
-            itemId in tombstone.memoryIds ||
-                (timestampMillis <= tombstone.deletedAtMillis &&
-                    (fingerprint in tombstone.semanticFingerprints || legacyFingerprint in tombstone.semanticFingerprints))
+        fun add(tombstone: AgentMemoryDeletionTombstone) {
+            memoryIds.addAll(tombstone.memoryIds)
+            tombstone.semanticFingerprints.forEach { fingerprint ->
+                deletedThrough[fingerprint] = maxOf(deletedThrough[fingerprint] ?: 0L, tombstone.deletedAtMillis)
+            }
+        }
+
+        fun isSuppressed(item: AgentMemoryItem): Boolean = matches(item.id, item.timestampMillis,
+            item.kind.name, item.key, item.value, item.scope.name, item.scopeId)
+
+        fun filter(input: JSONArray): JSONArray = JSONArray().apply {
+            val seenIds = hashSetOf<String>()
+            for (index in 0 until input.length()) {
+                val item = input.optJSONObject(index) ?: error("Memory backup contains an invalid record")
+                val id = item.opt("id") as? String
+                val value = item.opt("value") as? String
+                check(!id.isNullOrBlank() && !value.isNullOrBlank()) { "Memory backup record identity or value is missing" }
+                check(seenIds.add(id)) { "Memory backup contains duplicate identities" }
+                val kind = AgentMemoryKind.entries.firstOrNull { it.name == item.optString("kind") } ?: AgentMemoryKind.TASK
+                val scope = AgentMemoryScope.entries.firstOrNull { it.name == item.optString("scope") } ?: AgentMemoryScope.GLOBAL
+                if (!matches(id, item.optLong("timestamp_millis").coerceAtLeast(0L),
+                        kind.name, item.optString("key"), value, scope.name, item.optString("scope_id"))) put(item)
+            }
+        }
+
+        private fun matches(id: String, timestamp: Long, kind: String, key: String, value: String,
+            scope: String, scopeId: String): Boolean {
+            if (id in memoryIds) return true
+            val exact = semanticFingerprint(kind, key, value, scope, scopeId)
+            val legacy = semanticFingerprint(kind, key, value, scope, scopeId, legacyScope = true)
+            return deletedThrough[exact]?.let { timestamp <= it } == true ||
+                deletedThrough[legacy]?.let { timestamp <= it } == true
         }
     }
 
@@ -198,83 +195,15 @@ object AgentMemoryCausalDeletionPolicy {
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
 
-    private fun JSONArray?.strings(limit: Int): Set<String> {
-        if (this == null) return emptySet()
-        return buildSet {
-            for (index in 0 until length()) {
-                optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
-                if (size >= limit) break
-            }
+    private fun JSONArray?.strings(): Set<String>? {
+        if (this == null) return null
+        val result = linkedSetOf<String>()
+        for (index in 0 until length()) {
+            val value = opt(index) as? String ?: return null
+            if (value.isBlank() || !result.add(value)) return null
         }
+        return result
     }
 
-    private const val MAX_TOMBSTONES = 2_000
-    private const val MAX_IDS_PER_TOMBSTONE = 1_000
-    private const val MAX_RETRACTIONS_PER_TOMBSTONE = 2_000
     private const val MAX_RETRACTIONS_PER_EVENT = 128
-}
-
-class EncryptedAgentMemoryDeletionIndex(context: Context) {
-    private val appContext = context.applicationContext
-    private val database = AgentEncryptedDatabase(appContext, DATABASE_NAME)
-
-    @Synchronized
-    fun record(deletedItems: List<AgentMemoryItem>): AgentMemoryDeletionTombstone? {
-        val tombstone = AgentMemoryCausalDeletionPolicy.tombstone(deletedItems) ?: return null
-        save(AgentMemoryCausalDeletionPolicy.merge(snapshot(), listOf(tombstone)))
-        return tombstone
-    }
-
-    @Synchronized
-    fun snapshot(): List<AgentMemoryDeletionTombstone> = decode(
-        runCatching { JSONArray(database.readString(KEY_TOMBSTONES, "[]")) }.getOrDefault(JSONArray())
-    )
-
-    @Synchronized
-    fun mergeBackup(input: JSONArray?): List<AgentMemoryDeletionTombstone> {
-        val merged = AgentMemoryCausalDeletionPolicy.merge(snapshot(), decode(input ?: JSONArray()))
-        save(merged)
-        return merged
-    }
-
-    @Synchronized
-    fun exportJson(): JSONArray = JSONArray().apply {
-        snapshot().forEach { put(AgentMemoryCausalDeletionPolicy.encode(it)) }
-    }
-
-    fun filterBackupItems(input: JSONArray): JSONArray =
-        AgentMemoryCausalDeletionPolicy.filterBackupItems(input, snapshot())
-
-    fun publishRetractions(): Int {
-        val events = snapshot().flatMap(AgentMemoryCausalDeletionPolicy::retractionEvents)
-        if (events.isEmpty()) return 0
-        val accepted = GlobalAgentRepository(appContext).enqueueAll(events)
-        if (accepted > 0) GlobalConversationEventBus.requestProcessing(appContext)
-        return accepted
-    }
-
-    fun publishRetraction(tombstone: AgentMemoryDeletionTombstone): Boolean {
-        val accepted = GlobalAgentRepository(appContext).enqueueAll(
-            AgentMemoryCausalDeletionPolicy.retractionEvents(tombstone)
-        )
-        if (accepted > 0) GlobalConversationEventBus.requestProcessing(appContext)
-        return accepted > 0
-    }
-
-    private fun decode(array: JSONArray): List<AgentMemoryDeletionTombstone> = buildList {
-        for (index in 0 until array.length()) {
-            AgentMemoryCausalDeletionPolicy.decode(array.optJSONObject(index))?.let(::add)
-        }
-    }
-
-    private fun save(tombstones: List<AgentMemoryDeletionTombstone>) {
-        val array = JSONArray()
-        tombstones.forEach { array.put(AgentMemoryCausalDeletionPolicy.encode(it)) }
-        database.writeString(KEY_TOMBSTONES, array.toString())
-    }
-
-    companion object {
-        const val DATABASE_NAME = "galaxyssi_agent_memory_deletions_v1"
-        private const val KEY_TOMBSTONES = "tombstones"
-    }
 }
