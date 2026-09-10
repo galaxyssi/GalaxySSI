@@ -155,12 +155,15 @@ class GlobalAgentRepository(context: Context) {
         nowMillis: Long = System.currentTimeMillis()
     ): GlobalEventProcessingFailure = synchronized(STORE_LOCK) {
         val failures = loadEventFailures()
-        val failure = GlobalEventRetryPolicy.recordFailure(
+        val recorded = GlobalEventRetryPolicy.recordFailure(
             event.id,
             failures.firstOrNull { it.eventId == event.id },
             error,
             nowMillis
         )
+        val failure = if (AgentMemoryRetractionDeliveryPolicy.isRetraction(event)) {
+            AgentMemoryRetractionDeliveryPolicy.retainFailure(recorded)
+        } else recorded
         saveEventFailures(failures.filterNot { it.eventId == event.id } + failure)
         failure
     }
@@ -1819,7 +1822,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         )
     }
 
-    fun processPending(maxEvents: Int = 100): GlobalAgentProcessingBatch = synchronized(PROCESS_LOCK) {
+    fun processPending(maxEvents: Int = 100, retractionsOnly: Boolean = false): GlobalAgentProcessingBatch = synchronized(PROCESS_LOCK) {
         if (!syntheticEvalArtifactsPurged) {
             repository.purgeSyntheticConversation(AgentEvalSideEffectPolicy.SYNTHETIC_CONVERSATION_ID)
             syntheticEvalArtifactsPurged = true
@@ -1828,11 +1831,21 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (!settings.enabled) {
             return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())
         }
-        synchronizePersistentContext()
-        repository.recoverDeadLettersAfterUpgrade(repository.appVersionCode())
-        val events = repository.pendingEvents(maxEvents)
+        if (!retractionsOnly) {
+            synchronizePersistentContext()
+            repository.recoverDeadLettersAfterUpgrade(repository.appVersionCode())
+        }
+        val memoryDeletions = EncryptedAgentMemoryDeletionIndex(appContext)
+        val pendingRetractions = AgentMemoryRetractionDeliveryPolicy.loadPending(
+            retractionsOnly, { memoryDeletions.pendingRetractions(250) },
+            { Log.w("GalaxySSIMemory", "Retraction recovery remains pending: ${it.javaClass.simpleName}") }
+        )
+        val events = AgentMemoryRetractionDeliveryPolicy.select(
+            pendingRetractions, if (retractionsOnly) emptyList() else repository.pendingEvents(maxEvents),
+            repository.eventFailures(), maxEvents, System.currentTimeMillis()
+        )
         if (events.isEmpty()) {
-            auditMemoryIfDue(0)
+            if (!retractionsOnly) auditMemoryIfDue(0)
             return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())
         }
         var world = repository.loadWorld()
@@ -2048,6 +2061,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             ).requireSafe()
             GlobalMemorySupersessionPolicy.inspect(world).requireSafe()
             changedItems += reduction.changedItems.size
+            if (AgentMemoryRetractionDeliveryPolicy.isRetraction(event)) {
+                handledEventIds += event.id
+                if (retryingEventIds.remove(event.id)) repository.clearEventFailure(event.id)
+                return@forEach
+            }
             val decision = GlobalInterventionPolicy.decide(
                 event,
                 understanding,
@@ -2168,21 +2186,23 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             memoryInbox
         ).requireSafe()
         GlobalMemorySupersessionPolicy.inspect(world).requireSafe()
-        repository.saveMemoryInbox(memoryInbox)
-        repository.saveWorld(world)
-        repository.saveTopicGraph(topicGraph)
-        repository.saveEntityMemoryGraph(entityGraph)
-        repository.appendMemoryEvolutionRecords(newMemoryEvolutionRecords)
-        if (researchTasksInvalidated || newTasks.isNotEmpty()) {
-            repository.saveResearchTasks(existingTasks + newTasks)
+        memoryDeletions.commitRetractionProjection(handledEventIds) {
+            repository.saveMemoryInbox(memoryInbox)
+            repository.saveWorld(world)
+            repository.saveTopicGraph(topicGraph)
+            repository.saveEntityMemoryGraph(entityGraph)
+            repository.appendMemoryEvolutionRecords(newMemoryEvolutionRecords)
+            if (researchTasksInvalidated || newTasks.isNotEmpty()) {
+                repository.saveResearchTasks(existingTasks + newTasks)
+            }
+            if (cognitionTasksInvalidated || newCognitionTasks.isNotEmpty()) {
+                deliberationStore.saveCognitionTasks(existingCognitionTasks + newCognitionTasks)
+            }
+            if (proactiveMessagesInvalidated || newMessages.isNotEmpty()) {
+                repository.saveProactiveMessages(existingMessages + newMessages)
+            }
+            repository.removeEvents(handledEventIds)
         }
-        if (cognitionTasksInvalidated || newCognitionTasks.isNotEmpty()) {
-            deliberationStore.saveCognitionTasks(existingCognitionTasks + newCognitionTasks)
-        }
-        if (proactiveMessagesInvalidated || newMessages.isNotEmpty()) {
-            repository.saveProactiveMessages(existingMessages + newMessages)
-        }
-        repository.removeEvents(handledEventIds)
         GlobalAgentProcessingBatch(handledEventIds.size, changedItems, newTasks, newMessages, newCognitionTasks)
     }
 
@@ -2493,6 +2513,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         }
         if (updated.enabled) {
             if (!previous.enabled) repository.savePersistentContextSyncVersion(0)
+            AgentMemoryRetractionRecovery.enqueue(appContext)
             GlobalConversationEventBus.requestProcessing(appContext)
         }
         scheduleNextWake()

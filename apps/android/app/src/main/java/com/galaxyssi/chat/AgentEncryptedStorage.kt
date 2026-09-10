@@ -267,6 +267,14 @@ class AgentEncryptedDatabase(
         ).use { it.moveToFirst() }
     }
 
+    fun countKeys(prefix: String): Int = synchronized(database) {
+        require(prefix.isNotEmpty())
+        database.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_VALUES WHERE storage_key >= ? AND storage_key < ?",
+            arrayOf(prefix, "$prefix\uffff")
+        ).use { cursor -> check(cursor.moveToFirst()); cursor.getInt(0) }
+    }
+
     fun keys(prefix: String = ""): List<String> = synchronized(database) {
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")

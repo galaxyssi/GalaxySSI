@@ -38,6 +38,7 @@ internal class AgentStartupRecoverySequence(
 class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters) :
     CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result = try {
+        AgentMemoryRetractionRecovery.enqueue(applicationContext)
         var reconciled = 0
         AgentStartupRecoverySequence(
             reconcile = {
