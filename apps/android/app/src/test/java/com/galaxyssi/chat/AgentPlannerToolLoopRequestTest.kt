@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentPlannerToolLoopRequestTest {
+    @Test fun samePlanningRevisionRetainsItsIdentityAcrossFreshContextSnapshots() {
+        val first = create(request())
+        val original = request()
+        val refreshed = create(original.copy(runtimeContext = original.runtimeContext.copy(createdAtMillis = 999999)))
+        assertEquals(first.loopId, refreshed.loopId)
+        assertEquals(first.recoveryInputIdentity, refreshed.recoveryInputIdentity)
+        assertNotEquals(first.loopId, create(original.copy(planningRevision = 2)).loopId)
+        assertNotEquals(first.loopId, create(original.copy(goal = "Different goal")).loopId)
+    }
     @Test fun planningKeepsTheExecutionAndConversationIdentity() {
         val loop = create(request())
         assertEquals("session", loop.sessionId)
