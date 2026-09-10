@@ -158,11 +158,17 @@ object AgentRichContentCodec {
                 )
                 val expanded = if (
                     block.type == AgentRichBlockType.TEXT &&
-                    MERMAID_FENCE.containsMatchIn(block.text)
+                    (block.text.contains('|') || MERMAID_FENCE.containsMatchIn(block.text))
                 ) {
+                    // Desktop final replies wrap Markdown in TEXT blocks; keep streaming table rendering.
                     fromText(block.text)
-                        .takeIf { parsed -> parsed.any { it.type == AgentRichBlockType.MERMAID } }
-                        ?.map { parsed -> parsed.copy(metadata = block.metadata + parsed.metadata) }
+                        .takeIf { parsed -> parsed.any {
+                            it.type == AgentRichBlockType.TABLE || it.type == AgentRichBlockType.MERMAID
+                        } }
+                        ?.mapIndexed { part, parsed -> parsed.copy(
+                            id = if (part == 0) block.id else "${block.id.take(100)}-markdown-$part",
+                            metadata = block.metadata + parsed.metadata
+                        ) }
                         .orEmpty()
                 } else {
                     emptyList()
