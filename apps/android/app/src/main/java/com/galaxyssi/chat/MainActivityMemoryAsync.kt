@@ -12,12 +12,33 @@ internal object AgentMemoryUiWork {
 }
 
 internal data class AgentMemoryPageContent(
-    val snapshot: AgentMemorySnapshot,
+    val page: AgentMemoryBrowsePage,
     val captureEnabled: Boolean,
-    val usageCounts: Map<String, Int>
+    val request: AgentMemoryBrowseRequest
 )
 
-internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> = emptySet()) {
+internal fun MainActivity.showMemoryControlCenterAsync() {
+    val title = getString(R.string.cc_memory_title)
+    showFeaturePage(title)
+    featureContent.addView(featureValueRow(getString(R.string.navigation_content_loading), "", R.drawable.ic_agent_memory, ""))
+    val generation = navigationContentGate.begin()
+    AgentMemoryUiWork.execute {
+        if (!navigationContentGate.isCurrent(generation)) return@execute
+        val result = runCatching { buildControlCenterMemoryPage() }
+        handler.post {
+            if (isFinishing || isDestroyed || !navigationContentGate.isCurrent(generation) ||
+                featurePage.visibility != View.VISIBLE || featureTitle.text.toString() != title) return@post
+            featureContent.removeAllViews()
+            result.onSuccess { controlCenterRenderer.render(featureContent, it, ::handleControlCenterAction) }.onFailure { error ->
+                featureContent.addView(featureValueRow(getString(R.string.agent_observation_action_failed),
+                    memoryFailureReason(error), R.drawable.ic_agent_memory, ""))
+            }
+        }
+    }
+}
+
+internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> = emptySet(),
+    request: AgentMemoryBrowseRequest = AgentMemoryBrowseRequest(kinds = filterKinds)) {
     val title = getString(R.string.agent_memory_title)
     showFeaturePage(title)
     featureContent.addView(featureValueRow(getString(R.string.navigation_content_loading), "", R.drawable.ic_agent_node, ""))
@@ -25,21 +46,19 @@ internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> 
     AgentMemoryUiWork.execute {
         if (!navigationContentGate.isCurrent(generation)) return@execute
         val result = runCatching {
-            val source = mobileNativeAgent.memorySnapshot()
-            val snapshot = if (filterKinds.isEmpty()) source else AgentMemorySnapshot(
-                activeItems = source.activeItems.filter { it.kind in filterKinds },
-                conflicts = source.conflicts.filter { it.kind in filterKinds },
-                historyItems = source.historyItems.filter { it.kind in filterKinds }
-            )
-            val trust = AgentMemoryTrustStore(applicationContext)
-            AgentMemoryPageContent(snapshot, mobileNativeAgent.safetySettings().memoryCapture,
-                snapshot.activeItems.associate { it.id to trust.profile(it).usages.size })
+            val scoped = request.copy(kinds = filterKinds)
+            AgentMemoryPageContent(mobileNativeAgent.memoryStore.browse(scoped),
+                mobileNativeAgent.safetySettings().memoryCapture, scoped)
         }
         handler.post {
             if (isFinishing || isDestroyed || !navigationContentGate.isCurrent(generation) ||
                 featurePage.visibility != View.VISIBLE || featureTitle.text.toString() != title) return@post
             featureContent.removeAllViews()
             result.onSuccess { renderAgentMemoryPage(it, filterKinds) }.onFailure { error ->
+                if (error is AgentMemoryPageChanged && request.cursor != null) {
+                    showAgentMemoryPage(filterKinds, request.copy(cursor = null, backwards = false))
+                    return@onFailure
+                }
                 featureContent.addView(featureValueRow(getString(R.string.agent_observation_action_failed),
                     memoryFailureReason(error), R.drawable.ic_agent_node, ""))
             }
@@ -60,12 +79,12 @@ internal fun MainActivity.addAgentMemorySummaryRow() {
     val generation = navigationContentGate.begin()
     AgentMemoryUiWork.execute {
         if (!navigationContentGate.isCurrent(generation)) return@execute
-        val result = runCatching { mobileNativeAgent.memorySnapshot() }
+        val result = runCatching { mobileNativeAgent.memoryStore.browseCounts() }
         handler.post {
             if (isFinishing || isDestroyed || !navigationContentGate.isCurrent(generation) ||
                 featurePage.visibility != View.VISIBLE || placeholder.parent !== featureContent) return@post
             val position = featureContent.indexOfChild(placeholder)
-            val text = result.fold({ getString(R.string.agent_memory_value, it.activeCount, it.conflicts.size) },
+            val text = result.fold({ getString(R.string.agent_memory_value, it.active, it.conflicts) },
                 { getString(R.string.agent_observation_action_failed) })
             featureContent.removeView(placeholder)
             featureContent.addView(row(text), position)

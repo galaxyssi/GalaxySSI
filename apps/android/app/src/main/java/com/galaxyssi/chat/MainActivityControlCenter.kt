@@ -265,7 +265,7 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
     val availableResources = controlCenterResourceTargets(state.callableTargets)
         .count { it.status == AgentConnectorStatus.AVAILABLE }
     val trustedDeviceCount = desktopSecuritySummaries(activePcConnectorContacts()).size
-    val memoryCount = mobileNativeAgent.memorySnapshot().activeCount
+    val memoryCount = mobileNativeAgent.memoryStore.count()
     val knowledgeCount = mobileNativeAgent.knowledgeStore.sourceCount()
     val recentTasks = state.recentTasks.size
     val safety = mobileNativeAgent.safetySettings()

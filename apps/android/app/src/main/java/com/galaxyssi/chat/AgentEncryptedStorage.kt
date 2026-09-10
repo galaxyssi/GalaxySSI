@@ -207,10 +207,12 @@ class AgentEncryptedDatabase(
 
     fun mutateStrings(
         upserts: Map<String, String>,
-        removeKeys: Collection<String> = emptyList()
+        removeKeys: Collection<String> = emptyList(),
+        onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null
     ): Unit = synchronized(database) {
         if (upserts.isEmpty() && removeKeys.isEmpty()) return@synchronized
-        val encryptedValues = upserts.mapValues { (key, value) ->
+        val source = if (onMutation == null) upserts else upserts.toMap()
+        val encryptedValues = source.mapValues { (key, value) ->
             AgentStorageCipher.encrypt(value, associatedData(key))
         }
         val writable = database.writableDatabase
@@ -218,6 +220,7 @@ class AgentEncryptedDatabase(
         try {
             removeKeys.toSet().forEach { key ->
                 writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
+                onMutation?.invoke(writable, key, null)
             }
             encryptedValues.forEach { (key, encrypted) ->
                 val values = ContentValues().apply {
@@ -230,6 +233,7 @@ class AgentEncryptedDatabase(
                     values,
                     SQLiteDatabase.CONFLICT_REPLACE
                 ) != -1L) { "Agent encrypted database transaction failed" }
+                onMutation?.invoke(writable, key, source.getValue(key))
             }
             writable.setTransactionSuccessful()
         } finally {
@@ -245,6 +249,7 @@ class AgentEncryptedDatabase(
     /** Encrypt one row at a time; iteration errors roll back the entire batch. */
     internal fun mutateStreaming(
         upserts: Sequence<Pair<String, String>>,
+        onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null,
         removals: () -> Sequence<String>
     ): Unit = synchronized(database) {
         val writable = database.writableDatabase
@@ -260,11 +265,22 @@ class AgentEncryptedDatabase(
                     check(writable.insertWithOnConflict(TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
                         "Agent encrypted streaming transaction failed"
                     }
+                    onMutation?.invoke(writable, key, value)
                 }
             }
-            removals().forEach { key -> writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key)) }
+            removals().forEach { key ->
+                writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
+                onMutation?.invoke(writable, key, null)
+            }
             writable.setTransactionSuccessful()
         } finally { writable.endTransaction() }
+    }
+
+    internal fun <T> indexedTransaction(block: (SQLiteDatabase) -> T): T = synchronized(database) {
+        val writable = database.writableDatabase
+        writable.beginTransactionNonExclusive()
+        try { block(writable).also { writable.setTransactionSuccessful() } }
+        finally { writable.endTransaction() }
     }
 
     fun removeAll(keys: Collection<String>): Unit = synchronized(database) {
