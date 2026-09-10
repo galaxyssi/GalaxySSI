@@ -272,6 +272,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     internal val appContext = context.applicationContext
     internal val database = AgentEncryptedDatabase(context, DATABASE)
     internal val deletionIndex = EncryptedAgentMemoryDeletionIndex(context)
+    private val rows = AgentPersonalMemoryRows(database)
     internal var suppressObservations = false
 
     override fun remember(item: AgentMemoryItem): AgentMemoryWriteResult = synchronized(PROCESS_LOCK) {
@@ -393,7 +394,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     }
 
     override fun count(): Int = synchronized(PROCESS_LOCK) {
-        loadItems().count { it.status == AgentMemoryStatus.ACTIVE }
+        rows.activeCount()
     }
 
     override fun rebindConversationScope(sourceConversationId: String, targetConversationId: String): Int =
@@ -631,8 +632,9 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         .toSet()
 
     internal fun loadItems(): List<AgentMemoryItem> {
-        val raw = database.readString(KEY_ITEMS, "[]")
-        return SNAPSHOTS.get(raw) { AgentMemoryIdentity.normalizeConflicts(decodeItems(it)) }
+        return AgentMemoryIdentity.normalizeConflicts(rows.read().map {
+            decodeMemoryItem(it) ?: error("Personal memory row cannot be decoded")
+        })
     }
 
     internal fun decodeItems(raw: String): List<AgentMemoryItem> = runCatching {
@@ -646,19 +648,12 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     internal fun saveItems(items: List<AgentMemoryItem>) {
         val normalized = AgentMemoryIdentity.normalizeConflicts(items)
-        val array = JSONArray()
-        normalized.forEach { array.put(encodeMemoryItem(it)) }
-        val raw = array.toString()
-        database.writeString(KEY_ITEMS, raw)
-        SNAPSHOTS.put(raw, normalized)
+        rows.replace(normalized.asSequence().map(::encodeMemoryItem))
     }
 
     private fun saveDeletion(remaining: List<AgentMemoryItem>, deleted: List<AgentMemoryItem>): AgentMemoryDeletionTombstone? {
         val normalized = AgentMemoryIdentity.normalizeConflicts(remaining)
-        val raw = JSONArray().apply { normalized.forEach { put(encodeMemoryItem(it)) } }.toString()
-        val tombstone = deletionIndex.commitDeletion(deleted, raw)
-        SNAPSHOTS.put(raw, normalized)
-        return tombstone
+        return deletionIndex.commitDeletion(deleted, normalized.asSequence().map(::encodeMemoryItem))
     }
 
     internal fun publishMutation(before: List<AgentMemoryItem>, after: List<AgentMemoryItem>) {
@@ -666,60 +661,9 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         GlobalConversationEventBus.publishMemoryMutations(appContext, before, after)
     }
 
-    internal fun encodeMemoryItem(item: AgentMemoryItem): JSONObject = JSONObject()
-        .put("id", item.id)
-        .put("kind", item.kind.name)
-        .put("value", item.value)
-        .put("key", item.key)
-        .put("source", item.source)
-        .put("timestamp_millis", item.timestampMillis)
-        .put("version", item.version)
-        .put("supersedes_id", item.supersedesId)
-        .put("important", item.important)
-        .put("status", item.status.name)
-        .put("conflict_group_id", item.conflictGroupId)
-        .put("scope", item.scope.name)
-        .put("scope_id", item.scopeId)
-        .put("confidence", item.confidence)
-        .put("evidence_count", item.evidenceCount)
-        .put("auto_learned", item.autoLearned)
-        .put("last_confirmed_at_millis", item.lastConfirmedAtMillis)
-        .put("last_accessed_at_millis", item.lastAccessedAtMillis)
-        .put("expires_at_millis", item.expiresAtMillis)
-        .put("why_remembered", item.whyRemembered)
-        .put("origin_conversation_id", item.originConversationId)
-        .put("origin_event_id", item.originEventId)
-        .put("private_memory", item.privateMemory)
+    internal fun encodeMemoryItem(item: AgentMemoryItem): JSONObject = AgentMemoryItemCodec.encode(item)
 
-    internal fun decodeMemoryItem(json: JSONObject): AgentMemoryItem? {
-        val value = json.optString("value").trim()
-        if (value.isBlank()) return null
-        return AgentMemoryItem(
-            kind = enumOrDefault(json.optString("kind"), AgentMemoryKind.TASK),
-            value = value,
-            timestampMillis = json.optLong("timestamp_millis", System.currentTimeMillis()),
-            id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
-            source = json.optString("source", "agent"),
-            key = normalizeKey(json.optString("key")),
-            version = json.optInt("version", 1).coerceAtLeast(1),
-            supersedesId = json.optString("supersedes_id"),
-            important = json.optBoolean("important", false),
-            status = enumOrDefault(json.optString("status"), AgentMemoryStatus.ACTIVE),
-            conflictGroupId = json.optString("conflict_group_id"),
-            scope = enumOrDefault(json.optString("scope"), AgentMemoryScope.GLOBAL),
-            scopeId = json.optString("scope_id"),
-            confidence = json.optDouble("confidence", 0.65).coerceIn(0.0, 1.0),
-            evidenceCount = json.optInt("evidence_count", 1).coerceIn(1, MAX_EVIDENCE_COUNT),
-            autoLearned = json.optBoolean("auto_learned", false),
-            lastConfirmedAtMillis = json.optLong("last_confirmed_at_millis", 0L).coerceAtLeast(0L),
-            lastAccessedAtMillis = json.optLong("last_accessed_at_millis", 0L).coerceAtLeast(0L),
-            expiresAtMillis = json.optLong("expires_at_millis", 0L).coerceAtLeast(0L),
-            whyRemembered = json.optString("why_remembered").take(1_000),
-            originConversationId = json.optString("origin_conversation_id").take(160),
-            originEventId = json.optString("origin_event_id").take(160),
-            privateMemory = json.optBoolean("private_memory")
-        )
-    }
+    internal fun decodeMemoryItem(json: JSONObject): AgentMemoryItem? = AgentMemoryItemCodec.decode(json)
 
     internal fun buildConflict(groupId: String, items: List<AgentMemoryItem>): AgentMemoryConflict? {
         val candidates = items
@@ -747,12 +691,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return patterns.firstNotNullOfOrNull { pattern -> pattern.find(value)?.groupValues?.getOrNull(1) }.orEmpty()
     }
 
-    internal fun normalizeKey(value: String): String = value
-        .trim()
-        .lowercase(Locale.US)
-        .replace(Regex("[^\\p{L}\\p{N} _:.-]"), "")
-        .replace(Regex("\\s+"), " ")
-        .take(MAX_KEY_LENGTH)
+    internal fun normalizeKey(value: String): String = AgentMemoryItemCodec.normalizeKey(value)
 
     internal fun trimHistory(items: List<AgentMemoryItem>): List<AgentMemoryItem> {
         val unresolved = items.filter { it.status != AgentMemoryStatus.SUPERSEDED }
@@ -766,9 +705,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     companion object {
         private val PROCESS_LOCK = AgentMemoryStorage.lock
-        private val SNAPSHOTS = AgentPersistentSnapshotCache<AgentMemoryItem>()
         private const val DATABASE = AgentMemoryStorage.DATABASE
-        private const val KEY_ITEMS = "items"
         private const val MAX_ITEMS = 1_000
         private const val MAX_RECALL_ITEMS = 8
         private const val MAX_EVIDENCE_COUNT = 10_000

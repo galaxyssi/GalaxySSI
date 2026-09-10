@@ -23,7 +23,8 @@ class AgentMemoryRetractionRebootDeviceTest {
     @Test fun preparePendingRetractionsBeforeReboot() {
         val (case, boot) = arguments()
         val f = MemoryDeletionDeviceFixture(case)
-        check(!f.store.database.contains(AgentMemoryStorage.ITEMS)) { "Do not overwrite the original fixture" }
+        check(!f.store.database.contains(AgentMemoryStorage.ITEMS) &&
+            !f.store.database.contains(AgentPersonalMemoryRows.META)) { "Do not overwrite the original fixture" }
         val items = (0 until 200).map { deletionMemory(it, "\u64a4\u56de\u6d4b\u8bd5-$it") }
         f.store.saveItems(items)
         assertEquals(200, f.store.delete("\u64a4\u56de\u6d4b\u8bd5"))
