@@ -199,6 +199,37 @@ class AgentPlanNodeJournalDeviceTest {
         assertEquals(AgentActionStatus.COMPLETED, agent.currentPlan!!.actions.single().status)
     }
 
+    @Test fun recoveredAssessmentHonorsNewPauseOrCancellationDuringPlanning() {
+        val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
+        listOf(AgentPhase.PAUSED, AgentPhase.CANCELLED).forEach { stopped ->
+            lateinit var agent: MobileNativeAgent
+            agent = runtime(InMemoryAgentSessionStore(), screen, onPlan = { request ->
+                assertEquals(AgentPhase.PLANNING, agent.phase)
+                agent.phase = stopped
+                AgentPlan(request.goal, request.screen, emptyList(), emptyList(), plannerProfile = "unavailable")
+            })
+            agent.phase = AgentPhase.PAUSED
+            agent.currentGoal = "Test interrupted assessment"
+            val plan = AgentPlan(agent.currentGoal, screen, emptyList(), listOf(AgentAction(
+                "done", AgentActionKind.CALL_NATIVE_TOOL, "test.read", AgentRisk.LOW,
+                AgentActionStatus.COMPLETED, "Read result", result = "Retained")), plannerProfile = "guarded-model:test")
+            agent.currentPlan = plan
+            agent.lastActionResult = AgentActionResult("done", true, "Retained")
+            val state = agent.assessRecoveredPlanNodes(plan)
+            assertEquals(stopped, state.phase)
+            assertEquals("Retained", state.lastActionResult!!.message)
+            assertEquals(AgentActionStatus.COMPLETED, agent.currentPlan!!.actions.single().status)
+        }
+    }
+
+    @Test fun cancelledRecoveryDoesNotCallThePlanner() {
+        val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
+        val agent = runtime(InMemoryAgentSessionStore(), screen)
+        agent.phase = AgentPhase.CANCELLED
+        val plan = AgentPlan("Cancelled recovery", screen, emptyList(), emptyList())
+        assertEquals(AgentPhase.CANCELLED, agent.assessRecoveredPlanNodes(plan).phase)
+    }
+
     @Test fun ordinaryPlanExecutesRealMemoryAndStorageToolsAndCommitsTheirObservations() {
         val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
         val registry = AgentNativeToolRegistry().registerAll(AgentHardwareNativeTools.definitions(

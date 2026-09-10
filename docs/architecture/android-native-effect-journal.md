@@ -98,8 +98,9 @@ migration; they are not silently treated as an empty history.
 
 - Pure idempotent reads retain successful-result caching; they do not acquire
   persistent write claims.
-- Direct platform actions outside the native registry, connector sends and other
-  executors still need their own adapters.
+- Mobile direct actions and rollback now use the [action-effect adapter](android-action-effect-journal.md).
+  Platform actions outside both entry points and other executors still need their
+  own integration; connector acceptance is not a final response.
 - A model can propose a new key. This change alone does not prove that a new
   proposal cannot repeat the semantic effect of an older uncertain operation.
 - Whole Android task-DAG migration, automatic external reconciliation, durable

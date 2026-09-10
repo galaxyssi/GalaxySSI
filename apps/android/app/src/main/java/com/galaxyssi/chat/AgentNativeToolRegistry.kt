@@ -1468,7 +1468,6 @@ class AgentActionNativeToolExecutor(
         invocation.checkpoint()
         val action = actionFactory(invocation)
         val result = delegate.execute(action, screenProvider(invocation))
-        invocation.checkpoint()
         return AgentNativeToolAgentActionAdapter.fromAgentActionResult(result)
     }
 

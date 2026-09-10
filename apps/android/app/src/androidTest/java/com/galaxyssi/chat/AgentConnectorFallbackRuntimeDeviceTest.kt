@@ -151,6 +151,7 @@ class AgentConnectorFallbackRuntimeDeviceTest {
                     listOf(target, target.copy(id = "test-hermes", title = "Hermes test")) else listOf(target)
             },
             sessionStore = session,
+            actionEffectReplayStore = InMemoryAgentNativeToolReplayStore(),
             screenObservationOverride = false
         )
         val action = AgentAction("test-dispatch", AgentActionKind.CALL_CONNECTOR, "Hermes test", AgentRisk.LOW,
