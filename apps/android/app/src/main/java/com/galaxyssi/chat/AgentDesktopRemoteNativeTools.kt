@@ -255,6 +255,8 @@ object AgentDesktopRemoteNativeTools {
                 requiredConsents = consents,
                 timeoutMillis = timeoutMillis,
                 idempotency = idempotency,
+                effect = if (idempotency == AgentNativeToolIdempotency.IDEMPOTENT) AgentNativeToolEffect.READ_ONLY
+                    else AgentNativeToolEffect.MUTATION,
                 availability = AgentNativeToolAvailability(
                     AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
                     "Waiting for a paired Desktop capability manifest"

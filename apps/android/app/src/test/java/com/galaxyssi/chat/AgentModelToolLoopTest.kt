@@ -570,10 +570,11 @@ class AgentModelToolLoopTest {
     }
 
     @Test
-    fun retriesOnlyRetryableIdempotentToolFailures() = runBlocking {
+    fun retriesOnlyRetryableReadOnlyToolFailures() = runBlocking {
         val executions = AtomicInteger()
         val registry = registry(
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            effect = AgentNativeToolEffect.READ_ONLY,
             executor = AgentNativeToolExecutor {
                 if (executions.incrementAndGet() == 1) {
                     AgentNativeToolExecutionResult.failure("temporary", "Try again", retryable = true)
@@ -734,12 +735,30 @@ class AgentModelToolLoopTest {
         toolVersion = "1.0.0"
     )
 
+    @Test fun reportsIdempotentMutationFailureToModelWithoutBlindRetry() = runBlocking {
+        val executions = AtomicInteger()
+        val registry = registry(idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            effect = AgentNativeToolEffect.MUTATION, executor = AgentNativeToolExecutor {
+                executions.incrementAndGet()
+                AgentNativeToolExecutionResult.failure("write_uncertain", "Observe external state", retryable = true)
+            })
+        val adapter = ScriptedAdapter(AgentModelResponse(toolCalls = listOf(call("write-call"))),
+            AgentModelResponse("The write outcome needs reconciliation."))
+        val outcome = loop(adapter, registry).run(request())
+        assertEquals(1, executions.get())
+        assertEquals(0, outcome.usage.retries)
+        assertTrue(adapter.requests.last().messages.any {
+            it.role == AgentModelMessageRole.TOOL && it.toolResult?.error?.code == "write_uncertain"
+        })
+    }
+
     private fun registry(
         clock: AgentNativeClock = MutableClock(100),
         idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
         concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
         capabilities: Set<String> = emptySet(),
         consents: List<AgentNativeConsentRequirement> = emptyList(),
+        effect: AgentNativeToolEffect? = null,
         executor: AgentNativeToolExecutor
     ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock).register(
         AgentNativeToolDefinition(
@@ -763,7 +782,8 @@ class AgentModelToolLoopTest {
                 capabilities = capabilities,
                 requiredConsents = consents,
                 idempotency = idempotency,
-                concurrency = concurrency
+                concurrency = concurrency,
+                effect = effect
             ),
             executor = executor,
             executorId = "test.model_tool_loop"

@@ -226,6 +226,8 @@ object AgentNotificationNativeTools {
         ),
         timeoutMillis = 10_000L,
         idempotency = idempotency,
+        effect = if (idempotency == AgentNativeToolIdempotency.IDEMPOTENT) AgentNativeToolEffect.READ_ONLY
+            else AgentNativeToolEffect.MUTATION,
         availability = AgentNativeToolAvailability.AVAILABLE
     )
 

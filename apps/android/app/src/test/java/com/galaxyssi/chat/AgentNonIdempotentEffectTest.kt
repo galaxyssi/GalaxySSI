@@ -112,11 +112,13 @@ class AgentNonIdempotentEffectTest {
         val calls = AtomicInteger()
         val store = object : AgentNativeToolReplayStore by InMemoryAgentNativeToolReplayStore() {
             override fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult? = error("No read receipt lookup")
+            override fun observe(key: AgentNativeToolReplayKey): AgentNativeEffectClaim? = error("No read effect lookup")
             override fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim =
                 error("No read effect claim")
         }
         val runtime = AgentNativeToolRegistry(replayStore = store).register(AgentNativeToolDefinition(
-            descriptor.copy(idempotency = AgentNativeToolIdempotency.IDEMPOTENT), AgentNativeToolExecutor {
+            descriptor.copy(idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+                effect = AgentNativeToolEffect.READ_ONLY), AgentNativeToolExecutor {
                 AgentNativeToolExecutionResult.success(mapOf("value" to calls.incrementAndGet()))
             }))
         val call = context.copy(idempotencyKey = null)
