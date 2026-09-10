@@ -9,6 +9,25 @@ from agent_latency import opaque_id
 from agent_timing_clock import now_ns
 
 
+def transport_task_id(payload):
+    """One recovery batch is one transport sample, never one sample per item."""
+    if not isinstance(payload, dict) or payload.get("peer_chat"):
+        return ""
+    if payload.get("type") not in {"agent_task_recovery_request", "agent_task_recovery_result"}:
+        return str(payload.get("task_id") or "")
+    route, request, items = payload.get("client_route_id"), payload.get("request_id"), payload.get("items")
+    if (not isinstance(route, str) or not route.strip() or len(route) > 200
+            or not isinstance(request, str) or not request.strip() or len(request) > 128
+            or not isinstance(items, list) or not 1 <= len(items) <= 32):
+        return ""
+    fields = ("client_route_id", "conversation_id", "task_id", "turn_id", "contact_id", "source_message_id", "agent_id")
+    if any(not isinstance(item, dict) or any(not isinstance(item.get(key), str)
+           or not item[key].strip() or len(item[key]) > 200 for key in fields)
+           or item["client_route_id"] != route for item in items):
+        return ""
+    return items[0]["task_id"]
+
+
 @dataclass(frozen=True)
 class Attempt:
     operation: str

@@ -1307,7 +1307,8 @@ object GalaxySSIMqttClient {
             )
         )
         if (!payload.optBoolean("peer_chat")) {
-            AgentLatencyTelemetry.transportQueued(context, targetId, messageId, payload.optString("task_id"))
+            AgentLatencyTelemetry.transportQueued(context, targetId, messageId,
+                com.galaxyssi.chat.metrics.AgentTransportTiming.taskId(payload))
         }
         if (queueOnly) {
             if (!deferQueuedDispatch) {
