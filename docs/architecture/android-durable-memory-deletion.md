@@ -134,8 +134,10 @@ Local logs: `build/memory-deletion-ledger-release-build.log`,
 
 ## Remaining work
 
-The full Memory 2.0 goal is still incomplete. Global derived-memory retractions
-need durable delivery/replay acceptance across the commit-to-publication gap;
-this change does not activate global/evolution processing. Neural reranking,
+The full Memory 2.0 goal is still incomplete. The subsequent
+[durable retraction outbox](android-memory-retraction-outbox.md) closes the
+commit-to-publication gap and verifies storage recovery after a device reboot;
+full production derived-memory projection replay remains unverified. Neither
+change activates global/evolution processing. Neural reranking,
 complete retrieval authorization, conflict/forgetting policy, full personal-store
 paging, and comprehensive fault/backup acceptance remain separate work.

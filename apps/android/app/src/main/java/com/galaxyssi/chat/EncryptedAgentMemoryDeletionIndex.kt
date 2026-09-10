@@ -15,6 +15,7 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, AgentMemoryStorage.DATABASE)
     private val legacy = AgentEncryptedDatabase(appContext, DATABASE_NAME)
+    private val outbox = AgentMemoryRetractionOutbox(database, ::readRecord, ::ensureMigrated)
 
     fun record(deletedItems: List<AgentMemoryItem>): AgentMemoryDeletionTombstone? =
         synchronized(AgentMemoryStorage.lock) {
@@ -81,36 +82,32 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
     }
 
     fun publishRetractions(): Int {
-        val repository = GlobalAgentRepository(appContext)
-        var accepted = 0
-        var cursor = ""
-        while (true) {
-            val page = synchronized(AgentMemoryStorage.lock) {
-                ensureMigrated()
-                database.keysAfter(RECORD_PREFIX, cursor, PAGE_SIZE).map { it to readRecord(it) }
-            }
-            if (page.isEmpty()) break
-            page.forEach { (_, tombstone) ->
-                AgentMemoryCausalDeletionPolicy.retractionEvents(tombstone).forEach { event ->
-                    accepted += repository.enqueueAll(listOf(event))
-                }
-            }
-            cursor = page.last().first
-        }
-        if (accepted > 0) GlobalConversationEventBus.requestProcessing(appContext)
-        return accepted
+        val pending = outbox.requeueAll()
+        if (pending > 0) AgentMemoryRetractionRecovery.enqueue(appContext)
+        return pending
     }
 
     fun publishRetraction(tombstone: AgentMemoryDeletionTombstone): Boolean {
-        val accepted = GlobalAgentRepository(appContext).enqueueAll(AgentMemoryCausalDeletionPolicy.retractionEvents(tombstone))
-        if (accepted > 0) GlobalConversationEventBus.requestProcessing(appContext)
-        return accepted > 0
+        if (tombstone.retractedEventIds.isEmpty()) return false
+        AgentMemoryRetractionRecovery.enqueue(appContext)
+        return true
+    }
+
+    internal fun pendingRetractions(limit: Int = 100): List<GlobalConversationEvent> = outbox.pending(limit)
+    internal fun pendingRetractionCount(): Int = outbox.count()
+    internal fun acknowledgeRetractions(eventIds: Set<String>) = outbox.acknowledge(eventIds)
+    internal fun commitRetractionProjection(eventIds: Set<String>, persist: () -> Unit) {
+        persist()
+        outbox.acknowledge(eventIds)
     }
 
     private fun suppressionIndex() = AgentMemoryCausalDeletionPolicy.SuppressionIndex().apply { visitRecords(::add) }
 
-    private fun records(items: List<AgentMemoryDeletionTombstone>): Map<String, String> = items.associate {
-        "$RECORD_PREFIX${it.id}" to AgentMemoryCausalDeletionPolicy.encode(it).toString()
+    private fun records(items: List<AgentMemoryDeletionTombstone>): Map<String, String> = buildMap {
+        items.forEach {
+            put("$RECORD_PREFIX${it.id}", AgentMemoryCausalDeletionPolicy.encode(it).toString())
+            putAll(AgentMemoryRetractionOutbox.references(it))
+        }
     }
 
     private fun ensureMigrated() {
