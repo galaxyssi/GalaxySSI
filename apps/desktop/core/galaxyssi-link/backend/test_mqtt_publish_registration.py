@@ -13,6 +13,7 @@ class PublishRegistrationTest(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         for name, value in (("pending_outbound_acks", {}), ("early_outbound_acks", {}),
+                            ("pending_outbound_priorities", {}), ("outbound_publish_reservations", {}),
                             ("pending_delivery_acks", {}), ("mqtt_connection_generation", 51)):
             self.stack.enter_context(patch.object(bridge, name, value))
         self.published = self.stack.enter_context(patch.object(bridge, "mark_outbound_published"))
@@ -37,6 +38,22 @@ class PublishRegistrationTest(unittest.TestCase):
         bridge.on_publish(self.client, None, 71)
         self.published.assert_called_once_with("app-a", "message-a")
         self.assertEqual({}, bridge.pending_outbound_acks)
+
+    def test_artifact_priority_survives_registration_until_puback(self):
+        key = ("app-a", "message-a")
+        bridge.outbound_publish_reservations[key] = bridge.OUTBOUND_PRIORITY_ARTIFACT
+        self.track()
+        bridge.outbound_publish_reservations.clear()
+        self.assertEqual({key: bridge.OUTBOUND_PRIORITY_ARTIFACT}, bridge.pending_outbound_priorities)
+        bridge.on_publish(self.client, None, 71)
+        self.assertEqual({}, bridge.pending_outbound_priorities)
+
+    def test_synchronously_completed_info_leaves_no_priority_metadata(self):
+        self.info.is_published = lambda: True
+        self.track()
+        self.published.assert_called_once_with("app-a", "message-a")
+        self.assertEqual({}, bridge.pending_outbound_acks)
+        self.assertEqual({}, bridge.pending_outbound_priorities)
 
     def test_failed_early_ack_remains_retryable(self):
         bridge.on_publish(self.client, None, 71, 128)
@@ -106,6 +123,8 @@ class PublishRegistrationTest(unittest.TestCase):
             self.assertFalse(thread.is_alive())
         self.assertEqual([True], observed, "publish held a lock needed by disconnect")
         self.assertEqual({}, bridge.pending_outbound_acks)
+        self.assertEqual({}, bridge.pending_outbound_priorities)
+        self.assertEqual({}, bridge.outbound_publish_reservations)
         self.retryable.assert_called_once_with("app-a", "message-a")
 
 

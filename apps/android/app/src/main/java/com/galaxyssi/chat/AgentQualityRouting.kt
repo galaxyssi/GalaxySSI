@@ -143,24 +143,46 @@ object AgentQualityAwareRoutingPolicy {
     private const val AUTO_SWITCH_MARGIN = 0.08
 }
 
-class AgentShadowRoutingStore(context: Context) {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+class AgentShadowRoutingStore(context: Context, databaseName: String = DATABASE) {
+    private val database = AgentEncryptedDatabase(context.applicationContext, databaseName)
 
-    @Synchronized
-    fun save(recommendation: AgentShadowRoutingRecommendation) {
-        database.writeString("$KEY_PREFIX${recommendation.id}", encode(recommendation).toString())
-        prune()
+    fun save(recommendation: AgentShadowRoutingRecommendation) = synchronized(STORE_LOCK) {
+        val previous = order()
+        val key = "$KEY_PREFIX${recommendation.id}"
+        val retained = AgentShadowRoutingOrderIndex.retain(
+            previous.filterNot { it.key == key } + AgentShadowRoutingOrderEntry(key, recommendation.createdAtMillis)
+        )
+        val keys = retained.mapTo(hashSetOf()) { it.key }
+        database.mutateStrings(
+            upserts = buildMap {
+                put(AgentShadowRoutingOrderIndex.KEY, AgentShadowRoutingOrderIndex.encode(retained))
+                if (key in keys) put(key, encode(recommendation).toString())
+            },
+            removeKeys = (previous.map { it.key } + key).filterNot(keys::contains)
+        )
     }
 
-    @Synchronized
-    fun recent(limit: Int = MAX_ITEMS): List<AgentShadowRoutingRecommendation> =
-        database.entries(KEY_PREFIX).mapNotNull { decode(it.second) }
-            .sortedByDescending(AgentShadowRoutingRecommendation::createdAtMillis)
-            .take(limit.coerceIn(1, MAX_ITEMS))
+    fun recent(limit: Int = MAX_ITEMS): List<AgentShadowRoutingRecommendation> = synchronized(STORE_LOCK) {
+        val keys = order().take(limit.coerceIn(1, MAX_ITEMS)).map { it.key }
+        val values = database.readStrings(keys)
+        keys.mapNotNull { key -> values[key]?.let(::decode) }
+    }
 
-    private fun prune() {
-        val retained = recent(MAX_ITEMS).mapTo(hashSetOf()) { "$KEY_PREFIX${it.id}" }
-        database.removeAll(database.keys(KEY_PREFIX).filterNot(retained::contains))
+    private fun order(): List<AgentShadowRoutingOrderEntry> {
+        val keys = database.keys(KEY_PREFIX).toSet()
+        AgentShadowRoutingOrderIndex.decode(database.readString(AgentShadowRoutingOrderIndex.KEY, ""))
+            ?.takeIf { entries -> entries.mapTo(hashSetOf()) { it.key } == keys }
+            ?.let { return it }
+        // One-time legacy/corrupt-index recovery; payload and order updates are atomic thereafter.
+        val retained = AgentShadowRoutingOrderIndex.retain(database.readStrings(keys).mapNotNull { (key, raw) ->
+            decode(raw)?.let { AgentShadowRoutingOrderEntry(key, it.createdAtMillis) }
+        })
+        val retainedKeys = retained.mapTo(hashSetOf()) { it.key }
+        database.mutateStrings(
+            mapOf(AgentShadowRoutingOrderIndex.KEY to AgentShadowRoutingOrderIndex.encode(retained)),
+            keys.filterNot(retainedKeys::contains)
+        )
+        return retained
     }
 
     private fun encode(value: AgentShadowRoutingRecommendation) = JSONObject()
@@ -226,6 +248,7 @@ class AgentShadowRoutingStore(context: Context) {
         const val DATABASE = "galaxyssi_agent_shadow_routing_v1"
         const val KEY_PREFIX = "recommendation:"
         const val MAX_ITEMS = 500
+        val STORE_LOCK = Any()
     }
 }
 

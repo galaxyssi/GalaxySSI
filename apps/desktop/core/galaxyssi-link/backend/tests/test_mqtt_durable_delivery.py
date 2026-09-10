@@ -47,7 +47,9 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         with (
             patch.object(mqtt_bridge, "pending_outbound_acks", {}),
             patch.object(mqtt_bridge, "list_clients", return_value=[client]),
-            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT),
+            patch.object(mqtt_bridge, "outbound_inflight_count", side_effect=lambda **kwargs:
+                mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT if kwargs.get("client_route_id")
+                else mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT),
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", return_value=receipts),
             patch.object(mqtt_bridge, "get_client", return_value=client),

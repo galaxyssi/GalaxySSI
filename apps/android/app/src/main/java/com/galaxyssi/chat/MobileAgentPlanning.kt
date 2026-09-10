@@ -1,5 +1,7 @@
 package com.galaxyssi.chat
 
+import com.galaxyssi.chat.metrics.AgentPlanningTiming
+
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -1280,7 +1282,7 @@ object AgentPlanFactory {
         return actions(request, listOf(action))
     }
 
-    fun actions(request: AgentRequest, actions: List<AgentAction>): AgentPlan {
+    fun actions(request: AgentRequest, actions: List<AgentAction>): AgentPlan = AgentPlanningTiming.measure("plan") {
         val plannedActions = collapseDuplicateConnectorCalls(actions).ifEmpty {
             listOf(emptyPlanFallbackAction(request))
         }
@@ -1308,9 +1310,10 @@ object AgentPlanFactory {
             plannerProfile = "rule-based-local",
             contextDigest = request.runtimeContext.compactSummary().hashCode().toString(),
             route = AgentRouteResolver.resolve(routeAction, request.targets),
-            routeRationale = routeRationaleFor(routeAction, request)
+            routeRationale = routeRationaleFor(routeAction, request),
+            completionRequirements = request.completionRequirements
         )
-        return plan.copy(validation = AgentPlanValidator.validate(plan))
+        plan.copy(validation = AgentPlanValidator.validate(plan))
     }
 
     internal fun emptyPlanFallbackAction(request: AgentRequest): AgentAction {

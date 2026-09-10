@@ -1,6 +1,7 @@
 package com.galaxyssi.chat.metrics
 
 import java.util.UUID
+import org.json.JSONObject
 
 /** Best-effort metadata only. This registry never owns delivery or retry decisions. */
 internal class AgentTransportTiming(
@@ -63,5 +64,28 @@ internal class AgentTransportTiming(
 
     @Synchronized fun disconnected() {
         attempts.values.toList().forEach { broker(it, "cancelled") }
+    }
+
+    companion object {
+        /** A recovery batch is one transport sample, attributed to its first verified-shape identity. */
+        fun taskId(payload: JSONObject): String {
+            if (payload.optBoolean("peer_chat")) return ""
+            if (payload.optString("type") !in setOf("agent_task_recovery_request", "agent_task_recovery_result")) {
+                return payload.optString("task_id")
+            }
+            val route = payload.opt("client_route_id") as? String ?: return ""
+            val request = payload.opt("request_id") as? String ?: return ""
+            if (route.isBlank() || route.length > 200 || request.isBlank() || request.length > 128) return ""
+            val items = payload.optJSONArray("items") ?: return ""
+            if (items.length() !in 1..32) return ""
+            val fields = listOf("client_route_id", "conversation_id", "task_id", "turn_id",
+                "contact_id", "source_message_id", "agent_id")
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: return ""
+                if (fields.any { key -> (item.opt(key) as? String)?.let { it.isBlank() || it.length > 200 } != false } ||
+                    item.optString("client_route_id") != route) return ""
+            }
+            return items.getJSONObject(0).getString("task_id")
+        }
     }
 }

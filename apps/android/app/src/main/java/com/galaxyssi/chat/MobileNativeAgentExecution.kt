@@ -318,19 +318,21 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     ).also(::cacheRuntimeContext)
     logPlanningLatency("context", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
-    val planned = planner.plan(
-        request = AgentRequest(
-            goal = currentGoal,
-            screen = currentScreen,
-            targets = targets,
-            registrations = planningInputs.registrations,
-            requestedMembers = activeRequestedMembers,
-            memories = memories,
-            runtimeContext = context,
-            conversationContext = activeConversationContext,
-            executionTurnId = activeConversationTurnId
+    val planned = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.planning(appContext, sessionId) {
+        planner.plan(
+            request = AgentRequest(
+                goal = currentGoal,
+                screen = currentScreen,
+                targets = targets,
+                registrations = planningInputs.registrations,
+                requestedMembers = activeRequestedMembers,
+                memories = memories,
+                runtimeContext = context,
+                conversationContext = activeConversationContext,
+                executionTurnId = activeConversationTurnId
+            )
         )
-    )
+    }
     logPlanningLatency("planner", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
     val conversationPrompt = activeConversationContext.asAgentTransportBlock(currentGoal)
@@ -585,6 +587,18 @@ private fun MobileNativeAgent.executePendingPlanBatch(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiState {
+    // An empty ready set is normal while another node owns an execution or
+    // remote response. Keep its observation intact instead of inventing failure.
+    val inFlightPhase = when {
+        plan.actions.any { it.status == AgentActionStatus.RUNNING } -> AgentPhase.EXECUTING
+        plan.actions.any { it.status == AgentActionStatus.WAITING_RESPONSE } -> AgentPhase.WAITING_RESPONSE
+        else -> null
+    }
+    if (inFlightPhase != null) {
+        phase = inFlightPhase
+        persistSession()
+        return snapshot()
+    }
     val hasPending = plan.actions.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     }
@@ -777,7 +791,8 @@ internal fun MobileNativeAgent.executeParallelActions(
             goal = currentGoal,
             history = updatedPlan.actionHistory + updatedPlan.actions,
             completedAction = lastAction,
-            result = lastResult
+            result = lastResult,
+            requirements = updatedPlan.completionRequirements
         )?.let { completion ->
             currentPlan = updatedPlan
             lastActionResult = lastResult
@@ -1068,7 +1083,8 @@ internal fun MobileNativeAgent.executePlannedAction(
                 goal = currentGoal,
                 history = observedPlan.actionHistory + observedPlan.actions,
                 completedAction = hardenedAction,
-                result = observedResult
+                result = observedResult,
+                requirements = observedPlan.completionRequirements
             )
             if (verifiedCompletion != null) {
                 return completeVerifiedProjectOutcome(
@@ -2462,7 +2478,8 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
         goal = currentGoal,
         history = observedPlan.actionHistory + observedPlan.actions,
         completedAction = action,
-        result = result
+        result = result,
+        requirements = observedPlan.completionRequirements
     )
     if (verifiedCompletion != null) {
         return reconcileExecutionLoop(

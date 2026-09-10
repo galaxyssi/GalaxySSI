@@ -774,6 +774,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     private val appContext = context.applicationContext
     private val coreMemoryCoordinator by lazy { AndroidCoreMemoryCoordinator(appContext) }
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
+    private val windowState by lazy { AgentWindowStateStore(appContext) }
     private val conversationDatabase = sharedConversationDatabase(context.applicationContext)
     private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
     private val entryMutationLock = AgentTranscriptWindowMutationLock
@@ -791,11 +792,20 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             }
             val activeKey = "$KEY_ACTIVE_CONVERSATION:$windowKey"
             if (preferences.readString(activeKey, "").isBlank()) {
-                val previous = conversationDatabase.activeConversationId()
+                val previous = windowState.selected(windowKey).ifBlank { conversationDatabase.activeConversationId() }
                     .ifBlank { preferences.readString(KEY_ACTIVE_CONVERSATION, "") }
                 if (previous.isNotBlank()) preferences.writeString(activeKey, previous)
             }
             preferences.writeString("window_selection_migrated", "1")
+        }
+        if (windowKey.isNotBlank()) synchronized(entryMutationLock) {
+            val legacyKey = "$KEY_ACTIVE_CONVERSATION:$windowKey"
+            preferences.readString(legacyKey, "").takeIf(String::isNotBlank)?.let { previous ->
+                // Commit the authoritative selection before removing its legacy copy.
+                windowState.select(windowKey, previous)
+                preferences.remove(legacyKey)
+            }
+            if (loadDraftConversation() != null) windowState.select(windowKey, "")
         }
     }
 
@@ -1888,7 +1898,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     }
 
     private fun activeConversationId(): String {
-        if (windowKey.isNotBlank()) return preferences.readString("$KEY_ACTIVE_CONVERSATION:$windowKey", "")
+        if (windowKey.isNotBlank()) return windowState.selected(windowKey)
         conversationDatabase.activeConversationId().takeIf(String::isNotBlank)?.let { return it }
         val legacyId = preferences.readString(KEY_ACTIVE_CONVERSATION, "").trim()
         if (legacyId.isNotBlank()) {
@@ -1900,7 +1910,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
 
     private fun setActiveConversationId(conversationId: String) {
         if (windowKey.isNotBlank()) {
-            preferences.writeString("$KEY_ACTIVE_CONVERSATION:$windowKey", conversationId)
+            windowState.select(windowKey, conversationId)
             return
         }
         conversationDatabase.setActiveConversationId(conversationId)
@@ -1909,7 +1919,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
 
     private fun clearActiveConversationId() {
         if (windowKey.isNotBlank()) {
-            preferences.remove("$KEY_ACTIVE_CONVERSATION:$windowKey")
+            windowState.select(windowKey, "")
             return
         }
         conversationDatabase.clearActiveConversationId()

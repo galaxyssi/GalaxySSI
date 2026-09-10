@@ -54,13 +54,14 @@ class DeliveryBatchingTest(unittest.TestCase):
             self.assertEqual([], delivery.pending_outbound(limit=0))
             self.assertEqual([], delivery.pending_outbound(limit=-1))
 
-    def test_retry_barrier_and_other_route_are_preserved(self):
+    def test_fresh_messages_pass_retry_backoff_and_keep_other_route_isolated(self):
         self.seed(1, attempts=1)
         delivery.queue_outbound("phone-a", "later", "topic", "later-wire")
         delivery.queue_outbound("phone-b", "other", "topic", "other-wire")
         with patch.object(delivery, "_reveal", wraps=delivery._reveal) as reveal:
-            self.assertEqual([], delivery.pending_outbound(client_route_id="phone-a", limit=8, now=self.now + 1))
-            self.assertEqual(0, reveal.call_count)
+            self.assertEqual(["later"], [row["message_id"] for row in delivery.pending_outbound(
+                client_route_id="phone-a", limit=8, now=self.now + 1)])
+            self.assertEqual(2, reveal.call_count)
         self.assertEqual(["other"], [row["message_id"] for row in delivery.pending_outbound(
             client_route_id="phone-b", limit=8, now=self.now + 1)])
 
@@ -75,4 +76,3 @@ class DeliveryBatchingTest(unittest.TestCase):
         finally:
             db.close()
         self.assertEqual("message-00000", delivery.pending_outbound(client_route_id="phone-a", limit=1)[0]["message_id"])
-

@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Process
 import android.os.SystemClock
@@ -30,6 +31,22 @@ class AgentLiveFinalRecoveryDeviceTest {
     private val arguments = InstrumentationRegistry.getArguments()
     private val preferences by lazy { context.getSharedPreferences("live_final_recovery_test", Context.MODE_PRIVATE) }
     private val cipher by lazy { AgentRowStorageCipher(context, "live-final-recovery-test") }
+
+    @Test fun inspectPreservedCase(): Unit = runBlocking {
+        val id = enabledCase()
+        withContext(Dispatchers.IO) {
+            val state = load(id)
+            val expected = AgentConnectorResponseCodec.decode(state.getJSONObject("response"))
+            val entries = assistantEntries(state)
+            println("LIVE_FINAL phase=inspection case=$id checkpoint=${state.getString("phase")} " +
+                "pending=${AgentPendingDeliveryStore.find(context, expected.sourceMessageId, expected.contactId) != null} " +
+                "inbox=${AgentConnectorResponseStore.contains(context, expected)} " +
+                "terminal=${AgentTerminalDeliveryStore.isTerminal(context, expected.sourceMessageId)} " +
+                "assistant_entries=${entries.size} " +
+                "exact_transcript=${entries.size == 1 && entries.single().text == expected.content.trim()} " +
+                "entry_hashes=${entries.map { hash(it.text) }}")
+        }
+    }
 
     @Test fun submitAndDropOnlyTestFinal(): Unit = runBlocking {
         val id = enabledCase()
@@ -179,14 +196,26 @@ class AgentLiveFinalRecoveryDeviceTest {
         assertNotEquals("Run UI phase after a real process stop", state.getInt("inbox_pid"), Process.myPid())
         val expected = AgentConnectorResponseCodec.decode(state.getJSONObject("response"))
         val start = SystemClock.elapsedRealtime()
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        // Windows own their selection; open this conversation through the ordinary navigation entry point.
+        val intent = Intent(context, MainActivity::class.java).putExtra("galaxyssi_open_agent", true)
+            .putExtra("galaxyssi_agent_conversation_id", state.getString("conversation"))
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+            scenario.onActivity { activity ->
+                println("LIVE_FINAL phase=ui_launched case=$id selected_test_conversation=" +
+                    (activity.agentTranscriptStore.activeConversation().id == state.getString("conversation")))
+            }
             withTimeout(30_000L) {
                 while (withContext(Dispatchers.IO) { assistantEntries(state).isEmpty() }) delay(100)
             }
             withContext(Dispatchers.IO) { assertTranscript(state, expected) }
             waitForVisibleReply(scenario, expected.content.trim())
+            println("LIVE_FINAL phase=ui_visible case=$id")
             state.put("first_visible_ms", SystemClock.elapsedRealtime() - start)
             scenario.recreate()
+            scenario.onActivity { activity ->
+                println("LIVE_FINAL phase=ui_recreated case=$id selected_test_conversation=" +
+                    (activity.agentTranscriptStore.activeConversation().id == state.getString("conversation")))
+            }
             waitForVisibleReply(scenario, expected.content.trim())
             withContext(Dispatchers.IO) {
                 assertTranscript(state, expected)
@@ -239,7 +268,9 @@ class AgentLiveFinalRecoveryDeviceTest {
 
     private fun enabledCase(): String {
         assumeTrue("Explicit real-provider fault injection only", arguments.getString("live_final_probe") == "true")
-        assertEquals("This test is authorized only on S20U", "SM-G9880", Build.MODEL)
+        val expectedModel = arguments.getString("live_final_expected_model") ?: "SM-G9880"
+        require(expectedModel.isNotBlank())
+        assertEquals("Only run on the explicitly selected device model", expectedModel, Build.MODEL)
         return requireNotNull(arguments.getString("live_final_id")).also {
             require(it.matches(Regex("live-final-[0-9]{10,20}")))
         }

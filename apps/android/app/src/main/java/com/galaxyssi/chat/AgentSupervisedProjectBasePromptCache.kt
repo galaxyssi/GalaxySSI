@@ -8,7 +8,8 @@ internal data class AgentSupervisedProjectBasePromptKey(
     val progressLedger: String,
     val directResponseAllowed: Boolean = false,
     val maximumCharacters: Int,
-    val minimumBaseCharacters: Int
+    val minimumBaseCharacters: Int,
+    val completionRequirements: AgentCompletionRequirements? = null
 )
 
 /** Reuses exact base prompts across equivalent repair requests and provider rotations. */

@@ -7,12 +7,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun `completion obligations come from model interpreted intent without implicit publication`() {
+        for (continuation in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240)
+            assertTrue(prompt.contains("Declare root completion_requirements="))
+            assertTrue(prompt.contains("respecting exclusions"))
+            assertTrue(prompt.contains("No default publication"))
+            assertTrue(prompt.contains("explain changes in reason"))
+            assertFalse(prompt.contains("Unless local-only"))
+            assertFalse(prompt.contains("unless local-only"))
+        }
+    }
+
     @Test
-    fun `advertises one atomic mutation action for independent exact edits`() {
+    fun `planning and recovery require observed model authored final answers`() {
+        for (evidenceExpected in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), evidenceExpected, 240)
+            assertTrue(prompt.contains("other receipts need model review"))
+            assertTrue(prompt.contains("After evidence proves completion"))
+            assertTrue(prompt.contains("one DRAFT_PLAN: target=task-complete"))
+            assertTrue(prompt.contains("description=final answer in user's language"))
+            assertTrue(prompt.contains("Never repeat tools to finish or output diagnostic receipts"))
+            assertTrue(prompt.contains("Set completes_goal=true only when verified commit/push/PR receipts"))
+        }
+    }
+
+    @Test
+    fun `advertises batch exact edits with resource ordering`() {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 240)
 
         assertTrue(prompt.contains("galaxyssi.workspace.files.patch.exact.batch"))
-        assertTrue(prompt.contains("Batch exact multi-file edits atomically"))
+        assertTrue(prompt.contains("patches: galaxyssi.workspace.files.patch.exact.batch"))
+        assertTrue(prompt.contains("order conflicts/runtime/publication"))
     }
 
     @Test
@@ -30,8 +56,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
 
         assertTrue(prompt.contains(AgentMobileProjectNativeTools.OBSERVE))
-        assertTrue(prompt.contains("repository.observe once"))
-        assertTrue(prompt.contains("status + diff + history"))
+        assertTrue(prompt.contains("repository.observe for status/diff/history"))
     }
 
     @Test
@@ -52,15 +77,21 @@ class AgentSupervisedProjectPromptTemplateTest {
         val continuation = AgentSupervisedProjectPromptTemplate.render(context, true, 240)
 
         assertNotSame(planning, continuation)
-        assertTrue(planning.startsWith("Role: supervise one Android-initiated project step at a time."))
+        assertTrue(planning.startsWith("Plan the next Android tool graph."))
         assertTrue(continuation.startsWith("Continue the Android project from verified evidence."))
         assertTrue(planning.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
-        assertTrue(planning.contains("3-12 independent reads/disjoint mutations"))
-        assertTrue(continuation.contains("3-12 independent reads/disjoint mutations"))
-        assertTrue(planning.contains("Runtime total max 64 independent actions"))
-        assertTrue(continuation.contains("Runtime total max 64 independent actions"))
-        assertTrue(planning.contains("Never batch runtime, install"))
+        for (prompt in listOf(planning, continuation)) {
+            assertTrue(prompt.contains("Up to 64 actions per response, not lifetime"))
+            assertTrue(prompt.contains("Native depends_on uses earlier refs"))
+            assertTrue(prompt.contains("wait for the receipt; failure blocks dependents"))
+            assertTrue(prompt.contains("Native use_outputs_from=[]"))
+            assertTrue(prompt.contains("Independent reads/disjoint mutations may run concurrently"))
+            assertTrue(prompt.contains("order conflicts/runtime/publication"))
+            assertTrue(prompt.contains("Only last action may complete, depending on all others"))
+            assertFalse(prompt.contains("3-12 independent"))
+            assertFalse(prompt.contains("Never batch runtime, install"))
+        }
         assertTrue(planning.contains("start_line/max_lines"))
         assertTrue(continuation.contains("start_line/max_lines"))
     }

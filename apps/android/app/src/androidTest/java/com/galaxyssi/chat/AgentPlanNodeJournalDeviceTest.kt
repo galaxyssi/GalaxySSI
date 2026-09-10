@@ -234,6 +234,43 @@ class AgentPlanNodeJournalDeviceTest {
         }
     }
 
+    @Test fun parallelNativeDispatchDoesNotNeedCoordinatorMonitor() {
+        val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
+        val registry = AgentNativeToolRegistry().registerAll(AgentHardwareNativeTools.definitions(
+            AgentAndroidHardwarePlatformFacade(context)))
+        val agent = runtime(InMemoryAgentSessionStore(), screen, registry)
+        val id = "test-parallel-monitor-${UUID.randomUUID()}"
+        agent.sessionId = id
+        val actions = listOf(AgentHardwareNativeTools.MEMORY_STATUS,
+            AgentHardwareNativeTools.STORAGE_STATUS).map { tool ->
+            AgentAction(tool, AgentActionKind.CALL_NATIVE_TOOL, tool, AgentRisk.LOW,
+                AgentActionStatus.RUNNING, "Read device information",
+                mapOf("tool_id" to tool, "input_json" to "{}", INTERNAL_CONVERSATION_ID to id,
+                    INTERNAL_TURN_ID to "turn"), requiresConfirmation = false)
+        }
+        val pool = Executors.newFixedThreadPool(2)
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        try {
+            synchronized(agent) {
+                val futures = actions.map { action ->
+                    pool.submit<AgentActionResult> { agent.executeAction(action, screen) }
+                }
+                futures.forEach { future ->
+                    val result = future.get(10, TimeUnit.SECONDS)
+                    assertTrue(result.message, result.success)
+                    val output = org.json.JSONObject(result.metadata.getValue("native_tool_output"))
+                    assertTrue(output.getLong("total_bytes") > 0)
+                }
+            }
+            assertFalse(agent.cancelActiveNativeTool("Finished"))
+            println("AGENT_PARALLEL_MONITOR tools=2 elapsed_ms=" +
+                (android.os.SystemClock.elapsedRealtime() - startedAt))
+        } finally {
+            pool.shutdownNow()
+            assertTrue("Test workers did not stop", pool.awaitTermination(10, TimeUnit.SECONDS))
+        }
+    }
+
     @Test fun dependencyLayersExecuteWithBoundedDispatchStack() {
         val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
         val id = "test-dispatch-stack-${UUID.randomUUID()}"

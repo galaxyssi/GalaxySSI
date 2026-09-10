@@ -43,6 +43,15 @@ internal object AgentLatencyTelemetry {
         }, nowNs = SystemClock::elapsedRealtimeNanos
     )
 
+    fun <T> planning(context: Context, taskId: String, block: () -> T): T = AgentPlanningTiming.capture(
+        taskId,
+        emit = { trace, stage, operation, outcome, at ->
+            get(context).recordOpaque(trace, stage, operation, outcome, at)
+        },
+        nowNs = SystemClock::elapsedRealtimeNanos,
+        block = block
+    )
+
     fun bindReply(conversationId: String, turnId: String, entryTaskId: String, transportTaskId: String) {
         replyBindings.bind(conversationId, turnId, entryTaskId, transportTaskId)
     }

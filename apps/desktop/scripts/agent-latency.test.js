@@ -27,6 +27,19 @@ test('empty and corrupt statistics remain unavailable', () => {
   assert.match(html, /<td>-<\/td><td>-<\/td><td>-<\/td>/);
 });
 
+test('inbound timings distinguish queue, wire preparation and authenticated acceptance', () => {
+  const ids = ['ingress_queue', 'route_resolve', 'wire_open', 'wire_prepare',
+    'replay_lookup', 'signal_decrypt', 'inbound_accept'];
+  const metrics = Object.fromEntries(ids.map((id) => [`desktop_${id}_ms`,
+    { count: 1, incomplete: 0, unsuccessful: 0, p50_ms: 7, p95_ms: 8, p99_ms: 9 }]));
+  const html = render({ metrics }, { escapeHtml,
+    t: (key) => require('../src/renderer/locales/zh-CN.json')[key] || key });
+  for (const label of ['入口工作线程排队', '入口路由查找', '外层信封解密与解析',
+    '分片与信封准备', '加密重复包查询', 'Signal 信封解密', '入站消息校验与接纳',
+    '收包至开始 Signal 解密']) assert.ok(html.includes(label));
+  assert.equal((html.match(/<td>7<\/td><td>8<\/td><td>9<\/td>/g) || []).length, 7);
+});
+
 test('recovery stages render measured values and Chinese labels', () => {
   const metrics = Object.fromEntries(['lookup', 'page', 'restore', 'publish'].map((phase) => [
     `desktop_recovery_${phase}_ms`, { count: 1, incomplete: 0, unsuccessful: 1, p50_ms: 2, p95_ms: 3, p99_ms: 4 },

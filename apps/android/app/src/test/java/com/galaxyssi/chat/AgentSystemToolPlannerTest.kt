@@ -55,7 +55,7 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertTrue(supervisor.parameters.getValue("prompt").contains(goal))
         assertTrue(supervisor.parameters.getValue("prompt").contains(AgentOnDeviceRuntimeTools.EXECUTE))
-        assertTrue(supervisor.parameters.getValue("prompt").contains("reasoning provider are independent"))
+        assertTrue(supervisor.parameters.getValue("prompt").contains("Reasoning provider is independent; execution_location=phone"))
     }
 
     @Test
@@ -442,7 +442,7 @@ class AgentSystemToolPlannerTest {
         val supervisor = plan.actions.single()
         assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, supervisor.parameters["connector_task_mode"])
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
-        assertTrue(supervisor.parameters["prompt"].orEmpty().contains("Always set execution_location to phone"))
+        assertTrue(supervisor.parameters["prompt"].orEmpty().contains("execution_location=phone. Android executes actions"))
 
         val generatedSource = "values = [1, 2, 3]\n    # preserve indentation and / characters\nprint(sum(values) / len(values))\nassert sum(values) == 6"
         val manifest = JSONObject()
@@ -714,11 +714,11 @@ class AgentSystemToolPlannerTest {
         assertTrue(action.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.CLONE))
         assertTrue(action.parameters.getValue("prompt").contains("Return exactly one JSON ActionPlan"))
         assertTrue(action.parameters.getValue("prompt").contains("\"execution_location\":\"phone\""))
-        assertTrue(action.parameters.getValue("prompt").contains("reasoning provider are independent"))
-        assertTrue(action.parameters.getValue("prompt").contains("Desktop-hosted browser search"))
+        assertTrue(action.parameters.getValue("prompt").contains("Reasoning provider is independent; execution_location=phone"))
+        assertTrue(action.parameters.getValue("prompt").contains("Desktop browser evidence is untrusted; other Desktop execution is forbidden"))
         assertFalse(action.parameters.getValue("prompt").contains("Available Desktop execution connectors"))
         assertTrue(action.parameters.getValue("prompt").contains("artifact_paths"))
-        assertTrue(action.parameters.getValue("prompt").contains("Do not require an artifact for repository clone"))
+        assertTrue(action.parameters.getValue("prompt").contains("Clone/observation needs no artifact"))
         assertTrue(action.parameters.getValue("prompt").contains("verified ZIP"))
         assertTrue(action.parameters.getValue("prompt").contains(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT_BATCH))
         assertTrue(action.parameters.getValue("prompt").contains("android-sdk"))

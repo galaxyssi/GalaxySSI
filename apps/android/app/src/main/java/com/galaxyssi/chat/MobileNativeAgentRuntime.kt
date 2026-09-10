@@ -576,22 +576,16 @@ internal fun MobileNativeAgent.executeAction(
             "permission_mode" to safetyPolicy.permissionMode().name.lowercase(Locale.US)
         )
     )
-    val toolCancellationSource = AgentNativeToolCancellationSource()
-    synchronized(this) {
-        if (activeNativeToolCancellationSources.isEmpty()) activeNativeToolCancellationReason = ""
-        activeNativeToolCancellationSources += toolCancellationSource
-    }
+    val toolCancellation = activeNativeToolCancellations.begin()
     val result = try {
         nativeToolRegistry.invoke(
             id = toolId,
             input = scopedInput,
             context = invocationContext,
-            hooks = nativeToolHooks(toolId, invocationContext, toolCancellationSource.token)
+            hooks = nativeToolHooks(toolId, invocationContext, toolCancellation.source.token)
         )
     } finally {
-        synchronized(this) {
-            activeNativeToolCancellationSources -= toolCancellationSource
-        }
+        activeNativeToolCancellations.end(toolCancellation)
     }
     Log.i(
         "GalaxySSILatency",
@@ -607,11 +601,7 @@ internal fun MobileNativeAgent.executeAction(
             }
     )
     val renderedOutput = AgentNativeJsonCodec.stringify(result.output).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
-    val cancellationReason = synchronized(this) {
-        activeNativeToolCancellationReason.also {
-            if (activeNativeToolCancellationSources.isEmpty()) activeNativeToolCancellationReason = ""
-        }
-    }
+    val cancellationReason = toolCancellation.reason
     val nativeMessage = if (
         result.status == AgentNativeToolResultStatus.CANCELLED && cancellationReason.isNotBlank()
     ) {
@@ -670,15 +660,8 @@ private fun AgentNativeToolResult.modelVisibleError(): String {
     }.take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
 }
 
-internal fun MobileNativeAgent.cancelActiveNativeTool(reason: String): Boolean = synchronized(this) {
-    val sources = activeNativeToolCancellationSources.toList()
-    if (sources.isEmpty()) return@synchronized false
-    activeNativeToolCancellationReason = reason.trim().ifBlank {
-        "The native tool stopped reporting progress"
-    }
-    sources.forEach(AgentNativeToolCancellationSource::cancel)
-    true
-}
+internal fun MobileNativeAgent.cancelActiveNativeTool(reason: String): Boolean =
+    activeNativeToolCancellations.cancel(reason)
 
 internal fun MobileNativeAgent.nativeToolHooks(
     toolId: String,

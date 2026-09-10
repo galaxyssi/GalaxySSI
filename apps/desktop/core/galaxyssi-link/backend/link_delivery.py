@@ -98,6 +98,7 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
                 "ALTER TABLE outbound_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 50"
             )
         db.commit()
+    db.execute("CREATE INDEX IF NOT EXISTS outbound_messages_status_route ON outbound_messages(status,client_route_id)")
     db.execute(
         """CREATE TABLE IF NOT EXISTS delivery_metadata (
             key TEXT PRIMARY KEY,
@@ -511,30 +512,73 @@ def outbound_inflight_count(
     *,
     client_route_id: str = "",
     priority: int | None = None,
+    exclude_priority: int | None = None,
     active_messages: set[tuple[str, str]] | None = None,
+    awaiting_broker_only: bool = False,
+    active_priorities: dict[tuple[str, str], int] | None = None,
 ) -> int:
     observed_at = time.time() if now is None else float(now)
     normalized_route_id = str(client_route_id or "").strip()
+    broker_owned = {key for key in (active_messages or ())
+                    if not normalized_route_id or key[0] == normalized_route_id}
+    def matches(value: int) -> bool:
+        return (priority is None or value == priority) and (exclude_priority is None or value != exclude_priority)
+
     with _lock:
         db = _connect()
         try:
-            query = "SELECT status,attempts,updated_at,client_route_id,message_id FROM outbound_messages WHERE status IN ('sending','published')"
+            if awaiting_broker_only:
+                return _broker_inflight_count(db, normalized_route_id, broker_owned,
+                                              active_priorities or {}, observed_at, matches)
+            query = "SELECT status,attempts,updated_at,client_route_id,message_id,priority FROM outbound_messages WHERE status IN ('sending','published')"
             arguments = []
             if normalized_route_id:
                 query += " AND client_route_id=?"
                 arguments.append(_route(normalized_route_id))
-            if priority is not None:
-                query += " AND priority=?"
-                arguments.append(int(priority))
             rows = db.execute(query, arguments).fetchall()
+            seen = set()
+            count = 0
+            for status, attempts, updated_at, route, message, row_priority in rows:
+                key = (normalized_route_id or _unroute(route), str(message))
+                seen.add(key)
+                awaiting_receipt = not awaiting_broker_only or str(status) == "sending"
+                if matches(int(row_priority)) and (key in broker_owned or (awaiting_receipt and not _outbound_retry_due(
+                        str(status), int(attempts), float(updated_at), observed_at))):
+                    count += 1
+            # A peer receipt can delete the durable row before Paho receives PUBACK.
+            # The physical packet still owns capacity; missing metadata uses the ordinary lane.
+            for route, message in broker_owned - seen:
+                row = db.execute("SELECT priority FROM outbound_messages WHERE client_route_id=? AND message_id=?",
+                                 (_route(route), message)).fetchone()
+                if matches((active_priorities or {}).get((route, message), int(row[0]) if row else 50)):
+                    count += 1
+            return count
         finally:
             db.close()
-    return sum(
-        1
-        for status, attempts, updated_at, route, message in rows
-        if not _outbound_retry_due(str(status), int(attempts), float(updated_at), observed_at)
-        or (active_messages and (_unroute(route), str(message)) in active_messages)
-    )
+
+
+def _broker_inflight_count(db, route_id, broker_owned, priorities, observed_at, matches) -> int:
+    # PUBACK receipt debt can contain thousands of rows. Only physical owners and
+    # recent orphaned sends occupy slots; do not decrypt that unrelated backlog.
+    owners = {(_route(route), message): (route, message) for route, message in broker_owned}
+    count = 0
+    for sealed_key, key in owners.items():
+        row = db.execute("SELECT status,priority FROM outbound_messages WHERE client_route_id=? AND message_id=?",
+                         sealed_key).fetchone()
+        priority = (int(row[1]) if row and row[0] in {"sending", "published"}
+                    else priorities.get(key, int(row[1]) if row else OUTBOUND_PRIORITY_NORMAL))
+        if matches(priority):
+            count += 1
+    query = "SELECT client_route_id,message_id,attempts,updated_at,priority FROM outbound_messages WHERE status='sending'"
+    params = ()
+    if route_id:
+        query += " AND client_route_id=?"
+        params = (_route(route_id),)
+    for route, message, attempts, updated_at, priority in db.execute(query, params):
+        if ((route, message) not in owners and matches(int(priority))
+                and not _outbound_retry_due("sending", int(attempts), float(updated_at), observed_at)):
+            count += 1
+    return count
 
 
 def pending_outbound(
@@ -563,7 +607,7 @@ def pending_outbound(
                     """SELECT client_route_id,message_id,attempts,updated_at,status
                        FROM outbound_messages
                        WHERE client_route_id=? AND status IN ('queued','sending','published')
-                       ORDER BY priority DESC, created_at""",
+                       ORDER BY priority DESC, CASE attempts WHEN 0 THEN 0 ELSE 1 END, created_at""",
                     (_route(normalized_route_id),),
                 )
             else:
@@ -571,7 +615,7 @@ def pending_outbound(
                     """SELECT client_route_id,message_id,attempts,updated_at,status
                        FROM outbound_messages
                        WHERE status IN ('queued','sending','published')
-                       ORDER BY priority DESC, CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
+                       ORDER BY priority DESC, CASE attempts WHEN 0 THEN 0 ELSE 1 END, created_at"""
                 )
             # Inspect only small scheduling fields until the batch is selected.
             # Decrypting the whole backlog under the caller's publish lock stalls

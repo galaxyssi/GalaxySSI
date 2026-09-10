@@ -1,5 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$Serial,
+    [ValidateNotNullOrEmpty()][string]$ExpectedModel = 'SM-G9880',
     [Parameter(Mandatory = $true)][long]$Source,
     [string]$Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
     [string]$DesktopJournal = "$env:APPDATA\GalaxySSI\diagnostics\agent_latency_v1.jsonl"
@@ -10,7 +11,9 @@ if ($Source -le 0) { throw 'Pass the source from a completed live-final recovery
 $caseId = "live-final-$Source"
 if ($caseId -notmatch '^live-final-[0-9]{10,20}$') { throw 'Invalid live-final case ID' }
 $model = (& $Adb -s $Serial shell getprop ro.product.model | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $model -ne 'SM-G9880') { throw 'Only S20U SM-G9880 is authorized' }
+if ($LASTEXITCODE -ne 0 -or $model -cne $ExpectedModel) {
+    throw "Selected device model '$model' does not match explicitly expected '$ExpectedModel'"
+}
 $sha = [Security.Cryptography.SHA256]::Create()
 try {
     $traceId = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes("$caseId-task")))).Replace('-', '').ToLowerInvariant()
