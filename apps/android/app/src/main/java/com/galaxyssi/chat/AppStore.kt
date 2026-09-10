@@ -1400,6 +1400,7 @@ object AppStore {
         AgentRowStorageCipher.clearCachedKeys()
         runCatching { AgentStorageCipher.deleteMasterKey() }
         runCatching { AgentKnowledgeDatabase.deleteIndexKey() }
+        runCatching { AgentMemoryIndexKey.deleteKey() }
         GalaxySSICrypto.resetLocalIdentity(context)
         context.cacheDir.listFiles().orEmpty().forEach { it.deleteRecursively() }
         context.externalCacheDirs.filterNotNull().forEach { directory ->

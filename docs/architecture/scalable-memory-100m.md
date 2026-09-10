@@ -276,3 +276,9 @@ The first [indexed point-operation implementation](android-personal-memory-point
 connects important/private flag changes to direct encrypted row updates and
 measures 1,201 and 10,001 real records. Its scope does not include the remaining
 full-collection operations, new-event ingestion, sharding or native search.
+
+The next [incremental write implementation](android-personal-memory-incremental-writes.md)
+connects ordinary Agent memory creation and duplicate evidence to encrypted
+lookup membership and target-only transactions. It also removes the historical
+record-count retention budget. Whole-collection recall, backup and legacy
+migration, sharding, native search and the required 100M+ scale remain unfinished.
