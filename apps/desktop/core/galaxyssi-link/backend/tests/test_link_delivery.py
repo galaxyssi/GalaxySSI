@@ -132,7 +132,7 @@ class LinkDeliveryTest(unittest.TestCase):
                 self.assertEqual(["final"], [item["message_id"] for item in pending])
                 self.assertEqual(100, pending[0]["priority"])
 
-    def test_route_filter_keeps_failed_ciphertexts_in_order(self) -> None:
+    def test_route_filter_preserves_retries_without_blocking_fresh_ciphertexts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "delivery.db"
             with patch.object(link_delivery, "DB_PATH", database):
@@ -155,14 +155,14 @@ class LinkDeliveryTest(unittest.TestCase):
                         ),
                     )
                     self.assertEqual(
-                        [],
-                        link_delivery.pending_outbound(
+                        ["second"],
+                        [item["message_id"] for item in link_delivery.pending_outbound(
                             now=130.999,
                             client_route_id="current",
-                        ),
+                        )],
                     )
                     self.assertEqual(
-                        ["first", "second"],
+                        ["second", "first"],
                         [
                             item["message_id"]
                             for item in link_delivery.pending_outbound(

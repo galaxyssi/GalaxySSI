@@ -73,6 +73,7 @@ class GlobalResearchExecutor(context: Context) {
         val tasks = repository.researchTasks()
         val synthesisTask = tasks.firstOrNull { task ->
             task.researchPlan.synthesisSourceMessageId == response.sourceMessageId &&
+                GlobalConnectorResponseScope.RESEARCH.matches(response, task.id, "${task.id}:synthesis") &&
                 task.status in setOf(GlobalResearchTaskStatus.RUNNING, GlobalResearchTaskStatus.WAITING_FOR_RESOURCE)
         }
         if (synthesisTask != null) {
@@ -96,11 +97,17 @@ class GlobalResearchExecutor(context: Context) {
             return true
         }
         val unitTask = tasks.firstOrNull { task ->
-            task.researchPlan.units.any { it.sourceMessageId == response.sourceMessageId } &&
+            task.researchPlan.units.any {
+                it.sourceMessageId == response.sourceMessageId &&
+                    GlobalConnectorResponseScope.RESEARCH.matches(response, task.id, it.id)
+            } &&
                 task.status in setOf(GlobalResearchTaskStatus.RUNNING, GlobalResearchTaskStatus.WAITING_FOR_RESOURCE)
         }
         if (unitTask != null) {
-            val unit = unitTask.researchPlan.units.first { it.sourceMessageId == response.sourceMessageId }
+            val unit = unitTask.researchPlan.units.first {
+                it.sourceMessageId == response.sourceMessageId &&
+                    GlobalConnectorResponseScope.RESEARCH.matches(response, unitTask.id, it.id)
+            }
             modelCallBudget.complete(
                 GlobalModelCallKind.RESEARCH_EVIDENCE,
                 evidenceBudgetOwner(unitTask, unit),
@@ -123,6 +130,9 @@ class GlobalResearchExecutor(context: Context) {
         }
         val legacy = tasks.firstOrNull { task ->
             task.sourceMessageId == response.sourceMessageId &&
+                task.researchPlan.synthesisSourceMessageId != response.sourceMessageId &&
+                task.researchPlan.units.none { it.sourceMessageId == response.sourceMessageId } &&
+                GlobalConnectorResponseScope.RESEARCH.matches(response, task.id) &&
                 task.status in setOf(GlobalResearchTaskStatus.RUNNING, GlobalResearchTaskStatus.WAITING_FOR_RESOURCE)
         } ?: return false
         if (!response.success) {
@@ -307,7 +317,7 @@ class GlobalResearchExecutor(context: Context) {
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = sourceMessageId,
-            conversationId = "global-research:${task.id}",
+            conversationId = GlobalConnectorResponseScope.RESEARCH.conversation(task.id),
             turnId = unit.id,
             trustedBackgroundCognition = repository.settings().allowPairedAgentCognition
         )
@@ -624,7 +634,7 @@ class GlobalResearchExecutor(context: Context) {
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = sourceMessageId,
-            conversationId = "global-research:${task.id}",
+            conversationId = GlobalConnectorResponseScope.RESEARCH.conversation(task.id),
             turnId = "${task.id}:synthesis",
             trustedBackgroundCognition = repository.settings().allowPairedAgentCognition
         )

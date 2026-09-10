@@ -513,6 +513,8 @@ def outbound_inflight_count(
     priority: int | None = None,
     exclude_priority: int | None = None,
     active_messages: set[tuple[str, str]] | None = None,
+    awaiting_broker_only: bool = False,
+    active_priorities: dict[tuple[str, str], int] | None = None,
 ) -> int:
     observed_at = time.time() if now is None else float(now)
     normalized_route_id = str(client_route_id or "").strip()
@@ -535,15 +537,16 @@ def outbound_inflight_count(
             for status, attempts, updated_at, route, message, row_priority in rows:
                 key = (normalized_route_id or _unroute(route), str(message))
                 seen.add(key)
-                if matches(int(row_priority)) and (key in broker_owned or not _outbound_retry_due(
-                        str(status), int(attempts), float(updated_at), observed_at)):
+                awaiting_receipt = not awaiting_broker_only or str(status) == "sending"
+                if matches(int(row_priority)) and (key in broker_owned or (awaiting_receipt and not _outbound_retry_due(
+                        str(status), int(attempts), float(updated_at), observed_at))):
                     count += 1
             # A peer receipt can delete the durable row before Paho receives PUBACK.
             # The physical packet still owns capacity; missing metadata uses the ordinary lane.
             for route, message in broker_owned - seen:
                 row = db.execute("SELECT priority FROM outbound_messages WHERE client_route_id=? AND message_id=?",
                                  (_route(route), message)).fetchone()
-                if matches(int(row[0]) if row else 50):
+                if matches((active_priorities or {}).get((route, message), int(row[0]) if row else 50)):
                     count += 1
             return count
         finally:
@@ -576,7 +579,7 @@ def pending_outbound(
                     """SELECT client_route_id,message_id,attempts,updated_at,status
                        FROM outbound_messages
                        WHERE client_route_id=? AND status IN ('queued','sending','published')
-                       ORDER BY priority DESC, created_at""",
+                       ORDER BY priority DESC, CASE attempts WHEN 0 THEN 0 ELSE 1 END, created_at""",
                     (_route(normalized_route_id),),
                 )
             else:
@@ -584,7 +587,7 @@ def pending_outbound(
                     """SELECT client_route_id,message_id,attempts,updated_at,status
                        FROM outbound_messages
                        WHERE status IN ('queued','sending','published')
-                       ORDER BY priority DESC, CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
+                       ORDER BY priority DESC, CASE attempts WHEN 0 THEN 0 ELSE 1 END, created_at"""
                 )
             # Inspect only small scheduling fields until the batch is selected.
             # Decrypting the whole backlog under the caller's publish lock stalls
