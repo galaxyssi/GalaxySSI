@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_action_dispatch">动作派发与回执</string>
+    <string name="agent_latency_screen_observe">执行后屏幕观察</string>
+    <string name="agent_latency_receipt_observe">工具回执观察</string>
+    <string name="agent_latency_result_verify">验证结果应用</string>
     <string name="agent_latency_recovery_query">恢复状态查询往返</string>
     <string name="agent_latency_recovery_page">恢复结果页请求往返</string>
     <string name="agent_latency_recovery_body">恢复正文获取与校验</string>

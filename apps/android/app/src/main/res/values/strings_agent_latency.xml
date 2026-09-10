@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_action_dispatch">Action dispatch and receipt</string>
+    <string name="agent_latency_screen_observe">Post-action screen observation</string>
+    <string name="agent_latency_receipt_observe">Tool receipt observation</string>
+    <string name="agent_latency_result_verify">Verification result application</string>
     <string name="agent_latency_recovery_query">Recovery status round trip</string>
     <string name="agent_latency_recovery_page">Recovery page round trip</string>
     <string name="agent_latency_recovery_body">Recovery body fetch and validation</string>

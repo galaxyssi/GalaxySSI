@@ -51,6 +51,9 @@ internal object AgentLatencyContract {
         "phone_transcript_draw_ms" to ("phone_transcript_persisted" to "phone_final_output_visible"),
         "phone_final_delivery_ui_ms" to ("phone_final_received" to "phone_final_output_visible")
     ).apply {
+        AgentRuntimeTiming.phases.forEach { phase ->
+            put("phone_runtime_${phase}_ms", "phone_runtime_${phase}_started" to "phone_runtime_${phase}_finished")
+        }
         AgentPlanningTiming.phases.forEach { phase ->
             put("phone_planning_${phase}_ms", "phone_planning_${phase}_started" to "phone_planning_${phase}_finished")
         }

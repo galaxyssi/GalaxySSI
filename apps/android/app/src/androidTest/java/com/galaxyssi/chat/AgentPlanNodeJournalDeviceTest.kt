@@ -476,7 +476,7 @@ class AgentPlanNodeJournalDeviceTest {
             override fun rebindSession(sourceSessionId: String, targetSessionId: String) = 0
             override fun delete(taskIds: Set<String>) { taskIds.forEach(records::remove) }
             override fun clear() { records.clear() }
-        })
+        }).apply { runtimeTiming = com.galaxyssi.chat.metrics.AgentRuntimeTiming.NONE }
 
     @Test fun crashAfterFirstParallelResultBeforeSecondReturns() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("plan_node_crash") == "true")
