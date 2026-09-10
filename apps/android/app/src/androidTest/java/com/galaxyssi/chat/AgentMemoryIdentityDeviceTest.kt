@@ -87,7 +87,7 @@ class AgentMemoryIdentityDeviceTest {
         assertEquals(2, after.activeItems.size)
         assertEquals(setOf("b1", "b2"), after.conflicts.single().candidates.map { it.id }.toSet())
         assertEquals(setOf("a1", "a2"), after.historyItems.map { it.id }.toSet())
-        assertEquals(0, reopen().decodeItems(store.database.readString("items", "[]"))
+        assertEquals(0, reopen().loadItems()
             .count { it.conflictGroupId == "legacy-group" && it.status == AgentMemoryStatus.CONFLICTED })
     }
 

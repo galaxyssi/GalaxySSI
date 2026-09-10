@@ -242,6 +242,31 @@ class AgentEncryptedDatabase(
         Unit
     }
 
+    /** Encrypt one row at a time; iteration errors roll back the entire batch. */
+    internal fun mutateStreaming(
+        upserts: Sequence<Pair<String, String>>,
+        removals: () -> Sequence<String>
+    ): Unit = synchronized(database) {
+        val writable = database.writableDatabase
+        writable.beginTransaction()
+        try {
+            upserts.forEach { (key, value) ->
+                val previous = readEncryptedValue(writable, key)
+                if (previous == null || AgentStorageCipher.decrypt(previous, associatedData(key)) != value) {
+                    val values = ContentValues().apply {
+                        put("storage_key", key)
+                        put("encrypted_value", AgentStorageCipher.encrypt(value, associatedData(key)))
+                    }
+                    check(writable.insertWithOnConflict(TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
+                        "Agent encrypted streaming transaction failed"
+                    }
+                }
+            }
+            removals().forEach { key -> writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key)) }
+            writable.setTransactionSuccessful()
+        } finally { writable.endTransaction() }
+    }
+
     fun removeAll(keys: Collection<String>): Unit = synchronized(database) {
         if (keys.isEmpty()) return@synchronized
         val writable = database.writableDatabase

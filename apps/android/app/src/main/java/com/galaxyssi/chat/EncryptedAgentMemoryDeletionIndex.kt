@@ -15,6 +15,7 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, AgentMemoryStorage.DATABASE)
     private val legacy = AgentEncryptedDatabase(appContext, DATABASE_NAME)
+    private val memoryRows = AgentPersonalMemoryRows(database)
     private val outbox = AgentMemoryRetractionOutbox(database, ::readRecord, ::ensureMigrated)
 
     fun record(deletedItems: List<AgentMemoryItem>): AgentMemoryDeletionTombstone? =
@@ -25,13 +26,11 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
             tombstone
         }
 
-    internal fun commitDeletion(deletedItems: List<AgentMemoryItem>, remainingItems: String): AgentMemoryDeletionTombstone? =
+    internal fun commitDeletion(deletedItems: List<AgentMemoryItem>, remainingItems: Sequence<JSONObject>): AgentMemoryDeletionTombstone? =
         synchronized(AgentMemoryStorage.lock) {
             val tombstone = AgentMemoryCausalDeletionPolicy.tombstone(deletedItems) ?: return@synchronized null
             ensureMigrated()
-            val updates = linkedMapOf(AgentMemoryStorage.ITEMS to remainingItems)
-            updates.putAll(records(listOf(tombstone)))
-            database.mutateStrings(updates)
+            memoryRows.replace(remainingItems, records(listOf(tombstone)))
             tombstone
         }
 
@@ -54,7 +53,7 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
 
     internal fun exportState(): JSONObject = synchronized(AgentMemoryStorage.lock) {
         ensureMigrated()
-        JSONObject().put("memory", readArray(database, AgentMemoryStorage.ITEMS))
+        JSONObject().put("memory", memoryRows.export())
             .put("memory_deletion_index", exportJson())
     }
 
@@ -70,10 +69,8 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
         val incoming = decodeStrict(deletionRecords ?: JSONArray())
         ensureMigrated()
         val index = suppressionIndex().apply { incoming.forEach(::add) }
-        val filtered = index.filter(memory ?: readArray(database, AgentMemoryStorage.ITEMS))
-        val updates = linkedMapOf(AgentMemoryStorage.ITEMS to filtered.toString())
-        updates.putAll(records(incoming))
-        database.mutateStrings(updates)
+        val filtered = index.filter(memory ?: memoryRows.export())
+        memoryRows.replace((0 until filtered.length()).asSequence().map { filtered.getJSONObject(it) }, records(incoming))
     }
 
     fun filterBackupItems(input: JSONArray): JSONArray = synchronized(AgentMemoryStorage.lock) {

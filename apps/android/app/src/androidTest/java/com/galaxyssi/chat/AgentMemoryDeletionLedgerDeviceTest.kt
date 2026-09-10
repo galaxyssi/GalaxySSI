@@ -56,10 +56,10 @@ class AgentMemoryDeletionLedgerDeviceTest {
 
     @Test fun corruptLegacyLedgerCannotDeleteMemoryOrCommitMigration() = withFixture { fixture ->
         fixture.store.saveItems(listOf(deletionMemory(1)))
-        val before = fixture.store.database.readString(AgentMemoryStorage.ITEMS, "")
+        val before = AgentPersonalMemoryRows(fixture.store.database).export().toString()
         fixture.legacy.writeString("tombstones", "corrupt-ledger")
         assertNotNull(runCatching { fixture.store.deleteById("memory-1") }.exceptionOrNull())
-        assertEquals(before, fixture.store.database.readString(AgentMemoryStorage.ITEMS, ""))
+        assertEquals(before, AgentPersonalMemoryRows(fixture.store.database).export().toString())
         assertFalse(fixture.store.database.contains(EncryptedAgentMemoryDeletionIndex.MIGRATION_KEY))
         assertEquals(1, fixture.reopen().count())
     }
@@ -68,23 +68,23 @@ class AgentMemoryDeletionLedgerDeviceTest {
         fixture.store.saveItems(listOf(deletionMemory(1)))
         val record = fixture.ledger.record(listOf(deletionMemory(2)))!!
         fixture.store.database.writeString(EncryptedAgentMemoryDeletionIndex.RECORD_PREFIX + record.id, "bad-json")
-        val before = fixture.store.database.readString(AgentMemoryStorage.ITEMS, "")
+        val before = AgentPersonalMemoryRows(fixture.store.database).export().toString()
         assertNotNull(runCatching { fixture.ledger.snapshot() }.exceptionOrNull())
         assertNotNull(runCatching { fixture.ledger.restoreState(encoded(listOf(deletionMemory(3)), fixture), null) }.exceptionOrNull())
-        assertEquals(before, fixture.store.database.readString(AgentMemoryStorage.ITEMS, ""))
+        assertEquals(before, AgentPersonalMemoryRows(fixture.store.database).export().toString())
     }
 
     @Test fun sqliteWriteFailureRollsBackMemoryAndDeletionRecordTogether() = withFixture { fixture ->
         fixture.store.saveItems(listOf(deletionMemory(1), deletionMemory(2)))
         fixture.ledger.snapshot()
-        val before = fixture.store.database.readString(AgentMemoryStorage.ITEMS, "")
+        val before = AgentPersonalMemoryRows(fixture.store.database).export().toString()
         fixture.sql().use { sql ->
             sql.execSQL("CREATE TRIGGER test_deletion_abort BEFORE INSERT ON encrypted_values " +
                 "WHEN NEW.storage_key LIKE 'memory-deletion:v2:record:%' " +
                 "BEGIN SELECT RAISE(ABORT, 'test_deletion_abort'); END")
             try {
                 assertNotNull(runCatching { fixture.store.deleteById("memory-1") }.exceptionOrNull())
-                assertEquals(before, fixture.store.database.readString(AgentMemoryStorage.ITEMS, ""))
+                assertEquals(before, AgentPersonalMemoryRows(fixture.store.database).export().toString())
                 assertEquals(2, fixture.reopen().count())
                 assertTrue(fixture.ledger.snapshot().isEmpty())
             } finally { sql.execSQL("DROP TRIGGER test_deletion_abort") }

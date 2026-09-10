@@ -28,7 +28,8 @@ class AgentMemoryDeletionRebootDeviceTest {
     @Test fun preparePersistentDeletionFixture() {
         val (case, bootId) = arguments()
         val fixture = MemoryDeletionDeviceFixture(case)
-        check(!fixture.store.database.contains(AgentMemoryStorage.ITEMS)) { "Do not overwrite an existing reboot fixture" }
+        check(!fixture.store.database.contains(AgentMemoryStorage.ITEMS) &&
+            !fixture.store.database.contains(AgentPersonalMemoryRows.META)) { "Do not overwrite an existing reboot fixture" }
         fixture.store.saveItems(originals())
         assertEquals(1_501, fixture.store.delete("\u5220\u9664\u76ee\u6807"))
         val extra = JSONArray().apply {
