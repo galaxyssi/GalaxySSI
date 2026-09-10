@@ -818,7 +818,7 @@ class AgentModelToolLoop(
             val prepared = attempt.prepared
             val mayRetry = !result.isSuccess &&
                 result.error?.retryable == true &&
-                prepared.descriptor.idempotency != AgentNativeToolIdempotency.NON_IDEMPOTENT &&
+                !prepared.descriptor.requiresEffectClaim &&
                 state.request.budget.maxRetriesPerCall > 0
             if (!mayRetry) {
                 appendToolResult(state, prepared.call, result, retryCount = 0)
@@ -898,7 +898,7 @@ class AgentModelToolLoop(
 
             val mayRetry = !result.isSuccess &&
                 result.error?.retryable == true &&
-                descriptor.idempotency != AgentNativeToolIdempotency.NON_IDEMPOTENT &&
+                !descriptor.requiresEffectClaim &&
                 attempt <= state.request.budget.maxRetriesPerCall
             if (!mayRetry) {
                 appendToolResult(state, call, result, attempt - 1)

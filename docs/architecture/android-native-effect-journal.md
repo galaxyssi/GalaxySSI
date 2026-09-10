@@ -1,11 +1,12 @@
 # Android Native Effect Journal
 
-Android source version: 1.1.12 (898). Desktop is unchanged.
+Android source version: 1.1.50 (936). Desktop is unchanged.
 
 ## Runtime Integration
 
 The ordinary mobile plan executor and model-tool loop share the native tool
-registry. Tools declaring `IDEMPOTENCY_KEY_REQUIRED` or `NON_IDEMPOTENT` acquire a durable effect
+registry. Mutations (including idempotent overwrites), and tools declaring
+`IDEMPOTENCY_KEY_REQUIRED` or `NON_IDEMPOTENT`, acquire a durable effect
 claim before entering their executor. The process cannot publish a finished
 result to the Agent/UI before committing that outcome. This is execution state,
 not optional diagnostic telemetry.
@@ -35,12 +36,35 @@ stable key when absent, in both serial and parallel dispatch, and Skill children
 inherit a parent-key/step identity. Parallel model calls also retain explicitly
 provided keys. Automatic retry of non-idempotent tools remains disabled.
 
-For a direct registry caller without a logical effect key, a non-idempotent call
+For a direct registry caller without a logical effect key, a mutation without an explicit-key requirement
 uses its invocation ID as a fallback; the executor and receipt receive that key.
 Repeating that invocation is not a new effect, while a new invocation without a
 stable caller key is a new request. Idempotent reads without keys still perform
 fresh reads without accessing the effect journal. Claims do not equate two new
 model-generated calls merely because their arguments are similar.
+
+### Idempotency Is Not Read-Only Semantics
+
+An idempotent overwrite can still destroy a newer user edit when redispatched
+after a lost receipt. Since 1.1.50, descriptor `effect` distinguishes explicit
+serial reads from mutations. Existing `PARALLEL_READ_ONLY` tools imply a read;
+unclassified serial tools conservatively require a claim. Explicit mutations
+cannot advertise parallel-read-only concurrency. Existing non-idempotent and
+explicit-key-required contracts continue requiring claims regardless of effect
+metadata. Missing required keys are still rejected before execution.
+
+This internal recovery metadata does not change the public model tool catalog
+hash, so pending planner journals do not become invalid merely because execution
+is more durable. The ordinary plan adapter supplies the stable action ID for
+idempotent mutations too. The model tool loop automatically retries only pure
+reads; mutation outcomes are observations for the next model decision, not
+permission for a blind retry. Resource-scoped parallel mutation scheduling is
+unchanged.
+
+Known serial hardware, notification, Home Assistant, web/media and remote
+Desktop reads are annotated explicitly. Flashlight setting, browser closing,
+workspace creation and file overwrites remain mutations. This classification
+uses tool contracts, never keywords in a user's request or error message.
 
 ## Storage and Recovery
 
@@ -154,3 +178,41 @@ Logs remain local under `build/nonidempotent-*`. The test executor performs a
 real local file write using the production registry and encrypted journal; it
 does not test remote service reconciliation or a model inventing a new effect
 key for the same semantic operation. Those acceptance gaps remain open.
+
+### Idempotent Mutation Extension Verified on 2026-09-10
+
+- Before the fix, both new JVM reproductions failed: an interrupted overwrite
+  ran again over a newer user edit, and an invocation without an explicit key
+  executed twice. These were behavioral failures, not compilation failures.
+- Final full JVM run: 3,486 tests in 503 suites, zero failures/errors, five skips.
+  The first full run found one old read-only fixture missing its explicit read
+  declaration. Its freshness assertions were retained and a no-observation
+  assertion was added. The final run also checks browser state mutations,
+  concurrent duplicates, isolation, input conflicts and deliberate new actions.
+- Debug and instrumentation APK builds passed. Repository checks, 73-library
+  16 KiB alignment and the 24-library QNN packaging audit passed.
+- SM-T575 was upgraded in place to 1.1.50 (936). First install remained
+  2026-09-07 07:17:23; last update became 2026-09-10 13:47:55. No user data,
+  pairing or downloaded models were cleared. No other device was operated on.
+- The combined mutation, observation-first and ordinary multi-node recovery
+  run passed five actual tests in 1.990 seconds, with four opt-in methods skipped.
+  Two new tests use the production workspace catalog, actual file overwrites
+  and encrypted SQLite: a failed receipt commit survives database reopen, and
+  a completed receipt replays without overwriting newer text.
+- Crash case `20260910-v1150` killed process 16965 after the actual workspace
+  overwrite and before receipt commit. Recovery in a new process passed in
+  0.176 seconds, returned `effect_outcome_unknown` and retained newer text.
+- The same evidence was verified again after a physical T575 reboot, without
+  reseeding or submitting another task. Boot ID changed from
+  `3f19ddc6-092e-45e9-9fbe-a97b41d3ab81` to
+  `748770b9-f8f2-413a-90db-54980d1636f6`; recovery passed in 0.270 seconds.
+  The original claim, test file and verification marker remain on the device.
+- Existing encrypted journal regression: nine actual passes, four explicit
+  restart/crash phases skipped, 172.536 seconds. This covers 2,005 later effects,
+  large results, competing owners, rollback and legacy scope isolation.
+
+Local logs are `build/idempotent-mutation-*.log`. APK SHA-256:
+`DD84F2239F812CACF5EC59EFF47579B37F01B5AD7C9C6F14F3EDA470DC26A15E`.
+This is not a real cloud-provider test or a performance percentile gate. It
+does not retroactively create receipts for old unjournaled operations, prove
+exactly-once external services, or complete all-path Run Kernel acceptance.

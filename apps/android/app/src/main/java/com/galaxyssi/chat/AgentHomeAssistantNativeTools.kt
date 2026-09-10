@@ -418,6 +418,8 @@ object AgentHomeAssistantNativeTools {
         }.orEmpty(),
         timeoutMillis = TOOL_TIMEOUT_MILLIS,
         idempotency = idempotency,
+        effect = if (idempotency == AgentNativeToolIdempotency.IDEMPOTENT) AgentNativeToolEffect.READ_ONLY
+            else AgentNativeToolEffect.MUTATION,
         availability = AgentNativeToolAvailability.AVAILABLE
     )
 

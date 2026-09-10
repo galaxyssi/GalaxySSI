@@ -1518,7 +1518,8 @@ object AgentHardwareNativeTools {
                 )
             ),
             consents = listOf(FLASHLIGHT_CONTROL_CONSENT),
-            idempotency = AgentNativeToolIdempotency.IDEMPOTENT
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            effect = AgentNativeToolEffect.MUTATION
         ),
         execute = { invocation ->
             val enabled = invocation.input.boolean("enabled")
@@ -1912,7 +1913,8 @@ object AgentHardwareNativeTools {
         permissions: List<AgentNativePermissionRequirement> = emptyList(),
         consents: List<String> = emptyList(),
         timeoutMillis: Long = MAX_TOOL_TIMEOUT_MILLIS,
-        idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.IDEMPOTENT
+        idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+        effect: AgentNativeToolEffect = AgentNativeToolEffect.READ_ONLY
     ) = AgentNativeToolDescriptor(
         id = id,
         version = VERSION,
@@ -1927,6 +1929,7 @@ object AgentHardwareNativeTools {
         requiredConsents = consents.map(::consent),
         timeoutMillis = timeoutMillis,
         idempotency = idempotency,
+        effect = effect,
         availability = AgentNativeToolAvailability.AVAILABLE
     )
 

@@ -1176,6 +1176,7 @@ object AgentWebMediaNativeTools {
             ),
             outputSchema = browserSessionCreateOutputSchema(),
             consents = emptyList(),
+            effect = AgentNativeToolEffect.MUTATION,
             availability = web.availability
         ),
         executor = AgentNativeToolExecutor { invocation ->
@@ -1253,6 +1254,7 @@ object AgentWebMediaNativeTools {
             ),
             outputSchema = browserSessionNavigateOutputSchema(),
             consents = emptyList(),
+            effect = AgentNativeToolEffect.MUTATION,
             availability = web.availability
         ),
         executor = AgentNativeToolExecutor { invocation ->
@@ -1433,7 +1435,8 @@ object AgentWebMediaNativeTools {
             risk = AgentNativeToolRisk.LOW,
             capabilities = setOf("content.extract", "html.no_script_execution"),
             timeoutMillis = MAX_TOOL_TIMEOUT_MILLIS,
-            idempotency = AgentNativeToolIdempotency.IDEMPOTENT
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            effect = AgentNativeToolEffect.READ_ONLY
         ),
         executor = AgentNativeToolExecutor { invocation ->
             val source = invocation.input.string("content")
@@ -1688,6 +1691,7 @@ object AgentWebMediaNativeTools {
             requiredConsents = consents(CONTENT_URI_READ_CONSENT),
             timeoutMillis = MAX_TOOL_TIMEOUT_MILLIS,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            effect = AgentNativeToolEffect.READ_ONLY,
             availability = ocr.availability
         ),
         executor = AgentNativeToolExecutor { invocation ->
@@ -1932,6 +1936,7 @@ object AgentWebMediaNativeTools {
         risk: AgentNativeToolRisk = AgentNativeToolRisk.LOW,
         consents: List<String> = listOf(PUBLIC_WEB_CONSENT),
         idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+        effect: AgentNativeToolEffect? = null,
         availability: AgentNativeToolAvailability
     ) = AgentNativeToolDescriptor(
         id = id,
@@ -1953,6 +1958,8 @@ object AgentWebMediaNativeTools {
         requiredConsents = consents(consents),
         timeoutMillis = MAX_TOOL_TIMEOUT_MILLIS,
         idempotency = idempotency,
+        effect = effect ?: if (idempotency == AgentNativeToolIdempotency.IDEMPOTENT) AgentNativeToolEffect.READ_ONLY
+            else AgentNativeToolEffect.MUTATION,
         availability = availability
     )
 
@@ -1982,6 +1989,8 @@ object AgentWebMediaNativeTools {
         requiredConsents = consents(consentIds),
         timeoutMillis = MAX_TOOL_TIMEOUT_MILLIS,
         idempotency = idempotency,
+        effect = if (idempotency == AgentNativeToolIdempotency.IDEMPOTENT) AgentNativeToolEffect.READ_ONLY
+            else AgentNativeToolEffect.MUTATION,
         availability = availability
     )
 

@@ -11,6 +11,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentWebMediaNativeToolsTest {
+    @Test fun browserStateMutationsRequireClaimsButStatelessReadsDoNot() {
+        val descriptors = AgentWebMediaNativeTools.definitions(services(FakeTransport())).associate { it.descriptor.id to it.descriptor }
+        listOf(AgentWebMediaNativeTools.BROWSER_SESSION_CREATE, AgentWebMediaNativeTools.BROWSER_SESSION_NAVIGATE,
+            AgentWebMediaNativeTools.BROWSER_SESSION_CLOSE, AgentWebMediaNativeTools.WEB_DOWNLOAD,
+            AgentWebMediaNativeTools.MEDIA_PLAYBACK_HANDOFF, AgentWebMediaNativeTools.MEDIA_FFMPEG_TRANSCODE).forEach {
+            assertTrue(it, descriptors.getValue(it).requiresEffectClaim)
+        }
+        listOf(AgentWebMediaNativeTools.WEB_SEARCH, AgentWebMediaNativeTools.WEB_OPEN,
+            AgentWebMediaNativeTools.WEB_FETCH, AgentWebMediaNativeTools.WEB_HEAD, AgentWebMediaNativeTools.HTTP_REQUEST,
+            AgentWebMediaNativeTools.CONTENT_EXTRACT, AgentWebMediaNativeTools.OCR_RECOGNIZE_CONTENT,
+            AgentWebMediaNativeTools.MEDIA_METADATA).forEach {
+            assertFalse(it, descriptors.getValue(it).requiresEffectClaim)
+        }
+    }
+
     @Test
     fun exposesBoundedToolsAndReportsMissingFfmpegRuntime() {
         val services = services(FakeTransport())

@@ -395,6 +395,8 @@ object AgentNativeJsonSchemaValidator : AgentNativeToolValidator {
         }?.toMap().orEmpty()
 }
 
+enum class AgentNativeToolEffect { READ_ONLY, MUTATION }
+
 data class AgentNativeToolDescriptor(
     val id: String,
     val version: String,
@@ -411,8 +413,15 @@ data class AgentNativeToolDescriptor(
     val timeoutPolicy: AgentNativeToolTimeoutPolicy = AgentNativeToolTimeoutPolicy.FIXED,
     val idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
     val concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
-    val availability: AgentNativeToolAvailability = AgentNativeToolAvailability.AVAILABLE
+    val availability: AgentNativeToolAvailability = AgentNativeToolAvailability.AVAILABLE,
+    val effect: AgentNativeToolEffect? = null
 ) {
+    // Recovery policy is internal; keep pending journals' public catalog hashes stable.
+    val requiresEffectClaim: Boolean
+        get() = idempotency != AgentNativeToolIdempotency.IDEMPOTENT ||
+            !(effect == AgentNativeToolEffect.READ_ONLY ||
+                (effect == null && concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY))
+
     init {
         require(ID_PATTERN.matches(id)) {
             "Tool id must be a stable lowercase dotted identifier: $id"
@@ -430,7 +439,8 @@ data class AgentNativeToolDescriptor(
         }
         require(
             concurrency != AgentNativeToolConcurrency.PARALLEL_READ_ONLY ||
-                (risk == AgentNativeToolRisk.LOW && idempotency == AgentNativeToolIdempotency.IDEMPOTENT)
+                (risk == AgentNativeToolRisk.LOW && idempotency == AgentNativeToolIdempotency.IDEMPOTENT &&
+                    effect != AgentNativeToolEffect.MUTATION)
         ) {
             "Parallel native tools must be low-risk and idempotent"
         }
@@ -1001,9 +1011,10 @@ class AgentNativeToolRegistry(
         val definition = lookup(id)
             ?: return missingToolResult(id, input, context, hooks)
         val descriptor = definition.descriptor
-        // Non-idempotent describes the effect, not permission to redispatch the same call.
+        // Even an idempotent overwrite can destroy newer state when replayed after recovery.
         val effectiveKey = context.idempotencyKey?.takeIf(String::isNotBlank)
-            ?: context.invocationId.takeIf { descriptor.idempotency == AgentNativeToolIdempotency.NON_IDEMPOTENT }
+            ?: context.invocationId.takeIf { descriptor.requiresEffectClaim &&
+                descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED }
         val startedAt = clock.nowEpochMillis()
         val deadline = minOf(
             context.deadlineEpochMillis ?: Long.MAX_VALUE,
@@ -1158,8 +1169,7 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            if (replayKey != null &&
-                descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENT) {
+            if (replayKey != null && descriptor.requiresEffectClaim) {
                 val claim = replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
                 if (claim.inputSha256 != digestOrEmpty(input)) {
                     return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
@@ -1239,7 +1249,7 @@ class AgentNativeToolRegistry(
                 metadata = execution.metadata,
                 verification = verification
             )
-            if (replayKey != null && descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED) {
+            if (replayKey != null && !descriptor.requiresEffectClaim) {
                 cacheResult(replayKey, result)
             }
             return result
