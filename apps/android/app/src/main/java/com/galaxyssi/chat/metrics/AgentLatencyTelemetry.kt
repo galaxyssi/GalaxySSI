@@ -49,6 +49,13 @@ internal object AgentLatencyTelemetry {
         }, nowNs = SystemClock::elapsedRealtimeNanos
     )
 
+    fun model(context: Context, taskId: String, provider: String): AgentModelTiming = AgentModelTiming(
+        traceId = AgentLatencyContract.opaqueId(taskId.ifBlank { java.util.UUID.randomUUID().toString() }),
+        emit = { point -> get(context); journal?.append(point) },
+        provider = provider,
+        nowNs = SystemClock::elapsedRealtimeNanos
+    )
+
     fun <T> planning(context: Context, taskId: String, block: () -> T): T = AgentPlanningTiming.capture(
         taskId,
         emit = { trace, stage, operation, outcome, at ->

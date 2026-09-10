@@ -14,6 +14,9 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import android.os.SystemClock
+import com.galaxyssi.chat.metrics.AgentModelTiming
+import com.galaxyssi.chat.metrics.AgentTimingJournal
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -34,10 +37,14 @@ internal object LocalModelInferenceProcess {
     }
 }
 
-private object LocalModelInferenceProtocol {
+internal object LocalModelInferenceProtocol {
     const val GENERATE = 1
     const val RELEASE = 2
     const val RESULT = 3
+    const val TIMING = 4
+    const val TRACE_ID = "trace_id"
+    const val TRACE_PROVIDER = "trace_provider"
+    const val TIMING_EVENT = "timing_event"
 
     const val REQUEST_ID = "request_id"
     const val PROFILE_ID = "profile_id"
@@ -89,7 +96,22 @@ class LocalModelInferenceService : Service() {
         val request = message.data
         val replyTo = message.replyTo
         val requestId = request.getLong(LocalModelInferenceProtocol.REQUEST_ID)
+        val timing = AgentModelTiming(
+            request.getString(LocalModelInferenceProtocol.TRACE_ID).orEmpty(),
+            emit = { point ->
+                replyTo?.send(Message.obtain(null, LocalModelInferenceProtocol.TIMING).apply {
+                    data = Bundle().apply {
+                        putLong(LocalModelInferenceProtocol.REQUEST_ID, requestId)
+                        putString(LocalModelInferenceProtocol.TIMING_EVENT, AgentTimingJournal.encode(point).toString())
+                    }
+                })
+            },
+            provider = request.getString(LocalModelInferenceProtocol.TRACE_PROVIDER).orEmpty(),
+            nowNs = SystemClock::elapsedRealtimeNanos
+        )
+        val queued = timing.begin("service_queue")
         executor.execute {
+            queued.completed()
             val response = Bundle().apply {
                 putLong(LocalModelInferenceProtocol.REQUEST_ID, requestId)
             }
@@ -98,7 +120,7 @@ class LocalModelInferenceService : Service() {
                     this@LocalModelInferenceService,
                     request.getString(LocalModelInferenceProtocol.PROFILE_ID).orEmpty()
                 )
-                LocalModelInferenceRuntime.generate(
+                LocalModelInferenceRuntime.generateWithTiming(
                     context = this@LocalModelInferenceService,
                     profile = profile,
                     systemPrompt = request.getString(LocalModelInferenceProtocol.SYSTEM_PROMPT).orEmpty(),
@@ -112,7 +134,8 @@ class LocalModelInferenceService : Service() {
                     workClass = enumValueOrDefault(
                         request.getString(LocalModelInferenceProtocol.WORK_CLASS),
                         LocalModelWorkClass.INTERACTIVE
-                    )
+                    ),
+                    timing = timing
                 )
             }.onSuccess { result ->
                 response.putBoolean(LocalModelInferenceProtocol.SUCCESS, true)
@@ -147,7 +170,7 @@ class LocalModelInferenceService : Service() {
             }
             // Native models may retain large CPU or HTP allocations. Release them before
             // returning so the next voice turn can prepare Whisper without overlapping graphs.
-            runCatching { LocalModelInferenceRuntime.releaseForAsr() }
+            runCatching { timing.measure("release") { LocalModelInferenceRuntime.releaseForAsr() } }
             sendResponse(replyTo, response)
         }
     }
@@ -183,13 +206,20 @@ internal object LocalModelInferenceProcessClient {
     private data class PendingRequest(
         val monitor: Object = Object(),
         @Volatile var response: Bundle? = null,
-        @Volatile var failure: Throwable? = null
+        @Volatile var failure: Throwable? = null,
+        val timing: AgentModelTiming = AgentModelTiming.NONE
     )
 
     private val connectionMonitor = Object()
     private val pending = ConcurrentHashMap<Long, PendingRequest>()
     private val requestIds = AtomicLong(1L)
     private val replyMessenger = Messenger(Handler(Looper.getMainLooper()) { message ->
+        if (message.what == LocalModelInferenceProtocol.TIMING) {
+            val event = message.data
+            pending[event.getLong(LocalModelInferenceProtocol.REQUEST_ID)]?.timing
+                ?.acceptRemote(event.getString(LocalModelInferenceProtocol.TIMING_EVENT).orEmpty())
+            return@Handler true
+        }
         if (message.what != LocalModelInferenceProtocol.RESULT) return@Handler false
         val response = message.data
         val request = pending.remove(response.getLong(LocalModelInferenceProtocol.REQUEST_ID))
@@ -235,13 +265,14 @@ internal object LocalModelInferenceProcessClient {
         maximumTokens: Int,
         temperature: Float,
         thinkingMode: LocalModelThinkingMode,
-        workClass: LocalModelWorkClass
+        workClass: LocalModelWorkClass,
+        timing: AgentModelTiming = AgentModelTiming.NONE
     ): LocalModelInferenceResult {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "Local inference must not block the UI thread"
         }
         return try {
-            val response = transact(
+            val response = timing.measure("process_roundtrip") { transact(
                 context,
                 LocalModelInferenceProtocol.GENERATE,
                 Bundle().apply {
@@ -252,9 +283,11 @@ internal object LocalModelInferenceProcessClient {
                     putFloat(LocalModelInferenceProtocol.TEMPERATURE, temperature)
                     putString(LocalModelInferenceProtocol.THINKING_MODE, thinkingMode.name)
                     putString(LocalModelInferenceProtocol.WORK_CLASS, workClass.name)
-                }
-            )
-            requireSuccess(response)
+                    putString(LocalModelInferenceProtocol.TRACE_ID, timing.traceId)
+                    putString(LocalModelInferenceProtocol.TRACE_PROVIDER, timing.provider)
+                },
+                timing
+            ).also(::requireSuccess) }
             LocalModelInferenceResult(
                 text = response.getString(LocalModelInferenceProtocol.TEXT).orEmpty(),
                 profileId = response.getString(LocalModelInferenceProtocol.PROFILE_ID).orEmpty(),
@@ -298,13 +331,13 @@ internal object LocalModelInferenceProcessClient {
 
     fun loadedProfileId(): String = remoteLoadedProfileId
 
-    private fun transact(context: Context, what: Int, payload: Bundle): Bundle {
+    private fun transact(context: Context, what: Int, payload: Bundle, timing: AgentModelTiming = AgentModelTiming.NONE): Bundle {
         val requestId = requestIds.getAndIncrement()
         payload.putLong(LocalModelInferenceProtocol.REQUEST_ID, requestId)
-        val request = PendingRequest()
+        val request = PendingRequest(timing = timing)
         pending[requestId] = request
         val target = try {
-            ensureConnected(context)
+            timing.measure("service_bind") { ensureConnected(context) }
         } catch (error: Throwable) {
             pending.remove(requestId)
             throw error

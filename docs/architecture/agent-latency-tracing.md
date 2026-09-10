@@ -11,6 +11,11 @@ stages. See [Android image stage tracing](android-image-stage-tracing.md) for
 scope, invariants and T575 measurements; preview rendering and network transfer
 are not part of those image preparation samples.
 
+Local LLM stage events cross the private Binder boundary without creating a
+second writer for this journal. See [Android model stage tracing](android-model-stage-tracing.md)
+for load/reuse, queue, generation and first-token boundaries and their current
+device acceptance limits.
+
 ## Identity and Clocks
 
 - `trace_id`: SHA-256 of the existing task ID, never the prompt or conversation

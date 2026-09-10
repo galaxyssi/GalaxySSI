@@ -31,6 +31,19 @@ internal fun MainActivity.addAgentLatencySection() {
                 if (isFinishing || isDestroyed || !rows.isAttachedToWindow || request != generation) return@runOnUiThread
                 rows.removeAllViews()
                 val labels = mapOf(
+                    "phone_model_request_ms" to R.string.agent_latency_model_request,
+                    "phone_model_client_lock_wait_ms" to R.string.agent_latency_model_client_lock,
+                    "phone_model_worker_lock_wait_ms" to R.string.agent_latency_model_worker_lock,
+                    "phone_model_service_bind_ms" to R.string.agent_latency_model_bind,
+                    "phone_model_process_roundtrip_ms" to R.string.agent_latency_model_roundtrip,
+                    "phone_model_service_queue_ms" to R.string.agent_latency_model_queue,
+                    "phone_model_preflight_ms" to R.string.agent_latency_model_preflight,
+                    "phone_model_sdk_init_ms" to R.string.agent_latency_model_sdk,
+                    "phone_model_load_ms" to R.string.agent_latency_model_load,
+                    "phone_model_reuse_ms" to R.string.agent_latency_model_reuse,
+                    "phone_model_generate_ms" to R.string.agent_latency_model_generate,
+                    "phone_model_first_token_ms" to R.string.agent_latency_model_first_token,
+                    "phone_model_release_ms" to R.string.agent_latency_model_release,
                     "phone_runtime_image_prepare_ms" to R.string.agent_latency_image_prepare,
                     "phone_runtime_image_original_probe_ms" to R.string.agent_latency_image_original_probe,
                     "phone_runtime_image_decode_ms" to R.string.agent_latency_image_decode,

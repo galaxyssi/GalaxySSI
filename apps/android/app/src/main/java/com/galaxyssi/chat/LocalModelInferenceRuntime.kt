@@ -1,6 +1,8 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import com.galaxyssi.chat.metrics.AgentLatencyTelemetry
+import com.galaxyssi.chat.metrics.AgentModelTiming
 import com.galaxyssi.llama.GalaxySSILlamaRuntime
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -86,7 +88,28 @@ object LocalModelInferenceRuntime {
         maximumTokens: Int = 768,
         temperature: Float = 0.3f,
         thinkingMode: LocalModelThinkingMode = LocalModelThinkingMode.AUTOMATIC,
-        workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE
+        workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE,
+        taskId: String = ""
+    ): LocalModelInferenceResult {
+        val timing = if (LocalModelInferenceProcess.isRuntimeProcess()) AgentModelTiming.NONE else runCatching {
+            AgentLatencyTelemetry.model(context.applicationContext, taskId, engineFor(profile).name)
+        }.getOrDefault(AgentModelTiming.NONE)
+        return timing.measure("request") {
+            generateWithTiming(context, profile, systemPrompt, userPrompt, maximumTokens, temperature,
+                thinkingMode, workClass, timing)
+        }
+    }
+
+    internal fun generateWithTiming(
+        context: Context,
+        profile: LocalModelRuntimeProfile,
+        systemPrompt: String,
+        userPrompt: String,
+        maximumTokens: Int,
+        temperature: Float,
+        thinkingMode: LocalModelThinkingMode,
+        workClass: LocalModelWorkClass,
+        timing: AgentModelTiming
     ): LocalModelInferenceResult {
         check(LocalModelRuntimeSettings.isProfileEnabled(context, profile)) {
             "The selected local model is installed but disabled"
@@ -99,8 +122,10 @@ object LocalModelInferenceRuntime {
             SharedQnnRuntimeResources.arbiter.asrHasPriority()
         ) throw LocalModelAsrPriorityException()
         if (workClass == LocalModelWorkClass.INTERACTIVE) foregroundWaiters.incrementAndGet()
+        val lockWait = timing.begin(if (LocalModelInferenceProcess.isRuntimeProcess()) "worker_lock_wait" else "client_lock_wait")
         return try {
             synchronized(lock) {
+                lockWait.completed()
                 if (workClass == LocalModelWorkClass.BACKGROUND && !canRunBackground()) {
                     throw LocalModelBackgroundDeferredException()
                 }
@@ -117,7 +142,8 @@ object LocalModelInferenceRuntime {
                         maximumTokens = maximumTokens,
                         temperature = temperature,
                         thinkingMode = thinkingMode,
-                        workClass = workClass
+                        workClass = workClass,
+                        timing = timing
                     )
                 }
                 generateLocked(
@@ -127,10 +153,12 @@ object LocalModelInferenceRuntime {
                     userPrompt = userPrompt,
                     maximumTokens = maximumTokens,
                     temperature = temperature,
-                    thinkingMode = thinkingMode
+                    thinkingMode = thinkingMode,
+                    timing = timing
                 )
             }
         } finally {
+            lockWait.close()
             if (workClass == LocalModelWorkClass.INTERACTIVE) {
                 foregroundLeaseUntilElapsed = monotonicMillis() + FOREGROUND_IDLE_GRACE_MILLIS
                 foregroundWaiters.decrementAndGet()
@@ -145,7 +173,8 @@ object LocalModelInferenceRuntime {
         userPrompt: String,
         maximumTokens: Int,
         temperature: Float,
-        thinkingMode: LocalModelThinkingMode
+        thinkingMode: LocalModelThinkingMode,
+        timing: AgentModelTiming
     ): LocalModelInferenceResult {
         val engine = engineFor(profile)
         if (engine == LocalModelInferenceEngine.GENIEX_NPU) {
@@ -158,6 +187,61 @@ object LocalModelInferenceRuntime {
         } else if (GenieXLocalModelRuntime.loadedProfileId().isNotBlank()) {
             GenieXLocalModelRuntime.release()
         }
+        val prepared = timing.measure("preflight") { prepareModel(context, profile) }
+        val modelFile = prepared.modelFile
+        val effectiveContext = prepared.contextTokens
+        if (engine == LocalModelInferenceEngine.GENIEX_NPU) {
+            return GenieXLocalModelRuntime.generate(
+                context = context,
+                profile = profile,
+                modelFile = modelFile,
+                contextTokens = effectiveContext,
+                threads = prepared.threads,
+                systemPrompt = systemPrompt,
+                userPrompt = prepareUserPrompt(profile, userPrompt, thinkingMode),
+                maximumTokens = maximumTokens,
+                temperature = temperature,
+                thinkingEnabled = thinkingEnabled(profile, thinkingMode),
+                timing = timing
+            )
+        }
+        GenieXLocalModelRuntime.release()
+        checkNotNull(modelFile) { "A GGUF file is required by the legacy local-model runtime" }
+        if (loadedProfile != profile.id || loadedContextTokens != effectiveContext) {
+            timing.measure("load") {
+                GalaxySSILlamaRuntime.unload()
+                GalaxySSILlamaRuntime.loadModel(
+                    context = context,
+                    modelPath = modelFile.absolutePath,
+                    contextTokens = effectiveContext,
+                    threads = prepared.threads
+                )
+                loadedProfile = profile.id
+                loadedContextTokens = effectiveContext
+            }
+        } else { timing.measure("reuse") { Unit } }
+        val effectivePrompt = prepareUserPrompt(profile, userPrompt, thinkingMode)
+        val startedAt = System.currentTimeMillis()
+        val reply = timing.measure("generate") {
+            GalaxySSILlamaRuntime.generate(
+                systemPrompt = systemPrompt,
+                userPrompt = effectivePrompt,
+                maximumTokens = maximumTokens,
+                temperature = temperature
+            ).trim().also { check(it.isNotBlank()) { "The local model returned an empty response" } }
+        }
+        return LocalModelInferenceResult(
+            text = reply,
+            profileId = profile.id,
+            backend = GalaxySSILlamaRuntime.backendInfo(),
+            smeAvailable = GalaxySSILlamaRuntime.osExposesSme(),
+            elapsedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
+        )
+    }
+
+    private data class PreparedModel(val modelFile: java.io.File?, val contextTokens: Int, val threads: Int)
+
+    private fun prepareModel(context: Context, profile: LocalModelRuntimeProfile): PreparedModel {
         val modelFile = if (profile.artifactFormat == LocalModelArtifactFormat.GGUF) {
             LocalModelManager.verifiedFile(context, profile)
         } else {
@@ -189,50 +273,7 @@ object LocalModelInferenceRuntime {
                 contextTokens = requestedContext
             )
         }
-        val effectiveContext = estimate.recommendedContextTokens
-        if (engine == LocalModelInferenceEngine.GENIEX_NPU) {
-            return GenieXLocalModelRuntime.generate(
-                context = context,
-                profile = profile,
-                modelFile = modelFile,
-                contextTokens = effectiveContext,
-                threads = estimate.recommendedThreads,
-                systemPrompt = systemPrompt,
-                userPrompt = prepareUserPrompt(profile, userPrompt, thinkingMode),
-                maximumTokens = maximumTokens,
-                temperature = temperature,
-                thinkingEnabled = thinkingEnabled(profile, thinkingMode)
-            )
-        }
-        GenieXLocalModelRuntime.release()
-        checkNotNull(modelFile) { "A GGUF file is required by the legacy local-model runtime" }
-        if (loadedProfile != profile.id || loadedContextTokens != effectiveContext) {
-            GalaxySSILlamaRuntime.unload()
-            GalaxySSILlamaRuntime.loadModel(
-                context = context,
-                modelPath = modelFile.absolutePath,
-                contextTokens = effectiveContext,
-                threads = estimate.recommendedThreads
-            )
-            loadedProfile = profile.id
-            loadedContextTokens = effectiveContext
-        }
-        val effectivePrompt = prepareUserPrompt(profile, userPrompt, thinkingMode)
-        val startedAt = System.currentTimeMillis()
-        val reply = GalaxySSILlamaRuntime.generate(
-            systemPrompt = systemPrompt,
-            userPrompt = effectivePrompt,
-            maximumTokens = maximumTokens,
-            temperature = temperature
-        ).trim()
-        check(reply.isNotBlank()) { "The local model returned an empty response" }
-        return LocalModelInferenceResult(
-            text = reply,
-            profileId = profile.id,
-            backend = GalaxySSILlamaRuntime.backendInfo(),
-            smeAvailable = GalaxySSILlamaRuntime.osExposesSme(),
-            elapsedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
-        )
+        return PreparedModel(modelFile, estimate.recommendedContextTokens, estimate.recommendedThreads)
     }
 
     fun canRunBackground(): Boolean =
