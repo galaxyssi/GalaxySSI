@@ -1,4 +1,4 @@
-use super::{Inner, SqlResult, SqliteIndexStore, read_node, write_node};
+use super::{Inner, NodeCacheStats, SqlResult, SqliteIndexStore, read_node, write_node};
 use crate::store::{Node, NodeStore, ROOT};
 use diskann::{ANNError, ANNResult};
 use std::sync::{
@@ -59,6 +59,11 @@ impl SqliteSession {
     }
     pub fn node_count(&self) -> ANNResult<u64> {
         self.call(false, |inner| Ok(inner.active.as_ref().unwrap().meta.count))
+    }
+    pub fn node_cache_stats(&self) -> ANNResult<NodeCacheStats> {
+        self.call(false, |inner| {
+            Ok(inner.active.as_ref().unwrap().cache.stats())
+        })
     }
     pub fn generation(&self) -> ANNResult<u64> {
         self.call(false, |inner| {
@@ -128,14 +133,20 @@ impl SqliteSession {
 impl NodeStore for SqliteSession {
     fn read(&self, id: u64) -> ANNResult<Node> {
         self.call(false, |inner| {
-            read_node(
+            let active = inner.active.as_mut().unwrap();
+            if let Some(node) = active.cache.get(id) {
+                return Ok(node);
+            }
+            let node = read_node(
                 inner.connection.as_ref().unwrap(),
                 inner.crypto.as_ref().unwrap(),
                 self.owner.config,
-                &inner.active.as_ref().unwrap().meta,
+                &active.meta,
                 id,
             )?
-            .ok_or_else(|| ANNError::message("Native index node is missing"))
+            .ok_or_else(|| ANNError::message("Native index node is missing"))?;
+            active.cache.insert(id, &node);
+            Ok(node)
         })
     }
     fn create(&self, id: u64, vector: &[f32]) -> ANNResult<()> {
@@ -149,15 +160,17 @@ impl NodeStore for SqliteSession {
                 .count
                 .checked_add(1)
                 .ok_or_else(|| ANNError::message("Native index node count overflow"))?;
+            let node = Node::new(vector);
             write_node(
                 inner.connection.as_ref().unwrap(),
                 inner.crypto.as_ref().unwrap(),
                 self.owner.config,
                 &active.meta,
                 id,
-                &Node::new(vector),
+                &node,
                 true,
             )?;
+            active.cache.insert(id, &node);
             active.meta.count = next_count;
             active.dirty = true;
             Ok(())
@@ -168,8 +181,12 @@ impl NodeStore for SqliteSession {
             let active = inner.active.as_mut().unwrap();
             let connection = inner.connection.as_ref().unwrap();
             let crypto = inner.crypto.as_ref().unwrap();
-            let mut node = read_node(connection, crypto, self.owner.config, &active.meta, id)?
-                .ok_or_else(|| ANNError::message("Native index neighbor target is missing"))?;
+            let mut node = if let Some(node) = active.cache.get(id) {
+                node
+            } else {
+                read_node(connection, crypto, self.owner.config, &active.meta, id)?
+                    .ok_or_else(|| ANNError::message("Native index neighbor target is missing"))?
+            };
             node.neighbors.clear();
             node.neighbors.extend_from_slice(values);
             write_node(
@@ -181,6 +198,7 @@ impl NodeStore for SqliteSession {
                 &node,
                 false,
             )?;
+            active.cache.insert(id, &node);
             active.dirty = true;
             Ok(())
         })

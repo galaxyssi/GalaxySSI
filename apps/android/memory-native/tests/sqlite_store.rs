@@ -16,6 +16,8 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+#[path = "sqlite_store/cache.rs"]
+mod cache;
 #[path = "sqlite_store/growth.rs"]
 mod growth;
 #[path = "sqlite_store/replay.rs"]
