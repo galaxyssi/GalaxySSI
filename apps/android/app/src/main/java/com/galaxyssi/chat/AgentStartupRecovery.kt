@@ -38,6 +38,8 @@ internal class AgentStartupRecoverySequence(
 class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters) :
     CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result = try {
+        runCatching { AgentMemorySegmentWork.enqueue(applicationContext) }
+            .onFailure { Log.w("GalaxySSIRecovery", "Memory maintenance enqueue failed: ${it.javaClass.simpleName}") }
         AgentMemoryRetractionRecovery.enqueue(applicationContext)
         var reconciled = 0
         AgentStartupRecoverySequence(

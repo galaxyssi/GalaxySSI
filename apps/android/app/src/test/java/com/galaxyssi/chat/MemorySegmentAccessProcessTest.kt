@@ -31,6 +31,7 @@ class MemorySegmentAccessProcessTest {
             while (!ready.exists() && child.isAlive && System.nanoTime() < deadline) Thread.sleep(10)
             assertTrue("Child did not acquire lock: ${log.readText()}", ready.exists())
             val access = MemorySegmentAccess(lock)
+            assertNull(access.tryMaintenance { fail("Child owns the lock"); 1 })
             if (!exclusive) assertEquals(7, access.readWrite { 7 })
             val started = CountDownLatch(1)
             val pending = pool.submit<Int> {
@@ -43,6 +44,7 @@ class MemorySegmentAccessProcessTest {
             child.destroyForcibly()
             assertTrue(child.waitFor(5, TimeUnit.SECONDS))
             assertEquals(9, pending.get(5, TimeUnit.SECONDS).toInt())
+            assertEquals(11, access.tryMaintenance { 11 })
         } finally {
             child.destroyForcibly(); child.waitFor(5, TimeUnit.SECONDS)
             pool.shutdownNow(); assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))

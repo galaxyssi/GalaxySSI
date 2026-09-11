@@ -10,6 +10,8 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -294,13 +296,13 @@ class AgentEncryptedDatabase(
         Unit
     }
 
-    fun contains(key: String): Boolean = synchronized(database) {
+    fun contains(key: String): Boolean = database.operations.withLock {
         database.readableDatabase.rawQuery(
             "SELECT 1 FROM $TABLE_VALUES WHERE storage_key = ? LIMIT 1", arrayOf(key)
         ).use { it.moveToFirst() }
     }
 
-    fun countKeys(prefix: String): Int = synchronized(database) {
+    fun countKeys(prefix: String): Int = database.operations.withLock {
         require(prefix.isNotEmpty())
         database.readableDatabase.rawQuery(
             "SELECT COUNT(*) FROM $TABLE_VALUES WHERE storage_key >= ? AND storage_key < ?",
@@ -308,7 +310,7 @@ class AgentEncryptedDatabase(
         ).use { cursor -> check(cursor.moveToFirst()); cursor.getInt(0) }
     }
 
-    fun keys(prefix: String = ""): List<String> = synchronized(database) {
+    fun keys(prefix: String = ""): List<String> = database.operations.withLock {
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
@@ -326,9 +328,9 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun recentKeys(prefix: String, limit: Int): List<String> = synchronized(database) {
+    fun recentKeys(prefix: String, limit: Int): List<String> = database.operations.withLock {
         val boundedLimit = limit.coerceAtLeast(0)
-        if (boundedLimit == 0) return@synchronized emptyList()
+        if (boundedLimit == 0) return@withLock emptyList()
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
@@ -347,9 +349,9 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun oldestKeys(prefix: String, limit: Int): List<String> = synchronized(database) {
+    fun oldestKeys(prefix: String, limit: Int): List<String> = database.operations.withLock {
         val boundedLimit = limit.coerceAtLeast(0)
-        if (boundedLimit == 0) return@synchronized emptyList()
+        if (boundedLimit == 0) return@withLock emptyList()
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
@@ -368,7 +370,7 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun keysAfter(prefix: String, after: String, limit: Int): List<String> = synchronized(database) {
+    fun keysAfter(prefix: String, after: String, limit: Int): List<String> = database.operations.withLock {
         require(prefix.isNotEmpty() && limit in 1..256)
         require(after.isEmpty() || after.startsWith(prefix))
         database.readableDatabase.query(TABLE_VALUES, arrayOf("storage_key"),
@@ -397,7 +399,7 @@ class AgentEncryptedDatabase(
     private fun associatedData(key: String): ByteArray =
         "database:$databaseName:$key".toByteArray(Charsets.UTF_8)
 
-    private fun <T> withStorage(block: () -> T): T = synchronized(database) {
+    private fun <T> withStorage(block: () -> T): T = database.operations.withLock {
         if (database.segmented) database.segmentAccess.readWrite(block) else block()
     }
 
@@ -418,12 +420,24 @@ class AgentEncryptedDatabase(
             }
         }
 
-    internal fun maintainMemorySegments(maxSegments: Int = 2, maxRows: Int = 8): AgentMemorySegmentMaintenance.Result = synchronized(database) {
+    internal fun maintainMemorySegments(maxSegments: Int = 2, maxRows: Int = 8): AgentMemorySegmentMaintenance.Result = database.operations.withLock {
         check(database.segmented)
         database.segmentAccess.maintenance {
             AgentMemorySegmentMaintenance(database.writableDatabase, database.segments, ::associatedData)
                 .run(maxSegments, maxRows)
         }
+    }
+
+    internal fun tryMaintainMemorySegments(checkActive: () -> Unit): AgentMemorySegmentMaintenance.Result? {
+        check(database.segmented)
+        if (!database.operations.tryLock()) return null
+        try {
+            return database.segmentAccess.tryMaintenance {
+                checkActive()
+                AgentMemorySegmentMaintenance(database.writableDatabase, database.segments, ::associatedData)
+                    .run(1, 1, checkActive)
+            }
+        } finally { database.operations.unlock() }
     }
 
     private fun decodeValue(key: String, encrypted: String): String? =
@@ -466,6 +480,7 @@ class AgentEncryptedDatabase(
         context: Context,
         databaseName: String
     ) : SQLiteOpenHelper(context, "$databaseName.db", null, if (databaseName == AgentMemoryStorage.DATABASE) 2 else 1) {
+        val operations = ReentrantLock()
         val segmented = databaseName == AgentMemoryStorage.DATABASE
         val segmentAccess by lazy {
             MemorySegmentAccess(java.io.File(context.getDatabasePath("$databaseName.db").absolutePath + ".segments.lock"))

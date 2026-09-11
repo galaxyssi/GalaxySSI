@@ -18,6 +18,24 @@ internal class MemorySegmentAccess(private val path: File) {
     fun <T> readWrite(block: () -> T): T = access(false, block)
     fun <T> maintenance(block: () -> T): T = access(true, block)
 
+    /** Background work yields instead of joining the queue ahead of interactive reads. */
+    fun <T : Any> tryMaintenance(block: () -> T): T? {
+        if (!state.mutex.tryLock()) return null
+        try {
+            check(state.depth == 0) { "Cannot start background maintenance inside a storage operation" }
+            val parent = requireNotNull(path.parentFile)
+            check(parent.isDirectory || parent.mkdirs() || parent.isDirectory)
+            RandomAccessFile(path, "rw").use { file ->
+                val lock = file.channel.tryLock() ?: return null
+                lock.use {
+                    state.exclusive = true
+                    state.depth = 1
+                    try { return block() } finally { state.depth = 0; state.exclusive = false }
+                }
+            }
+        } finally { state.mutex.unlock() }
+    }
+
     private fun <T> access(exclusive: Boolean, block: () -> T): T = state.mutex.withLock {
         if (state.depth > 0) {
             check(!exclusive || state.exclusive) { "Cannot upgrade memory segment access inside a transaction" }

@@ -40,16 +40,17 @@ internal class AgentMemoryPayloadSegments(root: File) {
         finally { encrypted.fill(0) }
     }
 
-    fun seal() = files.seal()
+    fun seal(id: java.util.UUID) = files.seal(id)
     fun size(id: java.util.UUID) = files.size(id)
     fun remove(id: java.util.UUID) = files.remove(id)
 
-    fun relocate(key: String, value: String, aad: ByteArray, expectedSegment: java.util.UUID, expectedBytes: Long): Encoded {
+    fun relocate(key: String, value: String, aad: ByteArray, expectedSegment: java.util.UUID, expectedBytes: Long,
+        checkActive: () -> Unit = {}): Encoded {
         require(key.startsWith(AgentPersonalMemoryRows.PREFIX))
         val reference = reference(value, aad)
         check(reference.segment == expectedSegment) { "Memory segment catalog does not match authenticated reference" }
         check(reference.length == expectedBytes) { "Memory segment catalog length mismatch" }
-        return encodeReference(files.relocate(reference, aad), aad)
+        return encodeReference(files.relocate(reference, aad, checkActive), aad)
     }
 
     fun decode(key: String, value: String, aad: ByteArray): String {

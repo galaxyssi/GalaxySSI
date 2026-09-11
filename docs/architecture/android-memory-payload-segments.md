@@ -92,10 +92,9 @@ source revisions are unchanged because the plaintext has not changed.
 
 Zero-reference segments are reclaimed. Live records larger than the per-pass
 copy budget remain readable but are not compacted by this pass; deletion still
-allows their whole segment to be reclaimed. This is a bounded maintenance API,
-not yet an automatically scheduled reclamation service. Scheduling, starvation
-of oversized live records, real-device latency under concurrent access, and
-storage-pressure behavior remain release gates. File/index metadata is not
+allows their whole segment to be reclaimed. The automatic scheduler is described
+below. Starvation of oversized live records, real-device latency under concurrent
+access, and storage-pressure behavior remain release gates. File/index metadata is not
 tamper-proof; authentication verifies payload references and contents, not every
 SQLite page or physical filesystem operation.
 
@@ -105,7 +104,8 @@ SQLite page or physical filesystem operation.
 - Verify streaming backup/restore, mixed inline/external browse, recall and
   deletion barriers without changing their semantics.
 - Validate bounded reclamation/compaction and connect a non-disruptive background
-  scheduler. Repeated writes must not cause permanent unbounded garbage growth.
+  scheduler, including real OS scheduling and wakeup behavior. Repeated writes
+  must not cause permanent unbounded garbage growth.
 - Verify actual process interruption between durable append and SQL publication,
   restart after publication, low storage and injected corruption.
 - Measure write/read/space costs at real cardinalities, including threshold
@@ -220,7 +220,75 @@ faster. No monotonic latency claim is made.
   establish acceptable large-corpus backup/restore throughput or concurrent UI
   responsiveness; both remain work items.
 
-Automatic maintenance scheduling, oversized live-record compaction, low-storage
-faults, and new-layout latency remain unfinished. Native disk ANN and source/index
-sharding are separate outstanding goals; this candidate is not a completed
-100M-memory delivery.
+At the 1.1.70 checkpoint, automatic scheduling, oversized live-record compaction,
+low-storage faults, and new-layout latency remained unfinished. Native disk ANN
+and source/index sharding are separate outstanding goals; these candidates are
+not a completed 100M-memory delivery.
+
+## Automatic maintenance (1.1.71 candidate)
+
+Startup recovery now registers one unique, persistent WorkManager periodic job
+with `KEEP`, a 15-minute interval/initial delay and a device-idle constraint.
+Registration is not in normal recall/write calls. The job only handles local
+memory ciphertext; it does not use a model, enable global processing, send a
+notification, require a network, or publish any memory to another device.
+This uses the existing WorkManager dependency. Its periodic interval is not an
+exact execution promise: Android may delay idle work. See the official
+[periodic work and constraints documentation](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work).
+
+The production worker runs on the IO dispatcher. An absent segment catalog exits
+without constructing a memory database. Each step tries both the process operation
+lock and cross-process file lock without waiting; contention returns a deferred
+result. The same lock order and transaction scope apply to normal operations.
+An idle pass checks foreground/cancellation before work, between records and at
+64KiB copy boundaries. Returning to the foreground or expiring the five-second
+scheduling quantum aborts an unfinished reference transaction, leaves its old
+reference valid, and releases locks. Its unpublished tail is cataloged for later
+reclamation. A single OS/Keystore/fsync call is not interruptible by this check;
+this is cooperative yielding, not a proven 200ms worst-case latency guarantee.
+
+Each step moves at most one record. Successful partial compaction keeps the
+durable catalog cursor at that segment until its remaining eligible rows have
+been examined. The active destination segment is reused across steps instead of
+creating one tiny destination per row. The five-second quantum limits one worker
+invocation, not the memory count or the total work needed to finish. WorkManager
+retains deferred work for retry; the catalog cursor survives process restart.
+Corruption remains an explicit error and retry, not a successful empty sweep.
+Fair error isolation across damaged segments and resumable copies of records
+larger than 1MiB still require further work.
+
+Validation:
+
+- **42 host tests passed** in 2.493s, including non-blocking cross-process access,
+  cancellation between encrypted frames, resumption, and a 10,001-step sweep
+  without an action-count ceiling. Logs:
+  `build/memory-segments-v1171-host-compile.log` and
+  `build/memory-segments-v1171-host-tests.log`.
+- Android build succeeded in **23m57s**, including APK and instrumentation APK.
+  Full JVM regression: **3,669 passed, five existing skips, zero failures/errors**
+  out of 3,674 discovered tests. The focused 42 cases above overlap this suite.
+  Log: `build/memory-segments-v1171-build.log`.
+- Installed **1.1.71 (957)** only on **SM-T575 / R52R90282TY**, with data-preserving
+  replacement and version readback. APK SHA-256:
+  `6c48c6d1f2a4a0a4fb89c4b054bcefe455e1b34d416e6ad09bf82feae79800e6`.
+  No S26U operation, uninstall, data reset, model download or model-setting
+  change was performed.
+- **44 real-device tests passed** in 139.856s: 18 segment/maintenance regressions,
+  five background-work tests, 14 browse correctness tests and seven streaming
+  backup correctness tests. Coverage includes real SQLite lock contention,
+  ciphertext cutover rollback, cancellation during a multi-frame copy, continued
+  compaction using the same destination, an absent catalog without database
+  creation, and durable unique WorkManager registration. Raw output:
+  `build/memory-segments-v1171-device.log`.
+- This run does not repeat the 10,001-row bulk archive throughput or the inline
+  latency matrix. The 1.1.70 measurements remain historical evidence, not
+  performance certification of 1.1.71. Registration and the production sweep
+  function were exercised; natural OS idle delivery, screen-wakeup latency and
+  real UI frame timing still need acceptance.
+- Both real process-death recovery checks passed on this build: a kill before
+  source commit retained the old value, and a kill after commit retained the new
+  value. Fresh processes verified reclamation and recovery, then cleaned only
+  their isolated fixture. The two intentional `Process crashed` results are not
+  passing tests; preparation, two recovery verifications and cleanup succeeded.
+  Log: `build/memory-segment-recovery-v1171.log`; per-phase evidence:
+  `build/memory-segment-recovery-v1171/segments-recovery-b0838327a5154e0782f5974c63cb7f46/`.

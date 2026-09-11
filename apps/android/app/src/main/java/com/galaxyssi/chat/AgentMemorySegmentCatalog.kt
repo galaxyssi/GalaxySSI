@@ -23,6 +23,10 @@ internal class AgentMemorySegmentCatalog(private val path: File) {
 
     data class Entry(val id: Long, val segment: UUID)
 
+    fun hasAfter(id: Long): Boolean = database { db ->
+        db.rawQuery("SELECT 1 FROM segments WHERE id>? LIMIT 1", arrayOf(id.toString())).use { it.moveToFirst() }
+    }
+
     fun next(limit: Int): List<Entry> = database { db ->
         require(limit in 1..32)
         val after = db.rawQuery("SELECT cursor FROM progress WHERE id=1", null).use { if (it.moveToFirst()) it.getLong(0) else 0L }
@@ -33,11 +37,12 @@ internal class AgentMemorySegmentCatalog(private val path: File) {
         page(after).ifEmpty { page(0) }
     }
 
-    fun advance(entry: Entry, removed: Boolean) = database { db ->
+    fun advance(entry: Entry, removed: Boolean, revisit: Boolean = false) = database { db ->
+        check(!revisit || !removed)
         db.beginTransaction()
         try {
             if (removed) db.execSQL("DELETE FROM segments WHERE id=? AND segment=?", arrayOf(entry.id, entry.segment.toString()))
-            db.execSQL("INSERT OR REPLACE INTO progress(id,cursor) VALUES(1,?)", arrayOf(entry.id))
+            db.execSQL("INSERT OR REPLACE INTO progress(id,cursor) VALUES(1,?)", arrayOf(if (revisit) entry.id - 1 else entry.id))
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }

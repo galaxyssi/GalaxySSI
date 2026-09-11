@@ -91,6 +91,24 @@ class MemorySegmentFileTest {
         assertEquals(2, s.read(next, scope) { it.read() })
     }
 
+    @Test fun cancellationBetweenFramesKeepsThePublishedSourceAndAbandonsTheTail() {
+        val root = temporary.newFolder()
+        val s = store(root)
+        val data = bytes(200_017)
+        val source = s.append(scope) { it.write(data) }
+        var checks = 0
+        val cancellation = java.util.concurrent.CancellationException("foreground")
+        assertSame(cancellation, runCatching {
+            s.relocate(source, scope) { if (++checks == 2) throw cancellation }
+        }.exceptionOrNull())
+        assertEquals(2, checks)
+        assertArrayEquals(data, s.read(source, scope) { it.readBytes() })
+        val orphanIds = root.walkTopDown().filter { it.extension == "seg" }.map { it.nameWithoutExtension }.toSet()
+        val next = s.append(scope) { it.write(7) }
+        assertFalse(next.segment.toString() in orphanIds)
+        assertEquals(7, s.read(next, scope) { it.read() })
+    }
+
     @Test fun failedTailNeverReplacesPreviouslyCommittedBytes() {
         val root = temporary.newFolder()
         val s = store(root)

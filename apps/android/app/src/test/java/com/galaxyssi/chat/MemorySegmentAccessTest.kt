@@ -44,4 +44,24 @@ class MemorySegmentAccessTest {
             assertTrue(entered.await(5, TimeUnit.SECONDS))
         } finally { pool.shutdownNow(); assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS)) }
     }
+
+    @Test fun backgroundMaintenanceDoesNotWaitForAnotherThread() {
+        val path = File(temporary.root, "access.lock")
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            MemorySegmentAccess(path).readWrite {
+                val pending = pool.submit<Int?> { MemorySegmentAccess(path).tryMaintenance { fail("must not enter"); 1 } }
+                assertNull(pending.get(1, TimeUnit.SECONDS))
+            }
+            assertEquals(7, MemorySegmentAccess(path).tryMaintenance { 7 })
+        } finally { pool.shutdownNow(); assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS)) }
+    }
+
+    @Test fun nonBlockingMaintenanceRejectsNestingAndReleasesOnFailure() {
+        val access = MemorySegmentAccess(File(temporary.root, "access.lock"))
+        assertTrue(runCatching { access.readWrite { access.tryMaintenance { 1 } } }.isFailure)
+        assertTrue(runCatching { access.tryMaintenance { error("copy failed") } }.isFailure)
+        assertEquals(7, access.readWrite { 7 })
+        assertEquals(9, access.tryMaintenance { 9 })
+    }
 }

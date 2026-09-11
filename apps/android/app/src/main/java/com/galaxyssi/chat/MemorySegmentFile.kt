@@ -100,12 +100,14 @@ internal class MemorySegmentFile(
     }
 
     @Synchronized fun seal() { active = null }
+    @Synchronized fun seal(id: UUID) { if (active == id) active = null }
 
-    @Synchronized fun relocate(reference: Reference, aad: ByteArray): Reference = append(aad) { output ->
+    @Synchronized fun relocate(reference: Reference, aad: ByteArray, checkActive: () -> Unit = {}): Reference = append(aad) { output ->
         read(reference, aad) { input ->
             val buffer = ByteArray(BLOCK_BYTES)
             try {
                 while (true) {
+                    checkActive()
                     val n = input.read(buffer)
                     if (n < 0) break
                     output.write(buffer, 0, n)
