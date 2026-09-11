@@ -13,7 +13,8 @@ internal class MemorySegmentFile(
     private val encrypt: (ByteArray, ByteArray) -> ByteArray,
     private val decrypt: (ByteArray, ByteArray) -> ByteArray,
     private val syncDirectory: (File) -> Unit,
-    private val targetBytes: Long = 64L * 1024 * 1024
+    private val targetBytes: Long = 64L * 1024 * 1024,
+    private val register: (UUID) -> Unit = {}
 ) {
     private var active: UUID? = null
 
@@ -84,6 +85,7 @@ internal class MemorySegmentFile(
         }
         syncDirectory(requireNotNull(root.parentFile))
         val id = UUID.randomUUID()
+        register(id)
         val path = file(id)
         val directory = requireNotNull(path.parentFile)
         if (!directory.isDirectory) {
@@ -95,6 +97,33 @@ internal class MemorySegmentFile(
         syncDirectory(directory)
         active = id
         return id
+    }
+
+    @Synchronized fun seal() { active = null }
+
+    @Synchronized fun relocate(reference: Reference, aad: ByteArray): Reference = append(aad) { output ->
+        read(reference, aad) { input ->
+            val buffer = ByteArray(BLOCK_BYTES)
+            try {
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    output.write(buffer, 0, n)
+                }
+            } finally { buffer.fill(0) }
+        }
+    }
+
+    @Synchronized fun size(id: UUID): Long = file(id).length()
+
+    /** Caller holds exclusive maintenance access and has checked committed references. */
+    @Synchronized fun remove(id: UUID): Long {
+        val path = file(id)
+        val size = path.length()
+        check(!path.exists() || path.delete()) { "Cannot reclaim memory segment" }
+        path.parentFile?.takeIf { it.isDirectory }?.let(syncDirectory)
+        if (active == id) active = null
+        return size
     }
 
     private fun file(id: UUID) = File(File(root, id.toString().take(2)), "$id.seg")

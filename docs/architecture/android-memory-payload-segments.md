@@ -46,10 +46,13 @@ bad lengths fail explicitly, not as an empty/default memory.
 
 The commit order is:
 
-1. Create the new segment/directory if needed and sync its directory entries.
+1. Acquire shared cross-process segment access, before opening a source SQLite
+   transaction. Register a new segment UUID durably in the separate SQLite
+   segment catalog before creating its file; sync catalog/directory entries.
 2. Append bounded encrypted frames and sync the file descriptor.
 3. Encrypt the final reference.
-4. Commit the reference and derived indexes in the existing SQLite transaction.
+4. Commit the reference, segment membership/byte count and derived indexes in the
+   existing SQLite transaction, then release shared segment access.
 
 SQL rollback leaves the earlier reference/indexes unchanged. A crash before
 reference publication can leave unreachable ciphertext, not an acknowledged
@@ -64,14 +67,45 @@ patterns remain observable. Logical deletion is not physical flash erasure or
 per-record cryptographic erasure. Shared Keystore key handles and Java charset/
 cipher internals are not claimed to be completely zeroizable.
 
+## Reclamation and incremental compaction
+
+Schema version 2 adds segment membership and length columns with a covering
+index. Existing inline ciphertext remains unchanged. A separate adjacent SQLite
+catalog stores random segment UUIDs and a durable maintenance cursor, not memory
+content or an in-memory manifest. Registration survives source-transaction
+rollback; a process killed before publication therefore leaves a discoverable
+orphan. The catalog also reveals segment existence and creation order.
+
+`maintainMemorySegments()` takes exclusive cross-process access. Ordinary memory
+operations hold shared access from before SQLite lookup/transaction through
+payload consumption/publication. Nested wrappers reuse the same process lock;
+upgrading a shared transaction to maintenance is rejected. Locks are released by
+the OS on process death. Other database namespaces do not acquire these locks.
+
+A pass visits at most the requested catalog page (default 2, maximum 32), and
+moves at most the requested number of live records (default 8, maximum 32) and
+1MiB of stored frames. A segment with at least half dead space is eligible for
+incremental compaction. Re-encryption streams through 64KiB buffers without
+materializing the source JSON/String. The source reference cutover commits before
+old files are unlinked and their directory synced. Derived content indexes and
+source revisions are unchanged because the plaintext has not changed.
+
+Zero-reference segments are reclaimed. Live records larger than the per-pass
+copy budget remain readable but are not compacted by this pass; deletion still
+allows their whole segment to be reclaimed. This is a bounded maintenance API,
+not yet an automatically scheduled reclamation service. Scheduling, starvation
+of oversized live records, real-device latency under concurrent access, and
+storage-pressure behavior remain release gates. File/index metadata is not
+tamper-proof; authentication verifies payload references and contents, not every
+SQLite page or physical filesystem operation.
+
 ## Required before release
 
 - Run JVM framing/authentication tests and real Keystore/SQLite device tests.
 - Verify streaming backup/restore, mixed inline/external browse, recall and
   deletion barriers without changing their semantics.
-- Complete bounded reclamation/compaction of obsolete and orphan payloads.
-  Current append-only files retain old revisions after row replacement/deletion;
-  repeated writes must not cause permanent unbounded garbage growth.
+- Validate bounded reclamation/compaction and connect a non-disruptive background
+  scheduler. Repeated writes must not cause permanent unbounded garbage growth.
 - Verify actual process interruption between durable append and SQL publication,
   restart after publication, low storage and injected corruption.
 - Measure write/read/space costs at real cardinalities, including threshold
@@ -105,6 +139,88 @@ by this implementation.
   `62adeff3d1c3939daed2f22ae4acf2bc132fac3a4acf452999a5f04ba603860d`.
 - Device tests for the real storage entry points are added but not yet executed.
   SM-T575 was read-only checked at **1.1.68 (954)**; no new APK has been installed
-  during this stage. Source version **1.1.69 (955)** is a development candidate.
+  during that build. That evidence applies to **1.1.69 (955)**, not the later
+  maintenance implementation. Current source candidate is **1.1.70 (956)** after
+  merging main's separate 1.1.69 update; its verification is still in progress.
 - No PR has been published for this incomplete segment stage. Reclamation,
   recovery and real performance remain release gates, not deferred acceptance.
+
+## Maintenance validation (1.1.70 candidate)
+
+- Main at `bae066970` was merged into the branch (merge `ce3f8be43`),
+  preserving the empty-window history fix and previously accepted recall report.
+- Independent host tests: **31 passed** in 4.743s, including real AES-GCM frames,
+  streaming relocation, nested locks, and two real child-process terminations
+  that release publication/maintenance locks. This overlaps the Gradle suite;
+  it is not an additional 31 unique test cases. The first standalone compiler
+  invocation omitted its cached coroutine dependency; the corrected invocation
+  and raw results are in `build/memory-segments-v1170-host-compile-retry.log`
+  and `build/memory-segments-v1170-host-tests.log`.
+- Final frozen-source Android build succeeded in **10m18s**. Full JVM results:
+  **3,658 passed, 5 existing skips, zero failures/errors**, 3,663 discovered.
+  Log: `build/memory-segments-v1170-final-build.log`. The preceding 24m30s build
+  is a development build, not the installed artifact's source freeze.
+- Installed only on **SM-T575 / R52R90282TY**, preserving application data and
+  pairing. Version **1.1.70 (956)**; APK SHA-256:
+  `22481eda1fe0234a8f1af0b1b3639dd33638b3a4f33b503422a7ff6607ca751c`.
+  No S26U operation, app uninstall, data reset, or model download was performed.
+- **18 real-device tests passed** in 20.244s, including original ciphertext
+  preservation through v1-to-v2 schema migration, unrelated v1 namespaces,
+  mixed-format normal read/browse/recall, backup/deletion, orphan reclamation,
+  bounded compaction, SQL abort and corruption. Raw output:
+  `build/memory-segments-v1170-device.log`.
+- Two additional **intentional process deaths on the device** were observed:
+  immediately before source commit and immediately after commit. Fresh
+  instrumentation processes verified rollback/orphan reclamation and committed
+  value recovery. Preparation, two verification phases and cleanup passed;
+  the intentional crashes are evidence, not passing instrumentation tests.
+  Runner: `tools/dev/test-memory-segment-recovery.ps1`. Raw per-phase logs:
+  `build/memory-segment-recovery-v1170/segments-recovery-7f0f0fc7345e46bbb4107eb983e6e8e9/`.
+  This tests process termination, not battery removal or hardware power loss.
+- All **25 existing real-device regressions passed** in 2,057.113s, including
+  15 browse tests, eight streaming-backup tests, indexed recall/new-write timing,
+  and selected-access timing. Together with the 18 segment tests above, this is
+  43 passing device test methods, separate from the intentional crash phases.
+  Raw output: `build/memory-segments-v1170-existing-device.log`.
+- The new inline recall/write/access run recorded **800/800 samples <=200ms**;
+  maximum 193.317385ms. Each operation below has 100 observations at each real
+  cardinality. Raw samples and independently checkable summaries are retained in
+  `build/memory-segments-v1170-latency.log`. This is a new run, not a replacement
+  for the earlier user-accepted 798/800 report with its 201.6/202.4ms outliers.
+
+| Actual rows | Operation | P50 ms | P95 ms | P99 ms | Maximum ms |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1,201 | Warm indexed recall | 73.09 | 81.98 | 87.43 | 88.73 |
+| 1,201 | New memory write | 126.09 | 142.45 | 151.17 | 151.85 |
+| 1,201 | Single access update | 19.71 | 36.15 | 51.99 | 62.39 |
+| 1,201 | Eight access updates | 92.46 | 144.07 | 159.64 | 175.43 |
+| 10,001 | Warm indexed recall | 51.22 | 62.53 | 71.61 | 83.50 |
+| 10,001 | New memory write | 90.48 | 112.04 | 121.98 | 132.74 |
+| 10,001 | Single access update | 33.55 | 49.37 | 70.71 | 79.67 |
+| 10,001 | Eight access updates | 145.65 | 174.14 | 192.21 | 193.32 |
+
+These measurements do not certify external-layout latency, threshold crossing,
+concurrent maintenance, or 100M-record capacity. The sequential device run is not
+a controlled comparison of cardinalities; smaller datasets were not universally
+faster. No monotonic latency claim is made.
+
+### Remaining measured performance gaps
+
+- Browse timing is a separate sample set, not part of the 800 observations
+  above. At 10,001 rows, a 25-row page recorded **P95 219.61ms, P99 248.49ms,
+  maximum 263.39ms; 28/100 exceeded 200ms**. Its functional test passing does
+  not waive that latency gate. Eight-row pages and recent-eight reads stayed
+  below 200ms. First index construction at that size took 51,543.24ms.
+- The real 10,001-row streaming archive round trip preserved contents, counts,
+  and order. Archive size was **4,196,934 bytes**; export took **71,200ms**.
+  Clear plus restore took **447,109ms**, including approximately 100,246ms to
+  clear the existing fixture and 346,863ms for restore. Raw phase evidence:
+  `build/memory-segments-v1170-backup-progress.log`. These are bulk-operation
+  costs, not individual read/write latency. Streaming correctness does not
+  establish acceptable large-corpus backup/restore throughput or concurrent UI
+  responsiveness; both remain work items.
+
+Automatic maintenance scheduling, oversized live-record compaction, low-storage
+faults, and new-layout latency remain unfinished. Native disk ANN and source/index
+sharding are separate outstanding goals; this candidate is not a completed
+100M-memory delivery.

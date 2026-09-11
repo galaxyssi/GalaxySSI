@@ -57,6 +57,40 @@ class MemorySegmentFileTest {
         assertFalse(new.segment in references.map { it.segment })
     }
 
+    @Test fun registrationFailureNeverPublishesAnUnregisteredFile() {
+        val root = temporary.newFolder()
+        val s = MemorySegmentFile(root, ::encrypt, ::decrypt, {}, register = { error("catalog unavailable") })
+        fails { s.append(scope) { it.write(bytes(200)) } }
+        assertFalse(root.walkTopDown().any { it.extension == "seg" })
+    }
+
+    @Test fun compactionReauthenticatesLocationsAndKeepsTheOriginalUntilReclaimed() {
+        val root = temporary.newFolder()
+        val s = store(root)
+        val data = bytes(200_017)
+        val before = s.append(scope) { it.write(data) }
+        s.seal()
+        val after = s.relocate(before, scope)
+        assertNotEquals(before.segment, after.segment)
+        assertArrayEquals(data, s.read(before, scope) { it.readBytes() })
+        assertArrayEquals(data, s.read(after, scope) { it.readBytes() })
+        assertTrue(s.remove(before.segment) > 0)
+        assertEquals(0L, s.remove(before.segment))
+        fails { s.read(before, scope) { it.readBytes() } }
+        assertArrayEquals(data, store(root).read(after, scope) { it.readBytes() })
+        assertEquals(65_536, largestBlock)
+    }
+
+    @Test fun reclaimedActiveSegmentIsNeverRecreatedUnderItsOldIdentity() {
+        val root = temporary.newFolder()
+        val s = store(root)
+        val first = s.append(scope) { it.write(1) }
+        s.remove(first.segment)
+        val next = s.append(scope) { it.write(2) }
+        assertNotEquals(first.segment, next.segment)
+        assertEquals(2, s.read(next, scope) { it.read() })
+    }
+
     @Test fun failedTailNeverReplacesPreviouslyCommittedBytes() {
         val root = temporary.newFolder()
         val s = store(root)
