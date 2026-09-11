@@ -168,6 +168,31 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
         before to after
     }
 
+    internal fun refreshAccess(ids: Set<String>, nowMillis: Long): Int = synchronized(AgentMemoryStorage.lock) {
+        if (ids.isEmpty()) return@synchronized 0
+        require(ids.all(String::isNotBlank)) { "Recalled memory identity is empty" }
+        val meta = metadata()
+        val writes = linkedMapOf<String, String>()
+        ids.forEach { id ->
+            val row = readRow(id) ?: return@forEach
+            val current = AgentMemoryItemCodec.decode(row.getJSONObject("item")) ?: error("Invalid recalled memory")
+            if (current.status != AgentMemoryStatus.ACTIVE || current.privateMemory || current.isExpired(nowMillis)) return@forEach
+            val refreshed = AgentMemoryAccessTracker.refresh(listOf(current), setOf(id), nowMillis)
+            if (refreshed.changed) {
+                row.put("item", AgentMemoryItemCodec.encode(refreshed.items.single()))
+                writes[key(id)] = row.toString()
+            }
+        }
+        val changed = writes.size
+        if (changed > 0) {
+            meta.put("revision", UUID.randomUUID().toString())
+            writes[META] = meta.toString()
+            // Access timestamps do not alter lookup membership or browse order.
+            database.mutateStrings(writes, onMutation = browseIndex.observer())
+        }
+        changed
+    }
+
     private fun readRow(id: String): JSONObject? {
         val rowKey = key(id)
         if (!database.contains(rowKey)) return null

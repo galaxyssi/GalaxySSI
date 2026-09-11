@@ -317,9 +317,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
             .take(MAX_RECALL_ITEMS)
         if (recalled.isNotEmpty()) {
             val recalledIds = recalled.mapTo(hashSetOf()) { it.id }
-            AgentMemoryAccessTracker.refresh(items, recalledIds, now).takeIf { it.changed }?.let { refresh ->
-                saveItems(refresh.items)
-            }
+            rows.refreshAccess(recalledIds, now)
         }
         return recalled
     }

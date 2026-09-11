@@ -266,7 +266,7 @@ class AgentMemoryIncrementalWriteDeviceTest {
             assertEquals(size + 100, f.store.count())
             fun report(values: List<Double>): String {
                 val sorted = values.sorted()
-                return "p50=${sorted[49]} p95=${sorted[94]} p99=${sorted[98]} max=${sorted.last()} misses100=${values.count { it >= 100 }}"
+                return "p50=${sorted[49]} p95=${sorted[94]} p99=${sorted[98]} max=${sorted.last()} misses100=${values.count { it >= 100 }} misses200=${values.count { it > 200.0 }} budgetMs=200"
             }
             Log.i("GalaxySSIMemoryWriteTest", "rowsBefore=$size samples=100 newMs=${report(fresh)} duplicateMs=${report(duplicate)}")
         }
