@@ -17,4 +17,6 @@
     <string name="knowledge_model_counts">%1$d 个向量分块 · %2$d 篇待索引</string>
     <string name="knowledge_model_discovering_counts">%1$d 个向量分块 · %2$d 篇已排队 · 正在继续登记来源</string>
     <string name="knowledge_model_error">错误：%1$s</string>
+    <string name="knowledge_model_partial_counts">已统计 %1$d 个向量分块 · %2$d 篇排队文档 · 统计中</string>
+    <string name="knowledge_model_counts_error">记忆统计暂不可用：%1$s</string>
 </resources>
