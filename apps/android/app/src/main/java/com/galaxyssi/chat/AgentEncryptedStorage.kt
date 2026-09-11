@@ -176,6 +176,7 @@ class AgentEncryptedDatabase(
     private val databaseName: String
 ) {
     private val database = sharedDatabase(context.applicationContext, databaseName)
+    internal val storageIdentity = context.applicationContext.getDatabasePath("$databaseName.db").absolutePath
 
     fun readString(key: String, defaultValue: String): String = synchronized(database) {
         val encrypted = readEncryptedValue(database.readableDatabase, key) ?: return@synchronized defaultValue

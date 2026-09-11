@@ -23,6 +23,13 @@ internal object AgentMemoryIndexKey {
 
     fun stamp(): String = token("personal-memory-lookup-key-check-v1")
 
+    internal fun deriveRecallKey(generation: String): ByteArray {
+        require(runCatching { java.util.UUID.fromString(generation).toString() == generation }.getOrDefault(false))
+        val input = "personal-memory-recall-hmac-v1:$generation".toByteArray(Charsets.UTF_8)
+        return try { Mac.getInstance("HmacSHA256").run { init(key()); doFinal(input) } }
+        finally { input.fill(0) }
+    }
+
     @Synchronized private fun key(): SecretKey {
         cached?.let { return it }
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
