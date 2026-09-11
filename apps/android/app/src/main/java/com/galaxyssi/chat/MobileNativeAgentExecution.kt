@@ -767,13 +767,13 @@ internal fun MobileNativeAgent.executePlannedAction(
         planRevision = reviewedPlan.revision
     )
     currentPlan = currentPlan?.addCheckpoint(checkpoint)
-    recordAudit(
+    appendAudits(AgentAuditRecord(
         AgentAuditEvent.CHECKPOINT_SAVED,
         "checkpoint=${checkpoint.id}; action=${hardenedAction.id}; rollback=${checkpoint.rollbackAction != null}"
-    )
+    ))
     Log.i(
         "GalaxySSILatency",
-        "agent_execute stage=checkpoint_recorded action=${hardenedAction.id.take(24)} " +
+        "agent_execute stage=checkpoint_staged action=${hardenedAction.id.take(24)} " +
             "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
     )
     val materializedAction = if (trustedHandoffReplay) hardenedAction else currentPlan?.materializeToolInput(
@@ -790,23 +790,18 @@ internal fun MobileNativeAgent.executePlannedAction(
     ).enforceSupervisedPlanningBoundary()
     val displayCommand = executionAction.phoneDevelopmentDisplayCommand()
     if (executionAction.parameters["prompt"] != hardenedAction.parameters["prompt"]) {
-        recordAudit(
+        appendAudits(AgentAuditRecord(
             AgentAuditEvent.TOOL_OUTPUT_HANDOFF,
             "action=${hardenedAction.id}; sources=${hardenedAction.outputSourceIds().size}; target=${hardenedAction.target}"
-        )
+        ))
     }
     val toolStartedAt = System.currentTimeMillis()
-    recordAudit(
+    appendAudits(AgentAuditRecord(
         AgentAuditEvent.TOOL_STARTED,
         "action=${hardenedAction.id}; kind=${hardenedAction.kind}; target=${hardenedAction.target.take(160)}" +
             (if (executionAction.isSupervisedProjectConnector()) "; planning_only=true" else "") +
             displayCommand.takeIf(String::isNotBlank)?.let { "; command=${it.take(200)}" }.orEmpty()
-    )
-    Log.i(
-        "GalaxySSILatency",
-        "agent_execute stage=dispatch_start action=${hardenedAction.id.take(24)} " +
-            "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
-    )
+    ))
     // Connector recovery needs the dispatched input, not a stale pre-routing proposal.
     val journalAction = if (executionAction.kind == AgentActionKind.CALL_CONNECTOR) {
         currentPlan = currentPlan?.let { active -> active.copy(actions = active.actions.map {
@@ -815,7 +810,10 @@ internal fun MobileNativeAgent.executePlannedAction(
         executionAction
     } else hardenedAction
     val nodeKey = requireNotNull(AgentPlanNodeKey.from(sessionId, requireNotNull(currentPlan), journalAction))
+    // Persist the checkpoint, audits and final dispatched input together before any external operation.
     persistSession()
+    Log.i("GalaxySSILatency", "agent_execute stage=dispatch_start action=${hardenedAction.id.take(24)} " +
+        "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}")
     lastActionResult = executeJournaledPlanAction(nodeKey) {
         executeAction(executionAction, currentScreen, userConfirmed)
     }

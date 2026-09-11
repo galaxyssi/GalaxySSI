@@ -1584,6 +1584,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
         handleAgentSkillCommand(goal, conversationId, turnId)
     ) return
     agentRoutingExecutor.execute {
+        Log.i("GalaxySSILatency", "agent_route stage=worker_started turn=${turnId.take(8)} " +
+            "queue_ms=${SystemClock.elapsedRealtime() - routingStartedAt}")
         if (initialAgentHydrationPending) {
             val hydrationWaitStartedAt = SystemClock.elapsedRealtime()
             initialAgentHydrationReady.await()
@@ -1593,6 +1595,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     "wait_ms=${SystemClock.elapsedRealtime() - hydrationWaitStartedAt}"
             )
         }
+        val contextReadStartedAt = SystemClock.elapsedRealtime()
         val baseConversationContext = agentContextBeforeTurn.remove(turnId)
             ?: agentTranscriptStore.context(
                 conversationId = conversationId,
@@ -1601,6 +1604,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         Log.i(
             "GalaxySSILatency",
             "agent_route stage=context_loaded turn=${turnId.take(8)} " +
+                "read_ms=${SystemClock.elapsedRealtime() - contextReadStartedAt} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
         val correctionContext = voiceCorrectionJournal.contextBlock(conversationId)

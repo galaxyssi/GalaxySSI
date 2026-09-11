@@ -62,6 +62,13 @@ object AppStore {
         normalizeVerifiedPhoneRelationshipRoutes(appContext)
     }
 
+    internal fun localDeviceRouteId(context: Context): String {
+        ensureInitialized(context)
+        val routeId = readObject(context, KEY_PROFILE).optString("device_id")
+        if (GalaxySSILinkProtocol.validRouteId(routeId)) return routeId
+        return profile(context).getString("device_id")
+    }
+
     fun profile(context: Context): JSONObject {
         ensureInitialized(context)
         val current = readObject(context, KEY_PROFILE)

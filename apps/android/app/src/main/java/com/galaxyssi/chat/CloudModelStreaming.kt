@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.util.Log
 import com.galaxyssi.chat.voice.modelstream.AssembledToolCall
 import com.galaxyssi.chat.voice.modelstream.CloudModelStreamClient
 import com.galaxyssi.chat.voice.modelstream.ModelStreamCancelReason
@@ -15,6 +16,7 @@ import com.galaxyssi.chat.voice.modelstream.OkHttpCloudModelStreamClient
 import com.galaxyssi.chat.voice.modelstream.ToolCallDeltaAssembler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
@@ -110,6 +112,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         if (!allowExternalTools) disableExternalTools(prepared)
         val globalSequence = AtomicLong(0L)
         val toolProgress = CloudWebToolLoopProgress()
+        var webBudget: AgentWebExecutionBudget? = null
         val evidenceResults = mutableListOf<Pair<String, String>>()
         var emittedText = false
         var connected = false
@@ -117,62 +120,84 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         try {
             var round = 0L
             while (true) {
+                if (webBudget?.expired == true && toolProgress.requestFinalization()) prepareFinalRound(prepared)
                 val roundNumber = round++
                 val bufferForCitationVerification = evidenceResults.isNotEmpty()
                 val roundId = "$requestId:r$roundNumber"
+                val roundStarted = System.nanoTime()
+                var firstActivity = false
                 val assembler = ToolCallDeltaAssembler()
                 val inlineProtocolGuard = InlineToolProtocolStreamGuard()
                 var roundFailure: ModelStreamEvent.Failed? = null
                 var roundCompleted = false
-                transport.stream(
-                    prepared.toRequest(
-                        roundId = roundId,
-                        connectTimeoutMillis = connectTimeoutMillis,
-                        readTimeoutMillis = readTimeoutMillis
-                    )
-                ).collect { event ->
-                    when (event) {
-                        is ModelStreamEvent.Connected -> if (!connected) {
-                            connected = true
-                            emit(
-                                ModelStreamEvent.Connected(
-                                    requestId,
-                                    event.httpStatus,
-                                    event.connectedAtElapsedMs
-                                )
-                            )
+                val roundBudgetMillis = if (toolProgress.finalizationRequested) 30_000L
+                    else webBudget?.remainingMillis?.coerceAtLeast(1L) ?: Long.MAX_VALUE
+                val finishedWithinBudget = withTimeoutOrNull(roundBudgetMillis) {
+                    val roundRequest = prepared.toRequest(
+                            roundId = roundId,
+                            connectTimeoutMillis = connectTimeoutMillis,
+                            readTimeoutMillis = if (toolProgress.finalizationRequested) minOf(readTimeoutMillis, 30_000L)
+                                else readTimeoutMillis
+                        )
+                    Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=request " +
+                        "prepare_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} input_chars=${roundRequest.bodyJson.length}")
+                    transport.stream(roundRequest).collect { event ->
+                        if (!firstActivity && (event is ModelStreamEvent.TextDelta || event is ModelStreamEvent.ToolCallDelta)) {
+                            firstActivity = true
+                            Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=first_activity " +
+                                "elapsed_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} kind=${if (event is ModelStreamEvent.ToolCallDelta) "tool" else "text"}")
                         }
-                        is ModelStreamEvent.TextDelta -> {
-                            val visibleText = inlineProtocolGuard.append(event.text)
-                            if (visibleText.isNotEmpty() && !bufferForCitationVerification) {
-                                emittedText = true
+                        when (event) {
+                            is ModelStreamEvent.Connected -> if (!connected) {
+                                connected = true
                                 emit(
-                                    ModelStreamEvent.TextDelta(
+                                    ModelStreamEvent.Connected(
                                         requestId,
-                                        globalSequence.incrementAndGet(),
-                                        visibleText,
-                                        event.receivedAtElapsedMs
+                                        event.httpStatus,
+                                        event.connectedAtElapsedMs
                                     )
                                 )
                             }
-                        }
-                        is ModelStreamEvent.ToolCallDelta -> {
-                            assembler.accept(event.payload)
-                            emit(
-                                ModelStreamEvent.ToolCallDelta(
-                                    requestId,
-                                    globalSequence.incrementAndGet(),
-                                    event.payload
+                            is ModelStreamEvent.TextDelta -> {
+                                val visibleText = inlineProtocolGuard.append(event.text)
+                                if (visibleText.isNotEmpty() && !bufferForCitationVerification) {
+                                    emittedText = true
+                                    emit(
+                                        ModelStreamEvent.TextDelta(
+                                            requestId,
+                                            globalSequence.incrementAndGet(),
+                                            visibleText,
+                                            event.receivedAtElapsedMs
+                                        )
+                                    )
+                                }
+                            }
+                            is ModelStreamEvent.ToolCallDelta -> {
+                                assembler.accept(event.payload)
+                                emit(
+                                    ModelStreamEvent.ToolCallDelta(
+                                        requestId,
+                                        globalSequence.incrementAndGet(),
+                                        event.payload
+                                    )
                                 )
-                            )
+                            }
+                            is ModelStreamEvent.Usage -> emit(ModelStreamEvent.Usage(requestId, event.usage))
+                            is ModelStreamEvent.Completed -> {
+                                roundCompleted = true
+                                lastFinishReason = event.finishReason
+                            }
+                            is ModelStreamEvent.Failed -> roundFailure = ModelStreamEvent.Failed(requestId, event.error)
                         }
-                        is ModelStreamEvent.Usage -> emit(ModelStreamEvent.Usage(requestId, event.usage))
-                        is ModelStreamEvent.Completed -> {
-                            roundCompleted = true
-                            lastFinishReason = event.finishReason
-                        }
-                        is ModelStreamEvent.Failed -> roundFailure = ModelStreamEvent.Failed(requestId, event.error)
                     }
+                    true
+                } ?: false
+                Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=finished " +
+                    "elapsed_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} completed=$roundCompleted")
+                if (!finishedWithinBudget) {
+                    emitEvidenceFallbackAndComplete(context, disclosure, requestId, globalSequence,
+                        evidenceResults, "web_deadline")
+                    return@flow
                 }
                 val failure = roundFailure
                 if (failure != null) {
@@ -271,7 +296,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     }
                     if (bufferForCitationVerification) {
                         val candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+                        val validationStarted = System.nanoTime()
                         val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
+                        Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=citation_validation " +
+                            "elapsed_ms=${(System.nanoTime() - validationStarted) / 1_000_000L} repair=${citationRepair != null}")
                         if (candidate.isNotBlank() && citationRepair != null &&
                             toolProgress.requestRepair("stream_citations")
                         ) {
@@ -345,24 +373,32 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     }
                     continue
                 }
+                val budget = webBudget ?: AgentWebExecutionBudget(
+                    if (preparedCallsByKey.values.any { it.arguments.optString("profile") == "deep" }) 180_000L else 60_000L
+                ).also { webBudget = it }
                 val newlyCompleted = CloudToolBatchExecutor.executeOrdered(
                     calls = preparedCallsByKey.values.toList(),
-                    maxParallel = MAX_PARALLEL_TOOL_CALLS
+                    maxParallel = MAX_PARALLEL_TOOL_CALLS,
+                    onCompleted = { completed ->
+                        onToolEvent?.invoke(CloudToolEvent(completed.call.name, "completed", completed.output.take(240)))
+                    }
                 ) { preparedCall ->
-                    CloudWebGrounding.executeTool(
-                        context,
-                        preparedCall.call.name,
-                        preparedCall.arguments
-                    )
+                    try {
+                        budget.execute { token, checkpoint ->
+                            CloudWebGrounding.executeTool(context, preparedCall.call.name,
+                                preparedCall.arguments, token, checkpoint)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: AgentWebBudgetExceededException) {
+                        CloudWebGrounding.failureResult(preparedCall.call.name, error).toString()
+                    }
                 }
                 newlyCompleted.forEach { completed ->
                     val arguments = JSONObject(completed.call.argumentsJson)
                     if (toolProgress.record(completed.call.name, arguments, completed.output)) {
                         evidenceResults += completed.call.name to completed.output
                     }
-                    onToolEvent?.invoke(
-                        CloudToolEvent(completed.call.name, "completed", completed.output.take(240))
-                    )
                 }
                 val completedCalls = parsedCalls.map { (call, arguments, _) ->
                     CompletedCloudToolCall(
@@ -377,7 +413,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 } else {
                     appendToolResults(prepared, completedCalls.map { it.call to it.output })
                 }
-                if (newlyCompleted.isEmpty() && toolProgress.requestFinalization()) {
+                val noEvidenceProgress = toolProgress.observeEvidenceBatch(newlyCompleted.map { it.output })
+                if ((newlyCompleted.isEmpty() || noEvidenceProgress || budget.expired) && toolProgress.requestFinalization()) {
                     prepareFinalRound(prepared)
                 }
             }
@@ -491,6 +528,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
     private fun disableExternalTools(prepared: PreparedCloudConversationStream) {
         prepared.body.remove("tools")
         prepared.body.remove("tool_choice")
+        prepared.body.remove("parallel_tool_calls")
     }
 
     private fun appendToolArgumentRepairPrompt(

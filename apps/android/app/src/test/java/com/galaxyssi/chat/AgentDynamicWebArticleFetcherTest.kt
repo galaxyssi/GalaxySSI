@@ -8,6 +8,50 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class AgentDynamicWebArticleFetcherTest {
+    @Test fun rendererStartupTimeoutKeepsStaticEvidence() {
+        val source = html("<p>Static evidence remains available.</p><p>Please enable JavaScript</p>")
+        val fetcher = AgentDynamicWebArticleFetcher(requestFetcher { source },
+            AgentDynamicWebRenderer { _, _, _, _, _ ->
+                throw AgentWebRendererUnavailableException("renderer_connection_timeout")
+            })
+        val result = fetcher.fetch(source.url, 100_000, 5_000, AgentNativeToolCancellationToken.NONE) {}
+        assertTrue(result.body.contentEquals(source.body))
+        assertEquals("renderer_connection_timeout", result.dynamicFallbackError)
+        assertFalse(result.fetchTier == "isolated_webview")
+    }
+
+    @Test fun unavailableRendererDoesNotRepeatAcrossDifferentPages() {
+        val health = AgentWebRendererHealth()
+        val attempts = AtomicInteger()
+        val renderer = AgentDynamicWebRenderer { _, _, _, _, _ ->
+            health.checkAvailable()
+            attempts.incrementAndGet()
+            health.failed()
+            throw AgentWebRendererUnavailableException("renderer_initialization_failed")
+        }
+        val fetcher = AgentDynamicWebArticleFetcher(
+            requestFetcher { html("<p>Please enable JavaScript</p>").copy(url = it) }, renderer)
+        repeat(3) { index ->
+            val result = fetcher.fetch("https://example.com/$index", 100_000, 5_000,
+                AgentNativeToolCancellationToken.NONE) {}
+            assertTrue(result.body.isNotEmpty())
+            assertFalse(result.fetchTier == "isolated_webview")
+        }
+        assertEquals(1, attempts.get())
+    }
+
+    @Test fun cancellationAndOverallDeadlineStillPropagate() {
+        for (failure in listOf(AgentNativeToolCancelledException(), AgentNativeToolTimeoutException(),
+            java.util.concurrent.CancellationException())) {
+            val fetcher = AgentDynamicWebArticleFetcher(
+                requestFetcher { html("<p>Please enable JavaScript</p>") },
+                AgentDynamicWebRenderer { _, _, _, _, _ -> throw failure })
+            org.junit.Assert.assertThrows(failure.javaClass) {
+                fetcher.fetch("https://example.com/", 100_000, 5_000, AgentNativeToolCancellationToken.NONE) {}
+            }
+        }
+    }
+
     @Test
     fun fallbackPolicyDetectsJavascriptShellsAndChallenges() {
         assertEquals(

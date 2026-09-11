@@ -19,7 +19,7 @@ class AgentWebIntelligenceTest {
     fun catalogExceedsEighteenSourcesAndCoversDistinctVerticals() {
         val entries = AgentWebIntelligenceEngineCatalog.entries
 
-        assertEquals(287, entries.size)
+        assertEquals(288, entries.size)
         assertEquals(entries.size, entries.map { it.id }.distinct().size)
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.NEWS })
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.CODE })
@@ -49,7 +49,7 @@ class AgentWebIntelligenceTest {
             .digest(entries.map { it.id }.sorted().joinToString("\n").toByteArray())
             .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
         assertEquals(
-            "ebe2e39787edab5166db322b0322e1440ccc733a150db5375443e6bd721f56a9",
+            "27f52d1c1e33b4ea02c895678123edd6fa1a1a76d0e87efcb1b0f0bcc8190e02",
             digest
         )
     }

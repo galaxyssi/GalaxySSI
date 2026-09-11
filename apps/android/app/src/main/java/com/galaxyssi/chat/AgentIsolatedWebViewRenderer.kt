@@ -4,12 +4,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import android.os.RemoteException
 import java.io.File
 import java.net.InetAddress
 import java.net.URI
@@ -39,7 +41,10 @@ internal object AgentWebRenderContract {
 }
 
 /** Synchronous client for the private WebView renderer process. */
-class AgentIsolatedWebViewRenderer(context: Context) : AgentDynamicWebRenderer {
+class AgentIsolatedWebViewRenderer internal constructor(
+    context: Context,
+    private val health: AgentWebRendererHealth = RENDER_HEALTH
+) : AgentDynamicWebRenderer {
     private val appContext = context.applicationContext
 
     override fun render(
@@ -52,6 +57,12 @@ class AgentIsolatedWebViewRenderer(context: Context) : AgentDynamicWebRenderer {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "Dynamic rendering must run outside the Android main thread"
         }
+        if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+        checkpoint()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            throw AgentWebRendererUnavailableException("renderer_requires_android_9")
+        }
+        health.checkAvailable()
         require(AgentWebRenderUrlPolicy.allows(url)) { "Dynamic rendering requires a public HTTPS URL" }
         require(AgentWebRenderUrlPolicy.resolvesToPublicAddress(url)) {
             "Dynamic rendering requires a public network destination"
@@ -64,30 +75,54 @@ class AgentIsolatedWebViewRenderer(context: Context) : AgentDynamicWebRenderer {
         val connected = ArrayBlockingQueue<Boolean>(1)
         val result = ArrayBlockingQueue<Bundle>(1)
         val bound = AtomicBoolean(false)
+        val failure = AtomicReference<String?>()
+        val remoteBinder = AtomicReference<IBinder?>()
+        fun disconnected(reason: String) {
+            failure.compareAndSet(null, reason)
+            service.set(null)
+            connected.offer(false)
+            result.offer(Bundle().apply {
+                putString(AgentWebRenderContract.KEY_STATUS, AgentWebRenderContract.STATUS_FAILED)
+                putString(AgentWebRenderContract.KEY_ERROR, reason)
+            })
+        }
+        val deathRecipient = IBinder.DeathRecipient { disconnected("renderer_process_disconnected") }
         val reply = Messenger(Handler(Looper.getMainLooper()) { message ->
-            result.offer(Bundle(message.data))
+            if (message.data.getString(AgentWebRenderContract.KEY_REQUEST_ID) == requestId) {
+                result.offer(Bundle(message.data))
+            }
             true
         })
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                service.set(binder?.let(::Messenger))
-                connected.offer(binder != null)
+                if (binder == null) return disconnected("renderer_null_binding")
+                if (failure.get() != null) return
+                try {
+                    binder.linkToDeath(deathRecipient, 0)
+                    remoteBinder.set(binder)
+                    service.set(Messenger(binder))
+                    connected.offer(true)
+                } catch (_: RemoteException) {
+                    disconnected("renderer_process_disconnected")
+                }
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
-                service.set(null)
-                result.offer(Bundle().apply {
-                    putString(AgentWebRenderContract.KEY_STATUS, AgentWebRenderContract.STATUS_FAILED)
-                    putString(AgentWebRenderContract.KEY_ERROR, "renderer_process_disconnected")
-                })
+                disconnected("renderer_process_disconnected")
             }
+
+            override fun onNullBinding(name: ComponentName?) = disconnected("renderer_null_binding")
+            override fun onBindingDied(name: ComponentName?) = disconnected("renderer_binding_died")
         }
         try {
+            health.checkAvailable()
             val intent = Intent(appContext, AgentIsolatedWebRenderService::class.java)
             bound.set(appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE))
-            if (!bound.get()) error("renderer_bind_failed")
-            awaitConnection(connected, deadline, cancellationToken, checkpoint)
-            val remote = service.get() ?: error("renderer_connection_unavailable")
+            if (!bound.get()) throw AgentWebRendererUnavailableException("renderer_bind_failed")
+            val connectionDeadline = minOf(deadline, System.nanoTime() + TimeUnit.SECONDS.toNanos(5))
+            awaitConnection(connected, connectionDeadline, cancellationToken, checkpoint)
+            failure.get()?.let { throw AgentWebRendererUnavailableException(it) }
+            val remote = service.get() ?: throw AgentWebRendererUnavailableException("renderer_connection_unavailable")
             val cancellation = cancellationToken.invokeOnCancellation {
                 sendCancel(remote, requestId)
             }
@@ -97,21 +132,34 @@ class AgentIsolatedWebViewRenderer(context: Context) : AgentDynamicWebRenderer {
                     data = Bundle().apply {
                         putString(AgentWebRenderContract.KEY_REQUEST_ID, requestId)
                         putString(AgentWebRenderContract.KEY_URL, url)
-                        putLong(AgentWebRenderContract.KEY_TIMEOUT_MILLIS, boundedTimeout)
+                        putLong(AgentWebRenderContract.KEY_TIMEOUT_MILLIS, remainingMillis(deadline))
                         putLong(AgentWebRenderContract.KEY_MAX_BYTES, maxBytes)
                     }
                 })
                 val response = awaitResult(result, deadline, cancellationToken, checkpoint)
+                failure.get()?.let { throw AgentWebRendererUnavailableException(it) }
                 if (response.getString(AgentWebRenderContract.KEY_STATUS) != AgentWebRenderContract.STATUS_COMPLETED) {
-                    error(response.getString(AgentWebRenderContract.KEY_ERROR).orEmpty().ifBlank { "renderer_failed" })
+                    val reason = response.getString(AgentWebRenderContract.KEY_ERROR).orEmpty().ifBlank { "renderer_failed" }
+                    if (reason.startsWith("renderer_initialization_failed") || reason == "renderer_process_not_configured") {
+                        throw AgentWebRendererUnavailableException(reason)
+                    }
+                    error(reason)
                 }
+                health.succeeded()
                 return readRenderedResult(response, maxBytes)
             } finally {
                 cancellation.dispose()
                 sendCancel(remote, requestId)
             }
+        } catch (error: AgentWebRendererUnavailableException) {
+            if (error.message != "renderer_temporarily_unavailable") health.failed()
+            throw error
+        } catch (_: RemoteException) {
+            health.failed()
+            throw AgentWebRendererUnavailableException("renderer_process_disconnected")
         } finally {
             if (bound.get()) runCatching { appContext.unbindService(connection) }
+            remoteBinder.get()?.let { runCatching { it.unlinkToDeath(deathRecipient, 0) } }
             RENDER_GATE.release()
         }
     }
@@ -161,9 +209,9 @@ class AgentIsolatedWebViewRenderer(context: Context) : AgentDynamicWebRenderer {
             if (token.isCancellationRequested) throw AgentNativeToolCancelledException()
             checkpoint()
             val remaining = remainingMillis(deadline)
-            if (remaining <= 0L) throw AgentNativeToolTimeoutException()
+            if (remaining <= 0L) throw AgentWebRendererUnavailableException("renderer_connection_timeout")
             queue.poll(remaining.coerceAtMost(100L), TimeUnit.MILLISECONDS)?.let { connected ->
-                check(connected) { "renderer_connection_failed" }
+                if (!connected) throw AgentWebRendererUnavailableException("renderer_connection_failed")
                 return
             }
         }
@@ -198,6 +246,7 @@ class AgentIsolatedWebViewRenderer(context: Context) : AgentDynamicWebRenderer {
 
     private companion object {
         val RENDER_GATE = Semaphore(1, true)
+        val RENDER_HEALTH = AgentWebRendererHealth()
     }
 }
 
