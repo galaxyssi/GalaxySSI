@@ -266,7 +266,7 @@ internal fun MainActivity.runDebugBackupRoundtrip(token: String) {
                 includeContacts = true,
                 includeMessages = true
             )
-            val backupText = backup.readText(Charsets.UTF_8)
+            val encryptedBackup = StreamingBackupArchive.isStreaming(backup)
             AgentEncryptedPreferences(this, "galaxyssi_app_store").apply {
                 writeString("contacts", JSONArray().toString())
                 writeString("friend_requests", JSONArray().toString())
@@ -279,7 +279,7 @@ internal fun MainActivity.runDebugBackupRoundtrip(token: String) {
             val contactRestored = restoredContacts.contains(contactToken) && restoredContacts.contains("Backup Smoke")
             val messageRestored = restoredHistory.contains(messageToken)
             backup.delete()
-            val ok = backupText.contains("\"type\":\"galaxyssi_backup\"") && contactRestored && messageRestored
+            val ok = encryptedBackup && contactRestored && messageRestored
             prefs.edit()
                 .putString("backup_roundtrip_result", JSONObject()
                     .put("ok", ok)
@@ -287,7 +287,7 @@ internal fun MainActivity.runDebugBackupRoundtrip(token: String) {
                     .put("contact_id", contactId)
                     .put("contact_restored", contactRestored)
                     .put("message_restored", messageRestored)
-                    .put("encrypted_backup", backupText.contains("\"cipher\":\"aes-256-gcm\""))
+                    .put("encrypted_backup", encryptedBackup)
                     .toString())
                 .commit()
         }.getOrElse { error ->

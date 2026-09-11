@@ -1,0 +1,3 @@
+<resources>
+    <string name="backup_operation_running">A backup or restore is already in progress.</string>
+</resources>

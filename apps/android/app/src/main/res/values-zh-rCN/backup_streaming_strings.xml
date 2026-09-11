@@ -1,0 +1,3 @@
+<resources>
+    <string name="backup_operation_running">正在备份或恢复，请等待当前操作完成。</string>
+</resources>

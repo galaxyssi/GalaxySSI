@@ -181,11 +181,32 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
 
     fun export(): JSONArray = JSONArray().apply { read().forEach { put(it) } }
 
+    internal fun exportRows(visitRow: (String, JSONObject) -> Unit): Pair<Long, Long> = synchronized(AgentMemoryStorage.lock) {
+        val meta = metadata()
+        var count = 0L
+        var active = 0L
+        visit { rowKey, value ->
+            val row = JSONObject(value)
+            val item = row.getJSONObject("item")
+            check(rowKey == key(item.getString("id")) && row.getLong("position") >= 0 && item.getString("value").isNotBlank()) {
+                "Invalid personal memory backup source"
+            }
+            if (item.optString("status", "ACTIVE") == "ACTIVE") active = Math.addExact(active, 1)
+            visitRow(rowKey, row)
+            count = Math.addExact(count, 1)
+        }
+        check(count == meta.getLong("count") && active == meta.getLong("active_count")) { "Memory backup source count mismatch" }
+        count to active
+    }
+
     fun replace(items: Sequence<JSONObject>, additional: Map<String, String> = emptyMap()) =
         synchronized(AgentMemoryStorage.lock) {
             metadata()
             commit(normalize(items), additional)
         }
+
+    internal fun replacePrepared(items: Sequence<JSONObject>, additional: Sequence<Pair<String, String>>) =
+        synchronized(AgentMemoryStorage.lock) { metadata(); commitStream(items, additional) }
 
     private fun metadata(): JSONObject {
         if (!database.contains(META)) {
@@ -209,23 +230,23 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
     }
 
     private fun commit(items: Sequence<JSONObject>, additional: Map<String, String>) {
-        require(additional.keys.none { it == META || it == AgentMemoryStorage.ITEMS || it == AgentMemoryBrowseIndex.MARKER ||
-            it.startsWith(PREFIX) || it.startsWith(LOOKUP_PREFIX) })
+        commitStream(items, additional.asSequence().map { it.key to it.value })
+    }
+
+    private fun commitStream(items: Sequence<JSONObject>, additional: Sequence<Pair<String, String>>) = MemoryReplacementKeys.transaction(database) { seen ->
         val previousMeta = if (database.contains(META)) JSONObject(database.readString(META, "")) else null
         val keepLookup = previousMeta?.has("lookup_generation") == true
         if (keepLookup) validateLookupMetadata(previousMeta!!)
         val generation = if (keepLookup) previousMeta!!.getString("lookup_generation") else UUID.randomUUID().toString()
-        val removedLookups = mutableListOf<String>()
-        val seen = hashSetOf<String>()
-        var active = 0
+        var active = 0L
         var previousPosition = -1L
         val writes = sequence {
             items.forEach { item ->
                 val id = item.getString("id")
                 require(id.isNotBlank() && item.getString("value").isNotBlank()) { "Personal memory identity or value is empty" }
                 val rowKey = key(id)
-                require(seen.add(rowKey)) { "Duplicate personal memory identity" }
-                if (item.optString("status", "ACTIVE") == "ACTIVE") active++
+                seen.add(rowKey)
+                if (item.optString("status", "ACTIVE") == "ACTIVE") active = Math.addExact(active, 1)
                 val old = if (database.contains(rowKey)) JSONObject(database.readString(rowKey, "")) else null
                 val oldPosition = old?.getLong("position") ?: -1L
                 check(previousPosition < Long.MAX_VALUE) { "Personal memory order needs compaction" }
@@ -243,10 +264,14 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
                     yield(lookupPrefix(generation, decoded) + rowKey.removePrefix(PREFIX) to id)
                 }
                 if (keepLookup && oldLive && !sameLookup) {
-                    removedLookups.add(lookupPrefix(generation, oldItem!!) + rowKey.removePrefix(PREFIX))
+                    seen.removeLookup(lookupPrefix(generation, oldItem!!) + rowKey.removePrefix(PREFIX))
                 }
             }
-            additional.forEach { (key, value) -> yield(key to value) }
+            additional.forEach { (key, value) ->
+                require(key != META && key != AgentMemoryStorage.ITEMS && key != AgentMemoryBrowseIndex.MARKER &&
+                    !key.startsWith(PREFIX) && !key.startsWith(LOOKUP_PREFIX)) { "Invalid additional memory mutation key" }
+                yield(key to value)
+            }
             val meta = JSONObject().put("schema", 3).put("count", seen.size).put("active_count", active)
                 .put("revision", UUID.randomUUID().toString())
             addLookupMetadata(meta, generation, Math.addExact(previousPosition, 1))
@@ -258,7 +283,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
                 while (true) {
                     val page = database.keysAfter(PREFIX, cursor, 128)
                     if (page.isEmpty()) break
-                    page.filterNot { it in seen }.forEach { rowKey ->
+                    page.filterNot(seen::contains).forEach { rowKey ->
                         if (keepLookup) {
                             val old = JSONObject(database.readString(rowKey, "")).getJSONObject("item")
                             val item = AgentMemoryItemCodec.decode(old) ?: error("Cannot remove invalid memory lookup")
@@ -270,7 +295,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
                     cursor = page.last()
                 }
                 yield(AgentMemoryStorage.ITEMS)
-                if (keepLookup) yieldAll(removedLookups) else yieldAll(obsoleteLookups(generation))
+                if (keepLookup) yieldAll(seen.removedLookups()) else yieldAll(obsoleteLookups(generation))
             }
         }
     }
@@ -305,8 +330,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
         while (true) {
             val page = database.keysAfter(PREFIX, cursor, 128)
             if (page.isEmpty()) return
-            val values = database.readStrings(page)
-            page.forEach { block(it, values[it] ?: error("Personal memory row cannot be decrypted")) }
+            page.forEach { block(it, database.readString(it, "").ifEmpty { error("Personal memory row cannot be decrypted") }) }
             cursor = page.last()
         }
     }

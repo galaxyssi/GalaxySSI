@@ -141,8 +141,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 950
-        versionName = "1.1.64"
+        versionCode = 951
+        versionName = "1.1.65"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -277,6 +277,7 @@ dependencies {
     implementation("org.signal:libsignal-android:0.86.5")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.crypto.tink:tink-android:1.23.0")
     implementation("org.commonmark:commonmark:0.24.0")
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r")
     implementation("org.jsoup:jsoup:1.23.1")

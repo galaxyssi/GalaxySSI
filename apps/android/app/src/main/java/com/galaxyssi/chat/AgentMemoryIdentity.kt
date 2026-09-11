@@ -31,14 +31,18 @@ internal object AgentMemoryIdentity {
                         replacements[item.id] = item.copy(status = AgentMemoryStatus.ACTIVE, conflictGroupId = "")
                     } else if (partitions.size > 1 || groupId.isBlank()) {
                         val first = candidates.first()
-                        val encoded = listOf(groupId, first.kind.name, first.scope.name, first.scopeId, first.key)
-                            .joinToString("") { "${it.length}:$it" }
-                        val scopedId = UUID.nameUUIDFromBytes(encoded.toByteArray(Charsets.UTF_8)).toString()
+                        val scopedId = normalizedConflictId(groupId, first)
                         candidates.forEach { replacements[it.id] = it.copy(conflictGroupId = scopedId) }
                     }
                 }
             }
         return if (replacements.isEmpty()) items else items.map { replacements[it.id] ?: it }
+    }
+
+    internal fun normalizedConflictId(groupId: String, item: AgentMemoryItem): String {
+        val encoded = listOf(groupId, item.kind.name, item.scope.name, item.scopeId, item.key)
+            .joinToString("") { "${it.length}:$it" }
+        return UUID.nameUUIDFromBytes(encoded.toByteArray(Charsets.UTF_8)).toString()
     }
 
     fun conflictCandidates(items: List<AgentMemoryItem>, groupId: String, selectedId: String): List<AgentMemoryItem> {
