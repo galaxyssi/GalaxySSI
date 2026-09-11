@@ -129,7 +129,32 @@ impl<'a, S: NodeStore> glue::SearchStrategy<'a, Provider<S>, &'a [f32]> for Stra
     }
 }
 impl<'a, S: NodeStore> glue::DefaultPostProcessor<'a, Provider<S>, &'a [f32]> for Strategy {
-    default_post_processor!(glue::Pipeline<glue::FilterStartPoints, glue::CopyIds>);
+    default_post_processor!(VisibleResults);
+}
+
+#[derive(Default)]
+pub(crate) struct VisibleResults;
+impl<S: NodeStore> glue::SearchPostProcess<Search<'_, S>, &[f32]> for VisibleResults {
+    type Error = ANNError;
+    async fn post_process<I, B>(
+        &self,
+        accessor: &mut Search<'_, S>,
+        _: &[f32],
+        candidates: I,
+        output: &mut B,
+    ) -> ANNResult<usize>
+    where
+        I: Iterator<Item = diskann::neighbor::Neighbor<u64>> + Send,
+        B: diskann::graph::search_output_buffer::SearchOutputBuffer<u64> + Send + ?Sized,
+    {
+        let mut visible = Vec::new();
+        for candidate in candidates {
+            if accessor.provider.store.visible(*candidate.id())? {
+                visible.push(candidate);
+            }
+        }
+        Ok(output.extend(visible))
+    }
 }
 impl<S: NodeStore> glue::PruneStrategy<Provider<S>> for Strategy {
     type PruneAccessor<'a> = Prune<'a, S>;

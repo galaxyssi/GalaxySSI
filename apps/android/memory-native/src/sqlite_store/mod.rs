@@ -1,6 +1,7 @@
 //! Encrypted physical SQLite shards. All mutation files participate in one
 //! rollback-journal transaction; WAL must never be used for this store.
 mod codec;
+mod records;
 mod session;
 use crate::store::{MAX_NEIGHBORS, Node, ROOT};
 use aes_gcm::aead::{OsRng, rand_core::RngCore};
@@ -102,6 +103,8 @@ impl SqliteIndexStore {
         connection.execute_batch("BEGIN IMMEDIATE").ann()?;
         let result = (|| -> ANNResult<()> {
             connection.execute_batch("CREATE TABLE index_state (id INTEGER PRIMARY KEY CHECK(id=1), sealed BLOB NOT NULL)").ann()?;
+            connection.execute_batch("CREATE TABLE index_records (key BLOB PRIMARY KEY CHECK(length(key) BETWEEN 1 AND 64), \
+                revision INTEGER NOT NULL CHECK(revision>0), ciphertext BLOB NOT NULL) WITHOUT ROWID").ann()?;
             for shard in 0..config.shards {
                 connection.execute_batch(&format!("CREATE TABLE s{shard}.nodes (id BLOB PRIMARY KEY CHECK(length(id)=8), \
                     revision INTEGER NOT NULL CHECK(revision>0), ciphertext BLOB NOT NULL) WITHOUT ROWID")).ann()?;

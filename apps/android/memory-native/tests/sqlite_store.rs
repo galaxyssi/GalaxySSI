@@ -18,6 +18,8 @@ use zeroize::Zeroizing;
 
 #[path = "sqlite_store/growth.rs"]
 mod growth;
+#[path = "sqlite_store/replay.rs"]
+mod replay;
 
 const KEY: [u8; 32] = [0x31; 32]; // Public fixture key, never an App/Keystore key.
 const IDENTITY: [u8; 32] = [0x52; 32];
@@ -395,6 +397,18 @@ fn process_exit(committed: bool) {
         session.node_count().unwrap(),
         if committed { 1025 } else { 1 }
     );
+    assert_eq!(
+        session
+            .record(b"crash-checkpoint")
+            .unwrap()
+            .as_deref()
+            .map(|v| v.as_slice()),
+        if committed {
+            Some(b"staged=1024".as_slice())
+        } else {
+            None
+        }
+    );
     assert_eq!(session.generation().unwrap(), if committed { 2 } else { 1 });
     assert_eq!(
         session.read(ROOT).unwrap().neighbors.as_slice(),
@@ -438,6 +452,9 @@ fn crash_child() {
         fs::canonicalize(root.parent().unwrap()).unwrap(),
         fs::canonicalize(std::env::temp_dir()).unwrap()
     );
+    if std::env::var("GALAXYSSI_NATIVE_REPLAY_RESUME").as_deref() == Ok("1") {
+        replay::crash_replay(&root);
+    }
     let mut cfg = config();
     cfg.cache_bytes = (cfg.shards + 1) * 16 * 1024;
     let store = SqliteIndexStore::open(&root, Zeroizing::new(KEY), IDENTITY, cfg).unwrap();
@@ -446,6 +463,9 @@ fn crash_child() {
         session.create(id, &vector(id)).unwrap();
     }
     session.neighbors(ROOT, &[1, 2]).unwrap();
+    session
+        .put_record(b"crash-checkpoint", b"staged=1024")
+        .unwrap();
     if std::env::var("GALAXYSSI_NATIVE_CRASH_COMMIT").unwrap() == "1" {
         session.commit().unwrap();
     }

@@ -92,6 +92,26 @@ impl Crypto {
         aad.extend_from_slice(&revision.to_le_bytes());
         aad
     }
+    fn record_aad(&self, meta: &Metadata, key: &[u8], revision: u64) -> Vec<u8> {
+        let mut aad = self.aad(b"record");
+        aad.extend_from_slice(&meta.instance);
+        aad.extend_from_slice(&revision.to_le_bytes());
+        aad.extend_from_slice(&(key.len() as u32).to_le_bytes());
+        aad.extend_from_slice(key);
+        aad
+    }
+    pub fn encode_record(&self, meta: &Metadata, key: &[u8], bytes: &[u8]) -> ANNResult<Vec<u8>> {
+        self.seal(bytes, &self.record_aad(meta, key, meta.generation))
+    }
+    pub fn decode_record(
+        &self,
+        meta: &Metadata,
+        key: &[u8],
+        revision: u64,
+        envelope: &[u8],
+    ) -> ANNResult<Zeroizing<Vec<u8>>> {
+        self.unseal(envelope, &self.record_aad(meta, key, revision))
+    }
     pub fn encode_node(
         &self,
         meta: &Metadata,

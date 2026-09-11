@@ -55,4 +55,7 @@ pub trait NodeStore: Send + Sync + 'static {
     fn create(&self, id: u64, vector: &[f32]) -> ANNResult<()>;
     fn neighbors(&self, id: u64, values: &[u64]) -> ANNResult<()>;
     fn check_active(&self) -> ANNResult<()>;
+    fn visible(&self, id: u64) -> ANNResult<bool> {
+        Ok(id != ROOT)
+    }
 }
