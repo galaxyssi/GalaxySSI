@@ -10,6 +10,8 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -178,29 +180,25 @@ class AgentEncryptedDatabase(
     private val database = sharedDatabase(context.applicationContext, databaseName)
     internal val storageIdentity = context.applicationContext.getDatabasePath("$databaseName.db").absolutePath
 
-    fun readString(key: String, defaultValue: String): String = synchronized(database) {
-        val encrypted = readEncryptedValue(database.readableDatabase, key) ?: return@synchronized defaultValue
-        AgentStorageCipher.decrypt(encrypted, associatedData(key)) ?: defaultValue
+    fun readString(key: String, defaultValue: String): String = withStorage {
+        val encrypted = readEncryptedValue(database.readableDatabase, key) ?: return@withStorage defaultValue
+        decodeValue(key, encrypted) ?: defaultValue
     }
 
-    fun readStrings(keys: Collection<String>): Map<String, String> = synchronized(database) {
+    fun readStrings(keys: Collection<String>): Map<String, String> = withStorage {
         val requested = keys.distinct()
-        if (requested.isEmpty()) return@synchronized emptyMap()
+        if (requested.isEmpty()) return@withStorage emptyMap()
         buildMap {
             requested.forEach { key ->
                 readEncryptedValue(database.readableDatabase, key)
-                    ?.let { encrypted -> AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+                    ?.let { encrypted -> decodeValue(key, encrypted) }
                     ?.let { value -> put(key, value) }
             }
         }
     }
 
-    fun writeString(key: String, value: String) = synchronized(database) {
-        val encrypted = AgentStorageCipher.encrypt(value, associatedData(key))
-        val values = ContentValues().apply {
-            put("storage_key", key)
-            put("encrypted_value", encrypted)
-        }
+    fun writeString(key: String, value: String) = withStorage {
+        val values = encodeValue(key, value)
         check(database.writableDatabase.insertWithOnConflict(
             TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE
         ) != -1L) { "Agent encrypted database write failed" }
@@ -209,12 +207,13 @@ class AgentEncryptedDatabase(
     fun mutateStrings(
         upserts: Map<String, String>,
         removeKeys: Collection<String> = emptyList(),
-        onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null
-    ): Unit = synchronized(database) {
-        if (upserts.isEmpty() && removeKeys.isEmpty()) return@synchronized
+        onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null,
+        segmentPersonalRows: Boolean = false
+    ): Unit = withStorage {
+        if (upserts.isEmpty() && removeKeys.isEmpty()) return@withStorage
         val source = if (onMutation == null) upserts else upserts.toMap()
         val encryptedValues = source.mapValues { (key, value) ->
-            AgentStorageCipher.encrypt(value, associatedData(key))
+            encodeValue(key, value, segmentPersonalRows)
         }
         val writable = database.writableDatabase
         writable.beginTransaction()
@@ -223,11 +222,7 @@ class AgentEncryptedDatabase(
                 writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
                 onMutation?.invoke(writable, key, null)
             }
-            encryptedValues.forEach { (key, encrypted) ->
-                val values = ContentValues().apply {
-                    put("storage_key", key)
-                    put("encrypted_value", encrypted)
-                }
+            encryptedValues.forEach { (key, values) ->
                 check(writable.insertWithOnConflict(
                     TABLE_VALUES,
                     null,
@@ -242,7 +237,7 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun remove(key: String): Unit = synchronized(database) {
+    fun remove(key: String): Unit = withStorage {
         database.writableDatabase.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
         Unit
     }
@@ -251,18 +246,16 @@ class AgentEncryptedDatabase(
     internal fun mutateStreaming(
         upserts: Sequence<Pair<String, String>>,
         onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null,
+        segmentPersonalRows: Boolean = false,
         removals: () -> Sequence<String>
-    ): Unit = synchronized(database) {
+    ): Unit = withStorage {
         val writable = database.writableDatabase
         writable.beginTransaction()
         try {
             upserts.forEach { (key, value) ->
                 val previous = readEncryptedValue(writable, key)
-                if (previous == null || AgentStorageCipher.decrypt(previous, associatedData(key)) != value) {
-                    val values = ContentValues().apply {
-                        put("storage_key", key)
-                        put("encrypted_value", AgentStorageCipher.encrypt(value, associatedData(key)))
-                    }
+                if (previous == null || decodeValue(key, previous) != value) {
+                    val values = encodeValue(key, value, segmentPersonalRows)
                     check(writable.insertWithOnConflict(TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
                         "Agent encrypted streaming transaction failed"
                     }
@@ -277,15 +270,15 @@ class AgentEncryptedDatabase(
         } finally { writable.endTransaction() }
     }
 
-    internal fun <T> indexedTransaction(block: (SQLiteDatabase) -> T): T = synchronized(database) {
+    internal fun <T> indexedTransaction(block: (SQLiteDatabase) -> T): T = withStorage {
         val writable = database.writableDatabase
         writable.beginTransactionNonExclusive()
         try { block(writable).also { writable.setTransactionSuccessful() } }
         finally { writable.endTransaction() }
     }
 
-    fun removeAll(keys: Collection<String>): Unit = synchronized(database) {
-        if (keys.isEmpty()) return@synchronized
+    fun removeAll(keys: Collection<String>): Unit = withStorage {
+        if (keys.isEmpty()) return@withStorage
         val writable = database.writableDatabase
         writable.beginTransaction()
         try {
@@ -298,18 +291,18 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun clear(): Unit = synchronized(database) {
+    fun clear(): Unit = withStorage {
         database.writableDatabase.delete(TABLE_VALUES, null, null)
         Unit
     }
 
-    fun contains(key: String): Boolean = synchronized(database) {
+    fun contains(key: String): Boolean = database.operations.withLock {
         database.readableDatabase.rawQuery(
             "SELECT 1 FROM $TABLE_VALUES WHERE storage_key = ? LIMIT 1", arrayOf(key)
         ).use { it.moveToFirst() }
     }
 
-    fun countKeys(prefix: String): Int = synchronized(database) {
+    fun countKeys(prefix: String): Int = database.operations.withLock {
         require(prefix.isNotEmpty())
         database.readableDatabase.rawQuery(
             "SELECT COUNT(*) FROM $TABLE_VALUES WHERE storage_key >= ? AND storage_key < ?",
@@ -317,7 +310,7 @@ class AgentEncryptedDatabase(
         ).use { cursor -> check(cursor.moveToFirst()); cursor.getInt(0) }
     }
 
-    fun keys(prefix: String = ""): List<String> = synchronized(database) {
+    fun keys(prefix: String = ""): List<String> = database.operations.withLock {
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
@@ -335,9 +328,9 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun recentKeys(prefix: String, limit: Int): List<String> = synchronized(database) {
+    fun recentKeys(prefix: String, limit: Int): List<String> = database.operations.withLock {
         val boundedLimit = limit.coerceAtLeast(0)
-        if (boundedLimit == 0) return@synchronized emptyList()
+        if (boundedLimit == 0) return@withLock emptyList()
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
@@ -356,9 +349,9 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun oldestKeys(prefix: String, limit: Int): List<String> = synchronized(database) {
+    fun oldestKeys(prefix: String, limit: Int): List<String> = database.operations.withLock {
         val boundedLimit = limit.coerceAtLeast(0)
-        if (boundedLimit == 0) return@synchronized emptyList()
+        if (boundedLimit == 0) return@withLock emptyList()
         val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
@@ -377,7 +370,7 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun keysAfter(prefix: String, after: String, limit: Int): List<String> = synchronized(database) {
+    fun keysAfter(prefix: String, after: String, limit: Int): List<String> = database.operations.withLock {
         require(prefix.isNotEmpty() && limit in 1..256)
         require(after.isEmpty() || after.startsWith(prefix))
         database.readableDatabase.query(TABLE_VALUES, arrayOf("storage_key"),
@@ -387,11 +380,11 @@ class AgentEncryptedDatabase(
         }
     }
 
-    fun entries(prefix: String = ""): List<Pair<String, String>> = synchronized(database) {
+    fun entries(prefix: String = ""): List<Pair<String, String>> = withStorage {
         buildList {
             keys(prefix).forEach { key ->
                 readEncryptedValue(database.readableDatabase, key)
-                    ?.let { encrypted -> AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+                    ?.let { encrypted -> decodeValue(key, encrypted) }
                     ?.let { value -> add(key to value) }
             }
         }
@@ -405,6 +398,54 @@ class AgentEncryptedDatabase(
 
     private fun associatedData(key: String): ByteArray =
         "database:$databaseName:$key".toByteArray(Charsets.UTF_8)
+
+    private fun <T> withStorage(block: () -> T): T = database.operations.withLock {
+        if (database.segmented) database.segmentAccess.readWrite(block) else block()
+    }
+
+    private fun encodeValue(key: String, value: String, largeStore: Boolean = false): ContentValues =
+        ContentValues().apply {
+            put("storage_key", key)
+            if (database.segmented && AgentMemoryPayloadSegments.external(key, value, largeStore)) {
+                val encoded = database.segments.encode(key, value, associatedData(key))
+                put("encrypted_value", encoded.value)
+                put("segment_id", encoded.segment)
+                put("segment_bytes", encoded.bytes)
+            } else {
+                put("encrypted_value", AgentStorageCipher.encrypt(value, associatedData(key)))
+                if (database.segmented) {
+                    putNull("segment_id")
+                    putNull("segment_bytes")
+                }
+            }
+        }
+
+    internal fun maintainMemorySegments(maxSegments: Int = 2, maxRows: Int = 8): AgentMemorySegmentMaintenance.Result = database.operations.withLock {
+        check(database.segmented)
+        database.segmentAccess.maintenance {
+            AgentMemorySegmentMaintenance(database.writableDatabase, database.segments, ::associatedData)
+                .run(maxSegments, maxRows)
+        }
+    }
+
+    internal fun tryMaintainMemorySegments(checkActive: () -> Unit): AgentMemorySegmentMaintenance.Result? {
+        check(database.segmented)
+        if (!database.operations.tryLock()) return null
+        try {
+            return database.segmentAccess.tryMaintenance {
+                checkActive()
+                AgentMemorySegmentMaintenance(database.writableDatabase, database.segments, ::associatedData)
+                    .run(1, 1, checkActive)
+            }
+        } finally { database.operations.unlock() }
+    }
+
+    private fun decodeValue(key: String, encrypted: String): String? =
+        if (encrypted.startsWith(AgentMemoryPayloadSegments.PREFIX)) {
+            database.segments.decode(key, encrypted, associatedData(key))
+        } else AgentStorageCipher.decrypt(encrypted, associatedData(key)).also {
+            check(it != null || !key.startsWith(AgentPersonalMemoryRows.PREFIX)) { "Personal memory ciphertext is corrupt" }
+        }
 
     private fun readEncryptedValue(database: SQLiteDatabase, key: String): String? {
         val length = database.rawQuery(
@@ -438,16 +479,36 @@ class AgentEncryptedDatabase(
     private class SharedEncryptedDatabase(
         context: Context,
         databaseName: String
-    ) : SQLiteOpenHelper(context, "$databaseName.db", null, 1) {
+    ) : SQLiteOpenHelper(context, "$databaseName.db", null, if (databaseName == AgentMemoryStorage.DATABASE) 2 else 1) {
+        val operations = ReentrantLock()
+        val segmented = databaseName == AgentMemoryStorage.DATABASE
+        val segmentAccess by lazy {
+            MemorySegmentAccess(java.io.File(context.getDatabasePath("$databaseName.db").absolutePath + ".segments.lock"))
+        }
+        val segments by lazy {
+            AgentMemoryPayloadSegments(java.io.File(context.getDatabasePath("$databaseName.db").absolutePath + ".segments"))
+        }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE $TABLE_VALUES (" +
                     "storage_key TEXT PRIMARY KEY NOT NULL, " +
-                    "encrypted_value TEXT NOT NULL)"
+                    "encrypted_value TEXT NOT NULL" +
+                    (if (segmented) ", segment_id TEXT, segment_bytes INTEGER" else "") + ")"
             )
+            if (segmented) createSegmentIndex(db)
         }
 
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) {
+                db.execSQL("ALTER TABLE $TABLE_VALUES ADD COLUMN segment_id TEXT")
+                db.execSQL("ALTER TABLE $TABLE_VALUES ADD COLUMN segment_bytes INTEGER")
+                createSegmentIndex(db)
+            }
+        }
+
+        private fun createSegmentIndex(db: SQLiteDatabase) {
+            db.execSQL("CREATE INDEX memory_payload_segment ON $TABLE_VALUES(segment_id,storage_key,segment_bytes) WHERE segment_id IS NOT NULL")
+        }
     }
 
     private companion object {
