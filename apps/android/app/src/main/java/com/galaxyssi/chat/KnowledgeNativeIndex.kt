@@ -13,9 +13,44 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
     var readyStamp: KnowledgeCorpusStamp? = null
         private set
 
+    /** Inspect/reopen a committed graph without registration, backfill or vector replay. */
+    fun tryReady(active: () -> Unit): Boolean {
+        validateBudget()
+        active()
+        val state = feed.state()
+        if (state == null || !state.bootstrapComplete) { readyStamp = null; return false }
+        val stamp = KnowledgeCorpusStamp(state.epoch, state.head, state.completedChunks)
+        if (readyStamp == stamp) return true
+        readyStamp = null
+        if (sourceEpoch != state.epoch) { close(); sourceEpoch = state.epoch }
+        if (handle.get() == 0L) {
+            val files = KnowledgeNativeFiles(storage.nativeIndexDirectory(ledger.modelKey), ledger.modelKey, state.epoch)
+            if (!files.directory.exists()) {
+                if (state.completedChunks != 0L) return false
+                active()
+                readyStamp = stamp
+                return true
+            }
+            active()
+            // A null root opens an existing authenticated index; it cannot create a graph.
+            handle.set(files.open(spec.dimensions, cacheBytes, null).also { check(it > 0) })
+        }
+        active()
+        val checkpoint = KnowledgeNativeWire.checkpoint(KnowledgeNativeBridge.checkpoint(handle.get()))
+        check(checkpoint.epoch == state.epoch)
+        if (checkpoint.sequence != state.head || checkpoint.pending != null) return false
+        active()
+        readyStamp = stamp
+        return true
+    }
+
+    private fun validateBudget() {
+        check(cacheBytes >= (KnowledgeNativeFiles.SHARDS + 1) * 16L * 1024) { "Insufficient native pager budget" }
+    }
+
     fun synchronize(maxPages: Int = 4, active: () -> Unit): Boolean {
         require(maxPages in 1..16)
-        check(cacheBytes >= (KnowledgeNativeFiles.SHARDS + 1) * 16L * 1024) { "Insufficient native pager budget" }
+        validateBudget()
         readyStamp = null
         ledger.ensureRegistered()
         active()
@@ -57,7 +92,7 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
                 } else {
                     val next = checkpoint.pending?.next ?: 0
                     check(next <= Int.MAX_VALUE)
-                    ledger.pageByKey(change.key, next.toInt(), 64).use { vectors ->
+                    ledger.pageByKey(change.key, next.toInt(), 64, active).use { vectors ->
                         val obsolete = vectors == null || vectors.revision != change.revision || vectors.total != change.chunkCount
                         KnowledgeNativeWire.checkpoint(KnowledgeNativeBridge.beginEvent(id, encoded, obsolete))
                         if (!obsolete && vectors!!.rows.isNotEmpty()) {
@@ -95,7 +130,7 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
             if (it.moveToFirst()) it.getString(0) else null
         } } ?: return null
         active()
-        return ledger.pageByKey(key, 0, 1)?.use { page -> page.rows.firstOrNull()?.values?.copyOf() }
+        return ledger.pageByKey(key, 0, 1, active)?.use { page -> page.rows.firstOrNull()?.values?.copyOf() }
     }
     fun search(query: FloatArray): List<KnowledgeVectorMatch> {
         val stamp = requireNotNull(readyStamp) { "Native replay is not current" }

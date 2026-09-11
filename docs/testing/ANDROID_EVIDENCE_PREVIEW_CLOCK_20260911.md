@@ -6,6 +6,12 @@ Android 1.1.84 (970), followed by the incremental-render fix in 1.1.85 (971), ba
 on merged PR #3007. No Desktop changes or chat color/layout redesign.
 The original model-led web/image planning and dependent follow-up searches remain intact.
 
+For PR submission, the branch incorporates `origin/main` at `319ffdeef` (PR #3008,
+nonblocking memory retrieval) and advances Android to 1.1.88 (974), after main's
+1.1.87 (973). The only merge conflict was version metadata. Device measurements
+below remain the actual 1.1.84/1.1.85 builds; the version bump does not imply that
+1.1.88 was installed or remeasured on S26U.
+
 ## Why A New Conversation Was Not An Empty Model Request
 
 Controlled source message 2889 in the previous S26U run produced request bodies of
