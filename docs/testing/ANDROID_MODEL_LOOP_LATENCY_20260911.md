@@ -139,7 +139,7 @@ separately. Neither search-cache timings nor screenshot observations are confuse
 with full model-led completion.
 
 The first model rounds were 1685 / 2239 / 3117 ms; the second were
-1416 / 1626 / 5342 ms. The longer final generation explains why the second total
+1416 / 1626 / 5342 ms. The longer final model request explains why the second total
 was slower despite a faster search batch. Model work now accounts for roughly
 7.0-8.4 s; App dispatch, durable completion and scheduling account for roughly
 3.9-4.8 s. The first App cloud dispatch took about 1.75 s, the second 1.83 s.
@@ -161,8 +161,39 @@ source latency reached the suggested target in the measured probes. Ordinary
 web latency improved but did not consistently reach one second; balanced and
 explicit-source searches are intentionally not reduced to the fast policy.
 Main-page completion improved from the earlier 17.9-25.2 s examples, but stable
-latency and complete relevance are not yet demonstrated. No PR was submitted in
-this iteration.
+latency and complete relevance are not yet demonstrated. These phone measurements
+precede the PR-preparation merge of `origin/main` at `a39d961a2`; they are not a
+device acceptance result for the subsequently merged native-memory changes.
+
+### Final-Round Timing And Processing Clock Follow-Up
+
+For controlled source message 2889, final round 2 measured:
+
+| Boundary | Elapsed |
+| --- | ---: |
+| Request preparation | 1 ms |
+| Request start to first text delta | 3704 ms |
+| First text delta to stream completion | 1638 ms |
+| Complete final model request | 5342 ms |
+| Subsequent citation validation | 15 ms |
+
+The serialized final request contained 61085 JSON characters, including tool
+schemas, messages and evidence. This is not a token count. Existing telemetry
+cannot split first-text latency into transport, provider queue and model prefill
+time. The final round is buffered for citation verification before text reaches
+the App; 5342 ms does not measure Android text drawing.
+
+Code inspection of `MainActivityTranscript.agentProcessTranscriptRow` found that
+its repeating ticker captures `displayCompletedAt` at row construction. A row
+created while active continues counting until a completion-triggered rebind;
+the ticker does not itself re-read the current terminal state. The current render
+policy attempts to rebind process rows when associated assistant content changes.
+Completion that fails to invalidate the row is therefore a stale-timer risk, not
+evidence that the model is still generating. A short gap can also be real durable
+task finalization after the provider returns. This PR does not repair or claim
+device acceptance of the newly reported processing-clock problem. Follow-up
+should verify exact conversation/turn/task ownership, terminal-event invalidation,
+identical final streaming text, background return and multiple concurrent turns.
 
 Evidence is in `build/reports/s26u-*-1.1.83-*` and
 `build/reports/android-search-tail-1.1.83-build.log` in this worktree.
