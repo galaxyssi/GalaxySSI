@@ -1,0 +1,19 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.94",
+  "rows": 10001,
+  "initial_complete": false,
+  "open_ms": 28,
+  "migration_ms": 9367,
+  "reopen_ms": 23,
+  "pages": 201,
+  "first_page_ms": 1200.350768,
+  "page_p50_ms": 624.243538,
+  "page_p95_ms": 916.664769,
+  "page_p99_ms": 987.570769,
+  "page_max_ms": 1200.350768,
+  "body_reads": 0,
+  "header_reads": 10001,
+  "ciphertext_sha256": "95b4ea281213622780074760c1fa15afccce5ded8c1594ea55c76b7c7718eb1e",
+  "scope": "Retained real encrypted corpus, not 100M capacity or UI latency; includes per-page authentication"
+}

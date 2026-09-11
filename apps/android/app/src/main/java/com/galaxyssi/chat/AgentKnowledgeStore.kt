@@ -66,6 +66,8 @@ interface AgentKnowledgeStore {
     fun list(limit: Int = 100): List<AgentKnowledgeItem>
     fun sourcePage(cursor: AgentKnowledgeSourceCursor? = null, limit: Int = 50): AgentKnowledgeSourcePage
     fun sourceCount(): Int
+    fun observeSourceDirectory(ready: () -> Unit): java.io.Closeable = java.io.Closeable {}
+    fun retrySourceDirectory() = Unit
     fun sourceItemIds(reference: AgentKnowledgeSourceReference): Set<String>
     fun findByIds(ids: Set<String>): List<AgentKnowledgeItem>
     fun updateAccess(
