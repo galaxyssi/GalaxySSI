@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
@@ -127,6 +128,36 @@ class AgentImageSearchDeviceTest {
             }
             val start = SystemClock.elapsedRealtime()
             var firstImageObservedMillis = -1L
+            var observedImage: ImageView? = null
+            var observedDrawable: android.graphics.drawable.Drawable? = null
+            var imageViewReplacements = 0
+            var imageDrawableResets = 0
+            val imageRebinds = JSONArray()
+            var previousRender = JSONArray()
+            fun renderSnapshot() = JSONArray(activity.renderedAgentTranscriptSourceEntries
+                .filter { it.role == AgentTranscriptRole.ASSISTANT }.map { item ->
+                    val blocks = AgentRichContentCodec.decode(item.richOutputJson)
+                        .ifEmpty { AgentRichContentCodec.fromText(item.text) }
+                    JSONObject().put("id", item.id).put("identity", AgentTranscriptRenderPolicy.identity(item))
+                        .put("conversation", item.conversationId).put("turn", item.turnId).put("task", item.taskId)
+                        .put("text_chunks", item.textChunkCount).put("rich_chunks", item.richOutputChunkCount)
+                        .put("types", JSONArray(blocks.map { it.type.name }))
+                        .put("sections", JSONArray(AgentResponseSectionOrganizer.organize(blocks).sections.map { it.kind.name }))
+                })
+            fun observeImageReuse() {
+                val previous = observedImage ?: return
+                val current = children(activity.agentOutputList).filterIsInstance<ImageView>()
+                    .firstOrNull { it.isClickable && it.contentDescription == previous.contentDescription } ?: return
+                if (current !== previous) {
+                    imageViewReplacements++
+                    val latest = renderSnapshot()
+                    imageRebinds.put(JSONObject().put("before", previousRender).put("after", latest))
+                    previousRender = latest
+                }
+                if (current.drawable !== observedDrawable) imageDrawableResets++
+                observedImage = current
+                observedDrawable = current.drawable
+            }
             fun visibleImage() = children(activity.agentOutputList).filterIsInstance<ImageView>()
                 .firstOrNull { image ->
                     val bitmap = (image.drawable as? BitmapDrawable)?.bitmap
@@ -145,7 +176,11 @@ class AgentImageSearchDeviceTest {
             await(180_000) {
                 if (firstImageObservedMillis < 0 && visibleImage() != null) {
                     firstImageObservedMillis = SystemClock.elapsedRealtime() - start
+                    observedImage = visibleImage()
+                    observedDrawable = observedImage?.drawable
+                    previousRender = renderSnapshot()
                 }
+                observeImageReuse()
                 store.list(conversation.id).any { it.role == AgentTranscriptRole.ASSISTANT } &&
                     AgentTaskRuntime.supervisor(context).activeWorkspaces().none { it.conversationId == conversation.id }
             }
@@ -163,7 +198,10 @@ class AgentImageSearchDeviceTest {
             assertFalse("Simple image answer must not expose duplicate rich JSON",
                 answer.any { it.text.contains("```galaxyssi-rich") })
             sources.take(3).forEach { AgentMarkdownImageStore.load(context, it) }
-            instrumentation.runOnMainSync { activity.agentOutputList.scrollToPosition(0) }
+            instrumentation.runOnMainSync {
+                activity.agentTranscriptAutoFollow = false
+                activity.agentOutputLayout.scrollToPositionWithOffset(0, 0)
+            }
             instrumentation.waitForIdleSync()
             await(20_000, onMain = false) {
                 val bounds = Rect()
@@ -174,6 +212,46 @@ class AgentImageSearchDeviceTest {
             report.put("drawable_observed_ms", firstImageObservedMillis)
             report.put("visible_image_observed_ms", SystemClock.elapsedRealtime() - start)
             report.put("visible_image_check", "viewport_drawable_and_screen_color_distribution")
+            val processingLabel = activity.getString(R.string.agent_trace_processing, "", "").trim()
+            val processedLabel = activity.getString(R.string.agent_trace_processed, "", "").trim()
+            var completedClock = ""
+            fun clockLabels() = children(activity.agentOutputList).filterIsInstance<TextView>()
+                .filter { it.isShown }.map { it.text.toString() }
+            await(5_000) {
+                observeImageReuse()
+                val labels = clockLabels()
+                report.put("clock_labels_wait", JSONArray(labels.filter {
+                    it.startsWith(processedLabel) || it.startsWith(processingLabel)
+                })).put("image_view_replacements_after_first_draw", imageViewReplacements)
+                    .put("image_drawable_resets_after_first_draw", imageDrawableResets)
+                    .put("image_rebinds", imageRebinds)
+                reportFile("image-ui-latest.json").writeText(report.toString(2))
+                if (labels.none { it.startsWith(processedLabel) || it.startsWith(processingLabel) }) {
+                    activity.agentOutputLayout.scrollToPositionWithOffset(0, 0)
+                }
+                completedClock = labels.firstOrNull { it.startsWith(processedLabel) }.orEmpty()
+                completedClock.isNotBlank() && labels.none { it.startsWith(processingLabel) }
+            }
+            report.put("completed_clock", completedClock)
+                .put("completed_clock_observed_ms", SystemClock.elapsedRealtime() - start)
+            SystemClock.sleep(1_200)
+            instrumentation.runOnMainSync {
+                observeImageReuse()
+                val labels = clockLabels()
+                report.put("clock_labels_after_delay", JSONArray(labels.filter {
+                    it.startsWith(processedLabel) || it.startsWith(processingLabel)
+                })).put("image_view_replacements_after_first_draw", imageViewReplacements)
+                    .put("image_drawable_resets_after_first_draw", imageDrawableResets)
+                    .put("image_rebinds", imageRebinds)
+                    .put("clock_window_focused", activity.hasWindowFocus())
+                reportFile("image-ui-latest.json").writeText(report.toString(2))
+                assertTrue("Completed clock must remain frozen", completedClock in labels)
+                assertFalse("Completed task must not resume processing", labels.any { it.startsWith(processingLabel) })
+            }
+            report.put("completed_clock_stable", true)
+                .put("image_view_replacements_after_first_draw", imageViewReplacements)
+                .put("image_drawable_resets_after_first_draw", imageDrawableResets)
+                .put("image_rebinds", imageRebinds)
             capture("image-ui-latest.png")
             instrumentation.runOnMainSync { assertTrue(visibleImage()!!.performClick()) }
             val saveLabel = activity.getString(R.string.peer_attachment_save)

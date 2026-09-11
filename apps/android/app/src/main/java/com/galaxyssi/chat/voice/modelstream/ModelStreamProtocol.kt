@@ -81,6 +81,13 @@ sealed interface ModelStreamEvent {
         val receivedAtElapsedMs: Long
     ) : ModelStreamEvent
 
+    /** Full replacement for ephemeral display. It must not enter the committed text or TTS stream. */
+    data class CitationPreview(
+        override val requestId: String,
+        val text: String,
+        val receivedAtElapsedMs: Long
+    ) : ModelStreamEvent
+
     data class ToolCallDelta(
         override val requestId: String,
         val sequence: Long,

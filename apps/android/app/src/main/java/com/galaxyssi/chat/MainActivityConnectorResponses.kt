@@ -689,7 +689,7 @@ internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnector
         liveAgentConnectorStreams.remove(update.sourceMessageId)
     } else {
         liveAgentConnectorStreams[update.sourceMessageId] = AgentTranscriptEntry(
-            id = "agent-stream-${update.sourceMessageId}",
+            id = if (update.previewOnly) "agent-stream-preview-${update.sourceMessageId}" else "agent-stream-${update.sourceMessageId}",
             role = AgentTranscriptRole.ASSISTANT,
             text = update.content,
             timestampMillis = update.receivedAtMillis,

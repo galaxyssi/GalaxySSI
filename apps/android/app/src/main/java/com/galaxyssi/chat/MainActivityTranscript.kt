@@ -1149,6 +1149,7 @@ internal fun MainActivity.agentReplyWaitingTranscriptRow(): View = LinearLayout(
 }
 
 internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntry): View {
+    if (AgentStableAssistantRow.supports(entry)) return AgentStableAssistantRow(this, entry)
     val progressiveText = entry.textChunkCount > 0 && entry.richOutputChunkCount == 0
     val richContent = if (progressiveText) {
         agentChunkedAssistantContent(entry)
@@ -1181,9 +1182,7 @@ internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntr
         richContent
     }
     val decoratedContent = decorateAgentReplySpeech(entry, content)
-    val execution = agentExecutionPresentations[entry.taskId]
-        ?.takeUnless { isAgentApprovalEntry(entry) || entry.dedupeKey.startsWith("agent-recovery:") }
-        ?: return decoratedContent
+    val executionLabel = agentAssistantExecutionLabel(entry) ?: return decoratedContent
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         layoutParams = LinearLayout.LayoutParams(
@@ -1191,7 +1190,15 @@ internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntr
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         addView(decoratedContent)
-        addView(TextView(this@agentAssistantTranscriptRow).apply {
+        addView(executionLabel)
+    }
+}
+
+internal fun MainActivity.agentAssistantExecutionLabel(entry: AgentTranscriptEntry, existing: View? = null): View? {
+    val execution = agentExecutionPresentations[entry.taskId]
+        ?.takeUnless { isAgentApprovalEntry(entry) || entry.dedupeKey.startsWith("agent-recovery:") }
+        ?: return null
+    return ((existing as? TextView) ?: TextView(this)).apply {
             text = buildString {
                 append(execution.executorLabel)
                 append(" \u00b7 ")
@@ -1209,14 +1216,21 @@ internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntr
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(2), dp(5), dp(2), 0)
-        })
     }
 }
 
 internal fun MainActivity.agentAssistantRichContent(
     displayEntry: AgentTranscriptEntry,
     actionEntry: AgentTranscriptEntry
-): View = AgentRichContentView(
+): View = agentAssistantRichRenderer(displayEntry, actionEntry).create(agentAssistantDisplayEntry(displayEntry))
+
+internal fun MainActivity.updateAgentAssistantRichContent(view: View, entry: AgentTranscriptEntry): Boolean =
+    agentAssistantRichRenderer(entry, entry).update(view, agentAssistantDisplayEntry(entry))
+
+private fun MainActivity.agentAssistantRichRenderer(
+    displayEntry: AgentTranscriptEntry,
+    actionEntry: AgentTranscriptEntry
+): AgentRichContentView = AgentRichContentView(
     activity = this,
     onTextViewReady = { textView ->
         attachAgentTranscriptActions(textView, actionEntry)
@@ -1241,14 +1255,16 @@ internal fun MainActivity.agentAssistantRichContent(
             agentResponseSectionExpansion.remove(agentResponseSectionExpansion.keys.first())
         }
     }
-).create(displayEntry.copy(
+)
+
+private fun MainActivity.agentAssistantDisplayEntry(displayEntry: AgentTranscriptEntry): AgentTranscriptEntry = displayEntry.copy(
     text = CodexStyleResponsePolicy.sanitizeAssistantText(
         localizedAgentAssistantText(displayEntry.text)
     ),
     richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
         displayEntry.richOutputJson
     )
-))
+)
 
 internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry): View {
     val groupKey = AgentTranscriptPresentationPolicy.processGroupKey(entry)
@@ -1363,16 +1379,18 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                 val statusView = this
                 val visibleBounds = Rect()
                 var hasRendered = false
+                val clock = AgentProcessClock(startedAt, displayCompletedAt)
                 val ticker = object : Runnable {
                     override fun run() {
                         val visible = statusView.isShown &&
                             statusView.getGlobalVisibleRect(visibleBounds)
                         if (!hasRendered || visible) {
-                            val elapsedMillis = (
-                                (displayCompletedAt ?: System.currentTimeMillis()) - startedAt
-                            ).coerceAtLeast(0L)
+                            if (clock.completedAtMillis == null) {
+                                clock.observe(agentProcessCompletionTimestamp(entry, renderedAgentTranscriptSourceEntries))
+                            }
+                            val elapsedMillis = clock.elapsed(System.currentTimeMillis())
                             val nextText = getString(
-                                if (completed) {
+                                if (clock.completedAtMillis != null) {
                                     R.string.agent_trace_processed
                                 } else {
                                     R.string.agent_trace_processing
@@ -1385,7 +1403,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                             }
                             hasRendered = true
                         }
-                        if (displayCompletedAt == null && statusView.isAttachedToWindow) {
+                        if (clock.completedAtMillis == null && statusView.isAttachedToWindow) {
                             statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
                         }
                     }

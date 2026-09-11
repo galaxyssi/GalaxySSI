@@ -25,7 +25,7 @@ private object AgentReplySpeechRuntime {
 internal fun MainActivity.observeAgentReplySpeech(
     entries: List<AgentTranscriptEntry>
 ): Set<String> {
-    agentVoiceConversation?.onEntries(entries)
+    agentVoiceConversation?.onEntries(entries.filterNot { it.id.startsWith("agent-stream-preview-") })
     return applyAgentReplySpeechCommand(
         AgentReplySpeechRuntime.controller(this).observe(
             AgentReplySpeechPresentationPolicy.latestTarget(entries)
@@ -37,12 +37,27 @@ internal fun MainActivity.decorateAgentReplySpeech(
     entry: AgentTranscriptEntry,
     content: View
 ): View {
-    val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return content
+    val footer = agentReplySpeechFooter(entry) ?: return content
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        addView(content)
+        addView(footer)
+    }
+}
+
+internal fun MainActivity.agentReplySpeechFooter(entry: AgentTranscriptEntry, existing: View? = null): View? {
+    val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return null
     val controller = AgentReplySpeechRuntime.controller(this)
     val latest = AgentReplySpeechPresentationPolicy.latestTarget(renderedAgentTranscriptSourceEntries)
-    if (latest?.responseId != target.responseId && !controller.isActive(target)) return content
+    if (latest?.responseId != target.responseId && !controller.isActive(target)) return null
 
-    val button = AgentReplySpeechButton(this).apply {
+    val existingContainer = existing as? LinearLayout
+    val existingButton = existingContainer?.getChildAt(0) as? AgentReplySpeechButton
+    val button = (existingButton ?: AgentReplySpeechButton(this)).apply {
         tag = "agent-reply-speech:${target.responseId}"
         setPlaying(controller.isEnabled(target))
         setOnClickListener {
@@ -54,28 +69,16 @@ internal fun MainActivity.decorateAgentReplySpeech(
             notifyAgentReplySpeechRows(changed - entry.id)
         }
     }
+    if (existingButton != null) return existingContainer
     return LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.END
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        addView(content)
+        ).apply { topMargin = dp(1) }
         addView(
-            LinearLayout(this@decorateAgentReplySpeech).apply {
-                gravity = Gravity.END
-                addView(
-                    button,
-                    LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        dp(32)
-                    )
-                )
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(1) }
+            button,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32))
         )
     }
 }

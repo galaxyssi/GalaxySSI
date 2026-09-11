@@ -68,7 +68,7 @@ import kotlin.math.ceil
 
 class AgentRichContentView(
     private val activity: Activity,
-    private val onTextViewReady: (TextView) -> Unit,
+    private var onTextViewReady: (TextView) -> Unit,
     private val onAction: (AgentRichAction) -> Unit,
     private val onFormSubmit: (AgentRichBlock, Map<String, String>) -> Unit,
     private val enableResponseSections: Boolean = true,
@@ -85,16 +85,80 @@ class AgentRichContentView(
 ) {
     private data class RenderScope(val conversation: String, val task: String, val turn: String)
 
-    fun create(entry: AgentTranscriptEntry): View {
-        val scope = RenderScope(entry.conversationId, entry.taskId, entry.turnId)
+    private class ContentLayout(context: Context) : LinearLayout(context) {
+        var renderer: AgentRichContentView? = null
+        var scope: RenderScope? = null
+        var identity = ""
+        var groups: List<List<AgentRichBlock>>? = null
+    }
+
+    private fun presentationBlocks(entry: AgentTranscriptEntry): List<AgentRichBlock> {
         val explicit = AgentRichContentCodec.decode(entry.richOutputJson)
         val parsed = explicit.ifEmpty { AgentRichContentCodec.fromText(entry.text) }
-        val blocks = AgentImagePresentation.annotate(parsed,
+        return AgentImagePresentation.annotate(parsed,
             entry.text + "\n" + parsed.filter { it.type == AgentRichBlockType.TEXT }.joinToString("\n") { it.text },
             activity.resources.configuration.locales[0].language == "zh",
             activity.getString(R.string.rich_output_type_image))
+    }
+
+    private fun finalOnly(layout: AgentResponseSectionLayout): Boolean =
+        enableResponseSections && layout.collapsible && layout.sections.singleOrNull()?.kind ==
+            AgentResponseSectionKind.FINAL_ANSWER
+
+    internal fun update(view: View, entry: AgentTranscriptEntry): Boolean {
+        val container = view as? ContentLayout ?: return false
+        val previous = container.groups ?: return false
+        val scope = RenderScope(entry.conversationId, entry.taskId, entry.turnId)
+        if (container.scope != scope || container.identity != AgentTranscriptRenderPolicy.identity(entry)) return false
+        container.renderer?.takeUnless { it === this }?.let { renderer ->
+            renderer.onTextViewReady = onTextViewReady
+            return renderer.update(view, entry)
+        }
+        val blocks = presentationBlocks(entry)
+        val layout = AgentResponseSectionOrganizer.organize(blocks)
+        val singleAnswer = finalOnly(layout)
+        if (enableResponseSections && layout.collapsible && !singleAnswer) return false
+        val visibleBlocks = if (singleAnswer) layout.sections.single().blocks else blocks
+        if (!AgentRichContentUpdatePolicy.supports(visibleBlocks)) return false
+        container.setPadding(0, if (singleAnswer) dp(4) else 0, 0, if (singleAnswer) dp(4) else 0)
+        val groups = AgentRichContentUpdatePolicy.groups(visibleBlocks)
+        groups.forEachIndexed { index, group ->
+            val old = previous.getOrNull(index)
+            val child = container.getChildAt(index)
+            when {
+                old != null && AgentRichContentUpdatePolicy.sameContent(old, group) -> Unit
+                child is TextView && old?.all(AgentRichSelectableParagraphs::supports) == true &&
+                    group.all(AgentRichSelectableParagraphs::supports) -> {
+                    child.text = AgentRichSelectableParagraphs.buildText(group, ::inlineMarkdown)
+                }
+                else -> {
+                    if (child != null) container.removeViewAt(index)
+                    addBlockGroup(container, group, scope, index)
+                }
+            }
+            rebindSelectableActions(container.getChildAt(index))
+        }
+        while (container.childCount > groups.size) container.removeViewAt(container.childCount - 1)
+        container.groups = groups
+        return true
+    }
+
+    private fun rebindSelectableActions(view: View) {
+        if (view is ParagraphSelectingTextView) onTextViewReady(view)
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) rebindSelectableActions(view.getChildAt(index))
+        }
+    }
+
+    fun create(entry: AgentTranscriptEntry): View {
+        val scope = RenderScope(entry.conversationId, entry.taskId, entry.turnId)
+        val blocks = presentationBlocks(entry)
         val sectionLayout = AgentResponseSectionOrganizer.organize(blocks)
-        return LinearLayout(activity).apply {
+        val singleAnswer = finalOnly(sectionLayout)
+        return ContentLayout(activity).apply {
+            renderer = this@AgentRichContentView
+            this.scope = scope
+            identity = AgentTranscriptRenderPolicy.identity(entry)
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             layoutParams = LinearLayout.LayoutParams(
@@ -103,7 +167,7 @@ class AgentRichContentView(
             ).apply {
                 topMargin = dp(12)
             }
-            if (enableResponseSections && sectionLayout.collapsible) {
+            if (enableResponseSections && sectionLayout.collapsible && !singleAnswer) {
                 sectionLayout.sections.forEachIndexed { index, section ->
                     addView(
                         if (section.kind == AgentResponseSectionKind.FINAL_ANSWER) {
@@ -120,7 +184,10 @@ class AgentRichContentView(
                     )
                 }
             } else {
-                addBlockViews(this, blocks, scope)
+                val visibleBlocks = if (singleAnswer) sectionLayout.sections.single().blocks else blocks
+                setPadding(0, if (singleAnswer) dp(4) else 0, 0, if (singleAnswer) dp(4) else 0)
+                addBlockViews(this, visibleBlocks, scope)
+                if (AgentRichContentUpdatePolicy.supports(visibleBlocks)) groups = AgentRichContentUpdatePolicy.groups(visibleBlocks)
             }
         }
     }
@@ -133,15 +200,14 @@ class AgentRichContentView(
         }
 
     private fun addBlockViews(container: LinearLayout, blocks: List<AgentRichBlock>, scope: RenderScope) {
-        var sourceIndex = 0
-        var renderedIndex = 0
-        while (sourceIndex < blocks.size) {
-            val block = blocks[sourceIndex]
+        AgentRichContentUpdatePolicy.groups(blocks).forEachIndexed { index, group ->
+            addBlockGroup(container, group, scope, index)
+        }
+    }
+
+    private fun addBlockGroup(container: LinearLayout, group: List<AgentRichBlock>, scope: RenderScope, index: Int) {
+            val block = group.first()
             val selectableGroup = AgentRichSelectableParagraphs.supports(block)
-            var end = sourceIndex + 1
-            if (selectableGroup) {
-                while (end < blocks.size && AgentRichSelectableParagraphs.supports(blocks[end])) end++
-            }
             val width = if (block.type == AgentRichBlockType.APPROVAL) {
                 (activity.resources.displayMetrics.widthPixels * MAX_ASSISTANT_WIDTH_RATIO).toInt()
             } else {
@@ -151,7 +217,7 @@ class AgentRichContentView(
                 if (selectableGroup) {
                     AgentRichSelectableParagraphs.createView(
                         context = activity,
-                        blocks = blocks.subList(sourceIndex, end),
+                        blocks = group,
                         inlineMarkdown = ::inlineMarkdown,
                         lineSpacingExtraPx = dp(4).toFloat(),
                         onTextViewReady = onTextViewReady
@@ -159,6 +225,7 @@ class AgentRichContentView(
                 } else {
                     blockView(block, scope)
                 },
+                index,
                 LinearLayout.LayoutParams(
                     width,
                     if (!selectableGroup && block.type == AgentRichBlockType.DIVIDER) {
@@ -168,12 +235,9 @@ class AgentRichContentView(
                     }
                 ).apply {
                     gravity = Gravity.START
-                    if (renderedIndex > 0) topMargin = dp(blockSpacing(block))
+                    if (index > 0) topMargin = dp(blockSpacing(block))
                 }
             )
-            sourceIndex = end
-            renderedIndex++
-        }
     }
 
     private fun collapsibleSection(

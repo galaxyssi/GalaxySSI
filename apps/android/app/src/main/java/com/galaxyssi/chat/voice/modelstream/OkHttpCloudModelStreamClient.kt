@@ -36,7 +36,11 @@ object SharedCloudModelHttpClient {
 
 class OkHttpCloudModelStreamClient(
     private val baseClient: OkHttpClient = SharedCloudModelHttpClient.client,
-    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L }
+    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val onTiming: (ModelStreamTiming) -> Unit = { timing ->
+        android.util.Log.i("GalaxySSIWebLatency", "model_http request=${timing.requestId} " +
+            timing.milliseconds.entries.joinToString(" ") { "${it.key}=${it.value}" })
+    }
 ) : CloudModelStreamClient {
     private class ActiveRequest(val call: Call) {
         @Volatile var cancelReason: ModelStreamCancelReason? = null
@@ -44,7 +48,9 @@ class OkHttpCloudModelStreamClient(
     private val activeCalls = ConcurrentHashMap<String, ActiveRequest>()
 
     override fun stream(request: ModelStreamRequest): Flow<ModelStreamEvent> = channelFlow {
+        val timings = ModelStreamTimings(request.requestId)
         val client = baseClient.newBuilder()
+            .eventListener(timings)
             .connectTimeout(request.connectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(request.readTimeoutMs, TimeUnit.MILLISECONDS)
             .build()
@@ -68,8 +74,10 @@ class OkHttpCloudModelStreamClient(
         }
         val reader = launch(Dispatchers.IO) {
             try {
-                readStream(request, active).collect { send(it) }
+                timings.mark("reader_started")
+                readStream(request, active, timings).collect { send(it) }
             } finally {
+                runCatching { onTiming(timings.snapshot()) }
                 activeCalls.remove(request.requestId, active)
                 channel.close()
             }
@@ -82,10 +90,10 @@ class OkHttpCloudModelStreamClient(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun readStream(request: ModelStreamRequest, active: ActiveRequest): Flow<ModelStreamEvent> = flow {
+    private fun readStream(request: ModelStreamRequest, active: ActiveRequest, timings: ModelStreamTimings): Flow<ModelStreamEvent> = flow {
         val call = active.call
         val adapter = ModelStreamProviderAdapters.create(request.provider)
-        val state = StreamEmissionState()
+        val state = StreamEmissionState(timings = timings)
         try {
             call.execute().use { response ->
                 throwIfCancelled(request.requestId)
@@ -190,6 +198,7 @@ class OkHttpCloudModelStreamClient(
         frame: ParsedModelStreamFrame,
         state: StreamEmissionState
     ): Boolean {
+        state.timings.mark("first_frame")
         val providerSequence = frame.providerSequence
         if (providerSequence != null && state.lastProviderSequence != null &&
             providerSequence <= requireNotNull(state.lastProviderSequence)
@@ -206,6 +215,7 @@ class OkHttpCloudModelStreamClient(
         }
         for (delta in frame.textDeltas) {
             if (delta.isEmpty()) continue
+            state.timings.mark("first_text")
             state.emittedPayload = true
             emit(
                 ModelStreamEvent.TextDelta(
@@ -217,6 +227,7 @@ class OkHttpCloudModelStreamClient(
             )
         }
         for (payload in frame.toolDeltas) {
+            state.timings.mark("first_tool")
             state.emittedPayload = true
             emit(
                 ModelStreamEvent.ToolCallDelta(
@@ -260,6 +271,7 @@ class OkHttpCloudModelStreamClient(
 }
 
 private data class StreamEmissionState(
+    val timings: ModelStreamTimings,
     val sequence: AtomicLong = AtomicLong(0L),
     var emittedPayload: Boolean = false,
     var sawTerminal: Boolean = false,

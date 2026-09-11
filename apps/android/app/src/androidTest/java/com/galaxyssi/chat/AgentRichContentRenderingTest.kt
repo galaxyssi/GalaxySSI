@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -28,7 +29,7 @@ class AgentRichContentRenderingTest {
         lateinit var document: LinearLayout
         lateinit var scroll: ScrollView
         instrumentation.runOnMainSync {
-            document = AgentRichContentView(activity, {}, {}, { _, _ -> }).create(
+            document = AgentRichContentView(activity, {}, {}, { _, _ -> }, enableResponseSections = false).create(
                 AgentTranscriptEntry(
                     id = "rich-showcase",
                     role = AgentTranscriptRole.ASSISTANT,
@@ -38,19 +39,25 @@ class AgentRichContentRenderingTest {
                 )
             ) as LinearLayout
             scroll = ScrollView(activity).apply {
+                setBackgroundColor(android.graphics.Color.WHITE)
                 setPadding(24, 24, 24, 24)
                 addView(document, ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ))
             }
-            activity.setContentView(scroll)
+            activity.findViewById<ViewGroup>(android.R.id.content).addView(scroll, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         instrumentation.waitForIdleSync()
         SystemClock.sleep(700)
 
         instrumentation.runOnMainSync {
-            assertEquals(blocks.size, document.childCount)
+            // Five adjacent textual blocks share one cross-paragraph selection surface.
+            assertEquals(16, document.childCount)
+            val paragraphs = document.getChildAt(0) as TextView
+            assertTrue(paragraphs.text.contains("Project status"))
+            assertTrue(paragraphs.text.contains("Verify the final result"))
             for (index in 0 until document.childCount) {
                 val child = document.getChildAt(index)
                 assertEquals(View.VISIBLE, child.visibility)
