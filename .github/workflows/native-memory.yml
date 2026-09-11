@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/android/memory-native/**"
       - "tools/dev/test-memory-native.ps1"
+      - "tools/dev/benchmark-memory-native.ps1"
       - "tools/dev/check-no-chinese-outside-i18n*"
       - ".github/workflows/native-memory.yml"
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - "apps/android/memory-native/**"
       - "tools/dev/test-memory-native.ps1"
+      - "tools/dev/benchmark-memory-native.ps1"
       - "tools/dev/check-no-chinese-outside-i18n*"
       - ".github/workflows/native-memory.yml"
   workflow_dispatch:
