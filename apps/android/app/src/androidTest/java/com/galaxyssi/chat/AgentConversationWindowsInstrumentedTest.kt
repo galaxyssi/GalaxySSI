@@ -20,6 +20,108 @@ class AgentConversationWindowsInstrumentedTest {
     private val context = instrumentation.targetContext
     private val manager get() = context.getSystemService(ActivityManager::class.java)
 
+    @Test fun brandHeaderSeparatesWindowAndConversationActions() {
+        val key = "brand-header-${UUID.randomUUID()}"
+        val store = AgentTranscriptStore(context, key)
+        val seed = store.createConversation("Header actions", privateMode = true)
+        store.append(AgentTranscriptRole.PROCESS, "Header action verification", conversationId = seed.id)
+        val conversations = mutableSetOf(seed.id)
+        val windows = mutableListOf<MainActivity>()
+        val release = AtomicBoolean(false)
+        var handle: AgentTaskHandle? = null
+        var monitor = instrumentation.addMonitor(ConversationWindowActivity::class.java.name, null, false)
+        try {
+            context.startActivity(Intent(context, ConversationWindowActivity::class.java)
+                .setData(Uri.parse("galaxyssi://conversation-window/$key"))
+                .putExtra(AgentConversationWindows.WINDOW_KEY, key)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_NEW_TASK))
+            val root = instrumentation.waitForMonitorWithTimeout(monitor, 60_000) as? MainActivity
+                ?: error("Header test window did not open")
+            windows += root
+            await("Header ready") { !root.initialAgentHydrationPending && root.conversationWindow.visible &&
+                root.conversationWindow.conversationId == seed.id }
+            instrumentation.removeMonitor(monitor)
+            val taskId = root.taskId
+            val running = AgentTaskRuntime.supervisor(context).submit(AgentWorkspace(
+                workspaceId = key, sessionId = key, conversationId = seed.id, taskId = key, goal = "Header lifecycle test"
+            )) { while (!release.get()) delay(100) }
+            handle = running
+            await("Background fixture started") { running.isActive }
+            val brandText = root.findViewById<android.view.ViewGroup>(R.id.agentBrandNewConversation)
+            val title = root.findViewById<View>(R.id.agentBrandTitle)
+            val subtitle = descendants(brandText).filterIsInstance<android.widget.TextView>()
+                .first { it.text.toString() == context.getString(R.string.agent_brand_subtitle) }
+            instrumentation.runOnMainSync {
+                assertTrue(root.agentBrandLogo.isClickable)
+                assertTrue(brandText.isClickable)
+                assertEquals(context.getString(R.string.conversation_window_open), root.agentBrandLogo.contentDescription)
+                assertEquals(0, context.resources.getIdentifier("agentOpenWindowButton", "id", context.packageName))
+                root.agentGoalInput.setText("Draft before title tap")
+            }
+            tapCenter(title)
+            await("Title starts a new session") { root.agentTranscriptStore.activeConversation().id != seed.id }
+            val second = root.agentTranscriptStore.activeConversation().id
+            conversations += second
+            instrumentation.runOnMainSync {
+                assertEquals(taskId, root.taskId)
+                assertEquals("", root.agentGoalInput.text.toString())
+                assertTrue(running.isActive)
+                assertEquals("Draft before title tap", AgentWindowStateStore(context).load(key, seed.id).text)
+                root.agentTranscriptStore.append(AgentTranscriptRole.PROCESS, "Second session", conversationId = second)
+                root.agentGoalInput.setText("Draft before subtitle tap")
+            }
+            tapCenter(subtitle)
+            await("Subtitle starts a new session") { root.agentTranscriptStore.activeConversation().id != second }
+            conversations += root.agentTranscriptStore.activeConversation().id
+            instrumentation.runOnMainSync {
+                assertEquals(taskId, root.taskId)
+                assertTrue(running.isActive)
+                assertEquals("Draft before subtitle tap", AgentWindowStateStore(context).load(key, second).text)
+                root.openAgentConversation(seed.id)
+                assertEquals("Draft before title tap", root.agentGoalInput.text.toString())
+            }
+            monitor = instrumentation.addMonitor(ConversationWindowActivity::class.java.name, null, false)
+            tapCenter(root.agentBrandLogo)
+            val child = instrumentation.waitForMonitorWithTimeout(monitor, 60_000) as? MainActivity
+                ?: error("Logo did not open a document window")
+            windows += child
+            await("Logo handoff ready") { !child.initialAgentHydrationPending && !root.conversationWindow.openingWindow }
+            instrumentation.runOnMainSync {
+                assertNotEquals(root.taskId, child.taskId)
+                assertEquals(seed.id, child.agentTranscriptStore.activeConversation().id)
+                assertEquals("Draft before title tap", child.agentGoalInput.text.toString())
+                assertNotEquals(seed.id, root.agentTranscriptStore.activeConversation().id)
+                conversations += root.agentTranscriptStore.activeConversation().id
+                assertEquals("", root.agentGoalInput.text.toString())
+                assertTrue(running.isActive)
+            }
+            capture("brand-header-actions.png")
+        } finally {
+            release.set(true)
+            handle?.takeIf { it.isActive }?.cancel("Header test cleanup")
+            handle?.let { await("Header fixture stopped") { !it.isActive } }
+            instrumentation.runOnMainSync { windows.filterNot { it.isDestroyed }.forEach { it.finishAndRemoveTask() } }
+            conversations.forEach(store::deleteConversation)
+            if (handle != null) EncryptedAgentWorkspaceStore(context).delete(key)
+            instrumentation.removeMonitor(monitor)
+        }
+    }
+
+    private fun tapCenter(view: View) {
+        val point = IntArray(2)
+        instrumentation.runOnMainSync {
+            view.getLocationOnScreen(point)
+            point[0] += view.width / 2
+            point[1] += view.height / 2
+        }
+        val down = SystemClock.uptimeMillis()
+        for (action in listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
+            val event = android.view.MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
+                point[0].toFloat(), point[1].toFloat(), 0)
+            try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+        }
+    }
+
     @Test fun recreatedDocumentUsesLastSelectionAndDraft() {
         val key = "window-recreate-${UUID.randomUUID()}"
         val store = AgentTranscriptStore(context, key)
@@ -174,7 +276,7 @@ class AgentConversationWindowsInstrumentedTest {
                 instrumentation.runOnMainSync {
                     root.openAgentConversation(conversation.id)
                     root.agentGoalInput.setText("Draft $index")
-                    assertTrue(root.findViewById<View>(R.id.agentOpenWindowButton).performClick())
+                    assertTrue(root.agentBrandLogo.performClick())
                 }
                 val window = instrumentation.waitForMonitorWithTimeout(monitor, 60_000) as? MainActivity
                     ?: error("Window $index did not open")
@@ -227,7 +329,7 @@ class AgentConversationWindowsInstrumentedTest {
             instrumentation.runOnMainSync {
                 root.agentSessionsDialog?.dismiss()
                 root.openAgentConversation(conversations.first())
-                root.findViewById<View>(R.id.agentOpenWindowButton).performClick()
+                root.agentBrandLogo.performClick()
             }
             await("Existing window foreground") { target.conversationWindow.visible }
             assertEquals(11, manager.appTasks.count { it.taskInfo.taskId in taskIds })

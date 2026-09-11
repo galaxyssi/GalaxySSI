@@ -152,7 +152,10 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
 
     fun attach() {
         AgentConversationWindows.register(this)
-        activity.findViewById<View>(R.id.agentOpenWindowButton).setOnClickListener { AgentConversationWindows.open(this) }
+        activity.agentBrandLogo.setOnClickListener { AgentConversationWindows.open(this) }
+        activity.findViewById<View>(R.id.agentBrandNewConversation).setOnClickListener {
+            if (!activity.initialAgentHydrationPending && !openingWindow) activity.createAgentConversation()
+        }
         activity.agentGoalInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
