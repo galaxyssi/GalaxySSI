@@ -93,6 +93,27 @@ class SQLiteAgentKnowledgeStore internal constructor(
     fun exportJson(): JSONArray = storage.access { db ->
         JSONArray().also { array -> storage.scan(db).forEach { array.put(AgentKnowledgeCodec.encodeItem(it)) } }
     }
+    internal fun exportRecords(writer: BackupRecordStream.Writer) = storage.backupSnapshot().use {
+        KnowledgeBackupRecords.export(it, writer)
+    }
+    internal fun restoreRecords(staging: KnowledgeBackupStaging, progress: (Long) -> Unit = {}) {
+        storage.transaction { db ->
+            storage.scan(db).forEach(staging::rememberPrevious)
+            staging.finishPrevious()
+            var restored = 0L
+            for ((before, after) in staging.changes()) {
+                if (after == null) db.delete("knowledge_items", "item_key=?", arrayOf(storage.key("id", requireNotNull(before).id)))
+                else {
+                    storage.write(db, after)
+                    restored = Math.addExact(restored, 1)
+                    progress(restored)
+                }
+            }
+        }
+        try {
+            for ((before, after) in staging.changes()) publish(listOfNotNull(before), listOfNotNull(after))
+        } finally { KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex() }
+    }
     fun replaceAllJson(array: JSONArray) {
         val changed = storage.transaction { db ->
             val previous = storage.scan(db).toList()
