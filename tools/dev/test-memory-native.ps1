@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('host', 'android')][string]$Mode = 'host',
+    [ValidateSet('host', 'android', 'sqlite-android')][string]$Mode = 'host',
     [string]$CargoHome,
     [string]$RustupHome,
     [string]$Ndk = "$env:LOCALAPPDATA\Android\Sdk\ndk\29.0.13113456",
@@ -27,7 +27,8 @@ if ($Mode -eq 'host') {
     $env:CARGO_ENCODED_RUSTFLAGS = '-C' + [char]31 + "dlltool=$llvm/llvm-dlltool.exe"
     & $cargo $toolchain fmt --manifest-path $manifest --check
     if ($LASTEXITCODE -ne 0) { throw 'Native memory formatting check failed' }
-    & $cargo $toolchain test --locked --offline --all-features --manifest-path $manifest --jobs 2 -- --show-output *> "$output/host.log"
+    # Core tests need no Windows C compiler; SQLite runs on Android and Linux CI.
+    & $cargo $toolchain test --locked --offline --features probe --manifest-path $manifest --jobs 2 -- --show-output *> "$output/host.log"
     $code = $LASTEXITCODE
     Get-Content -LiteralPath "$output/host.log" -Tail 50
     if ($code -ne 0) { throw "Host regression failed: $output" }
@@ -36,13 +37,29 @@ if ($Mode -eq 'host') {
     if ($LASTEXITCODE -ne 0 -or $model -ne 'SM-T575') { throw "Only SM-T575 is authorized for this probe; found $model" }
     $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "$llvm/aarch64-linux-android26-clang.cmd"
     $env:CARGO_ENCODED_RUSTFLAGS = @('-C', 'link-arg=-Wl,-z,max-page-size=16384', '-C', 'link-arg=-Wl,-z,common-page-size=16384') -join [char]31
-    & $cargo $toolchain build --release --locked --offline --target aarch64-linux-android --features probe `
-        --bin memory-native-probe --manifest-path $manifest --jobs 2 *> "$output/android-build.log"
-    if ($LASTEXITCODE -ne 0) { throw "Android native build failed: $output" }
-    $metadata = & $cargo $toolchain metadata --format-version 1 --no-deps --locked --offline --manifest-path $manifest
-    if ($LASTEXITCODE -ne 0) { throw 'Unable to locate the native target directory' }
-    $targetDirectory = ($metadata | ConvertFrom-Json).target_directory
-    $binary = Join-Path $targetDirectory 'aarch64-linux-android/release/memory-native-probe'
+    & $cargo $toolchain fmt --manifest-path $manifest --check
+    if ($LASTEXITCODE -ne 0) { throw 'Native memory formatting check failed' }
+    if ($Mode -eq 'sqlite-android') {
+        $env:CC_aarch64_linux_android = $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
+        $env:AR_aarch64_linux_android = "$llvm/llvm-ar.exe"
+        $env:LIBSQLITE3_FLAGS = '-DSQLITE_MAX_ATTACHED=64'
+        & $cargo $toolchain test --no-run --release --locked --offline --target aarch64-linux-android `
+            --features sqlite-store --test sqlite_store --manifest-path $manifest --jobs 2 --message-format=json `
+            1> "$output/android-artifacts.jsonl" 2> "$output/android-build.log"
+        if ($LASTEXITCODE -ne 0) { throw "Android SQLite native build failed: $output" }
+        $artifacts = @(Get-Content -LiteralPath "$output/android-artifacts.jsonl" | ForEach-Object { $_ | ConvertFrom-Json } |
+            Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'sqlite_store' -and $_.executable })
+        if ($artifacts.Count -ne 1) { throw "Expected one SQLite test executable: $output" }
+        $binary = $artifacts[0].executable
+    } else {
+        & $cargo $toolchain build --release --locked --offline --target aarch64-linux-android --features probe `
+            --bin memory-native-probe --manifest-path $manifest --jobs 2 *> "$output/android-build.log"
+        if ($LASTEXITCODE -ne 0) { throw "Android native build failed: $output" }
+        $metadata = & $cargo $toolchain metadata --format-version 1 --no-deps --locked --offline --manifest-path $manifest
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to locate the native target directory' }
+        $targetDirectory = ($metadata | ConvertFrom-Json).target_directory
+        $binary = Join-Path $targetDirectory 'aarch64-linux-android/release/memory-native-probe'
+    }
     $headers = & "$llvm/llvm-readelf.exe" --program-headers --wide $binary
     if ($LASTEXITCODE -ne 0) { throw 'Unable to read native ELF headers' }
     $headers | Set-Content -Encoding utf8 -LiteralPath "$output/elf-headers.txt"
@@ -63,6 +80,17 @@ if ($Mode -eq 'host') {
     if ($LASTEXITCODE -ne 0) { throw 'Native probe upload failed' }
     & $Adb -s $Serial shell chmod 700 $remote
     if ($LASTEXITCODE -ne 0) { throw 'Unable to prepare native probe executable' }
+    if ($Mode -eq 'sqlite-android') {
+        & $Adb -s $Serial shell "TMPDIR=/data/local/tmp $remote --test-threads=1 --show-output" *> "$output/sqlite-android.log"
+        $code = $LASTEXITCODE
+        Get-Content -LiteralPath "$output/sqlite-android.log"
+        if ($code -ne 0 -or (Get-Content -Raw -LiteralPath "$output/sqlite-android.log") -notmatch 'test result: ok\. [1-9][0-9]* passed; 0 failed; 1 ignored; 0 measured; 0 filtered out') {
+            throw "Android SQLite storage regressions failed: $output"
+        }
+        Write-Output "Verified SQLite storage on $model; $($loads.Count) aligned ELF segments; sha256=$sha"
+        Write-Output "Native memory evidence: $output"
+        return
+    }
     $phases = @('prepare', 'verify', 'wrong-key', 'corrupt', 'verify')
     for ($i = 0; $i -lt $phases.Count; $i++) {
         $phase = $phases[$i]

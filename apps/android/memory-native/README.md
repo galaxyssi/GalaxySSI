@@ -26,7 +26,8 @@ unchanged by building or running the isolated probe.
 - Inserts require one host transaction covering the new vector and all neighbor
   changes; searches require a stable host snapshot. A failed operation propagates
   its error. The App bridge must enforce those boundaries before activation.
-- Root/format/model identity, durable generation publication, mutation replay,
+- The optional `sqlite-store` implements encrypted physical node shards and a
+  durable transaction/snapshot owner. Source/model mapping, mutation replay,
   deletion, source revision validation, shared cache admission and JNI ownership
   are still integration work. No production feature flag enables this module.
 
@@ -52,6 +53,7 @@ From the repository root:
 ```powershell
 ./tools/dev/test-memory-native.ps1 -Mode host
 ./tools/dev/test-memory-native.ps1 -Mode android
+./tools/dev/test-memory-native.ps1 -Mode sqlite-android
 ```
 
 The Android runner is restricted to **SM-T575**. It uploads a native executable
@@ -62,6 +64,18 @@ The `Native Memory Adapter` workflow runs formatting and locked host regression
 tests on changes to this module. It is not a replacement for Android device or
 production App integration tests.
 
+`host` tests the core adapter and builds the small file probe without requiring
+a Windows C compiler. `sqlite-android` builds the bundled SQLite storage tests
+with NDK Clang and executes them on SM-T575. Linux CI tests **all features**,
+including SQLite. A Windows all-feature host build additionally needs a Windows
+GNU C toolchain; the NDK Android C compiler is not a Windows C compiler.
+
+SQLite storage builds must set `LIBSQLITE3_FLAGS=-DSQLITE_MAX_ATTACHED=64`.
+Both the Android runner and CI do this explicitly. An incompatible build fails
+on open instead of silently changing the requested shard topology. Locked
+`rusqlite` 0.40.1 uses bundled `libsqlite3-sys` 0.38.2; these are optional native
+dependencies, not a replacement for the App's existing SQLite engine.
+
 The optional `probe` binary uses **64 synthetic vectors and a public test key**.
 Its file-per-node fixture only exercises encrypted disk access and reopening; it
 is deliberately not a production layout, Keystore implementation, transaction
@@ -70,8 +84,10 @@ capacity, deletion guarantees, or a 200ms production recall bound.
 
 ## Remaining acceptance
 
-Implement the encrypted, sharded production `NodeStore` and App/JNI bridge;
-then test transactions, cancellation, corruption, true process death, deletion
-residue, source revision changes, cold/warm RSS and actual query recall against
+Complete the App/JNI bridge and source/index generation lifecycle, then test
+deletion residue, source revision changes, cold/warm RSS and actual query recall against
 exact ground truth at increasing cardinalities. Real BGE semantic cases and
 end-to-end Agent hybrid recall are required separately from synthetic I/O tests.
+
+See [SQLite shard design and evidence](../../../docs/architecture/android-native-memory-sqlite-shards.md)
+for storage invariants, regression scope and remaining integration barriers.
