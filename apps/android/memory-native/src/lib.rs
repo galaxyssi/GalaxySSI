@@ -1,3 +1,5 @@
+#[cfg(feature = "android-jni")]
+mod jni_bridge;
 mod provider;
 #[cfg(feature = "sqlite-store")]
 pub mod replay;

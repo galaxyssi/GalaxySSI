@@ -1,9 +1,10 @@
 # Native memory index candidate
 
-This module is **not yet wired into the production Android Agent recall path**.
-It is the storage-access adapter for the next disk-backed vector index, not a
-completed 100M-memory implementation. The existing App and its Keystore data are
-unchanged by building or running the isolated probe.
+Version **0.4.0** provides the JNI backend used by Android knowledge semantic
+retrieval. It replaces the transient whole-corpus JVM graph, not the authoritative
+encrypted source database. This is **not a completed 100M-memory implementation**.
+The isolated probe still never reads or changes App data; the App bridge maintains
+its own derived index and Keystore-wrapped key.
 
 ## Dependency and design
 
@@ -20,18 +21,17 @@ unchanged by building or running the isolated probe.
 - Opening reads only the persisted root. All vectors, including the root and
   queries, must be normalized in the same embedding space. A zero centroid is
   rejected because it produces pathological pruning with normalized vectors.
-- Decrypted node/query/prune vectors use `Zeroizing` ownership. This does not
-  establish whole-process zeroization: upstream scratch IDs/distances and the
-  future JNI/host cache still require lifecycle and memory testing.
+- Decrypted node/query/prune vectors and JNI array copies use `Zeroizing`
+  ownership. This does not establish whole-process zeroization: upstream scratch
+  IDs/distances and operating-system copies still require memory analysis.
 - Inserts require one host transaction covering the new vector and all neighbor
   changes; searches require a stable host snapshot. A failed operation propagates
   its error. The App bridge must enforce those boundaries before activation.
 - The optional `sqlite-store` implements encrypted physical node shards and a
-  durable transaction/snapshot owner. Version **0.3.0** adds bounded mutation
-  replay, transactional provenance and stale-source filtering. The Android
-  source-feed bridge, authoritative source validation, shared cache admission
-  and JNI ownership are still integration work. No production feature flag
-  enables this module.
+  durable transaction/snapshot owner. Version 0.3.0 added bounded mutation replay,
+  transactional provenance and stale-source filtering. The `android-jni` feature
+  adds opaque handle ownership, synchronous bounded calls and cancellation.
+  Android validates source revisions and access policy after candidate retrieval.
 
 ## Build prerequisites
 
@@ -42,7 +42,8 @@ The development cache is `build/native-memory-deps/{cargo,rustup}`; callers may
 pass another cache using `-CargoHome` and `-RustupHome`. Do not check toolchains or
 `target/` artifacts into Git. Rustup can install into these directories by setting
 `CARGO_HOME` and `RUSTUP_HOME`, using `--profile minimal --no-modify-path`.
-The native adapter adds no model downloads or Android runtime dependencies yet.
+The native adapter adds no model downloads. Android builds package the separate
+`libgalaxyssi_memory_native.so`; they do not alter Whisper/QNN or GGML libraries.
 
 Before the first offline build, use this Cargo environment to fetch the locked
 dependencies with `cargo fetch --locked --manifest-path apps/android/memory-native/Cargo.toml`.
@@ -78,6 +79,16 @@ on open instead of silently changing the requested shard topology. Locked
 `rusqlite` 0.40.1 uses bundled `libsqlite3-sys` 0.38.2; these are optional native
 dependencies, not a replacement for the App's existing SQLite engine.
 
+Android Gradle's `buildNativeMemory` task invokes `tools/dev/build-memory-native.mjs`.
+It builds the locked `android-jni` feature from source with the pinned NDK and
+verifies 16KiB ELF LOAD alignment before staging the library. No developer-machine
+binary is required. Set `CARGO_HOME`/`RUSTUP_HOME` or install the pinned toolchain
+in the development cache described above. Gradle offline mode also makes Cargo
+offline; run `cargo fetch --locked` beforehand. CI uses the local
+`setup-native-memory` composite action to install Rust 1.97.1 and the Android target.
+The release profile permits unwinding so JNI boundaries can contain Rust panics;
+an allocation abort or operating-system process kill is not caught by this layer.
+
 The optional `probe` binary uses **64 synthetic vectors and a public test key**.
 Its file-per-node fixture only exercises encrypted disk access and reopening; it
 is deliberately not a production layout, Keystore implementation, transaction
@@ -86,7 +97,7 @@ capacity, deletion guarantees, or a 200ms production recall bound.
 
 ## Remaining acceptance
 
-Complete the App/JNI bridge and source/index generation lifecycle, then test
+Test the App/JNI bridge and source/index generation lifecycle, then measure
 deletion residue, source revision changes, cold/warm RSS and actual query recall against
 exact ground truth at increasing cardinalities. Real BGE semantic cases and
 end-to-end Agent hybrid recall are required separately from synthetic I/O tests.
@@ -95,3 +106,5 @@ See [SQLite shard design and evidence](../../../docs/architecture/android-native
 for storage invariants, regression scope and remaining integration barriers.
 See [native source replay](../../../docs/architecture/android-native-memory-replay.md)
 for checkpoint, retry and source visibility contracts.
+See [Android native activation](../../../docs/architecture/android-native-memory-activation.md)
+for App lifecycle, replay scheduling and remaining scale acceptance.

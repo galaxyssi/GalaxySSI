@@ -98,8 +98,10 @@ class KnowledgeVectorIndexWorker(context: Context, parameters: WorkerParameters)
                 }
             }
             if (ledger.nextJob() == null) {
+                val nativeReady = controller.searchSession()?.advanceIndex { isStopped || !controller.indexingEnabled } != false
                 controller.refreshCounts()
-                controller.update { it.copy(phase = "ready", error = "") }
+                controller.update { it.copy(phase = if (nativeReady) "ready" else "indexing", error = "") }
+                if (!nativeReady) controller.requestIndex()
                 return@withContext Result.success()
             }
             controller.update { it.copy(phase = "indexing", error = "") }
@@ -109,10 +111,12 @@ class KnowledgeVectorIndexWorker(context: Context, parameters: WorkerParameters)
                 do {
                     if (isStopped || !controller.indexingEnabled) break
                     pending = indexer.runBatch(8) { isStopped || !controller.indexingEnabled }.pending
+                    controller.searchSession()?.advanceIndex { isStopped || !controller.indexingEnabled }
                     controller.refreshCounts()
                 } while (pending && SystemClock.elapsedRealtime() - started < 15_000)
             }
             if (!isStopped && controller.indexingEnabled) {
+                pending = (controller.searchSession()?.advanceIndex { isStopped || !controller.indexingEnabled } == false) || pending
                 controller.update { it.copy(phase = if (pending) "indexing" else "ready") }
                 if (pending) controller.requestIndex()
             }

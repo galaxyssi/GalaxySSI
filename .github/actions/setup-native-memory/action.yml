@@ -1,0 +1,8 @@
+name: Set up native memory toolchain
+description: Install the pinned Rust compiler and Android standard library for source-built memory JNI
+runs:
+  using: composite
+  steps:
+    - name: Install native memory toolchain
+      shell: bash
+      run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt --target aarch64-linux-android
