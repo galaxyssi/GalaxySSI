@@ -810,6 +810,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     }
 
     fun conversations(includeArchived: Boolean = false): List<AgentConversation> {
+        prepareWindowDraftStorage()
         if (!emptyConversationsPruned) synchronized(this) {
             if (!emptyConversationsPruned) {
                 prunePersistedEmptyConversations()
@@ -826,30 +827,43 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         cursor: AgentConversationPageCursor? = null,
         pageSize: Int = 100
     ): AgentConversationPage {
-        ensureConversationMigration()
+        prepareWindowDraftStorage()
         return conversationDatabase.page(status, cursor, pageSize)
     }
 
     internal fun conversationCount(status: AgentConversationStatus): Int {
-        ensureConversationMigration()
+        prepareWindowDraftStorage()
         return conversationDatabase.count(status)
     }
 
     internal fun prepareConversationPaging() {
-        ensureConversationMigration()
+        prepareWindowDraftStorage()
         conversationDatabase.prepareForPaging()
     }
 
-    fun activeConversation(): AgentConversation {
-        draftConversation?.let { return it }
-        loadDraftConversation()?.let {
-            draftConversation = it
-            return it
-        }
+    private fun prepareWindowDraftStorage() {
         ensureConversationMigration()
+        conversationDatabase.prepareWindowDrafts(entryDatabase::conversationIdsWithEntries)
+    }
+
+    fun activeConversation(): AgentConversation {
+        ensureConversationMigration()
+        (draftConversation ?: loadDraftConversation())?.let { draft ->
+            val persisted = conversationDatabase.read(draft.id)
+            if (persisted == null) {
+                val current = conversationDatabase.readWindowDraft(draft.id) ?: draft
+                draftConversation = current
+                return current
+            }
+            draftConversation = null
+            preferences.remove(draftPreferenceKey)
+            setActiveConversationId(persisted.id)
+            if (persisted.status == AgentConversationStatus.ACTIVE) return persisted
+        }
         val activeId = activeConversationId()
         return conversationDatabase.read(activeId)
             ?.takeIf { it.status == AgentConversationStatus.ACTIVE }
+            ?: conversationDatabase.readWindowDraft(activeId)
             ?: conversationDatabase.firstActive()
             ?: createConversation()
     }
@@ -908,20 +922,20 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     @Synchronized
     fun switchConversation(conversationId: String): Boolean {
         ensureConversationMigration()
-        val match = conversationDatabase.read(conversationId)
+        val persisted = conversationDatabase.read(conversationId)
+        val match = (persisted ?: conversationDatabase.readWindowDraft(conversationId))
             ?.takeIf { it.status == AgentConversationStatus.ACTIVE }
             ?: return false
-        draftConversation = null
-        preferences.remove(draftPreferenceKey)
+        draftConversation = match.takeIf { persisted == null }
+        if (persisted == null) saveDraftConversation(match) else preferences.remove(draftPreferenceKey)
         setActiveConversationId(match.id)
         return true
     }
 
     @Synchronized
-    internal fun persistForWindow(conversationId: String) {
-        persistDraftIfNeeded(conversationId)
-        AgentWindowStateStore(appContext).protectConversation(conversationId)
-        AgentConversationWindows.changed()
+    internal fun prepareForWindow(conversationId: String) {
+        val conversation = conversationForEvent(conversationId) ?: return
+        conversationDatabase.saveWindowDraft(conversation)
     }
 
     @Synchronized
@@ -1026,7 +1040,10 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     @Synchronized
     fun deleteConversation(conversationId: String): Boolean {
         ensureConversationMigration()
-        val deletedConversation = conversationDatabase.delete(conversationId) ?: return false
+        val deletedConversation = conversationDatabase.delete(conversationId)
+            ?: conversationDatabase.deleteWindowDraft(conversationId) ?: return false
+        if (draftConversation?.id == conversationId) draftConversation = null
+        if (loadDraftConversation()?.id == conversationId) preferences.remove(draftPreferenceKey)
         entryDatabase.deleteConversation(conversationId)
         preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
@@ -1326,7 +1343,6 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val cleanText = text.trim()
         if (cleanText.isBlank()) return false
         val cleanKey = dedupeKey.trim().take(MAX_DEDUPE_KEY_CHARACTERS)
-        synchronized(this) { persistDraftIfNeeded(conversationId) }
         val entry = AgentTranscriptEntry(
             id = UUID.randomUUID().toString(), role = role, text = cleanText,
             timestampMillis = timestampMillis, dedupeKey = cleanKey,
@@ -1345,6 +1361,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             }
         }
         if (!inserted) return false
+        synchronized(this) { persistDraftIfNeeded(conversationId) }
         AgentConversationWindows.changed()
         preparedContextCache.invalidateTranscriptMutation(conversationId, role)
         if (role != AgentTranscriptRole.PROCESS) {
@@ -1371,7 +1388,6 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val cleanText = text.trim()
         val cleanKey = dedupeKey.trim().take(MAX_DEDUPE_KEY_CHARACTERS)
         if (cleanText.isBlank() || cleanKey.isBlank()) return false
-        synchronized(this) { persistDraftIfNeeded(conversationId) }
         val mutation = synchronized(entryMutationLock) {
             val previous = entryDatabase.findByDedupeKey(conversationId, cleanKey)
             val updated = previous != null
@@ -1411,6 +1427,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                 )
             }
         } ?: return false
+        synchronized(this) { persistDraftIfNeeded(conversationId) }
         val eventEntry = mutation.eventEntry
         AgentConversationWindows.changed()
         val previous = mutation.previousEntry
@@ -1498,16 +1515,23 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     }
 
     private fun persistDraftIfNeeded(conversationId: String) {
-        val draft = draftConversation?.takeIf { it.id == conversationId } ?: return
         ensureConversationMigration()
-        val created = conversationDatabase.insertIfAbsent(draft)
-        setActiveConversationId(draft.id)
-        draftConversation = null
-        preferences.remove(draftPreferenceKey)
-        if (created) GlobalConversationEventBus.publishConversationCreated(appContext, draft)
+        val selectedDraft = loadDraftConversation()
+        val localDraft = (draftConversation ?: selectedDraft)?.takeIf { it.id == conversationId }
+        if (conversationDatabase.readWindowDraft(conversationId) == null) {
+            localDraft?.let(conversationDatabase::saveWindowDraft)
+        }
+        val created = conversationDatabase.promoteWindowDraft(conversationId)
+        if (draftConversation?.id == conversationId) draftConversation = null
+        if (selectedDraft?.id == conversationId || activeConversationId() == conversationId) {
+            setActiveConversationId(conversationId)
+            if (selectedDraft?.id == conversationId) preferences.remove(draftPreferenceKey)
+        }
+        if (created != null) GlobalConversationEventBus.publishConversationCreated(appContext, created)
     }
 
     private fun saveDraftConversation(conversation: AgentConversation) {
+        conversationDatabase.saveWindowDraft(conversation)
         preferences.writeString(
             draftPreferenceKey,
             JSONObject()
@@ -1557,7 +1581,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val conversationIdsWithContent = entryDatabase.conversationIdsWithEntries()
         val windowStates = AgentWindowStateStore(appContext)
         val retained = all.filter {
-            it.id in conversationIdsWithContent || AgentConversationWindows.isOpen(it.id) || windowStates.isWindowConversation(it.id)
+            it.createdByAgent || it.id in conversationIdsWithContent || AgentConversationWindows.isOpen(it.id) || windowStates.isWindowConversation(it.id)
         }
         if (retained.size == all.size) return@synchronized
         saveConversations(retained)
@@ -1574,14 +1598,17 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     private fun updateConversation(id: String, transform: (AgentConversation) -> AgentConversation): Boolean {
         ensureConversationMigration()
         return synchronized(conversationDatabase) {
-        draftConversation?.takeIf { it.id == id }?.let { previous ->
+        val persisted = conversationDatabase.read(id)
+        if (persisted == null) (conversationDatabase.readWindowDraft(id) ?: draftConversation?.takeIf { it.id == id })?.let { previous ->
             val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
-            draftConversation = current
-            saveDraftConversation(current)
+            conversationDatabase.saveWindowDraft(current)
+            if (draftConversation?.id == id) {
+                draftConversation = current
+                if (loadDraftConversation()?.id == id) saveDraftConversation(current)
+            }
             return@synchronized true
         }
-        ensureConversationMigration()
-        val previous = conversationDatabase.read(id) ?: return@synchronized false
+        val previous = persisted ?: return@synchronized false
         val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
         check(conversationDatabase.upsert(current)) { "Agent conversation update failed" }
         GlobalConversationEventBus.publishConversationUpdated(appContext, previous, current)
@@ -1591,9 +1618,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     }
 
     private fun conversationForEvent(id: String): AgentConversation? {
-        draftConversation?.takeIf { it.id == id }?.let { return it }
         ensureConversationMigration()
-        return conversationDatabase.read(id)
+        return conversationDatabase.read(id) ?: conversationDatabase.readWindowDraft(id)
+            ?: draftConversation?.takeIf { it.id == id }
     }
 
     private fun touchConversation(entry: AgentTranscriptEntry, timestamp: Long) {
@@ -1858,6 +1885,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
 
     private fun saveEntries(items: List<AgentTranscriptEntry>) {
         entryDatabase.replaceAll(items)
+        conversationDatabase.promoteWindowDraftsWithEntries(items.mapTo(mutableSetOf(), AgentTranscriptEntry::conversationId))
     }
 
     private fun AgentTranscriptEntry.toJson(): JSONObject = JSONObject()
