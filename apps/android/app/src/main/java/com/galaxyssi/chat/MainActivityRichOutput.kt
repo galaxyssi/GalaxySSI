@@ -1071,17 +1071,9 @@ internal fun MainActivity.agentProcessCompletionTimestamp(
         ?.completedAtMillis
         ?.takeIf { it > 0L }
         ?.let { return it.coerceAtLeast(entry.timestampMillis) }
-    val assistantTimestamp = entries.asSequence()
-        .filter { candidate ->
-            candidate.role == AgentTranscriptRole.ASSISTANT &&
-                !isAgentApprovalEntry(candidate) &&
-                when {
-                    entry.turnId.isNotBlank() -> candidate.turnId == entry.turnId
-                    entry.taskId.isNotBlank() -> candidate.taskId == entry.taskId
-                    else -> candidate.timestampMillis >= entry.timestampMillis
-                }
-        }
-        .maxOfOrNull(AgentTranscriptEntry::timestampMillis)
+    val assistantTimestamp = AgentProcessClockPolicy.finalReplyTimestamp(
+        entry, entries.filterNot(::isAgentApprovalEntry)
+    )
     if (assistantTimestamp != null) return assistantTimestamp
 
     val workspaceId = entry.turnId.trim()
@@ -1103,6 +1095,7 @@ private fun MainActivity.scheduleAgentProcessCompletionLookup(
     agentTranscriptContentExecutor.execute {
         val completedAtMillis = runCatching {
             EncryptedAgentWorkspaceStore(this).find(workspaceId)
+                ?.takeIf { it.conversationId == entry.conversationId }
                 ?.takeIf { AgentTranscriptPresentationPolicy.processClockStopsFor(it.status) }
                 ?.updatedAtMillis
                 ?.takeIf { it > 0L }

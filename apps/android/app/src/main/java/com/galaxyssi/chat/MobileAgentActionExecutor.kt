@@ -1472,6 +1472,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 var streamCompleted = false
                 var streamError: Throwable? = null
                 var providerError: ModelStreamError? = null
+                var previewVisible = false
                 Log.i(
                     "GalaxySSILatency",
                     "agent_cloud stage=request_start source=$messageId model=${model.optString("cloud_model")} " +
@@ -1499,6 +1500,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             allowExternalTools = action.parameters["connector_task_mode"] !=
                                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
                             systemPromptOverride = supervisedEnvelope?.systemPrompt.orEmpty(),
+                            citationPreviewEnabled = !managedTeamAction,
                             onToolEvent = { event ->
                                 Log.i(
                                     "GalaxySSILatency",
@@ -1514,6 +1516,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                         "agent_cloud stage=connected source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}")
                                 }
                                 is ModelStreamEvent.TextDelta -> {
+                                    previewVisible = false
                                     merger.offer(
                                         event.sequence,
                                         event.text,
@@ -1568,10 +1571,24 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                     )
                                 }
                                 is ModelStreamEvent.ToolCallDelta -> Unit
+                                is ModelStreamEvent.CitationPreview -> {
+                                    previewVisible = event.text.isNotBlank()
+                                    if (!managedTeamAction) AgentConnectorStreamBus.publish(AgentConnectorStreamUpdate(
+                                        sourceMessageId = messageId, contactId = candidateId,
+                                        content = merger.snapshot() + event.text,
+                                        conversationId = conversationId, turnId = turnId, taskId = connectorTaskId,
+                                        attemptOrdinal = currentStreamAttemptOrdinal, previewOnly = previewVisible
+                                    ))
+                                }
                             }
                         }
                     }
                 }.onFailure { streamError = it }
+                if (previewVisible && !managedTeamAction) AgentConnectorStreamBus.publish(AgentConnectorStreamUpdate(
+                    sourceMessageId = messageId, contactId = candidateId, content = merger.snapshot(),
+                    conversationId = conversationId, turnId = turnId, taskId = connectorTaskId,
+                    attemptOrdinal = currentStreamAttemptOrdinal
+                ))
                 if (streamError is kotlinx.coroutines.CancellationException || providerError?.code == "CANCELLED") {
                     dispatchLease.cancel()
                 }

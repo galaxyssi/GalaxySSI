@@ -40,7 +40,7 @@ internal object AgentRichSelectableParagraphs {
         onTextViewReady(this)
     }
 
-    private fun buildText(
+    internal fun buildText(
         blocks: List<AgentRichBlock>,
         inlineMarkdown: (String) -> CharSequence
     ): CharSequence = SpannableStringBuilder().apply {

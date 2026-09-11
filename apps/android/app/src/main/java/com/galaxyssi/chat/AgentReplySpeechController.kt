@@ -31,6 +31,7 @@ internal object AgentReplySpeechPresentationPolicy {
 
     fun target(entry: AgentTranscriptEntry, allowEmptyFinal: Boolean = false): AgentReplySpeechTarget? {
         if (entry.role != AgentTranscriptRole.ASSISTANT ||
+            entry.id.startsWith("agent-stream-preview-") ||
             AgentReplyWaitingIndicatorPolicy.isIndicator(entry) ||
             entry.dedupeKey.startsWith("approval:") ||
             entry.dedupeKey.startsWith("agent-recovery:")

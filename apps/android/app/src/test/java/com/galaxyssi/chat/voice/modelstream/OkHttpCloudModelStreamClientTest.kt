@@ -89,6 +89,22 @@ class OkHttpCloudModelStreamClientTest {
     }
 
     @Test
+    fun `timings distinguish response headers and first text without logging content`() = runBlocking {
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream")
+            .setBody("data: {\"choices\":[{\"delta\":{\"content\":\"private response\"}}]}\n\ndata: [DONE]\n\n")
+            .setBodyDelay(120, TimeUnit.MILLISECONDS))
+        val reports = mutableListOf<ModelStreamTiming>()
+        val events = OkHttpCloudModelStreamClient(onTiming = reports::add).stream(request()).toList()
+        assertTrue(events.any { it is ModelStreamEvent.Completed })
+        val timing = reports.single()
+        assertTrue(timing.milliseconds.getValue("headers_to_first_text_ms") >= 80L)
+        assertTrue(timing.milliseconds.getValue("request_write_ms") >= 0L)
+        assertTrue(timing.milliseconds.getValue("first_text_ms") >= timing.milliseconds.getValue("first_frame_ms"))
+        assertEquals(-1L, timing.milliseconds.getValue("first_tool_ms"))
+        assertFalse(timing.toString().contains("private response"))
+    }
+
+    @Test
     fun `tool arguments split across frames assemble once and duplicate provider sequence is ignored`() = runBlocking {
         val body = buildString {
             append("data: {\"sequence\":1,\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"q\\\":\"}}]}}]}\n\n")

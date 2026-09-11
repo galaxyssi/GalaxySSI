@@ -51,11 +51,12 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         readTimeoutMillis: Long = 300_000L,
         onToolEvent: ((CloudToolEvent) -> Unit)? = null,
         allowExternalTools: Boolean = true,
-        systemPromptOverride: String = ""
+        systemPromptOverride: String = "",
+        citationPreviewEnabled: Boolean = false
     ): Flow<ModelStreamEvent> = flow {
         lifetimes.run(requestId) {
             emitAll(streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
-                readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride))
+                readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -69,7 +70,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         readTimeoutMillis: Long,
         onToolEvent: ((CloudToolEvent) -> Unit)?,
         allowExternalTools: Boolean,
-        systemPromptOverride: String
+        systemPromptOverride: String,
+        citationPreviewEnabled: Boolean
     ): Flow<ModelStreamEvent> = flow {
         if (!contact.optBoolean("cloud_streaming_enabled", true)) {
             emitLegacy(context, contact, turns, requestId, images, onToolEvent, systemPromptOverride)
@@ -114,6 +116,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         val toolProgress = CloudWebToolLoopProgress()
         var webBudget: AgentWebExecutionBudget? = null
         val evidenceResults = mutableListOf<Pair<String, String>>()
+        val evidencePrompt = CloudEvidencePromptLedger()
         var emittedText = false
         var connected = false
         var lastFinishReason: String? = null
@@ -123,6 +126,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 if (webBudget?.expired == true && toolProgress.requestFinalization()) prepareFinalRound(prepared)
                 val roundNumber = round++
                 val bufferForCitationVerification = evidenceResults.isNotEmpty()
+                val preview = if (citationPreviewEnabled && bufferForCitationVerification) {
+                    CloudCitationPreview(evidenceResults.toList())
+                } else null
+                var previewShown = false
                 val roundId = "$requestId:r$roundNumber"
                 val roundStarted = System.nanoTime()
                 var firstActivity = false
@@ -141,6 +148,9 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         )
                     Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=request " +
                         "prepare_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} input_chars=${roundRequest.bodyJson.length}")
+                    Log.i("GalaxySSIWebLatency", "model_payload request=$requestId round=$roundNumber " +
+                        CloudRequestSizeBreakdown.measure(prepared.body, prepared.conversationKey)
+                            .entries.joinToString(" ") { "${it.key}=${it.value}" })
                     transport.stream(roundRequest).collect { event ->
                         if (!firstActivity && (event is ModelStreamEvent.TextDelta || event is ModelStreamEvent.ToolCallDelta)) {
                             firstActivity = true
@@ -160,6 +170,13 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             }
                             is ModelStreamEvent.TextDelta -> {
                                 val visibleText = inlineProtocolGuard.append(event.text)
+                                preview?.append(visibleText)?.let { text ->
+                                    if (!previewShown) Log.i("GalaxySSIWebLatency",
+                                        "model_round request=$requestId round=$roundNumber stage=first_cited_preview " +
+                                            "elapsed_ms=${(System.nanoTime() - roundStarted) / 1_000_000L}")
+                                    previewShown = true
+                                    emit(ModelStreamEvent.CitationPreview(requestId, text, event.receivedAtElapsedMs))
+                                }
                                 if (visibleText.isNotEmpty() && !bufferForCitationVerification) {
                                     emittedText = true
                                     emit(
@@ -188,6 +205,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                                 lastFinishReason = event.finishReason
                             }
                             is ModelStreamEvent.Failed -> roundFailure = ModelStreamEvent.Failed(requestId, event.error)
+                            is ModelStreamEvent.CitationPreview -> Unit
                         }
                     }
                     true
@@ -195,12 +213,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=finished " +
                     "elapsed_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} completed=$roundCompleted")
                 if (!finishedWithinBudget) {
+                    if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                     emitEvidenceFallbackAndComplete(context, disclosure, requestId, globalSequence,
                         evidenceResults, "web_deadline")
                     return@flow
                 }
                 val failure = roundFailure
                 if (failure != null) {
+                    if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                     if (!emittedText && failure.error.code == "STREAM_UNSUPPORTED") {
                         AgentDataDisclosureLedger.update(
                             context,
@@ -229,6 +249,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     return@flow
                 }
                 if (!roundCompleted) {
+                    if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                     val error = ModelStreamError(
                         "STREAM_INTERRUPTED",
                         "The provider stream ended before completion",
@@ -278,6 +299,9 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 } else {
                     structuredCalls
                 }
+                if (previewShown && (calls.isNotEmpty() || CloudWebGrounding.containsInternalToolProtocol(rawRoundText))) {
+                    emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                }
                 if (calls.isEmpty()) {
                     if (CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
                         if (!toolProgress.requestRepair("stream_internal_protocol")) {
@@ -303,6 +327,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         if (candidate.isNotBlank() && citationRepair != null &&
                             toolProgress.requestRepair("stream_citations")
                         ) {
+                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                             appendPlainConversationTurn(prepared, role = "assistant", text = candidate)
                             appendPlainConversationTurn(prepared, role = "user", text = citationRepair)
                             disableExternalTools(prepared)
@@ -408,10 +433,16 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         }
                     )
                 }
+                val promptCalls = completedCalls.map { completed ->
+                    val compact = evidencePrompt.project(completed.output)
+                    Log.i("GalaxySSIWebLatency", "evidence_projection request=$requestId tool=${completed.call.name} " +
+                        "original_chars=${completed.output.length} projected_chars=${compact.length}")
+                    completed.copy(output = compact)
+                }
                 if (usesInlineProtocol) {
-                    appendInlineToolResults(prepared, rawRoundText, completedCalls)
+                    appendInlineToolResults(prepared, rawRoundText, promptCalls)
                 } else {
-                    appendToolResults(prepared, completedCalls.map { it.call to it.output })
+                    appendToolResults(prepared, promptCalls.map { it.call to it.output })
                 }
                 val noEvidenceProgress = toolProgress.observeEvidenceBatch(newlyCompleted.map { it.output })
                 if ((newlyCompleted.isEmpty() || noEvidenceProgress || budget.expired) && toolProgress.requestFinalization()) {

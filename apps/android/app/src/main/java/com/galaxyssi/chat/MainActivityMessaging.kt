@@ -812,6 +812,7 @@ internal fun MainActivity.consumeCloudStreamEvent(
             }
         }
         is ModelStreamEvent.ToolCallDelta -> Unit
+        is ModelStreamEvent.CitationPreview -> Unit // Direct voice/chat streams do not opt into replaceable previews.
         is ModelStreamEvent.Usage -> state.usage = event.usage
     }
 }
