@@ -247,6 +247,7 @@ class AgentConversationWindowsInstrumentedTest {
 
     @Test fun tenDocumentWindowsHandoffReuseAndBackgroundCompletion() {
         val prefix = "window-ui-${UUID.randomUUID()}"
+        val requireSharedAsr = InstrumentationRegistry.getArguments().getString("require_shared_asr") == "true"
         val windows = mutableListOf<MainActivity>()
         val conversations = mutableListOf<String>()
         val handles = mutableListOf<AgentTaskHandle>()
@@ -266,6 +267,13 @@ class AgentConversationWindowsInstrumentedTest {
                 ?: error("Root window did not open")
             windows += root
             await("Root hydration") { !root.initialAgentHydrationPending && root.conversationWindow.conversationId.isNotBlank() }
+            if (requireSharedAsr) {
+                assertTrue("The real high-accuracy ASR profile must remain selected", root.isHighAccuracyQnnSelected())
+                await("Shared high-accuracy model ready", 180_000) { root.highAccuracyAsrController.isReady() }
+            }
+            val sharedBefore = com.galaxyssi.chat.voice.asr.local.SharedHighAccuracyLocalAsrRuntime.snapshot()
+            val baselinePss = android.os.Debug.getPss()
+            android.util.Log.i("GalaxySSIWindowTest", "baseline_pss_kb=$baselinePss shared=$sharedBefore")
             for (index in 1..10) {
                 manager.appTasks.first { it.taskInfo.taskId == root.taskId }.moveToFront()
                 await("Root visible") { root.conversationWindow.visible }
@@ -302,7 +310,14 @@ class AgentConversationWindowsInstrumentedTest {
                     }
                     store.append(AgentTranscriptRole.PROCESS, "Background completed $index", conversationId = conversation.id)
                 }
-                android.util.Log.i("GalaxySSIWindowTest", "opened=$index task=${window.taskId}")
+                val shared = com.galaxyssi.chat.voice.asr.local.SharedHighAccuracyLocalAsrRuntime.snapshot()
+                if (requireSharedAsr) {
+                    assertEquals("Opening a window must not load another model", sharedBefore?.controllerCreations,
+                        shared?.controllerCreations)
+                    assertEquals(1, shared?.loadedControllers)
+                }
+                android.util.Log.i("GalaxySSIWindowTest", "opened=$index task=${window.taskId} " +
+                    "pss_kb=${android.os.Debug.getPss()} shared=$shared")
             }
             val taskIds = windows.map { it.taskId }.toSet()
             assertEquals(11, taskIds.size)
@@ -354,6 +369,14 @@ class AgentConversationWindowsInstrumentedTest {
             store.deleteConversation(rootSeed.id)
             handles.filterNot { it.isActive }.forEach { EncryptedAgentWorkspaceStore(context).delete(it.workspaceId) }
             instrumentation.removeMonitor(monitor)
+        }
+        if (requireSharedAsr) {
+            await("Shared ASR released after all windows close", 60_000) {
+                val shared = com.galaxyssi.chat.voice.asr.local.SharedHighAccuracyLocalAsrRuntime.snapshot()
+                shared?.clients == 0 && shared.loadedControllers == 0
+            }
+            android.util.Log.i("GalaxySSIWindowTest", "idle_release_pss_kb=${android.os.Debug.getPss()} " +
+                "shared=${com.galaxyssi.chat.voice.asr.local.SharedHighAccuracyLocalAsrRuntime.snapshot()}")
         }
     }
 

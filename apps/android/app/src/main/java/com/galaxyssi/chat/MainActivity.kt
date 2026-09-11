@@ -717,7 +717,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var lastVoiceRecognitionStartAt = 0L
     internal val voiceAssistantScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal val highAccuracyAsrControllerDelegate = lazy(LazyThreadSafetyMode.NONE) {
-        HighAccuracyLocalAsrController.create(this, voiceAssistantScope)
+        com.galaxyssi.chat.voice.asr.local.SharedHighAccuracyLocalAsrRuntime.acquire(applicationContext)
     }
     internal val highAccuracyAsrController by highAccuracyAsrControllerDelegate
     internal var wakeWordEngine: WakeWordEngine? = null
