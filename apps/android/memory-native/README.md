@@ -27,9 +27,11 @@ unchanged by building or running the isolated probe.
   changes; searches require a stable host snapshot. A failed operation propagates
   its error. The App bridge must enforce those boundaries before activation.
 - The optional `sqlite-store` implements encrypted physical node shards and a
-  durable transaction/snapshot owner. Source/model mapping, mutation replay,
-  deletion, source revision validation, shared cache admission and JNI ownership
-  are still integration work. No production feature flag enables this module.
+  durable transaction/snapshot owner. Version **0.3.0** adds bounded mutation
+  replay, transactional provenance and stale-source filtering. The Android
+  source-feed bridge, authoritative source validation, shared cache admission
+  and JNI ownership are still integration work. No production feature flag
+  enables this module.
 
 ## Build prerequisites
 
@@ -91,3 +93,5 @@ end-to-end Agent hybrid recall are required separately from synthetic I/O tests.
 
 See [SQLite shard design and evidence](../../../docs/architecture/android-native-memory-sqlite-shards.md)
 for storage invariants, regression scope and remaining integration barriers.
+See [native source replay](../../../docs/architecture/android-native-memory-replay.md)
+for checkpoint, retry and source visibility contracts.

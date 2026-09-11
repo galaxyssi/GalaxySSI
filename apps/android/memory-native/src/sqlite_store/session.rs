@@ -26,7 +26,7 @@ impl SqliteSession {
             finished: AtomicBool::new(false),
         }
     }
-    fn call<T>(
+    pub(super) fn call<T>(
         &self,
         write: bool,
         operation: impl FnOnce(&mut Inner) -> ANNResult<T>,

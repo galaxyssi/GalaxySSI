@@ -1,5 +1,7 @@
 mod provider;
 #[cfg(feature = "sqlite-store")]
+pub mod replay;
+#[cfg(feature = "sqlite-store")]
 pub mod sqlite_store;
 pub mod store;
 mod strategy;
