@@ -107,6 +107,13 @@ class HighAccuracyLocalAsrController internal constructor(
         config: AsrConfig,
         modelProfileId: String,
         onPartial: (AsrEvent.Partial) -> Unit
+    ): HighAccuracyLocalAsrTurn? = startOwnedTurnIfReady(config, modelProfileId, onPartial) {}
+
+    internal fun startOwnedTurnIfReady(
+        config: AsrConfig,
+        modelProfileId: String,
+        onPartial: (AsrEvent.Partial) -> Unit,
+        onReleased: (HighAccuracyLocalAsrTurn) -> Unit
     ): HighAccuracyLocalAsrTurn? {
         if (closed.get() || !isReady()) {
             prepareAsync()
@@ -124,14 +131,20 @@ class HighAccuracyLocalAsrController internal constructor(
                     synchronized(turnLock) {
                         if (activeTurn === released) activeTurn = null
                     }
+                    onReleased(released)
                 }
             )
-            if (turn.start()) {
-                activeTurn = turn
-                turn
-            } else {
+            try {
+                if (turn.start()) {
+                    activeTurn = turn
+                    turn
+                } else {
+                    turn.close()
+                    null
+                }
+            } catch (error: Exception) {
                 turn.close()
-                null
+                throw error
             }
         }
     }
