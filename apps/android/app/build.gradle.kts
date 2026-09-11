@@ -13,6 +13,7 @@ val runtimeAssetRoot = providers.gradleProperty("galaxyssi.runtimeAssetRoot")
     .orElse(rootProject.file("../../build/runtime/android-assets"))
     .get()
 val qnnCompatJniRoot = layout.buildDirectory.dir("generated/qnn-compat-jni")
+val nativeMemoryJniRoot = layout.buildDirectory.dir("generated/memory-native/jni")
 val androidNdkVersion = "29.0.13113456"
 val androidNdkHostTag = when {
     System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "windows-x86_64"
@@ -116,6 +117,17 @@ tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn(stageCurrentNdkSharedRuntime)
 }
 
+val buildNativeMemory = tasks.register<Exec>("buildNativeMemory") {
+    val source = rootProject.file("memory-native")
+    inputs.files(fileTree(source) { exclude("target/**") })
+    inputs.file(rootProject.file("../../tools/dev/build-memory-native.mjs"))
+    outputs.file(nativeMemoryJniRoot.map { it.file("arm64-v8a/libgalaxyssi_memory_native.so") })
+    commandLine(listOf("node", rootProject.file("../../tools/dev/build-memory-native.mjs").absolutePath,
+        "--sdk", android.sdkDirectory.absolutePath, "--output", nativeMemoryJniRoot.get().asFile.absolutePath) +
+        if (gradle.startParameter.isOffline) listOf("--offline") else emptyList())
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeMemory) }
+
 tasks.matching { task ->
     task.name.startsWith("merge") && task.name.endsWith("NativeLibs")
 }.configureEach {
@@ -179,6 +191,7 @@ android {
         getByName("main") {
             jniLibs.srcDir(runtimeJniRoot)
             jniLibs.srcDir(qnnCompatJniRoot)
+            jniLibs.srcDir(nativeMemoryJniRoot)
             assets.srcDir(runtimeAssetRoot)
         }
     }

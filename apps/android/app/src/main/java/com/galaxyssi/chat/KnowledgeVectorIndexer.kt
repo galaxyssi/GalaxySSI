@@ -11,6 +11,9 @@ internal class KnowledgeVectorIndexer(private val ledger: KnowledgeVectorLedger,
     fun runBatch(maxChunks: Int = 8, cancelled: () -> Boolean = { false }): KnowledgeVectorBatchResult {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Vector indexing must run off the UI thread" }
         require(maxChunks in 1..256)
+        if (cancelled()) return KnowledgeVectorBatchResult(0, 0, true)
+        ledger.ensureRegistered()
+        if (!ledger.changes().bootstrap()) return KnowledgeVectorBatchResult(0, 0, true)
         var committed = 0
         var stale = 0
         var current: KnowledgeVectorJob? = null

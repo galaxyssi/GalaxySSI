@@ -1,0 +1,39 @@
+name: Native Memory Adapter
+
+on:
+  pull_request:
+    paths:
+      - "apps/android/memory-native/**"
+      - "tools/dev/test-memory-native.ps1"
+      - "tools/dev/check-no-chinese-outside-i18n*"
+      - ".github/workflows/native-memory.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/android/memory-native/**"
+      - "tools/dev/test-memory-native.ps1"
+      - "tools/dev/check-no-chinese-outside-i18n*"
+      - ".github/workflows/native-memory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-regressions:
+    runs-on: ubuntu-latest
+    env:
+      LIBSQLITE3_FLAGS: -DSQLITE_MAX_ATTACHED=64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check native build output exclusion
+        run: node --test tools/dev/check-no-chinese-outside-i18n.test.mjs
+      - name: Install pinned native toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt
+      - name: Check native formatting
+        run: cargo +1.97.1 fmt --manifest-path apps/android/memory-native/Cargo.toml --check
+      - name: Test the native storage adapter and probe build
+        run: cargo +1.97.1 test --locked --all-features --manifest-path apps/android/memory-native/Cargo.toml --jobs 2 -- --show-output

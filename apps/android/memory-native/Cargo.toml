@@ -1,0 +1,37 @@
+[package]
+name = "galaxyssi-memory-native"
+version = "0.4.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autobins = false
+
+[workspace]
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+diskann = { git = "https://github.com/microsoft/DiskANN.git", rev = "a2373e82de8b0edea674736e7fa1c2d55b9a9f44", default-features = false }
+diskann-vector = { git = "https://github.com/microsoft/DiskANN.git", rev = "a2373e82de8b0edea674736e7fa1c2d55b9a9f44" }
+tokio = { version = "=1.48.0", features = ["rt"] }
+zeroize = "=1.8.2"
+aes-gcm = { version = "=0.10.3", optional = true, features = ["zeroize"] }
+aes = { version = "=0.8.4", optional = true, features = ["zeroize"] }
+rusqlite = { version = "=0.40.1", optional = true, default-features = false, features = ["bundled", "cache", "limits"] }
+jni = { version = "=0.21.1", optional = true, default-features = false }
+
+[features]
+probe = ["dep:aes-gcm"]
+sqlite-store = ["dep:aes-gcm", "dep:aes", "dep:rusqlite"]
+android-jni = ["sqlite-store", "dep:jni"]
+
+[[bin]]
+name = "memory-native-probe"
+path = "src/bin/memory_probe.rs"
+required-features = ["probe"]
+
+[profile.release]
+panic = "unwind"
+lto = "thin"
+codegen-units = 1

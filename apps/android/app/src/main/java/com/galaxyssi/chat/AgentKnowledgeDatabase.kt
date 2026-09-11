@@ -42,7 +42,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..4) { "Unsupported knowledge schema $version" }
+                require(version in 0..5) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -56,6 +56,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 if (version < 4) {
                     KnowledgeSourcePaging.create(db)
                     db.execSQL("PRAGMA user_version=4")
+                }
+                if (version < 5) {
+                    KnowledgeVectorChangeSchema.create(db)
+                    db.execSQL("PRAGMA user_version=5")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
@@ -87,6 +91,8 @@ internal class AgentKnowledgeDatabase private constructor(
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
+    internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
+        "knowledge-native/${key("native-index", modelKey)}")
     @Synchronized override fun close() { retired = true; connection?.close(); connection = null }
 
     private fun migrate(db: KnowledgeSqlite) {

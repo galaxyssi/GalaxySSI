@@ -60,6 +60,7 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+      - uses: ./.github/actions/setup-native-memory
       - run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;25.2.9519653" "ndk;29.0.13113456" "cmake;3.22.1" "cmake;3.31.6"'
       - run: npm run test:android:asr-native
       - run: npm run check:android
@@ -119,6 +120,7 @@ jobs:
       - name: Build core regression Signal sidecar
         run: apps/android/gradlew -p apps/desktop/core/galaxyssi-link/backend/signal_sidecar installDist --no-daemon
       - run: python -m pip install -r apps/desktop/core/galaxyssi-link/backend/requirements.txt
+      - uses: ./.github/actions/setup-native-memory
       - run: npm run test:core-regressions:contract
       - run: python tools/dev/test-ci-android-memory.py
       - run: npm run test:core-regressions

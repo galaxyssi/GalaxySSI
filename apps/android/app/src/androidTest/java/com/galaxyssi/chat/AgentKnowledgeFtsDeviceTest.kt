@@ -91,6 +91,7 @@ class AgentKnowledgeFtsDeviceTest {
             store.replaceSource("source", (1..80).map { item("legacy-$it", "backfillevidence $it") })
             store.close()
             KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { sql ->
+                KnowledgeVectorChangeFixtureSchema.remove(sql)
                 sql.execSQL("DROP TRIGGER knowledge_fts_delete")
                 sql.execSQL("DROP TABLE knowledge_fts")
                 sql.execSQL("DROP TABLE knowledge_fts_pending")

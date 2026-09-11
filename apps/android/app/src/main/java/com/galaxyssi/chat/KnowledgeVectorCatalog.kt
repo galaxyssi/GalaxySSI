@@ -1,15 +1,18 @@
 package com.galaxyssi.chat
 
-internal data class KnowledgeCorpusStamp(val changes: Long, val externalVersion: Long)
+internal data class KnowledgeCorpusStamp(val epoch: String, val changes: Long, val completedChunks: Long)
 
 /** Keyset pages of opaque metadata, never an eager list of source text or all vectors. */
 internal class KnowledgeVectorCatalog(private val storage: AgentKnowledgeDatabase, private val ledger: KnowledgeVectorLedger) {
     fun stamp(): KnowledgeCorpusStamp = storage.access { db ->
-        val changes = db.rawQuery("SELECT total_changes()", null).use { check(it.moveToFirst()); it.getLong(0) }
-        val external = db.rawQuery("PRAGMA data_version", null).use { check(it.moveToFirst()); it.getLong(0) }
-        KnowledgeCorpusStamp(changes, external)
+        val state = ledger.changes().state(db)
+        KnowledgeCorpusStamp(state?.epoch.orEmpty(), state?.head ?: 0, state?.completedChunks ?: 0)
     }
     fun count(): Int = storage.access { db ->
+        ledger.changes().state(db)?.takeIf { it.bootstrapComplete }?.let {
+            require(it.completedChunks <= Int.MAX_VALUE) { "Semantic index is too large for one graph" }
+            return@access it.completedChunks.toInt()
+        }
         db.rawQuery("SELECT COALESCE(sum(chunk_count),0) FROM knowledge_vector_docs WHERE model_key=? AND complete=1",
             arrayOf(ledger.modelKey)).use {
             check(it.moveToFirst())

@@ -114,7 +114,10 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             AgentMemoryRecallRevision.advance(meta)
             yield(META to meta.toString())
         }
-        database.mutateStreaming(writes, observers()) { emptySequence() }
+        database.mutateStreaming(writes, observers(),
+            segmentPersonalRows = meta.getLong("count") + change.after.size - before.size >= AgentMemoryPayloadSegments.ROW_THRESHOLD) {
+            emptySequence()
+        }
     }
 
     private fun lookupMetadata(): JSONObject {
@@ -177,7 +180,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             AgentMemoryRecallRevision.advance(meta, contentChanged = before.privateMemory != after.privateMemory)
             // The flag diff is known; do not decrypt both old rows again to detect unchanged writes.
             database.mutateStrings(mapOf(key(id) to row.toString(), META to meta.toString()),
-                onMutation = observers(before.privateMemory != after.privateMemory))
+                onMutation = observers(before.privateMemory != after.privateMemory),
+                segmentPersonalRows = meta.getLong("count") >= AgentMemoryPayloadSegments.ROW_THRESHOLD)
         }
         before to after
     }
@@ -202,7 +206,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             AgentMemoryRecallRevision.advance(meta, contentChanged = false)
             writes[META] = meta.toString()
             // Access timestamps do not alter lookup membership or browse order.
-            database.mutateStrings(writes, onMutation = observers(recallDocumentsChanged = false))
+            database.mutateStrings(writes, onMutation = observers(recallDocumentsChanged = false),
+                segmentPersonalRows = meta.getLong("count") >= AgentMemoryPayloadSegments.ROW_THRESHOLD)
         }
         changed
     }
@@ -316,7 +321,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             addLookupMetadata(meta, generation, Math.addExact(previousPosition, 1))
             yield(META to meta.toString())
         }
-        database.mutateStreaming(writes, observers()) {
+        database.mutateStreaming(writes, observers(),
+            segmentPersonalRows = (previousMeta?.getLong("count") ?: 0L) >= AgentMemoryPayloadSegments.ROW_THRESHOLD) {
             sequence {
                 var cursor = ""
                 while (true) {
