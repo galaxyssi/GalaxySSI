@@ -14,8 +14,15 @@ class AppBackupRecordsDeviceTest {
     private val password = "fixture-only-passphrase".toCharArray()
     private fun fixture(block: (MemoryDeletionDeviceFixture) -> Unit) {
         val f = MemoryDeletionDeviceFixture()
-        try { block(f) } finally { f.clear() }
+        try { block(f) } finally {
+            knowledge(f).close()
+            android.database.sqlite.SQLiteDatabase.deleteDatabase(f.context.getDatabasePath("test-app-backup-knowledge.db"))
+            f.clear()
+        }
     }
+    private fun knowledge(f: MemoryDeletionDeviceFixture) = SQLiteAgentKnowledgeStore(f.context,
+        "test-app-backup-knowledge.db", "test-app-backup-knowledge-legacy") { _, _ -> }
+    private fun archive(f: MemoryDeletionDeviceFixture) = AppBackupRecords(f.context, knowledge(f))
     private fun file(f: MemoryDeletionDeviceFixture) = File(f.context.cacheDir, "${UUID.randomUUID()}.hcbak")
     private val arrays = setOf("knowledge", "tasks", "transcript", "agent_conversations", "workflows", "workflow_schedules",
         "workflow_triggers", "workflow_execution_history", "custom_device_connectors")
@@ -28,7 +35,7 @@ class AppBackupRecordsDeviceTest {
     }
     private fun export(f: MemoryDeletionDeviceFixture, file: File, contacts: Boolean = true, messages: Boolean = true) {
         val expected = AppBackupFields.expected(contacts, messages)
-        AppBackupRecords(f.context).export(file, password, contacts, messages,
+        archive(f).export(file, password, contacts, messages,
             appFields = { emit -> expected.filter { it.first == "app-field" }.forEach { emit(it.second, value(it.first, it.second)) } },
             agentFields = { emit -> expected.filter { it.first == "agent-field" }.forEach { emit(it.second, value(it.first, it.second)) } })
     }
@@ -46,7 +53,7 @@ class AppBackupRecordsDeviceTest {
                 assertTrue(received.add(section to key))
                 assertEquals(value(section, key).toString(), item.toString())
             }
-            AppBackupRecords(f.context).restore(file, password, true,
+            archive(f).restore(file, password, true,
                 { key, item -> accept("app-field", key, item) }, { key, item -> accept("agent-field", key, item) }, { completed = true })
             assertEquals(AppBackupFields.expected(true, true), received)
             assertTrue(completed)
@@ -61,7 +68,7 @@ class AppBackupRecordsDeviceTest {
             export(f, file)
             f.store.saveItems(emptyList())
             val received = mutableSetOf<String>()
-            AppBackupRecords(f.context).restore(file, password, false, { key, _ -> received.add(key) }, { _, _ -> }, {})
+            archive(f).restore(file, password, false, { key, _ -> received.add(key) }, { _, _ -> }, {})
             assertFalse("messages" in received)
             assertTrue("contacts" in received)
             assertEquals(listOf(deletionMemory(1)), f.reopen().loadItems())
@@ -78,7 +85,7 @@ class AppBackupRecordsDeviceTest {
             for (broken in listOf(original.copyOf(original.size - 1), original.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() })) {
                 file.writeBytes(broken)
                 var called = false
-                assertNotNull(runCatching { AppBackupRecords(f.context).restore(file, password, true,
+                assertNotNull(runCatching { archive(f).restore(file, password, true,
                     { _, _ -> called = true }, { _, _ -> called = true }, { called = true }) }.exceptionOrNull())
                 assertFalse(called)
                 assertEquals(listOf(deletionMemory(2)), f.reopen().loadItems())
@@ -100,7 +107,7 @@ class AppBackupRecordsDeviceTest {
                     EncryptedAgentMemoryDeletionIndex(f.context).exportRecords(w)
                     w.json("app", "end", JSONObject().put("fields", 1))
                 }
-                assertNotNull(runCatching { AppBackupRecords(f.context).restore(file, password, true,
+                assertNotNull(runCatching { archive(f).restore(file, password, true,
                     { _, _ -> fail("Applied incomplete backup") }, { _, _ -> fail() }, { fail() }) }.exceptionOrNull())
                 assertEquals(listOf(deletionMemory(9)), f.reopen().loadItems())
             } finally { file.delete() }
@@ -135,5 +142,64 @@ class AppBackupRecordsDeviceTest {
             assertEquals("unreadable-fixture-metadata", f.store.database.readString(AgentPersonalMemoryRows.META, ""))
         } finally { f.store.database.writeString(AgentPersonalMemoryRows.META, meta) }
         assertEquals(listOf(deletionMemory(1)), f.reopen().loadItems())
+    }
+
+    @Test fun appArchiveStreamsKnowledgeAndRestoresItOutsideMetadataCallbacks() = fixture { f ->
+        val item = AgentKnowledgeItem("app-knowledge", AgentKnowledgeKind.NOTE, "\u5907\u4efd", "\u77e5\u8bc6\u5185\u5bb9", updatedAtMillis = 1)
+        val store = knowledge(f)
+        store.upsert(item)
+        val original = store.list(1).single()
+        val file = file(f)
+        try {
+            export(f, file)
+            var rows = 0
+            StreamingBackupArchive.read(file, password) { section, key, input ->
+                assertFalse(section == "agent-field" && key == "knowledge")
+                if (section == "knowledge-row") rows++
+                readBackupJson(input)
+            }
+            assertEquals(1, rows)
+            store.replaceAllJson(JSONArray())
+            archive(f).restore(file, password, false, { _, _ -> }, { key, _ -> assertNotEquals("knowledge", key) }, {})
+            assertEquals(listOf(original), store.list(5))
+        } finally { file.delete() }
+    }
+
+    @Test fun completeLegacyAppArchiveRestoresKnowledgeWithoutAnArrayCallback() = fixture { f ->
+        val item = AgentKnowledgeItem("legacy-source", AgentKnowledgeKind.NOTE, "\u65e7\u5907\u4efd", "\u4fdd\u7559\u5185\u5bb9", updatedAtMillis = 2)
+        val expected = AppBackupFields.expected(false, false, 1)
+        val file = file(f)
+        try {
+            StreamingBackupArchive.write(file, password) { w ->
+                w.json("app", "begin", JSONObject().put("schema", 1).put("contacts", false).put("messages", false))
+                expected.forEach { (section, key) ->
+                    val field = if (key == "knowledge") JSONArray().put(AgentKnowledgeCodec.encodeItem(item)) else value(section, key)
+                    w.json(section, key, JSONObject().put("value", field))
+                }
+                EncryptedAgentMemoryDeletionIndex(f.context).exportRecords(w)
+                w.json("app", "end", JSONObject().put("fields", expected.size))
+            }
+            archive(f).restore(file, password, false, { _, _ -> }, { key, _ -> assertNotEquals("knowledge", key) }, {})
+            assertEquals(listOf(item.copy(summary = AgentKnowledgeCodec.summarize(item.content))), knowledge(f).list(5))
+        } finally { file.delete() }
+    }
+
+    @Test fun missingKnowledgeSectionRejectsBeforeAnyLiveStoreChanges() = fixture { f ->
+        f.store.saveItems(listOf(deletionMemory(1)))
+        val item = AgentKnowledgeItem("retained", AgentKnowledgeKind.NOTE, "\u4fdd\u7559", "\u4e0d\u5f97\u4e22\u5931", updatedAtMillis = 1)
+        val store = knowledge(f); store.upsert(item)
+        val before = store.list(5)
+        val expected = AppBackupFields.expected(false, false)
+        val file = file(f)
+        try {
+            StreamingBackupArchive.write(file, password) { w ->
+                w.json("app", "begin", JSONObject().put("schema", 2).put("contacts", false).put("messages", false))
+                expected.forEach { (section, key) -> w.json(section, key, JSONObject().put("value", value(section, key))) }
+                EncryptedAgentMemoryDeletionIndex(f.context).exportRecords(w)
+                w.json("app", "end", JSONObject().put("fields", expected.size))
+            }
+            assertThrows(Exception::class.java) { archive(f).restore(file, password, true, { _, _ -> fail() }, { _, _ -> fail() }, { fail() }) }
+            assertEquals(before, store.list(5)); assertEquals(listOf(deletionMemory(1)), f.reopen().loadItems())
+        } finally { file.delete() }
     }
 }

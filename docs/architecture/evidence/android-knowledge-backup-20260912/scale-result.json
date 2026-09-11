@@ -1,0 +1,79 @@
+{
+  "device_result": {
+    "device": "SM-T575",
+    "version": "1.1.93",
+    "rows": 10001,
+    "archive_bytes": 3258063,
+    "seed_ms": 294882,
+    "export_ms": 268088,
+    "stage_ms": 31662,
+    "restore_ms": 312967,
+    "verify_ms": 214373,
+    "sampled_java_heap_max_bytes": 42175228,
+    "native_heap_at_end_bytes": 13730376,
+    "scope": "Real encrypted sources and FTS, not semantic vectors or 100M capacity; heap samples are not a peak bound"
+  },
+  "instrumentation": {
+    "tests": 1,
+    "status": "passed",
+    "seconds": 1126.501
+  },
+  "raw_samples": {
+    "percentile_method": "nearest rank",
+    "max_ms": 25.748769,
+    "p99_ms": 2.590769,
+    "files": [
+      {
+        "file": "stage-row-01.csv",
+        "rows": 1500,
+        "sha256": "329e544c5c5015641e7deed2a98707d96dc0056ebd3d058d0be2aa5c40985884"
+      },
+      {
+        "file": "stage-row-02.csv",
+        "rows": 1500,
+        "sha256": "f4d930aef53ecf7b2cd76c12f1aa1072685365471255a1610d3991bfeffb6a60"
+      },
+      {
+        "file": "stage-row-03.csv",
+        "rows": 1500,
+        "sha256": "02f48652eb1f52824ddb0e833023ecddc87a4f6ed2d13f4f5d0981387eec4f39"
+      },
+      {
+        "file": "stage-row-04.csv",
+        "rows": 1500,
+        "sha256": "1b98e6ea3d2b94e846846661e7e4ff59595834f102abd210973fc51e9b4ad499"
+      },
+      {
+        "file": "stage-row-05.csv",
+        "rows": 1500,
+        "sha256": "f7e35c4ac99fad022eb6c32bc3cbe5d195c72203f80bc1aa9ba17f8e320a8b74"
+      },
+      {
+        "file": "stage-row-06.csv",
+        "rows": 1500,
+        "sha256": "f85c295701ce582ef287931695a9d50f4950cf9a62a19b35bd70fa2f2bcd146b"
+      },
+      {
+        "file": "stage-row-07.csv",
+        "rows": 1001,
+        "sha256": "4743cf26b57d1a214fb81409bec99a8b3b80d6273d2057d17b3dc9b70988bef4"
+      }
+    ],
+    "input_sha256": "4ac6fee7cd21bedb12fd85f871637aa90bd709ed8de69289f81b8b29feb9076b",
+    "p95_ms": 2.105307,
+    "p50_ms": 1.782039,
+    "scope": "Per-source staging parse/encrypt/insert only; excludes stage commit/fsync, live writes, UI and retrieval",
+    "count": 10001,
+    "over_200_ms": 0
+  },
+  "source_archive_sha256": "e4115849f028f5f96145861242ecf0297fd4d7e643f148612ad2bb9577602fb3",
+  "retained_fixture": "test-knowledge-backup-cf7de680-e44d-499f-87e6-39e03f35389b.db",
+  "source_data": "Synthetic unique Chinese source bodies, policies and FTS; all 10001 compared after reopening",
+  "exclusions": [
+    "No semantic vectors in this scale run",
+    "No production mutation-observer or model-indexing timing",
+    "No 100M capacity claim",
+    "Heap samples are not process peak memory",
+    "No 200 ms batch restore or writer-lock claim"
+  ]
+}

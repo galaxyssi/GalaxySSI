@@ -29,10 +29,11 @@ internal object AppBackupFields {
         require(valid) { "Invalid backup field: $section/$key" }
     }
 
-    fun expected(contacts: Boolean, messages: Boolean): Set<Pair<String, String>> = buildSet {
+    fun expected(contacts: Boolean, messages: Boolean, schema: Int = 2): Set<Pair<String, String>> = buildSet {
+        require(schema in 1..2) { "Unsupported app backup schema" }
         app.keys.filter { (contacts || it !in setOf("contacts", "friend_requests")) && (messages || it != "messages") }
             .forEach { add("app-field" to it) }
-        agent.keys.forEach { add("agent-field" to it) }
+        agent.keys.filter { schema == 1 || it != "knowledge" }.forEach { add("agent-field" to it) }
     }
 
     private fun kind(section: String, key: String): Kind = when (section) {

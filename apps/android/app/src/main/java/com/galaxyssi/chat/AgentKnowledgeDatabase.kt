@@ -19,7 +19,7 @@ import org.json.JSONObject
 internal class AgentKnowledgeDatabase private constructor(
     private val context: Context, private val name: String, private val legacyName: String
 ) : Closeable {
-    private var retired = false
+    @Volatile private var retired = false
     private var connection: KnowledgeSqlite? = null
     private var indexing = false
     internal var decryptedItemReads = 0L
@@ -99,6 +99,10 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
+    internal fun checkActive() { check(!retired) { "Knowledge store was closed; reopen the store" } }
+    internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
+        KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
+    }
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
     internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
         "knowledge-native/${key("native-index", modelKey)}")

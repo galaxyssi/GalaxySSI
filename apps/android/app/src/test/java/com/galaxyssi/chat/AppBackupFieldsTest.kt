@@ -6,6 +6,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppBackupFieldsTest {
+    @Test fun newSchemaMovesKnowledgeOutOfTheLegacyArrayField() {
+        val old = AppBackupFields.expected(true, true, 1)
+        val current = AppBackupFields.expected(true, true, 2)
+        assertEquals(setOf("agent-field" to "knowledge"), old - current)
+        assertEquals(current, AppBackupFields.expected(true, true))
+        for (schema in listOf(0, 3, Int.MAX_VALUE))
+            assertThrows(IllegalArgumentException::class.java) { AppBackupFields.expected(true, true, schema) }
+    }
     @Test fun optionalAppSectionsFollowExportOptions() {
         val full = AppBackupFields.expected(true, true)
         assertEquals(setOf("app-field" to "contacts", "app-field" to "friend_requests", "app-field" to "messages"),
