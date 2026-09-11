@@ -106,7 +106,7 @@
 
                     <LinearLayout
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -114,14 +114,24 @@
                             android:id="@+id/agentBrandLogo"
                             android:layout_width="39dp"
                             android:layout_height="39dp"
-                            android:contentDescription="@null"
+                            android:background="?android:attr/selectableItemBackgroundBorderless"
+                            android:clickable="true"
+                            android:contentDescription="@string/conversation_window_open"
+                            android:focusable="true"
+                            android:tooltipText="@string/conversation_window_open"
                             android:src="@mipmap/ic_launcher" />
 
                         <LinearLayout
+                            android:id="@+id/agentBrandNewConversation"
                             android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:layout_marginStart="8dp"
-                            android:gravity="center_horizontal"
+                            android:clickable="true"
+                            android:contentDescription="@string/agent_session_new"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackground"
+                            android:gravity="center"
+                            android:tooltipText="@string/agent_session_new"
                             android:orientation="vertical">
 
                             <TextView
@@ -149,17 +159,6 @@
                         android:layout_width="0dp"
                         android:layout_height="1dp"
                         android:layout_weight="1" />
-
-                    <ImageButton
-                        android:id="@+id/agentOpenWindowButton"
-                        android:layout_width="40dp"
-                        android:layout_height="44dp"
-                        android:background="@android:color/transparent"
-                        android:contentDescription="@string/conversation_window_open"
-                        android:tooltipText="@string/conversation_window_open"
-                        android:padding="9dp"
-                        android:src="@drawable/ic_conversation_external"
-                        android:tint="@color/text_primary" />
 
                     <FrameLayout
                         android:id="@+id/agentSessionSummary"
