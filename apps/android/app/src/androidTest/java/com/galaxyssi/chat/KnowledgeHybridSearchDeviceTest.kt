@@ -145,7 +145,8 @@ class KnowledgeHybridSearchDeviceTest {
         f.encoder.before = { Thread.sleep(150) }
         try {
             assertTrue(session.advanceIndex())
-            assertEquals("fruit", session.search("apple", 8) { emptyList() }.single().item.id)
+            val result = session.search("apple", 8) { emptyList() }
+            assertEquals(session.status, listOf("fruit"), result.map { it.item.id })
             assertTrue(f.encoder.closed.await(5, TimeUnit.SECONDS))
         } finally { session.close() }
     }

@@ -18,7 +18,7 @@ internal class KnowledgeSemanticSearch(
     private val ttlMillis: Long = 30_000
 ) : Closeable {
     private data class Snapshot(val index: KnowledgeNativeIndex, val epoch: Long)
-    private val lock = ReentrantLock()
+    private val lock = ReentrantLock(true)
     private val epoch = AtomicLong()
     private val closed = AtomicBoolean()
     private val indexScheduled = AtomicBoolean()
@@ -33,8 +33,10 @@ internal class KnowledgeSemanticSearch(
         require(limit in 1..24)
         if (Looper.myLooper() == Looper.getMainLooper()) { status = "requires_worker_thread"; return lexical().take(limit) }
         if (closed.get() || suspended.get()) { status = "suspended"; return lexical().take(limit) }
-        // Foreground retrieval never queues behind replay or another encoder call.
-        if (!lock.tryLock()) { status = "busy"; return lexical().take(limit) }
+        // Allow a short cleanup/checkpoint handoff, never an unbounded replay/inference wait.
+        val admitted = try { lock.tryLock(25, TimeUnit.MILLISECONDS) }
+            catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
+        if (!admitted) { status = "busy"; return lexical().take(limit) }
         val result = try {
             var expected = epoch.get()
             try {
