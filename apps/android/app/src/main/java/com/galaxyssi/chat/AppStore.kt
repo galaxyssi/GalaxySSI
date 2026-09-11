@@ -1303,37 +1303,52 @@ object AppStore {
         includeContacts: Boolean,
         includeMessages: Boolean
     ): File {
-        require(password.length >= 8) { "Backup password must be at least 8 characters." }
+        val secret = password.toCharArray()
+        return try { exportBackup(context, secret, includeContacts, includeMessages) } finally { secret.fill('\u0000') }
+    }
+
+    internal fun exportBackup(context: Context, password: CharArray, includeContacts: Boolean, includeMessages: Boolean): File {
+        require(password.size >= 8) { "Backup password must be at least 8 characters." }
         ensureInitialized(context)
-        val payload = JSONObject()
-            .put("identity", GalaxySSICrypto.exportSignalStoreJson(context))
-            .put("profile", profile(context))
-            .put("includes_contacts", includeContacts)
-            .put("includes_messages", includeMessages)
-            .put("includes_agent_data", true)
-            .put(
-                "privacy_manifest",
-                AgentPrivateDataInventory.backupManifest(includeContacts, includeMessages)
-            )
-            .put("agent_data", AgentBackupData.export(context, includeSessionHistory = includeMessages))
-        if (includeContacts) {
-            payload.put("contacts", contacts(context))
-            payload.put("friend_requests", friendRequests(context))
-        }
-        if (includeMessages) {
-            payload.put("messages", ChatHistoryStore.readAll(context))
-        }
-        val encrypted = encryptBackup(payload.toString(), password)
         val backup = context.filesDir.resolve("backups").apply { mkdirs() }
-            .resolve("galaxyssi_backup_${System.currentTimeMillis()}.hcbak")
-        backup.writeText(encrypted.toString(), Charsets.UTF_8)
+            .resolve("galaxyssi_backup_${System.currentTimeMillis()}_${java.util.UUID.randomUUID()}.hcbak")
+        AppBackupRecords(context).export(backup, password, includeContacts, includeMessages, appFields = { emit ->
+            emit("identity", GalaxySSICrypto.exportSignalStoreJson(context))
+            emit("profile", profile(context))
+            emit("privacy_manifest", AgentPrivateDataInventory.backupManifest(includeContacts, includeMessages))
+            if (includeContacts) {
+                emit("contacts", contacts(context))
+                emit("friend_requests", friendRequests(context))
+            }
+            if (includeMessages) emit("messages", ChatHistoryStore.readAll(context))
+        })
         return backup
     }
 
     fun importBackup(context: Context, file: File, password: String, includeMessages: Boolean = true) {
+        val secret = password.toCharArray()
+        try { importBackup(context, file, secret, includeMessages) } finally { secret.fill('\u0000') }
+    }
+
+    internal fun importBackup(context: Context, file: File, password: CharArray, includeMessages: Boolean = true) {
         require(file.isFile) { "Backup file not found." }
+        if (StreamingBackupArchive.isStreaming(file)) {
+            AppBackupRecords(context).restore(file, password, includeMessages, applyAppField = { key, value ->
+                when (key) {
+                    "identity" -> GalaxySSICrypto.importSignalStoreJson(context, value as JSONObject)
+                    "profile" -> writeObject(context, KEY_PROFILE, value as JSONObject)
+                    "contacts" -> writeArray(context, KEY_CONTACTS, value as JSONArray)
+                    "friend_requests" -> writeArray(context, KEY_FRIEND_REQUESTS, value as JSONArray)
+                    "messages" -> ChatHistoryStore.replaceAll(context, value as JSONObject)
+                    "privacy_manifest" -> Unit
+                    else -> error("Unsupported backup field")
+                }
+            })
+            return
+        }
+        // Legacy backups remain importable; only the old format requires whole-payload decoding.
         val root = JSONObject(file.readText(Charsets.UTF_8))
-        val payload = JSONObject(decryptBackup(root, password))
+        val payload = JSONObject(decryptBackup(root, String(password)))
         payload.optJSONObject("identity")?.let { GalaxySSICrypto.importSignalStoreJson(context, it) }
         payload.optJSONObject("profile")?.let { writeObject(context, KEY_PROFILE, it) }
         payload.optJSONArray("contacts")?.let { writeArray(context, KEY_CONTACTS, it) }

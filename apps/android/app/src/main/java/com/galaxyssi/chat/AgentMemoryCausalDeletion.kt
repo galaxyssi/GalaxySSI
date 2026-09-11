@@ -110,6 +110,19 @@ object AgentMemoryCausalDeletionPolicy {
         scopeId = item.scopeId
     )
 
+    internal data class BackupSuppressionKeys(val id: String, val timestamp: Long, val exact: String, val legacy: String)
+
+    internal fun backupSuppressionKeys(item: JSONObject): BackupSuppressionKeys {
+        val id = item.opt("id") as? String
+        val value = item.opt("value") as? String
+        check(!id.isNullOrBlank() && !value.isNullOrBlank()) { "Memory backup record identity or value is missing" }
+        val kind = AgentMemoryKind.entries.firstOrNull { it.name == item.optString("kind") } ?: AgentMemoryKind.TASK
+        val scope = AgentMemoryScope.entries.firstOrNull { it.name == item.optString("scope") } ?: AgentMemoryScope.GLOBAL
+        fun fingerprint(legacy: Boolean) = semanticFingerprint(kind.name, item.optString("key"), value,
+            scope.name, item.optString("scope_id"), legacyScope = legacy)
+        return BackupSuppressionKeys(id, item.optLong("timestamp_millis").coerceAtLeast(0L), fingerprint(false), fingerprint(true))
+    }
+
     internal class SuppressionIndex {
         private val memoryIds = hashSetOf<String>()
         private val deletedThrough = hashMapOf<String, Long>()

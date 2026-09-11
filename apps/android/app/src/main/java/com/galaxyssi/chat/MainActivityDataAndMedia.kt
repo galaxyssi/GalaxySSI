@@ -289,16 +289,29 @@ internal fun MainActivity.showExportBackupDialog() {
 }
 
 internal fun MainActivity.exportBackupToUri(uri: Uri) {
-    val password = pendingExportPassword ?: return
+    val password = pendingExportPassword?.toCharArray() ?: return
+    val includeMessages = pendingExportIncludeMessages
     pendingExportPassword = null
-    runCatching {
-        val file = AppStore.exportBackup(this, password, includeMessages = pendingExportIncludeMessages, includeContacts = true)
-        contentResolver.openOutputStream(uri)?.use { out ->
-            file.inputStream().use { input -> input.copyTo(out) }
+    val context = applicationContext
+    val activity = java.lang.ref.WeakReference(this)
+    val submitted = BackupOperationRunner.shared.submit(work = {
+        try {
+            val file = AppStore.exportBackup(context, password, includeMessages = includeMessages, includeContacts = true)
+            val destination = context.contentResolver.openOutputStream(uri) ?: throw java.io.IOException("Cannot open backup destination")
+            destination.use { out -> file.inputStream().use { input -> input.copyTo(out) } }
+        } finally { password.fill('\u0000') }
+    }, complete = { result ->
+        password.fill('\u0000')
+        activity.get()?.runOnUiThread {
+            val current = activity.get()?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@runOnUiThread
+            val text = result.fold({ current.getString(R.string.backup_export_success) },
+                { current.getString(R.string.backup_export_failed, it.message.orEmpty()) })
+            Toast.makeText(current, text, Toast.LENGTH_LONG).show()
         }
-        runOnUiThread { Toast.makeText(this, getString(R.string.backup_export_success), Toast.LENGTH_SHORT).show() }
-    }.onFailure {
-        runOnUiThread { Toast.makeText(this, getString(R.string.backup_export_failed, it.message ?: ""), Toast.LENGTH_LONG).show() }
+    })
+    if (!submitted) {
+        password.fill('\u0000')
+        Toast.makeText(this, R.string.backup_operation_running, Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -537,20 +550,33 @@ internal fun MainActivity.showPasswordFeaturePage(title: String, message: String
 }
 
 internal fun MainActivity.importBackupWithPassword(uri: Uri, password: String) {
-    runCatching {
-        val target = File(cacheDir, "import_${System.currentTimeMillis()}.hcbak")
-        contentResolver.openInputStream(uri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
+    val secret = password.toCharArray()
+    val context = applicationContext
+    val activity = java.lang.ref.WeakReference(this)
+    val submitted = BackupOperationRunner.shared.submit(work = {
+        var target: File? = null
+        try {
+            val copied = File.createTempFile("import-", ".hcbak", context.cacheDir).also { target = it }
+            val source = context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("Cannot open backup source")
+            source.use { input -> copied.outputStream().use { output -> input.copyTo(output) } }
+            AppStore.importBackup(context, copied, secret)
+        } finally { secret.fill('\u0000'); target?.delete() }
+    }, complete = { result ->
+        secret.fill('\u0000')
+        activity.get()?.runOnUiThread {
+            val current = activity.get()?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@runOnUiThread
+            result.fold({
+                current.pendingImportUri = null
+                Toast.makeText(current, R.string.backup_import_success, Toast.LENGTH_LONG).show()
+                current.recreate()
+            }, {
+                Toast.makeText(current, current.getString(R.string.backup_import_failed, it.message.orEmpty()), Toast.LENGTH_LONG).show()
+            })
         }
-        AppStore.importBackup(this, target, password)
-        target.delete()
-        runOnUiThread {
-            pendingImportUri = null
-            Toast.makeText(this, getString(R.string.backup_import_success), Toast.LENGTH_LONG).show()
-            recreate()
-        }
-    }.onFailure {
-        runOnUiThread { Toast.makeText(this, getString(R.string.backup_import_failed, it.message ?: ""), Toast.LENGTH_LONG).show() }
+    })
+    if (!submitted) {
+        secret.fill('\u0000')
+        Toast.makeText(this, R.string.backup_operation_running, Toast.LENGTH_SHORT).show()
     }
 }
 

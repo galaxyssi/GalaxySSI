@@ -57,6 +57,25 @@ class EncryptedAgentMemoryDeletionIndex(context: Context) {
             .put("memory_deletion_index", exportJson())
     }
 
+    internal fun exportRecords(writer: BackupRecordStream.Writer) = synchronized(AgentMemoryStorage.lock) {
+        ensureMigrated()
+        writer.json("memory", "begin", JSONObject().put("schema", 1))
+        val counts = memoryRows.exportRows { key, row -> writer.json("memory-row", key, row) }
+        var deletions = 0L
+        visitRecords { record ->
+            writer.json("memory-deletion", record.id, AgentMemoryCausalDeletionPolicy.encode(record))
+            deletions = Math.addExact(deletions, 1)
+        }
+        writer.json("memory", "end", JSONObject().put("rows", counts.first).put("active", counts.second).put("deletions", deletions))
+    }
+
+    internal fun restoreRecords(staging: MemoryBackupStaging) = synchronized(AgentMemoryStorage.lock) {
+        ensureMigrated()
+        visitRecords(staging::addLocalDeletion)
+        staging.prepare()
+        memoryRows.replacePrepared(staging.items(), staging.additionalRows())
+    }
+
     internal fun restoreState(payload: JSONObject) {
         fun array(key: String): JSONArray? {
             if (!payload.has(key)) return null

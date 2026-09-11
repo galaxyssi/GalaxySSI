@@ -12,6 +12,19 @@ object AgentBackupData {
     private const val ITEMS_KEY = "items"
 
     fun export(context: Context, includeSessionHistory: Boolean = true): JSONObject {
+        val result = JSONObject()
+        exportFields(context, includeSessionHistory, includeMemory = true) { key, value -> result.put(key, value) }
+        return result
+    }
+
+    internal fun visitNonMemoryFields(context: Context, includeSessionHistory: Boolean, visit: (String, Any) -> Unit) =
+        exportFields(context, includeSessionHistory, includeMemory = false, visit = visit)
+
+    private class FieldSink(private val visit: (String, Any) -> Unit) {
+        fun put(key: String, value: Any): FieldSink { visit(key, value); return this }
+    }
+
+    private fun exportFields(context: Context, includeSessionHistory: Boolean, includeMemory: Boolean, visit: (String, Any) -> Unit) {
         val safety = SharedPreferencesAgentSafetySettingsStore(context).load()
         val taskBudget = AgentTaskBudgetStore(context).load()
         val modelPlanner = AgentModelPlannerSettingsStore(context).load()
@@ -19,14 +32,16 @@ object AgentBackupData {
         val voiceAssistant = VoiceAssistantSettings.get(context)
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
-        val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
-        val memoryState = memoryDeletionIndex.exportState()
-        return JSONObject()
+        val fields = FieldSink(visit)
+        if (includeMemory) {
+            val memoryState = EncryptedAgentMemoryDeletionIndex(context).exportState()
+            fields.put("memory", memoryState.getJSONArray("memory"))
+                .put("memory_deletion_index", memoryState.getJSONArray("memory_deletion_index"))
+        }
+        fields
             .put("version", 33)
             .put("interface_language", AppLanguage.current(context))
             .put("agent_preference_mode", preferenceMode.wireValue)
-            .put("memory", memoryState.getJSONArray("memory"))
-            .put("memory_deletion_index", memoryState.getJSONArray("memory_deletion_index"))
             .put("knowledge", SQLiteAgentKnowledgeStore(context).exportJson())
             .put("tasks", if (includeSessionHistory) SQLiteAgentTaskStore(context).exportJson() else JSONArray())
             .put("transcript", if (includeSessionHistory) readAgentTranscriptArray(context) else JSONArray())
@@ -115,8 +130,17 @@ object AgentBackupData {
     }
 
     fun restore(context: Context, payload: JSONObject) {
-        val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
-        memoryDeletionIndex.restoreState(payload)
+        EncryptedAgentMemoryDeletionIndex(context).restoreState(payload)
+        applyNonMemoryFields(context, payload)
+        finishRestore(context)
+    }
+
+    internal fun restoreNonMemoryFields(context: Context, payload: JSONObject) {
+        require(!payload.has("memory") && !payload.has("memory_deletion_index")) { "Memory must use its validated restore path" }
+        applyNonMemoryFields(context, payload)
+    }
+
+    private fun applyNonMemoryFields(context: Context, payload: JSONObject) {
         if (payload.has("interface_language")) {
             AppLanguage.set(context, payload.optString("interface_language", AppLanguage.AUTO))
         }
@@ -280,7 +304,10 @@ object AgentBackupData {
             VoiceAssistantSettings.setSpeakReplies(context, json.optBoolean("speak_replies", true))
             VoiceAssistantSettings.setRoutingMode(context, json.optString("routing_mode"))
         }
-        memoryDeletionIndex.publishRetractions()
+    }
+
+    internal fun finishRestore(context: Context) {
+        EncryptedAgentMemoryDeletionIndex(context).publishRetractions()
         GlobalConversationEventBus.requestProcessing(context)
     }
 

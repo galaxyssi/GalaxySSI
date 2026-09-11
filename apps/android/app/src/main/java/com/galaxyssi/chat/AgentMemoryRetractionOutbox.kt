@@ -29,16 +29,18 @@ internal class AgentMemoryRetractionOutbox(
 
     fun requeueAll(): Int = synchronized(AgentMemoryStorage.lock) {
         migrateLedger()
-        val updates = linkedMapOf<String, String>()
+        var count = 0
         var cursor = ""
         while (true) {
             val page = database.keysAfter(EncryptedAgentMemoryDeletionIndex.RECORD_PREFIX, cursor, 128)
             if (page.isEmpty()) break
+            val updates = linkedMapOf<String, String>()
             page.forEach { updates.putAll(references(readRecord(it))) }
+            database.mutateStrings(updates)
+            count = Math.addExact(count, updates.size)
             cursor = page.last()
         }
-        database.mutateStrings(updates)
-        updates.size
+        count
     }
 
     private fun bootstrap() {
