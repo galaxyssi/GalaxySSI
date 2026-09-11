@@ -30,6 +30,7 @@ function readSubmodulePaths() {
 }
 
 const ignoredSubmodulePaths = readSubmodulePaths();
+const ignoredGeneratedPaths = new Set(["apps/android/memory-native/target"]);
 
 const ignoredDirs = new Set([
   ".git",
@@ -97,7 +98,9 @@ function walk(dir, findings) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       const rel = normalize(path.relative(root, full));
-      if (!ignoredDirs.has(entry.name) && !ignoredSubmodulePaths.has(rel)) walk(full, findings);
+      if (!ignoredDirs.has(entry.name) && !ignoredSubmodulePaths.has(rel) && !ignoredGeneratedPaths.has(rel)) {
+        walk(full, findings);
+      }
       continue;
     }
     if (entry.isSymbolicLink()) continue;
