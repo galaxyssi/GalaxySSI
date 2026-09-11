@@ -302,19 +302,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val cleanQuery = query.trim()
         if (cleanQuery.isBlank()) return emptyList()
         val now = System.currentTimeMillis()
-        val items = loadItems()
-        val recalled = items
-            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory && !it.isExpired(now) }
-            .filter { lexicalScore(it, cleanQuery) > 0.0 }
-            .map { item -> item to score(item, cleanQuery) }
-            .filter { (_, score) -> score > 0 }
-            .sortedWith(
-                compareByDescending<Pair<AgentMemoryItem, Double>> { it.second }
-                    .thenByDescending { it.first.important }
-                    .thenByDescending { it.first.timestampMillis }
-            )
-            .map { it.first }
-            .take(MAX_RECALL_ITEMS)
+        val recalled = rows.recall(cleanQuery, now, MAX_RECALL_ITEMS)
         if (recalled.isNotEmpty()) {
             val recalledIds = recalled.mapTo(hashSetOf()) { it.id }
             rows.refreshAccess(recalledIds, now)
@@ -539,41 +527,12 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return resolved
     }
 
-    internal fun score(item: AgentMemoryItem, query: String): Double {
-        val lexicalScore = lexicalScore(item, query)
-        val ageDays = ((System.currentTimeMillis() - item.timestampMillis).coerceAtLeast(0L) / DAY_MILLIS.toDouble())
-        val recency = 1.0 / (1.0 + ageDays / 30.0)
-        val evidence = kotlin.math.ln(1.0 + item.evidenceCount.coerceAtLeast(1))
-        return lexicalScore * (0.5 + item.confidence.coerceIn(0.0, 1.0)) +
-            recency + evidence + if (item.important) 2.0 else 0.0
-    }
+    internal fun score(item: AgentMemoryItem, query: String): Double =
+        AgentMemoryRecallRanking.score(item, query, System.currentTimeMillis())
 
-    internal fun lexicalScore(item: AgentMemoryItem, query: String): Double {
-        val value = item.value.lowercase()
-        val searchable = "${item.key} $value".lowercase()
-        val cleanQuery = query.lowercase()
-        if (cleanQuery.isBlank()) return 0.0
-        var lexicalScore = 0.0
-        if (value == cleanQuery) lexicalScore += 12.0
-        if (value.contains(cleanQuery) || cleanQuery.contains(value)) lexicalScore += 8.0
-        structuredTokens(cleanQuery).forEach { token ->
-            if (searchable.contains(token)) lexicalScore += STRUCTURED_TOKEN_WEIGHT
-        }
-        queryTokens(cleanQuery).forEach { token -> if (searchable.contains(token)) lexicalScore += 1.0 }
-        return lexicalScore
-    }
+    internal fun lexicalScore(item: AgentMemoryItem, query: String): Double = AgentMemoryRecallRanking.lexical(item, query)
 
-    internal fun queryTokens(value: String): Set<String> {
-        val wordTokens = value.split(Regex("[^\\p{L}\\p{N}]+"))
-            .filter { it.length >= MIN_TOKEN_LENGTH }
-        val cjkBigrams = value.filter { it.code in 0x3400..0x9FFF }.windowed(2)
-        return (wordTokens + cjkBigrams).toSet()
-    }
-
-    private fun structuredTokens(value: String): Set<String> = STRUCTURED_TOKEN_PATTERN
-        .findAll(value)
-        .map { it.value.lowercase() }
-        .toSet()
+    internal fun queryTokens(value: String): Set<String> = AgentMemoryRecallRanking.queryTokens(value)
 
     internal fun loadItems(): List<AgentMemoryItem> {
         return AgentMemoryIdentity.normalizeConflicts(rows.read().map {
@@ -646,11 +605,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         private val PROCESS_LOCK = AgentMemoryStorage.lock
         private const val DATABASE = AgentMemoryStorage.DATABASE
         private const val MAX_RECALL_ITEMS = 8
-        private const val MIN_TOKEN_LENGTH = 3
-        private const val STRUCTURED_TOKEN_WEIGHT = 6.0
         private const val MAX_KEY_PREFIX_LENGTH = 64
         private const val MAX_KEY_LENGTH = 80
-        private const val DAY_MILLIS = 86_400_000L
-        private val STRUCTURED_TOKEN_PATTERN = Regex("[\\p{L}\\p{N}]+(?:[-_.:][\\p{L}\\p{N}]+)+")
     }
 }
