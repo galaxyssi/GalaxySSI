@@ -78,7 +78,7 @@ internal object AgentConversationWindows {
         opening[conversation.id] = token
         pending[token] = WeakReference(source) to conversation.id
         try {
-            activity.agentTranscriptStore.persistForWindow(conversation.id)
+            activity.agentTranscriptStore.prepareForWindow(conversation.id)
             AgentWindowStateStore(activity).save(key, conversation.id, source.snapshot())
             states.select(key, conversation.id)
             activity.startActivity(Intent(activity, ConversationWindowActivity::class.java)

@@ -154,8 +154,41 @@ packaging checks pass again. All 69 device regressions pass, including two new
 tests proving unchanged index ciphertext on access/importance updates and
 preserved older-writer invalidation after an access update. Both restart stages
 also pass again (PIDs 29188 and 29268, 129 retained source rows, one candidate
-decryption). The same-cardinality timing retest is in progress; first-candidate
-numbers do not certify this build's latency.
+decryption). Both same-cardinality timing tests pass their correctness assertions
+in 775.785 seconds, for 73 passing device cases in this corrected build.
+
+The corrected run has 798/800 operations at or below 200ms. All group P95 values
+meet 200ms, but the strict every-operation goal does not: two eight-row access
+updates at 1,201 rows took 201.557538ms and 202.394885ms. No sample was discarded.
+See [all corrected raw samples](android-memory-recall-corrected-20260911.json).
+The user explicitly accepted this measured result, including both small overruns,
+on 2026-09-11. This phase is accepted; the observed over-budget samples remain in
+the report and are not reclassified as being below 200ms. This acceptance does
+not certify untested cardinalities, broad queries or the full 100M+ goal.
+
+| Rows | Operation | P50 ms | P95 ms | P99 ms | Max ms | >200ms |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1,201 | Selective warm recall | 34.31 | 55.40 | 58.53 | 68.20 | 0/100 |
+| 1,201 | New memory write | 59.96 | 97.74 | 113.95 | 126.06 | 0/100 |
+| 10,001 | Selective warm recall | 52.04 | 59.01 | 70.72 | 86.92 | 0/100 |
+| 10,001 | New memory write | 90.45 | 100.74 | 107.99 | 108.03 | 0/100 |
+| 1,201 | Access update, 1 row | 44.20 | 52.50 | 57.38 | 62.80 | 0/100 |
+| 1,201 | Access update, 8 rows | 180.52 | 197.61 | 201.56 | 202.39 | 2/100 |
+| 10,001 | Access update, 1 row | 28.07 | 39.23 | 40.58 | 44.58 | 0/100 |
+| 10,001 | Access update, 8 rows | 111.64 | 150.27 | 160.22 | 163.75 | 0/100 |
+
+Eight-row access P95 changed from 231.31 to 197.61ms at 1,201 rows and from 172.88
+to 150.27ms at 10,001 rows. These are sequential device runs, not a randomized
+controlled trial; not every timing difference can be attributed to the patch.
+The observed small/large results do not prove monotonic latency at every size.
+
+The full-scan reference in the same corrected package took 5,905.05ms and
+61,794.53ms at the two sizes. Each is one sample, not an old-release percentile.
+After the 100 new writes, the fixture databases occupied 3,477,504 bytes for
+1,301 rows and 26,550,272 bytes for 10,101 rows. That includes source/index data,
+not a measurement of native vector storage or a proof of 100M capacity.
+
+Corrected local evidence uses `build/memory-indexed-recall-content-revision-*`.
 
 Corrected app APK SHA-256:
 `4f918ec5ce38a5e64f9b0cf3619a21e7c72827fe4b47393fda9deffd091bda55`.

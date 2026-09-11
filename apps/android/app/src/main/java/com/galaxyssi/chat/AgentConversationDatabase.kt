@@ -25,6 +25,7 @@ internal class AgentConversationDatabase(
 ) : SQLiteOpenHelper(context.applicationContext, databaseName, null, DATABASE_VERSION) {
     private val rowCipher = AgentRowStorageCipher(context.applicationContext, databaseName)
     @Volatile private var legacyRowsMigrated = false
+    private var windowDraftsPrepared = false
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -53,6 +54,7 @@ internal class AgentConversationDatabase(
         createLatestMessageIndex(db)
         createMigrationMetadata(db, complete = true)
         createConversationState(db)
+        createWindowDrafts(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -92,6 +94,10 @@ internal class AgentConversationDatabase(
         }
         createMigrationMetadata(db, complete = false)
         if (oldVersion < 4) createConversationState(db)
+        if (oldVersion < 6) {
+            createWindowDrafts(db)
+            db.execSQL("DROP TABLE IF EXISTS agent_conversation_history_drafts")
+        }
     }
 
     @Synchronized
@@ -151,6 +157,82 @@ internal class AgentConversationDatabase(
         values(conversation),
         SQLiteDatabase.CONFLICT_IGNORE
     ) != -1L
+
+    @Synchronized
+    fun readWindowDraft(id: String): AgentConversation? = readableDatabase.query(
+        TABLE_WINDOW_DRAFTS, COLUMNS, "conversation_id = ?", arrayOf(id), null, null, null, "1"
+    ).use { cursor -> if (cursor.moveToFirst()) decode(cursor) else null }
+
+    @Synchronized
+    fun saveWindowDraft(conversation: AgentConversation) {
+        if (read(conversation.id) == null) writeWindowDraft(conversation)
+    }
+
+    private fun writeWindowDraft(conversation: AgentConversation) {
+        val values = ContentValues().apply {
+            put("conversation_id", conversation.id)
+            put("encrypted_payload", rowCipher.encrypt(toJson(conversation).toString(), associatedData(conversation.id)))
+        }
+        check(writableDatabase.insertWithOnConflict(TABLE_WINDOW_DRAFTS, null, values,
+            SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Window draft write failed" }
+    }
+
+    @Synchronized
+    fun deleteWindowDraft(id: String): AgentConversation? {
+        val draft = readWindowDraft(id) ?: return null
+        writableDatabase.delete(TABLE_WINDOW_DRAFTS, "conversation_id = ?", arrayOf(id))
+        return draft
+    }
+
+    @Synchronized
+    fun promoteWindowDraft(id: String): AgentConversation? {
+        val draft = readWindowDraft(id) ?: return null
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            val created = draft.takeIf { insertIfAbsent(it) }
+            deleteWindowDraft(id)
+            db.setTransactionSuccessful()
+            created
+        } finally { db.endTransaction() }
+    }
+
+    /** Separate window recovery state from formal conversations, including legacy empty rows. */
+    @Synchronized
+    fun prepareWindowDrafts(conversationIdsWithEntries: () -> Set<String>) {
+        if (windowDraftsPrepared) return
+        ensureLegacyRowsMigrated()
+        val db = writableDatabase
+        val migrated = db.query(TABLE_ROW_STORAGE_METADATA, arrayOf("metadata_value"),
+            "metadata_key = ?", arrayOf(KEY_WINDOW_DRAFTS), null, null, null, "1")
+            .use { it.moveToFirst() && it.getInt(0) == 1 }
+        val withContent = conversationIdsWithEntries()
+        db.beginTransaction()
+        try {
+            if (!migrated) {
+                readAll().filter { it.id !in withContent && !it.createdByAgent }.forEach { draft ->
+                    writeWindowDraft(draft)
+                    db.delete(TABLE_CONVERSATIONS, "conversation_id = ?", arrayOf(draft.id))
+                }
+                val values = ContentValues().apply {
+                    put("metadata_key", KEY_WINDOW_DRAFTS)
+                    put("metadata_value", 1)
+                }
+                db.insertOrThrow(TABLE_ROW_STORAGE_METADATA, null, values)
+            }
+            // Recover a first message committed just before the process stopped, before draft promotion.
+            promoteWindowDraftsWithEntries(withContent)
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        windowDraftsPrepared = true
+    }
+
+    @Synchronized
+    fun promoteWindowDraftsWithEntries(withContent: Set<String>) {
+        val pending = readableDatabase.query(TABLE_WINDOW_DRAFTS, arrayOf("conversation_id"), null, null, null, null, null)
+            .use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+        pending.filter { it in withContent }.forEach { promoteWindowDraft(it) }
+    }
 
     @Synchronized
     fun upsertAll(conversations: Collection<AgentConversation>): Boolean {
@@ -319,6 +401,7 @@ internal class AgentConversationDatabase(
     @Synchronized
     fun clear() {
         writableDatabase.delete(TABLE_CONVERSATIONS, null, null)
+        writableDatabase.delete(TABLE_WINDOW_DRAFTS, null, null)
     }
 
     @Synchronized
@@ -543,13 +626,20 @@ internal class AgentConversationDatabase(
         )
     }
 
+    private fun createWindowDrafts(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_WINDOW_DRAFTS " +
+            "(conversation_id TEXT PRIMARY KEY NOT NULL, encrypted_payload TEXT NOT NULL)")
+    }
+
     internal companion object {
         const val DATABASE_NAME = "galaxyssi_agent_conversations_v2.db"
         const val STORAGE_CIPHER_NAMESPACE = DATABASE_NAME
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 6
         const val TABLE_CONVERSATIONS = "agent_conversations"
         const val TABLE_CONVERSATION_STATE = "agent_conversation_state"
         const val TABLE_ROW_STORAGE_METADATA = "row_storage_metadata"
+        const val TABLE_WINDOW_DRAFTS = "agent_window_conversation_drafts"
+        const val KEY_WINDOW_DRAFTS = "window_draft_storage_migrated"
         const val KEY_LEGACY_ROWS_MIGRATED = "legacy_rows_migrated"
         const val KEY_ACTIVE_CONVERSATION = "active_conversation"
         const val ORDER_BY = "pinned DESC, updated_at DESC, conversation_id DESC"
