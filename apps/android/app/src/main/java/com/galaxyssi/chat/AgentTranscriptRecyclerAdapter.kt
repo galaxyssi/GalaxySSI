@@ -32,6 +32,10 @@ internal class AgentTranscriptRecyclerAdapter(
     override fun onBindViewHolder(holder: AgentTranscriptViewHolder, position: Int) {
         val bindStartedAt = SystemClock.elapsedRealtime()
         val entry = entries[position]
+        if ((holder.container.getChildAt(0) as? AgentStableAssistantRow)?.bind(entry) == true) {
+            observeDraw(holder, entry)
+            return
+        }
         holder.container.removeAllViews()
         holder.container.addView(
             activity.agentTranscriptRow(entry),

@@ -20,6 +20,9 @@ object AgentTranscriptRenderPolicy {
         entry.role == AgentTranscriptRole.ASSISTANT && entry.id.startsWith("agent-stream-")
 
     fun processGroupSignatures(entries: Collection<AgentTranscriptEntry>): Map<String, Int> {
+        val finalReplies = entries.asSequence()
+            .filter { it.role == AgentTranscriptRole.ASSISTANT && !isLiveStream(it) }
+            .groupBy(AgentTranscriptPresentationPolicy::processGroupKey)
         val deliveryFailures = entries.asSequence()
             .filter { it.role == AgentTranscriptRole.ASSISTANT && it.dedupeKey.startsWith("delivery-failed:") }
             .groupBy(AgentTranscriptPresentationPolicy::processGroupKey)
@@ -37,7 +40,10 @@ object AgentTranscriptRenderPolicy {
                 val narrationSignature = visibleNarration.fold(1) { result, entry ->
                     31 * result + sourceProcessSignature(entry)
                 }
-                deliveryFailures[key].orEmpty().fold(narrationSignature) { result, failure ->
+                val completionSignature = finalReplies[key].orEmpty().fold(narrationSignature) { result, reply ->
+                    31 * result + reply.timestampMillis.hashCode() + identity(reply).hashCode()
+                }
+                deliveryFailures[key].orEmpty().fold(completionSignature) { result, failure ->
                     31 * result + failure.timestampMillis.hashCode() + failure.dedupeKey.hashCode()
                 }
             }
@@ -53,6 +59,7 @@ object AgentTranscriptRenderPolicy {
 
     fun signature(entry: AgentTranscriptEntry): Int {
         var result = entry.role.hashCode()
+        result = 31 * result + entry.id.startsWith("agent-stream-preview-").hashCode()
         if (entry.role != AgentTranscriptRole.ASSISTANT) {
             result = 31 * result + entry.timestampMillis.hashCode()
         }
