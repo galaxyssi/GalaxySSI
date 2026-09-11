@@ -1,9 +1,10 @@
-# Streaming personal-memory backup (work in progress)
+# Streaming personal-memory backup
 
 Branch: `feat/memory-streaming-backup-20260911`, based on merged PR #2991
 (`e99ffde63`). The development version is Android 1.1.65 (951). The default App
-backup implementation now uses the streaming format. Full acceptance remains
-in progress; this does not establish the 100M+ goal or latency below 100ms.
+backup implementation now uses the streaming format. Focused backup and shared
+device regressions pass; remaining acceptance is listed below. This does not
+establish the 100M+ goal or latency below 100ms.
 
 ## Current implementation
 
@@ -59,8 +60,8 @@ in progress; this does not establish the 100M+ goal or latency below 100ms.
   Retraction requeueing commits batches instead of collecting the entire ledger.
 
 The corrected integrated APK is installed on T575. The 14 new focused device
-cases passed, including a 10,001-row round trip. Existing shared-memory
-regressions and actual backup-screen acceptance remain pending. Cross-store
+cases passed, including a 10,001-row round trip. The 107 shared regressions also
+passed; actual backup-screen acceptance remains pending. Cross-store
 restore remains a sequence of store operations, not one atomic
 transaction. An I/O or process failure after live application starts still needs
 a durable full-app restore journal; authentication-before-apply is not proof of
@@ -136,8 +137,8 @@ repair. Six additional app-format/device cases and nine JVM integration cases
 are also implemented. All 14 new device cases and all 27 new JVM cases pass in
 the corrected build below. The app-field tests use injected restore callbacks
 instead of replacing the user's real pairing, identity and message history;
-they do not establish full AppStore/backup-screen acceptance. Existing shared
-regressions must still run on this build before publishing the phase as complete.
+they do not establish full AppStore/backup-screen acceptance. The existing shared
+regressions were subsequently run on the same APK, as recorded below.
 
 ### Retained development evidence (2026-09-11)
 
@@ -176,7 +177,7 @@ regressions must still run on this build before publishing the phase as complete
   the 137-row content/order check (one case, 16.622s). The same case is included
   in the subsequent full run, so it is not an additional unique test.
 - `memory-streaming-portable-device.log`: all 14 focused cases passed on T575
-  (`R52R90282TY`, SM-T575), 958.936s. The 10,001-row test verified every restored
+  (SM-T575), 958.936s. The 10,001-row test verified every restored
   record and its position. `memory-streaming-portable-device-progress2.log`
   preserves the timings: export 98,263ms, clear plus restore 444,637ms, encrypted
   file 4,196,934 bytes. Clear finished 158,174ms after export; restore itself
@@ -190,6 +191,20 @@ regressions must still run on this build before publishing the phase as complete
   10,001-row restore: PSS 191,044KiB and RSS 250,824KiB. This is one whole-process
   sample, not a measured peak or evidence that memory use is constant at 100M rows.
   Test setup itself still creates a 10,001-item list.
+- `memory-streaming-shared-regression.log`: 107 shared device cases passed in
+  1,644.522s on the same APK, covering memory identity/deletion/outbox, point
+  operations, incremental writes, browse indexes/UI, image/attachment behavior
+  and timing instrumentation. Together with the new suite, 121 unique device
+  cases pass. No app data reset, re-pairing or private-memory upload was used.
+- These are correctness passes, not performance-gate passes. Preserved raw
+  timing: `memory-streaming-shared-regression-timings.log`. At 10,001 real rows,
+  100 eight-row page samples measured P50 118.58ms, P95 295.84ms, P99 405.24ms,
+  maximum 715.99ms and 100/100 misses of the requested 100ms bound. Twenty-five
+  row pages also missed 100/100. In the incremental-write suite, new writes had
+  P50 106.92ms, P95 276.05ms, P99 414.51ms, maximum 882.25ms and 59/100 misses;
+  duplicate updates missed 100/100. No slow or failing samples were excluded.
+  Source encryption, index migration and remaining full-collection paths still
+  need profiling and architectural work; these samples do not isolate a cause.
 
 ## Required next integration
 
@@ -198,9 +213,10 @@ regressions must still run on this build before publishing the phase as complete
    complete app backup as bounded-memory until those adapters are verified.
 2. Verify background UI work, failed document-provider opens and lifecycle return.
 3. Verify legacy import without erasing data, identity or pairing on the device.
-4. Exercise source-write rollback, all existing memory regressions, actual APK
-   packaging and T575-only instrumentation. Keep earlier measurements and do not
+4. Extend the existing rollback, regression and packaging checks to the scale
+   ladder and long-duration failures. Keep earlier measurements and do not
    treat a synthetic count label as storage-capacity evidence.
 5. Complete restart/cancellation handling and retraction scheduling without
-   rebuilding whole-corpus sets. Complete repository fetch/version checks and an
-   independent English PR only after the integration has been verified.
+   rebuilding whole-corpus sets. Repository fetch/version checks are current at
+   `e99ffde63`; publish this bounded phase as an independent English PR without
+   claiming the unfinished scale, latency or recovery goals.
