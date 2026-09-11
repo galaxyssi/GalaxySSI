@@ -20,6 +20,79 @@ class AgentConversationWindowsInstrumentedTest {
     private val context = instrumentation.targetContext
     private val manager get() = context.getSystemService(ActivityManager::class.java)
 
+    @Test fun emptyWindowHandoffKeepsDraftOutOfEveryHistoryList() {
+        val key = "empty-window-ui-${UUID.randomUUID()}"
+        val store = AgentTranscriptStore(context, key)
+        val draft = store.createConversation(privateMode = true)
+        val conversations = mutableSetOf(draft.id)
+        val windows = mutableListOf<MainActivity>()
+        var monitor = instrumentation.addMonitor(ConversationWindowActivity::class.java.name, null, false)
+        try {
+            context.startActivity(Intent(context, ConversationWindowActivity::class.java)
+                .setData(Uri.parse("galaxyssi://conversation-window/$key"))
+                .putExtra(AgentConversationWindows.WINDOW_KEY, key)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_NEW_TASK))
+            val root = instrumentation.waitForMonitorWithTimeout(monitor, 60_000) as? MainActivity
+                ?: error("Empty root did not open")
+            windows += root
+            await("Empty root ready") { !root.initialAgentHydrationPending && root.conversationWindow.conversationId == draft.id }
+            monitor = instrumentation.addMonitor(ConversationWindowActivity::class.java.name, null, false)
+            instrumentation.runOnMainSync { root.agentGoalInput.setText("Unsent window draft") }
+            tapCenter(root.agentBrandLogo)
+            val child = instrumentation.waitForMonitorWithTimeout(monitor, 60_000) as? MainActivity
+                ?: error("Empty child did not open")
+            windows += child
+            await("Empty handoff ready") { !child.initialAgentHydrationPending && !root.conversationWindow.openingWindow }
+            instrumentation.runOnMainSync {
+                assertEquals(draft.id, child.agentTranscriptStore.activeConversation().id)
+                assertEquals("Unsent window draft", child.agentGoalInput.text.toString())
+                conversations += root.agentTranscriptStore.activeConversation().id
+                assertNotEquals(draft.id, root.agentTranscriptStore.activeConversation().id)
+                child.showConversationHub()
+            }
+            fun visibleIds(activity: MainActivity): List<String>? = activity.agentSessionsDialog?.window?.decorView?.let { decor ->
+                descendants(decor).filterIsInstance<androidx.recyclerview.widget.RecyclerView>()
+                    .mapNotNull { it.adapter as? ConversationHubListAdapter }.firstOrNull()?.currentList
+                    ?.filterIsInstance<ConversationHubRow.Conversation>()?.map { it.item.id }
+            }
+            await("Child history loaded") { visibleIds(child) != null }
+            AgentConversationDatabase(context).use { database ->
+                conversations.forEach { assertNull("Empty window must not create a formal row", database.read(it)) }
+                assertNotNull(database.readWindowDraft(draft.id))
+            }
+            assertFalse(store.conversationPage(AgentConversationStatus.ACTIVE, pageSize = 500).items.any { it.id in conversations })
+            instrumentation.runOnMainSync { assertFalse(visibleIds(child).orEmpty().any { it in conversations }) }
+            val sourceFreshId = root.agentTranscriptStore.activeConversation().id
+            assertTrue(store.append(AgentTranscriptRole.USER, "Window history verification", conversationId = draft.id))
+            assertEquals("A stale source store must not reselect the transferred draft", sourceFreshId,
+                AgentTranscriptStore(context, key).activeConversation().id)
+            AgentConversationDatabase(context).use { database ->
+                assertNotNull(database.read(draft.id))
+                assertNull(database.readWindowDraft(draft.id))
+            }
+            await("First message appears in open child list") { draft.id in visibleIds(child).orEmpty() }
+            manager.appTasks.first { it.taskInfo.taskId == root.taskId }.moveToFront()
+            await("Root visible") { root.conversationWindow.visible }
+            instrumentation.runOnMainSync { root.showConversationHub() }
+            await("First message also appears in root list") { draft.id in visibleIds(root).orEmpty() }
+            instrumentation.runOnMainSync {
+                assertFalse(visibleIds(root).orEmpty().any { it in conversations && it != draft.id })
+                root.agentSessionsDialog?.dismiss()
+                root.findViewById<View>(R.id.agentBrandNewConversation).performClick()
+                conversations += root.agentTranscriptStore.activeConversation().id
+                assertEquals("", root.agentGoalInput.text.toString())
+            }
+            assertFalse(store.conversationPage(AgentConversationStatus.ACTIVE, pageSize = 500).items.any {
+                it.id in conversations && it.id != draft.id
+            })
+            capture("empty-window-history.png")
+        } finally {
+            instrumentation.runOnMainSync { windows.filterNot { it.isDestroyed }.forEach { it.finishAndRemoveTask() } }
+            conversations.forEach(store::deleteConversation)
+            instrumentation.removeMonitor(monitor)
+        }
+    }
+
     @Test fun brandHeaderSeparatesWindowAndConversationActions() {
         val key = "brand-header-${UUID.randomUUID()}"
         val store = AgentTranscriptStore(context, key)
