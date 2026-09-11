@@ -1,6 +1,6 @@
 [package]
 name = "galaxyssi-memory-native"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
@@ -14,9 +14,12 @@ diskann-vector = { git = "https://github.com/microsoft/DiskANN.git", rev = "a237
 tokio = { version = "=1.48.0", features = ["rt"] }
 zeroize = "=1.8.2"
 aes-gcm = { version = "=0.10.3", optional = true, features = ["zeroize"] }
+aes = { version = "=0.8.4", optional = true, features = ["zeroize"] }
+rusqlite = { version = "=0.40.1", optional = true, default-features = false, features = ["bundled", "cache", "limits"] }
 
 [features]
 probe = ["dep:aes-gcm"]
+sqlite-store = ["dep:aes-gcm", "dep:aes", "dep:rusqlite"]
 
 [[bin]]
 name = "memory-native-probe"
