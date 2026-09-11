@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 /** Only isolated test databases use this downgrade to reproduce real pre-v5 layouts. */
 internal object KnowledgeVectorChangeFixtureSchema {
     fun remove(db: KnowledgeSqlite) {
+        KnowledgeCountFixtureSchema.remove(db)
         db.execSQL("DROP TRIGGER IF EXISTS knowledge_vector_enrollment_model")
         db.execSQL("DROP TABLE IF EXISTS knowledge_vector_enrollment")
         for (trigger in listOf("model", "head", "insert", "update", "delete", "tracked_insert", "tracked_update"))

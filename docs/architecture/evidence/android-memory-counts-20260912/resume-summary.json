@@ -1,0 +1,345 @@
+{
+  "schema": 1,
+  "apk_sha256": "615a0ebe358f690bac944e7c94716a131ed6b4f17d1804bab99d7d9a391d89a6",
+  "seconds": 791.988,
+  "device": "SM-T575",
+  "version": "1.1.92",
+  "database": "test-count-scale-db7e1ae4dda44fa39e09e72add9a7c2b.db",
+  "database_bytes": 850718720,
+  "resumed": true,
+  "resume_initial_vectors": 251008,
+  "resume_initial_pending": 251008,
+  "reopen_first_read_ms": 0.857962,
+  "results": [
+    {
+      "phase": "old-count-1000000-resumed",
+      "n": 32,
+      "p50_ms": 362.93573,
+      "p95_ms": 368.296961,
+      "p99_ms": 372.657499,
+      "max_ms": 372.657499,
+      "over_200ms": 32
+    },
+    {
+      "phase": "backfill-vector",
+      "n": 11703,
+      "p50_ms": 33.331654,
+      "p95_ms": 38.10423,
+      "p99_ms": 42.398653,
+      "max_ms": 70.237577,
+      "over_200ms": 0
+    },
+    {
+      "phase": "backfill-queue",
+      "n": 11703,
+      "p50_ms": 31.947731,
+      "p95_ms": 36.102577,
+      "p99_ms": 41.3295,
+      "max_ms": 218.199731,
+      "over_200ms": 1
+    },
+    {
+      "phase": "point-count-million",
+      "n": 256,
+      "p50_ms": 0.406039,
+      "p95_ms": 0.460077,
+      "p99_ms": 0.486,
+      "max_ms": 0.547116,
+      "over_200ms": 0
+    },
+    {
+      "phase": "live-write-million",
+      "n": 128,
+      "p50_ms": 1.873576,
+      "p95_ms": 4.179731,
+      "p99_ms": 19.608,
+      "max_ms": 29.179423,
+      "over_200ms": 0
+    }
+  ],
+  "final_vectors": 1000126,
+  "final_pending": 1000126,
+  "scope": "One million actual SQLite vector rows and queue rows, but no authentic vector ciphertext, source bodies, neural embedding, Keystore or UI. WAL/FULL transaction time includes commit/fsync. No OS cache drop. This resumed run repeats baseline counts after the interrupted migration; no OS cache drop or small-store comparison is implied. Page samples exclude CSV writing, seeding and verification.",
+  "validation": [
+    {
+      "phase": "old-count-1000000-resumed",
+      "samples": 32,
+      "sum_ms": 11552.664451999999,
+      "outliers": [
+        {
+          "sample": "1",
+          "elapsed_ms": "343.133653"
+        },
+        {
+          "sample": "2",
+          "elapsed_ms": "345.606077"
+        },
+        {
+          "sample": "3",
+          "elapsed_ms": "348.810154"
+        },
+        {
+          "sample": "4",
+          "elapsed_ms": "349.770422"
+        },
+        {
+          "sample": "5",
+          "elapsed_ms": "350.260077"
+        },
+        {
+          "sample": "6",
+          "elapsed_ms": "357.067038"
+        },
+        {
+          "sample": "7",
+          "elapsed_ms": "356.809038"
+        },
+        {
+          "sample": "8",
+          "elapsed_ms": "358.127962"
+        },
+        {
+          "sample": "9",
+          "elapsed_ms": "361.157461"
+        },
+        {
+          "sample": "10",
+          "elapsed_ms": "356.964884"
+        },
+        {
+          "sample": "11",
+          "elapsed_ms": "357.879269"
+        },
+        {
+          "sample": "12",
+          "elapsed_ms": "362.678538"
+        },
+        {
+          "sample": "13",
+          "elapsed_ms": "361.525116"
+        },
+        {
+          "sample": "14",
+          "elapsed_ms": "362.873"
+        },
+        {
+          "sample": "15",
+          "elapsed_ms": "368.296961"
+        },
+        {
+          "sample": "16",
+          "elapsed_ms": "363.273577"
+        },
+        {
+          "sample": "17",
+          "elapsed_ms": "363.416077"
+        },
+        {
+          "sample": "18",
+          "elapsed_ms": "363.52173"
+        },
+        {
+          "sample": "19",
+          "elapsed_ms": "364.726039"
+        },
+        {
+          "sample": "20",
+          "elapsed_ms": "364.254192"
+        },
+        {
+          "sample": "21",
+          "elapsed_ms": "364.886384"
+        },
+        {
+          "sample": "22",
+          "elapsed_ms": "366.727577"
+        },
+        {
+          "sample": "23",
+          "elapsed_ms": "366.759538"
+        },
+        {
+          "sample": "24",
+          "elapsed_ms": "362.93573"
+        },
+        {
+          "sample": "25",
+          "elapsed_ms": "362.024346"
+        },
+        {
+          "sample": "26",
+          "elapsed_ms": "364.097307"
+        },
+        {
+          "sample": "27",
+          "elapsed_ms": "366.853999"
+        },
+        {
+          "sample": "28",
+          "elapsed_ms": "365.630269"
+        },
+        {
+          "sample": "29",
+          "elapsed_ms": "367.216615"
+        },
+        {
+          "sample": "30",
+          "elapsed_ms": "372.657499"
+        },
+        {
+          "sample": "31",
+          "elapsed_ms": "366.420462"
+        },
+        {
+          "sample": "32",
+          "elapsed_ms": "366.303461"
+        }
+      ]
+    },
+    {
+      "phase": "backfill-vector",
+      "samples": 11703,
+      "sum_ms": 388110.3590500002,
+      "outliers": []
+    },
+    {
+      "phase": "backfill-queue",
+      "samples": 11703,
+      "sum_ms": 371314.22581000015,
+      "outliers": [
+        {
+          "sample": "3115",
+          "elapsed_ms": "218.199731"
+        }
+      ]
+    },
+    {
+      "phase": "point-count-million",
+      "samples": 256,
+      "sum_ms": 105.59976299999997,
+      "outliers": []
+    },
+    {
+      "phase": "live-write-million",
+      "samples": 128,
+      "sum_ms": 310.168154,
+      "outliers": []
+    }
+  ],
+  "raw_files": [
+    {
+      "file": "resume-old-count-1000000-resumed-01.csv",
+      "samples": 32,
+      "first_sample": 1,
+      "last_sample": 32
+    },
+    {
+      "file": "resume-backfill-vector-01.csv",
+      "samples": 1500,
+      "first_sample": 1,
+      "last_sample": 1500
+    },
+    {
+      "file": "resume-backfill-vector-02.csv",
+      "samples": 1500,
+      "first_sample": 1501,
+      "last_sample": 3000
+    },
+    {
+      "file": "resume-backfill-vector-03.csv",
+      "samples": 1500,
+      "first_sample": 3001,
+      "last_sample": 4500
+    },
+    {
+      "file": "resume-backfill-vector-04.csv",
+      "samples": 1500,
+      "first_sample": 4501,
+      "last_sample": 6000
+    },
+    {
+      "file": "resume-backfill-vector-05.csv",
+      "samples": 1500,
+      "first_sample": 6001,
+      "last_sample": 7500
+    },
+    {
+      "file": "resume-backfill-vector-06.csv",
+      "samples": 1500,
+      "first_sample": 7501,
+      "last_sample": 9000
+    },
+    {
+      "file": "resume-backfill-vector-07.csv",
+      "samples": 1500,
+      "first_sample": 9001,
+      "last_sample": 10500
+    },
+    {
+      "file": "resume-backfill-vector-08.csv",
+      "samples": 1203,
+      "first_sample": 10501,
+      "last_sample": 11703
+    },
+    {
+      "file": "resume-backfill-queue-01.csv",
+      "samples": 1500,
+      "first_sample": 1,
+      "last_sample": 1500
+    },
+    {
+      "file": "resume-backfill-queue-02.csv",
+      "samples": 1500,
+      "first_sample": 1501,
+      "last_sample": 3000
+    },
+    {
+      "file": "resume-backfill-queue-03.csv",
+      "samples": 1500,
+      "first_sample": 3001,
+      "last_sample": 4500
+    },
+    {
+      "file": "resume-backfill-queue-04.csv",
+      "samples": 1500,
+      "first_sample": 4501,
+      "last_sample": 6000
+    },
+    {
+      "file": "resume-backfill-queue-05.csv",
+      "samples": 1500,
+      "first_sample": 6001,
+      "last_sample": 7500
+    },
+    {
+      "file": "resume-backfill-queue-06.csv",
+      "samples": 1500,
+      "first_sample": 7501,
+      "last_sample": 9000
+    },
+    {
+      "file": "resume-backfill-queue-07.csv",
+      "samples": 1500,
+      "first_sample": 9001,
+      "last_sample": 10500
+    },
+    {
+      "file": "resume-backfill-queue-08.csv",
+      "samples": 1203,
+      "first_sample": 10501,
+      "last_sample": 11703
+    },
+    {
+      "file": "resume-point-count-million-01.csv",
+      "samples": 256,
+      "first_sample": 1,
+      "last_sample": 256
+    },
+    {
+      "file": "resume-live-write-million-01.csv",
+      "samples": 128,
+      "first_sample": 1,
+      "last_sample": 128
+    }
+  ]
+}
