@@ -88,36 +88,53 @@ internal class KnowledgeVectorLedger(
     fun page(itemId: String, fromOrdinal: Int = 0, limit: Int = 64): KnowledgeVectorPage? =
         pageByKey(storage.key("id", itemId), fromOrdinal, limit)
 
-    internal fun pageByKey(key: String, fromOrdinal: Int = 0, limit: Int = 64): KnowledgeVectorPage? = storage.access { db ->
+    internal fun pageByKey(key: String, fromOrdinal: Int = 0, limit: Int = 64,
+        active: () -> Unit = {}): KnowledgeVectorPage? {
         require(fromOrdinal >= 0 && limit in 1..256)
-        val revision = revision(db, key) ?: return@access null
-        val job = state(db, key, revision)?.takeIf { it.complete } ?: return@access null
+        val frames = mutableListOf<ByteArray>()
         val rows = mutableListOf<KnowledgeStoredVector>()
         try {
-            db.rawQuery("SELECT ordinal,ciphertext,length(ciphertext) FROM knowledge_vectors WHERE item_key=? AND model_key=? " +
-                "AND ordinal>=? ORDER BY ordinal LIMIT ?", arrayOf(key, modelKey, fromOrdinal.toString(), limit.toString())).use { cursor ->
-                while (cursor.moveToNext()) {
-                    val ordinal = cursor.checkedInt(0)
-                    check(ordinal == fromOrdinal + rows.size && ordinal < job.count) { "Vector chunk order mismatch" }
-                    check(cursor.getLong(2) == 37L + spec.dimensions * 4L) { "Invalid encrypted vector size" }
-                    val encrypted = cursor.getBlob(1)
-                    val bytes = try { AgentStorageCipher.decryptBinary(encrypted, aad(job, "chunk", ordinal.toString())) }
-                        finally { encrypted.fill(0) }
-                    try {
-                        check(bytes.size == 8 + spec.dimensions * 4) { "Vector dimensions mismatch" }
-                        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-                        val start = buffer.int
-                        val end = buffer.int
-                        check(start in 0 until end && end <= job.length) { "Vector provenance mismatch" }
-                        val vector = FloatArray(spec.dimensions) { buffer.float }
-                        try { checkVector(vector) } catch (error: Throwable) { vector.fill(0f); throw error }
-                        rows += KnowledgeStoredVector(ordinal, start, end, vector)
-                    } finally { bytes.fill(0) }
+            // Copy one bounded encrypted page atomically; Keystore calls do not own the database lock.
+            val job = storage.access { db ->
+                val revision = revision(db, key) ?: return@access null
+                val current = state(db, key, revision)?.takeIf { it.complete } ?: return@access null
+                db.rawQuery("SELECT ordinal,ciphertext,length(ciphertext) FROM knowledge_vectors WHERE item_key=? AND model_key=? " +
+                    "AND ordinal>=? ORDER BY ordinal LIMIT ?", arrayOf(key, modelKey, fromOrdinal.toString(), limit.toString())).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val ordinal = cursor.checkedInt(0)
+                        check(ordinal == fromOrdinal + frames.size && ordinal < current.count) { "Vector chunk order mismatch" }
+                        check(cursor.getLong(2) == 37L + spec.dimensions * 4L) { "Invalid encrypted vector size" }
+                        frames += cursor.getBlob(1)
+                    }
                 }
+                check(frames.size == minOf(limit, (current.count - fromOrdinal).coerceAtLeast(0))) { "Vector chunks are missing" }
+                current
+            } ?: return null
+            frames.forEachIndexed { offset, encrypted ->
+                active()
+                val ordinal = fromOrdinal + offset
+                val bytes = try { AgentStorageCipher.decryptBinary(encrypted, aad(job, "chunk", ordinal.toString())) }
+                    finally { encrypted.fill(0) }
+                try {
+                    check(bytes.size == 8 + spec.dimensions * 4) { "Vector dimensions mismatch" }
+                    val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                    val start = buffer.int
+                    val end = buffer.int
+                    check(start in 0 until end && end <= job.length) { "Vector provenance mismatch" }
+                    val vector = FloatArray(spec.dimensions) { buffer.float }
+                    try { checkVector(vector) } catch (error: Throwable) { vector.fill(0f); throw error }
+                    rows += KnowledgeStoredVector(ordinal, start, end, vector)
+                } finally { bytes.fill(0) }
             }
-            check(rows.size == minOf(limit, (job.count - fromOrdinal).coerceAtLeast(0))) { "Vector chunks are missing" }
-            KnowledgeVectorPage(revision, job.count, rows)
+            active()
+            val current = storage.access { db ->
+                revision(db, key) == job.revision && state(db, key, job.revision) == job
+            }
+            if (!current) { rows.forEach { it.close() }; return null }
+            active()
+            return KnowledgeVectorPage(job.revision, job.count, rows)
         } catch (error: Throwable) { rows.forEach { it.close() }; throw error }
+        finally { frames.forEach { it.fill(0) } }
     }
 
     private fun isCurrent(db: KnowledgeSqlite, job: KnowledgeVectorJob): Boolean {

@@ -27,6 +27,8 @@ class KnowledgeHybridSearchDeviceTest {
         override fun close() { closed.countDown() }
     }
     private data class Fixture(val store: SQLiteAgentKnowledgeStore, val db: AgentKnowledgeDatabase, val encoder: Encoder)
+    private fun prepare(f: Fixture): KnowledgeSemanticSearch =
+        f.store.attachSemanticEncoder(spec, { f.encoder }).also { assertTrue(it.advanceIndex()) }
     private fun isolated(block: (Fixture) -> Unit) {
         val name = "test-hybrid-${UUID.randomUUID()}.db"
         val store = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
@@ -46,7 +48,7 @@ class KnowledgeHybridSearchDeviceTest {
     }
     @Test fun normalStoreAndRagRetrieveWithoutAnyLexicalOverlapAndHonorCloudPolicy() = isolated { f ->
         assertTrue(f.store.search("apple", 8).isEmpty())
-        f.store.attachSemanticEncoder(spec, { f.encoder })
+        prepare(f)
         assertEquals("fruit", f.store.search("apple", 8).single().id)
         assertTrue(f.store.semanticSearchStatus.startsWith("ready:"))
         assertTrue(requireNotNull(f.encoder.last).all { it == 0f })
@@ -57,7 +59,7 @@ class KnowledgeHybridSearchDeviceTest {
         assertEquals("fruit", snapshot.items.single().id); assertEquals(2, snapshot.stats.itemCount)
     }
     @Test fun sourceReplacementInvalidatesCachedVectorsAndDoesNotReturnOldExcerpt() = isolated { f ->
-        f.store.attachSemanticEncoder(spec, { f.encoder })
+        prepare(f)
         assertEquals("orchard", f.store.searchRanked("apple", 8).single().excerpt)
         f.store.upsert(AgentKnowledgeItem("fruit", AgentKnowledgeKind.NOTE, "F", "harbor"))
         assertTrue(f.store.search("apple", 8).isEmpty())
@@ -67,7 +69,7 @@ class KnowledgeHybridSearchDeviceTest {
     @Test fun permissionChangesCannotReuseAnOlderMorePermissiveSource() = isolated { f ->
         f.store.updateAccess(setOf("fruit"), AgentKnowledgeCloudAccess.FULL, AgentKnowledgeAgentAccess.LOCAL_ONLY, emptyList())
         assertFalse(f.store.indexVectorChunks(f.encoder, 8).pending)
-        f.store.attachSemanticEncoder(spec, { f.encoder })
+        prepare(f)
         assertEquals(1, AgentKnowledgeRetriever.retrieve(f.store, "apple", "cloud-model:fixture").citations.size)
         f.store.updateAccess(setOf("fruit"), AgentKnowledgeCloudAccess.DENY, AgentKnowledgeAgentAccess.LOCAL_ONLY, emptyList())
         assertTrue(AgentKnowledgeRetriever.retrieve(f.store, "apple", "cloud-model:fixture").citations.isEmpty())
@@ -84,7 +86,7 @@ class KnowledgeHybridSearchDeviceTest {
         assertEquals("requires_worker_thread", f.store.semanticSearchStatus)
     }
     @Test fun mutationWhileQueryModelRunsCannotPublishAnOldVectorMatch() = isolated { f ->
-        f.store.attachSemanticEncoder(spec, { f.encoder })
+        prepare(f)
         f.encoder.before = { f.store.upsert(AgentKnowledgeItem("fruit", AgentKnowledgeKind.NOTE, "F", "harbor")) }
         assertTrue(f.store.search("apple", 8).isEmpty())
         assertTrue(f.store.semanticSearchStatus.startsWith("unavailable:"))
@@ -96,16 +98,17 @@ class KnowledgeHybridSearchDeviceTest {
         assertEquals(2, f.store.stats().itemCount)
     }
     @Test fun corruptAuthenticatedVectorFallsBackWithoutPublishingDerivedEvidence() = isolated { f ->
-        f.store.attachSemanticEncoder(spec, { f.encoder })
+        val session = f.store.attachSemanticEncoder(spec, { f.encoder })
         f.db.access { it.execSQL("UPDATE knowledge_vectors SET ciphertext=zeroblob(length(ciphertext))") }
+        assertTrue(runCatching { session.advanceIndex() }.isFailure)
+        assertTrue(f.store.semanticSearchStatus.startsWith("unavailable:"))
         assertTrue(f.store.search("apple", 8).isEmpty())
         assertEquals("fruit", f.store.search("orchard", 8).single().id)
-        assertTrue(f.store.semanticSearchStatus.startsWith("unavailable:"))
     }
     @Test fun lifecycleInvalidationDoesNotBlockUiOrAllowLateResults() = isolated { f ->
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
-        f.store.attachSemanticEncoder(spec, { f.encoder })
+        val session = prepare(f)
         f.encoder.before = { entered.countDown(); check(release.await(10, TimeUnit.SECONDS)) }
         val executor = Executors.newSingleThreadExecutor()
         try {
@@ -119,12 +122,15 @@ class KnowledgeHybridSearchDeviceTest {
             assertTrue(requireNotNull(f.encoder.last).all { it == 0f })
             f.encoder.before = {}
             KnowledgeSemanticSearch.resumeRuntime()
-            assertEquals("fruit", f.store.search("apple", 8).single().id)
+            assertTrue(session.advanceIndex())
+            val result = f.store.search("apple", 8)
+            assertEquals(session.status, listOf("fruit"), result.map { it.id })
         } finally { release.countDown(); executor.shutdownNow() }
     }
     @Test fun shortTtlAndExplicitCloseInvalidateTheGraph() = isolated { f ->
         val session = KnowledgeSemanticSearch(f.db, spec, { f.encoder }, 1_000_000, ttlMillis = 100)
         try {
+            assertTrue(session.advanceIndex())
             assertEquals("fruit", session.search("apple", 8) { emptyList() }.single().item.id)
             val until = SystemClock.elapsedRealtime() + 3000
             while (session.status != "invalidated" && SystemClock.elapsedRealtime() < until) Thread.sleep(10)
@@ -138,6 +144,7 @@ class KnowledgeHybridSearchDeviceTest {
         val session = KnowledgeSemanticSearch(f.db, spec, { f.encoder }, 1_000_000, ttlMillis = 50)
         f.encoder.before = { Thread.sleep(150) }
         try {
+            assertTrue(session.advanceIndex())
             assertEquals("fruit", session.search("apple", 8) { emptyList() }.single().item.id)
             assertTrue(f.encoder.closed.await(5, TimeUnit.SECONDS))
         } finally { session.close() }
