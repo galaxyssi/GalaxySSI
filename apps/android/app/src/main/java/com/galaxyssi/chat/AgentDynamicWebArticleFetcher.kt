@@ -123,6 +123,7 @@ class AgentDynamicWebArticleFetcher(
             throw error
         } catch (error: Exception) {
             fetched.copy(
+                durationMillis = elapsedMillis(started),
                 dynamicFallbackReason = fallbackReason,
                 dynamicFallbackError = (error.message ?: error.javaClass.simpleName).take(500)
             )

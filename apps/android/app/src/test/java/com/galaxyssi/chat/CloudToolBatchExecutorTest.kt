@@ -11,6 +11,31 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class CloudToolBatchExecutorTest {
+    @Test fun modelPlannedWebAndImageSearchOverlapWithoutReorderingObservations() = runBlocking {
+        val started = CountDownLatch(2)
+        val calls = listOf("web_search", "web_image_search").mapIndexed { index, name ->
+            PreparedCloudToolCall(AssembledToolCall("call-$index", index, name, "{}"), JSONObject())
+        }
+        val results = CloudToolBatchExecutor.executeOrdered(calls, 2) {
+            started.countDown()
+            assertTrue("Independent model-planned searches were serialized", started.await(2, TimeUnit.SECONDS))
+            it.call.name
+        }
+        assertEquals(listOf("web_search", "web_image_search"), results.map { it.output })
+    }
+
+    @Test fun fastToolPublishesProgressBeforeSlowSiblingCompletes() = runBlocking {
+        val fastReported = CountDownLatch(1)
+        val calls = (0..1).map { PreparedCloudToolCall(AssembledToolCall("call-$it", it, "web_fetch", "{}"), JSONObject()) }
+        val results = CloudToolBatchExecutor.executeOrdered(calls, 2, onCompleted = {
+            if (it.call.callId == "call-1") fastReported.countDown()
+        }) {
+            if (it.call.callId == "call-0") assertTrue(fastReported.await(2, TimeUnit.SECONDS))
+            it.call.callId
+        }
+        assertEquals(listOf("call-0", "call-1"), results.map { it.call.callId })
+    }
+
     @Test
     fun independentToolCallsRunConcurrentlyAndKeepModelOrder() = runBlocking {
         val active = AtomicInteger()

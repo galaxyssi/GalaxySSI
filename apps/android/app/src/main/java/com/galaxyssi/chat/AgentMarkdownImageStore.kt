@@ -32,44 +32,65 @@ internal object AgentMarkdownImageStore {
             }
         }).build()
 
-    fun load(context: Context, source: String): File {
+    fun load(context: Context, source: String,
+        cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
+        checkpoint: () -> Unit = {}): File {
+        checkpoint()
         require(AgentMarkdownImages.isWebSource(source) && source.startsWith("https://", true))
+        val cached = cacheFile(context, source)
+        if (cached.isFile && cached.length() in 1..MAX_BYTES.toLong()) return cached
         val key = MessageDigest.getInstance("SHA-256").digest(source.toByteArray())
             .joinToString("") { "%02x".format(it) }
         return synchronized(locks[(key.hashCode() and Int.MAX_VALUE) % locks.size]) {
+            checkpoint()
             val file = cacheFile(context, source)
             if (file.isFile && file.length() in 1..MAX_BYTES.toLong()) return@synchronized file
-            var url = source
-            repeat(6) {
-                val request = Request.Builder().url(url)
-                    .header("User-Agent", "GalaxySSI/Android (+https://github.com/galaxyssi/GalaxySSI)")
-                    .get().build()
-                require(request.url.isHttps && request.url.username.isEmpty() && request.url.password.isEmpty())
-                http.newCall(request).execute().use { response ->
+            fetch(context, source, cancellationToken, checkpoint)
+        }
+    }
+
+    private fun fetch(context: Context, source: String,
+        cancellationToken: AgentNativeToolCancellationToken, checkpoint: () -> Unit): File {
+        var url = source
+        for (redirect in 0 until 6) {
+            checkpoint()
+            val request = Request.Builder().url(url)
+                .header("User-Agent", "GalaxySSI/Android (+https://github.com/galaxyssi/GalaxySSI)")
+                .get().build()
+            require(request.url.isHttps && request.url.username.isEmpty() && request.url.password.isEmpty())
+            val call = http.newCall(request)
+            val registration = cancellationToken.invokeOnCancellation(call::cancel)
+            try {
+                call.execute().use { response ->
                     if (response.code in setOf(301, 302, 303, 307, 308)) {
                         url = request.url.resolve(response.header("Location").orEmpty())?.toString()
                             ?: error("Invalid image redirect")
                     } else {
                         check(response.isSuccessful) { "Image HTTP ${response.code}" }
                         val body = response.body ?: error("Image body missing")
-                        check(body.contentLength() <= MAX_BYTES) { "Image too large" }
-                        val bytes = body.byteStream().use { input ->
-                            val output = ByteArrayOutputStream()
-                            val buffer = ByteArray(16 * 1024)
-                            while (true) {
-                                val count = input.read(buffer)
-                                if (count < 0) break
-                                check(output.size() + count <= MAX_BYTES) { "Image too large" }
-                                output.write(buffer, 0, count)
-                            }
-                            output.toByteArray()
-                        }
-                        cache(context, source, bytes)
-                        return@synchronized file
+                        return cache(context, source, readImageBody(body, checkpoint))
                     }
                 }
+            } finally {
+                registration.dispose()
             }
-            error("Too many image redirects")
+        }
+        error("Too many image redirects")
+    }
+
+    private fun readImageBody(body: okhttp3.ResponseBody, checkpoint: () -> Unit): ByteArray {
+        check(body.contentLength() <= MAX_BYTES) { "Image too large" }
+        return body.byteStream().use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                checkpoint()
+                val count = input.read(buffer)
+                if (count < 0) break
+                check(output.size() + count <= MAX_BYTES) { "Image too large" }
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
         }
     }
 

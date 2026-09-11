@@ -99,6 +99,7 @@ internal fun MobileNativeAgent.failSubmission(reason: String): AgentUiState {
 }
 
 internal fun MobileNativeAgent.startExecutionLoop(turnId: String): Boolean {
+    val startedAt = SystemClock.elapsedRealtime()
     val taskId = turnId.trim().ifBlank { sessionId }
     val profile = AgentExecutionProfile.forGoal(
         goal = currentGoal,
@@ -112,13 +113,16 @@ internal fun MobileNativeAgent.startExecutionLoop(turnId: String): Boolean {
         taskBudget = taskBudget,
         environment = AgentTaskBudgetProbe.environment(appContext)
     )
-    persistExecutionLoopEvent(event)
-    recordAudit(
+    appendAudits(AgentAuditRecord(
         AgentAuditEvent.REASONING_SUMMARY,
         "execution_profile=${profile.taskKind.name}; effort=${profile.reasoningEffort.name}; " +
             "no_progress_ms=${event.snapshot.budget.noProgressTimeoutMillis}; " +
             "task_budget=${taskBudget.profile.wireValue}"
-    )
+    ))
+    val preparedAt = SystemClock.elapsedRealtime()
+    persistExecutionLoopEvent(event)
+    Log.i("GalaxySSILatency", "agent_loop_start turn=${turnId.take(8)} " +
+        "prepare_ms=${preparedAt - startedAt} persist_ms=${SystemClock.elapsedRealtime() - preparedAt}")
     if (event.snapshot.budgetFailure.isNotBlank()) {
         phase = AgentPhase.FAILED
         lastActionResult = AgentActionResult(

@@ -9,6 +9,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudWebToolLoopProgressTest {
+    @Test fun timedOutPageIsNotFetchedAgainThroughAnotherReadTool() {
+        val progress = CloudWebToolLoopProgress()
+        val arguments = JSONObject().put("url", "https://example.test/page?q=%E4%B8%AD")
+        val failure = """{"status":"failed","error_code":"web_source_timeout","retryable":false}"""
+        progress.record("web_fetch", arguments, failure)
+        assertEquals(failure, progress.cached("web_extract", arguments))
+        assertNull(progress.cached("web_extract", JSONObject().put("url", "https://another.example.test/page")))
+        assertNull(CloudWebToolLoopProgress().cached("web_fetch", arguments))
+    }
+
     @Test
     fun distinctModelCallsAreNotStoppedByAnAppCountBudget() {
         val progress = CloudWebToolLoopProgress()

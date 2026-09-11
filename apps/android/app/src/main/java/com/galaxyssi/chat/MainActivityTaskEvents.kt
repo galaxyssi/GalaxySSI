@@ -1435,6 +1435,7 @@ internal fun MainActivity.connectorProgressText(progress: JSONObject): String {
     }
     val operation = getString(when (code) {
         "web_search" -> R.string.agent_trace_connector_operation_web_search
+        "web_image_search" -> R.string.agent_trace_connector_operation_web_image_search
         "command" -> R.string.agent_trace_connector_operation_command
         "file_change" -> R.string.agent_trace_connector_operation_file_change
         "mcp_tool" -> R.string.agent_trace_connector_operation_mcp

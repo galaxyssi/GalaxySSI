@@ -129,6 +129,7 @@ internal object AgentWebEvidenceVerification {
         packs: List<AgentNativeJsonObject>
     ): AgentWebCitationValidation {
         val allowed = linkedSetOf<String>()
+        val allowedImages = linkedSetOf<String>()
         var evidenceItems = 0
         var verifiedItems = 0
         packs.forEach { pack ->
@@ -142,16 +143,25 @@ internal object AgentWebEvidenceVerification {
                     citationId == AgentWebIntelligenceText.citationId(url, hash)
                 ) {
                     allowed += url
+                    objectList(item["images"]).forEach { image ->
+                        listOf(image["url"], image["thumbnail_url"], image["original_url"]).map(::canonical)
+                            .filter(::isWebUrl).forEach(allowedImages::add)
+                    }
                     verifiedItems += 1
                 }
             }
         }
-        val cited = MARKDOWN_LINK.findAll(answer)
+        val links = MARKDOWN_LINK.findAll(answer).toList()
+        val cited = links.asSequence()
             .map { canonical(it.groupValues[1].trimEnd('.', ',', ';')) }
             .filter(String::isNotBlank)
             .distinct()
             .toList()
-        val invalid = cited.filterNot(allowed::contains)
+        val invalid = links.mapNotNull { match ->
+            val url = canonical(match.groupValues[1].trimEnd('.', ',', ';'))
+            val isImage = match.range.first > 0 && answer[match.range.first - 1] == '!'
+            url.takeUnless { it in allowed || (isImage && it in allowedImages) }
+        }.distinct()
         val status = when {
             evidenceItems == 0 -> "not_required"
             verifiedItems == 0 -> "evidence_unverified"

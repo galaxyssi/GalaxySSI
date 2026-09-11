@@ -11,6 +11,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentWebMediaNativeToolsTest {
+    @Test fun encodedQueriesPathsAndRedirectsReachTransportUnchanged() {
+        val original = "https://public.example.test/a%2Fb/%E4%B8%AD?q=%E5%B0%8F+fish&x=%25%26%3D%2B#fragment"
+        val redirected = "https://public.example.test/image?name=%E4%B8%AD&sig=a%2Fb%3D%3D"
+        val transport = FakeTransport(
+            AgentWebTransportResponse(302, mapOf("Location" to listOf(redirected))),
+            AgentWebTransportResponse(200, mapOf("Content-Type" to listOf("text/plain")), "ok".toByteArray()))
+        val web = AgentBoundedWebService(transport, FakeResolver("public.example.test" to
+            listOf(InetAddress.getByName("8.8.8.8"))))
+        web.fetch(original)
+        assertEquals(original.substringBefore('#'), transport.requests[0].uri.toString())
+        assertEquals(redirected, transport.requests[1].uri.toString())
+    }
+
     @Test fun browserStateMutationsRequireClaimsButStatelessReadsDoNot() {
         val descriptors = AgentWebMediaNativeTools.definitions(services(FakeTransport())).associate { it.descriptor.id to it.descriptor }
         listOf(AgentWebMediaNativeTools.BROWSER_SESSION_CREATE, AgentWebMediaNativeTools.BROWSER_SESSION_NAVIGATE,

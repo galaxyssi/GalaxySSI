@@ -81,7 +81,14 @@ internal object AgentWebEvidencePack {
             (MAX_TOTAL_EXCERPT_CHARS / selected.size).coerceIn(MIN_EXCERPT_CHARS, MAX_EXCERPT_CHARS)
         }
         val items = selected.mapIndexed { index, (kind, value) ->
-            item(index + 1, kind, value, excerptLimit)
+            val sourceUrl = canonical(value["url"])
+            val media = (documents + results).filter { canonical(it["url"]) == sourceUrl }
+                .flatMap(::images).distinctBy { it["url"] }.take(4)
+            item(index + 1, kind, value, excerptLimit) + mapOf(
+                "images" to media,
+                "lead_image_url" to media.firstOrNull()?.get("url")?.toString().orEmpty(),
+                "media_evidence_level" to "discovered_url_not_visually_verified"
+            )
         }
         val domainCount = items.mapNotNull { item ->
             runCatching { URI(item["url"]?.toString()).host?.lowercase(Locale.ROOT) }.getOrNull()
@@ -165,8 +172,33 @@ internal object AgentWebEvidencePack {
             "fetch_tier" to metadata["fetch_tier"]?.toString().orEmpty()
                 .ifBlank { value["fetch_tier"]?.toString().orEmpty() }
                 .take(64),
-            "lead_image_url" to leadImageUrl(metadata).take(4_096)
+            "lead_image_url" to mediaUrl(leadImageUrl(metadata))
         )
+    }
+
+    private fun images(value: AgentNativeJsonObject): List<AgentNativeJsonObject> {
+        val metadata = stringMap(value["metadata"])
+        val primary = mediaUrl(value["image_url"]).ifBlank { mediaUrl(leadImageUrl(metadata)) }
+        val discovered = objectList(metadata["images"]).map { image ->
+            mapOf("url" to mediaUrl(image["url"]), "thumbnail_url" to mediaUrl(image["thumbnail_url"]),
+                "title" to compact(image["title"]?.toString().orEmpty(), 256),
+                "alt" to compact(image["alt"]?.toString().orEmpty(), 256),
+                "width" to nonNegativeLong(image["width"]), "height" to nonNegativeLong(image["height"]))
+        }
+        return (listOf(mapOf(
+            "url" to primary,
+            "title" to compact(value["title"]?.toString().orEmpty(), 256),
+            "thumbnail_url" to mediaUrl(value["thumbnail_url"]),
+            "width" to nonNegativeLong(value["image_width"]),
+            "height" to nonNegativeLong(value["image_height"])
+        )) + discovered).filter { it["url"].toString().isNotBlank() }
+    }
+
+    private fun mediaUrl(value: Any?): String = value?.toString().orEmpty().trim().let { url ->
+        if (url.length > 4_096) return@let ""
+        val uri = runCatching { URI(url) }.getOrNull()
+        url.takeIf { uri?.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") &&
+            !uri?.host.isNullOrBlank() && uri?.userInfo == null }.orEmpty()
     }
 
     private fun receipt(value: AgentNativeJsonObject): AgentNativeJsonObject = linkedMapOf(

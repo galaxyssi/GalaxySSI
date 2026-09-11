@@ -9,18 +9,49 @@ import java.util.Locale
 internal class CloudWebToolLoopProgress {
     private val outputsByCall = linkedMapOf<String, String>()
     private val requestedRepairs = linkedSetOf<String>()
+    private val evidenceKeys = linkedSetOf<String>()
+    private val unavailableResources = linkedMapOf<String, String>()
+    private var stagnantBatches = 0
+
+    fun observeEvidenceBatch(outputs: List<String>): Boolean {
+        var gainedEvidence = false
+        outputs.forEach { encoded ->
+            val output = runCatching { JSONObject(encoded) }.getOrNull() ?: return@forEach
+            val items = output.optJSONObject("evidence_pack")?.optJSONArray("items") ?: JSONArray()
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val url = item.optString("url")
+                if (url.isBlank()) continue
+                val key = url + "|" + item.optString("content_sha256") + "|" +
+                    item.optString("evidence_level") + "|" + canonicalJson(item.optJSONArray("images"))
+                if (evidenceKeys.add(key)) gainedEvidence = true
+            }
+        }
+        stagnantBatches = if (gainedEvidence) 0 else stagnantBatches + 1
+        return stagnantBatches >= 3
+    }
 
     var finalizationRequested: Boolean = false
         private set
 
     fun cached(toolName: String, arguments: JSONObject): String? =
-        outputsByCall[semanticKey(toolName, arguments)]
+        outputsByCall[semanticKey(toolName, arguments)] ?: resourceKey(toolName, arguments)?.let(unavailableResources::get)
 
     fun record(toolName: String, arguments: JSONObject, output: String): Boolean {
         val key = semanticKey(toolName, arguments)
         if (outputsByCall.containsKey(key)) return false
         outputsByCall[key] = output
+        val errorCode = runCatching { JSONObject(output).optString("error_code") }.getOrDefault("")
+        if (errorCode in setOf("web_source_timeout", "renderer_unavailable")) {
+            resourceKey(toolName, arguments)?.let { unavailableResources[it] = output }
+        }
         return true
+    }
+
+    private fun resourceKey(toolName: String, arguments: JSONObject): String? {
+        if (toolName.lowercase(Locale.ROOT) !in setOf("web_fetch", "web_extract", "web_diff")) return null
+        val url = arguments.optString("url").trim()
+        return url.takeIf { it.isNotBlank() }?.let(AgentWebIntelligenceText::canonicalUrl)
     }
 
     fun requestRepair(kind: String): Boolean = requestedRepairs.add(kind)

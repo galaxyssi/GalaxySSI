@@ -656,6 +656,8 @@ object AgentWebIntelligenceEngineCatalog {
         spec("google", "Google", "general", "https://www.google.com/search?q={query}&num={limit}", enabled = false),
         spec("bing_news", "Bing News", "news", "https://www.bing.com/news/search?q={query}&count={limit}", weight = 1.1),
         spec("brave_news", "Brave News", "news", "https://search.brave.com/news?q={query}"),
+        spec("sogou_image", "Sogou Images", "image", "https://pic.sogou.com/pics?query={query}",
+            parser = AgentPublicImageSearchParser.SOGOU, weight = 1.2, authority = 0.75),
         spec(
             "brave_image",
             "Brave Image",
@@ -857,12 +859,13 @@ object AgentWebIntelligenceText {
         val host = parsed.host?.lowercase(Locale.ROOT)?.removePrefix("www.") ?: return value.trim()
         val port = parsed.port.takeIf { it >= 0 && !((scheme == "https" && it == 443) || (scheme == "http" && it == 80)) }
         val authority = if (port != null) "$host:$port" else host
-        val path = (parsed.path ?: "/").replace(Regex("/+"), "/").let { if (it != "/") it.trimEnd('/') else it }
+        val path = parsed.rawPath.orEmpty().ifBlank { "/" }.replace(Regex("/+"), "/")
+            .let { if (it != "/") it.trimEnd('/') else it }
         val query = parsed.rawQuery.orEmpty().split('&').mapNotNull { pair ->
             val key = pair.substringBefore('=')
             if (key.lowercase(Locale.ROOT).startsWith("utm_") || key.lowercase(Locale.ROOT) in trackingKeys) null else pair
         }.sorted().joinToString("&")
-        URI(scheme, authority, path, query.ifBlank { null }, null).toString()
+        URI("$scheme://$authority$path" + if (query.isBlank()) "" else "?$query").toString()
     }.getOrDefault(value.trim())
 
     fun citationId(url: String, excerpt: String): String = MessageDigest.getInstance("SHA-256")
@@ -931,6 +934,7 @@ class AgentWebIntelligenceSearchAdapter(
         )
         val text = fetched.body.toString(Charsets.UTF_8)
         return when (spec.parser) {
+            AgentPublicImageSearchParser.SOGOU -> AgentPublicImageSearchParser.sogou(text, limit)
             "html" -> parseHtml(text, fetched.url, limit)
             "site_index" -> parseSiteIndex(text, fetched.url, limit)
             "x_public" -> parseXPublic(text, fetched.url, limit)
@@ -1041,6 +1045,11 @@ class AgentWebIntelligenceSearchAdapter(
     }
 
     private fun requestHeaders(): Map<String, String> = buildMap {
+        if (spec.id == "baidu") {
+            // The desktop representation includes source URLs and snippets in server-rendered cards.
+            put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+        }
         when (spec.parser) {
             "brave_image" -> {
                 put("Accept", "application/json")
@@ -1103,24 +1112,8 @@ class AgentWebIntelligenceSearchAdapter(
     }
 
     private fun parseHtml(source: String, baseUrl: String, limit: Int): List<AgentWebIntelligenceRawResult> {
-        val anchorPattern = Regex(
-            "<a\\b[^>]*?href\\s*=\\s*([\"'])(.*?)\\1[^>]*>([\\s\\S]*?)</a>",
-            setOf(RegexOption.IGNORE_CASE)
-        )
-        val engineHost = runCatching { URI(baseUrl).host.orEmpty() }.getOrDefault("")
-        val seen = linkedSetOf<String>()
-        return buildList {
-            anchorPattern.findAll(source).forEach { match ->
-                val title = AgentWebIntelligenceText.clean(match.groupValues[3], 2_048)
-                val unwrapped = unwrap(match.groupValues[2], baseUrl)
-                val host = runCatching { URI(unwrapped).host.orEmpty() }.getOrDefault("")
-                val canonical = AgentWebIntelligenceText.canonicalUrl(unwrapped)
-                if (title.isBlank() || host.isBlank() || host.equals(engineHost, ignoreCase = true) || !seen.add(canonical)) {
-                    return@forEach
-                }
-                add(raw(size + 1, title, canonical))
-                if (size >= limit) return@buildList
-            }
+        return AgentPublicWebSearchParser.parse(source, baseUrl, limit).mapIndexedNotNull { index, hit ->
+            result(index + 1, hit.title, hit.url, hit.excerpt)
         }
     }
 
@@ -1512,6 +1505,7 @@ class AgentWebIntelligenceSearchAdapter(
             )
             val source = fetched.body.toString(Charsets.UTF_8)
             return when {
+                spec.parser == AgentPublicImageSearchParser.SOGOU -> AgentPublicImageSearchParser.sogou(source, limit)
                 spec.parser == "html" -> adapter.parseHtml(source, fetched.url, limit)
                 spec.parser == "site_index" -> adapter.parseSiteIndex(source, fetched.url, limit)
                 spec.parser == "x_public" -> adapter.parseXPublic(source, fetched.url, limit)
@@ -1606,7 +1600,7 @@ class AgentWebIntelligenceFusion(
                 urlQuality,
                 duplicatePenalty
             ))
-            val final = (
+            val webScore = (
                 0.28 * reciprocalRank +
                     0.21 * lexical +
                     0.14 * consensus +
@@ -1614,6 +1608,12 @@ class AgentWebIntelligenceFusion(
                     0.07 * freshness +
                     0.20 * localModel
                 ).coerceIn(0.0, 1.0)
+            val titleSpecificity = if (titleTokens.isEmpty()) 0.0 else
+                queryTokens.intersect(titleTokens).size.toDouble() / titleTokens.size
+            val final = if (item.vertical == AgentWebIntelligenceVertical.IMAGE) {
+                // Body repetition is useful for research, but not for identifying the pictured subject.
+                0.45 * webScore + 0.35 * titleOverlap + 0.20 * titleSpecificity
+            } else webScore
             item.score = AgentWebIntelligenceScore(
                 final,
                 reciprocalRank,
@@ -1624,11 +1624,17 @@ class AgentWebIntelligenceFusion(
                 localModel
             )
         }
-        return merged.values.sortedWith(
+        val ranked = merged.values.sortedWith(
             compareByDescending<AgentWebIntelligenceResult> { it.score.final }
                 .thenByDescending { it.engineRanks.size }
                 .thenByDescending { it.authority }
-        ).take(limit)
+        )
+        if (ranked.isNotEmpty() && ranked.all { it.vertical == AgentWebIntelligenceVertical.IMAGE }) {
+            val seenPages = hashSetOf<String>()
+            val firstPerPage = ranked.filter { seenPages.add(it.url) }
+            return (firstPerPage + ranked.filterNot { it in firstPerPage }).take(limit)
+        }
+        return ranked.take(limit)
     }
 
     private fun freshness(value: String): Double {
@@ -1675,7 +1681,8 @@ data class AgentWebIntelligenceSearchResponse(
     val engineCatalogSize: Int = AgentWebIntelligenceEngineCatalog.entries.size,
     val completedAtMillis: Long = System.currentTimeMillis(),
     val earlyCompleted: Boolean = false,
-    val completionReason: String = ""
+    val completionReason: String = "",
+    val sourceSelectionMillis: Long = 0L
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "protocol" to AGENT_WEB_INTELLIGENCE_PROTOCOL,
@@ -1702,7 +1709,8 @@ data class AgentWebIntelligenceSearchResponse(
             "ranker_model" to AgentWebIntelligenceRanker.MODEL_ID,
             "early_completed" to earlyCompleted,
             "completion_reason" to completionReason,
-            "elapsed_millis" to elapsedMillis
+            "elapsed_millis" to elapsedMillis,
+            "source_selection_millis" to sourceSelectionMillis
         )
     )
 }
@@ -1712,9 +1720,28 @@ internal object AgentWebSearchCompletionPolicy {
         profile: String,
         explicitSources: Boolean,
         groups: List<List<AgentWebIntelligenceRawResult>>,
-        limit: Int
+        limit: Int,
+        imageOnly: Boolean = false,
+        query: String = ""
     ): Boolean {
         if (explicitSources || profile == AgentWebIntelligenceSearchProfile.DEEP.wireValue) return false
+        if (imageOnly) {
+            return groups.flatten().filter { it.imageUrl.isNotBlank() && it.url.isNotBlank() }
+                .map { it.imageUrl }.distinct().size >= limit
+        }
+        if (query.isNotBlank()) {
+            val tokens = AgentWebIntelligenceText.tokens(query).toSet()
+            val evidence = groups.flatten().filter { result ->
+                val words = AgentWebIntelligenceText.tokens(result.title + " " + result.excerpt).toSet()
+                result.excerpt.length >= 30 && tokens.isNotEmpty() &&
+                    tokens.count(words::contains).toDouble() / tokens.size >= 0.5
+            }.distinctBy { AgentWebIntelligenceText.canonicalUrl(it.url) }
+            val domains = evidence.mapNotNull { runCatching { URI(it.url).host }.getOrNull() }.toSet()
+            val fast = profile == AgentWebIntelligenceSearchProfile.FAST.wireValue
+            return evidence.size >= (if (fast) min(limit, 4) else max(limit, 6)) &&
+                domains.size >= min(limit, 3) &&
+                (fast || evidence.map { it.engineId }.distinct().size >= 2)
+        }
         val successfulGroups = groups.filter { it.isNotEmpty() }
         val uniqueUrls = successfulGroups.flatten()
             .map { AgentWebIntelligenceText.canonicalUrl(it.url) }
@@ -1742,7 +1769,9 @@ class AgentWebIntelligenceSearchCoordinator(
     private val clock: () -> Long = System::currentTimeMillis,
     private val healthProvider: () -> Map<String, AgentWebIntelligenceSourceHealth> = { emptyMap() },
     private val receiptObserver: (AgentWebIntelligenceReceipt) -> Unit = {},
-    private val learnedSourceProvider: () -> List<AgentWebIntelligenceLearnedSource> = { emptyList() }
+    private val learnedSourceProvider: () -> List<AgentWebIntelligenceLearnedSource> = { emptyList() },
+    private val receiptBatchObserver: (List<AgentWebIntelligenceReceipt>) -> Unit = { it.forEach(receiptObserver) },
+    private val scopedHealthProvider: ((Set<String>) -> Map<String, AgentWebIntelligenceSourceHealth>)? = null
 ) {
     private val baseSourceIds = AgentWebIntelligenceEngineCatalog.entries.map { it.id }.toSet()
     private val specs = ConcurrentHashMap(
@@ -1770,7 +1799,9 @@ class AgentWebIntelligenceSearchCoordinator(
         require(limit in 1..100)
         require(engineFanout in 1..32)
         require(timeoutMillis in 1_000L..60_000L)
-        refreshLearnedSources()
+        val started = clock()
+        validateEngines(requestedEngines)
+        if (requestedEngines.isEmpty() && needsSpecialistSources(verticals, categoryTags)) refreshLearnedSources()
         val selection = selectEnginePlan(
             query,
             engineFanout,
@@ -1779,7 +1810,7 @@ class AgentWebIntelligenceSearchCoordinator(
             categoryTags
         )
         val selected = selection.selected
-        val started = clock()
+        val selectionMillis = clock() - started
         if (selected.isEmpty()) {
             return AgentWebIntelligenceSearchResponse(
                 query = query,
@@ -1798,6 +1829,8 @@ class AgentWebIntelligenceSearchCoordinator(
         }
         val deadline = started + timeoutMillis
         val executor = Executors.newFixedThreadPool(min(maxWorkers.coerceIn(1, 16), selected.size))
+        val localCancellation = AgentNativeToolCancellationSource()
+        val parentRegistration = cancellationToken.invokeOnCancellation(localCancellation::cancel)
         try {
             val completion = ExecutorCompletionService<
                 Triple<String, List<AgentWebIntelligenceRawResult>, AgentWebIntelligenceReceipt>
@@ -1808,13 +1841,15 @@ class AgentWebIntelligenceSearchCoordinator(
                     val attemptStarted = clock()
                     try {
                         checkpoint()
-                        if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
-                        val remaining = (deadline - clock()).coerceAtLeast(1_000L)
+                        if (localCancellation.token.isCancellationRequested) throw AgentNativeToolCancelledException()
+                        val remaining = deadline - clock()
+                        if (remaining < 1_000L) throw AgentWebMediaException("engine_timeout", "No search budget remains")
                         val results = adapters.getValue(id).search(
                             query,
-                            max(limit, 8).coerceAtMost(20),
+                            if (verticals == setOf(AgentWebIntelligenceVertical.IMAGE)) 20
+                            else max(limit, 8).coerceAtMost(20),
                             min(8_000L, remaining),
-                            cancellationToken,
+                            localCancellation.token,
                             checkpoint
                         )
                         Triple(
@@ -1831,6 +1866,7 @@ class AgentWebIntelligenceSearchCoordinator(
                         val code = when (error) {
                             is AgentWebMediaException -> error.code
                             is AgentNativeToolCancelledException -> "cancelled"
+                            is AgentWebBudgetExceededException -> "cancelled"
                             else -> "engine_failed"
                         }
                         Triple(
@@ -1858,10 +1894,11 @@ class AgentWebIntelligenceSearchCoordinator(
             val receipts = mutableListOf<AgentWebIntelligenceReceipt>()
             var earlyCompleted = false
             while (pending.isNotEmpty()) {
+                if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
                 checkpoint()
                 val remaining = deadline - clock()
                 if (remaining <= 0L) break
-                val completed = completion.poll(remaining, TimeUnit.MILLISECONDS) ?: break
+                val completed = completion.poll(minOf(remaining, 100L), TimeUnit.MILLISECONDS) ?: continue
                 val (engine, results, receipt) = completed.get()
                 pending.remove(engine)
                 groups += results
@@ -1870,7 +1907,9 @@ class AgentWebIntelligenceSearchCoordinator(
                         profile = profile,
                         explicitSources = selection.explicit,
                         groups = groups,
-                        limit = limit
+                        limit = limit,
+                        imageOnly = verticals == setOf(AgentWebIntelligenceVertical.IMAGE),
+                        query = query
                     )
                 ) {
                     earlyCompleted = true
@@ -1892,7 +1931,7 @@ class AgentWebIntelligenceSearchCoordinator(
                     retryable = !earlyCompleted
                 )
             }
-            receipts.forEach(receiptObserver)
+            receiptBatchObserver(receipts)
             val results = fusion.fuse(query, groups, limit)
             val status = when {
                 results.isEmpty() -> "failed"
@@ -1901,7 +1940,7 @@ class AgentWebIntelligenceSearchCoordinator(
                 else -> "partial"
             }
             val completedAt = clock()
-            val health = healthProvider()
+            val health = sourceHealth(selected.toSet())
             return AgentWebIntelligenceSearchResponse(
                 query = query,
                 status = status,
@@ -1917,11 +1956,26 @@ class AgentWebIntelligenceSearchCoordinator(
                 engineCatalogSize = specs.size,
                 completedAtMillis = completedAt,
                 earlyCompleted = earlyCompleted,
-                completionReason = if (earlyCompleted) "sufficient_diverse_evidence" else ""
+                completionReason = if (earlyCompleted) {
+                    if (verticals == setOf(AgentWebIntelligenceVertical.IMAGE)) "sufficient_image_candidates"
+                    else "sufficient_diverse_evidence"
+                } else "",
+                sourceSelectionMillis = selectionMillis
             )
         } finally {
+            localCancellation.cancel()
+            parentRegistration.dispose()
             executor.shutdownNow()
         }
+    }
+
+    fun validateEngines(requested: List<String>) {
+        if (requested.isEmpty()) return
+        val invalid = requested.filter { !specs.containsKey(it) && !it.matches(Regex("learned_[a-f0-9]{16}")) }
+        require(invalid.isEmpty()) { "Unknown web intelligence engines: ${invalid.joinToString()}" }
+        if (requested.any { !specs.containsKey(it) }) refreshLearnedSources()
+        val unknown = requested.filterNot(specs::containsKey)
+        require(unknown.isEmpty()) { "Unknown web intelligence engines: ${unknown.joinToString()}" }
     }
 
     fun selectEngines(
@@ -1931,7 +1985,8 @@ class AgentWebIntelligenceSearchCoordinator(
         verticals: Set<AgentWebIntelligenceVertical>,
         categoryTags: Set<String> = emptySet()
     ): List<String> {
-        refreshLearnedSources()
+        validateEngines(requested)
+        if (requested.isEmpty() && needsSpecialistSources(verticals, categoryTags)) refreshLearnedSources()
         return selectEnginePlan(query, fanout, requested, verticals, categoryTags).selected
     }
 
@@ -1955,15 +2010,25 @@ class AgentWebIntelligenceSearchCoordinator(
         val desired = verticals
         val desiredTags = categoryTags.mapNotNull(::normalizeAgentWebCategoryTag).toSet()
         val nowMillis = clock()
-        val health = healthProvider()
         val skipped = mutableListOf<AgentWebIntelligenceSourceHealth>()
         val orderedSpecs = AgentWebIntelligenceEngineCatalog.entries +
             specs.values.filter { it.id !in baseSourceIds }.sortedBy(AgentWebIntelligenceEngineSpec::id)
-        val ranked = orderedSpecs
+        val eligible = orderedSpecs
             .filter(AgentWebIntelligenceEngineSpec::enabledByDefault)
+            .filter { spec ->
+                if (desired == setOf(AgentWebIntelligenceVertical.IMAGE)) true
+                else (spec.id in baseSourceIds && spec.vertical in generalWebVerticals) ||
+                    spec.vertical in desired || spec.categoryTags.any(desiredTags::contains)
+            }
+            .filter { spec ->
+                desired != setOf(AgentWebIntelligenceVertical.IMAGE) ||
+                    spec.parser in AgentPublicImageSearchParser.directParsers
+            }
             .filter { spec ->
                 spec.requiresKey.isBlank() || credentialProvider.credential(spec.requiresKey).isNotBlank()
             }
+        val health = sourceHealth(eligible.map { it.id }.toSet())
+        val ranked = eligible
             .mapIndexedNotNull { index, spec ->
                 val sourceHealth = health[spec.id] ?: AgentWebIntelligenceSourceHealth(spec.id)
                 if (sourceHealth.circuitState(nowMillis) == "open") {
@@ -1973,8 +2038,8 @@ class AgentWebIntelligenceSearchCoordinator(
                 val score = spec.weight +
                     (if (spec.vertical in desired) 2.5 else 0.0) +
                     (if (spec.categoryTags.any(desiredTags::contains)) 2.0 else 0.0) +
-                    (if (spec.vertical == AgentWebIntelligenceVertical.GENERAL) 1.0 else 0.0) +
-                    (if ("*" in spec.languages || language in spec.languages) 0.8 else -1.5) +
+                    (if (spec.vertical in generalWebVerticals) 1.0 else 0.0) +
+                    (when { language in spec.languages -> 2.0; "*" in spec.languages -> 0.8; else -> -1.5 }) +
                     spec.authority * 0.5 +
                     sourceHealth.routingScore()
                 Triple(score, -index, spec.id)
@@ -2006,6 +2071,14 @@ class AgentWebIntelligenceSearchCoordinator(
             }
         )
     }
+
+    private fun sourceHealth(ids: Set<String>): Map<String, AgentWebIntelligenceSourceHealth> =
+        if (ids.isEmpty()) emptyMap() else scopedHealthProvider?.invoke(ids) ?: healthProvider()
+
+    private val generalWebVerticals = setOf(AgentWebIntelligenceVertical.GENERAL, AgentWebIntelligenceVertical.REGIONAL)
+
+    private fun needsSpecialistSources(verticals: Set<AgentWebIntelligenceVertical>, tags: Set<String>): Boolean =
+        tags.isNotEmpty() || verticals.any { it !in generalWebVerticals && it != AgentWebIntelligenceVertical.IMAGE }
 
     @Synchronized
     private fun refreshLearnedSources() {

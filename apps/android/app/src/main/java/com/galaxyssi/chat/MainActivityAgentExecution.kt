@@ -495,10 +495,11 @@ internal fun MainActivity.executeConcurrentAgentGoal(
         parentRunId = agentRunIdsByTurn[turnId].orEmpty(),
         agentId = deterministicAction?.parameters?.get("connector_id").orEmpty()
             .ifBlank { "galaxyssi-mobile" },
-        deviceId = AppStore.profile(this).optString("device_id")
-            .ifBlank { AppStore.profile(this).optString("galaxyssi_id") },
+        deviceId = AppStore.localDeviceRouteId(this),
         status = AgentWorkspaceStatus.CREATED
     )
+    Log.i("GalaxySSILatency", "agent_runtime stage=workspace_prepared turn=${turnId.take(8)} " +
+        "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}")
     AgentTaskRuntime.supervisor(this).submit(
         workspace,
         AgentTaskLane.READ_REASONING,

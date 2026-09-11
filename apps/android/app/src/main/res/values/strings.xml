@@ -121,8 +121,8 @@
     <string name="cloud_stream_interrupted_status">Interrupted</string>
     <string name="cloud_stream_cancelled_status">Stopped</string>
     <string name="cloud_stream_interrupted_notice">The response was interrupted. Send the request again to retry.</string>
-    <string name="cloud_web_fallback_sources">I found these current sources:</string>
-    <string name="cloud_web_fallback_empty">The live search finished, but no reliable source could be summarized. Please try again.</string>
+    <string name="cloud_web_fallback_sources">These sources were retrieved, but a reliable synthesis is not complete:</string>
+    <string name="cloud_web_fallback_empty">No reliable web evidence is available yet. Try again later or narrow the query.</string>
     <string name="discover_segment_all">All</string>
     <string name="discover_segment_local">Local</string>
     <string name="discover_segment_official">Official</string>
@@ -1954,6 +1954,7 @@
     <string name="agent_trace_connector_progress_completed">Completed: %1$s%2$s</string>
     <string name="agent_trace_connector_progress_failed">Failed: %1$s%2$s</string>
     <string name="agent_trace_connector_operation_web_search">web search</string>
+    <string name="agent_trace_connector_operation_web_image_search">image search</string>
     <string name="agent_trace_connector_operation_command">command</string>
     <string name="agent_trace_connector_operation_file_change">file update</string>
     <string name="agent_trace_connector_operation_mcp">MCP tool</string>

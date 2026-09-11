@@ -870,7 +870,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             sessionStore = SharedPreferencesAgentSessionStore(this, "window:${conversationWindow.key}"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
-        agentRoutingExecutor.execute {
+        navigationContentExecutor.execute {
             runCatching { mobileNativeAgent.nativeToolCatalog() }
                 .onFailure { Log.w("GalaxySSILatency", "native_tool_catalog_prewarm_failed", it) }
         }
@@ -891,7 +891,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         AgentTaskRuntime.supervisor(this)
         traceStartup("mobile_agent")
         globalSuperAgentRuntime = GlobalSuperAgentRuntime.get(this)
-        agentRoutingExecutor.execute {
+        navigationContentExecutor.execute {
             runCatching { globalSuperAgentRuntime.prewarmContextSnapshot() }
                 .onFailure { Log.w("GalaxySSILatency", "global_context_prewarm_failed", it) }
             runCatching { AndroidCognitionScheduler.requestImmediate(applicationContext) }
