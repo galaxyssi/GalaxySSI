@@ -160,7 +160,8 @@ impl NodeStore for SqliteSession {
                 .count
                 .checked_add(1)
                 .ok_or_else(|| ANNError::message("Native index node count overflow"))?;
-            let node = Node::new(vector);
+            crate::store::validate_vector(vector, self.owner.config.dimensions)?;
+            let node = super::compact::node(vector)?;
             write_node(
                 inner.connection.as_ref().unwrap(),
                 inner.crypto.as_ref().unwrap(),

@@ -1,4 +1,4 @@
-use crate::store::{MAX_NEIGHBORS, Node};
+use crate::store::{MAX_NEIGHBORS, Node, PackedVector};
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
     aead::{Aead, AeadCore, OsRng, Payload},
@@ -120,14 +120,33 @@ impl Crypto {
         node: &Node,
     ) -> ANNResult<Vec<u8>> {
         node.validate(meta.dimensions)?;
+        let version = node
+            .packed_vector
+            .as_ref()
+            .map_or(1, |packed| packed.format);
+        let vector_bytes = match version {
+            1 => meta.dimensions * 4,
+            2 => meta.dimensions,
+            3 => meta.dimensions * 2,
+            _ => return Err(ANNError::message("Unsupported native node codec")),
+        };
         let mut bytes = Zeroizing::new(Vec::with_capacity(
-            12 + meta.dimensions * 4 + node.neighbors.len() * 8,
+            12 + vector_bytes + node.neighbors.len() * 8,
         ));
-        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&version.to_le_bytes());
         bytes.extend_from_slice(&(meta.dimensions as u32).to_le_bytes());
         bytes.extend_from_slice(&(node.neighbors.len() as u32).to_le_bytes());
-        for value in node.vector.iter() {
-            bytes.extend_from_slice(&value.to_le_bytes());
+        if let Some(packed) = &node.packed_vector {
+            if super::compact::decode(packed.format, &packed.bytes, meta.dimensions)?.as_slice()
+                != node.vector.as_slice()
+            {
+                return Err(ANNError::message("Native compact codes/vector mismatch"));
+            }
+            bytes.extend_from_slice(&packed.bytes);
+        } else {
+            for value in node.vector.iter() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
         }
         for id in node.neighbors.iter() {
             bytes.extend_from_slice(&id.to_le_bytes());
@@ -148,22 +167,38 @@ impl Crypto {
         let number =
             |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
         let degree = number(8);
-        if number(0) != 1
-            || number(4) != meta.dimensions
+        let vector_bytes = match number(0) {
+            1 => meta.dimensions * 4,
+            2 => meta.dimensions,
+            3 => meta.dimensions * 2,
+            _ => return Err(ANNError::message("Unsupported native node codec")),
+        };
+        if number(4) != meta.dimensions
             || degree > MAX_NEIGHBORS
-            || bytes.len() != 12 + meta.dimensions * 4 + degree * 8
+            || bytes.len() != 12 + vector_bytes + degree * 8
         {
             return Err(ANNError::message("Invalid native index node layout"));
         }
-        let node = Node {
-            vector: Zeroizing::new(
-                bytes[12..12 + meta.dimensions * 4]
+        let payload = &bytes[12..12 + vector_bytes];
+        let packed_vector = (number(0) != 1).then(|| PackedVector {
+            format: number(0) as u32,
+            bytes: Zeroizing::new(payload.to_vec()),
+        });
+        let vector = if packed_vector.is_some() {
+            super::compact::decode(number(0) as u32, payload, meta.dimensions)?
+        } else {
+            Zeroizing::new(
+                payload
                     .chunks_exact(4)
                     .map(|v| f32::from_le_bytes(v.try_into().unwrap()))
                     .collect(),
-            ),
+            )
+        };
+        let node = Node {
+            vector,
+            packed_vector,
             neighbors: Zeroizing::new(
-                bytes[12 + meta.dimensions * 4..]
+                bytes[12 + vector_bytes..]
                     .chunks_exact(8)
                     .map(|v| u64::from_le_bytes(v.try_into().unwrap()))
                     .collect(),

@@ -2,6 +2,7 @@
 //! rollback-journal transaction; WAL must never be used for this store.
 mod cache;
 mod codec;
+mod compact;
 mod records;
 mod session;
 use crate::store::{MAX_NEIGHBORS, Node, ROOT};
@@ -127,7 +128,7 @@ impl SqliteIndexStore {
                 config,
                 &meta,
                 ROOT,
-                &Node::new(root),
+                &compact::node(root)?,
                 true,
             )?;
             connection

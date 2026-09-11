@@ -32,7 +32,23 @@ fn scale_cli_resumes_real_replay_and_checks_every_persisted_vector() {
     assert!(run("grow", "96").contains("scale_grown rows=96"));
     let report = run("measure", "96");
     assert!(report.contains("scale_verified rows=96"));
-    assert!(report.contains("found=256 expected=256"));
+    let recall = report
+        .lines()
+        .find(|line| line.starts_with("scale_recall "))
+        .unwrap();
+    let value = |name: &str| {
+        recall
+            .split_whitespace()
+            .find_map(|field| field.strip_prefix(name))
+            .unwrap()
+            .parse::<usize>()
+            .unwrap()
+    };
+    assert_eq!(value("expected="), 256);
+    // SQ8 may exchange nearly tied neighbors; retain a 99% gate for this tiny corpus.
+    assert!(value("found=") >= 254, "{report}");
+    assert!(report.contains("max_squared_error="));
+    println!("{report}");
     let wrong_count = Command::new(env!("CARGO_BIN_EXE_memory-native-scale"))
         .args(["measure", path.to_str().unwrap(), "64", "16"])
         .output()
