@@ -137,6 +137,7 @@ class KnowledgeSourcePagingDeviceTest {
         val oldVector = db.access { sql -> sql.rawQuery("SELECT hex(ciphertext) FROM knowledge_vectors", null).use {
             assertTrue(it.moveToFirst()); it.getString(0)
         } }
+        db.access(KnowledgeVectorChangeFixtureSchema::remove)
         store.close()
         val reopened = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
         val page = reopened.sourcePage()
@@ -146,7 +147,7 @@ class KnowledgeSourcePagingDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(4, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(5, it.getInt(0)) }
             sql.rawQuery("SELECT hex(ciphertext) FROM knowledge_vectors", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldVector, it.getString(0))
             }

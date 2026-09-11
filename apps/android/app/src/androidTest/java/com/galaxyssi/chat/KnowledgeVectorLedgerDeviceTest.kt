@@ -210,6 +210,7 @@ class KnowledgeVectorLedgerDeviceTest {
     @Test fun versionTwoUpgradeKeepsSourceAndCreatesPendingVectorState() = isolated { f ->
         f.store.upsert(item(text = "existing v2 knowledge"))
         f.db.access {
+            KnowledgeVectorChangeFixtureSchema.remove(it)
             it.execSQL("DROP TRIGGER knowledge_vector_source_insert")
             it.execSQL("DROP TABLE knowledge_vector_queue")
             it.execSQL("DROP TABLE knowledge_vectors")

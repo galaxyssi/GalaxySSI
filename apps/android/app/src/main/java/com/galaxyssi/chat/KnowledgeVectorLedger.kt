@@ -21,6 +21,8 @@ internal class KnowledgeVectorLedger(
     private val storage: AgentKnowledgeDatabase, private val namespace: String, val spec: KnowledgeVectorSpec
 ) {
     internal val modelKey by lazy { storage.key("vector-model", spec.identity) }
+    internal fun ensureRegistered() = storage.transaction(::register)
+    internal fun changes() = KnowledgeVectorChanges(storage, modelKey)
     private data class Checkpoint(val key: String, val revision: String, val next: Int, val count: Int,
         val complete: Boolean, val length: Int)
     private fun KnowledgeVectorJob.checkpoint() = Checkpoint(key, revision, next, count, complete, item.content.length)
@@ -145,6 +147,7 @@ internal class KnowledgeVectorLedger(
         }
 
     private fun marker(job: KnowledgeVectorJob) = ContentValues().apply {
+        put("feed_tracked", 1)
         put("revision", job.revision); put("dimensions", spec.dimensions)
         put("content_length", job.item.content.length)
         put("next_offset", job.next); put("chunk_count", job.count); put("complete", if (job.complete) 1 else 0)
