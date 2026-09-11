@@ -36,6 +36,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Private renderer process used only after the bounded static fetcher detects a JS-only page. */
@@ -43,10 +45,25 @@ class AgentIsolatedWebRenderService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val jobs = ConcurrentHashMap<String, RenderJob>()
     private val incoming = Messenger(Handler(Looper.getMainLooper(), ::handleMessage))
+    private val preflightExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "web-renderer-preflight").apply { isDaemon = true }
+    }
+    private var initializationError: String? = null
+    private var stopped = false
 
     override fun onCreate() {
         super.onCreate()
-        WebView.setWebContentsDebuggingEnabled(false)
+        initializationError = AgentWebRendererBootstrap.error
+        if (initializationError != null) return
+        try {
+            WebView.setWebContentsDebuggingEnabled(false)
+        } catch (error: RuntimeException) {
+            initializationError = "renderer_initialization_failed:${error.javaClass.simpleName}"
+            return
+        } catch (error: LinkageError) {
+            initializationError = "renderer_initialization_failed:${error.javaClass.simpleName}"
+            return
+        }
         renderCacheDirectory().apply {
             mkdirs()
             listFiles()?.forEach(File::delete)
@@ -56,9 +73,11 @@ class AgentIsolatedWebRenderService : Service() {
     override fun onBind(intent: Intent?): IBinder = incoming.binder
 
     override fun onDestroy() {
+        stopped = true
         jobs.values.toList().forEach { it.cancel("renderer_process_stopped") }
         jobs.clear()
-        clearRendererStorage()
+        preflightExecutor.shutdownNow()
+        if (initializationError == null) clearRendererStorage()
         renderCacheDirectory().listFiles()?.forEach(File::delete)
         super.onDestroy()
     }
@@ -79,6 +98,14 @@ class AgentIsolatedWebRenderService : Service() {
         val requestId = message.data.getString(AgentWebRenderContract.KEY_REQUEST_ID).orEmpty()
         val url = message.data.getString(AgentWebRenderContract.KEY_URL).orEmpty()
         val reply = message.replyTo
+        if (stopped) {
+            reply?.sendFailure(requestId, "renderer_process_stopped")
+            return
+        }
+        initializationError?.let {
+            reply?.sendFailure(requestId, it)
+            return
+        }
         val timeoutMillis = message.data.getLong(AgentWebRenderContract.KEY_TIMEOUT_MILLIS)
             .coerceIn(MIN_TIMEOUT_MILLIS, MAX_TIMEOUT_MILLIS)
         val maxBytes = message.data.getLong(AgentWebRenderContract.KEY_MAX_BYTES)
@@ -127,14 +154,23 @@ class AgentIsolatedWebRenderService : Service() {
         private var extractionFile: File? = null
         private var extractionOutput: BufferedOutputStream? = null
         private var webView: WebView? = null
+        private var preflight: Future<*>? = null
         private val publicHosts = ConcurrentHashMap<String, Boolean>()
         private val timeoutAction = Runnable { fail("renderer_timeout") }
 
         fun start() {
-            if (!AgentWebRenderUrlPolicy.resolvesToPublicAddress(initialUrl)) {
-                fail("renderer_non_public_destination")
-                return
+            mainHandler.postDelayed(timeoutAction, timeoutMillis)
+            // DNS is network I/O; doing it on the service main thread rejects valid public pages.
+            preflight = preflightExecutor.submit {
+                val allowed = AgentWebRenderUrlPolicy.resolvesToPublicAddress(initialUrl)
+                mainHandler.post {
+                    if (finished.get()) return@post
+                    if (!allowed) fail("renderer_non_public_destination") else startWebView()
+                }
             }
+        }
+
+        private fun startWebView() {
             clearRendererStorage()
             val view = runCatching { WebView(this@AgentIsolatedWebRenderService) }
                 .getOrElse {
@@ -143,7 +179,6 @@ class AgentIsolatedWebRenderService : Service() {
                 }
             webView = view
             configure(view)
-            mainHandler.postDelayed(timeoutAction, timeoutMillis)
             view.loadUrl(initialUrl, ARTICLE_HEADERS)
         }
 
@@ -484,6 +519,8 @@ class AgentIsolatedWebRenderService : Service() {
                 return
             }
             mainHandler.removeCallbacks(timeoutAction)
+            preflight?.cancel(true)
+            preflight = null
             jobs.remove(requestId, this)
             releaseWebView()
             reply.sendResult(
@@ -504,6 +541,8 @@ class AgentIsolatedWebRenderService : Service() {
         private fun fail(reason: String) {
             if (!finished.compareAndSet(false, true)) return
             mainHandler.removeCallbacks(timeoutAction)
+            preflight?.cancel(true)
+            preflight = null
             jobs.remove(requestId, this)
             runCatching { extractionOutput?.close() }
             extractionOutput = null

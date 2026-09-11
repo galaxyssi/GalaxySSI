@@ -16,6 +16,7 @@ class CloudWebGroundingTest {
 
         assertEquals(
             listOf(
+                "web_image_search",
                 "web_search",
                 "web_fetch",
                 "web_crawl",

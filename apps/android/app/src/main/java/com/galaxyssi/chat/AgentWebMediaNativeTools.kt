@@ -442,15 +442,10 @@ class AgentBoundedWebService(
         if (asciiHost == "localhost" || asciiHost.endsWith(".localhost") || asciiHost.endsWith(".local")) {
             throw AgentWebMediaException("local_host_blocked", "Localhost and local-network hostnames are blocked")
         }
-        return URI(
-            "https",
-            null,
-            asciiHost,
-            parsed.port,
-            parsed.rawPath.ifBlank { "/" },
-            parsed.rawQuery,
-            null
-        )
+        val origin = URI("https", null, asciiHost, parsed.port, null, null, null).toASCIIString()
+        // The multi-argument URI constructor expects decoded components and would escape '%' a second time.
+        return URI(origin + parsed.rawPath.ifBlank { "/" } +
+            (parsed.rawQuery?.let { "?$it" } ?: ""))
     }
 
     private fun resolvePublic(host: String): List<InetAddress> {

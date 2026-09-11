@@ -1250,7 +1250,7 @@ internal fun MainActivity.refreshGlobalInsightIndicator(countOverride: Int? = nu
     } else return
     if (countOverride == null) {
         if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
-        agentRoutingExecutor.execute {
+        navigationContentExecutor.execute {
             val count = runCatching(runtime::newProactiveInsightCount).getOrNull()
             handler.post {
                 globalInsightCountRefreshInProgress.set(false)

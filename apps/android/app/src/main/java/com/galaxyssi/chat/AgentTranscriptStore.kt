@@ -1272,7 +1272,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (excludeTurnId.isBlank()) {
             preparedContextCache.get(conversationId)?.let { return it }
         }
-        val conversation = conversations(includeArchived = true).firstOrNull { it.id == conversationId }
+        val conversation = conversationForEvent(conversationId)
             ?: activeConversation()
         if (excludeTurnId.isBlank()) return preparedContextCache.getOrCompute(conversation.id) {
             buildContext(conversation, excludeTurnId = "")
@@ -1306,6 +1306,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         preparedContextCache.get(conversationId)
 
     fun metrics(conversationId: String): AgentConversationMetrics {
+        val conversation = conversationForEvent(conversationId)
         val messages = AgentFinalResponseIdentity.coalesce(list(conversationId))
         val dialogue = messages.filter { it.role != AgentTranscriptRole.PROCESS }
         val latestTurn = dialogue.map { it.turnId }.lastOrNull { it.isNotBlank() }.orEmpty()
@@ -1321,9 +1322,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             taskCount = messages.map { it.taskId }.filter(String::isNotBlank).distinct().size,
             estimatedContextTokens = (contextCharacters / 4.0).toInt(),
             lastResponseLatencyMillis = if (assistantAt >= userAt && userAt > 0L) assistantAt - userAt else 0L,
-            inputTokens = conversations(includeArchived = true).firstOrNull { it.id == conversationId }?.inputTokens ?: 0L,
-            outputTokens = conversations(includeArchived = true).firstOrNull { it.id == conversationId }?.outputTokens ?: 0L,
-            costMicros = conversations(includeArchived = true).firstOrNull { it.id == conversationId }?.costMicros ?: 0L
+            inputTokens = conversation?.inputTokens ?: 0L,
+            outputTokens = conversation?.outputTokens ?: 0L,
+            costMicros = conversation?.costMicros ?: 0L
         )
     }
 

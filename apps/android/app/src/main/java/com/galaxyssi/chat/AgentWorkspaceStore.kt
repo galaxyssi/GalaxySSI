@@ -625,44 +625,59 @@ class EncryptedAgentWorkspaceStore(
         workspace: AgentWorkspace,
         isNew: Boolean = false
     ): AgentWorkspace {
+        val started = System.nanoTime()
         val normalized = AgentWorkspaceBounds.normalizeOrNull(workspace)
         requireNotNull(normalized) { "Agent workspace fields are invalid or exceed storage limits" }
-        state.database.writeString(workspaceKey(normalized.workspaceId), AgentWorkspaceJsonCodec.encode(normalized))
-        state.cache[normalized.workspaceId] = normalized
+        val workspaceIds = state.workspaceIds.toMutableList()
+        val recoverableIds = state.recoverableIds.toMutableList()
+        val removedIds = mutableListOf<String>()
         var workspaceIndexChanged = false
-        if (isNew || normalized.workspaceId !in state.workspaceIds) {
-            state.workspaceIds += normalized.workspaceId
+        if (isNew || normalized.workspaceId !in workspaceIds) {
+            workspaceIds += normalized.workspaceId
             workspaceIndexChanged = true
         }
-        while (state.workspaceIds.size > AgentWorkspaceLimits.MAX_WORKSPACES) {
-            val staleId = state.workspaceIds
-                .mapNotNull(::loadWorkspace)
+        while (workspaceIds.size > AgentWorkspaceLimits.MAX_WORKSPACES) {
+            val staleId = workspaceIds
+                .mapNotNull { if (it == normalized.workspaceId) normalized else loadWorkspace(it) }
                 .minWithOrNull(NEWEST_FIRST.reversed())
                 ?.workspaceId
-                ?: state.workspaceIds.first()
-            state.workspaceIds.remove(staleId)
-            state.recoverableIds.remove(staleId)
-            state.cache.remove(staleId)
-            state.database.remove(workspaceKey(staleId))
+                ?: workspaceIds.first()
+            workspaceIds.remove(staleId)
+            recoverableIds.remove(staleId)
+            removedIds += staleId
             workspaceIndexChanged = true
         }
-        val recoverable = isRecoverable(normalized)
+        val recoverable = normalized.workspaceId in workspaceIds && isRecoverable(normalized)
         val recoverableChanged = if (recoverable) {
-            val previousIndex = state.recoverableIds.indexOf(normalized.workspaceId)
-            if (previousIndex >= 0 && previousIndex == state.recoverableIds.lastIndex) {
+            val previousIndex = recoverableIds.indexOf(normalized.workspaceId)
+            if (previousIndex >= 0 && previousIndex == recoverableIds.lastIndex) {
                 false
             } else {
-                if (previousIndex >= 0) state.recoverableIds.removeAt(previousIndex)
-                state.recoverableIds.add(normalized.workspaceId)
+                if (previousIndex >= 0) recoverableIds.removeAt(previousIndex)
+                recoverableIds.add(normalized.workspaceId)
                 true
             }
         } else {
-            state.recoverableIds.remove(normalized.workspaceId)
+            recoverableIds.remove(normalized.workspaceId)
         }
-        if (workspaceIndexChanged) saveIds(KEY_WORKSPACE_IDS, state.workspaceIds)
+        val updates = linkedMapOf(workspaceKey(normalized.workspaceId) to AgentWorkspaceJsonCodec.encode(normalized))
+        if (workspaceIndexChanged) updates[KEY_WORKSPACE_IDS] = org.json.JSONArray(workspaceIds).toString()
         if (recoverableChanged || workspaceIndexChanged) {
-            saveIds(KEY_RECOVERABLE_WORKSPACE_IDS, state.recoverableIds)
+            updates[KEY_RECOVERABLE_WORKSPACE_IDS] = org.json.JSONArray(recoverableIds).toString()
         }
+        removedIds.forEach { updates.remove(workspaceKey(it)) }
+        // Persist the record and both indexes atomically before exposing the new revision in memory.
+        val commitStarted = System.nanoTime()
+        state.database.mutateStrings(updates, removedIds.map(::workspaceKey))
+        if (isNew) android.util.Log.i("GalaxySSILatency", "workspace_create task=${normalized.taskId.take(8)} " +
+            "prepare_ms=${(commitStarted - started) / 1_000_000L} " +
+            "commit_ms=${(System.nanoTime() - commitStarted) / 1_000_000L} writes=${updates.size} removals=${removedIds.size}")
+        state.cache[normalized.workspaceId] = normalized
+        removedIds.forEach(state.cache::remove)
+        state.workspaceIds.clear()
+        state.workspaceIds.addAll(workspaceIds)
+        state.recoverableIds.clear()
+        state.recoverableIds.addAll(recoverableIds)
         return normalized
     }
 
