@@ -19,7 +19,8 @@ internal class KnowledgeVectorIndexer(private val ledger: KnowledgeVectorLedger,
         var current: KnowledgeVectorJob? = null
         repeat(maxChunks) {
             if (cancelled()) return KnowledgeVectorBatchResult(committed, stale, true)
-            val job = current ?: ledger.nextJob() ?: return KnowledgeVectorBatchResult(committed, stale, false)
+            val job = current ?: ledger.nextJob()
+                ?: return KnowledgeVectorBatchResult(committed, stale, ledger.enrollmentPending())
             // Model work happens outside the database transaction and its monitor.
             val chunk = KnowledgeEmbeddingChunks.next(job.item.content, job.next, encoder.spec.contextTokens, encoder::tokenCount)
             if (chunk == null) {

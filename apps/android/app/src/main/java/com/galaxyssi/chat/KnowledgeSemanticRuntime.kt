@@ -18,7 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 internal data class KnowledgeModelState(val loaded: Boolean = false, val installed: Boolean = false,
     val enabled: Boolean = false, val phase: String = "loading", val downloaded: Long = 0,
-    val indexedChunks: Long = 0, val pendingDocuments: Long = 0, val error: String = "")
+    val indexedChunks: Long = 0, val pendingDocuments: Long = 0, val error: String = "",
+    val enrollmentPending: Boolean = false)
 
 /** One model/session owner per database, not one model load for each ephemeral store facade. */
 internal class KnowledgeSemanticController(
@@ -171,9 +172,11 @@ internal class KnowledgeSemanticController(
             val pending = db.rawQuery("SELECT count(*) FROM knowledge_vector_queue WHERE model_key=?", arrayOf(ledger.modelKey)).use {
                 check(it.moveToFirst()); it.getLong(0)
             }
-            chunks to pending
+            val enrollmentPending = db.rawQuery("SELECT complete FROM knowledge_vector_enrollment WHERE model_key=?",
+                arrayOf(ledger.modelKey)).use { it.moveToFirst() && it.getLong(0) == 0L }
+            Triple(chunks, pending, enrollmentPending)
         }
-        update { it.copy(indexedChunks = counts.first, pendingDocuments = counts.second) }
+        update { it.copy(indexedChunks = counts.first, pendingDocuments = counts.second, enrollmentPending = counts.third) }
     }
     private fun submit(action: () -> Unit): CompletableFuture<Unit> {
         val result = CompletableFuture<Unit>()

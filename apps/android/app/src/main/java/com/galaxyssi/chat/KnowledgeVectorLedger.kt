@@ -22,6 +22,7 @@ internal class KnowledgeVectorLedger(
 ) {
     internal val modelKey by lazy { storage.key("vector-model", spec.identity) }
     internal fun ensureRegistered() = storage.transaction(::register)
+    internal fun enrollmentPending() = storage.access { !KnowledgeVectorEnrollment.state(it, modelKey).complete }
     internal fun changes() = KnowledgeVectorChanges(storage, modelKey)
     private data class Checkpoint(val key: String, val revision: String, val next: Int, val count: Int,
         val complete: Boolean, val length: Int)
@@ -29,6 +30,9 @@ internal class KnowledgeVectorLedger(
 
     fun nextJob(): KnowledgeVectorJob? = storage.transaction { db ->
         register(db)
+        val queued = db.rawQuery("SELECT 1 FROM knowledge_vector_queue WHERE model_key=? LIMIT 1",
+            arrayOf(modelKey)).use { it.moveToFirst() }
+        if (!queued) KnowledgeVectorEnrollment.refill(db, modelKey)
         val key = db.rawQuery("SELECT item_key FROM knowledge_vector_queue WHERE model_key=? " +
             "ORDER BY item_key LIMIT 1", arrayOf(modelKey)).use { if (it.moveToFirst()) it.getString(0) else null }
             ?: return@transaction null
@@ -80,8 +84,6 @@ internal class KnowledgeVectorLedger(
         val present = db.rawQuery("SELECT 1 FROM knowledge_vector_models WHERE model_key=?", arrayOf(modelKey)).use { it.moveToFirst() }
         if (present) return
         db.insertOrThrow("knowledge_vector_models", null, ContentValues().apply { put("model_key", modelKey) })
-        db.rawQuery("INSERT INTO knowledge_vector_queue(model_key,item_key) SELECT ?,item_key FROM knowledge_items",
-            arrayOf(modelKey)).use { it.moveToNext() }
     }
 
     /** Only complete documents are visible, with bounded, authenticated vector pages. */

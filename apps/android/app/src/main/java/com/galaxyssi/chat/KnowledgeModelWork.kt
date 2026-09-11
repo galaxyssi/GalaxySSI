@@ -98,6 +98,12 @@ class KnowledgeVectorIndexWorker(context: Context, parameters: WorkerParameters)
                 }
             }
             if (ledger.nextJob() == null) {
+                if (ledger.enrollmentPending()) {
+                    controller.refreshCounts()
+                    controller.update { it.copy(phase = "indexing", error = "") }
+                    controller.requestIndex()
+                    return@withContext Result.success()
+                }
                 val nativeReady = controller.searchSession()?.advanceIndex { isStopped || !controller.indexingEnabled } != false
                 controller.refreshCounts()
                 controller.update { it.copy(phase = if (nativeReady) "ready" else "indexing", error = "") }

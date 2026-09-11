@@ -15,5 +15,6 @@
     <string name="knowledge_model_importing">Importing</string>
     <string name="knowledge_model_downloading">Downloading · %1$d%%</string>
     <string name="knowledge_model_counts">%1$d vector chunks · %2$d documents pending</string>
+    <string name="knowledge_model_discovering_counts">%1$d vector chunks · %2$d documents queued · discovering more sources</string>
     <string name="knowledge_model_error">Error: %1$s</string>
 </resources>
