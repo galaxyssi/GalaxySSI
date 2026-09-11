@@ -91,6 +91,8 @@ internal class AgentKnowledgeDatabase private constructor(
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
+    internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
+        "knowledge-native/${key("native-index", modelKey)}")
     @Synchronized override fun close() { retired = true; connection?.close(); connection = null }
 
     private fun migrate(db: KnowledgeSqlite) {

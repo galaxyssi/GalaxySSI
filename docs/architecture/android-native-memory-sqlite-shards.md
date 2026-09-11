@@ -4,6 +4,10 @@ This is the next storage implementation for `galaxyssi-memory-native` **0.2.0**.
 It is not yet an activated Android recall backend. It does not change App data,
 the existing knowledge database's WAL mode, pairing or ASR/QNN behavior.
 
+This document records the **0.2.0 storage-stage** evidence. The later App bridge
+and its separate acceptance are described in
+[Android native activation](android-native-memory-activation.md).
+
 ## On-disk layout and ownership
 
 One index directory contains `catalog.sqlite` and 1-64 physical

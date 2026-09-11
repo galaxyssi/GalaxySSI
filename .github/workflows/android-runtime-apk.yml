@@ -400,6 +400,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY"
           fi
 
+      - uses: ./.github/actions/setup-native-memory
       - name: Build bundled APK
         working-directory: apps/android
         run: |

@@ -8,21 +8,20 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/** Optional, independently owned embedding session used by the normal store/RAG search path. */
+/** Owns the native index and optional encoder; the source database remains authoritative. */
 internal class KnowledgeSemanticSearch(
     private val storage: AgentKnowledgeDatabase, private val spec: KnowledgeVectorSpec,
     private val encoderFactory: () -> KnowledgeVectorEncoder,
     private val budgetBytes: Long = minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8),
     private val ttlMillis: Long = 30_000
 ) : Closeable {
-    private data class Snapshot(val stamp: KnowledgeCorpusStamp, val graph: KnowledgeHnswIndex, val epoch: Long,
-        val expiresAtNs: Long)
+    private data class Snapshot(val index: KnowledgeNativeIndex, val epoch: Long)
     private val lock = Any()
     private val epoch = AtomicLong()
     private val closed = AtomicBoolean()
-    private val ledger = storage.vectors(spec)
-    private val catalog = KnowledgeVectorCatalog(storage, ledger)
-    private var snapshot: Snapshot? = null
+    private val indexScheduled = AtomicBoolean()
+    private val catalog = KnowledgeVectorCatalog(storage, storage.vectors(spec))
+    @Volatile private var snapshot: Snapshot? = null
     private var encoder: KnowledgeVectorEncoder? = null
     @Volatile var status: String = "not_built"
         private set
@@ -36,12 +35,17 @@ internal class KnowledgeSemanticSearch(
             var expected = epoch.get()
             try {
                 ensureActive(expected)
-                val cached = snapshot?.takeIf { it.epoch == expected && System.nanoTime() < it.expiresAtNs && it.stamp == catalog.stamp() }
-                val current = cached ?: run {
-                    check(epoch.compareAndSet(expected, expected + 1)) { "Semantic retrieval invalidated" }
-                    expected++
-                    dispose()
-                    build(expected).also { snapshot = it }
+                val current = openSnapshot(expected)
+                expected = current.epoch
+                if (!current.index.synchronize { ensureActive(expected) }) {
+                    status = "indexing"
+                    scheduleIndex(current)
+                    return@synchronized lexical().take(limit)
+                }
+                val stamp = requireNotNull(current.index.readyStamp)
+                if (stamp.completedChunks == 0L) {
+                    status = "ready:0"
+                    return@synchronized lexical().take(limit)
                 }
                 val active = encoder ?: encoderFactory().also { opened ->
                     if (opened.spec != spec) { opened.close(); error("Embedding model specification changed") }
@@ -49,16 +53,16 @@ internal class KnowledgeSemanticSearch(
                 }
                 ensureActive(expected)
                 val queryVector = active.embed(query)
-                val matches = try { current.graph.search(queryVector, 128) } finally { queryVector.fill(0f) }
+                val matches = try { current.index.search(queryVector) } finally { queryVector.fill(0f) }
                 ensureActive(expected)
                 storage.access {
-                    val dense = catalog.resolve(matches.filter { it.similarity >= 0.35 }, current.stamp).map { (match, item) ->
+                    val dense = catalog.resolve(matches.filter { it.similarity >= 0.35 }, stamp).map { (match, item) ->
                         check(match.start >= 0 && match.end <= item.content.length)
                         AgentKnowledgeHit(item, match.similarity, item.content.substring(match.start, match.end).take(1000), emptyList())
                     }
                     val fused = KnowledgeHybridRanking.fuse(lexical(), dense, limit)
                     ensureActive(expected)
-                    status = "ready:${current.graph.size()}"
+                    status = "ready:${stamp.completedChunks}"
                     fused
                 }
             } catch (error: Exception) {
@@ -69,38 +73,53 @@ internal class KnowledgeSemanticSearch(
         }
     }
 
-    private fun build(expected: Long): Snapshot {
-        ensureActive(expected)
-        val stamp = catalog.stamp()
-        val count = catalog.count()
-        check(count > 0) { "No completed semantic vectors" }
-        val graph = KnowledgeHnswIndex(spec.dimensions, count, budgetBytes)
+    /** Called by the existing durable vector worker; never loads an inference model. */
+    fun advanceIndex(cancelled: () -> Boolean = { false }): Boolean = synchronized(lock) {
+        if (closed.get() || suspended.get() || cancelled()) return@synchronized true
+        val current = openSnapshot(epoch.get())
         try {
-            var after = ""
-            while (true) {
-                ensureActive(expected)
-                val keys = catalog.keys(after)
-                if (keys.isEmpty()) break
-                for (key in keys) {
-                    var ordinal = 0
-                    do {
-                        ensureActive(expected)
-                        val next = requireNotNull(ledger.pageByKey(key, ordinal)) { "Knowledge changed during ANN build" }.use { page ->
-                            page.rows.forEach { graph.add(key, page.revision, it) }
-                            ordinal += page.rows.size
-                            ordinal < page.total
-                        }
-                    } while (next)
-                }
-                after = keys.last()
+            val complete = current.index.synchronize {
+                ensureActive(current.epoch)
+                check(!cancelled()) { "Native memory indexing worker stopped" }
             }
-            check(graph.size() == count && catalog.stamp() == stamp) { "Knowledge changed during ANN build" }
-            ensureActive(expected)
-            cleanup.schedule({ expire(expected) }, ttlMillis, TimeUnit.MILLISECONDS)
-            return Snapshot(stamp, graph, expected, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ttlMillis))
-        } catch (error: Throwable) { graph.close(); throw error }
+            status = if (complete) "ready:${current.index.readyStamp?.completedChunks ?: 0}" else "indexing"
+            if (!complete) scheduleIndex(current)
+            complete
+        } catch (error: Exception) {
+            dispose(); status = "unavailable:${error.javaClass.simpleName}"
+            throw error
+        }
     }
-
+    private fun openSnapshot(expected: Long): Snapshot {
+        ensureActive(expected)
+        return snapshot?.takeIf { it.epoch == expected } ?: run {
+            check(epoch.compareAndSet(expected, expected + 1)) { "Semantic retrieval invalidated" }
+            dispose()
+            Snapshot(KnowledgeNativeIndex(storage, spec, budgetBytes), expected + 1).also {
+                snapshot = it
+                cleanup.schedule({ expire(it.epoch) }, ttlMillis, TimeUnit.MILLISECONDS)
+            }
+        }
+    }
+    private fun scheduleIndex(current: Snapshot) {
+        if (!indexScheduled.compareAndSet(false, true)) return
+        indexing.execute {
+            var again = false
+            try { synchronized(lock) {
+                ensureActive(current.epoch)
+                check(snapshot === current)
+                again = !current.index.synchronize { ensureActive(current.epoch) }
+                status = if (again) "indexing" else "ready:${current.index.readyStamp?.completedChunks ?: 0}"
+            } } catch (error: Exception) {
+                synchronized(lock) {
+                    if (snapshot === current) { dispose(); status = "unavailable:${error.javaClass.simpleName}" }
+                }
+            } finally {
+                indexScheduled.set(false)
+                if (again && !closed.get() && !suspended.get() && epoch.get() == current.epoch) scheduleIndex(current)
+            }
+        }
+    }
     private fun ensureActive(expected: Long) {
         check(!closed.get() && !suspended.get() && epoch.get() == expected && !Thread.currentThread().isInterrupted) {
             "Semantic retrieval cancelled by lifecycle change"
@@ -109,14 +128,18 @@ internal class KnowledgeSemanticSearch(
     fun invalidate(expected: Long = epoch.get()) {
         if (!epoch.compareAndSet(expected, expected + 1)) return
         status = "invalidated"
-        // Never wait for inference or graph construction on the UI/lifecycle thread.
+        snapshot?.index?.cancel()
+        // Never wait for inference or native disk work on a UI/lifecycle thread.
         cleanup.execute { synchronized(lock) {
             if (snapshot?.epoch == expected || snapshot == null) dispose()
         } }
     }
-    private fun expire(expected: Long) = synchronized(lock) {
-        // TTL retires an idle cache; unlike a privacy boundary it must not cancel a legitimate in-flight query.
-        if (snapshot?.epoch == expected && epoch.compareAndSet(expected, expected + 1)) {
+    private fun expire(expected: Long): Unit = synchronized(lock) {
+        if (snapshot?.epoch != expected) return@synchronized
+        // Active replay is work, not an idle cache. Its bounded slices still observe privacy cancellation.
+        if (indexScheduled.get()) {
+            cleanup.schedule({ expire(expected) }, ttlMillis, TimeUnit.MILLISECONDS)
+        } else if (epoch.compareAndSet(expected, expected + 1)) {
             dispose()
             status = "invalidated"
         }
@@ -128,7 +151,8 @@ internal class KnowledgeSemanticSearch(
         cleanup.execute { synchronized(lock) { dispose() } }
     }
     private fun dispose() {
-        snapshot?.graph?.close(); snapshot = null
+        val previousIndex = snapshot; snapshot = null
+        previousIndex?.index?.close()
         val previous = encoder; encoder = null
         previous?.close()
     }
@@ -138,10 +162,17 @@ internal class KnowledgeSemanticSearch(
         private val cleanup = Executors.newSingleThreadScheduledExecutor { task ->
             Thread(task, "knowledge-semantic-cleanup").apply { isDaemon = true }
         }
+        private val indexing = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "knowledge-native-index").apply { isDaemon = true }
+        }
         fun clearRuntime(suspend: Boolean = false) {
             if (suspend) suspended.set(true)
             sessions.forEach { it.invalidate() }
         }
-        fun resumeRuntime() { suspended.set(false) }
+        fun resumeRuntime() {
+            if (suspended.getAndSet(false)) sessions.forEach { session ->
+                indexing.execute { runCatching { session.advanceIndex() } }
+            }
+        }
     }
 }

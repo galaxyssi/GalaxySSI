@@ -2,8 +2,12 @@
 
 `galaxyssi-memory-native` **0.3.0** adds a transactional replay consumer to the
 encrypted SQLite/DiskANN candidate. It does **not** activate native recall in the
-Android App. Android still uses its existing JVM retrieval path. No APK or
+Android App. At that stage Android used its existing JVM retrieval path. No APK or
 Desktop version is changed by this native-library-only revision.
+
+For the subsequent 0.4.0 JNI integration, see
+[Android native activation](android-native-memory-activation.md); the evidence
+below remains specific to the 0.3.0 native replay stage.
 
 ## Transaction and source contract
 

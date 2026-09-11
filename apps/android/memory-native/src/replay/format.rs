@@ -201,6 +201,20 @@ impl Reader<'_> {
     }
 }
 impl Event {
+    pub fn encode(&self) -> Zeroizing<Vec<u8>> {
+        let mut bytes = Zeroizing::new(b"GSE1".to_vec());
+        encode_event(&mut bytes, self);
+        bytes
+    }
+    pub fn decode(bytes: &[u8]) -> ANNResult<Self> {
+        let mut input = Reader(bytes);
+        if input.bytes::<4>()? != *b"GSE1" {
+            return Err(invalid());
+        }
+        let event = input.event()?;
+        input.end()?;
+        Ok(event)
+    }
     pub fn validate(&self) -> ANNResult<()> {
         if self.sequence == 0 || self.sequence <= self.previous {
             return Err(invalid());
