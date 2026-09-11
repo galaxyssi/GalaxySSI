@@ -107,7 +107,7 @@ class AgentPersonalMemoryPointDeviceTest {
             }
             fun report(values: List<Double>): String {
                 val sorted = values.sorted()
-                return "p50=${sorted[49]} p95=${sorted[94]} p99=${sorted[98]} max=${sorted.last()} misses100=${values.count { it >= 100.0 }}"
+                return "p50=${sorted[49]} p95=${sorted[94]} p99=${sorted[98]} max=${sorted.last()} misses100=${values.count { it >= 100.0 }} misses200=${values.count { it > 200.0 }} budgetMs=200"
             }
             assertEquals(size, f.store.count())
             Log.i("GalaxySSIMemoryPointTest", "rows=$size samples=100 readMs=${report(reads)} writeMs=${report(writes)}")

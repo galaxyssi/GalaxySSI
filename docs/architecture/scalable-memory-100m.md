@@ -5,6 +5,12 @@ Requested on 2026-09-10, after PR #2986. This extends the Memory 2.0 work;
 the broader Run Kernel, tracing, recovery, Blob, DAG, concurrency and multimodal
 requirements remain active.
 
+On 2026-09-11, the user revised the read/retrieval and write latency target from
+below 100ms to **at most 200ms**. All other capacity, privacy, durability and
+recovery requirements remain unchanged. Earlier 100ms measurements below are
+historical evidence, not retrospectively successful 200ms tests. New reports
+retain those metrics and also count operations above 200ms.
+
 ## Non-negotiable requirements
 
 1. No product-level fixed total memory-count cap. Logical counts, sequence
@@ -14,7 +20,7 @@ requirements remain active.
 2. Design and validate for at least 100,000,000 real records, then larger
    partition sets. Smaller datasets must avoid paying for the large-dataset
    machinery. Do not force a million-entry vector index onto a small store.
-3. The user's requested retrieval and write latency is below 100ms. This is
+3. The user's current requested retrieval and write latency is at most 200ms. This is
    currently unproven. An unconditional guarantee for every device, payload,
    power state, cold model load or unbounded query is impossible. A measured
    SLO must not be substituted for an absolute guarantee without stating the
@@ -233,7 +239,7 @@ or hiding queued time from latency reports.
 Measure the caller-visible duration, including queueing. Report P50/P95/P99,
 maximum, deadline misses, throughput, peak RSS/PSS, disk bytes, write amplification,
 index freshness and retrieval quality. Do not count canceled/failed/partial
-requests as successful sub-100ms results.
+requests as successful at-most-200ms results.
 
 Separate durable single-record writes, point reads, lexical top-K, and text-query
 hybrid retrieval. The last includes local query embedding and reranking; also
@@ -251,7 +257,7 @@ Small stores use fewer partitions and direct indexed/flat paths; no forced
 summary creation, disk ANN load, fan-out or batch wait. Compare controlled
 percentiles across sizes. Lower cardinality should reduce work and usually
 latency, but individual requests cannot be strictly monotonic because of cache,
-OS scheduling, flash GC and fsync variance. The requested absolute 100ms and
+OS scheduling, flash GC and fsync variance. The requested absolute 200ms and
 strict monotonicity remain unproven; passing a percentile gate is a different
 claim and must be labeled as such.
 
