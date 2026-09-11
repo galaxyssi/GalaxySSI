@@ -20,6 +20,7 @@ impl NodeCache {
     pub fn new(bytes: usize, dimensions: usize) -> Self {
         let entry_bytes = std::mem::size_of::<Option<(u64, Node)>>()
             + dimensions * std::mem::size_of::<f32>()
+            + dimensions * 2 // Worst-case FP16 codes alongside the decoded working vector.
             + MAX_NEIGHBORS * std::mem::size_of::<u64>();
         let count = bytes / entry_bytes;
         Self {
@@ -74,7 +75,7 @@ mod tests {
     use super::*;
     #[test]
     fn cache_is_bounded_and_collisions_never_change_identity() {
-        let mut cache = NodeCache::new(4096, 512);
+        let mut cache = NodeCache::new(8192, 512);
         assert_eq!(cache.stats().slots, 1);
         let node = Node::new(&[1.0]);
         cache.insert(1, &node);
@@ -83,7 +84,7 @@ mod tests {
         assert!(cache.get(1).is_none());
         assert!(cache.get(2).is_some());
         assert_eq!(cache.stats().occupied, 1);
-        assert!(cache.stats().reserved_bytes <= 4096);
+        assert!(cache.stats().reserved_bytes <= 8192);
     }
     #[test]
     fn tiny_budgets_do_not_force_an_allocation() {

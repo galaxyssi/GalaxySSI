@@ -14,11 +14,22 @@ pub(crate) fn validate_vector(vector: &[f32], dimensions: usize) -> ANNResult<()
     Ok(())
 }
 
+/// Immutable compact payload, wiped with the owning node.
+#[cfg(feature = "sqlite-store")]
+#[derive(Clone)]
+pub(crate) struct PackedVector {
+    pub format: u32,
+    pub bytes: Zeroizing<Vec<u8>>,
+}
+
 /// Decrypted per-node working data. Never serialize this as a plaintext index.
 #[derive(Clone)]
 pub struct Node {
     pub vector: Zeroizing<Vec<f32>>,
     pub neighbors: Zeroizing<Vec<u64>>,
+    // Retain immutable codes across adjacency rewrites; never requantize decoded values.
+    #[cfg(feature = "sqlite-store")]
+    pub(crate) packed_vector: Option<PackedVector>,
 }
 
 impl Node {
@@ -26,6 +37,8 @@ impl Node {
         Self {
             vector: Zeroizing::new(vector.to_vec()),
             neighbors: Zeroizing::new(Vec::new()),
+            #[cfg(feature = "sqlite-store")]
+            packed_vector: None,
         }
     }
 

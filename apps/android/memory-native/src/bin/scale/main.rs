@@ -162,11 +162,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             unique.sort_unstable();
             unique.dedup();
             assert_eq!(ids.len(), unique.len());
+            let snapshot = store.begin(false, cancelled())?;
             for m in &matches {
                 let id = start_id(&m.source.key) + m.source.ordinal;
                 assert!((1..=rows).contains(&id));
-                assert!((m.similarity - data::dot(query, &data::vector(id))).abs() < 1e-5);
+                let decoded = snapshot.read(id)?;
+                assert!((m.similarity - data::dot(query, &decoded.vector)).abs() < 1e-5);
             }
+            snapshot.commit()?;
             recall += exact.iter().filter(|id| ids.contains(id)).count();
         }
         data::report(rows, "heldout_ann", &timings);
@@ -177,11 +180,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Full persisted-vector verification, separate from timed ANN and exact oracle.
         let verify = Instant::now();
         let session = store.begin(false, cancelled())?;
+        let mut max_squared_error = 0.0f64;
         for id in 1..=rows {
-            assert_eq!(session.read(id)?.vector.as_slice(), data::vector(id));
+            let actual = session.read(id)?;
+            let squared_error: f64 = actual
+                .vector
+                .iter()
+                .zip(data::vector(id))
+                .map(|(a, b)| (f64::from(*a) - f64::from(b)).powi(2))
+                .sum();
+            assert!(
+                squared_error <= 0.0001,
+                "node={id} squared_error={squared_error}"
+            );
+            max_squared_error = max_squared_error.max(squared_error);
         }
         session.commit()?;
-        println!("scale_verified rows={rows} ms={:.3}", ms(verify));
+        println!(
+            "scale_verified rows={rows} ms={:.3} max_squared_error={max_squared_error:.9}",
+            ms(verify)
+        );
     }
     let bytes: u64 = fs::read_dir(path)?
         .map(|e| e.unwrap().metadata().unwrap().len())

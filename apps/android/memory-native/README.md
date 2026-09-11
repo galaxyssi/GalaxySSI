@@ -1,6 +1,6 @@
 # Native memory index candidate
 
-Version **0.4.1** provides the JNI backend used by Android knowledge semantic
+Version **0.5.1** provides the JNI backend used by Android knowledge semantic
 retrieval. It replaces the transient whole-corpus JVM graph, not the authoritative
 encrypted source database. This is **not a completed 100M-memory implementation**.
 The isolated probe still never reads or changes App data; the App bridge maintains
@@ -37,6 +37,13 @@ its own derived index and Keystore-wrapped key.
   never survives commit/rollback and never bypasses cancellation or source checks.
   Its maximum is 4MiB; small budgets leave the cache disabled rather than raising
   the requested memory target. See [scale measurements](../../../docs/architecture/android-native-memory-scale.md).
+- New high-dimensional nodes use the pinned DiskANN scalar SQ8 quantizer when
+  normalized reconstruction squared-L2 error is at most `0.0001`. Smaller than
+  128-dimensional vectors keep FP32. Higher-error vectors try IEEE FP16 with the
+  same error check before retaining FP32. Authenticated nodes v2/v3 store immutable
+  SQ8/FP16 bytes; v1 remains readable and is not rewritten on opening.
+  Both working vectors and byte codes count toward the fixed cache target and are
+  wiped on release. See [compact node design](../../../docs/architecture/android-memory-compact-nodes.md).
 
 ## Build prerequisites
 

@@ -180,6 +180,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "diskann-quantization"
+version = "0.58.0"
+source = "git+https://github.com/microsoft/DiskANN.git?rev=a2373e82de8b0edea674736e7fa1c2d55b9a9f44#a2373e82de8b0edea674736e7fa1c2d55b9a9f44"
+dependencies = [
+ "bytemuck",
+ "cfg-if",
+ "diskann-utils",
+ "diskann-vector",
+ "diskann-wide",
+ "half",
+ "rand",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "diskann-utils"
 version = "0.58.0"
 source = "git+https://github.com/microsoft/DiskANN.git?rev=a2373e82de8b0edea674736e7fa1c2d55b9a9f44#a2373e82de8b0edea674736e7fa1c2d55b9a9f44"
@@ -262,12 +277,14 @@ dependencies = [
 
 [[package]]
 name = "galaxyssi-memory-native"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "aes",
  "aes-gcm",
  "diskann",
+ "diskann-quantization",
  "diskann-vector",
+ "half",
  "jni",
  "rusqlite",
  "tokio",
