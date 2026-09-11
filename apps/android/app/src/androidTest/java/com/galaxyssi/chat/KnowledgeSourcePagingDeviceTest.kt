@@ -111,6 +111,7 @@ class KnowledgeSourcePagingDeviceTest {
 
     @Test fun v3UpgradeReadsLegacyPreviewWithoutRewritingUserCiphertext() = isolated { store, db, name ->
         store.upsert(item(1))
+        db.sourceMaintenance.close()
         val key = db.key("id", "source-item-1")
         val aad = "$name:$key:header".toByteArray()
         val oldHeader = db.access { sql ->
@@ -122,7 +123,7 @@ class KnowledgeSourcePagingDeviceTest {
             val legacy = AgentStorageCipher.encrypt(header.toString(), aad)
             sql.rawQuery("UPDATE knowledge_items SET header=? WHERE item_key=?", arrayOf(legacy, key)).use { it.moveToNext() }
             for (operation in listOf("insert", "update", "delete")) sql.execSQL("DROP TRIGGER knowledge_browse_$operation")
-            sql.execSQL("DROP INDEX knowledge_source_recent")
+            sql.execSQL("DROP INDEX IF EXISTS knowledge_source_recent")
             sql.execSQL("DROP TABLE knowledge_browse_revision")
             sql.execSQL("PRAGMA user_version=3")
             legacy
@@ -140,6 +141,7 @@ class KnowledgeSourcePagingDeviceTest {
         db.access(KnowledgeVectorChangeFixtureSchema::remove)
         store.close()
         val reopened = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
+        AgentKnowledgeDatabase.shared(context, name, "legacy-$name").transaction { KnowledgeSourceDirectory.advance(it) }
         val page = reopened.sourcePage()
         assertEquals(item(1).title, page.groups.single().title)
         assertEquals(setOf("source-item-1"), reopened.sourceItemIds(requireNotNull(page.groups.single().reference)))
@@ -147,7 +149,7 @@ class KnowledgeSourcePagingDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(7, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(8, it.getInt(0)) }
             sql.rawQuery("SELECT hex(ciphertext) FROM knowledge_vectors", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldVector, it.getString(0))
             }

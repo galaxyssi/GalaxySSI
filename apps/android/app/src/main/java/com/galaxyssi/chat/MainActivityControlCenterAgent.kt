@@ -244,7 +244,7 @@ internal fun MainActivity.renderControlCenterSystemStatusPage() {
     val visibleTargets = controlCenterResourceTargets(state.callableTargets)
     val availableResources = visibleTargets.count { it.status == AgentConnectorStatus.AVAILABLE }
     val linkReady = GalaxySSIMqttClient.isConnected() && GalaxySSIMqttClient.isSecureReady()
-    val knowledgeCount = mobileNativeAgent.knowledgeStore.sourceCount()
+    val (knowledgeCount, knowledgeCountLabel) = knowledgeSourceCountState()
     val needsAttention = safety.executionPaused || !linkReady ||
         state.callableTargets.any { it.status == AgentConnectorStatus.NEEDS_SETUP }
     showControlCenterFeature(
@@ -266,7 +266,7 @@ internal fun MainActivity.renderControlCenterSystemStatusPage() {
                     if (RuntimePlaintextProtection.isRuntimeDiagnosticsVisible()) {
                         ControlCenterMetricSpec(formatBytes(memory.processCurrentBytes), getString(R.string.cc_metric_agent_memory))
                     } else {
-                        ControlCenterMetricSpec(knowledgeCount.toString(), getString(R.string.cc_metric_knowledge_sources))
+                        ControlCenterMetricSpec(knowledgeCountLabel, getString(R.string.cc_metric_knowledge_sources))
                     }
                 )
             ),
@@ -278,7 +278,7 @@ internal fun MainActivity.renderControlCenterSystemStatusPage() {
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.AGENT_CORE), getString(R.string.cc_service_runtime), getString(if (safety.executionPaused) R.string.cc_agent_paused_subtitle else R.string.cc_service_runtime_subtitle), R.drawable.ic_agent_node, getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_status_online), if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN),
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.NODES), getString(R.string.cc_service_link), getString(if (linkReady) R.string.cc_service_link_connected else R.string.cc_service_link_offline), R.drawable.ic_protocol_link, getString(if (linkReady) R.string.cc_status_online else R.string.cc_status_degraded), if (linkReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER),
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.RESOURCE_ROUTING), getString(R.string.cc_service_router), getString(R.string.cc_service_router_subtitle, availableResources, visibleTargets.size), R.drawable.ic_settings_model, getString(if (availableResources > 0) R.string.cc_status_ready else R.string.cc_status_degraded), if (availableResources > 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER),
-                        ControlCenterRowSpec(routeAction(ControlCenterRoute.KNOWLEDGE), getString(R.string.cc_service_knowledge), getString(R.string.cc_service_knowledge_subtitle, knowledgeCount), R.drawable.ic_agent_knowledge, getString(if (knowledgeCount > 0) R.string.cc_status_ready else R.string.status_needs_setup), if (knowledgeCount > 0) ControlCenterTone.BLUE else ControlCenterTone.NEUTRAL)
+                        ControlCenterRowSpec(routeAction(ControlCenterRoute.KNOWLEDGE), getString(R.string.cc_service_knowledge), knowledgeCount?.let { getString(R.string.cc_service_knowledge_subtitle, it) } ?: knowledgeCountLabel, R.drawable.ic_agent_knowledge, if (knowledgeCount == null) knowledgeCountLabel else getString(if (knowledgeCount > 0) R.string.cc_status_ready else R.string.status_needs_setup), if (knowledgeCount != null && knowledgeCount > 0) ControlCenterTone.BLUE else ControlCenterTone.NEUTRAL)
                     )
                 ))
                 if (RuntimePlaintextProtection.isRuntimeDiagnosticsVisible()) {

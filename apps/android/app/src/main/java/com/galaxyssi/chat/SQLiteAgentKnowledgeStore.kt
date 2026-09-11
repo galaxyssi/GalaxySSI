@@ -82,6 +82,8 @@ class SQLiteAgentKnowledgeStore internal constructor(
         }
     }
     override fun sourceCount(): Int = KnowledgeSourcePaging(storage).count()
+    override fun observeSourceDirectory(ready: () -> Unit) = storage.sourceMaintenance.observe(ready)
+    override fun retrySourceDirectory() = storage.sourceMaintenance.retry()
     override fun sourceItemIds(reference: AgentKnowledgeSourceReference): Set<String> = KnowledgeSourcePaging(storage).itemIds(reference)
     internal fun sourceExport(reference: AgentKnowledgeSourceReference) = KnowledgeSourceExport(storage, reference)
     override fun findByIds(ids: Set<String>): List<AgentKnowledgeItem> = storage.access { db ->

@@ -558,12 +558,21 @@ internal fun MainActivity.showAgentKnowledgePage(query: String = "", sourceCurso
             if (loading.parent !== featureContent) return@post
             featureContent.removeView(loading)
             result.onSuccess { snapshot -> renderKnowledgePageSnapshot(query, snapshot, sourceCursor, previousCursors) }.onFailure { error ->
+                if (error is KnowledgeSourceDirectoryNotReady) {
+                    showKnowledgeDirectoryWaiting(query, error.processed)
+                    return@onFailure
+                }
                 if (error is KnowledgeSourcePageChanged) {
                     showAgentKnowledgePage(query)
                     return@onFailure
                 }
                 featureContent.addView(featureValueRow(getString(R.string.knowledge_model_error, error.message.orEmpty()),
-                    "", R.drawable.ic_agent_knowledge, ""))
+                    "", R.drawable.ic_agent_knowledge, "").apply { setOnClickListener {
+                    cloudExecutor.execute {
+                        runCatching { mobileNativeAgent.knowledgeStore.retrySourceDirectory() }
+                        handler.post { if (parent === featureContent) showAgentKnowledgePage(query) }
+                    }
+                } })
             }
         }
     }
