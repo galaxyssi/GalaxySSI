@@ -180,7 +180,7 @@ class AgentEncryptedDatabase(
 
     fun readString(key: String, defaultValue: String): String = synchronized(database) {
         val encrypted = readEncryptedValue(database.readableDatabase, key) ?: return@synchronized defaultValue
-        AgentStorageCipher.decrypt(encrypted, associatedData(key)) ?: defaultValue
+        decodeValue(key, encrypted) ?: defaultValue
     }
 
     fun readStrings(keys: Collection<String>): Map<String, String> = synchronized(database) {
@@ -189,14 +189,14 @@ class AgentEncryptedDatabase(
         buildMap {
             requested.forEach { key ->
                 readEncryptedValue(database.readableDatabase, key)
-                    ?.let { encrypted -> AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+                    ?.let { encrypted -> decodeValue(key, encrypted) }
                     ?.let { value -> put(key, value) }
             }
         }
     }
 
     fun writeString(key: String, value: String) = synchronized(database) {
-        val encrypted = AgentStorageCipher.encrypt(value, associatedData(key))
+        val encrypted = encodeValue(key, value)
         val values = ContentValues().apply {
             put("storage_key", key)
             put("encrypted_value", encrypted)
@@ -209,12 +209,13 @@ class AgentEncryptedDatabase(
     fun mutateStrings(
         upserts: Map<String, String>,
         removeKeys: Collection<String> = emptyList(),
-        onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null
+        onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null,
+        segmentPersonalRows: Boolean = false
     ): Unit = synchronized(database) {
         if (upserts.isEmpty() && removeKeys.isEmpty()) return@synchronized
         val source = if (onMutation == null) upserts else upserts.toMap()
         val encryptedValues = source.mapValues { (key, value) ->
-            AgentStorageCipher.encrypt(value, associatedData(key))
+            encodeValue(key, value, segmentPersonalRows)
         }
         val writable = database.writableDatabase
         writable.beginTransaction()
@@ -251,6 +252,7 @@ class AgentEncryptedDatabase(
     internal fun mutateStreaming(
         upserts: Sequence<Pair<String, String>>,
         onMutation: ((SQLiteDatabase, String, String?) -> Unit)? = null,
+        segmentPersonalRows: Boolean = false,
         removals: () -> Sequence<String>
     ): Unit = synchronized(database) {
         val writable = database.writableDatabase
@@ -258,10 +260,10 @@ class AgentEncryptedDatabase(
         try {
             upserts.forEach { (key, value) ->
                 val previous = readEncryptedValue(writable, key)
-                if (previous == null || AgentStorageCipher.decrypt(previous, associatedData(key)) != value) {
+                if (previous == null || decodeValue(key, previous) != value) {
                     val values = ContentValues().apply {
                         put("storage_key", key)
-                        put("encrypted_value", AgentStorageCipher.encrypt(value, associatedData(key)))
+                        put("encrypted_value", encodeValue(key, value, segmentPersonalRows))
                     }
                     check(writable.insertWithOnConflict(TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
                         "Agent encrypted streaming transaction failed"
@@ -391,7 +393,7 @@ class AgentEncryptedDatabase(
         buildList {
             keys(prefix).forEach { key ->
                 readEncryptedValue(database.readableDatabase, key)
-                    ?.let { encrypted -> AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+                    ?.let { encrypted -> decodeValue(key, encrypted) }
                     ?.let { value -> add(key to value) }
             }
         }
@@ -405,6 +407,16 @@ class AgentEncryptedDatabase(
 
     private fun associatedData(key: String): ByteArray =
         "database:$databaseName:$key".toByteArray(Charsets.UTF_8)
+
+    private fun encodeValue(key: String, value: String, largeStore: Boolean = false): String =
+        if (AgentMemoryPayloadSegments.external(key, value, largeStore)) {
+            database.segments.encode(key, value, associatedData(key))
+        } else AgentStorageCipher.encrypt(value, associatedData(key))
+
+    private fun decodeValue(key: String, encrypted: String): String? =
+        if (encrypted.startsWith(AgentMemoryPayloadSegments.PREFIX)) {
+            database.segments.decode(key, encrypted, associatedData(key))
+        } else AgentStorageCipher.decrypt(encrypted, associatedData(key))
 
     private fun readEncryptedValue(database: SQLiteDatabase, key: String): String? {
         val length = database.rawQuery(
@@ -439,6 +451,9 @@ class AgentEncryptedDatabase(
         context: Context,
         databaseName: String
     ) : SQLiteOpenHelper(context, "$databaseName.db", null, 1) {
+        val segments by lazy {
+            AgentMemoryPayloadSegments(java.io.File(context.getDatabasePath("$databaseName.db").absolutePath + ".segments"))
+        }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE $TABLE_VALUES (" +
