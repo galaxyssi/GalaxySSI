@@ -11,9 +11,11 @@ The reported Animalia WebP URL returned HTTP 200 on Desktop, but HTTP 403 with
 image control returned HTTP 200 on the phone. This identifies an origin/network
 access difference; it does not prove that every failure is caused by a VPN.
 
-Only Desktop production code changes. Android UI, message schema, pairing,
-encryption, thumbnail viewer and save controls remain unchanged. Desktop version
-is incremented from 1.1.42 to 1.1.43. No Android APK was rebuilt or installed.
+This remote-image-delivery feature changes only Desktop production code. Its
+Android message schema, pairing, encryption, thumbnail viewer and save controls
+remain unchanged. Desktop version is incremented from 1.1.42 to 1.1.43.
+The same PR also contains a separate Android local-annotation feature, whose
+build and device tests are documented in CLOUD_IMAGE_ANNOTATION_20260912.md.
 
 ## Delivery path
 

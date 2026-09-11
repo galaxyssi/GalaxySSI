@@ -18,7 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 internal data class KnowledgeModelState(val loaded: Boolean = false, val installed: Boolean = false,
     val enabled: Boolean = false, val phase: String = "loading", val downloaded: Long = 0,
-    val indexedChunks: Long = 0, val pendingDocuments: Long = 0, val error: String = "")
+    val indexedChunks: Long = 0, val pendingDocuments: Long = 0, val error: String = "",
+    val enrollmentPending: Boolean = false, val countsPending: Boolean = false, val countsError: String = "")
 
 /** One model/session owner per database, not one model load for each ephemeral store facade. */
 internal class KnowledgeSemanticController(
@@ -34,12 +35,14 @@ internal class KnowledgeSemanticController(
     private val transferEpoch = AtomicLong()
     private val transferLock = Any()
     private val indexRequested = AtomicBoolean()
+    private val countsRequested = AtomicBoolean()
     internal val runningWork = AtomicInteger()
     @Volatile private var closed = false
     @Volatile private var downloadRequest = ""
     @Volatile var state = KnowledgeModelState()
         private set
     val indexingEnabled: Boolean get() = !closed && state.enabled && state.installed
+    internal val countingEnabled: Boolean get() = !closed
     val downloadPending: Boolean get() = !closed && downloadRequest.isNotBlank()
     private var retrieval: KnowledgeSemanticSearch? = null
     init {
@@ -161,19 +164,26 @@ internal class KnowledgeSemanticController(
             if (indexingEnabled) KnowledgeModelWork.requestIndex(context, namespace)
         }.whenComplete { _, error -> if (error != null) indexRequested.set(false) }
     }
-    fun refreshCounts() {
+    internal fun requestCounts() {
+        if (closed || !countsRequested.compareAndSet(false, true)) return
+        submit {
+            countsRequested.set(false)
+            if (!closed) KnowledgeCountWork.request(context, namespace)
+        }.whenComplete { _, error -> if (error != null) countsRequested.set(false) }
+    }
+    fun refreshCounts(schedule: Boolean = true) {
         if (closed) return
         val ledger = database().vectors(KnowledgeEmbeddingModel.spec)
         val counts = database().access { db ->
-            val chunks = db.rawQuery("SELECT count(*) FROM knowledge_vectors WHERE model_key=?", arrayOf(ledger.modelKey)).use {
-                check(it.moveToFirst()); it.getLong(0)
-            }
-            val pending = db.rawQuery("SELECT count(*) FROM knowledge_vector_queue WHERE model_key=?", arrayOf(ledger.modelKey)).use {
-                check(it.moveToFirst()); it.getLong(0)
-            }
-            chunks to pending
+            val snapshot = KnowledgeCounts.snapshot(db, ledger.modelKey)
+            val enrollmentPending = db.rawQuery("SELECT complete FROM knowledge_vector_enrollment WHERE model_key=?",
+                arrayOf(ledger.modelKey)).use { it.moveToFirst() && it.getLong(0) == 0L }
+            snapshot to enrollmentPending
         }
-        update { it.copy(indexedChunks = counts.first, pendingDocuments = counts.second) }
+        update { it.copy(indexedChunks = counts.first.chunks, pendingDocuments = counts.first.pending,
+            enrollmentPending = counts.second, countsPending = !counts.first.complete,
+            countsError = if (counts.first.complete) "" else it.countsError) }
+        if (schedule && !counts.first.complete) requestCounts()
     }
     private fun submit(action: () -> Unit): CompletableFuture<Unit> {
         val result = CompletableFuture<Unit>()
@@ -190,6 +200,7 @@ internal class KnowledgeSemanticController(
     override fun close() {
         synchronized(transferLock) { closed = true; transferEpoch.incrementAndGet(); downloadRequest = "" }
         invalidateSession()
+        KnowledgeCountWork.cancel(context, namespace)
         listeners.clear(); executor.shutdown()
     }
 }

@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "version": "1.1.91",
+  "version_code": 977,
+  "merged_main": "f2a656403",
+  "apk_sha256": "c60e9065df7a9854b21ff3459a77f7d870a6de7d0f60212789850bbcdcd369fb",
+  "gradle_max_heap_mib": 8192,
+  "kotlin_compiler_strategy": "in-process",
+  "command_line_heap_override": false,
+  "build": {
+    "seconds": 603,
+    "tasks": 106,
+    "executed": 28,
+    "up_to_date": 78
+  },
+  "unit": {
+    "suites": 537,
+    "tests": 3750,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 5
+  },
+  "native_16k_alignment": {
+    "passed": 74
+  },
+  "repository_guard": "passed",
+  "device": {
+    "model": "SM-T575",
+    "installed_version": "1.1.91",
+    "installed_version_code": 977,
+    "install": "in-place",
+    "first_install_time_unchanged": true,
+    "instrumentation": {
+      "passed": 22,
+      "failed": 0,
+      "seconds": 150.539,
+      "classes": [
+        "KnowledgeVectorEnrollmentDeviceTest",
+        "KnowledgeVectorLedgerDeviceTest"
+      ]
+    }
+  },
+  "scope": "Focused merged-version retest; million-directory-key scale and 75-test neural/worker regression are attributed to the initial 1.1.90 candidate in summary.json. No 100M complete-memory capacity or end-to-end latency claim."
+}

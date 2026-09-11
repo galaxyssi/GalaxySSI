@@ -1,0 +1,438 @@
+{
+  "schema": 1,
+  "apk_sha256": "615a0ebe358f690bac944e7c94716a131ed6b4f17d1804bab99d7d9a391d89a6",
+  "seconds": 1120.2,
+  "device": "SM-T575",
+  "version": "1.1.92",
+  "database": "test-count-scale-b064c1970fbe43e39f954b5036c41f34.db",
+  "database_bytes": 850718720,
+  "migration_ms": 8.355423,
+  "resumed": false,
+  "reopen_first_read_ms": 0.864192,
+  "results": [
+    {
+      "phase": "old-count-1024",
+      "n": 32,
+      "p50_ms": 0.374307,
+      "p95_ms": 0.440731,
+      "p99_ms": 0.4755,
+      "max_ms": 0.4755,
+      "over_200ms": 0
+    },
+    {
+      "phase": "old-count-10240",
+      "n": 32,
+      "p50_ms": 3.850692,
+      "p95_ms": 4.764231,
+      "p99_ms": 4.92723,
+      "max_ms": 4.92723,
+      "over_200ms": 0
+    },
+    {
+      "phase": "old-count-102400",
+      "n": 32,
+      "p50_ms": 36.463577,
+      "p95_ms": 37.389962,
+      "p99_ms": 39.366346,
+      "max_ms": 39.366346,
+      "over_200ms": 0
+    },
+    {
+      "phase": "old-count-1000000",
+      "n": 32,
+      "p50_ms": 368.8335,
+      "p95_ms": 383.840154,
+      "p99_ms": 3019.949498,
+      "max_ms": 3019.949498,
+      "over_200ms": 32
+    },
+    {
+      "phase": "backfill-vector",
+      "n": 15625,
+      "p50_ms": 33.635116,
+      "p95_ms": 37.950961,
+      "p99_ms": 42.050961,
+      "max_ms": 88.462154,
+      "over_200ms": 0
+    },
+    {
+      "phase": "backfill-queue",
+      "n": 15625,
+      "p50_ms": 32.312,
+      "p95_ms": 36.178153,
+      "p99_ms": 42.109193,
+      "max_ms": 175.710615,
+      "over_200ms": 0
+    },
+    {
+      "phase": "point-count-million",
+      "n": 256,
+      "p50_ms": 0.417307,
+      "p95_ms": 0.473154,
+      "p99_ms": 0.491384,
+      "max_ms": 0.558961,
+      "over_200ms": 0
+    },
+    {
+      "phase": "live-write-million",
+      "n": 128,
+      "p50_ms": 1.861423,
+      "p95_ms": 2.661269,
+      "p99_ms": 5.113231,
+      "max_ms": 19.4925,
+      "over_200ms": 0
+    }
+  ],
+  "final_vectors": 1000126,
+  "final_pending": 1000126,
+  "scope": "One million actual SQLite vector rows and queue rows, but no authentic vector ciphertext, source bodies, neural embedding, Keystore or UI. WAL/FULL transaction time includes commit/fsync. No OS cache drop. Baseline counts precede migration. Page samples exclude CSV writing, seeding and verification.",
+  "validation": [
+    {
+      "phase": "old-count-1024",
+      "samples": 32,
+      "sum_ms": 12.045926,
+      "outliers": []
+    },
+    {
+      "phase": "old-count-10240",
+      "samples": 32,
+      "sum_ms": 128.185651,
+      "outliers": []
+    },
+    {
+      "phase": "old-count-102400",
+      "samples": 32,
+      "sum_ms": 1169.8142659999999,
+      "outliers": []
+    },
+    {
+      "phase": "old-count-1000000",
+      "samples": 32,
+      "sum_ms": 14364.011875000002,
+      "outliers": [
+        {
+          "sample": "1",
+          "elapsed_ms": "3019.949498"
+        },
+        {
+          "sample": "2",
+          "elapsed_ms": "350.520962"
+        },
+        {
+          "sample": "3",
+          "elapsed_ms": "349.004962"
+        },
+        {
+          "sample": "4",
+          "elapsed_ms": "349.473923"
+        },
+        {
+          "sample": "5",
+          "elapsed_ms": "350.439846"
+        },
+        {
+          "sample": "6",
+          "elapsed_ms": "352.728884"
+        },
+        {
+          "sample": "7",
+          "elapsed_ms": "354.72223"
+        },
+        {
+          "sample": "8",
+          "elapsed_ms": "358.671346"
+        },
+        {
+          "sample": "9",
+          "elapsed_ms": "361.176576"
+        },
+        {
+          "sample": "10",
+          "elapsed_ms": "362.771192"
+        },
+        {
+          "sample": "11",
+          "elapsed_ms": "363.571692"
+        },
+        {
+          "sample": "12",
+          "elapsed_ms": "366.601807"
+        },
+        {
+          "sample": "13",
+          "elapsed_ms": "364.622923"
+        },
+        {
+          "sample": "14",
+          "elapsed_ms": "363.386115"
+        },
+        {
+          "sample": "15",
+          "elapsed_ms": "362.693308"
+        },
+        {
+          "sample": "16",
+          "elapsed_ms": "369.254577"
+        },
+        {
+          "sample": "17",
+          "elapsed_ms": "368.8335"
+        },
+        {
+          "sample": "18",
+          "elapsed_ms": "371.391499"
+        },
+        {
+          "sample": "19",
+          "elapsed_ms": "369.632923"
+        },
+        {
+          "sample": "20",
+          "elapsed_ms": "367.816769"
+        },
+        {
+          "sample": "21",
+          "elapsed_ms": "371.603115"
+        },
+        {
+          "sample": "22",
+          "elapsed_ms": "373.155961"
+        },
+        {
+          "sample": "23",
+          "elapsed_ms": "374.117076"
+        },
+        {
+          "sample": "24",
+          "elapsed_ms": "372.182"
+        },
+        {
+          "sample": "25",
+          "elapsed_ms": "373.168577"
+        },
+        {
+          "sample": "26",
+          "elapsed_ms": "374.791615"
+        },
+        {
+          "sample": "27",
+          "elapsed_ms": "371.934038"
+        },
+        {
+          "sample": "28",
+          "elapsed_ms": "373.267307"
+        },
+        {
+          "sample": "29",
+          "elapsed_ms": "370.775192"
+        },
+        {
+          "sample": "30",
+          "elapsed_ms": "377.479654"
+        },
+        {
+          "sample": "31",
+          "elapsed_ms": "383.840154"
+        },
+        {
+          "sample": "32",
+          "elapsed_ms": "370.432654"
+        }
+      ]
+    },
+    {
+      "phase": "backfill-vector",
+      "samples": 15625,
+      "sum_ms": 526286.8187950011,
+      "outliers": []
+    },
+    {
+      "phase": "backfill-queue",
+      "samples": 15625,
+      "sum_ms": 505906.8662220007,
+      "outliers": []
+    },
+    {
+      "phase": "point-count-million",
+      "samples": 256,
+      "sum_ms": 108.205459,
+      "outliers": []
+    },
+    {
+      "phase": "live-write-million",
+      "samples": 128,
+      "sum_ms": 266.880506,
+      "outliers": []
+    }
+  ],
+  "raw_files": [
+    {
+      "file": "fresh-old-count-1024-01.csv",
+      "samples": 32,
+      "first_sample": 1,
+      "last_sample": 32
+    },
+    {
+      "file": "fresh-old-count-10240-01.csv",
+      "samples": 32,
+      "first_sample": 1,
+      "last_sample": 32
+    },
+    {
+      "file": "fresh-old-count-102400-01.csv",
+      "samples": 32,
+      "first_sample": 1,
+      "last_sample": 32
+    },
+    {
+      "file": "fresh-old-count-1000000-01.csv",
+      "samples": 32,
+      "first_sample": 1,
+      "last_sample": 32
+    },
+    {
+      "file": "fresh-backfill-vector-01.csv",
+      "samples": 1500,
+      "first_sample": 1,
+      "last_sample": 1500
+    },
+    {
+      "file": "fresh-backfill-vector-02.csv",
+      "samples": 1500,
+      "first_sample": 1501,
+      "last_sample": 3000
+    },
+    {
+      "file": "fresh-backfill-vector-03.csv",
+      "samples": 1500,
+      "first_sample": 3001,
+      "last_sample": 4500
+    },
+    {
+      "file": "fresh-backfill-vector-04.csv",
+      "samples": 1500,
+      "first_sample": 4501,
+      "last_sample": 6000
+    },
+    {
+      "file": "fresh-backfill-vector-05.csv",
+      "samples": 1500,
+      "first_sample": 6001,
+      "last_sample": 7500
+    },
+    {
+      "file": "fresh-backfill-vector-06.csv",
+      "samples": 1500,
+      "first_sample": 7501,
+      "last_sample": 9000
+    },
+    {
+      "file": "fresh-backfill-vector-07.csv",
+      "samples": 1500,
+      "first_sample": 9001,
+      "last_sample": 10500
+    },
+    {
+      "file": "fresh-backfill-vector-08.csv",
+      "samples": 1500,
+      "first_sample": 10501,
+      "last_sample": 12000
+    },
+    {
+      "file": "fresh-backfill-vector-09.csv",
+      "samples": 1500,
+      "first_sample": 12001,
+      "last_sample": 13500
+    },
+    {
+      "file": "fresh-backfill-vector-10.csv",
+      "samples": 1500,
+      "first_sample": 13501,
+      "last_sample": 15000
+    },
+    {
+      "file": "fresh-backfill-vector-11.csv",
+      "samples": 625,
+      "first_sample": 15001,
+      "last_sample": 15625
+    },
+    {
+      "file": "fresh-backfill-queue-01.csv",
+      "samples": 1500,
+      "first_sample": 1,
+      "last_sample": 1500
+    },
+    {
+      "file": "fresh-backfill-queue-02.csv",
+      "samples": 1500,
+      "first_sample": 1501,
+      "last_sample": 3000
+    },
+    {
+      "file": "fresh-backfill-queue-03.csv",
+      "samples": 1500,
+      "first_sample": 3001,
+      "last_sample": 4500
+    },
+    {
+      "file": "fresh-backfill-queue-04.csv",
+      "samples": 1500,
+      "first_sample": 4501,
+      "last_sample": 6000
+    },
+    {
+      "file": "fresh-backfill-queue-05.csv",
+      "samples": 1500,
+      "first_sample": 6001,
+      "last_sample": 7500
+    },
+    {
+      "file": "fresh-backfill-queue-06.csv",
+      "samples": 1500,
+      "first_sample": 7501,
+      "last_sample": 9000
+    },
+    {
+      "file": "fresh-backfill-queue-07.csv",
+      "samples": 1500,
+      "first_sample": 9001,
+      "last_sample": 10500
+    },
+    {
+      "file": "fresh-backfill-queue-08.csv",
+      "samples": 1500,
+      "first_sample": 10501,
+      "last_sample": 12000
+    },
+    {
+      "file": "fresh-backfill-queue-09.csv",
+      "samples": 1500,
+      "first_sample": 12001,
+      "last_sample": 13500
+    },
+    {
+      "file": "fresh-backfill-queue-10.csv",
+      "samples": 1500,
+      "first_sample": 13501,
+      "last_sample": 15000
+    },
+    {
+      "file": "fresh-backfill-queue-11.csv",
+      "samples": 625,
+      "first_sample": 15001,
+      "last_sample": 15625
+    },
+    {
+      "file": "fresh-point-count-million-01.csv",
+      "samples": 256,
+      "first_sample": 1,
+      "last_sample": 256
+    },
+    {
+      "file": "fresh-live-write-million-01.csv",
+      "samples": 128,
+      "first_sample": 1,
+      "last_sample": 128
+    }
+  ]
+}

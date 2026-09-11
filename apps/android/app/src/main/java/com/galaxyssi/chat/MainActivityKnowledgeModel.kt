@@ -68,7 +68,12 @@ internal fun MainActivity.showKnowledgeModelPage() {
         }
         progress.visibility = if (transferring) View.VISIBLE else View.GONE
         progress.progress = percent
-        counts.text = getString(R.string.knowledge_model_counts, state.indexedChunks, state.pendingDocuments)
+        counts.text = if (state.countsError.isNotBlank()) getString(R.string.knowledge_model_counts_error, state.countsError)
+            else getString(when {
+                state.countsPending -> R.string.knowledge_model_partial_counts
+                state.enrollmentPending -> R.string.knowledge_model_discovering_counts
+                else -> R.string.knowledge_model_counts
+            }, state.indexedChunks, state.pendingDocuments)
         enabled.setOnCheckedChangeListener(null)
         enabled.isChecked = state.enabled
         enabled.isEnabled = state.loaded && state.installed && !transferring

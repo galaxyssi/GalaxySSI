@@ -1,5 +1,14 @@
 # Android Cloud Image Annotation
 
+## PR integration
+
+Before submission, origin/main at `ced9fd5f4` was merged, preserving its memory
+enrollment/count performance changes. Since main had advanced to 1.1.92 (978),
+this PR advances Android to 1.1.93 (979). The device/live evidence below was
+captured on the feature build 1.1.91 (977), before that merge; it must not be
+described as a device acceptance run of 1.1.93. No device reinstall was requested
+as part of PR submission.
+
 ## Problem and implementation
 
 Direct cloud conversations exposed web tools but no image editing tool. A model

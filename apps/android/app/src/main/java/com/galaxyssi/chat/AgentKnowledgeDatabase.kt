@@ -36,13 +36,14 @@ internal class AgentKnowledgeDatabase private constructor(
         val db = KnowledgeSqlite(path.absolutePath)
         try {
             db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL("PRAGMA recursive_triggers=ON")
             db.execSQL("PRAGMA busy_timeout=5000")
             db.execSQL("PRAGMA journal_mode=WAL")
             db.execSQL("PRAGMA synchronous=FULL")
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..5) { "Unsupported knowledge schema $version" }
+                require(version in 0..7) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -60,6 +61,14 @@ internal class AgentKnowledgeDatabase private constructor(
                 if (version < 5) {
                     KnowledgeVectorChangeSchema.create(db)
                     db.execSQL("PRAGMA user_version=5")
+                }
+                if (version < 6) {
+                    KnowledgeVectorEnrollment.create(db)
+                    db.execSQL("PRAGMA user_version=6")
+                }
+                if (version < 7) {
+                    KnowledgeCountSchema.create(db)
+                    db.execSQL("PRAGMA user_version=7")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
