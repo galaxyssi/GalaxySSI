@@ -80,7 +80,7 @@ fn increasing_cardinality_retains_nodes_with_fixed_pager_target() {
             let node = session.read(id).unwrap();
             session.commit().unwrap();
             reads.push(start.elapsed().as_secs_f64() * 1000.0);
-            assert_eq!(node.vector.as_slice(), expected);
+            super::compact::assert_reconstruction(&node.vector, &expected);
 
             let value = vector(inserted + 1);
             let start = Instant::now();
@@ -96,7 +96,7 @@ fn increasing_cardinality_retains_nodes_with_fixed_pager_target() {
         assert_eq!(session.node_count().unwrap(), inserted + 1);
         // Verify ALL retained vectors, not only the timed sample or catalog count.
         for id in 1..=inserted {
-            assert_eq!(session.read(id).unwrap().vector.as_slice(), vector(id));
+            super::compact::assert_reconstruction(&session.read(id).unwrap().vector, &vector(id));
         }
         session.commit().unwrap();
         let disk_bytes: u64 = fs::read_dir(&fixture.path)

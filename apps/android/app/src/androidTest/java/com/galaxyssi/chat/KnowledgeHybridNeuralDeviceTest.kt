@@ -19,6 +19,8 @@ class KnowledgeHybridNeuralDeviceTest {
         val spec = KnowledgeVectorSpec("5a88d266870fbd27c6f329df60de80e2d4cf3bbd5e6f080bd5c1b2e5abb12039", 512, 64)
         val name = "test-neural-hybrid-${UUID.randomUUID()}.db"
         var store = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
+        val database = AgentKnowledgeDatabase.shared(context, name, "legacy-$name")
+        val indexDirectory = database.nativeIndexDirectory(database.vectors(spec).modelKey)
         KnowledgeSemanticSearch.resumeRuntime()
         try {
             val passages = listOf(
@@ -34,6 +36,23 @@ class KnowledgeHybridNeuralDeviceTest {
             store = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
             store.attachSemanticEncoder(spec, { LlamaKnowledgeVectorEncoder.open(context, model, spec) })
                 .also { assertTrue(it.advanceIndex()) }
+            var nodes = 0L
+            var compactNodes = 0L
+            var encryptedBytes = 0L
+            indexDirectory.walkTopDown().filter { it.isFile && it.name.startsWith("nodes-") && it.extension == "sqlite" }
+                .forEach { file ->
+                    android.database.sqlite.SQLiteDatabase.openDatabase(file.path, null,
+                        android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { native ->
+                        native.rawQuery("SELECT COUNT(*),COALESCE(SUM(CASE WHEN length(ciphertext)<2088 THEN 1 ELSE 0 END),0)," +
+                            "COALESCE(SUM(length(ciphertext)),0) FROM nodes", null).use { rows ->
+                            assertTrue(rows.moveToFirst())
+                            nodes += rows.getLong(0); compactNodes += rows.getLong(1); encryptedBytes += rows.getLong(2)
+                        }
+                    }
+                }
+            println("KNOWLEDGE_HYBRID_COMPACT nodes=$nodes compact_nodes=$compactNodes encrypted_bytes=$encryptedBytes")
+            assertEquals("Three real embeddings plus the graph root", 4L, nodes)
+            assertTrue("The real model must exercise compact JNI storage", compactNodes > 0)
             val queries = listOf("\u6211\u7684\u7535\u8bdd\u627e\u4e0d\u5230\u4e86\u600e\u4e48\u529e",
                 "\u600e\u6837\u66f4\u6362\u8d26\u6237\u53e3\u4ee4", "\u600e\u6837\u8ba9SQL\u68c0\u7d22\u66f4\u5feb")
             queries.forEachIndexed { id, query ->
@@ -52,6 +71,7 @@ class KnowledgeHybridNeuralDeviceTest {
         } finally {
             store.close()
             context.deleteDatabase(name)
+            indexDirectory.deleteRecursively()
             AgentEncryptedPreferences(context, "legacy-$name").clear()
         }
     }

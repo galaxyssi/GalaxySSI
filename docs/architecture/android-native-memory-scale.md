@@ -3,6 +3,10 @@
 Android 1.1.75 / native memory 0.4.1 adds a bounded transaction-local node cache
 and a resumable, full-graph benchmark. This is not 100M-record acceptance.
 
+For subsequent versioned SQ8/FP16 storage and its quality/performance trade-offs,
+see [compact memory nodes](android-memory-compact-nodes.md). The measurements below
+remain the original FP32 baseline, not the later compact representation.
+
 ## Cache ownership
 
 Distance calculation, neighbor expansion, graph pruning and edge updates can

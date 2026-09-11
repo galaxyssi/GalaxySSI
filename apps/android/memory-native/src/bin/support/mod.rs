@@ -117,7 +117,7 @@ impl NodeStore for DiskFixture {
             bytes[12..12 + DIMENSIONS * 4]
                 .chunks_exact(4)
                 .map(|v| f32::from_le_bytes(v.try_into().unwrap()))
-                .collect(),
+                .collect::<Vec<_>>(),
         );
         let neighbors = Zeroizing::new(
             bytes[12 + DIMENSIONS * 4..]
@@ -125,7 +125,8 @@ impl NodeStore for DiskFixture {
                 .map(|v| u64::from_le_bytes(v.try_into().unwrap()))
                 .collect(),
         );
-        let node = Node { vector, neighbors };
+        let mut node = Node::new(&vector);
+        node.neighbors = neighbors;
         node.validate(DIMENSIONS)?;
         Ok(node)
     }
