@@ -33,6 +33,7 @@ class KnowledgeHybridNeuralDeviceTest {
             store.close()
             store = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
             store.attachSemanticEncoder(spec, { LlamaKnowledgeVectorEncoder.open(context, model, spec) })
+                .also { assertTrue(it.advanceIndex()) }
             val queries = listOf("\u6211\u7684\u7535\u8bdd\u627e\u4e0d\u5230\u4e86\u600e\u4e48\u529e",
                 "\u600e\u6837\u66f4\u6362\u8d26\u6237\u53e3\u4ee4", "\u600e\u6837\u8ba9SQL\u68c0\u7d22\u66f4\u5feb")
             queries.forEachIndexed { id, query ->
