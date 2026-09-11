@@ -102,6 +102,17 @@ internal class MemorySegmentFile(
     @Synchronized fun seal() { active = null }
     @Synchronized fun seal(id: UUID) { if (active == id) active = null }
 
+    @Synchronized fun beginCopy(reference: Reference): MemorySegmentCopy.State {
+        Reference.parse(reference.bytes())
+        val previous = active
+        val destination = try { newSegment() } finally { active = previous }
+        return MemorySegmentCopy.State(reference, destination, UUID.randomUUID()).validate()
+    }
+
+    @Synchronized fun copyStep(state: MemorySegmentCopy.State, aad: ByteArray, budget: Int,
+        checkActive: () -> Unit): MemorySegmentCopy.State =
+        MemorySegmentCopy(::file, encrypt, decrypt).step(state, aad, budget, checkActive)
+
     @Synchronized fun relocate(reference: Reference, aad: ByteArray, checkActive: () -> Unit = {}): Reference = append(aad) { output ->
         read(reference, aad) { input ->
             val buffer = ByteArray(BLOCK_BYTES)
@@ -214,8 +225,8 @@ internal class MemorySegmentFile(
 
     companion object {
         const val BLOCK_BYTES = 64 * 1024
-        private const val ENVELOPE_BYTES = 29
-        private fun blockAad(aad: ByteArray, r: Reference, ordinal: Long): ByteArray =
+        internal const val ENVELOPE_BYTES = 29
+        internal fun blockAad(aad: ByteArray, r: Reference, ordinal: Long): ByteArray =
             ByteBuffer.allocate(4 + aad.size + 48).putInt(aad.size).put(aad)
                 .putLong(r.segment.mostSignificantBits).putLong(r.segment.leastSignificantBits)
                 .putLong(r.record.mostSignificantBits).putLong(r.record.leastSignificantBits)

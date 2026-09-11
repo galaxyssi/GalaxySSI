@@ -13,6 +13,8 @@ internal class AgentMemorySegmentCatalog(private val path: File) {
             db.execSQL("PRAGMA synchronous=FULL")
             db.execSQL("CREATE TABLE IF NOT EXISTS segments (id INTEGER PRIMARY KEY AUTOINCREMENT, segment TEXT UNIQUE NOT NULL)")
             db.execSQL("CREATE TABLE IF NOT EXISTS progress (id INTEGER PRIMARY KEY CHECK(id=1), cursor INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE IF NOT EXISTS copy_job (id INTEGER PRIMARY KEY CHECK(id=1), source_key TEXT NOT NULL, " +
+                "source_value TEXT NOT NULL, source_segment TEXT NOT NULL, destination_segment TEXT NOT NULL, checkpoint TEXT NOT NULL)")
             block(db)
         }
     }
@@ -22,6 +24,30 @@ internal class AgentMemorySegmentCatalog(private val path: File) {
     }
 
     data class Entry(val id: Long, val segment: UUID)
+
+    data class CopyJob(val key: String, val value: String, val source: String, val destination: String, val checkpoint: String)
+
+    fun copyJob(): CopyJob? = database { db ->
+        db.rawQuery("SELECT source_key,source_value,source_segment,destination_segment,checkpoint FROM copy_job WHERE id=1", null).use {
+            if (it.moveToFirst()) CopyJob(it.getString(0), it.getString(1), it.getString(2), it.getString(3), it.getString(4)) else null
+        }
+    }
+
+    fun beginCopy(job: CopyJob) = database { db ->
+        db.execSQL("INSERT INTO copy_job VALUES(1,?,?,?,?,?)", arrayOf(job.key, job.value, job.source, job.destination, job.checkpoint))
+    }
+
+    fun checkpointCopy(before: CopyJob, next: CopyJob) = database { db ->
+        check(before.copy(checkpoint = next.checkpoint) == next)
+        val values = android.content.ContentValues().apply { put("checkpoint", next.checkpoint) }
+        check(db.update("copy_job", values, "id=1 AND checkpoint=?", arrayOf(before.checkpoint)) == 1) {
+            "Memory copy checkpoint changed"
+        }
+    }
+
+    fun finishCopy(job: CopyJob) = database { db ->
+        check(db.delete("copy_job", "id=1 AND checkpoint=?", arrayOf(job.checkpoint)) == 1) { "Memory copy checkpoint changed" }
+    }
 
     fun hasAfter(id: Long): Boolean = database { db ->
         db.rawQuery("SELECT 1 FROM segments WHERE id>? LIMIT 1", arrayOf(id.toString())).use { it.moveToFirst() }

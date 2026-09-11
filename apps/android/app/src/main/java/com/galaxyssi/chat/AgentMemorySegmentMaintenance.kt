@@ -14,6 +14,7 @@ internal class AgentMemorySegmentMaintenance(private val sql: SQLiteDatabase,
     fun run(maxSegments: Int, maxRows: Int, checkActive: () -> Unit = {}): Result {
         require(maxSegments in 1..32 && maxRows in 1..32)
         check(!sql.inTransaction()) { "Memory maintenance must not join an application transaction" }
+        AgentMemorySegmentCopy(sql, segments, aad).resume(checkActive)?.let { return it }
         var visited = 0; var moved = 0; var removed = 0; var reclaimed = 0L
         var remainingBytes = COPY_BYTES
         var lastId: Long? = null
@@ -28,6 +29,11 @@ internal class AgentMemorySegmentMaintenance(private val sql: SQLiteDatabase,
                 if (live > 0 && live <= segments.size(entry.segment) / 2) {
                     val rows = rows(entry.segment, maxRows - moved)
                     segments.seal(entry.segment)
+                    rows.firstOrNull()?.takeIf { it.bytes > COPY_BYTES }?.let { row ->
+                        checkActive()
+                        segments.beginCopy(row.key, row.value, aad(row.key), entry.segment, row.bytes)
+                        return Result(visited, moved, removed, reclaimed, false)
+                    }
                     sql.beginTransactionNonExclusive()
                     try {
                         for (row in rows) {

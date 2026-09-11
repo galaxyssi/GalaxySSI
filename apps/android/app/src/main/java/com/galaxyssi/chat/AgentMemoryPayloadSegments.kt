@@ -44,13 +44,60 @@ internal class AgentMemoryPayloadSegments(root: File) {
     fun size(id: java.util.UUID) = files.size(id)
     fun remove(id: java.util.UUID) = files.remove(id)
 
+    fun beginCopy(key: String, value: String, aad: ByteArray, expectedSegment: java.util.UUID, expectedBytes: Long) {
+        val source = checkedReference(key, value, aad, expectedSegment, expectedBytes)
+        val state = files.beginCopy(source)
+        catalog.beginCopy(AgentMemorySegmentCatalog.CopyJob(key, value, source.segment.toString(),
+            state.destination.toString(), encodeCopy(state, aad)))
+    }
+
+    fun copyState(job: AgentMemorySegmentCatalog.CopyJob, aad: ByteArray): MemorySegmentCopy.State {
+        require(job.checkpoint.length <= 512) { "Invalid memory copy checkpoint envelope" }
+        val encrypted = Base64.decode(job.checkpoint, Base64.NO_WRAP)
+        val bytes = try { AgentStorageCipher.decryptBinary(encrypted, copyAad(aad)) } finally { encrypted.fill(0) }
+        val state = try { MemorySegmentCopy.State.parse(bytes) } finally { bytes.fill(0) }
+        check(state.source == checkedReference(job.key, job.value, aad, java.util.UUID.fromString(job.source), state.source.length))
+        check(state.destination.toString() == job.destination) { "Memory copy destination mismatch" }
+        return state
+    }
+
+    fun copyStep(state: MemorySegmentCopy.State, aad: ByteArray, checkActive: () -> Unit) =
+        files.copyStep(state, aad, 1024 * 1024, checkActive)
+
+    fun checkpointCopy(job: AgentMemorySegmentCatalog.CopyJob, state: MemorySegmentCopy.State, aad: ByteArray): AgentMemorySegmentCatalog.CopyJob {
+        val next = job.copy(checkpoint = encodeCopy(state, aad))
+        catalog.checkpointCopy(job, next)
+        return next
+    }
+
+    fun copiedReference(state: MemorySegmentCopy.State, aad: ByteArray): Encoded {
+        state.validate()
+        check(state.complete) { "Memory copy has not been fully verified" }
+        return encodeReference(state.target, aad)
+    }
+
+    fun isCopiedReference(value: String, state: MemorySegmentCopy.State, aad: ByteArray): Boolean =
+        reference(value, aad) == state.target
+
+    private fun encodeCopy(state: MemorySegmentCopy.State, aad: ByteArray): String {
+        val bytes = state.bytes()
+        val encrypted = try { AgentStorageCipher.encryptBinary(bytes, copyAad(aad)) } finally { bytes.fill(0) }
+        return try { Base64.encodeToString(encrypted, Base64.NO_WRAP) } finally { encrypted.fill(0) }
+    }
+
     fun relocate(key: String, value: String, aad: ByteArray, expectedSegment: java.util.UUID, expectedBytes: Long,
         checkActive: () -> Unit = {}): Encoded {
-        require(key.startsWith(AgentPersonalMemoryRows.PREFIX))
-        val reference = reference(value, aad)
-        check(reference.segment == expectedSegment) { "Memory segment catalog does not match authenticated reference" }
-        check(reference.length == expectedBytes) { "Memory segment catalog length mismatch" }
+        val reference = checkedReference(key, value, aad, expectedSegment, expectedBytes)
         return encodeReference(files.relocate(reference, aad, checkActive), aad)
+    }
+
+    private fun checkedReference(key: String, value: String, aad: ByteArray, expectedSegment: java.util.UUID,
+        expectedBytes: Long): MemorySegmentFile.Reference {
+        require(key.startsWith(AgentPersonalMemoryRows.PREFIX))
+        return reference(value, aad).also {
+            check(it.segment == expectedSegment) { "Memory segment catalog does not match authenticated reference" }
+            check(it.length == expectedBytes) { "Memory segment catalog length mismatch" }
+        }
     }
 
     fun decode(key: String, value: String, aad: ByteArray): String {
@@ -81,6 +128,7 @@ internal class AgentMemoryPayloadSegments(root: File) {
         const val ROW_THRESHOLD = 16_384L
         const val INLINE_CHAR_LIMIT = 8_192
         private fun referenceAad(aad: ByteArray) = "memory-segment-reference:v1\u0000".toByteArray() + aad
+        private fun copyAad(aad: ByteArray) = "memory-segment-copy:v1\u0000".toByteArray() + aad
         private fun syncDirectory(directory: File) {
             val fd = Os.open(directory.absolutePath, OsConstants.O_RDONLY, 0)
             try {

@@ -9,7 +9,8 @@ if ($LASTEXITCODE -ne 0 -or $model -ne 'SM-T575') { throw "This recovery test re
 $fixture = 'segments-recovery-' + [guid]::NewGuid().ToString('N')
 $directory = Join-Path $OutputDirectory $fixture
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
-$phases = @('prepare', 'before-commit', 'verify-rollback', 'after-commit', 'verify-commit', 'cleanup')
+$phases = @('prepare', 'before-commit', 'verify-rollback', 'after-commit', 'verify-commit', 'cleanup',
+    'copy-prepare', 'during-copy', 'verify-copy', 'copy-cleanup')
 foreach ($phase in $phases) {
     Write-Output "Running $phase on $Serial with isolated fixture $fixture"
     $result = & $Adb -s $Serial shell am instrument -w -r -e class com.galaxyssi.chat.AgentMemorySegmentRecoveryDeviceTest `
@@ -17,7 +18,7 @@ foreach ($phase in $phases) {
     $exitCode = $LASTEXITCODE
     $text = $result | Out-String
     $text | Set-Content -Encoding utf8 -LiteralPath (Join-Path $directory "$phase.log")
-    if ($phase -in @('before-commit', 'after-commit')) {
+    if ($phase -in @('before-commit', 'after-commit', 'during-copy')) {
         if ($text -notmatch '(?i)Process crashed|Process is crashing|INSTRUMENTATION_FAILED') {
             throw "Expected intentional process death was not observed in $phase. See $directory"
         }
@@ -26,4 +27,4 @@ foreach ($phase in $phases) {
     }
     Write-Output $text.Trim()
 }
-Write-Output "Verified two real process deaths and recovery. Raw evidence: $directory"
+Write-Output "Verified three real process deaths and recovery. Raw evidence: $directory"

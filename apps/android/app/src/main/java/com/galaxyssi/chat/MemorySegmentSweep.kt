@@ -1,5 +1,7 @@
 package com.galaxyssi.chat
 
+internal class MemoryMaintenanceYield : RuntimeException(null, null, false, false)
+
 /** One scheduling quantum, not a corpus limit. The catalog owns the durable cursor. */
 internal class MemorySegmentSweep(
     private val shouldYield: () -> Boolean,
@@ -8,13 +10,12 @@ internal class MemorySegmentSweep(
     private val quantumNanos: Long = 5_000_000_000L
 ) {
     enum class Outcome { COMPLETE, DEFERRED }
-    private class Yield : RuntimeException(null, null, false, false)
 
     fun run(): Outcome {
         require(quantumNanos > 0)
         val started = clockNanos()
         val checkActive = {
-            if (shouldYield() || clockNanos() - started >= quantumNanos) throw Yield()
+            if (shouldYield() || clockNanos() - started >= quantumNanos) throw MemoryMaintenanceYield()
         }
         try {
             while (true) {
@@ -25,6 +26,6 @@ internal class MemorySegmentSweep(
                     false -> Unit
                 }
             }
-        } catch (_: Yield) { return Outcome.DEFERRED }
+        } catch (_: MemoryMaintenanceYield) { return Outcome.DEFERRED }
     }
 }

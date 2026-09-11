@@ -70,6 +70,46 @@ class AgentMemorySegmentRecoveryDeviceTest {
                 assertFalse(db.contains(key))
                 checkpoint("cleaned")
             }
+            "copy-prepare" -> {
+                assertEquals("cleaned", marker.readText())
+                val data = memoryCopyFixtureValue()
+                db.writeString(key, data)
+                repeat(2) {
+                    val dead = AgentPersonalMemoryRows.key("copy-recovery-dead-$it")
+                    db.writeString(dead, data); db.remove(dead)
+                }
+                db.maintainMemorySegments(1, 1)
+                val segments = AgentMemoryPayloadSegments(File(db.storageIdentity + ".segments"))
+                assertNotNull(segments.catalog.copyJob())
+                checkpoint("copy-prepared")
+            }
+            "during-copy" -> {
+                assertEquals("copy-prepared", marker.readText())
+                db.maintainMemorySegments(1, 1)
+                val segments = AgentMemoryPayloadSegments(File(db.storageIdentity + ".segments"))
+                val state = segments.copyState(requireNotNull(segments.catalog.copyJob()),
+                    "database:${AgentMemoryStorage.DATABASE}:$key".toByteArray())
+                assertTrue(state.copiedBytes > 0 && state.copiedBytes < state.source.length)
+                die("during-copy")
+            }
+            "verify-copy" -> {
+                assertEquals("during-copy", marker.readText())
+                val segments = AgentMemoryPayloadSegments(File(db.storageIdentity + ".segments"))
+                val saved = segments.copyState(requireNotNull(segments.catalog.copyJob()),
+                    "database:${AgentMemoryStorage.DATABASE}:$key".toByteArray())
+                assertTrue(saved.copiedBytes > 0 && saved.copiedBytes < saved.source.length)
+                repeat(20) { db.maintainMemorySegments(1, 1) }
+                assertNull(segments.catalog.copyJob())
+                assertTrue("Large memory did not recover exactly", memoryCopyFixtureValue() == db.readString(key, ""))
+                checkpoint("copy-verified")
+            }
+            "copy-cleanup" -> {
+                assertEquals("copy-verified", marker.readText())
+                f.clear()
+                repeat(20) { db.maintainMemorySegments(32, 32) }
+                assertFalse(db.contains(key))
+                checkpoint("copy-cleaned")
+            }
             else -> error("Unknown recovery test phase: $phase")
         }
     }

@@ -90,11 +90,10 @@ materializing the source JSON/String. The source reference cutover commits befor
 old files are unlinked and their directory synced. Derived content indexes and
 source revisions are unchanged because the plaintext has not changed.
 
-Zero-reference segments are reclaimed. Live records larger than the per-pass
-copy budget remain readable but are not compacted by this pass; deletion still
-allows their whole segment to be reclaimed. The automatic scheduler is described
-below. Starvation of oversized live records, real-device latency under concurrent
-access, and storage-pressure behavior remain release gates. File/index metadata is not
+Zero-reference segments are reclaimed. Records larger than the per-pass copy
+budget now use the resumable-copy candidate described below instead of being
+skipped. Real-device latency under concurrent access and storage-pressure
+behavior remain release gates. File/index metadata is not
 tamper-proof; authentication verifies payload references and contents, not every
 SQLite page or physical filesystem operation.
 
@@ -254,8 +253,8 @@ creating one tiny destination per row. The five-second quantum limits one worker
 invocation, not the memory count or the total work needed to finish. WorkManager
 retains deferred work for retry; the catalog cursor survives process restart.
 Corruption remains an explicit error and retry, not a successful empty sweep.
-Fair error isolation across damaged segments and resumable copies of records
-larger than 1MiB still require further work.
+Fair error isolation across damaged segments remains outstanding. The 1.1.72
+candidate below adds resumable copies of records larger than 1MiB.
 
 Validation:
 
@@ -292,3 +291,99 @@ Validation:
   passing tests; preparation, two recovery verifications and cleanup succeeded.
   Log: `build/memory-segment-recovery-v1171.log`; per-phase evidence:
   `build/memory-segment-recovery-v1171/segments-recovery-b0838327a5154e0782f5974c63cb7f46/`.
+
+## Resumable large-record copies (1.1.72 candidate)
+
+The catalog now holds at most one active copy job per physical memory database.
+It stores the opaque source key, original encrypted reference, random source/
+destination segment IDs, and an authenticated checkpoint. The checkpoint is a
+fixed 152-byte binary state before encryption, not a JSON payload or a corpus
+manifest. Its AAD includes a separate copy-state domain and the original
+database/item scope. It binds both record identities, offsets, lengths and
+64-bit copy/verification counters. Catalog columns must agree with that state
+and the authenticated original reference before maintenance proceeds.
+
+The destination is a detached, durably registered segment. Normal appends cannot
+use it. A pending job is processed before any reclamation, pinning both source
+and destination across worker invocations and process restart. Each step copies
+or verifies at most 1MiB of stored frames in 64KiB-or-smaller buffers. Copying
+reads and writes those frames; verification rereads them, so the budget is not
+a claim of 1MiB total device I/O including SQLite metadata.
+
+The ordering is:
+
+1. Register/create/sync a detached file, then persist the encrypted initial job.
+2. Reauthenticate source frames, encrypt them for the new identity, and sync the
+   written prefix before persisting its checkpoint.
+3. On restart, truncate only bytes beyond the durable destination checkpoint and
+   replay that unpublished tail. Never truncate or overwrite the original.
+4. Independently read/authenticate the completed destination in bounded batches.
+5. Persist verified completion, compare-and-swap the unchanged SQL source
+   reference in a transaction, then delete the completed job.
+
+The catalog cursor stays at the source candidate until it can be revisited after
+publication/abandonment. A user update or deletion wins over a stale job; the old
+job is cleared without resurrecting its value. A crash after source commit but
+before job cleanup is recognized through the published reference and cannot
+publish the same relocation twice. Missing/truncated completed destinations
+cannot replace the original; corruption detected during verification also keeps
+the original reference. Files must remain private to the storage engine: this
+is not protection against an attacker rewriting previously verified bytes after
+verification, or against hardware failing after an acknowledged commit.
+
+Cooperative foreground/time-quantum yields checkpoint completed frames before
+deferring. This prevents slow batches from repeatedly losing the same progress.
+Actual cancellation, I/O failures and authentication failures still propagate;
+their uncheckpointed tail is replayed later. A disk/Keystore call remains
+non-interruptible, and source String APIs still materialize one record when an
+application reads it. These changes do not remove that separate per-record RAM
+cost or prove 100M-record query latency.
+
+Validation:
+
+- Final focused host run: **54 passed**, 25.584s, including multi-MiB real files,
+  reopen at every batch, tail replay, corrupt/missing destinations, wrong AAD,
+  checked arithmetic, detached append ownership and slow-quantum progress.
+  Runner: `tools/dev/test-memory-segment-host.ps1`. Logs:
+  `build/memory-segments-v1172-host-final/compile.log` and `tests.log`.
+- The development build, whose inputs changed while compilation was running,
+  reported one slow-quantum test failure. That failed run is retained in
+  `build/memory-segments-v1172-build.log` and was not used for installation or
+  acceptance. The subsequent frozen-source build succeeded in **10m16s**:
+  **3,681 JVM tests passed, five existing skips, zero failures/errors**, out of
+  3,686 discovered tests. The slow-quantum case passed in this run. Log:
+  `build/memory-segments-v1172-final-build.log`. The focused host cases overlap
+  the full JVM regression and must not be counted twice.
+- Installed **1.1.72 (958)** only on **SM-T575 / R52R90282TY** using data-preserving
+  replacement, with version readback and the original installation date intact.
+  APK SHA-256:
+  `6d50aaa45a665d96f21d68709428c4571b9f5900ea94b109b24bdc66d78b5233`.
+  No other connected device was operated; no uninstall, pairing reset, model
+  download or model-setting change was performed.
+- **52 real-device regressions passed** in 157.845s, including the eight new
+  SQLite/Keystore copy cases, 18 segment/maintenance cases, five background-work
+  cases, 14 browse correctness cases and seven streaming-backup correctness
+  cases. The new cases exercise partial copy checkpoints, verification before
+  publication, source updates/deletions, failed checkpoint writes after file
+  sync, destination corruption, failed cleanup after publication, invalid
+  checkpoints/AAD, and a missing verified destination. Raw log:
+  `build/memory-segments-v1172-device.log`.
+- **Three real process deaths and recovery were verified**: before source
+  commit, after source commit, and during a partially checkpointed large copy.
+  Fresh processes checked the expected old/new content or nonzero persisted
+  copy progress, then completed the copy and verified exact contents. The ten
+  phases comprise seven successful preparation/verification/cleanup runs and
+  three intentional process terminations; terminations are not counted as
+  passing tests. Cleanup only touched the isolated fixture. Raw log:
+  `build/memory-segment-recovery-v1172.log`; per-phase evidence:
+  `build/memory-segment-recovery-v1172/segments-recovery-1f6a297a76dd430ea53860702d9f641e/`.
+- Repository checks and whitespace checks passed. This run did not repeat the
+  800-sample latency matrix, 10,001-row page timing or bulk archive throughput.
+  Their historical measurements and the user's accepted small overruns remain
+  unchanged; no performance gate is waived by these correctness results.
+
+Remaining work includes isolating corrupt pending jobs so they do not block
+unrelated maintenance, low-storage faults, natural OS idle scheduling and UI
+wakeup/frame timing, source/index sharding, and native disk ANN. The single-job
+maintenance design and bounded payload copying are not a claim that a phone
+already stores or searches 100M records within 200ms.
