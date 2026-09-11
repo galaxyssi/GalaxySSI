@@ -19,7 +19,7 @@ internal class AgentMemoryRecallQuery(private val database: AgentEncryptedDataba
         val result = database.indexedTransaction { sql ->
             val source = JSONObject(database.readString(AgentPersonalMemoryRows.META, ""))
             var state = index.state(sql)
-            if (state.json.optString("source_revision") != source.getString("revision")) {
+            if (state.json.optString("source_revision") != AgentMemoryRecallRevision.content(source)) {
                 database.remove(AgentMemoryRecallIndex.MARKER)
                 state = index.state(sql)
             }

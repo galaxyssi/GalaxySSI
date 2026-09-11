@@ -29,7 +29,7 @@ internal class AgentMemoryRecallIndex(internal val database: AgentEncryptedDatab
                 // Bulk replacement removes obsolete rows after writing source metadata.
                 // Validate counts only after the entire transaction has committed.
                 if (raw != null) {
-                    state.json.put("source_revision", JSONObject(raw).getString("revision"))
+                    state.json.put("source_revision", AgentMemoryRecallRevision.content(JSONObject(raw)))
                     database.writeString(MARKER, state.json.toString())
                 }
             } else if (raw == null) sql.delete(DOCS, "row_key=?", arrayOf(key))
@@ -55,7 +55,7 @@ internal class AgentMemoryRecallIndex(internal val database: AgentEncryptedDatab
     }
 
     private fun sourceRevision(): String = if (database.contains(AgentPersonalMemoryRows.META)) {
-        JSONObject(database.readString(AgentPersonalMemoryRows.META, "")).getString("revision")
+        AgentMemoryRecallRevision.content(JSONObject(database.readString(AgentPersonalMemoryRows.META, "")))
     } else ""
 
     internal fun hasher(state: State): AgentMemoryRecallHasher = AgentMemoryRecallHasher(state.generation).also {
@@ -74,7 +74,7 @@ internal class AgentMemoryRecallIndex(internal val database: AgentEncryptedDatab
             if (!database.contains(MARKER)) return@indexedTransaction true
             val state = state(sql)
             if (state.generation != expectedGeneration || state.ready) return@indexedTransaction true
-            check(state.json.getString("source_revision") == JSONObject(database.readString(AgentPersonalMemoryRows.META, "")).getString("revision")) {
+            check(state.json.getString("source_revision") == sourceRevision()) {
                 "Memory recall backfill source revision changed"
             }
             val keys = database.keysAfter(AgentPersonalMemoryRows.PREFIX, state.cursor, limit)

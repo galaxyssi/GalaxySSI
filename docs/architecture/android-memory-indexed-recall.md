@@ -1,7 +1,7 @@
 # Indexed personal-memory recall
 
-Development version: Android 1.1.67 (953), following PR #2994. Build and device
-acceptance are pending. This is an incremental lexical-index implementation,
+Development version: Android 1.1.68 (954), following PR #2994 and integrating
+main through PR #2995. This is an incremental lexical-index implementation,
 not delivery of the 100M+ storage/vector engine or a proven 200ms guarantee.
 
 ## Actual retrieval path
@@ -35,11 +35,18 @@ new memories, bulk replacement, edits, privacy/status changes, deletion,
 scope rebinds and backup restoration. Access-time-only changes preserve
 posting membership. Bulk replacement writes metadata before removing obsolete
 rows; count checks therefore occur after the complete mutation transaction.
-The encrypted index marker is bound to the source revision. A source revision
+The encrypted index marker is bound to the source content revision. A source revision
 changed by an older writer invalidates the derived index before the next read
-or observed write, including access/importance-only updates. Rebuilding does not
+or observed content write, including after access/importance-only updates. Rebuilding does not
 delete source memories. Legacy migration permits source metadata to arrive after
 its rows. This is revision consistency, not authentication of omitted postings.
+
+The encrypted source metadata tracks the general revision, observed revision and
+content revision. Access/importance-only updates advance the general/observed
+revision without writing the index marker. A writer that only advances the
+general revision breaks that correspondence; its revision becomes the content
+token, preserving invalidation even if a subsequent access write occurs. No
+plaintext revision side table or long-lived decrypted metadata cache is added.
 
 New empty stores start with a ready index and maintain it incrementally.
 Existing row stores build the index in 16-record transactions, committing the
@@ -73,7 +80,7 @@ Caller scope policies remain separate from candidate ranking; this change does
 not establish full namespace-filtered semantic retrieval or rewrite Agent
 routing. Those still require end-to-end acceptance.
 
-## Validation plan
+## Validation scope
 
 - Pure matching-superset checks over multilingual, structured and randomized
   inputs; preserve legacy weights and stable top-K ordering.
@@ -89,7 +96,71 @@ routing. Those still require end-to-end acceptance.
   maximum and every operation above 200ms. Warm repeated recall includes the
   existing five-minute access-write throttle; distinguish it from fresh access
   persistence, migration and cold-start timing.
+  Fixtures suppress Global Agent observation publication to avoid background
+  processing or outgoing events. Write measurements cover the storage mutation
+  path, not an enabled Global Agent's observation queue or end-to-end agent turn.
+  The selective benchmark starts without a browse index; existing browse-index
+  maintenance is covered by separate access/point regression tests.
 - Re-run the existing memory identity, rows, access and paging regression cases.
+
+## First-candidate device validation
+
+Validated on SM-T575 with Android 1.1.68 (954), preserving production data and
+pairing. Fixtures use independent database, preference and file namespaces.
+No other connected device was operated. No model was downloaded or unloaded.
+
+- Full debug app/test APK build and JVM tests passed: 3,637 discovered,
+  3,632 passed, five existing skips, zero failures/errors. The seven new matching
+  and ranking tests all passed.
+- Final-build device regression: 67/67 passed (15 indexed-recall, eight identity,
+  ten row-storage, seven point-operation, 14 browse, six access and seven streaming
+  backup tests). Large timing tests run separately, not counted here.
+- Two-stage restart fixture: 129 source rows, 16 indexed at the first checkpoint;
+  a distinct process resumed the same generation/cursor and returned the sole
+  selected row after one decryption. Preparation PID 27205, resume PID 27289.
+  Instrumentation had already ended the first process before the host force-stop;
+  the host confirmed absence before starting the second process. This does not
+  demonstrate an arbitrary kill in the middle of a SQLite transaction.
+- Repository checks, 73-library Android 16KB audit and QNN packaging check passed.
+  Packaging checks do not establish unchanged ASR/QNN inference latency.
+- This candidate exposed an access-update performance regression. At 1,201 rows,
+  eight-row access updates had P95 231.31ms (100/100 above 200ms). At 10,001 rows,
+  new writes had one 207.34ms outlier. These samples are retained, not discarded.
+  The content-revision correction and its new regression tests require a fresh
+  build and same-cardinality timing before final acceptance.
+
+App APK SHA-256:
+`bf65596469a4c72330e42e4f0646776257ad137a10d4594b06d340e8b7d0c49d`.
+Test APK SHA-256:
+`0e13bc31e192275eaa3c1cd4147d3f8ec7abe8a400a277af2991d94e7b2bf383`.
+
+Local evidence is retained under `build/memory-indexed-recall-v1168-*`, including
+the complete build, instrumented regression/restart logs and raw benchmark
+logcat. No source memory body or production message is recorded in benchmark
+reports.
+
+All 800 first-candidate samples and independently recomputed percentiles are in
+[the first-candidate report](android-memory-recall-first-candidate-20260911.json).
+There were 102 operations above 200ms: one new write at 10,001 rows, 100 eight-row
+access updates at 1,201 rows, and one eight-row access update at 10,001 rows.
+The two timing tests passed their correctness assertions, not the latency goal.
+
+## Content-revision correction
+
+The correction removes index reads/writes from known non-content updates. Its
+build passes 3,638 JVM tests with five existing skips and no failures/errors,
+including six new content-revision tests. The 73-library alignment and QNN
+packaging checks pass again. All 69 device regressions pass, including two new
+tests proving unchanged index ciphertext on access/importance updates and
+preserved older-writer invalidation after an access update. Both restart stages
+also pass again (PIDs 29188 and 29268, 129 retained source rows, one candidate
+decryption). The same-cardinality timing retest is in progress; first-candidate
+numbers do not certify this build's latency.
+
+Corrected app APK SHA-256:
+`4f918ec5ce38a5e64f9b0cf3619a21e7c72827fe4b47393fda9deffd091bda55`.
+Corrected test APK SHA-256:
+`785e9ef83cd37f55eacde75f22a544b04aba1d6abda322885f7f34d73d2dc597`.
 
 ## Remaining work
 

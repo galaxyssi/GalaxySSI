@@ -207,6 +207,35 @@ class AgentMemoryIndexedRecallDeviceTest {
         assertEquals(1, f.reopen().count())
     }
 
+    @Test fun accessAndImportancePreserveTheEncryptedIndexMarker() = fixture { f ->
+        f.store.saveItems(listOf(deletionMemory(1, "nebularouting")))
+        fun ciphertext() = f.sql().use { sql ->
+            sql.rawQuery("SELECT encrypted_value FROM encrypted_values WHERE storage_key=?",
+                arrayOf(AgentMemoryRecallIndex.MARKER)).use { check(it.moveToFirst()); it.getString(0) }
+        }
+        val before = ciphertext()
+        val original = state(f).generation
+        assertEquals(1, AgentPersonalMemoryRows(f.store.database).refreshAccess(setOf("memory-1"), 10_000))
+        assertTrue(f.store.setImportant("memory-1", true))
+        assertEquals(before, ciphertext())
+        assertTrue(query(f, "nebularouting").first.usedIndex)
+        assertEquals(original, state(f).generation)
+    }
+
+    @Test fun accessWriteDoesNotConcealAnOlderWritersContentChange() = fixture { f ->
+        f.store.saveItems(listOf(deletionMemory(1, "nebularouting")))
+        val key = AgentPersonalMemoryRows.key("memory-1")
+        val body = JSONObject(f.store.database.readString(key, ""))
+        body.getJSONObject("item").put("value", "quartzgeometry")
+        val metadata = JSONObject(f.store.database.readString(AgentPersonalMemoryRows.META, ""))
+            .put("revision", java.util.UUID.randomUUID().toString())
+        f.store.database.mutateStrings(mapOf(key to body.toString(), AgentPersonalMemoryRows.META to metadata.toString()))
+        AgentPersonalMemoryRows(f.store.database).refreshAccess(setOf("memory-1"), 10_000)
+        val (diagnostic, result) = query(f, "quartzgeometry")
+        assertFalse(diagnostic.usedIndex)
+        assertEquals(listOf("memory-1"), result.map { it.id })
+    }
+
     @Test fun actualWarmRecallAndNewWriteLatencyAtRealCardinalities() {
         for (size in listOf(1_201, 10_001)) fixture { f ->
             f.store.saveItems((0 until size).map { deletionMemory(it, if (it == 0) "nebularouting" else "stored fact $it") })

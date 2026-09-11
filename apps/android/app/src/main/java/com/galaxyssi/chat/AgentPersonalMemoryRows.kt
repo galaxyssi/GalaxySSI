@@ -10,10 +10,10 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
     private val browseIndex = AgentMemoryBrowseIndex(database)
     private fun observers(recallDocumentsChanged: Boolean = true): (android.database.sqlite.SQLiteDatabase, String, String?) -> Unit {
         val browse = browseIndex.observer()
-        val recall = AgentMemoryRecallIndex(database).observer()
+        val recall = if (recallDocumentsChanged) AgentMemoryRecallIndex(database).observer() else null
         return { sql, key, value ->
             browse(sql, key, value)
-            if (recallDocumentsChanged || key == META) recall(sql, key, value)
+            recall?.invoke(sql, key, value)
         }
     }
     fun recall(query: String, now: Long, limit: Int): List<AgentMemoryItem> = synchronized(AgentMemoryStorage.lock) {
@@ -110,7 +110,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             meta.put("count", Math.addExact(meta.getInt("count"), change.after.size - before.size))
                 .put("active_count", Math.addExact(meta.getInt("active_count"),
                     change.after.count { it.status == AgentMemoryStatus.ACTIVE } - before.values.count { it.status == AgentMemoryStatus.ACTIVE }))
-                .put("next_position", position).put("revision", UUID.randomUUID().toString())
+                .put("next_position", position)
+            AgentMemoryRecallRevision.advance(meta)
             yield(META to meta.toString())
         }
         database.mutateStreaming(writes, observers()) { emptySequence() }
@@ -173,7 +174,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
             privateMemory = privateMemory ?: before.privateMemory)
         if (before != after) {
             row.put("item", AgentMemoryItemCodec.encode(after))
-            meta.put("revision", UUID.randomUUID().toString())
+            AgentMemoryRecallRevision.advance(meta, contentChanged = before.privateMemory != after.privateMemory)
             // The flag diff is known; do not decrypt both old rows again to detect unchanged writes.
             database.mutateStrings(mapOf(key(id) to row.toString(), META to meta.toString()),
                 onMutation = observers(before.privateMemory != after.privateMemory))
@@ -198,7 +199,7 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
         }
         val changed = writes.size
         if (changed > 0) {
-            meta.put("revision", UUID.randomUUID().toString())
+            AgentMemoryRecallRevision.advance(meta, contentChanged = false)
             writes[META] = meta.toString()
             // Access timestamps do not alter lookup membership or browse order.
             database.mutateStrings(writes, onMutation = observers(recallDocumentsChanged = false))
@@ -310,8 +311,8 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
                     !key.startsWith(PREFIX) && !key.startsWith(LOOKUP_PREFIX)) { "Invalid additional memory mutation key" }
                 yield(key to value)
             }
-            val meta = JSONObject().put("schema", 3).put("count", seen.size).put("active_count", active)
-                .put("revision", UUID.randomUUID().toString())
+            val meta = AgentMemoryRecallRevision.advance(JSONObject().put("schema", 3)
+                .put("count", seen.size).put("active_count", active))
             addLookupMetadata(meta, generation, Math.addExact(previousPosition, 1))
             yield(META to meta.toString())
         }
