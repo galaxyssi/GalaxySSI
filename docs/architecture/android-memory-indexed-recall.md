@@ -161,6 +161,10 @@ The corrected run has 798/800 operations at or below 200ms. All group P95 values
 meet 200ms, but the strict every-operation goal does not: two eight-row access
 updates at 1,201 rows took 201.557538ms and 202.394885ms. No sample was discarded.
 See [all corrected raw samples](android-memory-recall-corrected-20260911.json).
+The user explicitly accepted this measured result, including both small overruns,
+on 2026-09-11. This phase is accepted; the observed over-budget samples remain in
+the report and are not reclassified as being below 200ms. This acceptance does
+not certify untested cardinalities, broad queries or the full 100M+ goal.
 
 | Rows | Operation | P50 ms | P95 ms | P99 ms | Max ms | >200ms |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |

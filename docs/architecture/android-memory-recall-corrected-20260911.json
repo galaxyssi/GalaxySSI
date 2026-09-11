@@ -5,6 +5,8 @@
   "candidate": "content-revision-correction",
   "app_apk_sha256": "4f918ec5ce38a5e64f9b0cf3619a21e7c72827fe4b47393fda9deffd091bda55",
   "budget_ms": 200,
+  "user_accepted_observed_result": true,
+  "acceptance_note": "On 2026-09-11 the user accepted 798/800 samples within 200ms and the two observed 201.557538ms/202.394885ms overruns. Raw data and strict budget flags remain unchanged. This is phase acceptance, not a 100M-capacity or universal latency guarantee.",
   "total_samples": 800,
   "misses_200ms": 2,
   "all_samples_within_budget": false,
@@ -14,7 +16,7 @@
     "Selective warm recall excludes creation, backfill, cold start and broad queries; access writes are throttled in this group.",
     "Access groups initialize the browse index and include durable source and metadata updates.",
     "Sequential runs on one device, not a randomized controlled trial; no 100M or universal latency claim.",
-    "All misses retained; the strict every-operation <=200ms goal remains open."
+    "All misses retained; the strict every-operation <=200ms condition is not met, but the user accepted these measured phase results."
   ],
   "groups": [
     {
