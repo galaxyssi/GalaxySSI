@@ -95,11 +95,11 @@ object CloudModelClient {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
         val customSystemPrompt = systemPromptOverride.trim()
-        val effectiveSystemPrompt = if (customSystemPrompt.isNotBlank()) {
+        val effectiveSystemPrompt = (if (customSystemPrompt.isNotBlank()) {
             secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS)
         } else {
             defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt()
-        }
+        }) + "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
         return when (style) {
@@ -111,7 +111,7 @@ object CloudModelClient {
                     .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
                     .put("max_tokens", 1200)
                     .put("messages", messages)
-                    .put("tools", anthropicWebTools())
+                    .put("tools", anthropicWebTools(images))
                     .put("stream", true)
                     .apply {
                         if (CloudProviderPromptCachePolicy.shouldRequestExplicitCache(
@@ -159,7 +159,7 @@ object CloudModelClient {
                             .put("temperature", 0.7)
                             .put("maxOutputTokens", 1200)
                     )
-                    .put("tools", geminiWebTools())
+                    .put("tools", geminiWebTools(images))
                 PreparedCloudConversationStream(
                     requestId = requestId,
                     provider = ModelStreamProvider.GEMINI,
@@ -180,7 +180,7 @@ object CloudModelClient {
                     .put("model", contact.getString("cloud_model"))
                     .put("messages", messages)
                     .put("stream", true)
-                    .put("tools", CloudWebGrounding.openAiTools())
+                    .put("tools", conversationTools(images))
                     .put("tool_choice", "auto")
                 PreparedCloudConversationStream(
                     requestId = requestId,
@@ -530,8 +530,10 @@ object CloudModelClient {
         contextWindow: Int,
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
+        val imageSession = CloudImageAnnotationSession(context, images)
         val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt() +
+                "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(
             context,
             contact,
@@ -547,7 +549,7 @@ object CloudModelClient {
             .put("messages", messages)
             .put("stream", false)
             .apply {
-                put("tools", CloudWebGrounding.openAiTools())
+                put("tools", conversationTools(images))
                 put("tool_choice", "auto")
             }
             .apply { if (!isDefaultSystemPrompt(systemPrompt)) put("temperature", 0.1) }
@@ -627,7 +629,8 @@ object CloudModelClient {
                         CloudToolEvent(toolName, "running", arguments.toString().take(240))
                     )
                     val cached = toolProgress.cached(toolName, arguments)
-                    val toolResult = cached ?: CloudWebGrounding.executeTool(context, toolName, arguments)
+                    val toolResult = cached ?: imageSession.execute(toolName, arguments)
+                    imageSession.selectResult(toolResult)
                     if (cached == null && toolProgress.record(toolName, arguments, toolResult)) {
                         evidenceResults += toolName to toolResult
                         madeProgress = true
@@ -654,7 +657,8 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val cached = toolProgress.cached(call.name, call.arguments)
-                    val toolResult = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    val toolResult = cached ?: imageSession.execute(call.name, call.arguments)
+                    imageSession.selectResult(toolResult)
                     if (cached == null && toolProgress.record(call.name, call.arguments, toolResult)) {
                         evidenceResults += call.name to toolResult
                         madeProgress = true
@@ -742,7 +746,7 @@ object CloudModelClient {
         if (reply.isBlank() || CloudWebGrounding.citationValidation(reply, evidenceResults).requiresRepair) {
             reply = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
-        return CloudModelResponse(reply, usage.inputTokens, usage.outputTokens, usage.costMicros)
+        return CloudModelResponse(imageSession.appendTo(reply), usage.inputTokens, usage.outputTokens, usage.costMicros)
     }
 
     private fun sendAnthropicWithUsage(
@@ -765,8 +769,10 @@ object CloudModelClient {
         contextWindow: Int,
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
+        val imageSession = CloudImageAnnotationSession(context, images)
         val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt() +
+                "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val messages = anthropicMessages(compiled.messages)
@@ -776,7 +782,7 @@ object CloudModelClient {
             .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
             .put("max_tokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
             .put("messages", messages)
-            .put("tools", anthropicWebTools())
+            .put("tools", anthropicWebTools(images))
             .apply {
                 if (CloudProviderPromptCachePolicy.shouldRequestExplicitCache(
                         apiStyle = "anthropic",
@@ -847,7 +853,8 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val cached = toolProgress.cached(call.name, call.arguments)
-                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    val result = cached ?: imageSession.execute(call.name, call.arguments)
+                    imageSession.selectResult(result)
                     if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
                         evidenceResults += call.name to result
                         madeProgress = true
@@ -875,7 +882,8 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val cached = toolProgress.cached(call.name, call.arguments)
-                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    val result = cached ?: imageSession.execute(call.name, call.arguments)
+                    imageSession.selectResult(result)
                     if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
                         evidenceResults += call.name to result
                         madeProgress = true
@@ -965,7 +973,7 @@ object CloudModelClient {
             finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(
-            finalText,
+            imageSession.appendTo(finalText),
             totalUsage.inputTokens,
             totalUsage.outputTokens,
             totalUsage.costMicros
@@ -992,11 +1000,13 @@ object CloudModelClient {
         contextWindow: Int,
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
+        val imageSession = CloudImageAnnotationSession(context, images)
         val endpoint = contact.getString("cloud_endpoint")
         val separator = if (endpoint.contains("?")) "&" else "?"
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
         val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt() +
+                "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val contents = geminiContents(compiled.messages)
@@ -1010,7 +1020,7 @@ object CloudModelClient {
                 .put("temperature", if (isDefaultSystemPrompt(systemPrompt)) 0.7 else 0.1)
                 .put("maxOutputTokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
             )
-            .put("tools", geminiWebTools())
+            .put("tools", geminiWebTools(images))
         var totalUsage = CloudModelUsage()
         var finalText = ""
         val toolProgress = CloudWebToolLoopProgress()
@@ -1089,7 +1099,8 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val cached = toolProgress.cached(call.name, call.arguments)
-                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    val result = cached ?: imageSession.execute(call.name, call.arguments)
+                    imageSession.selectResult(result)
                     if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
                         evidenceResults += call.name to result
                         madeProgress = true
@@ -1122,7 +1133,8 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val cached = toolProgress.cached(call.name, call.arguments)
-                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    val result = cached ?: imageSession.execute(call.name, call.arguments)
+                    imageSession.selectResult(result)
                     if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
                         evidenceResults += call.name to result
                         madeProgress = true
@@ -1222,7 +1234,7 @@ object CloudModelClient {
             finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(
-            finalText,
+            imageSession.appendTo(finalText),
             totalUsage.inputTokens,
             totalUsage.outputTokens,
             totalUsage.costMicros
@@ -1312,8 +1324,12 @@ object CloudModelClient {
         val arguments: JSONObject
     )
 
-    private fun anthropicWebTools(): JSONArray {
-        val source = CloudWebGrounding.openAiTools()
+    internal fun conversationTools(images: List<CloudImagePayload>): JSONArray = CloudWebGrounding.openAiTools().apply {
+        if (images.isNotEmpty()) put(CloudImageAnnotationPlan.definition())
+    }
+
+    private fun anthropicWebTools(images: List<CloudImagePayload> = emptyList()): JSONArray {
+        val source = conversationTools(images)
         return JSONArray().apply {
             for (index in 0 until source.length()) {
                 val function = source.optJSONObject(index)?.optJSONObject("function") ?: continue
@@ -1326,8 +1342,8 @@ object CloudModelClient {
         }
     }
 
-    private fun geminiWebTools(): JSONArray {
-        val source = CloudWebGrounding.openAiTools()
+    private fun geminiWebTools(images: List<CloudImagePayload> = emptyList()): JSONArray {
+        val source = conversationTools(images)
         val declarations = JSONArray()
         for (index in 0 until source.length()) {
             val function = source.optJSONObject(index)?.optJSONObject("function") ?: continue

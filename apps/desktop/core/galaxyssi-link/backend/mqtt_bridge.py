@@ -3819,7 +3819,8 @@ def _agent_task_payload(
         and status not in TERMINAL_STATES
         and isinstance(partial_result, dict)
     ):
-        text = str(partial_result.get("text") or "")
+        from remote_reply_images import image_link_preview
+        text = image_link_preview(str(partial_result.get("text") or ""))
         sequence = max(0, int(partial_result.get("sequence") or 0))
         if text and sequence:
             cumulative_partial = {
@@ -3834,7 +3835,8 @@ def _agent_task_payload(
             payload["event_id"] = cumulative_partial["event_id"]
             payload["payload"] = cumulative_partial
     if status in TERMINAL_STATES and str(task.get("result") or "").strip():
-        payload["result_summary"] = str(task.get("result") or "")
+        from remote_reply_images import image_link_preview
+        payload["result_summary"] = image_link_preview(str(task.get("result") or ""))
     if readable_progress:
         payload["events"] = readable_progress
     receipt, snapshot = _task_reputation_evidence(task)
@@ -5104,6 +5106,21 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
         task_id = str(task.get("task_id") or "")
         raw_result = str(task.get("result") or "")
+        from remote_reply_images import PreparedReplyImages, prepare_reply_images
+        remote_images = PreparedReplyImages(raw_result)
+        if not plan_only and not structured_connector_response:
+            remote_images = prepare_reply_images(task_id, raw_result, scope={
+                "task_id": task_id, "client_route_id": client_route_id,
+                "conversation_id": task.get("client_conversation_id") or client_conversation_id,
+                "turn_id": _client_task_turn_id(task), "source_message_id": source_message_id,
+                "execution_generation": task.get("execution_generation", 1),
+            })
+            raw_result = remote_images.content
+            if remote_images.files or remote_images.failures:
+                add_task_trace("remote_image_prepared",
+                               f"images={len(remote_images.files)} failed={len(remote_images.failures)}", once=True)
+            if execution is not None and not execution.accepts(task):
+                return
         hidden_inputs: list[str] = []
         hidden_artifact_paths: list[str] = []
         generated_output_files = task_artifacts(task_id)
@@ -5153,7 +5170,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
             )
         from task_workspace import select_reply_artifacts
-        output_files = select_reply_artifacts(raw_result, list(finalization.output_files), task_id)
+        output_files = select_reply_artifacts(raw_result, remote_images.include_files(finalization.output_files), task_id)
         from blob_artifact_publication import prepare_for_route
         from blob_protocol import BlobError
         preparation_error = None
@@ -8813,15 +8830,32 @@ def republish_agent_task_result(task_id: str) -> dict:
     resumed = resume_deferred_artifacts(sys.modules[__name__], task.public(), route_id)
     if resumed is not None:
         return resumed
+    from remote_reply_images import prepare_reply_images
+    public_task = task.public()
+    remote_images = prepare_reply_images(public_task["task_id"], str(public_task.get("result") or ""), scope={
+        "task_id": public_task["task_id"], "client_route_id": route_id,
+        "conversation_id": public_task.get("client_conversation_id") or public_task.get("conversation_id"),
+        "turn_id": _client_task_turn_id(public_task), "source_message_id": str(public_task.get("source_message_id") or ""),
+        "execution_generation": public_task.get("execution_generation", 1),
+    })
+    current = agent_task_manager.get(task.task_id)
+    latest = current.public() if current is not None else {}
+    if any(latest.get(key) != public_task.get(key) for key in (
+        "task_id", "status", "result", "client_route_id", "client_conversation_id", "conversation_id",
+        "client_turn_id", "source_message_id", "execution_generation",
+    )):
+        return api_error("agent_task_result_changed", task_id=public_task["task_id"])
+    public_task["result"] = remote_images.content
+    public_task["output_files"] = remote_images.include_files(public_task.get("output_files") or [])
     from artifact_delivery import prepare_artifacts, register_artifact_batch
 
-    artifacts = prepare_artifacts(task.task_id, list(task.output_files or []))
+    artifacts = prepare_artifacts(task.task_id, public_task["output_files"])
     register_artifact_batch(
         artifacts,
         client_route_id=route_id,
         retain_on_desktop=False,
     )
-    payload = _build_republished_task_result(task.public(), route_id)
+    payload = _build_republished_task_result(public_task, route_id)
     wire_payload = {"scheme": "signal", "_client_route_id": route_id}
     if _publish_or_queue_task_result(client, wire_payload, payload, replay=True):
         _publish_task_artifacts(

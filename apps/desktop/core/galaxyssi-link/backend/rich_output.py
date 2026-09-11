@@ -252,6 +252,8 @@ def _artifact_block(raw: dict, task_id: str, inline_artifacts: bool = True) -> d
             "sha256": original_digest,
         },
     }
+    if raw.get("source_url"):
+        block["metadata"]["source_url"] = str(raw["source_url"])[:2000]
     if not inline_artifacts:
         block["metadata"]["transport"] = "encrypted-fragmented"
     inline = _inline_artifact(task_id, relative, mime_type) if inline_artifacts else None

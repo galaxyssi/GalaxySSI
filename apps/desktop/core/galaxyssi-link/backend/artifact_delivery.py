@@ -24,6 +24,12 @@ LEDGER_NAME = ".artifact-delivery-ledger.json"
 LEDGER_TTL_SECONDS = 7 * 24 * 60 * 60
 APK_MIME_TYPE = "application/vnd.android.package-archive"
 MIME_OVERRIDES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".avif": "image/avif",
     ".apk": APK_MIME_TYPE,
     ".aab": "application/octet-stream",
     ".apks": "application/zip",

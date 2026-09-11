@@ -17,6 +17,12 @@ internal class CloudWebToolLoopProgress {
         var gainedEvidence = false
         outputs.forEach { encoded ->
             val output = runCatching { JSONObject(encoded) }.getOrNull() ?: return@forEach
+            if (output.optString("tool") == CloudImageAnnotationPlan.TOOL &&
+                output.optString("status") == "completed" && output.optBoolean("image_saved")
+            ) {
+                val hash = output.optString("image_sha256")
+                if (hash.matches(Regex("[a-f0-9]{64}")) && evidenceKeys.add("annotation:$hash")) gainedEvidence = true
+            }
             val items = output.optJSONObject("evidence_pack")?.optJSONArray("items") ?: JSONArray()
             for (index in 0 until items.length()) {
                 val item = items.optJSONObject(index) ?: continue
