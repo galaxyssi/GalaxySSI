@@ -1,10 +1,13 @@
 //! Encrypted physical SQLite shards. All mutation files participate in one
 //! rollback-journal transaction; WAL must never be used for this store.
+mod cache;
 mod codec;
 mod records;
 mod session;
 use crate::store::{MAX_NEIGHBORS, Node, ROOT};
 use aes_gcm::aead::{OsRng, rand_core::RngCore};
+use cache::NodeCache;
+pub use cache::NodeCacheStats;
 use codec::{Crypto, Metadata};
 use diskann::{ANNError, ANNResult};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, config::DbConfig, limits::Limit, params};
@@ -33,10 +36,18 @@ impl<T> SqlResult<T> for rusqlite::Result<T> {
 pub struct StoreConfig {
     pub dimensions: usize,
     pub shards: usize,
-    /// Aggregate SQLite pager-cache target; not a whole-process RSS limit.
+    /// Combined pager and transaction-node cache target; not a whole-process RSS limit.
     pub cache_bytes: usize,
 }
 impl StoreConfig {
+    pub fn node_cache_bytes(&self) -> usize {
+        // Preserve a minimum 16KiB pager per database; avoid oversized small-store caches.
+        (self
+            .cache_bytes
+            .saturating_sub((self.shards + 1) * 16 * 1024)
+            / 4)
+        .min(4 * 1024 * 1024)
+    }
     fn validate(&self) -> ANNResult<()> {
         if !(1..=8192).contains(&self.dimensions)
             || !self.shards.is_power_of_two()
@@ -65,6 +76,7 @@ struct Active {
     failed: bool,
     dirty: bool,
     meta: Metadata,
+    cache: NodeCache,
 }
 struct Inner {
     connection: Option<Connection>,
@@ -222,6 +234,7 @@ impl SqliteIndexStore {
                     failed: false,
                     dirty: false,
                     meta,
+                    cache: NodeCache::new(self.config.node_cache_bytes(), self.config.dimensions),
                 })
             }
             Err(error) => {
@@ -294,7 +307,7 @@ fn connect(path: &Path, config: StoreConfig, create: bool) -> ANNResult<Connecti
             )
             .ann()?;
     }
-    let cache_kib = config.cache_bytes / 1024 / (config.shards + 1);
+    let cache_kib = (config.cache_bytes - config.node_cache_bytes()) / 1024 / (config.shards + 1);
     for schema in
         std::iter::once("main".to_owned()).chain((0..config.shards).map(|v| format!("s{v}")))
     {

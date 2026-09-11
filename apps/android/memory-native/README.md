@@ -1,6 +1,6 @@
 # Native memory index candidate
 
-Version **0.4.0** provides the JNI backend used by Android knowledge semantic
+Version **0.4.1** provides the JNI backend used by Android knowledge semantic
 retrieval. It replaces the transient whole-corpus JVM graph, not the authoritative
 encrypted source database. This is **not a completed 100M-memory implementation**.
 The isolated probe still never reads or changes App data; the App bridge maintains
@@ -26,12 +26,17 @@ its own derived index and Keystore-wrapped key.
   IDs/distances and operating-system copies still require memory analysis.
 - Inserts require one host transaction covering the new vector and all neighbor
   changes; searches require a stable host snapshot. A failed operation propagates
-  its error. The App bridge must enforce those boundaries before activation.
+  its error. The App JNI bridge and replay consumer enforce those boundaries.
 - The optional `sqlite-store` implements encrypted physical node shards and a
   durable transaction/snapshot owner. Version 0.3.0 added bounded mutation replay,
   transactional provenance and stale-source filtering. The `android-jni` feature
   adds opaque handle ownership, synchronous bounded calls and cancellation.
   Android validates source revisions and access policy after candidate retrieval.
+- A bounded transaction-local node cache avoids repeated row decryption during
+  graph construction. It shares the configured cache budget with SQLite pagers,
+  never survives commit/rollback and never bypasses cancellation or source checks.
+  Its maximum is 4MiB; small budgets leave the cache disabled rather than raising
+  the requested memory target. See [scale measurements](../../../docs/architecture/android-native-memory-scale.md).
 
 ## Build prerequisites
 

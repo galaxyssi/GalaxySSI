@@ -20,8 +20,8 @@ use diskann::{
 use diskann_vector::distance::Metric;
 use std::{num::NonZeroUsize, sync::Arc};
 
-/// Candidate native engine. The App bridge must supply encrypted storage and
-/// transaction/lifecycle ownership before this replaces production retrieval.
+/// Disk graph engine. The caller supplies authenticated storage and owns the
+/// transaction/snapshot and lifecycle boundaries for every operation.
 pub struct Index<S: NodeStore> {
     graph: DiskANNIndex<Provider<S>>,
 }
