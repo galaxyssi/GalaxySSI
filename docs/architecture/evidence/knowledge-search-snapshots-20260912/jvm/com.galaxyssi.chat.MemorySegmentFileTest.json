@@ -1,0 +1,105 @@
+{
+  "name": "com.galaxyssi.chat.MemorySegmentFileTest",
+  "tests": 19,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.817,
+  "cases": [
+    {
+      "name": "rawOrphanAppendDoesNotChangeAnyPublishedReference",
+      "seconds": 0.027,
+      "outcome": "passed"
+    },
+    {
+      "name": "falsifiedLengthsAndBlockCountsFail",
+      "seconds": 0.024,
+      "outcome": "passed"
+    },
+    {
+      "name": "everyCorruptByteInASmallRecordIsRejected",
+      "seconds": 0.062,
+      "outcome": "passed"
+    },
+    {
+      "name": "registrationFailureNeverPublishesAnUnregisteredFile",
+      "seconds": 0.017,
+      "outcome": "passed"
+    },
+    {
+      "name": "callerMustConsumeTheCompleteAuthenticatedRecord",
+      "seconds": 0.024,
+      "outcome": "passed"
+    },
+    {
+      "name": "referenceUsesCheckedLongOffsetsAndExactEncoding",
+      "seconds": 0.005,
+      "outcome": "passed"
+    },
+    {
+      "name": "authenticatedRoundTripAcrossBlockBoundaries",
+      "seconds": 0.111,
+      "outcome": "passed"
+    },
+    {
+      "name": "compactionReauthenticatesLocationsAndKeepsTheOriginalUntilReclaimed",
+      "seconds": 0.044,
+      "outcome": "passed"
+    },
+    {
+      "name": "pinnedReadStillRejectsWrongScopeAndPartialConsumption",
+      "seconds": 0.031,
+      "outcome": "passed"
+    },
+    {
+      "name": "reclaimedActiveSegmentIsNeverRecreatedUnderItsOldIdentity",
+      "seconds": 0.038,
+      "outcome": "passed"
+    },
+    {
+      "name": "directorySyncFailureDoesNotPublishAReference",
+      "seconds": 0.026,
+      "outcome": "passed"
+    },
+    {
+      "name": "emptyOrMalformedProducerCannotPublish",
+      "seconds": 0.027,
+      "outcome": "passed"
+    },
+    {
+      "name": "failedTailNeverReplacesPreviouslyCommittedBytes",
+      "seconds": 0.024,
+      "outcome": "passed"
+    },
+    {
+      "name": "cancellationBetweenFramesKeepsThePublishedSourceAndAbandonsTheTail",
+      "seconds": 0.053,
+      "outcome": "passed"
+    },
+    {
+      "name": "missingAndTruncatedFilesAreNotAnEmptyMemory",
+      "seconds": 0.027,
+      "outcome": "passed"
+    },
+    {
+      "name": "identityScopeAndOffsetSwapsFailAuthentication",
+      "seconds": 0.028,
+      "outcome": "passed"
+    },
+    {
+      "name": "pinnedReadAllowsConcurrentAppendToTheSameSegment",
+      "seconds": 0.042,
+      "outcome": "passed"
+    },
+    {
+      "name": "pinnedReadersHaveIndependentOffsetsAndAuthenticationState",
+      "seconds": 0.014,
+      "outcome": "passed"
+    },
+    {
+      "name": "partitionsRotateAndReferencesSurviveReopen",
+      "seconds": 0.182,
+      "outcome": "passed"
+    }
+  ]
+}

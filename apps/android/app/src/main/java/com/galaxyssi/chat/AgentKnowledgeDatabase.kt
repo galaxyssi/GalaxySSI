@@ -31,8 +31,8 @@ internal class AgentKnowledgeDatabase private constructor(
     internal var sourcePreviewMisses = 0L
         private set
     internal val sourceMaintenance = KnowledgeSourceMaintenance(this)
-    internal var decryptedItemReads = 0L
-        private set
+    private val itemReads = java.util.concurrent.atomic.AtomicLong()
+    internal val decryptedItemReads: Long get() = itemReads.get()
     internal var decryptedSourceSummaryReads = 0L
         private set
     internal var indexFailure: String? = null
@@ -164,6 +164,15 @@ internal class AgentKnowledgeDatabase private constructor(
     internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
         KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
     }
+    internal fun searchSnapshot(): KnowledgeSearchSnapshot {
+        var view: KnowledgeSearchSnapshot? = null
+        try {
+            return access { KnowledgeSearchSnapshot(this, context.getDatabasePath(name).absolutePath).also { view = it } }
+        } catch (failure: Throwable) {
+            try { view?.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+            throw failure
+        }
+    }
     internal fun sourceSnapshot(selection: KnowledgeSourceSelection, expectedRevision: String): KnowledgeSourceSnapshot = access {
         KnowledgeSourceSnapshot(this, context.getDatabasePath(name).absolutePath, selection, expectedRevision)
     }
@@ -287,7 +296,7 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     private fun readBody(db: KnowledgeSqlite, id: String, header: JSONObject): AgentKnowledgeItem {
-        decryptedItemReads++
+        itemReads.incrementAndGet()
         val encoded = readEncoded(db, id, header)
         return requireNotNull(AgentKnowledgeCodec.decodeItem(JSONObject(encoded))).also {
             check(key("id", it.id) == id) { "Knowledge identity mismatch" }
@@ -350,16 +359,18 @@ internal class AgentKnowledgeDatabase private constructor(
         searchTokens().use { AgentKnowledgeFtsIndex.put(db, id, item, it) }
     }
 
-    fun candidates(db: KnowledgeSqlite, query: String, limit: Int): Sequence<AgentKnowledgeItem> {
+    fun candidates(db: KnowledgeSqlite, query: String, limit: Int, checkActive: () -> Unit = {}): Sequence<AgentKnowledgeItem> {
+        checkActive()
         val ids = searchTokens().use { AgentKnowledgeFtsIndex.search(db, query, limit, it) }
         return sequence {
-            ids.forEach { yield(requireNotNull(read(db, it))) }
+            ids.forEach { checkActive(); yield(requireNotNull(read(db, it))) }
             // Until backfill completes, only pending rows need lexical scanning.
             var after = ""
             while (true) {
+                checkActive()
                 val page = AgentKnowledgeFtsIndex.pending(db, 32, after)
                 if (page.isEmpty()) break
-                page.forEach { if (it !in ids) yield(requireNotNull(read(db, it))) }
+                page.forEach { checkActive(); if (it !in ids) yield(requireNotNull(read(db, it))) }
                 after = page.last()
             }
         }

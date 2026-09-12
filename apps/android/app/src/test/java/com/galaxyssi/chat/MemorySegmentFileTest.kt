@@ -46,6 +46,51 @@ class MemorySegmentFileTest {
         assertEquals(65_536, largestBlock)
     }
 
+    @Test fun pinnedReadAllowsConcurrentAppendToTheSameSegment() {
+        val s = MemorySegmentFile(temporary.newFolder(), ::encrypt, ::decrypt, {})
+        val original = bytes(70_019)
+        val r = s.append(scope) { it.write(original) }
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val result = s.readPinned(r, scope) { input ->
+                val first = input.read()
+                val next = executor.submit<MemorySegmentFile.Reference> { s.append(scope) { it.write(bytes(8000)) } }
+                    .get(5, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals(r.segment, next.segment)
+                assertArrayEquals(bytes(8000), s.readPinned(next, scope) { it.readBytes() })
+                byteArrayOf(first.toByte()) + input.readBytes()
+            }
+            assertArrayEquals(original, result)
+        } finally { executor.shutdownNow(); assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) }
+    }
+
+    @Test fun pinnedReadersHaveIndependentOffsetsAndAuthenticationState() {
+        val s = store(temporary.newFolder())
+        val original = bytes(150_003)
+        val r = s.append(scope) { it.write(original) }
+        val entered = java.util.concurrent.CountDownLatch(2)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val futures = (1..2).map {
+                executor.submit<ByteArray> { s.readPinned(r, scope) { input ->
+                    val first = input.read()
+                    entered.countDown()
+                    assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    byteArrayOf(first.toByte()) + input.readBytes()
+                } }
+            }
+            futures.forEach { assertArrayEquals(original, it.get(5, java.util.concurrent.TimeUnit.SECONDS)) }
+        } finally { executor.shutdownNow(); assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) }
+    }
+
+    @Test fun pinnedReadStillRejectsWrongScopeAndPartialConsumption() {
+        val s = store(temporary.newFolder())
+        val r = s.append(scope) { it.write(bytes(70_000)) }
+        fails { s.readPinned(r, "other scope".toByteArray()) { it.readBytes() } }
+        fails { s.readPinned(r, scope) { it.read() } }
+        assertArrayEquals(bytes(70_000), s.readPinned(r, scope) { it.readBytes() })
+    }
+
     @Test fun partitionsRotateAndReferencesSurviveReopen() {
         val root = temporary.newFolder()
         val s = store(root)

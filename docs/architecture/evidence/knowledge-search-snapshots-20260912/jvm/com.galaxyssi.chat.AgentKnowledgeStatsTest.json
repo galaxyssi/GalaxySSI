@@ -1,0 +1,20 @@
+{
+  "name": "com.galaxyssi.chat.AgentKnowledgeStatsTest",
+  "tests": 2,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.009,
+  "cases": [
+    {
+      "name": "exactCountsKeepTheExistingSummaryAndSupport64BitValues",
+      "seconds": 0.008,
+      "outcome": "passed"
+    },
+    {
+      "name": "incompleteCountsCannotBeMistakenForExactOrEmptyCounts",
+      "seconds": 0.001,
+      "outcome": "passed"
+    }
+  ]
+}

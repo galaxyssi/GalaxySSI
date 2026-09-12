@@ -1,0 +1,15 @@
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeSourceSnapshotDeviceTest
+INSTRUMENTATION_STATUS: current=53
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=66
+INSTRUMENTATION_STATUS: stream=
+com.galaxyssi.chat.KnowledgeSourceSnapshotDeviceTest:
+INSTRUMENTATION_STATUS: test=bodyHeaderAndPreviewShareOnePermissionSnapshot
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeSourceSnapshotDeviceTest
+INSTRUMENTATION_STATUS: current=53
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=66
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=bodyHeaderAndPreviewShareOnePermissionSnapshot
+INSTRUMENTATION_STATUS_CODE: 0

@@ -1,0 +1,50 @@
+{
+  "name": "com.galaxyssi.chat.MemorySegmentSweepTest",
+  "tests": 8,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.017,
+  "cases": [
+    {
+      "name": "noHardActionOrSegmentCountStopsAHealthySweep",
+      "seconds": 0.006,
+      "outcome": "passed"
+    },
+    {
+      "name": "foregroundChangeCanInterruptAnInFlightCopy",
+      "seconds": 0.002,
+      "outcome": "passed"
+    },
+    {
+      "name": "quantumExpiryIsCheckedInsideCopiesToo",
+      "seconds": 0.001,
+      "outcome": "passed"
+    },
+    {
+      "name": "finishesWhenTheDurableCycleIsComplete",
+      "seconds": 0.002,
+      "outcome": "passed"
+    },
+    {
+      "name": "foregroundOrStopBeforeStartDoesNoStorageWork",
+      "seconds": 0.002,
+      "outcome": "passed"
+    },
+    {
+      "name": "storageFailureAndCancellationAreNotSuccessfulEmptyCycles",
+      "seconds": 0.001,
+      "outcome": "passed"
+    },
+    {
+      "name": "busyStoreYieldsWithoutPollingOrConsumingTheNextPage",
+      "seconds": 0.001,
+      "outcome": "passed"
+    },
+    {
+      "name": "quantumExpiryStopsBeforeStartingAnotherStorageTransaction",
+      "seconds": 0.002,
+      "outcome": "passed"
+    }
+  ]
+}

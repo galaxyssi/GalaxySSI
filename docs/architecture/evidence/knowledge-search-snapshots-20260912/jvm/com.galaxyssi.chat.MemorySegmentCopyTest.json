@@ -1,0 +1,70 @@
+{
+  "name": "com.galaxyssi.chat.MemorySegmentCopyTest",
+  "tests": 12,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 1.807,
+  "cases": [
+    {
+      "name": "invalidCheckpointArithmeticAndSelfOverwriteAreRejected",
+      "seconds": 0.034,
+      "outcome": "passed"
+    },
+    {
+      "name": "detachedDestinationIsNotUsedByNormalAppends",
+      "seconds": 0.025,
+      "outcome": "passed"
+    },
+    {
+      "name": "completedCheckpointStillRequiresTheDestinationToExistAtPublication",
+      "seconds": 0.029,
+      "outcome": "passed"
+    },
+    {
+      "name": "cancellationDoesNotAdvanceTheCheckpointOrOverwriteTheOriginal",
+      "seconds": 0.364,
+      "outcome": "passed"
+    },
+    {
+      "name": "fullCopyIsNotCompleteUntilAnIndependentVerificationPass",
+      "seconds": 0.025,
+      "outcome": "passed"
+    },
+    {
+      "name": "unpublishedTailIsTruncatedAndReplayedFromTheDurableCheckpoint",
+      "seconds": 0.351,
+      "outcome": "passed"
+    },
+    {
+      "name": "realMultiMegabyteCopyReopensAtEveryCheckpointAndVerifiesBeforeCompletion",
+      "seconds": 0.344,
+      "outcome": "passed"
+    },
+    {
+      "name": "wrongScopeAndFrameOrdinalFailAuthentication",
+      "seconds": 0.107,
+      "outcome": "passed"
+    },
+    {
+      "name": "longOffsetsArePreservedWithoutIntTruncation",
+      "seconds": 0.001,
+      "outcome": "passed"
+    },
+    {
+      "name": "aSlowBatchCheckpointsCompletedFramesBeforeYieldingInsteadOfLivelocking",
+      "seconds": 0.242,
+      "outcome": "passed"
+    },
+    {
+      "name": "aMissingOrShortCheckpointedDestinationFailsWithoutRecreatingIt",
+      "seconds": 0.252,
+      "outcome": "passed"
+    },
+    {
+      "name": "copiedDataCorruptionIsDetectedBeforeSourcePublication",
+      "seconds": 0.028,
+      "outcome": "passed"
+    }
+  ]
+}

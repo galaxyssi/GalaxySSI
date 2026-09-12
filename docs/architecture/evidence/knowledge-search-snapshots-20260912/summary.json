@@ -1,0 +1,48 @@
+{
+  "main": "7aba9f6b0435fa5cabfe614e656b0083d4fa9a06",
+  "branch": "perf/knowledge-read-snapshots-20260912",
+  "version": "1.1.104",
+  "version_code": 990,
+  "schema": 12,
+  "device": "SM-T575",
+  "serial": "R52R90282TY",
+  "installed_in_place": true,
+  "app_sha256": "79623b717cb6558569b81126df5f531da066b089071a544b29e15595c7a06140",
+  "test_apk_sha256": "a283998fb798664dd7726f9f38762803c238047bb0b83dc7cf88cf5e4f054a0b",
+  "final_build": {"successful": true, "seconds": 686, "compiler_heap_mib": 8192},
+  "final_jvm": {"suites": 9, "tests": 61, "passed": 61, "failures": 0, "errors": 0, "skipped": 0, "evidence": "jvm"},
+  "earlier_full_jvm": {
+    "suites": 544, "tests_including_skips": 3806, "passed": 3801,
+    "failures": 0, "errors": 0, "existing_skips": 5,
+    "scope": "Before the final two-line lifecycle publication ordering fix. Final JVM verification is targeted; final device verification covers the added lifecycle race."
+  },
+  "device_regression": {"passed": 66, "failures": 0, "seconds": 191.070, "evidence": "device"},
+  "selective_lexical_query": {
+    "actual_encrypted_records": 1201,
+    "decrypted_items_per_query": 1,
+    "initial_elapsed_ms": 65,
+    "hot_samples": 100,
+    "p50_ms": 28, "p95_ms": 46, "p99_ms": 49,
+    "evidence": "device-metrics.txt",
+    "scope": "One selective workload; not a broad-query, full-ANN, model, UI, cold-device, scale-trend or 100M benchmark."
+  },
+  "concurrent_append": {"elapsed_ms": 273, "within_200ms": false, "scope": "Full encrypted source append while a payload reader stays open; includes storage and indexing, not only lock admission."},
+  "payload_recovery": {
+    "phases_passed": 7, "actual_process_deaths": 3,
+    "retained_fixture": "test-payload-recovery-a9835c8769c44185958cfb5fa0b658c6.db",
+    "evidence": "payload-recovery"
+  },
+  "compaction_recovery": {
+    "phases_passed": 8, "actual_process_deaths": 3,
+    "retained_fixture": "test-knowledge-payload-4c6adf10-0751-40ac-a15e-fd763d986b2e.db",
+    "evidence": "compaction-recovery"
+  },
+  "aarch64_16kib_libraries_passed": 74,
+  "integration_note": "PR3029 was merged into this branch after Android compilation; its nine changed files are Desktop-only and do not alter the tested Android sources.",
+  "limits": [
+    "Legacy unindexed fallback still traverses pending rows completely in keyset pages.",
+    "Large individual bodies are still fully decoded for lexical scoring.",
+    "Final validation omits concurrently modified evidence rather than retrying indefinitely.",
+    "100M capacity, complete metadata/FTS partitioning, universal 200ms, device reboot, full tracing, unified kernel and ordinary Agent DAG acceptance remain incomplete."
+  ]
+}

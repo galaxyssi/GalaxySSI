@@ -91,11 +91,57 @@ class KnowledgeHybridSearchDeviceTest {
         assertTrue(f.store.search("apple", 8).isEmpty())
         assertTrue(f.store.semanticSearchStatus.startsWith("unavailable:"))
     }
+    @Test fun hybridRankingSharesAReadViewWithoutHoldingWriterAndRevalidatesEvidence() = isolated { f ->
+        val session = prepare(f)
+        val writer = Executors.newSingleThreadExecutor()
+        try {
+            val result = session.search("apple", 8) { read ->
+                assertNotNull(read)
+                assertEquals("fruit", KnowledgeLexicalSearch.search(requireNotNull(read), "orchard", 8).single().item.id)
+                writer.submit { f.store.upsert(AgentKnowledgeItem("fruit", AgentKnowledgeKind.NOTE, "F", "harbor")) }
+                    .get(10, TimeUnit.SECONDS)
+                // The WAL view still contains the old item, but final publication must reject it.
+                KnowledgeLexicalSearch.search(read, "orchard", 8)
+            }
+            assertTrue(result.isEmpty())
+            assertTrue(f.store.search("orchard", 8).isEmpty())
+        } finally { writer.shutdownNow(); assertTrue(writer.awaitTermination(10, TimeUnit.SECONDS)) }
+    }
     @Test fun insufficientAnnMemoryIsExplicitAndKeepsLexicalResultsAndAllSources() = isolated { f ->
         f.store.attachSemanticEncoder(spec, { f.encoder }, budgetBytes = 1)
         assertEquals("fruit", f.store.search("orchard", 8).single().id)
         assertTrue(f.store.semanticSearchStatus.startsWith("unavailable:"))
         assertEquals(2L, f.store.stats().itemCount)
+    }
+    @Test fun lifecycleInvalidationDuringPublicationCannotReturnStaleEvidence() = isolated { f ->
+        val session = prepare(f)
+        val locked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val queryThread = java.util.concurrent.atomic.AtomicReference<Thread>()
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val result = executor.submit<List<AgentKnowledgeHit>> {
+                queryThread.set(Thread.currentThread())
+                session.search("apple", 8) { read ->
+                    if (read == null) emptyList() else {
+                        val hits = KnowledgeLexicalSearch.search(read, "orchard", 8)
+                        executor.submit { f.db.access {
+                            locked.countDown()
+                            check(release.await(10, TimeUnit.SECONDS))
+                        } }
+                        check(locked.await(10, TimeUnit.SECONDS))
+                        hits
+                    }
+                }
+            }
+            assertTrue(locked.await(10, TimeUnit.SECONDS))
+            val until = SystemClock.elapsedRealtime() + 5000
+            while (queryThread.get()?.state != Thread.State.BLOCKED && SystemClock.elapsedRealtime() < until) Thread.sleep(5)
+            assertEquals(Thread.State.BLOCKED, queryThread.get()?.state)
+            session.invalidate()
+            release.countDown()
+            assertTrue(result.get(10, TimeUnit.SECONDS).isEmpty())
+        } finally { release.countDown(); executor.shutdownNow(); assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS)) }
     }
     @Test fun corruptAuthenticatedVectorFallsBackWithoutPublishingDerivedEvidence() = isolated { f ->
         val session = f.store.attachSemanticEncoder(spec, { f.encoder })

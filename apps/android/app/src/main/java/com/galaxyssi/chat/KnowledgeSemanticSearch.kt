@@ -29,14 +29,14 @@ internal class KnowledgeSemanticSearch(
         private set
     init { require(ttlMillis > 0 && budgetBytes > 0); sessions.add(this) }
 
-    fun search(query: String, limit: Int, lexical: () -> List<AgentKnowledgeHit>): List<AgentKnowledgeHit> {
+    fun search(query: String, limit: Int, lexical: (KnowledgeSearchSnapshot?) -> List<AgentKnowledgeHit>): List<AgentKnowledgeHit> {
         require(limit in 1..24)
-        if (Looper.myLooper() == Looper.getMainLooper()) { status = "requires_worker_thread"; return lexical().take(limit) }
-        if (closed.get() || suspended.get()) { status = "suspended"; return lexical().take(limit) }
+        if (Looper.myLooper() == Looper.getMainLooper()) { status = "requires_worker_thread"; return lexical(null).take(limit) }
+        if (closed.get() || suspended.get()) { status = "suspended"; return lexical(null).take(limit) }
         // Allow a short cleanup/checkpoint handoff, never an unbounded replay/inference wait.
         val admitted = try { lock.tryLock(25, TimeUnit.MILLISECONDS) }
             catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
-        if (!admitted) { status = "busy"; return lexical().take(limit) }
+        if (!admitted) { status = "busy"; return lexical(null).take(limit) }
         val result = try {
             var expected = epoch.get()
             try {
@@ -61,15 +61,16 @@ internal class KnowledgeSemanticSearch(
                     val queryVector = active.embed(query)
                     val matches = try { current.index.search(queryVector) } finally { queryVector.fill(0f) }
                     ensureActive(expected)
-                    storage.access {
-                        val dense = catalog.resolve(matches.filter { it.similarity >= 0.35 }, stamp).map { (match, item) ->
+                    storage.searchSnapshot().use { read ->
+                        val dense = catalog.resolve(read, matches.filter { it.similarity >= 0.35 }, stamp).map { (match, item) ->
                             check(match.start >= 0 && match.end <= item.content.length)
                             AgentKnowledgeHit(item, match.similarity, item.content.substring(match.start, match.end).take(1000), emptyList())
                         }
-                        val fused = KnowledgeHybridRanking.fuse(lexical(), dense, limit)
+                        val fused = KnowledgeHybridRanking.fuse(lexical(read), dense, limit)
+                        val published = read.validate(fused)
                         ensureActive(expected)
                         status = "ready:${stamp.completedChunks}"
-                        fused
+                        published
                     }
                 }
             } catch (error: Exception) {
@@ -79,7 +80,7 @@ internal class KnowledgeSemanticSearch(
             }
         } finally { lock.unlock() }
         // Release the index owner before reading the authoritative lexical fallback.
-        return result ?: lexical().take(limit)
+        return result ?: lexical(null).take(limit)
     }
 
     /** Called by the existing durable vector worker; never loads an inference model. */

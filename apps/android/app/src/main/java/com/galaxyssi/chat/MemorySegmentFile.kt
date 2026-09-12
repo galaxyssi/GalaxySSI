@@ -65,7 +65,11 @@ internal class MemorySegmentFile(
         }
     }
 
-    @Synchronized fun <T> read(reference: Reference, aad: ByteArray, consume: (InputStream) -> T): T {
+    @Synchronized fun <T> read(reference: Reference, aad: ByteArray, consume: (InputStream) -> T): T =
+        readPinned(reference, aad, consume)
+
+    /** Caller pins the committed reference against reclamation. Appends never rewrite its prefix. */
+    fun <T> readPinned(reference: Reference, aad: ByteArray, consume: (InputStream) -> T): T {
         Reference.parse(reference.bytes())
         return RandomAccessFile(file(reference.segment), "r").use { input ->
             check(Math.addExact(reference.offset, reference.length) <= input.length()) { "Memory segment is truncated" }

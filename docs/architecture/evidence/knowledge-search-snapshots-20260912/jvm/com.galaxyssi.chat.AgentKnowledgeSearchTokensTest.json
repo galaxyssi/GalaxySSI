@@ -1,0 +1,50 @@
+{
+  "name": "com.galaxyssi.chat.AgentKnowledgeSearchTokensTest",
+  "tests": 8,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.259,
+  "cases": [
+    {
+      "name": "repeatsDoNotExplodeStoredTokensAndCloseWipesDerivedSecret",
+      "seconds": 0.145,
+      "outcome": "passed"
+    },
+    {
+      "name": "adjacentChineseAndLatinHaveIndependentWordTokens",
+      "seconds": 0.003,
+      "outcome": "passed"
+    },
+    {
+      "name": "indexIsDeterministicOnlyWithinTheSameSecret",
+      "seconds": 0.003,
+      "outcome": "passed"
+    },
+    {
+      "name": "indexesChineseWordsBigramsAndSupplementaryCharacters",
+      "seconds": 0.002,
+      "outcome": "passed"
+    },
+    {
+      "name": "lexicalRerankingUsesTheSameUnicodeNormalization",
+      "seconds": 0.073,
+      "outcome": "passed"
+    },
+    {
+      "name": "punctuationCannotInjectFtsSyntaxAndWordsAreNotStored",
+      "seconds": 0.008,
+      "outcome": "passed"
+    },
+    {
+      "name": "normalizesCaseAndCompatibilityForms",
+      "seconds": 0.001,
+      "outcome": "passed"
+    },
+    {
+      "name": "documentIndexDoesNotStopAtSixtyFourTerms",
+      "seconds": 0.017,
+      "outcome": "passed"
+    }
+  ]
+}
