@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-12",
+  "device": "SM-T575",
+  "serial": "R52R90282TY",
+  "androidVersion": "1.1.105",
+  "versionCode": 991,
+  "baseCommit": "a3b9d025fa61625a53bdcd13845c1e6be38555d6",
+  "buildSeconds": 487,
+  "apkSha256": "7f0afbd92de66c68d7140e2506dfa95b1085957312e463789ca40962ea1c662e",
+  "testApkSha256": "7022d251ed7eb9550a7f0895b57bb1bfdd32f61f0280e1ea02363835bec1d58a",
+  "install": "In-place, verified version; no uninstall or data reset",
+  "jvm": { "suites": 545, "tests": 3816, "passed": 3811, "skipped": 5, "failures": 0, "errors": 0 },
+  "deviceTests": { "passed": 106, "failures": 0, "seconds": 2093.028, "independentStatusCheck": true },
+  "repositoryChecksPassed": true,
+  "androidAarch64LibrariesPassing16KB": 74,
+  "scale": {
+    "realEncryptedRecords": 10001,
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "fixtureRetained": true,
+    "fixtureSha256AfterRun": "5543febb1d9404ad30416b2aa40ce596dcfdabd021e296040db3a20445546983",
+    "initialWriteMs": 370103,
+    "fullReplacementMs": 659246,
+    "reopenAndCompleteVerificationMs": 232684,
+    "producerSampledJavaHeapBytes": 69248690,
+    "canonicalDatabaseFileBytes": 68341760,
+    "heapCaveat": "Producer samples only, not a continuous process/PSS peak",
+    "diskCaveat": "Canonical SQLite file only; excludes WAL, payload, and temporary files",
+    "verification": "All resulting bodies authenticated and checked, removed IDs absent, no duplicate resulting identities"
+  },
+  "selectiveRetrieval": { "corpus": 1201, "decryptedBodies": 1, "initialMs": 46, "hotSamples": 100, "p50Ms": 37, "p95Ms": 45, "p99Ms": 66 },
+  "concurrentEncryptedAppendHelperMs": 330,
+  "limitations": [
+    "Not 100-million-record acceptance or a universal 200 ms guarantee",
+    "Bulk source replacement still holds a long canonical writer transaction",
+    "Distinct allowed-agent metadata and largest individual record size are not fixed-heap cases",
+    "Legacy whole-store JSON adapters remain outside the production source replacement path",
+    "No new durable post-commit observation outbox",
+    "No physical reboot or new source-specific process-death injection in this run"
+  ]
+}

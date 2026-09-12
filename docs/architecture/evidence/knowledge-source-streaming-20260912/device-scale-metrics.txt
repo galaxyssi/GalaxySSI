@@ -1,0 +1,4 @@
+09-12 17:58:56.546 10334 10359 I TestRunner: started: tenThousandEncryptedBodiesSurviveStreamingReplacementAndReopen(com.galaxyssi.chat.KnowledgeSourceReplaceScaleDeviceTest)
+09-12 18:19:58.590 10334 10359 I System.out: KNOWLEDGE_SOURCE_REPLACE_SCALE rows=10001 seedMs=370103 replaceMs=659246 verifyMs=232684 producerSampledJavaHeapBytes=69248690 databaseBytes=68341760
+09-12 18:19:58.591 10334 10359 I System.out: KNOWLEDGE_SOURCE_REPLACE_FIXTURE test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db
+09-12 18:19:58.592 10334 10359 I TestRunner: finished: tenThousandEncryptedBodiesSurviveStreamingReplacementAndReopen(com.galaxyssi.chat.KnowledgeSourceReplaceScaleDeviceTest)
