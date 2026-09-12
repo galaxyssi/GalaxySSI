@@ -245,7 +245,7 @@ class MultipathPolicy:
             if (small and traffic in {Traffic.MESSAGE, Traffic.FINAL} and len(candidates) > 1):
                 samples = sorted(self._samples(peer, first, now))
                 delay = (samples[math.ceil(len(samples) * 0.9) - 1] * 1.5
-                         if samples else self.limits.unmeasured_hedge)
+                         if len(samples) >= CATALOG["timing"]["hedge_min_samples"] else self.limits.unmeasured_hedge)
                 delay = max(self.limits.hedge_min, min(delay, self.limits.hedge_max))
                 result.extend(Dispatch(key, self.paths[key].generation, delay * index)
                               for index, key in enumerate(candidates[1:], 1))
@@ -308,6 +308,17 @@ class MultipathPolicy:
             completed = tuple(key for key, value in self._attempts.items()
                               if (value.peer, value.message_id, value.content_hash)
                               == (peer, message_id, content_hash))
+            for key in completed:
+                self._attempts[key].peer_accepted = True
+                if not self._attempts[key].slot_held:
+                    del self._attempts[key]
+            return completed
+
+    def accept_verified_message(self, peer: str, message_id: str, content_hash: str) -> tuple[str, ...]:
+        """An authenticated stored-message ACK has no attributable path RTT."""
+        with self._lock:
+            completed = tuple(key for key, value in self._attempts.items()
+                              if (value.peer, value.message_id, value.content_hash) == (peer, message_id, content_hash))
             for key in completed:
                 self._attempts[key].peer_accepted = True
                 if not self._attempts[key].slot_held:

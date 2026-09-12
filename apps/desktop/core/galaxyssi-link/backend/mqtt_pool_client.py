@@ -20,6 +20,7 @@ import paho.mqtt.client as mqtt
 from mqtt_broker_catalog import BROKER_IDS, CATALOG
 from mqtt_broker_pool import BrokerPool, Ingress, publish_packet_bytes
 from mqtt_multipath_policy import Attempt, MultipathPolicy, Traffic
+from mqtt_delivery_dispatch import DeliveryDispatch
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class Publication:
 
 
 class MqttPoolClient:
-    def __init__(self, *, classify_publication, on_paths_changed=None, pool_factory=BrokerPool):
+    def __init__(self, *, classify_publication, on_paths_changed=None, pool_factory=BrokerPool, clock=time.monotonic):
         self.on_connect = self.on_disconnect = self.on_subscribe = self.on_publish = self.on_message = None
         self._classify = classify_publication
         self._on_paths_changed = on_paths_changed or (lambda *_: None)
@@ -70,6 +71,7 @@ class MqttPoolClient:
         self._seed = secrets.token_bytes(16)
         self.on_tick = None
         self._last_tick_error = float("-inf")
+        self.delivery = DeliveryDispatch(self.policy, self._pool.publish, self._delivery_completed, clock=clock)
 
     @staticmethod
     def _call(callback, *args):
@@ -100,6 +102,7 @@ class MqttPoolClient:
 
     def _tick(self):
         try:
+            self.delivery.tick()
             self._call(self.on_tick)
         except Exception as exc:
             now = time.monotonic()
@@ -263,7 +266,17 @@ class MqttPoolClient:
         info.rc = mqtt.MQTT_ERR_NO_CONN if not plans else mqtt.MQTT_ERR_QUEUE_SIZE
         return info
 
+    def publish_delivery(self, topic, delivery):
+        with self._lock:
+            info = PublishInfo(next(self._sequence))
+        return self.delivery.submit(topic, delivery, info)
+
+    def _delivery_completed(self, info, success):
+        self._call(self.on_publish, self, None, info.mid, 0 if success else 128, None)
+
     def _published(self, receipt):
+        if self.delivery.published(receipt):
+            return
         with self._lock:
             item = self._publications.get(receipt.attempt_id)
             if item is None or item[2:] != (receipt.physical.broker_id, receipt.physical.generation):
@@ -284,6 +297,7 @@ class MqttPoolClient:
 
     def disconnect(self):
         self._closed.set()
+        self.delivery.close()
         return self._pool.close()
 
     def wait_closed(self, timeout=None):

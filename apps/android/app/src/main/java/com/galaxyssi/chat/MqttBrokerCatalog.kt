@@ -22,6 +22,8 @@ internal object MqttBrokerCatalog {
     const val KEEPALIVE_SECONDS = 30
     const val METRIC_TTL_MS = 300000L
     const val RESUME_TTL_MS = 300000L
+    const val ATTEMPT_OBSERVATION_MS = 30000L
+    const val HEDGE_MIN_SAMPLES = 20
     const val HEDGE_MIN_MS = 100L
     const val HEDGE_MAX_MS = 2000L
     const val UNMEASURED_HEDGE_MS = 500L

@@ -168,7 +168,7 @@ internal class MqttMultipathPolicy(
         val result = mutableListOf(Dispatch(first, paths.getValue(first).generation, 0))
         if (small && traffic in setOf(Traffic.MESSAGE, Traffic.FINAL) && candidates.size > 1) {
             val values = samples(peer, first, now).sorted()
-            val delay = (if (values.isEmpty()) MqttBrokerCatalog.UNMEASURED_HEDGE_MS
+            val delay = (if (values.size < MqttBrokerCatalog.HEDGE_MIN_SAMPLES) MqttBrokerCatalog.UNMEASURED_HEDGE_MS
                 else (values[ceil(values.size * 0.9).toInt() - 1] * 1.5).toLong())
                 .coerceIn(MqttBrokerCatalog.HEDGE_MIN_MS, MqttBrokerCatalog.HEDGE_MAX_MS)
             candidates.drop(1).forEachIndexed { index, broker ->

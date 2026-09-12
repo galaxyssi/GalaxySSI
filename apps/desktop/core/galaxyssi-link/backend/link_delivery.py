@@ -103,6 +103,7 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             status TEXT NOT NULL,
             priority INTEGER NOT NULL DEFAULT 50,
             receipt_proof TEXT NOT NULL DEFAULT '',
+            transport_traffic TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
@@ -119,7 +120,8 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
                 "ALTER TABLE outbound_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 50"
             )
         db.commit()
-    for table, column in (("outbound_messages", "receipt_proof"), ("inbound_ciphertexts", "receipt_hash")):
+    for table, column in (("outbound_messages", "receipt_proof"), ("inbound_ciphertexts", "receipt_hash"),
+                          ("outbound_messages", "transport_traffic")):
         columns = {str(row[1]) for row in db.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             db.execute("BEGIN IMMEDIATE")
@@ -389,7 +391,10 @@ def queue_outbound(
     *,
     priority: int = OUTBOUND_PRIORITY_NORMAL,
     receipt_binding: str = "",
+    transport_traffic: str = "message",
 ) -> None:
+    from mqtt_multipath_policy import Traffic
+    transport_traffic = Traffic(transport_traffic).value
     now = time.time()
     proof = ""
     if receipt_binding:
@@ -403,8 +408,8 @@ def queue_outbound(
         try:
             db.execute(
                 """INSERT OR IGNORE INTO outbound_messages
-                   (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status,priority,receipt_proof)
-                   VALUES(?,?,?,?,?,?,0,'queued',?,?)""",
+                   (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status,priority,receipt_proof,transport_traffic)
+                   VALUES(?,?,?,?,?,?,0,'queued',?,?,?)""",
                 (
                     _route(client_route_id),
                     message_id,
@@ -414,6 +419,7 @@ def queue_outbound(
                     now,
                     int(priority),
                     _protect(proof, "receipt-proof") if proof else "",
+                    transport_traffic,
                 ),
             )
             db.commit()
@@ -774,7 +780,7 @@ def pending_outbound(
                 candidates.close()
             rows = [db.execute(
                 """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
-                          updated_at,status,priority FROM outbound_messages
+                          updated_at,status,priority,transport_traffic FROM outbound_messages
                    WHERE client_route_id=? AND message_id=?""", key,
             ).fetchone() for key in selected]
             db.commit()
@@ -791,6 +797,7 @@ def pending_outbound(
             "updated_at": row[6],
             "status": row[7],
             "priority": int(row[8]),
+            "transport_traffic": str(row[9] or "message"),
         }
         for row in rows
     ]

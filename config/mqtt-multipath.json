@@ -20,6 +20,8 @@
     "keepalive_seconds": 30,
     "metric_ttl_seconds": 300,
     "resume_ttl_seconds": 300,
+    "attempt_observation_seconds": 30,
+    "hedge_min_samples": 20,
     "hedge_min_ms": 100,
     "hedge_max_ms": 2000,
     "unmeasured_hedge_ms": 500

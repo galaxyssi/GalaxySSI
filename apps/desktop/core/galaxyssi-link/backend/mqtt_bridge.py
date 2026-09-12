@@ -2563,6 +2563,7 @@ def _publish_mqtt_wire_payload(
     wire_payload: str,
     link_secret: str,
     timing_scope: tuple[str, str] | None = None,
+    transport_traffic: str = "message",
 ):
     packets = [
         seal_wire_packet(packet, link_secret)
@@ -2572,7 +2573,17 @@ def _publish_mqtt_wire_payload(
         timing = transport_timing.begin(*timing_scope) if timing_scope else None
         generation = mqtt_connection_generation
         try:
-            info = mqttc.publish(topic, packets[0], qos=MQTT_QOS)
+            delivery = None
+            if isinstance(mqttc, MqttPoolClient) and timing_scope:
+                from mqtt_multipath_policy import Traffic
+                delivery = mqttc.peer_routes.prepare_delivery(topic, json.loads(wire_payload), timing_scope[1],
+                                                              Traffic(transport_traffic))
+                if delivery is None:
+                    return _DeferredPublishInfo()
+            if delivery is not None and delivery.size_bound <= mqttc.policy.limits.small_packet_bytes:
+                info = mqttc.publish_delivery(topic, delivery)
+            else:
+                info = mqttc.publish(topic, packets[0], qos=MQTT_QOS)
         except Exception:
             transport_timing.broker(timing, "failed")
             raise
@@ -6766,6 +6777,28 @@ def _process_message(mqttc, userdata, msg):
                     client_route_id, str(paired_client.get("local_identity_fingerprint") or ""),
                     str(paired_client.get("identity_fingerprint") or ""), str(paired_client.get("link_secret") or ""))):
             return
+        if isinstance(mqttc, MqttPoolClient):
+            from mqtt_delivery_envelope import stored_receipt
+            handled, accepted = mqttc.peer_routes.accept_delivery_receipt(
+                client_route_id, wire_payload, broker_id=getattr(msg, "broker_id", ""),
+                generation=getattr(msg, "broker_generation", 0), authenticated_identity=(
+                    client_route_id, str(paired_client.get("local_identity_fingerprint") or ""),
+                    str(paired_client.get("identity_fingerprint") or ""), str(paired_client.get("link_secret") or "")),
+                commit=lambda frame: acknowledge_verified_outbound(client_route_id,
+                    stored_receipt(frame.message.message_id, frame.message.content_hash), _receipt_binding_for_client(paired_client)))
+            if handled:
+                if accepted:
+                    message_id = str(wire_payload["message_id"])
+                    task_progress_window.release(client_route_id, message_id)
+                    transport_timing.received(client_route_id, message_id)
+                    flush_outbound_messages(mqttc)
+                return
+        delivery_frame = None
+        from mqtt_delivery_envelope import FIELD, parse_verified_frame
+        if FIELD in wire_payload:
+            delivery_frame = parse_verified_frame(wire_payload,
+                sender=str(paired_client.get("identity_fingerprint") or ""),
+                receiver=str(paired_client.get("local_identity_fingerprint") or ""), ingress_broker=getattr(msg, "broker_id", ""))
         if is_mqtt_chunk(wire_payload):
             local_id = desktop_id()
             source = str(wire_payload.get("from") or "")
@@ -6846,6 +6879,8 @@ def _process_message(mqttc, userdata, msg):
                 log.warning("Rejected MQTT message: application endpoints do not match paired identities")
                 return
             message_id = str(application_envelope["message_id"])
+            if delivery_frame is not None and delivery_frame.message.message_id != message_id:
+                raise ValueError("Delivery attempt does not match the authenticated application message")
             try:
                 bind_message_content(client_route_id, message_id, application_envelope)
             except InboundContentConflict:
@@ -6877,12 +6912,12 @@ def _process_message(mqttc, userdata, msg):
             )
 
         _deliver_stored_application(mqttc, paired_client, wire_payload, application_envelope, payload, trace,
-                                    timings=timings, ciphertext_digest=ciphertext_digest)
+                                    timings=timings, ciphertext_digest=ciphertext_digest, delivery_frame=delivery_frame)
     except Exception as e:
         log.error("MQTT message handling error (%s)", type(e).__name__)
 
 
-def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False):
+def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None):
     if payload.get("type") == "delivery_ack":
         return
     message_id = str(envelope["message_id"])
@@ -6892,6 +6927,15 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
     if not wire_hash:
         # A recovered body without its wire proof waits for the sender's durable retry.
         return
+    if delivery_frame is not None and isinstance(mqttc, MqttPoolClient):
+        paired = get_client(route)
+        if paired:
+            try:
+                mqttc.peer_routes.publish_stored_receipt(route, delivery_frame, message_id, wire_hash,
+                    authenticated_identity=(route, str(paired.get("local_identity_fingerprint") or ""),
+                        str(paired.get("identity_fingerprint") or ""), str(paired.get("link_secret") or "")))
+            except Exception as exc:
+                log.warning("Attempt receive receipt deferred (%s)", type(exc).__name__)
     receipt = accepted_delivery_ack_payload(payload, message_id, trace)
     receipt.update(stored_receipt(message_id, wire_hash))
     receipt.update(duplicate=duplicate)
@@ -6906,7 +6950,7 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
         log.warning("Stored-message receipt deferred (%s)", type(exc).__name__)
 
 
-def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest=""):
+def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest="", delivery_frame=None):
     import signal_receive_dispatch as dispatch
 
     route = str(paired_client["client_route_id"])
@@ -6922,7 +6966,7 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 if ciphertext_digest:
                     from mqtt_delivery_envelope import content_hash
                     bind_ciphertext(route, ciphertext_digest, message_id, receipt_hash=content_hash(wire_payload))
-                _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True)
+                _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True, delivery_frame=delivery_frame)
             return
         handler_started = False
         try:
@@ -6944,11 +6988,13 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 for stage, at_ns in timings:
                     record_task(identity["task_id"], stage, at_ns=at_ns, once=True)
                 record_task(identity["task_id"], "desktop_request_decrypted", once=True)
-            _ack_stored_application(mqttc, wire_payload, envelope, payload, trace)
+            _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, delivery_frame=delivery_frame)
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)
                 if acknowledge_verified_outbound(route, payload, _receipt_binding_for_client(paired_client)):
+                    if isinstance(mqttc, MqttPoolClient):
+                        mqttc.delivery.accept_verified_message(route, acknowledged_id, str(payload["content_hash"]))
                     task_progress_window.release(route, acknowledged_id)
                     transport_timing.received(route, acknowledged_id)
                     flush_outbound_messages(mqttc)
@@ -8110,6 +8156,7 @@ def _publish_to_registered_client(
             wire_payload,
             priority=_outbound_delivery_priority(payload),
             receipt_binding=_receipt_binding_for_client(paired_client),
+            transport_traffic=_outbound_transport_traffic(payload),
         )
         if not payload.get("peer_chat"):
             transport_timing.queued(client_route_id, message_id, transport_task_id(payload))
@@ -8140,6 +8187,7 @@ def _outbound_delivery_priority(payload: dict) -> int:
     if payload_type in {
         INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result",
         "agent_task_recovery_result", "agent_task_result_page", "agent_task_result_receipt_confirmed",
+        "agent_task_cancel", "pairing_revoked",
     }:
         return OUTBOUND_PRIORITY_DEPENDENCY
     if payload_type == ARTIFACT_CHUNK_TYPE:
@@ -8163,6 +8211,22 @@ def _outbound_delivery_priority(payload: dict) -> int:
     }:
         return OUTBOUND_PRIORITY_INTERACTIVE
     return OUTBOUND_PRIORITY_NORMAL
+
+
+def _outbound_transport_traffic(payload: dict) -> str:
+    payload_type = str(payload.get("type") or "").strip().lower()
+    if payload_type in {"agent_task_cancel", "pairing_revoked"}:
+        return "control"
+    if payload_type == "delivery_ack":
+        return "receipt"
+    priority = _outbound_delivery_priority(payload)
+    if priority == OUTBOUND_PRIORITY_TERMINAL:
+        return "final"
+    if priority == OUTBOUND_PRIORITY_PROGRESS:
+        return "progress"
+    if payload_type == ARTIFACT_CHUNK_TYPE:
+        return "chunk"
+    return "message"
 
 
 def flush_outbound_messages(
@@ -8321,6 +8385,7 @@ def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, s
                 pending["wire_payload"],
                 str(paired_client.get("link_secret") or ""),
                 timing_scope=(client_route_id, message_id),
+                transport_traffic=str(pending.get("transport_traffic") or "message"),
             )
             if info.rc == mqtt.MQTT_ERR_SUCCESS:
                 track_outbound_publish(info, client_route_id, message_id,

@@ -206,9 +206,11 @@ uses `signal-wire-sha256-v1`, a cross-platform digest of immutable Signal wire
 fields, not the local JSON application-envelope digest. The outgoing consumer
 requires this digest, stable message ID, `RX_STORED`, and the current pair/key
 binding persisted in the outbox. Local JSON hashes still enforce content
-conflicts independently. The per-attempt frame codec is tested but its dispatcher
-and peer-RTT accounting are not activated yet. See
-[durable receipt verification](../testing/MQTT_DURABLE_RECEIPTS_20260913.md).
+conflicts independently. The Desktop small-message dispatcher and peer-RTT
+accounting now use this frame in the actual durable publisher/bridge ingress.
+Android's symmetric dispatcher and attachment bitmap integration remain pending.
+See [durable receipt verification](../testing/MQTT_DURABLE_RECEIPTS_20260913.md)
+and [Desktop hedge verification](../testing/MQTT_HEDGED_DISPATCH_DESKTOP_20260913.md).
 Fair local Signal locks avoid thread
 starvation but do not guarantee ordering across independent brokers.
 

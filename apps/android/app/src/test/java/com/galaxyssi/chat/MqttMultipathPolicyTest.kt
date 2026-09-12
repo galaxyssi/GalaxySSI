@@ -158,9 +158,20 @@ class MqttMultipathPolicyTest {
         policy.reserve("fast", attempt(path = "mosquitto"))
         policy.acceptVerifiedReceipt("peer", "m", hash, "fast", 20)
         assertEquals("mosquitto", plan(policy).first().brokerId)
-        assertEquals(100L, plan(policy)[1].delayMs)
+        assertEquals(500L, plan(policy)[1].delayMs)
         policy.setNetwork("cellular")
         assertEquals(500L, plan(policy)[1].delayMs)
+    }
+
+    @Test fun percentileHedgeNeedsTwentyDistinctStoredReceipts() {
+        val policy = ready()
+        repeat(20) { index ->
+            val key = "sample-$index"
+            assertTrue(policy.reserve(key, attempt(path = "mosquitto", message = key)))
+            policy.brokerAck(key, "mosquitto", 1)
+            policy.acceptVerifiedReceipt("peer", key, hash, key, 20)
+            assertEquals(if (index < 19) 500L else 100L, plan(policy)[1].delayMs)
+        }
     }
 
     @Test fun chunkRetriesAvoidPreviousPath() {

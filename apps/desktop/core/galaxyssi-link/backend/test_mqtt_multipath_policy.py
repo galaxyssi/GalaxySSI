@@ -164,9 +164,17 @@ class MultipathPolicyTests(unittest.TestCase):
         self.policy.accept_verified_receipt("peer", "m", HASH, "fast", now=0.02)
         plan = self.plan()
         self.assertEqual("mosquitto", plan[0].broker_id)
-        self.assertEqual(0.1, plan[1].delay)
+        self.assertEqual(0.5, plan[1].delay)
         self.assertTrue(self.resume(epoch=2, expiry=300))
         self.assertFalse(self.policy._samples("peer", "mosquitto", 301))
+
+    def test_percentile_hedge_requires_twenty_distinct_verified_receipts(self):
+        for index in range(20):
+            key = f"sample-{index}"
+            self.assertTrue(self.reserve(key, path="mosquitto", message=key))
+            self.policy.broker_ack(key, "mosquitto", 1)
+            self.policy.accept_verified_receipt("peer", key, HASH, key, now=0.02)
+            self.assertEqual(0.5 if index < 19 else 0.1, self.plan()[1].delay)
 
     def test_network_change_discards_previous_network_speed_assumptions(self):
         self.policy.set_network("wifi")

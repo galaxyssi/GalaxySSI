@@ -12,6 +12,10 @@ import time
 from link_protocol import seal_wire_packet, valid_link_secret
 from mqtt_broker_catalog import CATALOG
 from mqtt_multipath_policy import PeerRoute, Traffic
+from mqtt_broker_pool import publish_packet_bytes
+from mqtt_delivery_dispatch import Delivery
+from mqtt_delivery_envelope import (Attempt, Frame, Message, MAX_SAFE_INTEGER, content_hash,
+                                    parse_verified_receipt, RECEIPT_TYPE)
 from mqtt_pool_client import Publication
 from mqtt_route_state import (FINGERPRINT, TTL_MS, RouteAdvertisement, ResumeResult, issue_local_resume,
                               forget_route, parse_verified_resume, record_verified_resume)
@@ -279,6 +283,76 @@ class PeerRoutes:
                 return None
             return Publication(peer.binding.scope, digest, digest, Traffic.MESSAGE, peer.binding.receive_topics,
                                authorized_paths=tuple(peer.local_generations.items()))
+
+    def prepare_delivery(self, topic, wire, message_id, traffic):
+        with self._lock:
+            peer = self._outbound.get(topic)
+        if peer is None or not self.ready(peer.binding.scope):
+            if peer:
+                self.request(peer.binding.scope)
+            return None
+        with peer.lock:
+            binding = peer.binding
+            if not peer.active:
+                return None
+        immutable = json.loads(json.dumps(wire, ensure_ascii=False))
+        message = Message(message_id, content_hash(immutable), binding.sender, binding.receiver, traffic.value)
+
+        def encode(frame):
+            return seal_wire_packet(json.dumps(frame.attach(immutable), ensure_ascii=False,
+                                               separators=(",", ":")), binding.secret)
+
+        def authorized(broker, generation):
+            with peer.lock:
+                local = peer.local
+                return (peer.active and peer.binding == binding and local is not None
+                        and local.expires_at_ms > self._wall() * 1000 and peer.local_confirmed_epoch == local.epoch
+                        and peer.local_generations.get(broker) == generation
+                        and self.client.ready_path_generations(binding.receive_topics).get(broker) == generation)
+
+        # Bound final AEAD/base64/MQTT bytes with the longest catalog ID and
+        # maximum representable generation. Signal encryption is never repeated.
+        longest = max(CATALOG["brokers"], key=len)
+        preview = encode(Frame(message, Attempt("0" * 32, longest, MAX_SAFE_INTEGER)))
+        size = publish_packet_bytes(topic, len(preview.encode("utf-8") if isinstance(preview, str) else preview))
+        return Delivery(binding.scope, message, binding.receive_topics, encode, authorized, size)
+
+    def accept_delivery_receipt(self, scope, payload, *, broker_id, generation, authenticated_identity, commit):
+        if not isinstance(payload, dict) or payload.get("type") != RECEIPT_TYPE:
+            return False, False
+        with self._lock:
+            peer = self._peers.get(scope)
+        if peer is None:
+            raise ValueError("Receipt does not belong to an authorized pair")
+        with peer.lock:
+            binding = peer.binding
+            if not peer.active or binding.identity != authenticated_identity:
+                raise ValueError("Receipt authentication no longer matches the configured pair")
+            if self.client.ready_path_generations(binding.receive_topics).get(broker_id) != generation:
+                return True, False
+            frame = parse_verified_receipt(payload, original_sender=binding.sender, original_receiver=binding.receiver)
+            accepted = self.client.delivery.accept_verified_receipt(scope, frame, lambda: commit(frame))
+        return True, accepted
+
+    def publish_stored_receipt(self, scope, frame, message_id, wire_hash, *, authenticated_identity):
+        with self._lock:
+            peer = self._peers.get(scope)
+        if peer is None or not self.ready(scope):
+            return None
+        with peer.lock:
+            binding = peer.binding
+            if (not peer.active or binding.identity != authenticated_identity
+                    or peer.local is None or peer.local.expires_at_ms <= self._wall() * 1000
+                    or peer.local_confirmed_epoch != peer.local.epoch
+                    or (frame.message.sender, frame.message.receiver) != (binding.receiver, binding.sender)):
+                return None
+            receipt = frame.receipt_after_store(stored_message_id=message_id, stored_content_hash=wire_hash)
+            encoded = seal_wire_packet(json.dumps(receipt, separators=(",", ":")), binding.secret)
+            digest = hashlib.sha256(encoded.encode() if isinstance(encoded, str) else encoded).hexdigest()
+            descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
+                                     preferred_broker=frame.attempt.broker_id,
+                                     authorized_paths=tuple(peer.local_generations.items()))
+        return self.client.publish(binding.send_topic, encoded, publication=descriptor)
 
     def status(self):
         with self._lock:
