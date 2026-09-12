@@ -86,15 +86,38 @@ loading, rich-content persistence, request isolation, deduplication, save/hash
 validation, a mock-provider/real-renderer tool loop, and fullscreen Save UI.
 
 `CloudImageAnnotationLiveTest` is opt-in (`-e live_annotation true`). It uses the
-configured DeepSeek provider and only a synthetic three-question worksheet. It
+configured DeepSeek provider and only synthetic worksheets: three questions by
+default, or twenty questions with `-e dense_annotation true`. It
 does not export credentials or existing conversation history. Its report and
 rendered image are stored under the app's external `files/reports` directory.
+
+## Compact grading verification
+
+- Android 1.1.93 (979) was built and installed on S26U (SM-S9480), retaining app
+  data. No other phone was operated.
+- All 26 focused JVM tests passed. All 13 device tests passed, including
+  original-byte preservation, unchanged source dimensions, no rectangular
+  annotation strokes, source-image deduplication and thumbnail/fullscreen Save.
+- Two real configured DeepSeek runs passed on the final compact renderer:
+  a three-question fixture and a two-column twenty-question fixture. Both
+  returned exactly one annotated image with the original decoded dimensions.
+- The twenty-question result was one 1000 x 1400 PNG of 68855 bytes. It marked
+  nineteen correct answers and corrected `63 - 16 = 48` to `47`. Engine elapsed
+  time was 9170 ms, including 140 ms in the local annotation tool; this excludes
+  main-screen dispatch overhead. The three-question instrumentation run took
+  4.921 seconds, which is not a separately measured model/engine latency.
+- Visual inspection confirmed compact ticks and one cross with the correction,
+  without boxes, numbering, a legend, appended canvas or an extra summary image.
+  The question text remained readable. Existing historical outputs are not
+  automatically redrawn.
+- Twenty-question output SHA-256:
+  `89c586e2e8cb35985a2dc7b16aa1bbb0c882e953643f3d9a603330cc183dec43`.
 
 ## Remaining acceptance
 
 Passing a renderer or mocked-provider test does not prove actual DeepSeek tool
 calling or grading quality. The separately reported live result above covers
-only the simple synthetic worksheet, not general grading accuracy.
+only the synthetic worksheets, not general grading accuracy.
 Handwriting, dense worksheets, formulas and ambiguous answers need additional
 accuracy evaluation; the existing model-input image compression also remains a
 potential readability limit.
