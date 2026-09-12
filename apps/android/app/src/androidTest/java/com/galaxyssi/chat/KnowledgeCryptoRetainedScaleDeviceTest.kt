@@ -17,7 +17,10 @@ class KnowledgeCryptoRetainedScaleDeviceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         check(context.getDatabasePath(name).isFile)
         val source = "\u6765\u6e90"
-        val content = "\u66f4\u65b0 " + "\u77e5\u8bc6\u6b63\u6587".repeat(80)
+        val variant = InstrumentationRegistry.getArguments().getString("retainedKnowledgeVariant").orEmpty()
+        require(variant.isEmpty() || variant.matches(Regex("[a-z0-9-]{1,64}")))
+        val content = "\u66f4\u65b0 " + "\u77e5\u8bc6\u6b63\u6587".repeat(80) +
+            if (variant.isEmpty()) "" else " [$variant]"
         var observed = 0
         val store = SQLiteAgentKnowledgeStore(context, name, "legacy-$name", publishSource = { mutation ->
             GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(mutation, 1234)
@@ -31,7 +34,7 @@ class KnowledgeCryptoRetainedScaleDeviceTest {
                     title = "\u6d4b\u8bd5 $i", content = "$content $i", source = source,
                     chunkIndex = i, chunkCount = 10_001, updatedAtMillis = i.toLong())
             })
-            println("KNOWLEDGE_CRYPTO_SCALE replace_ms=${(System.nanoTime() - started) / 1_000_000} rows=10001 fixture=$name")
+            println("KNOWLEDGE_CRYPTO_SCALE replace_ms=${(System.nanoTime() - started) / 1_000_000} rows=10001 fixture=$name variant=$variant")
             assertEquals(1, observed)
         } finally { store.close() }
         AgentRowStorageCipher.clearCachedKeys()
