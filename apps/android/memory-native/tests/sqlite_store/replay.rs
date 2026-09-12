@@ -138,6 +138,53 @@ fn replay_readding_the_same_revision_does_not_resurrect_older_vectors() {
 }
 
 #[test]
+fn migration_preserves_live_graph_pending_replay_and_source_removal_barriers() {
+    let fixture = Fixture::new();
+    let store = fixture.create();
+    let index = attach(store.clone(), true);
+    let rt = runtime();
+    let first = event(1, 0, 1, 2, 2);
+    index.begin_event(&first, false).unwrap();
+    rt.block_on(index.append(&first, &chunks(0, 1, 1))).unwrap();
+    let checkpoint = index.checkpoint().unwrap();
+    store.close().unwrap();
+    record_shards::downgrade(&fixture);
+    let store = fixture.open();
+    let index = attach(store.clone(), false);
+    assert!(!index.records_partitioned().unwrap());
+    assert!(!index.migrate_records(1).unwrap());
+    assert_eq!(index.checkpoint().unwrap(), checkpoint);
+    rt.block_on(index.append(&first, &chunks(0, 1, 1))).unwrap();
+    assert_eq!(index.node_count().unwrap(), 2);
+    rt.block_on(index.append(&first, &chunks(1, 2, 1))).unwrap();
+    while !index.migrate_records(1).unwrap() {}
+    assert!(index.records_partitioned().unwrap());
+    assert_eq!(
+        rt.block_on(index.search(&vector(1), 8, 128)).unwrap().len(),
+        2
+    );
+    let mut removal = event(2, 1, 1, 3, 0);
+    removal.removed = true;
+    index.begin_event(&removal, false).unwrap();
+    assert!(
+        rt.block_on(index.search(&vector(1), 8, 128))
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(index.node_count().unwrap(), 3);
+    store.close().unwrap();
+    let store = fixture.open();
+    let index = attach(store.clone(), false);
+    assert_eq!(index.checkpoint().unwrap().sequence(), 2);
+    assert!(
+        rt.block_on(index.search(&vector(1), 8, 128))
+            .unwrap()
+            .is_empty()
+    );
+    store.close().unwrap();
+}
+
+#[test]
 fn replay_provenance_failure_rolls_back_graph_and_cursor_in_the_same_transaction() {
     let fixture = Fixture::new();
     let store = fixture.create();
@@ -145,15 +192,19 @@ fn replay_provenance_failure_rolls_back_graph_and_cursor_in_the_same_transaction
     let rt = runtime();
     let e = event(1, 0, 1, 2, 2);
     let before = index.begin_event(&e, false).unwrap();
-    let external = Connection::open(fixture.path.join("catalog.sqlite")).unwrap();
-    external.execute_batch("CREATE TRIGGER reject_node_record BEFORE INSERT ON index_records \
-        WHEN substr(NEW.key,1,1)=x'6e' BEGIN SELECT RAISE(ABORT,'synthetic provenance failure'); END").unwrap();
+    let external = record_shards::attached(&fixture);
+    for shard in 0..config().shards {
+        external.execute_batch(&format!("CREATE TRIGGER s{shard}.reject_node_record BEFORE INSERT ON index_records \
+            WHEN substr(NEW.key,1,1)=x'6e' BEGIN SELECT RAISE(ABORT,'synthetic provenance failure'); END")).unwrap();
+    }
     assert!(rt.block_on(index.append(&e, &chunks(0, 2, 1))).is_err());
     assert_eq!(index.node_count().unwrap(), 1);
     assert_eq!(index.checkpoint().unwrap(), before);
-    external
-        .execute_batch("DROP TRIGGER reject_node_record")
-        .unwrap();
+    for shard in 0..config().shards {
+        external
+            .execute_batch(&format!("DROP TRIGGER s{shard}.reject_node_record"))
+            .unwrap();
+    }
     rt.block_on(index.append(&e, &chunks(0, 2, 1))).unwrap();
     assert_eq!(index.node_count().unwrap(), 3);
     assert_eq!(index.checkpoint().unwrap().sequence(), 1);
@@ -213,9 +264,11 @@ fn encrypted_records_are_bounded_bound_to_their_key_and_poison_failed_transactio
         b"synthetic-checkpoint"
     );
     reader.commit().unwrap();
-    let external = Connection::open(fixture.path.join("catalog.sqlite")).unwrap();
-    external.execute_batch("UPDATE index_records SET ciphertext=(SELECT ciphertext FROM index_records WHERE key=x'61'),\
-        revision=(SELECT revision FROM index_records WHERE key=x'61') WHERE key=x'62'").unwrap();
+    let external = record_shards::attached(&fixture);
+    let a = record_shards::location(&external, b"a");
+    let b = record_shards::location(&external, b"b");
+    external.execute_batch(&format!("UPDATE {b}.index_records SET ciphertext=(SELECT ciphertext FROM {a}.index_records WHERE key=x'61'),\
+        revision=(SELECT revision FROM {a}.index_records WHERE key=x'61') WHERE key=x'62'")).unwrap();
     let reader = store.begin(false, cancelled()).unwrap();
     assert!(reader.record(b"b").is_err());
     assert!(reader.commit().is_err());
@@ -242,8 +295,10 @@ fn replay_cancellation_and_corruption_cannot_return_partial_matches() {
     stop.store(false, Ordering::Release);
     assert_eq!(index.node_count().unwrap(), 1);
     rt.block_on(index.append(&e, &chunks(0, 1, 1))).unwrap();
-    let external = Connection::open(fixture.path.join("catalog.sqlite")).unwrap();
-    external.execute_batch("UPDATE index_records SET ciphertext=zeroblob(length(ciphertext)) WHERE substr(key,1,1)=x'6e'").unwrap();
+    let external = record_shards::attached(&fixture);
+    for shard in 0..config().shards {
+        external.execute_batch(&format!("UPDATE s{shard}.index_records SET ciphertext=zeroblob(length(ciphertext)) WHERE substr(key,1,1)=x'6e'")).unwrap();
+    }
     assert!(rt.block_on(index.search(&vector(1), 8, 128)).is_err());
     assert_eq!(index.checkpoint().unwrap().sequence(), 1);
     store.close().unwrap();

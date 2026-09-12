@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import java.util.UUID
 import org.junit.Assert.*
 import org.junit.Test
@@ -62,6 +63,44 @@ class KnowledgeNativeIndexDeviceTest {
             assertEquals(1, store.delete("fruit"))
             finish(index)
             assertTrue(index.search(floatArrayOf(0f, 1f)).isEmpty())
+        } finally { index.close() }
+    }
+
+    @Test fun readyGraphStillAdvancesMetadataMigrationWithoutLoadingAnEncoderOrRebuilding() = isolated { store, db ->
+        repeat(80) { store.upsert(item("partition-source-$it")) }
+        while (store.indexVectorChunks(encoder, 32).pending) { }
+        var index = KnowledgeNativeIndex(db, spec, 1_000_000)
+        try {
+            finish(index)
+            val expected = requireNotNull(index.readyStamp)
+            val count = index.physicalNodeCount()
+            index.close()
+            val ledger = db.vectors(spec)
+            val epoch = requireNotNull(ledger.changes().state()).epoch
+            val directory = db.nativeIndexDirectory(ledger.modelKey)
+            val identity = AgentNativeJsonCodec.sha256("native-memory:v1:${ledger.modelKey}:$epoch")
+            val aad = "knowledge-native-key:v1:$identity".toByteArray()
+            val key = AgentStorageCipher.decryptBinary(File(directory, "index-$epoch-v1.key").readBytes(), aad)
+            try {
+                KnowledgeNativeRecordMigrationDeviceTest().downgrade(File(directory, "index-$epoch-v1"),
+                    key, KnowledgeNativeWire.hex(identity, 32))
+            } finally { key.fill(0) }
+            index = KnowledgeNativeIndex(db, spec, 1_000_000)
+            assertTrue(index.tryReady {})
+            assertTrue(index.needsMaintenance)
+            assertFalse(index.advance {})
+            assertEquals(expected, index.readyStamp)
+            assertEquals(count, index.physicalNodeCount())
+            assertEquals(80, index.search(floatArrayOf(1f, 0f)).size)
+            index.close()
+            index = KnowledgeNativeIndex(db, spec, 1_000_000)
+            assertTrue(index.tryReady {})
+            assertTrue(index.needsMaintenance)
+            assertFalse(index.advance {})
+            assertTrue(index.advance {})
+            assertFalse(index.needsMaintenance)
+            assertEquals(expected, index.readyStamp)
+            assertEquals(count, index.physicalNodeCount())
         } finally { index.close() }
     }
 

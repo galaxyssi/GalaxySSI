@@ -51,6 +51,7 @@ internal class KnowledgeSemanticSearch(
                     status = "ready:0"
                     null
                 } else {
+                    if (current.index.needsMaintenance) scheduleIndex(current)
                     val stamp = requireNotNull(current.index.readyStamp)
                     val active = encoder ?: encoderFactory().also { opened ->
                         if (opened.spec != spec) { opened.close(); error("Embedding model specification changed") }
@@ -90,7 +91,7 @@ internal class KnowledgeSemanticSearch(
                 ensureActive(current.epoch)
                 check(!cancelled()) { "Native memory indexing worker stopped" }
             }
-            val complete = current.index.tryReady(active) || current.index.synchronize(active = active)
+            val complete = current.index.advance(active)
             status = if (complete) "ready:${current.index.readyStamp?.completedChunks ?: 0}" else "indexing"
             if (!complete) scheduleIndex(current)
             complete
@@ -118,7 +119,7 @@ internal class KnowledgeSemanticSearch(
                 ensureActive(current.epoch)
                 check(snapshot === current)
                 val active = { ensureActive(current.epoch) }
-                again = !(current.index.tryReady(active) || current.index.synchronize(active = active))
+                again = !current.index.advance(active)
                 status = if (again) "indexing" else "ready:${current.index.readyStamp?.completedChunks ?: 0}"
             } } catch (error: Exception) {
                 lock.withLock {
