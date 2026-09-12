@@ -140,7 +140,7 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
         } finally { metadata.fill(0); values.fill(0f) }
     }
     private fun firstVector(active: () -> Unit): FloatArray? {
-        val key = storage.access { db -> db.rawQuery("SELECT item_key FROM knowledge_vector_docs WHERE model_key=? " +
+        val key = storage.readCommitted { db -> db.rawQuery("SELECT item_key FROM knowledge_vector_docs WHERE model_key=? " +
             "AND complete=1 AND chunk_count>0 ORDER BY item_key LIMIT 1", arrayOf(ledger.modelKey)).use {
             if (it.moveToFirst()) it.getString(0) else null
         } } ?: return null
