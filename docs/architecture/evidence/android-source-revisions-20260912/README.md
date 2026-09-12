@@ -2,6 +2,7 @@
 
 - Date: 2026-09-12.
 - App: Android 1.1.96, versionCode 982. Installed with `adb install -r`; no user data reset or model changes.
+- PR release reservation: 1.1.97 (983), changed after testing to avoid concurrent PR #3019. These evidence files describe the real 1.1.96 test APK and are not relabeled as a 1.1.97 device run.
 - Upstream base: `253069c46` (includes #3017); subsequent source-language-only Desktop correction is separate from this Android feature.
 - App APK SHA-256: `db079e5ca84ebb0a2121f82c9a30f5299a5262f83d05ca7349a70e4e02296784`.
 - Test APK SHA-256: `5b11dd413c60a11639946519cd005bf656ebcc3540b0cf6f29f2d7ba19eef312`.

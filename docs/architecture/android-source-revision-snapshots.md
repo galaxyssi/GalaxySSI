@@ -2,7 +2,7 @@
 
 ## Scope
 
-Android 1.1.96 adds knowledge schema 10. This removes the full-source encrypted-header scan from the unchanged-source check used by Obsidian projection and exposes a closeable source iterator. It is a step toward the large-memory goal, not proof of 100-million-record capacity or sub-200-ms full-document export.
+Android 1.1.97 adds knowledge schema 10. This removes the full-source encrypted-header scan from the unchanged-source check used by Obsidian projection and exposes a closeable source iterator. It is a step toward the large-memory goal, not proof of 100-million-record capacity or sub-200-ms full-document export.
 
 ## Durable freshness
 
@@ -58,3 +58,5 @@ The final package also passed a new-process recovery run: 65 committed source ro
 Build verification: 3,765 JVM tests across 539 suites, zero failures/errors, five pre-existing skips; all 74 Android AArch64 libraries passed the 16-KiB alignment gate. The earlier pre-hardening package additionally passed all 11 Obsidian projection regressions, including 1,201 sources and a 601-chunk source. That 11-test suite is not represented as a rerun on the final two-guard hardening change.
 
 See [raw scale evidence](evidence/android-source-revisions-20260912/README.md) for artifact hashes, sample files and reproduction scope. The full goal remains incomplete.
+
+After these runs, the PR's release metadata was advanced to 1.1.97 (983) because concurrent PR #3019 also used 1.1.96 (982). No Android implementation changed with that reservation. The measured and installed APK remains the explicitly identified 1.1.96 test artifact; a 1.1.97 installation is not claimed here.
