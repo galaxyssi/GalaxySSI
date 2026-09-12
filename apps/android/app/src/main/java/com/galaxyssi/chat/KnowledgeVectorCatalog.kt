@@ -4,15 +4,15 @@ internal data class KnowledgeCorpusStamp(val epoch: String, val changes: Long, v
 
 /** Keyset pages of opaque metadata, never an eager list of source text or all vectors. */
 internal class KnowledgeVectorCatalog(private val storage: AgentKnowledgeDatabase, private val ledger: KnowledgeVectorLedger) {
-    fun stamp(): KnowledgeCorpusStamp = storage.access(::stamp)
+    fun stamp(): KnowledgeCorpusStamp = storage.readCommitted(::stamp)
     private fun stamp(db: KnowledgeSqlite): KnowledgeCorpusStamp {
         val state = ledger.changes().state(db)
         return KnowledgeCorpusStamp(state?.epoch.orEmpty(), state?.head ?: 0, state?.completedChunks ?: 0)
     }
-    fun count(): Int = storage.access { db ->
+    fun count(): Int = storage.readCommitted { db ->
         ledger.changes().state(db)?.takeIf { it.bootstrapComplete }?.let {
             require(it.completedChunks <= Int.MAX_VALUE) { "Semantic index is too large for one graph" }
-            return@access it.completedChunks.toInt()
+            return@readCommitted it.completedChunks.toInt()
         }
         db.rawQuery("SELECT COALESCE(sum(chunk_count),0) FROM knowledge_vector_docs WHERE model_key=? AND complete=1",
             arrayOf(ledger.modelKey)).use {
@@ -22,7 +22,7 @@ internal class KnowledgeVectorCatalog(private val storage: AgentKnowledgeDatabas
             n.toInt()
         }
     }
-    fun keys(after: String): List<String> = storage.access { db ->
+    fun keys(after: String): List<String> = storage.readCommitted { db ->
         db.rawQuery("SELECT item_key FROM knowledge_vector_docs WHERE model_key=? AND complete=1 AND item_key>? " +
             "ORDER BY item_key LIMIT 32", arrayOf(ledger.modelKey, after)).use {
             buildList { while (it.moveToNext()) add(it.getString(0)) }

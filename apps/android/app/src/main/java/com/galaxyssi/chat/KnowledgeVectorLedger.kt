@@ -96,10 +96,10 @@ internal class KnowledgeVectorLedger(
         val frames = mutableListOf<ByteArray>()
         val rows = mutableListOf<KnowledgeStoredVector>()
         try {
-            // Copy one bounded encrypted page atomically; Keystore calls do not own the database lock.
-            val job = storage.access { db ->
-                val revision = revision(db, key) ?: return@access null
-                val current = state(db, key, revision)?.takeIf { it.complete } ?: return@access null
+            // Copy bounded encrypted frames from one committed view before authentication.
+            val job = storage.readCommitted { db ->
+                val revision = revision(db, key) ?: return@readCommitted null
+                val current = state(db, key, revision)?.takeIf { it.complete } ?: return@readCommitted null
                 db.rawQuery("SELECT ordinal,ciphertext,length(ciphertext) FROM knowledge_vectors WHERE item_key=? AND model_key=? " +
                     "AND ordinal>=? ORDER BY ordinal LIMIT ?", arrayOf(key, modelKey, fromOrdinal.toString(), limit.toString())).use { cursor ->
                     while (cursor.moveToNext()) {
@@ -129,7 +129,7 @@ internal class KnowledgeVectorLedger(
                 } finally { bytes.fill(0) }
             }
             active()
-            val current = storage.access { db ->
+            val current = storage.readCommitted { db ->
                 revision(db, key) == job.revision && state(db, key, job.revision) == job
             }
             if (!current) { rows.forEach { it.close() }; return null }
