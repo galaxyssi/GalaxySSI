@@ -24,7 +24,7 @@ class ObsidianKnowledgeProjectionDeviceTest {
         val started = SystemClock.elapsedRealtime()
         var result = f.run(12)
         assertEquals(ObsidianProjectionBatchResult(12, 0, 1189), result)
-        assertEquals(12L, f.db.decryptedItemReads - initialReads)
+        assertEquals(24L, f.db.decryptedItemReads - initialReads)
         assertEquals(12, f.files().size)
         f.reopen()
         assertEquals(12, f.state.index().size)
@@ -52,7 +52,7 @@ class ObsidianKnowledgeProjectionDeviceTest {
         } while (result.remaining > 0)
         assertEquals(1201, unchanged)
         assertEquals(before, f.db.decryptedItemReads)
-        println("OBSIDIAN_PROJECTION sources=1201 batches=$rounds first_body_reads=12 unchanged_body_reads=0 summary_reads=${f.summaryReads() - initialSummaries} elapsed_ms=${SystemClock.elapsedRealtime() - started}")
+        println("OBSIDIAN_PROJECTION sources=1201 batches=$rounds first_body_reads=24 unchanged_body_reads=0 summary_reads=${f.summaryReads() - initialSummaries} elapsed_ms=${SystemClock.elapsedRealtime() - started}")
     }
 
     @Test fun sourceWith601ChunksIsCompleteAndOrdered() = isolated { f ->
@@ -64,7 +64,7 @@ class ObsidianKnowledgeProjectionDeviceTest {
         val text = spec.content()
         val bodies = text.lines().filter { it.startsWith("\u6295\u5f71\u6b63\u6587-") }
         assertEquals((0..600).map { "\u6295\u5f71\u6b63\u6587-$it" }, bodies)
-        assertEquals(601L, f.db.decryptedItemReads - before)
+        assertEquals(1202L, f.db.decryptedItemReads - before)
     }
 
     @Test fun completeCipherRevisionDetectsContentChangesWithSameTimestampAndCount() = isolated { f ->
@@ -189,6 +189,57 @@ class ObsidianKnowledgeProjectionDeviceTest {
         assertTrue(f.state.candidates().any { it.sourceKey == target.sourceKey })
     }
 
+    @Test fun streamedBytesMatchOldOrderingMetadataTagsAndPrivacyAtChunkBoundary() = isolated { f ->
+        val source = "fixture-streamed"
+        val items = (0..80).map { i -> item(i, source).copy(
+            chunkIndex = i % 7, title = "\u957f\u6587 [${i + 1}/81]", updatedAtMillis = 1000L + i,
+            tags = listOf("tag-${i % 19}", "tag-shared"), content = "  \u6b63\u6587-$i \ud83d\ude00  ") }
+        f.store.replaceSource(source, items.reversed())
+        val ordered = items.sortedWith(compareBy(AgentKnowledgeItem::chunkIndex, AgentKnowledgeItem::id))
+        val key = ObsidianKnowledgeIdentity.sourceKey(AgentKnowledgeSourceReference(source))
+        val expected = ObsidianAndroidBridge.note(key, "knowledge", "\u957f\u6587", source, 1080,
+            ordered.flatMap { it.tags }.distinct().take(16), ordered.joinToString("\n\n") { it.content.trim() })
+        assertEquals(1, f.run(1).written)
+        assertEquals(expected, f.files().single().readText())
+        assertEquals(ObsidianContentHash.hex(java.security.MessageDigest.getInstance("SHA-256").digest(expected.toByteArray())),
+            f.state.index().single().generatedHash)
+        f.store.replaceSource(source, listOf(item(1, source).copy(content = "password   ", chunkIndex = 0),
+            item(2, source).copy(content = "  fixture-only-value", chunkIndex = 1)))
+        assertEquals(1, f.run(1).written)
+        assertTrue(f.files().single().readText().contains("[Sensitive content omitted by GalaxySSI]"))
+        assertFalse(f.files().single().readText().contains("fixture-only-value"))
+    }
+
+    @Test fun lateCorruptMemberKeepsPreviousDocumentAndReleasesScratch() = isolated { f ->
+        val source = "late-corruption"
+        f.store.replaceSource(source, (1..193).map { item(it, source).copy(updatedAtMillis = it.toLong()) })
+        assertEquals(1, f.run(1).written)
+        val original = f.files().single().readBytes()
+        val index = f.state.index().single()
+        f.db.access { it.update("knowledge_items", android.content.ContentValues().apply { put("header", "damaged") },
+            "item_key=?", arrayOf(f.db.key("id", "projection-item-1"))) }
+        assertThrows(Exception::class.java) { f.run(1) }
+        assertArrayEquals(original, f.files().single().readBytes())
+        assertEquals(index, f.state.index().single())
+        assertFalse(File(context.cacheDir, "knowledge-export-scratch").listFiles().orEmpty().any { it.isDirectory })
+    }
+
+    @Test fun preparedDocumentRetainsPinnedContentAcrossSubsequentWritesAndClosesOnSinkFailure() = isolated { f ->
+        val original = item(1, "pinned")
+        f.store.upsert(original)
+        val prepared = ObsidianKnowledgeProjection.specs(f.store).single().prepare()
+        try {
+            f.store.upsert(original.copy(content = "\u540e\u6765\u66f4\u65b0"))
+            val text = ObsidianProjectionBatch.readSmallContent(prepared)
+            assertTrue(text.contains(original.content))
+            assertFalse(text.contains("\u540e\u6765\u66f4\u65b0"))
+            assertThrows(java.io.IOException::class.java) {
+                prepared.writeTo(object : java.io.OutputStream() { override fun write(value: Int) { throw java.io.IOException("fixture sink failure") } })
+            }
+        } finally { prepared.close() }
+        assertFalse(File(context.cacheDir, "knowledge-export-scratch").listFiles().orEmpty().any { it.isDirectory })
+    }
+
     private inner class Fixture {
         val name = "test-obsidian-${UUID.randomUUID()}"
         val root = File(context.cacheDir, name).apply { check(mkdirs()) }
@@ -199,7 +250,7 @@ class ObsidianKnowledgeProjectionDeviceTest {
         var previousSummaryReads = 0L
         fun summaryReads() = previousSummaryReads + db.decryptedSourceSummaryReads
         fun files() = root.walkTopDown().filter { it.isFile && it.extension == "md" }.toList()
-        fun run(budget: Int, afterWrite: () -> Unit = {}) = ObsidianKnowledgeProjection.run(store, state, root.toURI().toString(), budget,
+        fun run(budget: Int, afterWrite: () -> Unit = {}) = ObsidianKnowledgeProjection.runStreaming(store, state, root.toURI().toString(), budget,
             { spec -> ObsidianLegacyProjection.findIndex(context, DocumentFile.fromFile(root), state, spec) }) { spec, content ->
             state.saveIndex(ObsidianAndroidBridge.writeProjection(context, DocumentFile.fromFile(root), spec, content), spec.retiredSourceKey)
             afterWrite()

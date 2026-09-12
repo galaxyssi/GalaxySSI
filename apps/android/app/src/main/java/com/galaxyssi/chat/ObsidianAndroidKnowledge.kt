@@ -56,8 +56,11 @@ internal data class ObsidianProjectionSpec(
     val sourceRevision: String,
     val knowledgeReference: AgentKnowledgeSourceReference? = null,
     val retiredSourceKey: String = "",
+    val prepareContent: (() -> ObsidianPreparedContent)? = null,
     val content: () -> String
-)
+) {
+    fun prepare() = prepareContent?.invoke() ?: ObsidianStringContent(content())
+}
 
 internal class ObsidianAndroidStateStore(context: Context, databaseName: String = DATABASE, preferencesName: String = PREFERENCES) {
     private val preferences = AgentEncryptedPreferences(context.applicationContext, preferencesName)
@@ -291,11 +294,11 @@ object ObsidianAndroidBridge {
             val root = requireNotNull(DocumentFile.fromTreeUri(context, Uri.parse(settings.treeUri)))
             val newCandidates = scanUserEdits(context, root, store)
             val limit = maximumWrites.coerceIn(1, 32)
-            val batch = ObsidianKnowledgeProjection.run(SQLiteAgentKnowledgeStore(context), store, settings.treeUri, limit,
+            val batch = ObsidianKnowledgeProjection.runStreaming(SQLiteAgentKnowledgeStore(context), store, settings.treeUri, limit,
                 { spec -> ObsidianLegacyProjection.findIndex(context, root, store, spec) }) { spec, content ->
                 store.saveIndex(writeProjection(context, root, spec, content), spec.retiredSourceKey)
             }
-            val other = ObsidianProjectionBatch.run(otherProjectionSpecs(context).asSequence(), limit - batch.written, store::index) { spec, content ->
+            val other = ObsidianProjectionBatch.runStreaming(otherProjectionSpecs(context).asSequence(), limit - batch.written, store::index) { spec, content ->
                 store.saveIndex(writeProjection(context, root, spec, content))
             }
             store.saveSettings(settings.copy(
@@ -311,15 +314,15 @@ object ObsidianAndroidBridge {
     }
 
     internal fun writeProjection(context: Context, root: DocumentFile, spec: ObsidianProjectionSpec,
-        content: String): ObsidianProjectionIndexEntry {
+        content: String): ObsidianProjectionIndexEntry = ObsidianStringContent(content).use { writeProjection(context, root, spec, it) }
+
+    internal fun writeProjection(context: Context, root: DocumentFile, spec: ObsidianProjectionSpec,
+        content: ObsidianPreparedContent): ObsidianProjectionIndexEntry {
         val document = findOrCreateFile(root, spec.relativePath)
-        val bytes = content.toByteArray(Charsets.UTF_8)
-        try {
-            context.contentResolver.openOutputStream(document.uri, "wt")?.use { it.write(bytes) }
-                ?: error("Cannot write ${spec.relativePath}")
-        } finally { bytes.fill(0) }
+        val hash = context.contentResolver.openOutputStream(document.uri, "wt")?.use(content::writeTo)
+            ?: error("Cannot write ${spec.relativePath}")
         return ObsidianProjectionIndexEntry(spec.sourceKey, spec.relativePath, spec.sourceRevision,
-            sha256(content), document.lastModified(), userModified = false)
+            hash, document.lastModified(), userModified = false)
     }
 
     internal fun scanUserEdits(
@@ -333,9 +336,9 @@ object ObsidianAndroidBridge {
         selected.forEach { entry ->
             val document = findFile(root, entry.relativePath) ?: return@forEach
             if (document.lastModified() > 0L && document.lastModified() == entry.lastModifiedMillis) return@forEach
-            val content = context.contentResolver.openInputStream(document.uri)?.bufferedReader()?.use { it.readText() }
+            val content = context.contentResolver.openInputStream(document.uri)?.use { ObsidianBoundedTextScan.read(it, MAX_CANDIDATE_CHARACTERS) }
                 ?: return@forEach
-            val currentHash = sha256(content)
+            val currentHash = content.hash
             if (currentHash == entry.generatedHash) {
                 store.saveIndex(entry.copy(lastModifiedMillis = document.lastModified()))
                 return@forEach
@@ -348,7 +351,7 @@ object ObsidianAndroidBridge {
                     sourceKey = entry.sourceKey,
                     relativePath = entry.relativePath,
                     title = entry.relativePath.substringAfterLast('/').removeSuffix(".md"),
-                    content = content.take(MAX_CANDIDATE_CHARACTERS)
+                    content = content.prefix
                 ))
                 found += 1
             }
@@ -446,6 +449,11 @@ object ObsidianAndroidBridge {
         body: String
     ): String {
         val cleanBody = ObsidianProjectionPrivacyPolicy.transcriptText(body).trim()
+        return noteHeader(sourceKey, type, title, source, updatedAtMillis, tags, sha256(cleanBody)) + cleanBody + '\n'
+    }
+
+    internal fun noteHeader(sourceKey: String, type: String, title: String, source: String,
+        updatedAtMillis: Long, tags: List<String>, contentHash: String): String {
         val cleanTitle = title.trim()
             .takeIf(ObsidianProjectionPrivacyPolicy::safeMetadata)
             .orEmpty()
@@ -460,12 +468,10 @@ object ObsidianAndroidBridge {
             append("title: \"").append(yaml(cleanTitle)).append("\"\n")
             if (cleanSource.isNotBlank()) append("source: \"").append(yaml(cleanSource)).append("\"\n")
             append("updated_at: \"").append(isoDate(updatedAtMillis)).append("\"\n")
-            append("content_hash: \"").append(sha256(cleanBody)).append("\"\n")
+            append("content_hash: \"").append(contentHash).append("\"\n")
             append("managed_by: galaxyssi\n")
             if (cleanTags.isNotEmpty()) append("tags: [").append(cleanTags.joinToString(", ") { "\"${yaml(it)}\"" }).append("]\n")
             append("---\n\n# ").append(cleanTitle).append("\n\n")
-            append(cleanBody)
-            append('\n')
         }
     }
 

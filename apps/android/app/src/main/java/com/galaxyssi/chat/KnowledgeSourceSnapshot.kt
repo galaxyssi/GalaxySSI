@@ -53,6 +53,13 @@ internal class KnowledgeSourceSnapshot(private val owner: AgentKnowledgeDatabase
         }
         check(emitted == expectedCount) { "Knowledge source members are missing" }
     }
+    fun find(id: String): AgentKnowledgeItem {
+        checkActive()
+        return requireNotNull(owner.read(sql, owner.key("id", id))).also {
+            selection.verify(it)
+            check(it.id == id) { "Source snapshot identity mismatch" }
+        }
+    }
     private fun checkActive() { check(!closed) { "Source snapshot was closed" }; owner.checkActive() }
     override fun close() {
         if (closed) return

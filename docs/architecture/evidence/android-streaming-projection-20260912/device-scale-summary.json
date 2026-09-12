@@ -1,0 +1,14 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.98",
+  "rows": 10001,
+  "ciphertext_sha256": "c847fabe9875782c74e5b9fd9043320feedba59e3c921ada5f01b66ef3bac7af",
+  "output_sha256": "2ea9f4f32292a7c6f963e28b4ffbfafda93b6159f8f39c6edc5e9e90c7d48554",
+  "output_bytes": 249279,
+  "preparation_ms": 277763.830686,
+  "full_export_ms": 277767.645263,
+  "decrypted_item_reads": 20002,
+  "sort_budget_bytes": 524288,
+  "merge_fan_in": 16,
+  "scope": "Retained 10,001-member source, not 100M capacity or sub-200ms full export"
+}
