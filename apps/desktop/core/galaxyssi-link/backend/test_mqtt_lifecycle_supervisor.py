@@ -30,11 +30,13 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
             "connected_at": mqtt_bridge.mqtt_connected_at,
             "disconnected_at": mqtt_bridge.mqtt_disconnected_at,
             "last_error": mqtt_bridge.mqtt_last_error,
+            "progress_at": mqtt_bridge.mqtt_last_connection_progress_at,
             "start_count": mqtt_bridge.mqtt_worker_start_count,
         }
         mqtt_bridge.mqtt_lifecycle_stop_event.clear()
         mqtt_bridge.mqtt_connected_event.clear()
         mqtt_bridge._clear_transport_reconnect()
+        mqtt_bridge.mqtt_last_connection_progress_at = 0.0
 
     def tearDown(self):
         mqtt_bridge.client = self.originals["client"]
@@ -45,6 +47,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
         mqtt_bridge.mqtt_connected_at = self.originals["connected_at"]
         mqtt_bridge.mqtt_disconnected_at = self.originals["disconnected_at"]
         mqtt_bridge.mqtt_last_error = self.originals["last_error"]
+        mqtt_bridge.mqtt_last_connection_progress_at = self.originals["progress_at"]
         mqtt_bridge.mqtt_worker_start_count = self.originals["start_count"]
         mqtt_bridge.mqtt_lifecycle_stop_event.clear()
         mqtt_bridge.mqtt_connected_event.clear()
@@ -91,6 +94,98 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
             mqtt_bridge._mqtt_supervisor_tick(now=129.9)
 
         recover.assert_not_called()
+
+    def test_server_rejections_do_not_interrupt_paho_backoff(self):
+        mqttc = _DisconnectedMqtt()
+        mqtt_bridge.client = mqttc
+        mqtt_bridge.mqtt_disconnected_at = 100.0
+        with (
+            patch.object(mqtt_bridge, "_ensure_mqtt_worker", return_value=False),
+            patch.object(mqtt_bridge, "_request_transport_reconnect") as recover,
+            patch.object(mqtt_bridge, "_advance_mqtt_connection_generation"),
+            patch.object(mqtt_bridge, "_clear_mqtt_wire_transport_state"),
+        ):
+            for attempt_at in (7000.0, 7030.0, 7060.0):
+                with patch.object(mqtt_bridge.time, "time", return_value=attempt_at):
+                    mqtt_bridge.on_pre_connect(mqttc, None)
+                    mqtt_bridge.on_connect(mqttc, None, {}, "Server unavailable")
+                    mqtt_bridge.on_disconnect(mqttc, None, {}, "Unspecified error", None)
+                mqtt_bridge._mqtt_supervisor_tick(now=attempt_at + 29.0)
+        recover.assert_not_called()
+        self.assertEqual("connect_rc=Server unavailable", mqtt_bridge.mqtt_last_error)
+
+    def test_stalled_retry_recovers_once_then_observes_cooldown(self):
+        mqttc = _DisconnectedMqtt()
+        mqtt_bridge.client = mqttc
+        mqtt_bridge.mqtt_disconnected_at = 100.0
+        mqtt_bridge.mqtt_last_connection_progress_at = 7000.0
+        with (
+            patch.object(mqtt_bridge, "_ensure_mqtt_worker", return_value=False),
+            patch.object(mqtt_bridge, "_transport_reconnect_age", return_value=None),
+            patch.object(mqtt_bridge, "_request_transport_reconnect") as recover,
+        ):
+            mqtt_bridge._mqtt_supervisor_tick(now=7065.0)
+            mqtt_bridge._mqtt_supervisor_tick(now=7070.0)
+        recover.assert_called_once_with(mqttc, "supervisor_disconnected")
+
+    def test_connection_attempt_failure_is_progress_not_worker_stall(self):
+        mqtt_bridge.client = _DisconnectedMqtt()
+        mqtt_bridge.mqtt_disconnected_at = 100.0
+        with patch.object(mqtt_bridge.time, "time", return_value=7000.0):
+            mqtt_bridge.on_connect_fail(mqtt_bridge.client, None)
+        with (
+            patch.object(mqtt_bridge, "_ensure_mqtt_worker", return_value=False),
+            patch.object(mqtt_bridge, "_request_transport_reconnect") as recover,
+        ):
+            mqtt_bridge._mqtt_supervisor_tick(now=7029.0)
+        recover.assert_not_called()
+        self.assertEqual("connect_attempt_failed", mqtt_bridge.mqtt_last_error)
+
+    def test_successful_connection_clears_previous_rejection(self):
+        mqtt_bridge.mqtt_last_error = "connect_rc=Server busy"
+        mqtt_bridge._record_mqtt_connected()
+        self.assertEqual("", mqtt_bridge.mqtt_last_error)
+        self.assertTrue(mqtt_bridge.mqtt_connected_event.is_set())
+        self.assertEqual(0.0, mqtt_bridge.mqtt_disconnected_at)
+
+    def test_watchdog_rechecks_progress_before_forcing_disconnect(self):
+        mqtt_bridge.client = _DisconnectedMqtt()
+        mqtt_bridge.mqtt_disconnected_at = 100.0
+        mqtt_bridge.mqtt_last_connection_progress_at = 100.0
+
+        def connection_progressed():
+            mqtt_bridge.mqtt_last_connection_progress_at = 7000.0
+            return None
+
+        with (
+            patch.object(mqtt_bridge, "_ensure_mqtt_worker", return_value=False),
+            patch.object(mqtt_bridge, "_transport_reconnect_age", side_effect=connection_progressed),
+            patch.object(mqtt_bridge, "_request_transport_reconnect") as recover,
+        ):
+            mqtt_bridge._mqtt_supervisor_tick(now=7000.0)
+        recover.assert_not_called()
+
+    def test_offline_peer_send_returns_cause_without_publishing(self):
+        mqtt_bridge.client = _DisconnectedMqtt()
+        cases = [
+            ("connect_rc=Server unavailable", "busy or unavailable"),
+            ("connect_rc=Server busy", "busy or unavailable"),
+            ("disconnect_rc=Unspecified error", "disconnected"),
+        ]
+        with (
+            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "test-phone"}),
+            patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
+            patch("peer_chat_store.peer_chat_store") as store,
+        ):
+            for cause, expected in cases:
+                with self.subTest(cause=cause):
+                    mqtt_bridge.mqtt_last_error = cause
+                    result = mqtt_bridge.publish_peer_message("test-phone", "test message")
+                    self.assertFalse(result["ok"])
+                    self.assertEqual("mqtt_not_connected", result["code"])
+                    self.assertIn(expected, result["message"])
+            publish.assert_not_called()
+            store.assert_not_called()
 
     def test_initialization_failure_clears_running_for_next_restart(self):
         mqtt_bridge.running = False

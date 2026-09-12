@@ -157,8 +157,10 @@ mqtt_worker_started_at = 0.0
 mqtt_connected_at = 0.0
 mqtt_disconnected_at = 0.0
 mqtt_last_error = ""
+mqtt_last_connection_progress_at = 0.0
 mqtt_worker_start_count = 0
 MQTT_SUPERVISOR_POLL_SECONDS = 1.0
+MQTT_MAX_RECONNECT_DELAY_SECONDS = 30.0
 MQTT_DISCONNECTED_RECOVERY_SECONDS = max(
     10.0,
     float(os.environ.get("GALAXYSSI_MQTT_DISCONNECTED_RECOVERY_SECONDS", "30")),
@@ -2350,22 +2352,36 @@ def _reason_code_value(reason_code):
 
 
 def _record_mqtt_connected() -> None:
-    global mqtt_connected_at, mqtt_disconnected_at, mqtt_last_error
+    global mqtt_connected_at, mqtt_disconnected_at, mqtt_last_error, mqtt_last_connection_progress_at
     with mqtt_lifecycle_lock:
         mqtt_connected_at = time.time()
         mqtt_disconnected_at = 0.0
         mqtt_last_error = ""
+        mqtt_last_connection_progress_at = mqtt_connected_at
         mqtt_connected_event.set()
 
 
-def _record_mqtt_disconnected(error: str = "") -> None:
-    global mqtt_disconnected_at, mqtt_last_error
+def _record_mqtt_disconnected(error: str = "", *, preserve_connect_error: bool = False) -> None:
+    global mqtt_disconnected_at, mqtt_last_error, mqtt_last_connection_progress_at
     with mqtt_lifecycle_lock:
+        mqtt_last_connection_progress_at = time.time()
         if mqtt_disconnected_at <= 0.0:
-            mqtt_disconnected_at = time.time()
-        if error:
+            mqtt_disconnected_at = mqtt_last_connection_progress_at
+        # A rejected CONNACK is followed by a generic disconnect callback.
+        keep_rejection = preserve_connect_error and mqtt_last_error.startswith("connect_rc=")
+        if error and not keep_rejection:
             mqtt_last_error = str(error)[:500]
         mqtt_connected_event.clear()
+
+
+def on_pre_connect(mqttc, userdata):
+    global mqtt_last_connection_progress_at
+    with mqtt_lifecycle_lock:
+        mqtt_last_connection_progress_at = time.time()
+
+
+def on_connect_fail(mqttc, userdata):
+    _record_mqtt_disconnected("connect_attempt_failed")
 
 
 def mqtt_bridge_status() -> dict[str, Any]:
@@ -2710,7 +2726,7 @@ def _clear_mqtt_wire_transport_state() -> None:
 def on_disconnect(mqttc, userdata, *args):
     _advance_mqtt_connection_generation()
     reason_code = args[-2] if len(args) >= 2 else (args[0] if args else "unknown")
-    _record_mqtt_disconnected(f"disconnect_rc={reason_code}")
+    _record_mqtt_disconnected(f"disconnect_rc={reason_code}", preserve_connect_error=True)
     _clear_transport_reconnect()
     transport_probe_state.disconnected()
     _reset_subscription_state()
@@ -8544,7 +8560,13 @@ def publish_peer_message(
     if paired_client is None:
         return api_error("client_route_unavailable", "The paired phone is unavailable")
     if client is None or not client.is_connected():
-        return api_error("mqtt_not_connected", "GalaxySSI Link is offline")
+        with mqtt_lifecycle_lock:
+            connection_error = mqtt_last_error.lower()
+        if "server busy" in connection_error or "server unavailable" in connection_error:
+            message = "Message server is busy or unavailable. Wait for reconnection and send again."
+        else:
+            message = "Message server is disconnected. Wait for reconnection and send again."
+        return api_error("mqtt_not_connected", message)
     clean_content = str(content or "")[:24_000]
     selected_paths = [Path(value).expanduser().resolve() for value in (attachment_paths or [])[:12]]
     metadata_items = [item if isinstance(item, dict) else {} for item in (attachment_metadata or [])[:12]]
@@ -9070,6 +9092,8 @@ def start():
         with mqtt_lifecycle_lock:
             client = mqttc
         mqttc.on_connect = on_connect
+        mqttc.on_pre_connect = on_pre_connect
+        mqttc.on_connect_fail = on_connect_fail
         mqttc.on_disconnect = on_disconnect
         mqttc.on_message = on_mqtt_message
         mqttc.on_publish = on_publish
@@ -9080,7 +9104,7 @@ def start():
             mqttc.tls_set()
             mqttc.tls_insecure_set(False)
 
-        mqttc.reconnect_delay_set(min_delay=1, max_delay=30)
+        mqttc.reconnect_delay_set(min_delay=1, max_delay=int(MQTT_MAX_RECONNECT_DELAY_SECONDS))
         while running and not mqtt_lifecycle_stop_event.is_set():
             try:
                 mqttc.connect(BROKER, PORT, keepalive=60)
@@ -9119,6 +9143,7 @@ def _ensure_mqtt_worker() -> bool:
 
 
 def _mqtt_supervisor_tick(now: float | None = None) -> None:
+    global mqtt_last_connection_progress_at
     if mqtt_lifecycle_stop_event.is_set():
         return
     if _ensure_mqtt_worker():
@@ -9127,14 +9152,23 @@ def _mqtt_supervisor_tick(now: float | None = None) -> None:
     observed_at = time.time() if now is None else float(now)
     with mqtt_lifecycle_lock:
         disconnected_since = mqtt_disconnected_at
+        last_progress = mqtt_last_connection_progress_at
         mqttc = client
     if mqtt_connected_event.is_set() or disconnected_since <= 0.0 or mqttc is None:
         return
     disconnected_for = max(0.0, observed_at - disconnected_since)
     if disconnected_for < MQTT_DISCONNECTED_RECOVERY_SECONDS:
         return
+    # A live retry loop must finish its backoff. Only recover a stalled loop.
+    progress_grace = MQTT_MAX_RECONNECT_DELAY_SECONDS + MQTT_DISCONNECTED_RECOVERY_SECONDS
+    if last_progress > 0.0 and observed_at - last_progress < progress_grace:
+        return
     if _transport_reconnect_age() is not None:
         return
+    with mqtt_lifecycle_lock:
+        if mqtt_connected_event.is_set() or mqtt_last_connection_progress_at != last_progress:
+            return
+        mqtt_last_connection_progress_at = observed_at
     log.warning(
         "MQTT remained disconnected for %sms; forcing transport recovery",
         round(disconnected_for * 1000),
