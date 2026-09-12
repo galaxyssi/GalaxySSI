@@ -31,6 +31,7 @@ internal class KnowledgePayloadTestFixture(val name: String = "test-knowledge-pa
         db.transaction { sql ->
             val header = requireNotNull(db.readHeader(sql, key))
             val encoded = db.readEncoded(sql, key, header)
+            sql.delete("knowledge_primary_refs", "item_key=?", arrayOf(key))
             sql.delete("knowledge_payloads", "item_key=?", arrayOf(key))
             sql.delete("knowledge_chunks", "item_key=?", arrayOf(key))
             sql.insertOrThrow("knowledge_chunks", null, ContentValues().apply {
@@ -41,6 +42,11 @@ internal class KnowledgePayloadTestFixture(val name: String = "test-knowledge-pa
                 put("header", AgentStorageCipher.encrypt(header.put("chunks", 1).toString(), "$name:$key:header".toByteArray()))
             }, "item_key=?", arrayOf(key))
         }
+    }
+    fun putLegacy(item: AgentKnowledgeItem) = db.transaction {
+        store.upsert(item)
+        KnowledgePrimaryLegacyFixture.rewrite(db, context, name, db.key("id", item.id),
+            inline = AgentKnowledgeCodec.encodeItem(item).toString().length <= KnowledgePayloadSegments.INLINE_CHARS)
     }
     override fun close() {
         store.close()

@@ -33,6 +33,10 @@ class KnowledgePayloadRecoveryDeviceTest {
             title = "\u6062\u590d\u6d4b\u8bd5", summary = version, source = "\u672c\u5730\u6062\u590d",
             content = ("\u77e5\u8bc6\u6b63\u6587 $version ").repeat(3000).trim(), updatedAtMillis = 123)
         fun current() = store.findByIds(setOf("payload-recovery")).single()
+        fun put(version: String) = db.transaction {
+            store.upsert(item(version))
+            KnowledgePrimaryLegacyFixture.rewrite(db, context, name, db.key("id", item(version).id), inline = false)
+        }
         fun verify(version: String) { assertTrue("Recovered payload differs from $version", item(version) == current()) }
         fun die(value: String): Nothing {
             mark(value)
@@ -41,10 +45,10 @@ class KnowledgePayloadRecoveryDeviceTest {
         }
         try {
             when (phase) {
-                "prepare" -> { store.upsert(item("original")); mark("prepared") }
+                "prepare" -> { put("original"); mark("prepared") }
                 "before-commit" -> {
                     assertEquals("prepared", marker.readText()); verify("original")
-                    db.transaction { sql -> db.write(sql, item("uncommitted")); die("before-commit") }
+                    db.transaction { put("uncommitted"); die("before-commit") }
                 }
                 "verify-rollback" -> {
                     assertEquals("before-commit", marker.readText()); verify("original")
@@ -54,7 +58,7 @@ class KnowledgePayloadRecoveryDeviceTest {
                 }
                 "after-commit" -> {
                     assertEquals("rollback-verified", marker.readText())
-                    store.upsert(item("committed")); die("after-commit")
+                    put("committed"); die("after-commit")
                 }
                 "verify-commit" -> {
                     assertEquals("after-commit", marker.readText()); verify("committed")
@@ -72,7 +76,7 @@ class KnowledgePayloadRecoveryDeviceTest {
                 "verify-snapshot-release" -> {
                     assertEquals("during-snapshot", marker.readText()); assertEquals(0L, store.stats().itemCount)
                     assertTrue(requireNotNull(db.reclaimPayloads()).bytes > 0)
-                    store.upsert(item("retained")); verify("retained")
+                    put("retained"); verify("retained")
                     mark("snapshot-release-verified")
                 }
                 else -> error("Unknown payload recovery phase")

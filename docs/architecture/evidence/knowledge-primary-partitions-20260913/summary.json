@@ -1,0 +1,106 @@
+{
+  "date": "2026-09-13",
+  "scope": "Android authoritative knowledge record bodies in rotating encrypted SQLite partitions",
+  "base": "dfe37f35ad9cf00b5424702f9f831334c496c492",
+  "device": "SM-T575",
+  "android": {"versionName": "1.1.111", "versionCode": 997},
+  "desktopChanged": false,
+  "appApkSha256": "64cf8b59cef697d2d0a1dab3cd822b5a5d90551c07280832700f175db0f4d249",
+  "finalTestApkSha256": "0c097b026d2b22210e46158fc4c4b9e0a48c3de88135340d3ae14c1b62f0ff2f",
+  "build": {"apkAndJvmSeconds": 793, "lastTestOnlyRebuildSeconds": 132},
+  "baseline": {
+    "versionName": "1.1.110",
+    "versionCode": 996,
+    "memTotalKiB": 3687620,
+    "memAvailableKiB": 1934504,
+    "dataFreeKiB": 39238516,
+    "retainedCatalogBytes": 110985216
+  },
+  "retainedMigration": {
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "realRecords": 10001,
+    "moved": 10001,
+    "pages": 1251,
+    "maximumRecordsPerPage": 8,
+    "reopenEveryPages": 250,
+    "migrationMs": 58344,
+    "slowestPageMs": 101,
+    "testSecondsIncludingBeforeAndAfterReads": 153.760,
+    "physicalPartitions": 4,
+    "primaryReferences": 10001,
+    "legacyChunks": 0,
+    "legacyPayloadReferences": 0,
+    "logicalRevisionPreserved": true,
+    "beforeAndAfterFullRecordDigestEqual": true,
+    "digestSha256": "59c72cdc643ade772489b4ee25e038d04b9ab8680bc2a80aea7f0b6f75bd71f2",
+    "digestEncoding": "length-prefixed UTF-8 re-encoded complete items in backup traversal order",
+    "sqliteVersion": "3.50.1",
+    "physicalDirectoryKiBObservedAfterMigration": 6824,
+    "processVmHwmKiBObserved": 296388,
+    "processVmRssKiBObserved": 247176
+  },
+  "deviceSuites": {
+    "focused": {"passed": 15, "seconds": 8.008},
+    "legacy": {"passed": 95, "seconds": 712.222},
+    "counters": {"passed": 22, "seconds": 64.838},
+    "sourceBackupSearch": {"passed": 97, "seconds": 271.132},
+    "profile": {"passed": 3, "seconds": 5.423}
+  },
+  "retainedRewrite": {
+    "variant": "primary-partitions-v1",
+    "recordsWrittenAndIndividuallyVerified": 10001,
+    "testSeconds": 742.85,
+    "callerReplacementMs": 689018,
+    "previousPhaseCallerReplacementMs": 327999,
+    "controlledPerformanceComparison": false,
+    "stageMs": 7883.251840,
+    "prepareMs": 122002.485066,
+    "commitMs": 519204.603937,
+    "ownershipNestedInCommitMs": 84967.591478,
+    "applyNestedInCommitMs": 433160.891959,
+    "observeMs": 39871.836202,
+    "verifyMs": 53681,
+    "duplicateOrMissingRecords": false
+  },
+  "profile": {
+    "samplesPerOperation": 100,
+    "retainedBodyReadP95Ms": 12.798731,
+    "retainedBodyReadP99Ms": 14.832039,
+    "transactionInternalWriteP95Ms": 54.022423,
+    "transactionInternalWriteP99Ms": 73.658269,
+    "writeSamplesIncludeFinalDurableCommit": false
+  },
+  "guards": {
+    "repositoryCheck": "passed",
+    "android16KiBAArch64LibrariesPassed": 74,
+    "stagedWhitespaceCheck": "passed"
+  },
+  "recovery": {
+    "fixture": "test-primary-recovery-2166954ef87b481b94496327beae9551.db",
+    "successfulPreparationAndVerificationTests": 4,
+    "verifiedIntentionalProcessDeaths": ["before-frames", "before-catalog", "after-catalog"],
+    "phaseMarkersCheckedByHost": true,
+    "devicePowerCycle": false
+  },
+  "initialFailures": [
+    {"suite": "sourceBackupSearch", "passed": 96, "failed": 1,
+     "cause": "Historical payload snapshot fixture still wrote new primary records before querying legacy segments",
+     "fix": "Explicit legacy body fixture setup; keep the original concurrent encrypted append assertions"},
+    {"suite": "legacy", "passed": 93, "failed": 2,
+     "cause": "Test-only downgrade rewrote source headers after vector fingerprints were captured",
+     "fix": "Construct historical source headers before indexing; add primary migration vector preservation coverage"},
+    {"suite": "counters", "passed": 20, "failed": 2,
+     "cause": "Historical counter fixtures also rewrote source headers after indexing",
+     "fix": "Index historical bodies before counter downgrade; retain strict vector source validation"}
+  ],
+  "limitations": [
+    "Root metadata, full-text index and vector control ledgers remain centralized",
+    "Mixed live/dead physical partition compaction is not implemented",
+    "Unknown orphan files from aborted initial partition publication are retained, not automatically discovered",
+    "No 100-million-real-record acceptance or universal sub-200-ms latency guarantee",
+    "Observed full-source replacement was slower than the previous phase; bulk write optimization remains open",
+    "Large Unicode record regression process cumulative VmHWM reached 1278680 KiB; no causal attribution to partition storage was established",
+    "Per-frame and connection bounds do not bound total full-text indexing or single-record materialization memory",
+    "Catalog file shrinkage requires separate maintenance; the physical directory measurement is not a whole-store size reduction claim"
+  ]
+}

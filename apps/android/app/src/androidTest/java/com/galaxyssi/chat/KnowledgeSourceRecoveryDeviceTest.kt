@@ -23,7 +23,9 @@ class KnowledgeSourceRecoveryDeviceTest {
     @Test fun prepareCheckpointAndTerminate() {
         check(!context.getDatabasePath(name).exists())
         KnowledgeBackupTestFixture(name).apply { retain = true }.use { f ->
-            f.seed(137); f.store.close()
+            f.seed(137)
+            f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+            f.store.close()
             val hash = KnowledgeSourceMigrationTestSupport.fingerprint(name)
             val state = KnowledgeSourceMigrationTestSupport.raw(name) { db ->
                 db.execSQL("PRAGMA foreign_keys=ON"); db.execSQL("PRAGMA recursive_triggers=ON")

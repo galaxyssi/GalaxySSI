@@ -1,0 +1,44 @@
+INSTRUMENTATION_RESULT: stream=
+
+Time: 658.402
+There were 2 failures:
+1) versionFourMigrationIsLazyAndBackfillResumesAfterReopen(com.galaxyssi.chat.KnowledgeVectorChangesDeviceTest)
+java.lang.IllegalStateException: Stale vector document metadata
+	at com.galaxyssi.chat.KnowledgeVectorLedger.state(KnowledgeVectorLedger.kt:158)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$lambda$23(KnowledgeVectorLedger.kt:102)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.$r8$lambda$L3oyCQeyXpMBGFGV3H4q0OTY0Jc(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorLedger$$ExternalSyntheticLambda5.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeSearchSnapshot.access(KnowledgeSearchSnapshot.kt:40)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.readCommitted$app_debug(AgentKnowledgeDatabase.kt:214)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug(KnowledgeVectorLedger.kt:100)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug$default(KnowledgeVectorLedger.kt:93)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page(KnowledgeVectorLedger.kt:91)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page$default(KnowledgeVectorLedger.kt:90)
+	at com.galaxyssi.chat.KnowledgeVectorChangesDeviceTest.versionFourMigrationIsLazyAndBackfillResumesAfterReopen$lambda$36(KnowledgeVectorChangesDeviceTest.kt:212)
+	at com.galaxyssi.chat.KnowledgeVectorChangesDeviceTest.$r8$lambda$lConl3UROcc0OAtMqpZ5PqLtkkc(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorChangesDeviceTest$$ExternalSyntheticLambda21.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorChangesDeviceTest.isolated(KnowledgeVectorChangesDeviceTest.kt:58)
+	at com.galaxyssi.chat.KnowledgeVectorChangesDeviceTest.versionFourMigrationIsLazyAndBackfillResumesAfterReopen(KnowledgeVectorChangesDeviceTest.kt:195)
+2) versionFiveUpgradePreservesExistingQueueAndCompletedVectors(com.galaxyssi.chat.KnowledgeVectorEnrollmentDeviceTest)
+java.lang.IllegalStateException: Stale vector document metadata
+	at com.galaxyssi.chat.KnowledgeVectorLedger.state(KnowledgeVectorLedger.kt:158)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$lambda$23(KnowledgeVectorLedger.kt:102)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.$r8$lambda$L3oyCQeyXpMBGFGV3H4q0OTY0Jc(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorLedger$$ExternalSyntheticLambda5.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeSearchSnapshot.access(KnowledgeSearchSnapshot.kt:40)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.readCommitted$app_debug(AgentKnowledgeDatabase.kt:214)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug(KnowledgeVectorLedger.kt:100)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug$default(KnowledgeVectorLedger.kt:93)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page(KnowledgeVectorLedger.kt:91)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page$default(KnowledgeVectorLedger.kt:90)
+	at com.galaxyssi.chat.KnowledgeVectorEnrollmentDeviceTest.versionFiveUpgradePreservesExistingQueueAndCompletedVectors$lambda$31(KnowledgeVectorEnrollmentDeviceTest.kt:167)
+	at com.galaxyssi.chat.KnowledgeVectorEnrollmentDeviceTest.$r8$lambda$3xZAlZDmA78I0PJiio79KTezgZI(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorEnrollmentDeviceTest$$ExternalSyntheticLambda5.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorEnrollmentDeviceTest.isolated(KnowledgeVectorEnrollmentDeviceTest.kt:53)
+	at com.galaxyssi.chat.KnowledgeVectorEnrollmentDeviceTest.versionFiveUpgradePreservesExistingQueueAndCompletedVectors(KnowledgeVectorEnrollmentDeviceTest.kt:156)
+
+FAILURES!!!
+Tests run: 95,  Failures: 2
+
+
+INSTRUMENTATION_CODE: -1

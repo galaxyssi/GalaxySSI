@@ -70,7 +70,9 @@ class KnowledgeSourceRevisionDeviceTest {
     }
 
     @Test fun versionNineUpgradeDoesNotScanOrRewriteExistingSources() = KnowledgeBackupTestFixture().use { f ->
-        f.seed(129); val fingerprint = KnowledgeSourceMigrationTestSupport.fingerprint(f.name)
+        f.seed(129)
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+        val fingerprint = KnowledgeSourceMigrationTestSupport.fingerprint(f.name)
         KnowledgeSourceRevisionFixtureSchema.versionNine(f)
         val before = token(f, "fixture-1")
         assertTrue(before.endsWith(":0")); assertEquals(0L, f.db.decryptedItemReads)

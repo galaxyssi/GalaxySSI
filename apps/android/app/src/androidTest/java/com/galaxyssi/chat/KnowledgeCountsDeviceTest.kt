@@ -30,7 +30,7 @@ class KnowledgeCountsDeviceTest {
 
     @Test fun manyChunksInOneDocumentSeekByNumericOrdinalAcrossRestart() = KnowledgeCountTestFixture().use { f ->
         f.store.upsert(f.item("many-chunks", "\u7edf\u8ba1\u5206\u7247\u6062\u590d".repeat(600)))
-        f.index()
+        f.indexLegacy()
         val count = f.counts().chunks
         assertTrue(count > 130)
         f.downgrade()
@@ -81,7 +81,7 @@ class KnowledgeCountsDeviceTest {
     }
 
     @Test fun legacyUpgradeIsBoundedAndDoesNotDecryptSourcesOrVectors() = KnowledgeCountTestFixture().use { f ->
-        f.seed(131); f.index(); f.store.upsert(f.item("pending")); f.downgrade()
+        f.seed(131); f.indexLegacy(); f.store.upsert(f.item("pending")); f.downgrade()
         val reads = f.db.decryptedItemReads
         assertEquals(KnowledgeCountSnapshot(0, 0, false), f.counts())
         assertFalse(f.page(vectors)); assertEquals(64L, f.counts().chunks)
@@ -95,7 +95,7 @@ class KnowledgeCountsDeviceTest {
     }
 
     @Test fun liveMutationsOnBothSidesOfLegacyCursorAreCountedExactlyOnce() = KnowledgeCountTestFixture().use { f ->
-        f.seed(131); f.index(); f.downgrade(); f.page(vectors, 8)
+        f.seed(131); f.indexLegacy(); f.downgrade(); f.page(vectors, 8)
         val ordered = (1..131).map { "source-$it" }.sortedBy { f.db.key("id", it) }
         for (id in listOf(ordered.first(), ordered.last())) f.store.upsert(f.item(id, "\u4fee\u6539\u540e"))
         for (id in listOf(ordered[1], ordered[120])) f.db.transaction {
@@ -115,7 +115,7 @@ class KnowledgeCountsDeviceTest {
     }
 
     @Test fun failedOrIgnoredCheckpointRollsBackAllTrackedRows() = KnowledgeCountTestFixture().use { f ->
-        f.seed(65); f.index(); f.downgrade()
+        f.seed(65); f.indexLegacy(); f.downgrade()
         for (operation in listOf("ABORT,'fixture checkpoint'", "IGNORE")) {
             f.db.access { it.execSQL("CREATE TRIGGER reject_count_cursor BEFORE UPDATE ON knowledge_count_scan " +
                 "BEGIN SELECT RAISE($operation); END") }
@@ -128,7 +128,7 @@ class KnowledgeCountsDeviceTest {
     }
 
     @Test fun ignoredTrackingOrCounterUpdatesCannotAdvanceTheCursor() = KnowledgeCountTestFixture().use { f ->
-        f.seed(65); f.index(); f.downgrade()
+        f.seed(65); f.indexLegacy(); f.downgrade()
         for (table in listOf("knowledge_vectors", "knowledge_vector_counts")) {
             f.db.access { it.execSQL("CREATE TRIGGER ignore_count_write BEFORE UPDATE ON $table BEGIN SELECT RAISE(IGNORE); END") }
             assertThrows(Exception::class.java) { f.page(vectors) }
@@ -159,7 +159,7 @@ class KnowledgeCountsDeviceTest {
     }
 
     @Test fun malformedAndMissingCursorFailWithoutRestartingOrDiscardingCounts() = KnowledgeCountTestFixture().use { f ->
-        f.seed(2); f.index(); f.downgrade()
+        f.seed(2); f.indexLegacy(); f.downgrade()
         f.db.access { it.execSQL("UPDATE knowledge_count_scan SET after_item='bad' WHERE kind='VECTOR'") }
         assertThrows(IllegalStateException::class.java) { f.page(vectors) }
         f.db.access { it.execSQL("DELETE FROM knowledge_count_scan WHERE kind='VECTOR'") }
@@ -179,7 +179,7 @@ class KnowledgeCountsDeviceTest {
     }
 
     @Test fun simultaneousMaintenancePagesSerializeAndReopenWithExactCounts() = KnowledgeCountTestFixture().use { f ->
-        f.seed(131); f.index(); f.downgrade()
+        f.seed(131); f.indexLegacy(); f.downgrade()
         val executor = Executors.newFixedThreadPool(3)
         try { executor.invokeAll((1..3).map { Callable { f.page(vectors) } }).forEach { it.get(30, TimeUnit.SECONDS) } }
         finally { executor.shutdownNow() }

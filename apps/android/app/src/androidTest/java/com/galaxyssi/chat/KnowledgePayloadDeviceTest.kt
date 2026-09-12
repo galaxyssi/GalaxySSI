@@ -14,7 +14,7 @@ class KnowledgePayloadDeviceTest {
         val small = f.item(1, "\u672c\u5730 quartzplanet")
         val large = f.item(2).copy(cloudAccess = AgentKnowledgeCloudAccess.DENY,
             agentAccess = AgentKnowledgeAgentAccess.SELECTED_AGENTS, allowedAgentIds = listOf("trusted"))
-        f.store.upsert(small); f.store.upsert(large)
+        f.putLegacy(small); f.putLegacy(large)
         assertEquals(1L, f.count("knowledge_payloads")); assertEquals(1L, f.count("knowledge_chunks"))
         assertEquals(2L, f.count("knowledge_fts"))
         f.reopen()
@@ -27,9 +27,9 @@ class KnowledgePayloadDeviceTest {
     }
     @Test fun failedReferencePublicationPreservesOldRowAndOrphanCanBeReclaimed() = KnowledgePayloadTestFixture().use { f ->
         val old = f.item(1, "old-content")
-        f.store.upsert(old)
+        f.putLegacy(old)
         f.db.access { it.execSQL("CREATE TRIGGER fail_payload BEFORE INSERT ON knowledge_payloads BEGIN SELECT RAISE(ABORT,'fixture reference failure'); END") }
-        try { assertThrows(Exception::class.java) { f.store.upsert(f.item(1)) } }
+        try { assertThrows(Exception::class.java) { f.putLegacy(f.item(1)) } }
         finally { f.db.access { it.execSQL("DROP TRIGGER fail_payload") } }
         assertEquals(listOf(old), f.store.list(10)); assertEquals(0L, f.count("knowledge_payloads"))
         assertTrue(f.root.walkTopDown().any { it.extension == "seg" && it.length() > 0 })
@@ -37,11 +37,11 @@ class KnowledgePayloadDeviceTest {
         f.reopen(); assertEquals(listOf(old), f.store.list(10))
     }
     @Test fun backupSnapshotPinsOldBodiesWithoutBlockingConcurrentWriter() = KnowledgePayloadTestFixture().use { f ->
-        val original = f.item(1); f.store.upsert(original)
+        val original = f.item(1); f.putLegacy(original)
         f.db.backupSnapshot().use { snapshot ->
             val executor = Executors.newSingleThreadExecutor()
             try { executor.submit {
-                f.store.upsert(f.item(1, "replacement")); f.store.upsert(f.item(2))
+                f.putLegacy(f.item(1, "replacement")); f.putLegacy(f.item(2))
             }.get(5, TimeUnit.SECONDS) } finally { executor.shutdownNow() }
             assertNull(f.db.reclaimPayloads())
             assertEquals(listOf(original), snapshot.items().toList())
@@ -50,7 +50,7 @@ class KnowledgePayloadDeviceTest {
         assertEquals("replacement", f.store.findByIds(setOf(original.id)).single().content)
     }
     @Test fun sourceSnapshotSurvivesDeletionAndDefersReclamationUntilClosed() = KnowledgePayloadTestFixture().use { f ->
-        val original = f.item(1); f.store.upsert(original)
+        val original = f.item(1); f.putLegacy(original)
         val selection = KnowledgeSourceSelection(f.db, AgentKnowledgeSourceReference(source = original.source))
         val revision = f.db.access(selection::revision)
         f.db.sourceSnapshot(selection, revision).use { snapshot ->
@@ -102,7 +102,7 @@ class KnowledgePayloadDeviceTest {
         assertEquals(5L, f.count("knowledge_payloads")); assertEquals(5, f.store.list(10).size)
     }
     @Test fun missingOrCorruptedPayloadNeverBecomesAnEmptySuccessfulResult() = KnowledgePayloadTestFixture().use { f ->
-        val original = f.item(1); f.store.upsert(original)
+        val original = f.item(1); f.putLegacy(original)
         val file = f.root.walkTopDown().single { it.extension == "seg" }
         RandomAccessFile(file, "rw").use { bytes ->
             bytes.seek(bytes.length() - 1); val last = bytes.read()
@@ -116,7 +116,7 @@ class KnowledgePayloadDeviceTest {
         assertEquals(1L, f.store.stats().itemCount)
     }
     @Test fun closedOwnerStillPinsFilesUntilItsSnapshotLeaseIsReleased() = KnowledgePayloadTestFixture().use { f ->
-        f.store.upsert(f.item(1))
+        f.putLegacy(f.item(1))
         val snapshot = f.db.backupSnapshot()
         try {
             f.reopen(); f.db.transaction { it.delete("knowledge_items", null, null) }
