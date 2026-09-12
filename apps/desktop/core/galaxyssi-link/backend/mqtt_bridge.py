@@ -42,6 +42,7 @@ import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
 from link_delivery import (
     acknowledge_outbound,
+    acknowledge_verified_outbound,
     bind_ciphertext,
     bind_message_content,
     InboundContentConflict,
@@ -57,6 +58,7 @@ from link_delivery import (
     pending_outbound,
     pending_task_results as pending_persisted_task_results,
     queue_outbound,
+    stored_wire_receipt,
     queue_task_result,
     task_result_is_current,
     remove_task_result,
@@ -6885,9 +6887,14 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
         return
     message_id = str(envelope["message_id"])
     route = str(wire_payload["_client_route_id"])
+    from mqtt_delivery_envelope import stored_receipt
+    wire_hash = stored_wire_receipt(route, message_id)
+    if not wire_hash:
+        # A recovered body without its wire proof waits for the sender's durable retry.
+        return
     receipt = accepted_delivery_ack_payload(payload, message_id, trace)
-    receipt.update(delivery_status="RX_STORED", duplicate=duplicate,
-                   content_hash=bind_message_content(route, message_id, envelope))
+    receipt.update(stored_receipt(message_id, wire_hash))
+    receipt.update(duplicate=duplicate)
     complete_message(route, message_id, "RX_STORED", {
         "status": "RX_STORED", "content_hash": receipt["content_hash"],
         "client_source_message_id": receipt["client_source_message_id"],
@@ -6913,7 +6920,8 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
             )
             if claim.state not in {"busy", "rejected"} and not admission_token:
                 if ciphertext_digest:
-                    bind_ciphertext(route, ciphertext_digest, message_id)
+                    from mqtt_delivery_envelope import content_hash
+                    bind_ciphertext(route, ciphertext_digest, message_id, receipt_hash=content_hash(wire_payload))
                 _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True)
             return
         handler_started = False
@@ -6928,7 +6936,8 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 from blob_artifact_ingress import persist_receipt_before_ack
                 persist_receipt_before_ack(sys.modules[__name__], envelope, route)
             if ciphertext_digest:
-                bind_ciphertext(route, ciphertext_digest, message_id)
+                from mqtt_delivery_envelope import content_hash
+                bind_ciphertext(route, ciphertext_digest, message_id, receipt_hash=content_hash(wire_payload))
             identity = _remote_task_identity(payload, route)
             if timings and identity is not None and not claim.recovered:
                 from agent_latency import record_task
@@ -6939,9 +6948,9 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)
-                task_progress_window.release(route, acknowledged_id)
-                transport_timing.received(route, acknowledged_id)
-                if acknowledge_outbound(route, acknowledged_id):
+                if acknowledge_verified_outbound(route, payload, _receipt_binding_for_client(paired_client)):
+                    task_progress_window.release(route, acknowledged_id)
+                    transport_timing.received(route, acknowledged_id)
                     flush_outbound_messages(mqttc)
                 complete_message(route, message_id, "RX_STORED", {"status": "RX_STORED", "receipt_required": False})
             else:
@@ -8044,6 +8053,12 @@ def _schedule_requested_connector_state(
     return True
 
 
+def _receipt_binding_for_client(paired_client):
+    from mqtt_delivery_envelope import receipt_binding
+    return receipt_binding(paired_client["client_route_id"], paired_client["local_identity_fingerprint"],
+                           paired_client["identity_fingerprint"], paired_client["link_secret"])
+
+
 def _publish_to_registered_client(
     mqttc,
     paired_client: dict,
@@ -8094,6 +8109,7 @@ def _publish_to_registered_client(
             topic,
             wire_payload,
             priority=_outbound_delivery_priority(payload),
+            receipt_binding=_receipt_binding_for_client(paired_client),
         )
         if not payload.get("peer_chat"):
             transport_timing.queued(client_route_id, message_id, transport_task_id(payload))

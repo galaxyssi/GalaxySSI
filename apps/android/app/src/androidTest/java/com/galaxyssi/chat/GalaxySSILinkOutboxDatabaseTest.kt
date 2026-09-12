@@ -15,6 +15,38 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GalaxySSILinkOutboxDatabaseTest {
+    @Test fun onlyExactReceiptBindingAndHashCanDeleteDurableOutboxRow() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_receipt_${System.nanoTime()}.db"
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                database.insert(item(1, System.currentTimeMillis()).put("receipt_binding", "a".repeat(64))
+                    .put("receipt_hash", "b".repeat(64)))
+            }
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                assertTrue(database.deleteForVerifiedReceipt("message-1", "c".repeat(64), "b".repeat(64)) == null)
+                assertTrue(database.deleteForVerifiedReceipt("message-1", "a".repeat(64), "c".repeat(64)) == null)
+                assertTrue(database.deleteForVerifiedReceipt("message-other", "a".repeat(64), "b".repeat(64)) == null)
+                assertTrue(database.contains("message-1"))
+                assertTrue(database.deleteForVerifiedReceipt("message-1", "a".repeat(64), "b".repeat(64)) != null)
+                assertFalse(database.contains("message-1"))
+                assertTrue(database.deleteForVerifiedReceipt("message-1", "a".repeat(64), "b".repeat(64)) == null)
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
+    @Test fun outboxWithoutProofCannotBeRemovedByNetworkReceipt() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_receipt_absent_${System.nanoTime()}.db"
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                database.insert(item(1, System.currentTimeMillis()))
+                assertTrue(database.deleteForVerifiedReceipt("message-1", "", "") == null)
+                assertTrue(database.deleteForVerifiedReceipt("message-1", "a".repeat(64), "b".repeat(64)) == null)
+                assertTrue(database.contains("message-1"))
+            }
+        } finally { context.deleteDatabase(name) }
+    }
     @Test fun bulkWakeReadsIndexedScheduleInsteadOfStaleEncryptedRetryDate() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "mqtt_wake_${System.nanoTime()}.db"

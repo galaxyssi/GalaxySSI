@@ -122,7 +122,7 @@ class MqttPoolClient:
         required = set(topics)
         with self._lock:
             return {broker: path["generation"] for broker, path in self._paths.items()
-                    if path["connected"] and required <= path["topics"] and not self._closed.is_set()}
+                    if required and path["connected"] and required <= path["topics"] and not self._closed.is_set()}
 
     def _state(self, ingress: Ingress, state, error):
         if self._closed.is_set() and state != "disconnected":
@@ -177,20 +177,20 @@ class MqttPoolClient:
 
     def _subscribed(self, ingress, topics, complete):
         del complete
-        self.policy.subscribed(ingress.broker_id, ingress.generation, set(topics))
         with self._lock:
             path = self._paths[ingress.broker_id]
-            if not path["connected"] or path["generation"] != ingress.generation:
+            if self._closed.is_set() or not path["connected"] or path["generation"] != ingress.generation:
                 return
-            path["topics"].update(set(topics) & set(self._desired))
+            active = set(topics) & set(self._desired)
+            self.policy.subscribed(ingress.broker_id, ingress.generation, active)
+            path["topics"].update(active)
         self._complete_subscriptions()
         self._on_paths_changed(self, ingress, "subscribed", "")
 
     def _complete_subscriptions(self):
-        active = self.active_topics()
         with self._lock:
             completed = [(mid, topics) for mid, topics in self._pending_subscriptions.items()
-                         if set(topics) <= active]
+                         if self.ready_path_generations(topics)]
             for mid, _ in completed:
                 self._pending_subscriptions.pop(mid, None)
         for mid, topics in completed:

@@ -103,7 +103,8 @@ object GalaxySSILinkDeliveryStore {
         contactId: String = "",
         brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
         attachmentTransferId: String = "",
-        recoverableEnvelope: String = ""
+        recoverableEnvelope: String = "",
+        receiptRoutes: GalaxySSILinkProtocol.Routes? = null
     ) {
         val database = outboxDatabase(context)
         if (database.contains(messageId)) return
@@ -122,6 +123,10 @@ object GalaxySSILinkDeliveryStore {
             .put("next_attempt_at", System.currentTimeMillis())
             .put("created_at", System.currentTimeMillis())
             .put("updated_at", System.currentTimeMillis())
+        if (receiptRoutes != null) {
+            item.put("receipt_binding", receiptBinding(receiptRoutes))
+                .put("receipt_hash", MqttDeliveryEnvelope.contentHash(JSONObject(wirePayload)))
+        }
         attachmentTransferId.lowercase()
             .takeIf { it.matches(SHA256) }
             ?.let { item.put(ATTACHMENT_TRANSFER_ID, it) }
@@ -181,6 +186,7 @@ object GalaxySSILinkDeliveryStore {
             val envelope = runCatching { JSONObject(encodedEnvelope) }.getOrNull() ?: continue
             val wirePayload = encrypt(envelope)?.toString() ?: continue
             replaceWirePayload(context, item, messageId, wirePayload)
+            if (item.has("receipt_hash")) item.put("receipt_hash", MqttDeliveryEnvelope.contentHash(JSONObject(wirePayload)))
             item.put("topic", topic)
                 .put("status", "queued")
                 .put("attempts", 0)
@@ -314,6 +320,21 @@ object GalaxySSILinkDeliveryStore {
     @Synchronized
     fun acknowledge(context: Context, messageId: String) {
         removePendingMessage(context, messageId)
+    }
+
+    internal fun receiptBinding(routes: GalaxySSILinkProtocol.Routes): String =
+        MqttDeliveryEnvelope.receiptBinding(routes.clientRouteId, routes.localFingerprint, routes.remoteFingerprint, routes.linkSecret)
+
+    @Synchronized
+    internal fun acknowledgeVerified(context: Context, routes: GalaxySSILinkProtocol.Routes, payload: JSONObject): Boolean {
+        val (messageId, wireHash) = runCatching { MqttDeliveryEnvelope.parseStoredReceipt(payload) }.getOrNull() ?: return false
+        val removed = outboxDatabase(context).deleteForVerifiedReceipt(messageId, receiptBinding(routes), wireHash) ?: return false
+        // UI correlation comes from our outbox, never from peer-supplied display IDs.
+        val sourceId = removed.optLong("client_source_message_id")
+        payload.put("client_source_message_id", sourceId).put("source_message_id", sourceId)
+            .put("contact_id", removed.optString("contact_id"))
+        deleteOutboxPayload(context, removed)
+        return true
     }
 
     @Synchronized

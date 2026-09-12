@@ -703,6 +703,7 @@ internal fun MainActivity.applyDeliveryAck(json: JSONObject, trace: List<Deliver
         ?: return
     val contactId = json.optString("contact_id").takeIf { it.isNotBlank() } ?: selectedContact?.id ?: return
     val status = when (json.optString("delivery_status")) {
+        "RX_STORED" -> getString(R.string.delivery_status_delivered)
         "broker_ack" -> getString(R.string.delivery_status_confirmed)
         "read" -> getString(R.string.delivery_status_read)
         "notified" -> getString(R.string.delivery_status_notified)

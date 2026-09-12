@@ -58,6 +58,29 @@ class MqttPoolClientTest(unittest.TestCase):
         self.assertEqual(set(), self.client.active_topics())
         self.assertNotEqual(0, self.client.publish("outbox", b"ciphertext").rc)
 
+    def test_split_subacks_cannot_complete_one_receive_window(self):
+        self.pool.auto_suback = False
+        self.client.subscribe({"inbox": 1, "previous-inbox": 1})
+        self.ready()
+        self.pool.confirm("emqx", {"inbox"})
+        self.subscribed.reset_mock()
+        self.pool.confirm("hivemq", {"previous-inbox"})
+        self.subscribed.assert_not_called()
+        self.assertEqual({}, self.client.ready_path_generations({"inbox", "previous-inbox"}))
+        self.pool.confirm("hivemq", {"inbox"})
+        self.subscribed.assert_called_once()
+
+    def test_delayed_suback_after_unsubscribe_cannot_restore_policy_readiness(self):
+        self.ready()
+        self.client.unsubscribe("inbox")
+        self.client._subscribed(Ingress("hivemq", 1, time.monotonic()), {"inbox"}, True)
+        self.assertEqual(frozenset(), self.client.policy.ready_brokers({"inbox"}))
+        self.assertNotEqual(0, self.client.publish("outbox", b"ciphertext").rc)
+
+    def test_empty_receive_window_is_never_ready(self):
+        self.ready()
+        self.assertEqual({}, self.client.ready_path_generations(set()))
+
     def test_one_disconnect_does_not_reset_other_paths_or_global_generation(self):
         self.ready()
         self.pool.lose("emqx")

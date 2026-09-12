@@ -87,6 +87,22 @@ internal class GalaxySSILinkOutboxDatabase(
     }
 
     @Synchronized
+    fun deleteForVerifiedReceipt(messageId: String, binding: String, wireHash: String): JSONObject? {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val item = read(messageId) ?: return null
+            if (item.optString("receipt_binding") != binding || item.optString("receipt_hash") != wireHash ||
+                !binding.matches(Regex("[a-f0-9]{64}")) || !wireHash.matches(Regex("[a-f0-9]{64}"))) return null
+            check(db.delete(TABLE_OUTBOX, "message_id = ?", arrayOf(messageId)) == 1)
+            db.setTransactionSuccessful()
+            return item
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun deleteByClientSourceMessageIds(
         sourceMessageIds: Collection<Long>,
         beforeDelete: (JSONObject) -> Unit = {}

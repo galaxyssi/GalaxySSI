@@ -200,10 +200,16 @@ Task requests retain their original identity and reuse the existing task manager
 Transport RX_STORED is not TASK_ACCEPTED or RUN_FINISHED.
 
 Completed-body retention/compaction, cancellation execution-generation fencing,
-ordered wire acceptance, and end-to-end authenticated content/attempt-bound
-receipts are still required before three-path activation. Receive receipts now
-carry the canonical content hash; the outgoing receipt consumer and physical
-attempt bookkeeping are not yet migrated. Fair local Signal locks avoid thread
+ordered wire acceptance, and full physical-attempt receipt integration are still
+required before multi-path delivery activation. The existing receive ACK now
+uses `signal-wire-sha256-v1`, a cross-platform digest of immutable Signal wire
+fields, not the local JSON application-envelope digest. The outgoing consumer
+requires this digest, stable message ID, `RX_STORED`, and the current pair/key
+binding persisted in the outbox. Local JSON hashes still enforce content
+conflicts independently. The per-attempt frame codec is tested but its dispatcher
+and peer-RTT accounting are not activated yet. See
+[durable receipt verification](../testing/MQTT_DURABLE_RECEIPTS_20260913.md).
+Fair local Signal locks avoid thread
 starvation but do not guarantee ordering across independent brokers.
 
 ## Verification Boundary

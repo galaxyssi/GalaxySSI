@@ -87,6 +87,7 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             ciphertext_digest TEXT NOT NULL,
             message_id TEXT NOT NULL,
             received_at REAL NOT NULL,
+            receipt_hash TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (client_route_id, ciphertext_digest)
         )"""
     )
@@ -101,6 +102,7 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             attempts INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             priority INTEGER NOT NULL DEFAULT 50,
+            receipt_proof TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
@@ -117,6 +119,14 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
                 "ALTER TABLE outbound_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 50"
             )
         db.commit()
+    for table, column in (("outbound_messages", "receipt_proof"), ("inbound_ciphertexts", "receipt_hash")):
+        columns = {str(row[1]) for row in db.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            db.execute("BEGIN IMMEDIATE")
+            if column not in {str(row[1]) for row in db.execute(f"PRAGMA table_info({table})")}:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            db.commit()
+    db.execute("CREATE INDEX IF NOT EXISTS inbound_ciphertext_message ON inbound_ciphertexts(client_route_id,message_id,received_at)")
     db.execute("CREATE INDEX IF NOT EXISTS outbound_messages_status_route ON outbound_messages(status,client_route_id)")
     db.execute(
         """CREATE TABLE IF NOT EXISTS delivery_metadata (
@@ -268,7 +278,7 @@ def claim_message(client_route_id: str, message_id: str) -> bool:
             db.close()
 
 
-def bind_ciphertext(client_route_id: str, ciphertext_digest: str, message_id: str) -> None:
+def bind_ciphertext(client_route_id: str, ciphertext_digest: str, message_id: str, *, receipt_hash: str = "") -> None:
     """Persist the logical message behind a Signal ciphertext for pre-decrypt replay checks."""
     with _lock:
         db = _connect()
@@ -286,6 +296,17 @@ def bind_ciphertext(client_route_id: str, ciphertext_digest: str, message_id: st
             ).fetchone()
             if row is None or str(row[0]) != message_id:
                 raise ValueError("Signal ciphertext digest is already bound to another message")
+            if receipt_hash:
+                from mqtt_delivery_envelope import HASH
+                if not HASH.fullmatch(receipt_hash):
+                    raise ValueError("Invalid durable wire receipt digest")
+                db.execute("""UPDATE inbound_ciphertexts SET receipt_hash=?
+                              WHERE client_route_id=? AND ciphertext_digest=? AND (receipt_hash='' OR receipt_hash=?)""",
+                           (receipt_hash, _route(client_route_id), ciphertext_digest, receipt_hash))
+                saved = db.execute("SELECT receipt_hash FROM inbound_ciphertexts WHERE client_route_id=? AND ciphertext_digest=?",
+                                   (_route(client_route_id), ciphertext_digest)).fetchone()
+                if not saved or saved[0] != receipt_hash:
+                    raise ValueError("Conflicting durable wire receipt digest")
             db.commit()
         finally:
             db.close()
@@ -304,6 +325,19 @@ def message_for_ciphertext(client_route_id: str, ciphertext_digest: str) -> str 
         finally:
             db.close()
     return str(row[0]) if row else None
+
+
+def stored_wire_receipt(client_route_id: str, message_id: str) -> str:
+    with _lock:
+        db = _connect()
+        try:
+            row = db.execute("""SELECT receipt_hash FROM inbound_ciphertexts
+                              WHERE client_route_id=? AND message_id=? AND receipt_hash<>''
+                              ORDER BY received_at DESC, rowid DESC LIMIT 1""",
+                             (_route(client_route_id), message_id)).fetchone()
+            return str(row[0]) if row else ""
+        finally:
+            db.close()
 
 
 def complete_message(client_route_id: str, message_id: str, status: str, acknowledgement: dict | None = None) -> None:
@@ -354,15 +388,23 @@ def queue_outbound(
     wire_payload: str,
     *,
     priority: int = OUTBOUND_PRIORITY_NORMAL,
+    receipt_binding: str = "",
 ) -> None:
     now = time.time()
+    proof = ""
+    if receipt_binding:
+        from mqtt_delivery_envelope import HASH, content_hash
+        if not HASH.fullmatch(receipt_binding):
+            raise ValueError("Invalid outbound receipt binding")
+        proof = json.dumps({"message_id": message_id, "binding": receipt_binding, "content_hash": content_hash(json.loads(wire_payload))},
+                           separators=(",", ":"))
     with _lock:
         db = _connect()
         try:
             db.execute(
                 """INSERT OR IGNORE INTO outbound_messages
-                   (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status,priority)
-                   VALUES(?,?,?,?,?,?,0,'queued',?)""",
+                   (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status,priority,receipt_proof)
+                   VALUES(?,?,?,?,?,?,0,'queued',?,?)""",
                 (
                     _route(client_route_id),
                     message_id,
@@ -371,6 +413,7 @@ def queue_outbound(
                     now,
                     now,
                     int(priority),
+                    _protect(proof, "receipt-proof") if proof else "",
                 ),
             )
             db.commit()
@@ -472,6 +515,7 @@ def fail_exhausted_outbound(
 
 
 def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
+    """Local discard only. Network receipts must use acknowledge_verified_outbound."""
     with _lock:
         db = _connect()
         try:
@@ -481,6 +525,33 @@ def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
             )
             db.commit()
             return cursor.rowcount > 0
+        finally:
+            db.close()
+
+
+def acknowledge_verified_outbound(client_route_id: str, payload: dict, receipt_binding: str) -> bool:
+    from mqtt_delivery_envelope import HASH, parse_stored_receipt
+    try:
+        message_id, digest = parse_stored_receipt(payload)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(receipt_binding, str) or not HASH.fullmatch(receipt_binding):
+        return False
+    with _lock:
+        db = _connect()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT receipt_proof FROM outbound_messages WHERE client_route_id=? AND message_id=?",
+                             (_route(client_route_id), message_id)).fetchone()
+            if not row or not row[0]:
+                return False
+            proof = json.loads(_reveal(row[0], "receipt-proof"))
+            if proof != {"message_id": message_id, "binding": receipt_binding, "content_hash": digest}:
+                return False
+            db.execute("DELETE FROM outbound_messages WHERE client_route_id=? AND message_id=?",
+                       (_route(client_route_id), message_id))
+            db.commit()
+            return True
         finally:
             db.close()
 

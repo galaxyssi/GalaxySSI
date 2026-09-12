@@ -26,7 +26,8 @@ class MqttStoredDispatchTest(unittest.TestCase):
         self.addCleanup(self.stack.close)
         self.path = Path(self.temp.name) / "delivery.db"
         self.stack.enter_context(patch.object(delivery, "DB_PATH", self.path))
-        self.paired = {"client_route_id": "pair", "signal_name": "phone", "link_secret": link_protocol.new_link_secret()}
+        self.paired = {"client_route_id": "pair", "signal_name": "phone", "link_secret": link_protocol.new_link_secret(),
+                       "local_identity_fingerprint": "a" * 64, "identity_fingerprint": "b" * 64}
         self.envelope = link_protocol.make_envelope(
             {"type": "text", "content": "hello", "contact_id": "codex", "client_route_id": "pair",
              "task_id": "task", "turn_id": "turn", "conversation_id": "conversation"},
@@ -173,12 +174,42 @@ class MqttStoredDispatchTest(unittest.TestCase):
 
     def test_receipt_replay_never_creates_ack_of_ack(self):
         self.envelope["payload"] = {"type": "delivery_ack", "transport_message_id": "old-outbound"}
-        ack = self.mock("acknowledge_outbound", return_value=False)
+        ack = self.mock("acknowledge_verified_outbound", return_value=False)
         self.send()
         self.send()
-        ack.assert_called_once_with("pair", "old-outbound")
+        ack.assert_called_once()
+        self.assertEqual("pair", ack.call_args.args[0])
+        self.assertEqual("old-outbound", ack.call_args.args[1]["transport_message_id"])
+        self.assertEqual(bridge._receipt_binding_for_client(self.paired), ack.call_args.args[2])
         self.publish.assert_not_called()
         self.handle.assert_not_called()
+
+    def test_verified_receipt_retires_matching_outbox_through_real_receive_handler(self):
+        from mqtt_delivery_envelope import content_hash, stored_receipt
+        outbound = {**self.wire, "from": "desktop", "to": "phone", "body": "AA=="}
+        delivery.queue_outbound("pair", "old-outbound", "outbox", json.dumps(outbound),
+                                receipt_binding=bridge._receipt_binding_for_client(self.paired))
+        self.envelope["payload"] = stored_receipt("old-outbound", content_hash(outbound))
+        flush = self.mock("flush_outbound_messages")
+        self.send()
+        self.log.error.assert_not_called()
+        self.assertIsNone(delivery.outbound_status("pair", "old-outbound"))
+        flush.assert_called_once()
+        self.publish.assert_not_called()
+
+    def test_false_receipt_does_not_release_progress_or_timing(self):
+        from mqtt_delivery_envelope import stored_receipt
+        delivery.queue_outbound("pair", "old-outbound", "outbox", json.dumps(self.wire),
+                                receipt_binding=bridge._receipt_binding_for_client(self.paired))
+        self.envelope["payload"] = stored_receipt("old-outbound", "f" * 64)
+        window = self.mock("task_progress_window")
+        timing = self.mock("transport_timing")
+        self.send()
+        self.log.error.assert_not_called()
+        self.assertTrue(delivery.outbound_status("pair", "old-outbound"))
+        window.release.assert_not_called()
+        timing.received.assert_not_called()
+        self.publish.assert_not_called()
 
     def test_revocation_or_changed_identity_rejects_pending_body(self):
         for paired in (None, {**self.paired, "revoked_at": 1}, {**self.paired, "signal_name": "different"}):

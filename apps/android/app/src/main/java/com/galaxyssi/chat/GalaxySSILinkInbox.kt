@@ -18,7 +18,7 @@ internal class GalaxySSILinkInbox(
     data class Pending(val recordKey: String, val peer: Peer, val messageId: String,
                        val payload: String, val createdAt: Long)
     data class Replay(val messageId: String, val receiptRequired: Boolean, val completed: Boolean,
-                      val contentHash: String, val recordKey: String)
+                      val contentHash: String, val recordKey: String, val wireHash: String = "")
     class ContentConflict : IllegalArgumentException("Conflicting authenticated message content")
     class CapacityExceeded : IllegalStateException("Durable inbox capacity exceeded")
 
@@ -36,16 +36,24 @@ internal class GalaxySSILinkInbox(
                 "record_count INTEGER NOT NULL CHECK(record_count>=0), pending_bytes INTEGER NOT NULL CHECK(pending_bytes>=0))")
             db.execSQL("""CREATE TABLE IF NOT EXISTS link_inbox_ciphertexts (
                 scope_digest TEXT NOT NULL, ciphertext_digest TEXT NOT NULL, record_key TEXT NOT NULL,
+                receipt_hash TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(scope_digest,ciphertext_digest))""")
+            val hasReceiptHash = db.rawQuery("PRAGMA table_info(link_inbox_ciphertexts)", null).use { cursor ->
+                var found = false
+                while (cursor.moveToNext()) if (cursor.getString(1) == "receipt_hash") found = true
+                found
+            }
+            if (!hasReceiptHash) db.execSQL("ALTER TABLE link_inbox_ciphertexts ADD COLUMN receipt_hash TEXT NOT NULL DEFAULT ''")
             db.execSQL("CREATE INDEX IF NOT EXISTS link_inbox_cipher_record ON link_inbox_ciphertexts(record_key)")
         }
     }
 
     fun accept(peer: Peer, messageId: String, contentHash: String, payload: JSONObject,
-               ciphertextDigest: String = "", receiptRequired: Boolean = false): Accepted {
+               ciphertextDigest: String = "", receiptRequired: Boolean = false, wireHash: String = ""): Accepted {
         require(peer.scope.isNotBlank() && peer.scope.length <= 512 && peer.endpoint.isNotBlank())
         require(messageId.isNotBlank() && messageId.length <= 256 && HASH.matches(contentHash))
         require(ciphertextDigest.isEmpty() || HASH.matches(ciphertextDigest))
+        require(wireHash.isEmpty() || (ciphertextDigest.isNotEmpty() && HASH.matches(wireHash)))
         require(payload.optString("message_id") == messageId)
         val scope = MqttImmutableContent.sha256(peer.scope)
         val key = MqttImmutableContent.sha256("$scope\u0000$messageId")
@@ -85,6 +93,13 @@ internal class GalaxySSILinkInbox(
                 val bound = db.rawQuery("SELECT record_key FROM link_inbox_ciphertexts WHERE scope_digest=? AND ciphertext_digest=?",
                     arrayOf(scope, ciphertextDigest)).use { check(it.moveToFirst()); it.getString(0) }
                 check(bound == key) { "Signal ciphertext is bound to another message" }
+                if (wireHash.isNotEmpty()) {
+                    db.execSQL("UPDATE link_inbox_ciphertexts SET receipt_hash=? WHERE scope_digest=? AND ciphertext_digest=? " +
+                        "AND (receipt_hash='' OR receipt_hash=?)", arrayOf(wireHash, scope, ciphertextDigest, wireHash))
+                    val saved = db.rawQuery("SELECT receipt_hash FROM link_inbox_ciphertexts WHERE scope_digest=? AND ciphertext_digest=?",
+                        arrayOf(scope, ciphertextDigest)).use { check(it.moveToFirst()); it.getString(0) }
+                    check(saved == wireHash) { "Conflicting wire receipt digest" }
+                }
             }
             payload.put(MqttImmutableContent.RECORD_KEY, key)
             Accepted(key, when { existing == null -> Stage.STORED; existing.completed -> Stage.COMPLETED; else -> Stage.PENDING }, stamped)
@@ -94,14 +109,26 @@ internal class GalaxySSILinkInbox(
     fun replay(peerScope: String, ciphertextDigest: String): Replay? {
         require(HASH.matches(ciphertextDigest))
         return database.indexedTransaction { db ->
-            val key = db.rawQuery("SELECT record_key FROM link_inbox_ciphertexts WHERE scope_digest=? AND ciphertext_digest=?",
+            val saved = db.rawQuery("SELECT record_key,receipt_hash FROM link_inbox_ciphertexts WHERE scope_digest=? AND ciphertext_digest=?",
                 arrayOf(MqttImmutableContent.sha256(peerScope), ciphertextDigest)).use {
-                if (it.moveToFirst()) it.getString(0) else null
+                if (it.moveToFirst()) it.getString(0) to it.getString(1) else null
             } ?: return@indexedTransaction null
+            val (key, wireHash) = saved
             val value = checkNotNull(record(db, key)) { "Signal replay points to a missing durable inbox record" }
             if (!value.completed) readPending(key, value.messageId, value.createdAt)
-            Replay(value.messageId, value.receiptRequired, value.completed, value.contentHash, key)
+            Replay(value.messageId, value.receiptRequired, value.completed, value.contentHash, key, wireHash)
         }
+    }
+
+    fun storedReceipt(peerScope: String, messageId: String): Replay? = database.indexedTransaction { db ->
+        val key = MqttImmutableContent.sha256("${MqttImmutableContent.sha256(peerScope)}\u0000$messageId")
+        val value = record(db, key) ?: return@indexedTransaction null
+        if (!value.receiptRequired) return@indexedTransaction null
+        if (!value.completed) readPending(key, value.messageId, value.createdAt)
+        val wireHash = db.rawQuery("SELECT receipt_hash FROM link_inbox_ciphertexts WHERE record_key=? AND receipt_hash<>'' " +
+            "ORDER BY rowid DESC LIMIT 1", arrayOf(key)).use { if (it.moveToFirst()) it.getString(0) else null }
+            ?: return@indexedTransaction null
+        Replay(value.messageId, true, value.completed, value.contentHash, key, wireHash)
     }
 
     fun complete(payload: JSONObject): Boolean {

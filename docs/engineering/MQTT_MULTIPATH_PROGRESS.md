@@ -253,10 +253,14 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    including interrupted cancel generation fencing, remain to be finished.
    Android now uses a shared Signal/inbox transaction;
    verify real native rollback and process-death recovery before activation.
-   Outgoing receipts still require the planned authenticated content/scope binding
-   and physical-attempt integration; moving the inbox is not that integration.
-5. Define and integrate authenticated per-attempt/frame metadata and transport
-   receipts. Account for frame overhead before current 512 KiB privacy buckets
+   Outgoing receipts now validate authenticated current pair/key, stable message
+   ID, complete durable-receive status, and a shared Signal wire digest against
+   the persisted outbox proof. See [receipt binding](../testing/MQTT_DURABLE_RECEIPTS_20260913.md).
+   Physical-attempt scheduling/receipt integration and actual cross-platform
+   production acceptance are still outstanding.
+5. Authenticated per-attempt/frame metadata and transport receipt codecs now have
+   shared Android/Python vectors and negative tests; activate them in the real
+   dispatcher and timing path. Account for frame overhead before current 512 KiB privacy buckets
    and chunk splitting; do not silently overflow existing direct-wire limits.
 6. Add shared durable fragment/chunk bitmap acknowledgement, alternate-path
    retransmission, assembly validation, and final artifact handling. Current
@@ -269,7 +273,9 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    traffic, automatic internal rollback to one observed healthy common path.
 9. Run integration/fault matrices on owned test brokers, then designated-device
    tests. The latest user update switched this round to connected S20U (SM-G9880,
-   ADB serial `R5CN319CESA`). 37 isolated storage/security/pool tests completed;
+   ADB serial `R5CN319CESA`). The prior 37-case pool verification completed; the
+   latest durable-receipt checkpoint separately passed 47 isolated device cases
+   (including overlapping storage cases, not 84 distinct tests);
    no shipping App installation or UI control has occurred on S20U. Test-owned
    packages were removed after completion; the pre-existing test package remains.
    Do not operate S26U or SM-T575 in this round.

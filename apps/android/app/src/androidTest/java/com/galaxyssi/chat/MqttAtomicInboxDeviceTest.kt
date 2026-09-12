@@ -53,6 +53,51 @@ class MqttAtomicInboxDeviceTest {
         }
     }
 
+    @Test fun wireReceiptProofSurvivesBodyCompactionAndReopen() {
+        val db = database()
+        val inbox = GalaxySSILinkInbox(db)
+        val value = payload()
+        val saved = inbox.accept(peer, "message", MqttImmutableContent.hash(value), value, digest, true, "e".repeat(64))
+        assertEquals("e".repeat(64), inbox.storedReceipt(peer.scope, "message")?.wireHash)
+        assertNull(inbox.storedReceipt("other-pair", "message"))
+        assertTrue(inbox.complete(saved.payload))
+        val reopened = GalaxySSILinkInbox(db)
+        assertEquals("e".repeat(64), reopened.storedReceipt(peer.scope, "message")?.wireHash)
+        assertTrue(reopened.storedReceipt(peer.scope, "message")!!.completed)
+    }
+
+    @Test fun rolledBackInboxCannotProduceStoredReceipt() {
+        val db = database()
+        val inbox = GalaxySSILinkInbox(db)
+        assertThrows(IllegalStateException::class.java) {
+            db.indexedTransaction {
+                val value = payload()
+                inbox.accept(peer, "message", MqttImmutableContent.hash(value), value, digest, true, "e".repeat(64))
+                error("injected commit failure")
+            }
+        }
+        assertNull(inbox.storedReceipt(peer.scope, "message"))
+        assertNull(inbox.replay(peer.scope, digest))
+    }
+
+    @Test fun receiptMessagesDoNotRequestReceiptsEvenWithStoredWireProof() {
+        val inbox = GalaxySSILinkInbox(database())
+        val value = payload().put("type", "delivery_ack")
+        inbox.accept(peer, "message", MqttImmutableContent.hash(value), value, digest, false, "e".repeat(64))
+        assertNull(inbox.storedReceipt(peer.scope, "message"))
+    }
+
+    @Test fun oneCiphertextCannotAcquireAnotherReceiptDigest() {
+        val inbox = GalaxySSILinkInbox(database())
+        val value = payload()
+        val hash = MqttImmutableContent.hash(value)
+        inbox.accept(peer, "message", hash, value, digest, true, "e".repeat(64))
+        assertThrows(IllegalStateException::class.java) {
+            inbox.accept(peer, "message", hash, value, digest, true, "f".repeat(64))
+        }
+        assertEquals("e".repeat(64), inbox.storedReceipt(peer.scope, "message")?.wireHash)
+    }
+
     @Test fun successfulAcceptancePersistsBodyAndBindingBeforeReplay() {
         val db = database()
         val inbox = GalaxySSILinkInbox(db)
@@ -240,11 +285,14 @@ class MqttAtomicInboxDeviceTest {
             bundle.getInt("kyberPreKeyId"), KEMPublicKey(bytes("kyberPreKey")), bytes("kyberPreKeySignature")))
         val plain = payload()
         val wire = SessionCipher(alice, bobAddress).encrypt(plain.toString().toByteArray()).serialize()
+        val receiptHash = MqttDeliveryEnvelope.contentHash(JSONObject().put("scheme", "signal").put("from", "alice")
+            .put("to", "bob").put("signal_type", "prekey").put("message_type", 3)
+            .put("body", Base64.encodeToString(wire, Base64.NO_WRAP)))
         val before = MqttImmutableContent.hash(bob.exportJson())
         fun receive() = bob.transaction {
             val decrypted = SessionCipher(bob, aliceAddress).decrypt(PreKeySignalMessage(wire))
             val decoded = JSONObject(String(decrypted, Charsets.UTF_8))
-            inbox.accept(peer, "message", MqttImmutableContent.hash(decoded), decoded, digest, true)
+            inbox.accept(peer, "message", MqttImmutableContent.hash(decoded), decoded, digest, true, receiptHash)
         }
         assertThrows(IllegalStateException::class.java) {
             bob.transaction { receive(); error("Injected post-decrypt persistence failure") }
@@ -252,8 +300,10 @@ class MqttAtomicInboxDeviceTest {
         assertEquals(before, MqttImmutableContent.hash(bob.exportJson()))
         assertFalse(bob.containsSession(aliceAddress)); assertTrue(bob.containsPreKey(bundle.getInt("preKeyId")))
         assertNull(inbox.replay(peer.scope, digest)); assertTrue(inbox.pending().isEmpty())
+        assertNull(inbox.storedReceipt(peer.scope, "message"))
         assertEquals(GalaxySSILinkInbox.Stage.STORED, receive().stage)
         assertTrue(bob.containsSession(aliceAddress)); assertFalse(bob.containsPreKey(bundle.getInt("preKeyId")))
         assertNotNull(inbox.replay(peer.scope, digest))
+        assertEquals(receiptHash, inbox.storedReceipt(peer.scope, "message")?.wireHash)
     }
 }
