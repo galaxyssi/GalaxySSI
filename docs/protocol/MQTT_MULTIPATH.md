@@ -1,6 +1,7 @@
 # Automatic Multi-Broker Transport
 
-Status: implementation in progress, not yet activated in the application entry points.
+Status: implementation in progress. Ingress hardening is integrated; the three-path
+connection pool is not yet activated in the application connection entry points.
 
 ## Product Contract
 
@@ -121,6 +122,35 @@ quota. Chunk allocation is demand-driven, not batches of fixed round-robin sends
   receipt must not create another task or repeat an uncertain external effect.
 - Attachment chunks share one durable assembly and bitmap. A chunk receipt is not
   a complete-file receipt; final hash validation precedes preview/open/save.
+
+## Integrated Ingress Boundary
+
+Android's real MQTT callback now admits packets through `MqttInboundRoutePool`.
+Its up to four lazily started workers rotate fairly among configured Signal identities.
+An idle peer leaves no retained lane; workers expire after five idle seconds.
+The default bounds are 1,024 retained packets / 32 MiB globally and 64 packets /
+8 MiB per identity, including the currently executing packet. Admission rejection
+does not emit an application delivery receipt; the durable sender must retry.
+
+`MqttInboundBindings` maps all configured rotating mailbox aliases to the same
+Signal identity. Unknown and ambiguous aliases are rejected before queueing.
+Desktop's existing bounded ingress pool now also serializes by configured Signal
+identity, rather than a route ID that can vary between relationships for that
+identity. One-time pairing topics have separate bounded lanes.
+
+Desktop validates both application endpoints before binding a message ID to its
+immutable envelope hash in the existing Link delivery database. The database
+primary key is `(sealed configured pair, message_id)`; a conflicting body or
+conversation is rejected before Blob acceptance or any business dispatch. This
+local content digest includes the envelope headers, including timestamps. Retry
+copies reuse the original envelope/ciphertext, not a rebuilt envelope with a new
+timestamp. Changed content requires a new transport message ID.
+
+This binding is not a task claim, a durable full-message receipt, or an additional
+task ledger. It stores no plaintext payload and does not enable receipt races by
+itself. Atomic inbox/ciphertext/receipt recovery and Android's scoped durable
+content binding are still required before three-path activation. Existing
+time/count-pruned Android replay records must not be treated as that final ledger.
 
 ## Verification Boundary
 

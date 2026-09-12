@@ -103,7 +103,17 @@ object GalaxySSIMqttClient {
     private val inboundReplayExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "galaxyssi-inbound-replay").apply { isDaemon = true }
     }
-    private val inboundMqttExecutors = ConcurrentHashMap<String, java.util.concurrent.ExecutorService>()
+    private data class InboundPacket(val topic: String, val payload: ByteArray, val enqueuedAt: Long)
+    private val inboundBindings = MqttInboundBindings()
+    private val inboundMqttPool = MqttInboundRoutePool<InboundPacket>(
+        process = { packet ->
+            if (BuildConfig.DEBUG) Log.d("GalaxySSILatency",
+                "mqtt_inbound stage=queue ms=${android.os.SystemClock.elapsedRealtime() - packet.enqueuedAt} bytes=${packet.payload.size}")
+            timedInbound("handle") { handleIncoming(packet.topic, packet.payload) }
+        },
+        onFailure = { Log.e(TAG, "MQTT inbound handler failed type=${it.javaClass.simpleName}") }
+    )
+    private val inboundAdmissionLogAt = java.util.concurrent.atomic.AtomicLong()
     private val attachmentTransferExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "galaxyssi-link-attachments").apply { isDaemon = true }
     }
@@ -388,24 +398,15 @@ object GalaxySSIMqttClient {
                     val payload = message?.payload ?: return
                     if (payload.isEmpty()) return
                     val incomingTopic = topic.orEmpty()
-                    if (BuildConfig.DEBUG) {
-                        Log.d(TAG, "MQTT inbound mailbox=${incomingTopic.take(10)} bytes=${payload.size}")
-                    }
-                    val routeScope = mqttInboundRouteScope(incomingTopic)
-                    val routeExecutor = inboundMqttExecutors.computeIfAbsent(routeScope) {
-                        Executors.newSingleThreadExecutor { runnable ->
-                            Thread(
-                                runnable,
-                                "galaxyssi-mqtt-inbound-${routeScope.hashCode().toUInt().toString(16)}"
-                            ).apply { isDaemon = true }
-                        }
-                    }
+                    if (mqttPublishPacketBytes(incomingTopic, payload.size) > MqttBrokerCatalog.PACKET_BYTES) return
+                    val routeScope = inboundBindings.scope(incomingTopic) ?: return
                     val enqueuedAt = android.os.SystemClock.elapsedRealtime()
-                    routeExecutor.execute {
-                        if (BuildConfig.DEBUG) Log.d("GalaxySSILatency",
-                            "mqtt_inbound stage=queue ms=${android.os.SystemClock.elapsedRealtime() - enqueuedAt} bytes=${payload.size}")
-                        runCatching { timedInbound("handle") { handleIncoming(incomingTopic, payload) } }
-                            .onFailure { Log.e(TAG, "Failed to handle incoming MQTT message", it) }
+                    val admission = inboundMqttPool.submit(routeScope, InboundPacket(incomingTopic, payload, enqueuedAt), payload.size)
+                    if (admission != MqttInboundRoutePool.Admission.ACCEPTED) {
+                        val previous = inboundAdmissionLogAt.get()
+                        if (enqueuedAt - previous >= 5_000 && inboundAdmissionLogAt.compareAndSet(previous, enqueuedAt)) {
+                            Log.w(TAG, "MQTT inbound queue deferred packet reason=$admission")
+                        }
                     }
                 }
 
@@ -3069,8 +3070,10 @@ object GalaxySSIMqttClient {
         if (!mqtt.isConnected) return
         val context = appContext ?: return
         val links = GalaxySSILinkProtocol.allServerLinks(context)
-        val phoneTopics = AppStore.phoneReceiveTopics(context)
+        val phoneBindings = AppStore.phoneReceiveBindings(context)
+        val phoneTopics = phoneBindings.flatMapTo(linkedSetOf()) { it.second }
         val rendezvousTopics = PhoneContactCard.activeRendezvousTopics(context)
+        inboundBindings.replace(links.map { it.desktopId to it.routes.receiveWindow } + phoneBindings, rendezvousTopics)
         if (BuildConfig.DEBUG) {
             Log.d(
                 TAG,

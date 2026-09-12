@@ -21,6 +21,7 @@ EVENT_KINDS = (
     "decrypt_failure",
     "chunk_duplicate",
     "fragment_rejected",
+    "message_content_conflict",
 )
 DEFAULT_MAXIMUM_EVENTS = 40
 
@@ -132,7 +133,8 @@ class LinkTransportDiagnostics:
                 + int(counts["chunk_duplicate"])
             ),
             "old_counter": int(counts["old_counter"]),
-            "failure": int(counts["decrypt_failure"]) + int(counts["fragment_rejected"]),
+            "failure": int(counts["decrypt_failure"]) + int(counts["fragment_rejected"])
+                       + int(counts["message_content_conflict"]),
         }
         snapshot["last_event_at"] = (
             int(snapshot["recent_events"][-1]["recorded_at"])

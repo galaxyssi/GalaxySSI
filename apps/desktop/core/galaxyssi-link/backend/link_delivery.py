@@ -1,6 +1,7 @@
 """Durable idempotency records for GalaxySSI Link Protocol v1."""
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -59,6 +60,15 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             received_at REAL NOT NULL,
             status TEXT NOT NULL,
             acknowledgement TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (client_route_id, message_id)
+        )"""
+    )
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS inbound_content_hashes (
+            client_route_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            received_at REAL NOT NULL,
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
@@ -127,6 +137,7 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             # Recheck under the writer lock: concurrent first-open must not
             # discard rows committed by another process during initialization.
             db.execute("DELETE FROM inbound_messages")
+            db.execute("DELETE FROM inbound_content_hashes")
             db.execute("DELETE FROM inbound_ciphertexts")
             db.execute("DELETE FROM outbound_messages")
             db.execute("DELETE FROM task_result_outbox")
@@ -188,6 +199,47 @@ def ensure_transport_epoch(epoch: str) -> bool:
             return True
         finally:
             db.close()
+
+
+class InboundContentConflict(ValueError):
+    """An authenticated sender reused a logical message ID for different content."""
+
+
+def bind_message_content(client_route_id: str, message_id: str, envelope: dict) -> str:
+    """Bind immutable authenticated content before any payload-specific side effect.
+
+    This is part of the existing delivery database, not a task claim or RX_STORED
+    receipt. Callers must separately persist the complete message before ACKing.
+    """
+    if (not isinstance(client_route_id, str) or not client_route_id.strip() or len(client_route_id) > 512
+            or not isinstance(message_id, str) or not message_id or len(message_id) > 128
+            or not isinstance(envelope, dict) or envelope.get("message_id") != message_id):
+        raise ValueError("Invalid authenticated content binding")
+    canonical = json.dumps(envelope, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(canonical) > 2 * 1024 * 1024:
+        raise ValueError("Authenticated envelope exceeds content limit")
+    digest = hashlib.sha256(canonical).hexdigest()
+    route = _route(client_route_id)
+    with _lock:
+        db = _connect()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                """INSERT OR IGNORE INTO inbound_content_hashes
+                   (client_route_id,message_id,content_hash,received_at) VALUES(?,?,?,?)""",
+                (route, message_id, digest, time.time()),
+            )
+            row = db.execute(
+                "SELECT content_hash FROM inbound_content_hashes WHERE client_route_id=? AND message_id=?",
+                (route, message_id),
+            ).fetchone()
+            if row is None or str(row[0]) != digest:
+                raise InboundContentConflict("Message ID is bound to different authenticated content")
+            db.commit()
+        finally:
+            db.close()
+    return digest
 
 
 def claim_message(client_route_id: str, message_id: str) -> bool:
@@ -443,6 +495,7 @@ def discard_route(client_route_id: str) -> dict[str, int]:
     with _lock:
         db = _connect()
         try:
+            db.execute("DELETE FROM inbound_content_hashes WHERE client_route_id=?", (sealed_route_id,))
             for result_key, table_name in tables.items():
                 cursor = db.execute(
                     f"DELETE FROM {table_name} WHERE client_route_id=?",

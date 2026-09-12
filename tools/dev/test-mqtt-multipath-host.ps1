@@ -25,11 +25,14 @@ try {
         (CachedJar 'org.jetbrains.kotlin' 'kotlin-script-runtime' '2.0.21'),
         (CachedJar 'org.jetbrains.kotlin' 'kotlin-reflect'), (CachedJar 'org.jetbrains.intellij.deps' 'trove4j'),
         (CachedJar 'org.jetbrains.kotlinx' 'kotlinx-coroutines-core-jvm'), $annotations) -join [IO.Path]::PathSeparator
-    $sources = @('MqttBrokerCatalog', 'MqttMultipathPolicy', 'MqttBrokerPool', 'MqttRouteAdvertisement') |
+    $sources = @('MqttBrokerCatalog', 'MqttMultipathPolicy', 'MqttBrokerPool', 'MqttRouteAdvertisement',
+        'MqttInboundRoutePool', 'MqttInboundBindings') |
         ForEach-Object { "apps/android/app/src/main/java/com/galaxyssi/chat/$_.kt" }
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttMultipathPolicyTest.kt'
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttBrokerPoolTest.kt'
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttRouteAdvertisementTest.kt'
+    $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttInboundRoutePoolTest.kt'
+    $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttInboundBindingsTest.kt'
     $jar = Join-Path $OutputDirectory 'tests.jar'
     $compileLog = Join-Path $OutputDirectory 'compile.log'
     & $Java -Xmx1g -cp $compiler org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect `
@@ -38,7 +41,8 @@ try {
     $log = Join-Path $OutputDirectory 'tests.log'
     & $Java -cp "$jar$([IO.Path]::PathSeparator)$runtime" org.junit.runner.JUnitCore `
         com.galaxyssi.chat.MqttMultipathPolicyTest com.galaxyssi.chat.MqttBrokerPoolTest `
-        com.galaxyssi.chat.MqttRouteAdvertisementTest *> $log
+        com.galaxyssi.chat.MqttRouteAdvertisementTest com.galaxyssi.chat.MqttInboundRoutePoolTest `
+        com.galaxyssi.chat.MqttInboundBindingsTest *> $log
     $code = $LASTEXITCODE
     Get-Content -LiteralPath $log
     if ($code -ne 0) { throw 'MQTT multipath host tests failed' }

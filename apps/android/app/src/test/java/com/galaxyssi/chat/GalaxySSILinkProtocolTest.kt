@@ -76,12 +76,14 @@ class GalaxySSILinkProtocolTest {
     }
 
     @Test
-    fun mqttInboundWorkIsScopedByItsOpaqueMailbox() {
+    fun mqttInboundWorkIsScopedByConfiguredIdentityNotRotatingMailbox() {
         val first = GalaxySSILinkProtocol.newLinkSecret()
         val second = GalaxySSILinkProtocol.newLinkSecret()
-        assertEquals(first, mqttInboundRouteScope(first))
-        assertEquals(second, mqttInboundRouteScope(second))
-        assertNotEquals(mqttInboundRouteScope(first), mqttInboundRouteScope(second))
+        val other = GalaxySSILinkProtocol.newLinkSecret()
+        val bindings = MqttInboundBindings()
+        bindings.replace(listOf("peer-a" to setOf(first, second), "peer-b" to setOf(other)), emptySet())
+        assertEquals(bindings.scope(first), bindings.scope(second))
+        assertNotEquals(bindings.scope(first), bindings.scope(other))
     }
 
     @Test

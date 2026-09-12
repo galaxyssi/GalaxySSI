@@ -43,6 +43,8 @@ from unified_commands import default_command_engine
 from link_delivery import (
     acknowledge_outbound,
     bind_ciphertext,
+    bind_message_content,
+    InboundContentConflict,
     claim_message,
     complete_message,
     discard_route,
@@ -6826,10 +6828,20 @@ def _process_message(mqttc, userdata, msg):
                 )
                 raise
             validate_envelope(application_envelope)
-            if application_envelope["source_id"] != paired_client["signal_name"]:
-                log.warning("Rejected MQTT message: application sender does not match paired identity")
+            if (application_envelope["source_id"] != paired_client["signal_name"]
+                    or application_envelope["target_id"] != desktop_id()):
+                log.warning("Rejected MQTT message: application endpoints do not match paired identities")
                 return
             message_id = str(application_envelope["message_id"])
+            try:
+                bind_message_content(client_route_id, message_id, application_envelope)
+            except InboundContentConflict:
+                link_transport_diagnostics().record(
+                    "message_content_conflict", route_id=client_route_id,
+                    message_id=message_id, detail_code="immutable_content",
+                )
+                log.warning("Rejected conflicting authenticated MQTT message content")
+                return
             # A transport ACK must never outrun durable acceptance of a Blob job.
             from blob_input_bridge import persist_before_ack
             persist_before_ack(sys.modules[__name__], application_envelope, client_route_id)
@@ -7400,11 +7412,11 @@ def on_mqtt_message(mqttc, userdata, msg):
         return
     transport_probe_state.observe_transport_activity(time.monotonic())
     route_kind, route_data = resolved
-    route_key = (
-        str(route_data.get("client_route_id") or "")
-        if route_kind == "client"
-        else f"pair:{str(route_data.get('token') or '')[-8:]}"
-    )
+    identity = str(route_data.get("signal_name") or "")
+    if route_kind == "client" and not identity:
+        return False
+    route_key = (f"signal:{identity}" if route_kind == "client" else
+                 "pair:" + hashlib.sha256(str(route_data.get("token") or "").encode("utf-8")).hexdigest())
     return _queue_inbound_message(
         mqttc,
         route_key,

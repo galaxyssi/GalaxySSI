@@ -234,5 +234,3 @@ internal class MqttSubscriptionRecoveryState {
         ready = false
     }
 }
-
-internal fun mqttInboundRouteScope(topic: String): String = topic

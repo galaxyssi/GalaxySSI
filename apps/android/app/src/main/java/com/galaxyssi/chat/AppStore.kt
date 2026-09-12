@@ -571,18 +571,21 @@ object AppStore {
         }?.let { JSONObject(it.toString()) }
     }
 
-    fun phoneReceiveTopics(context: Context): Set<String> {
+    fun phoneReceiveTopics(context: Context): Set<String> =
+        phoneReceiveBindings(context).flatMapTo(linkedSetOf()) { it.second }
+
+    internal fun phoneReceiveBindings(context: Context): List<Pair<String, Set<String>>> {
         normalizeVerifiedPhoneRelationshipRoutes(context)
-        val topics = linkedSetOf<String>()
-        val contacts = contacts(context)
-        for (index in 0 until contacts.length()) {
-            contacts.optJSONObject(index)?.let(::phoneRoutes)?.receiveWindow?.let(topics::addAll)
+        return buildList {
+            listOf(contacts(context), friendRequests(context)).forEach { records ->
+                for (index in 0 until records.length()) {
+                    val record = records.optJSONObject(index) ?: continue
+                    val identity = galaxyssiIdOf(record)
+                    val routes = phoneRoutes(record) ?: continue
+                    if (identity.isNotBlank()) add(identity to routes.receiveWindow)
+                }
+            }
         }
-        val requests = friendRequests(context)
-        for (index in 0 until requests.length()) {
-            requests.optJSONObject(index)?.let(::phoneRoutes)?.receiveWindow?.let(topics::addAll)
-        }
-        return topics
     }
 
     fun phoneLinkSecretForOutgoingTopic(context: Context, topic: String): String? {
