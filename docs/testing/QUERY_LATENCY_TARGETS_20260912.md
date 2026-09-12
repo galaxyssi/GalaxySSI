@@ -3,7 +3,8 @@
 ## Scope
 
 Base: `cef237557f5f8f422f93832a535e3d63e3ba81ed` (`main`, PR #3025 merged).
-Android: 1.1.101 (987). Desktop: 1.1.48. Only S26U / SM-S9480 was operated.
+Measured Android development builds: 1.1.101 (987). Desktop: 1.1.48.
+Only S26U / SM-S9480 was operated.
 Existing app data and pairings were retained. No changes to model choice or reasoning effort.
 
 The weather prompt changed from Guangzhou to **Zhuhai**. Do not present the two
@@ -24,6 +25,16 @@ Original prompts (JSON escapes):
   "\u7ed9\u51fa\u4eca\u5929\u7684\u79d1\u6280\u65b0\u95fb\u3002"
 ]
 ```
+
+### PR Integration
+
+Before submission, upstream `main` advanced to
+`64f22a944` (PR #3026, knowledge payload segments), using Android 1.1.101 (987).
+It was merged into this branch without conflicts. The submitted Android version
+is therefore **1.1.102 (988)**; Desktop is **1.1.48**. The measured S26U build remains
+1.1.101 (987). Do not label earlier timing samples as measurements of the integrated
+1.1.102 build. Post-integration build/regression verification is recorded below;
+this PR-submission step does not reinstall the phone.
 
 ## Changes
 
@@ -193,6 +204,12 @@ No broker, pairing identity, proxy or account configuration was changed.
 - Fifth iteration: 118 focused Android tests passed and APK assembly succeeded,
   including 16 Markdown-image and 14 public-image-search tests.
 - Final repository checks and `git diff --check` passed.
+- After merging upstream PR #3026: 137 focused Android tests passed, including
+  the 118 previous cases, 17 model-stream tests and 2 knowledge-segment lease tests.
+  Android 1.1.102 (988) APK assembly succeeded; output metadata matches source.
+  APK SHA-256: `4c9ebfdb4f6a1e84075861ed649277c2b4d09a2ca5aa0e42fa4829ddd6d5cd2b`.
+  Desktop's 83 focused tests were rerun successfully. `npm run check` passed.
+  The integrated APK was not installed during this PR-submission step.
 
 ## Acceptance and Remaining Work
 
