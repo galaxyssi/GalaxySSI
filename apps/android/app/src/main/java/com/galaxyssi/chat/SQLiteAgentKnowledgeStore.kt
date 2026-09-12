@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.content.Context
 import java.util.Locale
 import org.json.JSONArray
+import com.galaxyssi.chat.metrics.AgentLatencyTelemetry
 
 /** Durable knowledge storage with keyed FTS5 candidate retrieval and lexical reranking. */
 class SQLiteAgentKnowledgeStore internal constructor(
@@ -47,16 +48,24 @@ class SQLiteAgentKnowledgeStore internal constructor(
         KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
 
-    override fun replaceSource(source: String, items: Sequence<AgentKnowledgeItem>) {
+    override fun replaceSource(source: String, items: Sequence<AgentKnowledgeItem>) =
+        replaceSource(source, items, KnowledgeSourceWriteTiming(AgentLatencyTelemetry.runtime(appContext)))
+
+    internal fun replaceSource(source: String, items: Sequence<AgentKnowledgeItem>, timing: KnowledgeSourceWriteTiming) {
         val cleanSource = source.trim()
         if (cleanSource.isBlank()) return
-        KnowledgeBackupStaging(appContext).use { staging ->
-            if (staging.acceptSource(cleanSource, items) == 0L) return
-            val change = KnowledgeSourceReplacement(storage, staging, cleanSource).commit()
-            try {
-                if (publishSource != null) publishSource.invoke(change)
-                else publish(change.items(previous = true), change.items(previous = false))
-            } finally { KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex() }
+        timing.measure("total") {
+            KnowledgeBackupStaging(appContext).use { staging ->
+                if (timing.measure("stage") { staging.acceptSource(cleanSource, items) } == 0L) return@use
+                val prepared = timing.measure("prepare") { KnowledgeSourceReplacement(storage, staging, cleanSource).prepare() }
+                val change = timing.measure("commit") { prepared.commit(timing) }
+                try {
+                    timing.measure("observe") {
+                        if (publishSource != null) publishSource.invoke(change)
+                        else publish(change.items(previous = true), change.items(previous = false))
+                    }
+                } finally { KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex() }
+            }
         }
     }
 

@@ -9,25 +9,29 @@ internal class KnowledgePreparedSourceReplacement(private val storage: AgentKnow
     private val revision: String, private val policy: KnowledgeSourcePolicy?) {
     private var used = false
 
-    fun commit(): KnowledgeSourceMutation {
+    fun commit(timing: KnowledgeSourceWriteTiming = KnowledgeSourceWriteTiming.NONE): KnowledgeSourceMutation {
         check(!used) { "Prepared knowledge replacement has already been consumed" }
         used = true
         return storage.transaction { db ->
             if (selection.revision(db) != revision) throw KnowledgeSourceReplacementChanged()
             val change = KnowledgeSourceMutation(storage, staging, policy)
             // Other sources can claim incoming IDs after preparation; check inside the writer.
-            for (item in staging.incoming()) {
-                check(!Thread.currentThread().isInterrupted)
-                storage.readSourceMetadata(db, storage.key("id", item.id))?.let {
-                    require(it.source == selection.reference.source) { "Knowledge ID belongs to another source" }
+            timing.measure("ownership") {
+                for (item in staging.incoming()) {
+                    check(!Thread.currentThread().isInterrupted)
+                    storage.readSourceMetadata(db, storage.key("id", item.id))?.let {
+                        require(it.source == selection.reference.source) { "Knowledge ID belongs to another source" }
+                    }
                 }
             }
-            for ((before, incoming) in staging.changes(includeUnchanged = true)) {
-                check(!Thread.currentThread().isInterrupted)
-                val next = incoming?.let(change::normalize)
-                if (before == next) continue
-                if (next == null) db.delete("knowledge_items", "item_key=?", arrayOf(storage.key("id", requireNotNull(before).id)))
-                else storage.write(db, next)
+            timing.measure("apply") {
+                for ((before, incoming) in staging.changes(includeUnchanged = true)) {
+                    check(!Thread.currentThread().isInterrupted)
+                    val next = incoming?.let(change::normalize)
+                    if (before == next) continue
+                    if (next == null) db.delete("knowledge_items", "item_key=?", arrayOf(storage.key("id", requireNotNull(before).id)))
+                    else storage.write(db, next)
+                }
             }
             change
         }

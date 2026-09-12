@@ -6,6 +6,7 @@ import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.galaxyssi.chat.metrics.*
 
 @RunWith(AndroidJUnit4::class)
 class KnowledgeCryptoRetainedScaleDeviceTest {
@@ -22,6 +23,10 @@ class KnowledgeCryptoRetainedScaleDeviceTest {
         val content = "\u66f4\u65b0 " + "\u77e5\u8bc6\u6b63\u6587".repeat(80) +
             if (variant.isEmpty()) "" else " [$variant]"
         var observed = 0
+        val points = mutableListOf<AgentTimingPoint>()
+        val timing = KnowledgeSourceWriteTiming(AgentRuntimeTiming({ trace, stage, operation, outcome, at ->
+            points += AgentTimingPoint(trace, "a".repeat(32), stage, at, 0, operation, outcome = outcome)
+        }))
         val store = SQLiteAgentKnowledgeStore(context, name, "legacy-$name", publishSource = { mutation ->
             GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(mutation, 1234)
             observed++
@@ -33,8 +38,14 @@ class KnowledgeCryptoRetainedScaleDeviceTest {
                 AgentKnowledgeItem(id = "replace-$i", kind = AgentKnowledgeKind.DOCUMENT,
                     title = "\u6d4b\u8bd5 $i", content = "$content $i", source = source,
                     chunkIndex = i, chunkCount = 10_001, updatedAtMillis = i.toLong())
-            })
+            }, timing)
             println("KNOWLEDGE_CRYPTO_SCALE replace_ms=${(System.nanoTime() - started) / 1_000_000} rows=10001 fixture=$name variant=$variant")
+            for (phase in listOf("total", "stage", "prepare", "commit", "ownership", "apply", "observe")) {
+                val metric = AgentLatencyContract.summarize(points).getValue("phone_runtime_knowledge_source_${phase}_ms")
+                assertEquals(phase, 1, metric.count)
+                assertEquals(phase, 0, metric.unsuccessful)
+                println("KNOWLEDGE_CRYPTO_SCALE phase=$phase elapsed_ms=${metric.p95Ms} rows=10001")
+            }
             assertEquals(1, observed)
         } finally { store.close() }
         AgentRowStorageCipher.clearCachedKeys()
