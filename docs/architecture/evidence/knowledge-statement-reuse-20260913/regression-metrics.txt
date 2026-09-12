@@ -1,0 +1,10 @@
+         1789239557.177 24200 24256 I System.out: KNOWLEDGE_SOURCE_PREPARE_WRITE samples=50 durable=true p50_ns=54505538 p95_ns=65061269 p99_ns=73125692 over_200ms=0
+         1789239625.726 24200 24234 I System.out: KNOWLEDGE_SOURCE_PREPARE_SCALE rows=10001 verified=10001 elapsed_ns=63405731224 callback_ns=623193384 concurrent_rolled_back_writes=20 published=false
+         1789239739.175 24200 24467 I System.out: KNOWLEDGE_READ_ADMISSION phase=validate elapsed_ns=8803500
+         1789239739.437 24200 24470 I System.out: KNOWLEDGE_READ_ADMISSION phase=open_and_read elapsed_ns=11396385
+         1789239751.008 24200 24475 I System.out: KNOWLEDGE_READ_ADMISSION_SCALE rows=10001 samples=100 results=8 p50_ns=108934654 p95_ns=119698653 p99_ns=130096731 over_200ms=0
+         1789239780.477 24200 24234 I System.out: KNOWLEDGE_VECTOR_READ retained_fixture=test-vector-read-admission-ca24a288-fe08-4ce0-8e5f-a2c52b9234b7.db
+         1789239785.592 24200 24521 I System.out: KNOWLEDGE_VECTOR_READ phase=ranked n=100 p50_ns=42935962 p95_ns=48449693 p99_ns=51661577 over_200ms=0
+         1789239785.702 24200 24234 I System.out: KNOWLEDGE_VECTOR_READ retained_fixture=test-vector-read-admission-229aa59a-6e6c-4bea-b115-4ef2be980809.db
+         1789239786.477 24200 24524 I System.out: KNOWLEDGE_VECTOR_READ phase=reopen elapsed_ns=33885039
+         1789239786.535 24200 24234 I System.out: KNOWLEDGE_VECTOR_READ retained_fixture=test-vector-read-admission-69bc88fe-acf8-4a32-a14e-34c7d752bc41.db
