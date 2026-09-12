@@ -129,13 +129,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         val toolProgress = CloudWebToolLoopProgress()
         var webBudget: AgentWebExecutionBudget? = null
         val evidenceResults = mutableListOf<Pair<String, String>>()
-        val evidencePrompt = CloudEvidencePromptLedger()
+        val evidencePrompt = CloudEvidencePromptLedger(turns.lastOrNull()?.content.orEmpty())
         var emittedText = false
         var connected = false
         var lastFinishReason: String? = null
         try {
             var round = 0L
             while (true) {
+                evidencePrompt.refresh()
                 if (webBudget?.expired == true && toolProgress.requestFinalization()) prepareFinalRound(prepared)
                 val roundNumber = round++
                 val bufferForCitationVerification = evidenceResults.isNotEmpty()
@@ -334,9 +335,12 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     if (bufferForCitationVerification) {
                         val candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
                         val validationStarted = System.nanoTime()
-                        val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
+                        val citationValidation = CloudWebGrounding.citationValidation(candidate, evidenceResults)
+                        val citationRepair = if (citationValidation.requiresRepair)
+                            AgentWebEvidenceVerification.repairPrompt(citationValidation, evidenceResults) else null
                         Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=citation_validation " +
-                            "elapsed_ms=${(System.nanoTime() - validationStarted) / 1_000_000L} repair=${citationRepair != null}")
+                            "elapsed_ms=${(System.nanoTime() - validationStarted) / 1_000_000L} repair=${citationRepair != null} " +
+                            "status=${citationValidation.status} invalid_count=${citationValidation.invalidCitationUrls.size}")
                         if (candidate.isNotBlank() && citationRepair != null &&
                             toolProgress.requestRepair("stream_citations")
                         ) {
@@ -446,16 +450,22 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                 }
                 completedCalls.forEach { imageSession.selectResult(it.output) }
-                val promptCalls = completedCalls.map { completed ->
-                    val compact = evidencePrompt.project(completed.output)
-                    Log.i("GalaxySSIWebLatency", "evidence_projection request=$requestId tool=${completed.call.name} " +
-                        "original_chars=${completed.output.length} projected_chars=${compact.length}")
-                    completed.copy(output = compact)
-                }
+                val firstTurn = prepared.conversation.length()
                 if (usesInlineProtocol) {
-                    appendInlineToolResults(prepared, rawRoundText, promptCalls)
+                    appendInlineToolResults(prepared, rawRoundText, completedCalls)
                 } else {
-                    appendToolResults(prepared, promptCalls.map { it.call to it.output })
+                    appendToolResults(prepared, completedCalls.map { it.call to it.output })
+                }
+                evidencePrompt.bind(completedCalls.map { it.output }) { projected ->
+                    Log.i("GalaxySSIWebLatency", "evidence_batch request=$requestId original_chars=${completedCalls.sumOf { it.output.length }} " +
+                        "projected_chars=${projected.sumOf { it.length }}")
+                    val temporary = prepared.copy(conversation = JSONArray())
+                    val promptCalls = completedCalls.mapIndexed { index, completed -> completed.copy(output = projected[index]) }
+                    if (usesInlineProtocol) appendInlineToolResults(temporary, rawRoundText, promptCalls)
+                    else appendToolResults(temporary, promptCalls.map { it.call to it.output })
+                    for (index in 0 until temporary.conversation.length()) {
+                        prepared.conversation.put(firstTurn + index, temporary.conversation.get(index))
+                    }
                 }
                 val noEvidenceProgress = toolProgress.observeEvidenceBatch(newlyCompleted.map { it.output })
                 if ((newlyCompleted.isEmpty() || noEvidenceProgress || budget.expired) && toolProgress.requestFinalization()) {

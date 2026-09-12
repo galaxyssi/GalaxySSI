@@ -53,6 +53,23 @@ class AgentMarkdownImagesTest {
         assertEquals(AgentRichBlockType.TEXT, parse(text).single().type)
     }
 
+    @Test fun linkedImagePreservesSourceWithoutLeakingWrapperSyntax() {
+        val blocks = parse("Before [$image](https://example.com/page_(1)) after")
+        assertEquals(listOf(AgentRichBlockType.TEXT, AgentRichBlockType.IMAGE,
+            AgentRichBlockType.TEXT, AgentRichBlockType.TEXT), blocks.map { it.type })
+        assertEquals("Before", blocks.first().text)
+        assertEquals("[Mackerel](<https://example.com/page_(1)>)", blocks[2].text)
+        assertEquals("after", blocks.last().text)
+        assertEquals(blocks, AgentRichContentCodec.decode(AgentRichContentCodec.encode(blocks)))
+    }
+
+    @Test fun linkedReferenceImagePreservesImageAndSource() {
+        val blocks = AgentMarkdownImages.split("[$image][source]\n\n[source]: https://example.com/page")
+        assertEquals(AgentRichBlockType.IMAGE, blocks.first().type)
+        assertEquals("[Mackerel](<https://example.com/page>)", blocks[1].text)
+        assertFalse(blocks.any { it.text.trim() == "[" })
+    }
+
     @Test fun supportsParenthesesTitlesAndEncodedQueries() {
         val block = parse("![A](<https://example.com/fish_(1)?size=100&amp;x=2> \"Photo\")").single()
         assertEquals("https://example.com/fish_(1)?size=100&x=2", block.uri)

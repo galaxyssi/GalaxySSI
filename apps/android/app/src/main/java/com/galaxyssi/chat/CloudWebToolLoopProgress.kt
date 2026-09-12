@@ -11,6 +11,7 @@ internal class CloudWebToolLoopProgress {
     private val requestedRepairs = linkedSetOf<String>()
     private val evidenceKeys = linkedSetOf<String>()
     private val unavailableResources = linkedMapOf<String, String>()
+    private val retrievedResources = linkedMapOf<String, String>()
     private var stagnantBatches = 0
 
     fun observeEvidenceBatch(outputs: List<String>): Boolean {
@@ -41,7 +42,9 @@ internal class CloudWebToolLoopProgress {
         private set
 
     fun cached(toolName: String, arguments: JSONObject): String? =
-        outputsByCall[semanticKey(toolName, arguments)] ?: resourceKey(toolName, arguments)?.let(unavailableResources::get)
+        outputsByCall[semanticKey(toolName, arguments)] ?: resourceKey(toolName, arguments)?.let { url ->
+            unavailableResources[url] ?: if (canReuseBody(toolName, arguments)) retrievedResources[url] else null
+        }
 
     fun record(toolName: String, arguments: JSONObject, output: String): Boolean {
         val key = semanticKey(toolName, arguments)
@@ -51,8 +54,24 @@ internal class CloudWebToolLoopProgress {
         if (errorCode in setOf("web_source_timeout", "renderer_unavailable")) {
             resourceKey(toolName, arguments)?.let { unavailableResources[it] = output }
         }
+        if (canReuseBody(toolName, arguments)) {
+            val result = runCatching { JSONObject(output) }.getOrNull()
+            val items = result?.optJSONObject("evidence_pack")?.optJSONArray("items")
+            val requested = resourceKey(toolName, arguments)
+            if (result?.optString("status") == "completed" && requested != null && items != null &&
+                (0 until items.length()).any { index -> items.optJSONObject(index)?.let {
+                    it.optString("evidence_level") == "retrieved_body" &&
+                        AgentWebIntelligenceText.canonicalUrl(it.optString("url")) == requested
+                } == true }) retrievedResources[requested] = output
+        }
         return true
     }
+
+    private fun canReuseBody(toolName: String, arguments: JSONObject): Boolean =
+        toolName.lowercase(Locale.ROOT) in setOf("web_fetch", "web_extract") &&
+            !arguments.optBoolean("force") && !arguments.has("content") &&
+            (arguments.optJSONArray("fields")?.length() ?: 0) == 0 &&
+            !arguments.has("focus")
 
     private fun resourceKey(toolName: String, arguments: JSONObject): String? {
         if (toolName.lowercase(Locale.ROOT) !in setOf("web_fetch", "web_extract", "web_diff")) return null

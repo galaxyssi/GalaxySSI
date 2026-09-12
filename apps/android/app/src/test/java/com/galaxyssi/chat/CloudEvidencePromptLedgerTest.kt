@@ -6,6 +6,69 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudEvidencePromptLedgerTest {
+    @Test fun emptySearchDropsRoutingDiagnosticsButRetainsFailures() {
+        val raw = JSONObject().put("operation", "search").put("status", "failed")
+            .put("receipts", JSONArray().put(JSONObject().put("error_code", "engine_timeout").put("retryable", true)))
+            .put("metadata", JSONObject().put("source_health", JSONArray().put("diagnostics"))
+                .put("circuits_skipped", JSONArray().put("diagnostics")).put("profile", "fast")).toString()
+        val value = JSONObject(CloudEvidencePromptLedger().project(raw))
+        assertEquals("failed", value.getString("status"))
+        assertEquals("engine_timeout", value.getJSONArray("receipts").getJSONObject(0).getString("error_code"))
+        assertFalse(value.getJSONObject("metadata").has("source_health"))
+        assertEquals("fast", value.getJSONObject("metadata").getString("profile"))
+    }
+
+    @Test fun retrievalTimestampAndJsonOrderingDoNotDuplicateTheSameEvidence() {
+        val first = fixture("An unchanged source.")
+        val changed = JSONObject(first).apply {
+            getJSONObject("evidence_pack").getJSONArray("items").getJSONObject(0)
+                .put("retrieved_at_millis", 99L)
+        }.toString()
+        val ledger = CloudEvidencePromptLedger()
+        ledger.project(first)
+        val item = JSONObject(ledger.project(changed)).getJSONObject("evidence_pack")
+            .getJSONArray("items").getJSONObject(0)
+        assertEquals("e1", item.getString("evidence_ref"))
+        assertEquals(99L, item.getLong("retrieved_at_millis"))
+        assertFalse(item.has("excerpt"))
+    }
+
+    @Test fun requestWideProjectionRebalancesEarlierResultsWithoutChangingOriginals() {
+        val ledger = CloudEvidencePromptLedger("battery benchmark")
+        val outputs = (0 until 24).map { index -> fixture(
+            "Navigation and unrelated background. ".repeat(100) +
+                "\nBattery benchmark measured 42 hours; the previous claim was incorrect.\n" +
+                "More unrelated background. ".repeat(100),
+            url = "https://source$index.example/report") }
+        val before = outputs.toList()
+        var projected = emptyList<String>()
+        ledger.bind(outputs) { projected = it }
+        ledger.refresh()
+        val excerpts = projected.map { JSONObject(it).getJSONObject("evidence_pack")
+            .getJSONArray("items").getJSONObject(0).getString("excerpt") }
+        assertTrue(excerpts.sumOf { it.length } <= 16_000)
+        assertTrue(excerpts.all { "42 hours" in it })
+        assertEquals(before, outputs)
+        val firstPass = projected
+        ledger.refresh()
+        assertEquals(firstPass, projected)
+        assertTrue(projected.sumOf { it.length } < outputs.sumOf { it.length } / 2)
+    }
+
+    @Test fun newRevisionsAndPublicationDatesAreNotDeduplicated() {
+        val ledger = CloudEvidencePromptLedger()
+        val original = fixture("Initial result.")
+        ledger.project(original)
+        for (field in listOf("content_sha256", "published_at")) {
+            val changed = JSONObject(original).apply {
+                getJSONObject("evidence_pack").getJSONArray("items").getJSONObject(0)
+                    .put(field, if (field == "content_sha256") "f".repeat(64) else "2026-09-12")
+            }.toString()
+            assertTrue(JSONObject(ledger.project(changed)).getJSONObject("evidence_pack")
+                .getJSONArray("items").getJSONObject(0).has("excerpt"))
+        }
+    }
+
     @Test fun preservesEvidenceAndRemovesOnlyModelSideRedundancy() {
         val original = fixture()
         val ledger = CloudEvidencePromptLedger()
@@ -73,9 +136,12 @@ class CloudEvidencePromptLedgerTest {
         println("fixed_web_tool_schema_chars=${tools.toString().length} tool_count=${tools.length()}")
     }
 
-    private fun fixture(text: String = "A source-backed technical observation. ".repeat(50)): String {
+    private fun fixture(
+        text: String = "A source-backed technical observation. ".repeat(50),
+        url: String = "https://one.example/report"
+    ): String {
         val pack = AgentWebEvidencePack.build("topic", "completed", listOf(mapOf(
-            "url" to "https://one.example/report", "title" to "Report", "content" to text,
+            "url" to url, "title" to "Report", "content" to text,
             "content_sha256" to AgentNativeJsonCodec.sha256(text), "retrieved_at_millis" to 1L
         )), emptyList(), emptyList(), 1L)
         return AgentNativeJsonCodec.stringify(mapOf("status" to "completed", "operation" to "search", "evidence_pack" to pack))
