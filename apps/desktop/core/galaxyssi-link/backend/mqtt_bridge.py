@@ -47,7 +47,6 @@ from link_delivery import (
     InboundContentConflict,
     complete_message,
     discard_route,
-    ensure_transport_epoch,
     fail_exhausted_outbound,
     mark_outbound_published,
     mark_outbound_retryable,
@@ -62,6 +61,9 @@ from link_delivery import (
     task_result_is_current,
     remove_task_result,
 )
+from mqtt_pool_client import MqttPoolClient, Publication
+from mqtt_peer_routes import PeerBinding, PeerRoutes
+from mqtt_multipath_policy import Traffic
 from link_protocol import (
     LinkTopics,
     MAX_OPAQUE_PACKET_BYTES,
@@ -138,12 +140,8 @@ from tool_permission_policy import (
 
 log = logging.getLogger("galaxyssi.mqtt")
 
-BROKER = os.environ.get("GALAXYSSI_MQTT_HOST", "broker.emqx.io")
-PORT = int(os.environ.get("GALAXYSSI_MQTT_PORT", "8883"))
-MQTT_TLS = os.environ.get("GALAXYSSI_MQTT_TLS", "1") != "0"
 FILES_DIR = Path.home() / "galaxyssi_files"
 MQTT_QOS = 1
-MQTT_TRANSPORT_EPOCH = "v10-peer-message-uuid"
 MOBILE_HIDDEN_AGENT_IDS = {"cloud-model"}
 
 client = None
@@ -249,6 +247,7 @@ mqtt_subscription_lock = threading.RLock()
 mqtt_subscription_pending: dict[int, tuple[tuple[str, str], ...]] = {}
 mqtt_subscription_pending_started_at: dict[int, float] = {}
 mqtt_subscription_active: dict[str, str] = {}
+mqtt_subscription_expected: dict[str, str] = {}
 mqtt_pairing_confirmations: dict[str, tuple] = {}
 mqtt_subscription_early_subacks: dict[int, tuple[bool, ...]] = {}
 mqtt_subscriptions_ready = threading.Event()
@@ -479,6 +478,8 @@ class _InboundMqttMessage:
     payload: bytes
     received_at_ms: int
     received_at_ns: int = 0
+    broker_id: str = ""
+    broker_generation: int = 0
 
 
 @dataclass(frozen=True)
@@ -1530,6 +1531,8 @@ def _subscribe_topics(mqttc, subscriptions: list[tuple[str, str]]) -> int:
     if not normalized:
         return 0
     request = [(topic, MQTT_QOS) for topic, _route_id in normalized]
+    with mqtt_subscription_lock:
+        mqtt_subscription_expected.update(normalized)
     try:
         result = mqttc.subscribe(request)
         if result is None:
@@ -1572,6 +1575,7 @@ def _subscribe_topic(mqttc, topic: str, client_route_id: str) -> bool:
 
 
 def _subscribe_client(mqttc, client: dict) -> None:
+    _refresh_pool_peers(mqttc)
     client_route_id = str(client.get("client_route_id") or "")
     _subscribe_topics(
         mqttc,
@@ -1594,6 +1598,7 @@ def _unsubscribe_client(mqttc, client: dict) -> None:
     with mqtt_subscription_lock:
         for topic in active_topics:
             mqtt_subscription_active.pop(topic, None)
+            mqtt_subscription_expected.pop(topic, None)
         stale_pending = [
             message_id
             for message_id, subscriptions in mqtt_subscription_pending.items()
@@ -1621,6 +1626,7 @@ def _reset_subscription_state() -> None:
         mqtt_subscription_pending.clear()
         mqtt_subscription_pending_started_at.clear()
         mqtt_subscription_active.clear()
+        mqtt_subscription_expected.clear()
         mqtt_pairing_confirmations.clear()
         mqtt_subscription_early_subacks.clear()
         mqtt_subscription_last_reconcile = 0.0
@@ -1639,8 +1645,8 @@ def _expected_subscriptions() -> dict[str, str]:
 
 
 def _refresh_subscription_ready() -> bool:
-    expected = set(_expected_subscriptions())
     with mqtt_subscription_lock:
+        expected = set(mqtt_subscription_expected)
         active = set(mqtt_subscription_active)
     ready = bool(expected) and expected.issubset(active)
     if ready:
@@ -1654,6 +1660,15 @@ def _resolve_inbound_topic(topic: str) -> tuple[str, dict] | None:
     pairing = pairing_session_for_topic(topic)
     if pairing is not None:
         return "pairing", pairing
+    with mqtt_subscription_lock:
+        indexed_route = mqtt_subscription_expected.get(topic)
+    if indexed_route:
+        paired_client = get_client(indexed_route)
+        if (paired_client and not paired_client.get("revoked_at")
+                and topic in _topics_for_client(paired_client).receive_window):
+            return "client", paired_client
+    if isinstance(client, MqttPoolClient):
+        return None
     for paired_client in list_clients():
         if topic in _topics_for_client(paired_client).receive_window:
             return "client", paired_client
@@ -1664,10 +1679,13 @@ def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
     """Idempotently repair missing or stale per-device MQTT subscriptions."""
     global mqtt_subscription_last_reconcile
     mqttc = mqttc or client
+    _refresh_pool_peers(mqttc)
     if mqttc is None or (hasattr(mqttc, "is_connected") and not mqttc.is_connected()):
         return {"ok": False, "reason": "mqtt_not_connected", "requested": 0}
     expected = _expected_subscriptions()
     with mqtt_subscription_lock:
+        mqtt_subscription_expected.clear()
+        mqtt_subscription_expected.update(expected)
         active_topics = set(mqtt_subscription_active)
         pending_topics = {
             topic
@@ -1850,6 +1868,9 @@ def _transport_reconnect_age(now: float | None = None) -> float | None:
 
 
 def _request_transport_reconnect(mqttc, reason: str, generation: int | None = None) -> None:
+    if isinstance(mqttc, MqttPoolClient):
+        mqttc.repair_subscriptions()
+        return
     if not _begin_transport_reconnect():
         return
     if generation is None:
@@ -2413,9 +2434,8 @@ def mqtt_bridge_status() -> dict[str, Any]:
             "running": bool(running and worker_alive),
             "connected": connected,
             "supervised": supervisor_alive,
-            "broker": BROKER,
-            "port": PORT,
-            "tls": MQTT_TLS,
+            "selection": "automatic",
+            "tls": True,
             "worker_start_count": mqtt_worker_start_count,
             "worker_started_at": mqtt_worker_started_at,
             "connected_at": mqtt_connected_at,
@@ -2426,7 +2446,11 @@ def mqtt_bridge_status() -> dict[str, Any]:
     subscriptions = mqtt_subscription_status()
     status["subscriptions"] = subscriptions
     status["ingress"] = mqtt_ingress_status()
-    status["ready"] = bool(status["connected"] and subscriptions["ready"])
+    status["receive_ready"] = bool(status["connected"] and subscriptions["ready"])
+    status["paths"] = active_client.path_snapshot()["paths"] if isinstance(active_client, MqttPoolClient) else {}
+    peers = active_client.peer_routes.status() if isinstance(active_client, MqttPoolClient) else {"configured": 0, "ready": 0}
+    status["peers"] = peers
+    status["ready"] = bool(status["connected"] and peers["ready"])
     return status
 
 
@@ -2505,12 +2529,9 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
             if isinstance(flags, dict)
             else getattr(flags, "session_present", False)
         )
-        log.info(
-            "MQTT connected %s:%s session_present=%s",
-            BROKER,
-            PORT,
-            session_present,
-        )
+        log.info("MQTT %s connected session_present=%s",
+                 "automatic broker pool" if isinstance(mqttc, MqttPoolClient) else "transport",
+                 session_present)
         # Keep the Paho callback thread free to receive SUBACK and messages.
         # Durable queue and task recovery starts only after subscriptions are active.
         _ensure_outbound_retry_thread()
@@ -6724,7 +6745,7 @@ def _process_message(mqttc, userdata, msg):
             if claim.get("pairing_token") != token:
                 log.warning("MQTT pairing ciphertext rejected: token binding mismatch")
                 return
-            handle_pairing_claim(mqttc, claim)
+            handle_pairing_claim(mqttc, claim, ingress_broker=getattr(msg, "broker_id", ""))
             return
         paired_client = route_data
         client_route_id = str(paired_client.get("client_route_id") or "")
@@ -6737,6 +6758,12 @@ def _process_message(mqttc, userdata, msg):
             log.warning("MQTT opaque packet rejected client=%s error=%s", client_route_id[-8:], exc)
             return
         wire_open_finished_ns = timing_now_ns()
+        if isinstance(mqttc, MqttPoolClient) and mqttc.peer_routes.handle_verified(
+                client_route_id, wire_payload, broker_id=getattr(msg, "broker_id", ""),
+                generation=getattr(msg, "broker_generation", 0), authenticated_identity=(
+                    client_route_id, str(paired_client.get("local_identity_fingerprint") or ""),
+                    str(paired_client.get("identity_fingerprint") or ""), str(paired_client.get("link_secret") or ""))):
+            return
         if is_mqtt_chunk(wire_payload):
             local_id = desktop_id()
             source = str(wire_payload.get("from") or "")
@@ -7468,7 +7495,9 @@ def on_mqtt_message(mqttc, userdata, msg):
             topic=str(msg.topic or ""),
             payload=payload,
             received_at_ms=int(time.time() * 1000),
-            received_at_ns=timing_now_ns(),
+            received_at_ns=getattr(msg, "received_at_ns", 0) or timing_now_ns(),
+            broker_id=str(getattr(msg, "broker_id", "") or ""),
+            broker_generation=int(getattr(msg, "broker_generation", 0) or 0),
         ),
     )
 
@@ -7484,7 +7513,7 @@ def _stop_inbound_route_workers(*, timeout=5.0) -> bool:
     return current.close(wait=True, cancel_pending=True, timeout=timeout)
 
 
-def handle_pairing_claim(mqttc, payload: dict):
+def handle_pairing_claim(mqttc, payload: dict, *, ingress_broker=""):
     token = str(payload.get("pairing_token") or "")
     bundle = payload.get("signal_bundle")
     fingerprint = str(payload.get("identity_fingerprint") or "")
@@ -7542,10 +7571,12 @@ def handle_pairing_claim(mqttc, payload: dict):
                 "desktop_id": desktop_id(), "desktop_fingerprint": local_fingerprint,
                 "client_route_id": client_route_id,
             }
-            mqttc.publish(
+            _publish_bootstrap(
+                mqttc,
                 _topics_for_client(rejected_client).send,
                 seal_wire_packet(json.dumps(rejection), rejected_client["link_secret"]),
-                qos=MQTT_QOS,
+                scope=client_route_id, required=frozenset({_transport_probe_topic()}),
+                ingress_broker=ingress_broker,
             )
         return
     access_grant = client_grant({"access": pairing_session.get("access")})
@@ -7557,7 +7588,7 @@ def handle_pairing_claim(mqttc, payload: dict):
     )
     if existing_client is not None:
         log.info("MQTT duplicate pairing claim accepted; confirmation will be replayed")
-        _publish_pairing_confirmation(mqttc, existing_client, fingerprint)
+        _publish_pairing_confirmation(mqttc, existing_client, fingerprint, ingress_broker=ingress_broker)
         return
     replaced_clients = clients_for_identity(
         fingerprint,
@@ -7639,10 +7670,20 @@ def handle_pairing_claim(mqttc, payload: dict):
     )
     log.info(f"MQTT pairing claim accepted fingerprint={fingerprint[:16]} result={result}")
 
-    _publish_pairing_confirmation(mqttc, paired_client, fingerprint, control_authorization)
+    _publish_pairing_confirmation(mqttc, paired_client, fingerprint, control_authorization,
+                                 ingress_broker=ingress_broker)
 
 
-def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, control_authorization=None):
+def _publish_bootstrap(mqttc, topic, sealed, *, scope, required, ingress_broker=""):
+    if not isinstance(mqttc, MqttPoolClient):
+        return mqttc.publish(topic, sealed, qos=MQTT_QOS)
+    digest = hashlib.sha256(sealed.encode("utf-8") if isinstance(sealed, str) else sealed).hexdigest()
+    descriptor = Publication(scope, digest, digest, Traffic.CONTROL, frozenset(required),
+                             bootstrap=True, preferred_broker=ingress_broker or None)
+    return mqttc.publish(topic, sealed, publication=descriptor)
+
+
+def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, control_authorization=None, *, ingress_broker=""):
     from device_identity import desktop_device_profile
     from desktop_control import desktop_control_manager
 
@@ -7681,7 +7722,7 @@ def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, 
     # A successful pairing must imply that the first phone message has a subscriber.
     with mqtt_subscription_lock:
         mqtt_pairing_confirmations[paired_client["client_route_id"]] = (
-            mqttc, topics.send, tuple(topics.receive_window), sealed,
+            mqttc, topics.send, tuple(topics.receive_window), sealed, ingress_broker,
         )
     _flush_pairing_confirmations()
 
@@ -7690,16 +7731,19 @@ def _flush_pairing_confirmations():
     ready = []
     with mqtt_subscription_lock:
         for route_id, pending in list(mqtt_pairing_confirmations.items()):
-            mqttc, topic, required, sealed = pending
+            mqttc, topic, required, sealed, ingress_broker = pending
             if not all(mqtt_subscription_active.get(item) == route_id for item in required):
                 continue
+            if isinstance(mqttc, MqttPoolClient) and not mqttc.ready_path_generations(required):
+                continue
             mqtt_pairing_confirmations.pop(route_id, None)
-            ready.append((route_id, mqttc, topic, sealed))
-    for route_id, mqttc, topic, sealed in ready:
+            ready.append((route_id, mqttc, topic, required, sealed, ingress_broker))
+    for route_id, mqttc, topic, required, sealed, ingress_broker in ready:
         if get_client(route_id) is None:
             continue
         try:
-            info = mqttc.publish(topic, sealed, qos=MQTT_QOS)
+            info = _publish_bootstrap(mqttc, topic, sealed, scope=route_id, required=required,
+                                      ingress_broker=ingress_broker)
             log.info("MQTT opaque pairing confirmation published mid=%s rc=%s", info.mid, info.rc)
         except Exception as exc:
             # The phone replays its claim until it receives a confirmation.
@@ -8136,6 +8180,9 @@ def flush_outbound_messages(
         route_candidates: list[list[dict]] = []
         for paired_client in _ordered_outbound_clients(preferred_client_route_id):
             client_route_id = str(paired_client.get("client_route_id") or "")
+            if isinstance(mqttc, MqttPoolClient) and not mqttc.peer_routes.ready(client_route_id):
+                mqttc.peer_routes.request(client_route_id)
+                continue
             route_inflight = outbound_inflight_count(
                 client_route_id=client_route_id, exclude_priority=OUTBOUND_PRIORITY_ARTIFACT,
                 active_messages=broker_owned_messages,
@@ -9125,19 +9172,51 @@ def _persistent_mqtt_client_id(path: Path | None = None) -> str:
 
 
 def _new_mqtt_client():
-    client_id = _persistent_mqtt_client_id()
-    callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
-    if callback_api_version is not None:
-        return mqtt.Client(
-            callback_api_version=callback_api_version.VERSION2,
-            client_id=client_id,
-            clean_session=True,
-        )
-    return mqtt.Client(client_id=client_id, clean_session=True)
+    def classify(topic, encoded):
+        if topic == _transport_probe_topic():
+            digest = hashlib.sha256(encoded).hexdigest()
+            return Publication("transport-probe", digest, digest, Traffic.CONTROL,
+                               frozenset({topic}), bootstrap=True)
+        return mqttc.peer_routes.classify(topic, encoded)
+    mqttc = MqttPoolClient(classify_publication=classify, on_paths_changed=_pool_paths_changed)
+    mqttc.peer_routes = PeerRoutes(mqttc)
+    mqttc.on_tick = mqttc.peer_routes.maintenance
+    return mqttc
+
+
+def _refresh_pool_peers(mqttc):
+    if not isinstance(mqttc, MqttPoolClient):
+        return
+    bindings = []
+    for paired in list_clients():
+        if paired.get("revoked_at"):
+            continue
+        sender = str(paired.get("local_identity_fingerprint") or "")
+        receiver = str(paired.get("identity_fingerprint") or "")
+        if not re.fullmatch("[a-f0-9]{64}", sender) or not re.fullmatch("[a-f0-9]{64}", receiver):
+            continue
+        topics = _topics_for_client(paired)
+        bindings.append(PeerBinding(str(paired["client_route_id"]), sender, receiver,
+                                    str(paired["link_secret"]), topics.send, frozenset(topics.receive_window)))
+    mqttc.peer_routes.replace(bindings)
+
+
+def _pool_paths_changed(mqttc, ingress, state, error):
+    del ingress, error
+    if state not in {"subscribed", "disconnected"}:
+        return
+    active = mqttc.active_topics()
+    with mqtt_subscription_lock:
+        for topic in set(mqtt_subscription_active) - active:
+            mqtt_subscription_active.pop(topic, None)
+        mqtt_subscription_active.update({topic: route for topic, route in mqtt_subscription_expected.items()
+                                         if topic in active})
+    _refresh_subscription_ready()
+    _flush_pairing_confirmations()
 
 
 def start():
-    """Run one supervised MQTT worker until shutdown or an unrecoverable exit."""
+    """Own one shared three-broker client until shutdown."""
     global client, running, mqtt_worker_started_at, mqtt_worker_start_count, mqtt_last_error
     mqttc = None
     with mqtt_lifecycle_lock:
@@ -9148,39 +9227,24 @@ def start():
         mqtt_worker_start_count += 1
         _record_mqtt_disconnected()
     try:
-        if ensure_transport_epoch(MQTT_TRANSPORT_EPOCH):
-            log.info("MQTT transport epoch advanced; obsolete broker outbox entries were cleared")
         mqttc = _new_mqtt_client()
         with mqtt_lifecycle_lock:
             client = mqttc
         mqttc.on_connect = on_connect
-        mqttc.on_pre_connect = on_pre_connect
-        mqttc.on_connect_fail = on_connect_fail
         mqttc.on_disconnect = on_disconnect
         mqttc.on_message = on_mqtt_message
         mqttc.on_publish = on_publish
         mqttc.on_subscribe = on_subscribe
-        mqttc.max_inflight_messages_set(MQTT_MAX_INFLIGHT)
-        mqttc.max_queued_messages_set(256)
-        if MQTT_TLS:
-            mqttc.tls_set()
-            mqttc.tls_insecure_set(False)
-
-        mqttc.reconnect_delay_set(min_delay=1, max_delay=int(MQTT_MAX_RECONNECT_DELAY_SECONDS))
-        while running and not mqtt_lifecycle_stop_event.is_set():
-            try:
-                mqttc.connect(BROKER, PORT, keepalive=60)
-                mqttc.loop_forever(retry_first_connection=True)
-            except Exception as exc:
-                _record_mqtt_disconnected(str(exc))
-                log.error("MQTT connection failed; retrying in 3 seconds: %s", exc)
-            if running and not mqtt_lifecycle_stop_event.wait(3.0):
-                continue
-            break
+        _refresh_pool_peers(mqttc)
+        mqttc.loop_forever()
     except Exception as exc:
         _record_mqtt_disconnected(str(exc))
         log.exception("MQTT worker exited during initialization")
     finally:
+        if mqttc is not None:
+            mqttc.disconnect()
+            if isinstance(mqttc, MqttPoolClient):
+                mqttc.wait_closed()
         _record_mqtt_disconnected(mqtt_last_error or "worker_exited")
         with mqtt_lifecycle_lock:
             if client is mqttc:
@@ -9300,7 +9364,6 @@ def stop():
     stop_blob_input()
     from blob_artifact_bridge import stop as stop_blob_output
     stop_blob_output(sys.modules[__name__])
-    running = False
     codex_warm_stop_event.set()
     presence_stop_event.set()
     outbound_retry_stop_event.set()

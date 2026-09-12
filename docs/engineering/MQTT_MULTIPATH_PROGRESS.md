@@ -26,13 +26,56 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Important Activation Boundary
 
-The new connection pools and scheduling policies are not yet connected to `GalaxySSIMqttClient.connect`
-or `mqtt_bridge.start`. Installed applications are unchanged. Existing entry
-points still use the old single-client implementation until the coordinated
-protocol and durable-delivery integration is complete.
+Desktop `mqtt_bridge.start` now owns the three-path pool in this development
+branch, with authenticated per-pair resume exchange and shared physical publish
+tokens. Android `GalaxySSIMqttClient.connect` still needs the corresponding
+activation. Installed applications are unchanged. Do not launch this worktree
+against the existing installed Android application as a completed upgrade.
 
 Do not claim automatic fallback, hedging, or striping in the shipping application
 on the basis of these isolated modules passing their tests.
+
+## Desktop Pool Activation Checkpoint
+
+- The actual Desktop lifecycle uses `MqttPoolClient` and `PeerRoutes`, not a
+  separate demonstration entry point. Physical workers use the common catalog,
+  independent TLS/reconnect generations, and the existing bounded ingress.
+- Logical subscription and publish IDs cannot collide when different brokers
+  use the same native MQTT packet ID. Only aggregate zero/one connection
+  transitions enter the existing global bridge lifecycle.
+- Authenticated `link_resume` requests and acknowledgements run through the
+  existing relationship AEAD and identity-scoped ingress. Local epochs are
+  persisted before publication; remote epochs are committed before activation.
+  Resume ACKs must bind the live local request ID, epoch, and canonical digest.
+- A common path requires all receive subscriptions on that path plus a confirmed
+  local generation and an unexpired authenticated peer advertisement. Split
+  SUBACKs across different brokers cannot falsely confirm pairing. Reconnecting
+  the same broker requires a new local epoch/ACK, even if its name is unchanged.
+- QR claims use the actual pairing handler and return confirmation on the
+  ingress path when it is ready, otherwise another fully subscribed path.
+  Pair confirmation does not by itself authorize later business publishing.
+- The existing outbox waits for that pair's resume without consuming business
+  delivery attempts while no authenticated path is ready. A single failed broker
+  does not clear other paths' subscriptions or the shared inbox/run ledger.
+- Closing the pool is bounded for the caller, while the owning bridge worker
+  remains alive until outstanding connection workers exit. The supervisor cannot
+  create an overlapping pool during slow DNS/TLS shutdown.
+- Subscription callbacks use cached intent instead of scanning all contacts.
+  Indexed inbound lookup revalidates the current pair. Resume admission is bounded
+  and keeps its fair rotation through registry refreshes at 10,000 configured
+  entries; that is not a 10,000-connection throughput result.
+- Health distinguishes physical connections, receive readiness, and authenticated
+  peer readiness. It exposes per-broker counts/generations, not private mailboxes.
+- This adapter currently submits one physical publication per logical token.
+  The policy's full hedges/races, authenticated attempt receipts, durable chunk
+  scheduling, and Android activation remain unfinished. Do not infer those
+  capabilities from this checkpoint or install it as the complete feature.
+
+Verification is documented in
+[Desktop pool activation](../testing/MQTT_POOL_ACTIVATION_DESKTOP_20260913.md).
+The final combined run passed 418 tests in 50.567 seconds, including 65 focused
+pool/resume/pairing/ownership cases and both live JVM recovery modules. It is not
+a phone end-to-end or public multi-broker delivery score.
 
 ## Integrated Ingress Hardening
 
@@ -182,11 +225,12 @@ See [Desktop stored dispatch](../testing/MQTT_STORED_DISPATCH_DESKTOP_20260913.m
 This supersedes the earlier statement that the actual bridge still used an
 ID-only accepted-state skip; it does not activate the three-path transport.
 
-1. Connect both pool implementations to the actual application-owned transport
-   lifecycle; preserve one shared application/service owner across ten windows.
-2. Complete authenticated resume request/response exchange and local capability
-   refresh, including pairing bootstrap and app-to-app relationships. Announce
-   only subscription-confirmed receiving paths; persist epochs before use.
+1. Activate the Android pool in the actual application/service-owned lifecycle;
+   Desktop activation now has host integration coverage. Preserve one shared
+   application/service owner across ten windows and verify real device lifecycle.
+2. Complete Android authenticated resume and pairing/app-to-app integration.
+   Desktop request/response, epoch refresh, and QR bootstrap are integrated and
+   host-tested, but cross-platform wire/device acceptance remains outstanding.
 3. Integrate generation-scoped physical attempts with the current publisher,
    outbox, receipt handlers, timing, subscription coordinator, and Run Kernel.
    Do not reset global business state when one path disconnects.

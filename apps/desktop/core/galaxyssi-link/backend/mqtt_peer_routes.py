@@ -1,0 +1,286 @@
+"""Authenticated per-pair resume exchange for the application broker pool."""
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass, field
+import hashlib
+import json
+import logging
+import threading
+import time
+
+from link_protocol import seal_wire_packet, valid_link_secret
+from mqtt_broker_catalog import CATALOG
+from mqtt_multipath_policy import PeerRoute, Traffic
+from mqtt_pool_client import Publication
+from mqtt_route_state import (FINGERPRINT, TTL_MS, RouteAdvertisement, ResumeResult, issue_local_resume,
+                              forget_route, parse_verified_resume, record_verified_resume)
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PeerBinding:
+    scope: str
+    sender: str
+    receiver: str
+    secret: str
+    send_topic: str
+    receive_topics: frozenset[str]
+
+    @property
+    def identity(self):
+        return self.scope, self.sender, self.receiver, self.secret
+
+
+@dataclass
+class _Peer:
+    binding: PeerBinding
+    local: RouteAdvertisement | None = None
+    local_generations: dict = field(default_factory=dict)
+    remote_epoch: int = 0
+    local_confirmed_epoch: int = 0
+    next_send: float = 0.0
+    failure_until: float = 0.0
+    active: bool = True
+    last_response: dict = field(default_factory=dict)
+    lock: threading.RLock = field(default_factory=threading.RLock)
+
+
+class PeerRoutes:
+    def __init__(self, client, *, on_ready=None, clock=time.monotonic, wall_clock=time.time):
+        self.client = client
+        self._on_ready = on_ready or (lambda *_: None)
+        self._clock, self._wall = clock, wall_clock
+        self._peers = {}
+        self._outbound = {}
+        self._rotation = deque()
+        self._urgent = {}
+        self._lock = threading.RLock()
+
+    def replace(self, bindings):
+        bindings = list(bindings)
+        if len(bindings) > CATALOG["limits"]["max_peer_routes"]:
+            raise ValueError("Too many authenticated peer routes")
+        if len({binding.scope for binding in bindings}) != len(bindings):
+            raise ValueError("Duplicate authenticated peer scope")
+        if len({binding.send_topic for binding in bindings}) != len(bindings):
+            raise ValueError("Ambiguous outgoing mailbox")
+        for binding in bindings:
+            if (not binding.scope or len(binding.scope) > 512 or not valid_link_secret(binding.secret)
+                    or not FINGERPRINT.fullmatch(binding.sender) or not FINGERPRINT.fullmatch(binding.receiver)
+                    or binding.sender == binding.receiver or not binding.receive_topics
+                    or len(binding.receive_topics) > 16
+                    or any(not topic or len(topic) > 512 or any(c in topic for c in ("#", "+", "\0"))
+                           for topic in (*binding.receive_topics, binding.send_topic))):
+                raise ValueError("Invalid authenticated peer binding")
+        with self._lock:
+            retained = {}
+            outbound = {}
+            for binding in bindings:
+                previous = self._peers.get(binding.scope)
+                if previous and previous.binding.identity != binding.identity:
+                    with previous.lock:
+                        forget_route(binding.scope)
+                        previous.active = False
+                        self.client.policy.forget_peer(binding.scope)
+                    previous = None
+                if previous is None:
+                    previous = _Peer(binding)
+                else:
+                    with previous.lock:
+                        if previous.binding.receive_topics != binding.receive_topics:
+                            previous.local = None
+                            previous.local_confirmed_epoch = 0
+                        previous.binding = binding
+                retained[binding.scope] = previous
+                outbound[binding.send_topic] = previous
+            for scope in set(self._peers) - set(retained):
+                with self._peers[scope].lock:
+                    forget_route(scope)
+                    self._peers[scope].active = False
+                    self.client.policy.forget_peer(scope)
+            self._peers, self._outbound = retained, outbound
+            existing_order = [scope for scope in self._rotation if scope in retained]
+            existing = set(existing_order)
+            self._rotation = deque(existing_order + [scope for scope in retained if scope not in existing])
+            self._urgent = {scope: True for scope in self._urgent if scope in retained}
+
+    def request(self, scope):
+        with self._lock:
+            if scope in self._peers and len(self._urgent) < 64:
+                self._urgent[scope] = True
+
+    def _local_advertisement(self, peer, now_ms):
+        binding = peer.binding
+        generations = self.client.ready_path_generations(binding.receive_topics)
+        ready = frozenset(generations)
+        if not ready:
+            return None
+        previous = peer.local
+        if (previous is None or previous.receive_brokers != ready or peer.local_generations != generations
+                or previous.expires_at_ms - now_ms < TTL_MS / 2):
+            peer.local = issue_local_resume(binding.scope, sender=binding.sender, receiver=binding.receiver,
+                                           receive_brokers=ready, now_ms=now_ms)
+            peer.local_confirmed_epoch = 0
+            peer.local_generations = generations
+        return peer.local
+
+    def maintenance(self, limit=16):
+        if not 1 <= limit <= 64:
+            raise ValueError("Bounded resume admission required")
+        with self._lock:
+            scopes = list(self._urgent)[:limit]
+            for scope in scopes:
+                self._urgent.pop(scope, None)
+            for _ in range(min(limit - len(scopes), len(self._rotation))):
+                scope = self._rotation.popleft()
+                self._rotation.append(scope)
+                if scope not in scopes:
+                    scopes.append(scope)
+            peers = [self._peers[scope] for scope in scopes if scope in self._peers]
+        for peer in peers:
+            if not peer.lock.acquire(blocking=False):
+                continue
+            try:
+                now, now_ms = self._clock(), int(self._wall() * 1000)
+                if not peer.active or now < peer.failure_until:
+                    continue
+                previous = peer.local
+                advertisement = self._local_advertisement(peer, now_ms)
+                if advertisement is None:
+                    continue
+                changed = advertisement is not previous
+                confirmed = peer.local_confirmed_epoch == advertisement.epoch
+                if not changed and (confirmed or now < peer.next_send):
+                    continue
+                payload = advertisement.to_wire()
+                binding = peer.binding
+                peer.next_send = now + 5.0
+                targets = advertisement.receive_brokers
+            except Exception as exc:
+                log.warning("Peer path resume deferred (%s)", type(exc).__name__)
+                peer.failure_until = self._clock() + 5.0
+                continue
+            finally:
+                peer.lock.release()
+            # Each endpoint is attempted independently; no wait for all brokers.
+            for broker in targets:
+                try:
+                    self._publish_control(binding, payload, broker)
+                except Exception as exc:
+                    log.warning("Peer path publication deferred (%s)", type(exc).__name__)
+
+    def _publish_control(self, binding, payload, broker):
+        if broker not in self.client.policy.ready_brokers(set(binding.receive_topics)):
+            return
+        encoded = json.dumps(payload, separators=(",", ":"))
+        digest = hashlib.sha256(encoded.encode()).hexdigest()
+        descriptor = Publication(binding.scope, digest, digest, Traffic.CONTROL,
+                                 binding.receive_topics, bootstrap=True, preferred_broker=broker)
+        return self.client.publish(binding.send_topic, seal_wire_packet(encoded, binding.secret),
+                                   publication=descriptor)
+
+    def handle_verified(self, scope, payload, *, broker_id, generation, authenticated_identity):
+        """Called only inside authenticated AEAD ingress for this configured pair."""
+        if not isinstance(payload, dict) or payload.get("type") not in {"link_resume", "link_resume_ack"}:
+            return False
+        with self._lock:
+            peer = self._peers.get(scope)
+        if peer is None:
+            raise ValueError("Resume does not belong to an authorized pair")
+        path = self.client.path_snapshot()["paths"].get(broker_id)
+        if not path or not path["connected"] or path["generation"] != generation:
+            return True
+        notify = False
+        request_resume = False
+        response = None
+        with peer.lock:
+            binding = peer.binding
+            if not peer.active or binding.identity != authenticated_identity:
+                raise ValueError("Resume authentication no longer matches the configured pair")
+            if broker_id not in self.client.policy.ready_brokers(set(binding.receive_topics)):
+                return True
+            now, now_ms = self._clock(), int(self._wall() * 1000)
+            raw = payload if payload["type"] == "link_resume" else payload.get("advertisement")
+            advertisement = parse_verified_resume(raw, sender=binding.receiver, receiver=binding.sender, now_ms=now_ms)
+            if payload["type"] == "link_resume_ack":
+                local = peer.local
+                if (local is None or local.expires_at_ms <= now_ms
+                        or payload.get("acknowledged_resume_id") != local.resume_id
+                        or type(payload.get("acknowledged_route_epoch")) is not int
+                        or payload["acknowledged_route_epoch"] != local.epoch
+                        or payload.get("acknowledged_digest") != local.digest()):
+                    raise ValueError("Unsolicited or stale resume acknowledgement")
+            result = record_verified_resume(scope, advertisement, now_ms=now_ms)
+            if result in {ResumeResult.STALE, ResumeResult.CONFLICT}:
+                return True
+            if advertisement.epoch > peer.remote_epoch:
+                remaining = min(CATALOG["timing"]["resume_ttl_seconds"],
+                                (advertisement.expires_at_ms - now_ms) / 1000)
+                route = PeerRoute(advertisement.epoch, advertisement.receive_brokers,
+                                  advertisement.packet_bytes, True, now + remaining)
+                if not self.client.policy.accept_verified_resume(scope, route, now=now):
+                    return True
+                peer.remote_epoch = advertisement.epoch
+                if peer.local is None or peer.local_confirmed_epoch != peer.local.epoch:
+                    peer.next_send = 0
+                    request_resume = True
+            if payload["type"] == "link_resume_ack":
+                notify = peer.local_confirmed_epoch != peer.local.epoch
+                peer.local_confirmed_epoch = peer.local.epoch
+            else:
+                local = self._local_advertisement(peer, now_ms)
+                previous = peer.last_response.get(broker_id)
+                response_key = (advertisement.epoch, advertisement.resume_id)
+                if local and (not previous or previous[0] != response_key or now - previous[1] >= 1.0):
+                    peer.last_response[broker_id] = (response_key, now)
+                    response = {"type": "link_resume_ack", "advertisement": local.to_wire(),
+                                "acknowledged_resume_id": advertisement.resume_id,
+                                "acknowledged_route_epoch": advertisement.epoch,
+                                "acknowledged_digest": advertisement.digest()}
+        if response:
+            self._publish_control(binding, response, broker_id)
+        if request_resume:
+            self.request(scope)
+        if notify:
+            self._on_ready(scope)
+        return True
+
+    def ready(self, scope):
+        with self._lock:
+            peer = self._peers.get(scope)
+        if not peer:
+            return False
+        with peer.lock:
+            local = peer.local
+            if (not peer.active or not local or local.expires_at_ms <= self._wall() * 1000
+                    or peer.local_confirmed_epoch != local.epoch):
+                return False
+            binding = peer.binding
+            current = self.client.ready_path_generations(binding.receive_topics)
+            if not current or any(peer.local_generations.get(broker) != generation
+                                  for broker, generation in current.items()):
+                return False
+        return bool(self.client.policy.plan(scope, "route-readiness", Traffic.MESSAGE, 1,
+                                             set(binding.receive_topics), now=self._clock()))
+
+    def classify(self, topic, encoded):
+        with self._lock:
+            peer = self._outbound.get(topic)
+        if peer is None:
+            return None
+        if not self.ready(peer.binding.scope):
+            self.request(peer.binding.scope)
+            return None
+        digest = hashlib.sha256(encoded).hexdigest()
+        with peer.lock:
+            if not peer.active:
+                return None
+            return Publication(peer.binding.scope, digest, digest, Traffic.MESSAGE, peer.binding.receive_topics,
+                               authorized_paths=tuple(peer.local_generations.items()))
+
+    def status(self):
+        with self._lock:
+            scopes = tuple(self._peers)
+        return {"configured": len(scopes), "ready": sum(self.ready(scope) for scope in scopes)}

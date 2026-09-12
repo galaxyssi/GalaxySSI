@@ -251,6 +251,29 @@ class BrokerPoolTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.pool.start()
 
+    def test_slow_shutdown_retains_worker_ownership_until_the_connect_call_exits(self):
+        entered, release = threading.Event(), threading.Event()
+        factory = self.pool._factory
+        def delayed_factory(broker, generation):
+            client = factory(broker, generation)
+            if broker == "emqx":
+                def connect(*_args, **_kwargs):
+                    entered.set()
+                    release.wait(3)
+                client.connect = connect
+            return client
+        self.pool._factory = delayed_factory
+        self.pool.start()
+        try:
+            self.assertTrue(entered.wait(1))
+            self.assertFalse(self.pool.close(timeout=0.01))
+            self.assertFalse(self.pool.wait_closed(timeout=0))
+            with self.assertRaises(RuntimeError):
+                self.pool.start()
+        finally:
+            release.set()
+        self.assertTrue(self.pool.wait_closed(timeout=1))
+
     def test_real_client_factory_enforces_tls_hostname_checks(self):
         with patch("mqtt_broker_pool.mqtt.Client") as factory:
             BrokerPool._new_client("mosquitto", 1)

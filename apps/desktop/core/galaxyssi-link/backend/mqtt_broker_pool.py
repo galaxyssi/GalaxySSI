@@ -380,7 +380,7 @@ class BrokerPool:
                                   "pending_publishes": len(path.publications), "last_error": path.last_error}
         return {"selection": "automatic", "paths": result}
 
-    def close(self, timeout: float = 4.0) -> None:
+    def close(self, timeout: float = 4.0) -> bool:
         self._stop.set()
         with self._lock:
             self._closed = True
@@ -393,7 +393,11 @@ class BrokerPool:
                     client.disconnect()
                 except Exception:
                     pass
-        deadline = time.monotonic() + timeout
+        return self.wait_closed(timeout)
+
+    def wait_closed(self, timeout: float | None = None) -> bool:
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
         for worker in self._workers:
             if worker is not threading.current_thread():
-                worker.join(max(0.0, deadline - time.monotonic()))
+                worker.join(None if deadline is None else max(0.0, deadline - time.monotonic()))
+        return all(not worker.is_alive() for worker in self._workers)

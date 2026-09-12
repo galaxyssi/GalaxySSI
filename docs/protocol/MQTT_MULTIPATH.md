@@ -1,7 +1,9 @@
 # Automatic Multi-Broker Transport
 
-Status: implementation in progress. Ingress hardening is integrated; the three-path
-connection pool is not yet activated in the application connection entry points.
+Status: implementation in progress. Ingress hardening is integrated. The Desktop
+connection entry point now owns the three-path pool in this development branch;
+Android activation and coordinated device acceptance remain unfinished. No
+shipping installation or complete-feature release is claimed.
 
 ## Product Contract
 
@@ -84,7 +86,36 @@ revocation or re-pairing removes the watermark.
 The Android and Desktop canonical capability digest is cross-checked with the
 same fixed contract vector in both test suites.
 
+### Desktop Resume Acknowledgement
+
+The existing relationship AEAD carries `link_resume_ack` with:
+
+- `advertisement`: the responder's current `link_resume` object;
+- `acknowledged_resume_id`: the initiating endpoint's live request ID;
+- `acknowledged_route_epoch`: that request's exact integer epoch;
+- `acknowledged_digest`: its canonical capability digest.
+
+The receiver revalidates the current pair identity and ingress connection
+generation before updating route state. An unsolicited/stale ACK is rejected
+before route persistence. ACKs do not trigger another ACK. A newly discovered
+common path expedites the endpoint's own outstanding resume instead of waiting
+for its ordinary retry interval. Duplicate advertisements do not extend TTL.
+
+Confirmation is generation-specific locally. A broker reconnect or changed
+receiving set requires a fresh local epoch and request confirmation. A cached
+publication descriptor cannot authorize a newer connection generation.
+
+Pairing confirmation requires the entire relationship receive window on at
+least one broker; the union of partial subscriptions across brokers is not
+sufficient. Pairing bootstrap packets are explicitly classified by trusted
+application code, not by a packet's untrusted `type` field.
+
 ## Scheduling
+
+The table describes the target policy. The current Desktop physical adapter
+submits one packet per token; full logical-message hedging, racing, and durable
+chunk scheduling are still being integrated above it. Policy unit tests alone
+are not evidence that the complete product already uses these strategies.
 
 Business paths are the intersection of local subscription-ready paths and the
 authenticated peer's advertised receiving paths. An empty intersection queues

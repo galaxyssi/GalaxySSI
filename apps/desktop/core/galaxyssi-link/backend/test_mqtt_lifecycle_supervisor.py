@@ -193,7 +193,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
 
         with patch.object(
             mqtt_bridge,
-            "ensure_transport_epoch",
+            "_new_mqtt_client",
             side_effect=RuntimeError("setup failed"),
         ):
             mqtt_bridge.start()
