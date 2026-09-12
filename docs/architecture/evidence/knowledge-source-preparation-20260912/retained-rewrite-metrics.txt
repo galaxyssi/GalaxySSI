@@ -1,0 +1,2 @@
+         1789223661.860  1292  1359 I System.out: KNOWLEDGE_CRYPTO_SCALE replace_ms=333044 rows=10001 fixture=test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db variant=source-prepare-v1
+         1789223731.146  1292  1359 I System.out: KNOWLEDGE_CRYPTO_SCALE verify_ms=69238 verified=10001
