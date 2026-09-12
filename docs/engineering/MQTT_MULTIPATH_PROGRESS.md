@@ -32,6 +32,13 @@ tokens. Android `GalaxySSIMqttClient.connect` now owns `MqttPoolTransport` and
 `MqttPeerRoutes` as well. Shipping applications are unchanged. Do not launch this worktree
 against the existing installed Android application as a completed upgrade.
 
+Deployment update, 2026-09-13: the matching full-runtime Android 1.1.113 (999)
+has now been installed on the designated S20U and packaged Desktop 1.1.50 is
+running. The three Desktop paths completed TLS, connection and subscriptions;
+the pairing QR is displayed. This supersedes the historical no-install status
+below, not the outstanding native pairing and business acceptance gates. See
+[coordinated deployment](../testing/MQTT_DEPLOYMENT_S20U_20260913.md).
+
 Do not claim automatic fallback, hedging, or striping in the shipping application
 on the basis of these isolated modules passing their tests.
 
@@ -320,20 +327,21 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    An owned loopback TLS lab also exercises the real Desktop pool, authenticated
    resume, bidirectional transport and one-broker stop/restart; it is not native
    Signal, full UI/attachment, public-provider performance or phone power proof.
-   No shipping App installation or UI control has occurred on S20U. Test-owned
-   packages were removed after completion; the pre-existing test package remains.
+   The later coordinated deployment installed the full production-package App
+   on S20U and checked its main UI. Test-owned packages were removed after the
+   earlier instrumentation; the pre-existing test package remains.
    Do not operate S26U or SM-T575 in this round.
    Earlier 29-test S26U evidence remains historical, not S20U acceptance.
    Isolated verification must not replace production
    app data; coordinated full installation and re-pairing remain separate steps.
 10. Collect honest cold/warm latency, p50/p95, redundant traffic, background,
     recovery, and power evidence. Do not load-test public brokers.
-11. Sync latest main before PR, bump Android/Desktop versions, compile full APK,
-    and submit PR after required verification. No production APK installation,
-    production uninstall, running Desktop replacement, or PR has occurred in this
-    worktree yet. S26U's isolated verification packages were installed, tested,
-    and removed; the new shipping transport is not installed. Local
-    commits are development checkpoints, not complete-feature releases.
+11. Main was synced through `6e303ed06`, versions were bumped to Android
+    1.1.113 (999) and Desktop 1.1.50, and full packages were deployed on S20U
+    and this Desktop. No production uninstall or history deletion was performed
+    during this deployment. Refresh main again before the eventual PR and finish
+    the remaining acceptance gates. No PR has been submitted from this worktree;
+    local commits remain development checkpoints, not complete-feature releases.
 
 ## Compatibility Decision
 

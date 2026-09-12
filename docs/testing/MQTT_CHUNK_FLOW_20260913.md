@@ -96,8 +96,9 @@ successful report used a coarse Windows monotonic clock; the final report uses
 
 ## Remaining Work
 
-Full-runtime Android/Desktop packaging, coordinated versions/install and real
-scan/pairing are next priorities. Continue with native Signal and durable
+Full-runtime Android/Desktop packaging and coordinated versions/install were
+subsequently completed in the [S20U deployment](MQTT_DEPLOYMENT_S20U_20260913.md).
+Real scan/pairing remains next. Continue with native Signal and durable
 business acceptance over owned sockets, real image/file/video artifact hashes,
 preview/open/save, App/App pairing, complete outage/restore and loss/latency
 matrices, attachment retry timing and quota/revocation cleanup, ten real windows,

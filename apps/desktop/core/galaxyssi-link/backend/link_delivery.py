@@ -79,6 +79,28 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
+    dispatch_columns = {
+        "dispatch_state": "TEXT NOT NULL DEFAULT 'stored'",
+        "dispatch_token": "TEXT NOT NULL DEFAULT ''",
+        "dispatch_admission_token": "TEXT NOT NULL DEFAULT ''",
+        "dispatch_attempts": "INTEGER NOT NULL DEFAULT 0",
+        "dispatch_updated_at": "REAL NOT NULL DEFAULT 0",
+        "dispatch_retry_at": "REAL NOT NULL DEFAULT 0",
+        "dispatch_error": "TEXT NOT NULL DEFAULT ''",
+    }
+    columns = {str(row[1]) for row in db.execute("PRAGMA table_info(inbound_messages)")}
+    if not dispatch_columns.keys() <= columns:
+        db.execute("BEGIN IMMEDIATE")
+        columns = {str(row[1]) for row in db.execute("PRAGMA table_info(inbound_messages)")}
+        lacks_dispatch_proof = "dispatch_state" not in columns
+        for column, definition in dispatch_columns.items():
+            if column not in columns:
+                db.execute(f"ALTER TABLE inbound_messages ADD COLUMN {column} {definition}")
+        if lacks_dispatch_proof:
+            # Historical ACK-only rows cannot prove whether side effects ran.
+            db.execute("UPDATE inbound_messages SET dispatch_state='uncertain', "
+                       "dispatch_error='legacy_record_without_dispatch_proof'")
+        db.commit()
     db.execute("""CREATE INDEX IF NOT EXISTS inbound_dispatch_pending ON inbound_messages(dispatch_retry_at,received_at)
                   WHERE dispatch_state IN ('stored','retry','running')""")
     db.execute(
