@@ -358,3 +358,51 @@ class PeerRoutes:
         with self._lock:
             scopes = tuple(self._peers)
         return {"configured": len(scopes), "ready": sum(self.ready(scope) for scope in scopes)}
+
+    def chunk_publication(self, topic, payload, *, authenticated_identity, attempted=frozenset(), on_path=None):
+        from mqtt_chunk_receipts import PROBE, Query
+        from mqtt_durable_chunks import Chunk
+        with self._lock:
+            peer = self._outbound.get(topic)
+        if peer is None or not self.ready(peer.binding.scope):
+            return None
+        with peer.lock:
+            if not peer.active or peer.binding.identity != authenticated_identity:
+                return None
+            binding = peer.binding
+            if payload.get("type") == PROBE:
+                query = Query.parse(payload)
+                identity, digest, traffic = query.transfer + ":probe", query.manifest, Traffic.RECEIPT
+            else:
+                chunk = Chunk.parse(payload)
+                identity, digest, traffic = f"{chunk.transfer}:{chunk.index}", chunk.digest, Traffic.CHUNK
+            return Publication(binding.scope, identity, digest, traffic, binding.receive_topics,
+                               authorized_paths=tuple(peer.local_generations.items()),
+                               attempted_brokers=attempted, on_path=on_path)
+
+    def chunk_ingress(self, scope, *, broker_id, generation, authenticated_identity):
+        with self._lock:
+            peer = self._peers.get(scope)
+        if peer is None:
+            return False
+        with peer.lock:
+            return (peer.active and peer.binding.identity == authenticated_identity
+                    and self.client.ready_path_generations(peer.binding.receive_topics).get(broker_id) == generation)
+
+    def publish_chunk_state(self, scope, payload, *, authenticated_identity, broker_id):
+        from mqtt_chunk_receipts import parse_state
+        parse_state(payload)
+        with self._lock:
+            peer = self._peers.get(scope)
+        if peer is None or not self.ready(scope):
+            return None
+        with peer.lock:
+            binding = peer.binding
+            if not peer.active or binding.identity != authenticated_identity:
+                return None
+            encoded = seal_wire_packet(json.dumps(payload, separators=(",", ":")), binding.secret)
+            digest = hashlib.sha256(encoded.encode()).hexdigest()
+            descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
+                                     preferred_broker=broker_id,
+                                     authorized_paths=tuple(peer.local_generations.items()))
+        return self.client.publish(binding.send_topic, encoded, publication=descriptor)

@@ -208,8 +208,9 @@ requires this digest, stable message ID, `RX_STORED`, and the current pair/key
 binding persisted in the outbox. Local JSON hashes still enforce content
 conflicts independently. The Desktop small-message dispatcher and peer-RTT
 accounting now use this frame in the actual durable publisher/bridge ingress.
-Android's symmetric small-message dispatcher is also integrated. Attachment
-bitmap/striping integration remains pending.
+Android's symmetric small-message dispatcher is also integrated. Wire-fragment
+bitmap and missing-only retry are described below; whole-artifact acceptance
+and throughput-aware striping remain pending.
 See [durable receipt verification](../testing/MQTT_DURABLE_RECEIPTS_20260913.md)
 and [Desktop hedge verification](../testing/MQTT_HEDGED_DISPATCH_DESKTOP_20260913.md).
 Fair local Signal locks avoid thread
@@ -225,12 +226,59 @@ application endpoints. Strict fragment hashes and final-wire validation precede
 the original Signal/inbox transaction. Only that committed inbox's matching
 wire proof authorizes release of completed fragment bytes.
 
-Global reserved storage is bounded at 16 transfers / 32 MiB, per pair at eight
+Pending reserved storage is bounded at 16 transfers / 32 MiB, per pair at eight
 transfers / 16 MiB, with fixed eight-day retention. Existing fragment geometry
-and application attachment IDs are unchanged. The new storage is not itself
-a network `CHUNK_STORED` implementation: acknowledged bitmaps, persisted sender
-state, adaptive striping, and missing-only cross-path retry remain pending.
+and application attachment IDs are unchanged.
 See [fragment verification](../testing/MQTT_DURABLE_CHUNKS_20260913.md).
+
+## Wire Fragment State Exchange
+
+The current pair-AEAD envelope carries these controls; none goes into chat or
+the model prompt. Only authenticated current pair identity and current subscribed
+connection generations may update the transfer state.
+
+- `_mqtt_chunks` on each `signal-chunk` contains a version-1 query.
+- `link_chunk_probe` carries that query without fragment bytes.
+- `link_chunk_state` returns the query plus durable receiver state.
+
+Query fields are `version`, `transfer_id`, `manifest_hash`, `chunk_count`, and a
+fresh 32-lowercase-hex `request_id` for each existing retry batch. The transfer ID
+is the existing complete raw-wire SHA-256, not a new task or attachment ID.
+The manifest hash is domain-separated and binds total size, count and endpoints.
+Both hashes are 64 lowercase hex characters. Count remains bounded at 96.
+
+A state adds `store_epoch` (32 lowercase hex), monotonic integer `revision`, and
+canonical padded Base64 `stored_bitmap`. Bit index zero is the least-significant
+bit of byte zero; the byte count is exactly `ceil(chunk_count / 8)` and unused
+high bits must be zero. The unknown-transfer response has all-zero epoch,
+revision zero, and empty bits; querying it allocates no incoming byte storage.
+
+The existing Link database stores only outgoing bitmap, current request, receiver
+epoch/revision and per-index attempted-path bits. The existing durable outbox
+still owns the immutable Signal wire. Sender metadata expires after seven days;
+retries do not extend retention. Admission is capped at 65,536 manifests globally
+and 4,096 per pair. Receiver complete-proof metadata has the same count caps.
+
+Only a solicited state for the exact current query can change outgoing bits.
+The first state of a fresh batch can report receiver storage reset. Subsequent
+states must keep that receiver epoch and advance revision; an exact duplicate
+is harmless, an older revision is ignored, and different bits at the same
+revision are rejected. A newer verified revision may retract a corrupted bit.
+The receiver validates stored fragment hashes before reporting its bitmap.
+
+Each retry batch selects only missing indices. A path attempt is persisted before
+physical publication; a retry prefers another healthy common path using the
+existing policy and total reservations. A full bitmap causes a small probe, not
+full re-upload and not a business completion claim. Current scheduling still
+uses the existing retry cadence, peer latency and in-flight bytes; per-window
+state coalescing and effective-throughput feedback remain to be completed.
+
+After original inbox commit, fragment bytes are removed while a compact proof
+remains for the receiver's fixed eight-day retention. A probe can retry a complete
+but interrupted Signal handoff from retained local bytes. For a completed proof,
+the receiver repeats the original business receipt only if the current inbox
+still proves the same message ID and Signal-wire hash. A bitmap alone never
+retires the business outbox or claims `RX_STORED`, `TASK_ACCEPTED`, or `RUN_FINISHED`.
 
 ## Verification Boundary
 

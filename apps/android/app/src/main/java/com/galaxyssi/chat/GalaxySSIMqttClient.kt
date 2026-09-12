@@ -85,7 +85,8 @@ object GalaxySSIMqttClient {
         val queuedAtElapsedMillis: Long = SystemClock.elapsedRealtime(),
         var nextPacketIndex: Int = 0,
         var outstanding: Int = 0,
-        var failed: Boolean = false
+        var failed: Boolean = false,
+        val publications: List<MqttPoolTransport.Publication> = emptyList()
     )
 
     private val approvedPhoneDecisionReplayScheduled = AtomicBoolean(false)
@@ -1524,7 +1525,8 @@ object GalaxySSIMqttClient {
         message: MqttMessage,
         purpose: String,
         timing: AgentTransportTiming.Attempt? = null,
-        delivery: MqttDeliveryDispatch.Delivery? = null
+        delivery: MqttDeliveryDispatch.Delivery? = null,
+        publication: MqttPoolTransport.Publication? = null
     ): IMqttDeliveryToken? = MqttPublishGuard.attempt {
         val callback = if (timing == null) null else object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) {
@@ -1534,7 +1536,7 @@ object GalaxySSIMqttClient {
                     AgentLatencyTelemetry.transport.broker(timing, "failed")
                 }
             }
-        val token = if (delivery == null) mqtt.publish(topic, message, timing, callback)
+        val token = if (delivery == null) mqtt.publish(topic, message, timing, callback, publication)
             else mqtt.publishDelivery(topic, delivery, timing, callback)
         token.exception?.let { throw it }
         token
@@ -1561,8 +1563,10 @@ object GalaxySSIMqttClient {
             Log.w(TAG, "Opaque publish rejected: relationship key not found")
             return false
         }
-        val packets = runCatching {
-            GalaxySSIMqttWireChunking.encode(wirePayload).map { packet ->
+        val rawPackets = runCatching { GalaxySSIMqttWireChunking.encode(wirePayload) }
+            .onFailure { Log.e(TAG, "MQTT wire payload rejected purpose=$purpose", it) }.getOrNull() ?: return false
+        var packets = runCatching {
+            rawPackets.map { packet ->
                 GalaxySSILinkProtocol.sealWirePacket(packet, linkSecret)
             }
         }
@@ -1603,6 +1607,9 @@ object GalaxySSIMqttClient {
         val key = durableMessageId?.let { "durable:$it" } ?: "ephemeral:${UUID.randomUUID()}"
         synchronized(fragmentTransferLock) {
             if (fragmentTransfers.containsKey(key)) return true
+            val routed = if (durableMessageId.isNullOrBlank()) emptyList() else
+                AndroidMqttChunks.prepare(context, topic, rawPackets, linkSecret, peerRoutes) ?: return false
+            if (routed.isNotEmpty()) packets = routed.map { it.first }
             fragmentTransfers[key] = OutboundFragmentTransfer(
                 key = key,
                 durableMessageId = durableMessageId,
@@ -1610,7 +1617,8 @@ object GalaxySSIMqttClient {
                 packets = packets,
                 purpose = purpose,
                 brokerAckTimeoutMillis = brokerAckTimeoutMillis,
-                timing = AgentLatencyTelemetry.transport.begin(serverLink?.desktopId.orEmpty(), durableMessageId.orEmpty())
+                timing = AgentLatencyTelemetry.transport.begin(serverLink?.desktopId.orEmpty(), durableMessageId.orEmpty()),
+                publications = routed.map { it.second }
             )
             pumpFragmentTransfersLocked(mqtt)
             val transfer = fragmentTransfers[key]
@@ -1652,7 +1660,8 @@ object GalaxySSIMqttClient {
                     mqtt,
                     transfer.topic,
                     mqttMessage(transfer.packets[packetIndex]),
-                    "${transfer.purpose}_fragment_${packetIndex + 1}_of_${transfer.packets.size}"
+                    "${transfer.purpose}_fragment_${packetIndex + 1}_of_${transfer.packets.size}",
+                    publication = transfer.publications.getOrNull(packetIndex)
                 )
                 if (token == null) {
                     transfer.failed = true
@@ -1843,6 +1852,9 @@ object GalaxySSIMqttClient {
             val endpoint = relationship.optString("galaxyssi_id").ifBlank { relationship.optString("hermes_id") }
                 .ifBlank { relationship.optString("id") }
             if (handleTransportReceipt(routes, wire, ingress, endpoint, phone = true)) return
+            if (AndroidMqttChunks.receive(context, routes, wire, ingress, peerRoutes, endpoint, GalaxySSICrypto.localGalaxySSIId(),
+                    onWire = { decoded, transfer -> handlePhoneRelationshipWire(context, topic, relationship, decoded, chunkTransferId = transfer) },
+                    repeatReceipt = { publishPhoneContactReceipt(context, endpoint, it) })) return
             handlePhoneRelationshipWire(context, topic, relationship, wire, AndroidMqttDelivery.frame(routes, wire, ingress))
             return
         }
@@ -1862,6 +1874,9 @@ object GalaxySSIMqttClient {
             .getOrNull() ?: return
         if (handleResume(link.routes, wire, ingress)) return
         if (handleTransportReceipt(link.routes, wire, ingress, link.desktopId)) return
+        if (AndroidMqttChunks.receive(context, link.routes, wire, ingress, peerRoutes, link.desktopId, GalaxySSICrypto.localGalaxySSIId(),
+                onWire = { decoded, transfer -> handleIncomingDecoded(topic, link, decoded, chunkTransferId = transfer) },
+                repeatReceipt = { publishInboundReceipt(link, it) })) return
         handleIncomingDecoded(topic, link, wire, AndroidMqttDelivery.frame(link.routes, wire, ingress))
     }
 
@@ -1873,32 +1888,6 @@ object GalaxySSIMqttClient {
         deliveryFrame: MqttDeliveryEnvelope.Frame? = null,
         chunkTransferId: String? = null
     ) {
-        if (GalaxySSIMqttWireChunking.isChunk(wire)) {
-            val localId = GalaxySSICrypto.localGalaxySSIId()
-            val senderId = relationship.optString("galaxyssi_id")
-                .ifBlank { relationship.optString("hermes_id") }
-                .ifBlank { relationship.optString("id") }
-            if (senderId.isBlank() || wire.optString("from") != senderId || wire.optString("to") != localId) {
-                Log.w(TAG, "Rejected phone MQTT chunk with mismatched endpoint identity")
-                return
-            }
-            val assembled = runCatching {
-                val routes = GalaxySSILinkProtocol.Routes(relationship.getString("client_route_id"), relationship.getString("link_secret"),
-                    relationship.getString("local_identity_fingerprint"), relationship.getString("identity_fingerprint"))
-                AndroidMqttChunks.accept(context, routes, wire)
-            }.onFailure {
-                Log.w(TAG, "Rejected phone MQTT fragmented transfer", it)
-            }.getOrNull() ?: return
-            val reassembledWire = runCatching { JSONObject(assembled) }
-                .onFailure { Log.w(TAG, "Rejected reassembled phone MQTT payload", it) }
-                .getOrNull() ?: return
-            Log.i(
-                TAG,
-                "Phone MQTT fragmented transfer reassembled bytes=${assembled.toByteArray(Charsets.UTF_8).size}"
-            )
-            handlePhoneRelationshipWire(context, topic, relationship, reassembledWire, chunkTransferId = wire.getString("transfer_id"))
-            return
-        }
         if (PhoneContactCard.isRelationshipControlType(wire.optString("type"))) {
             handlePhonePairingIncoming(context, wire, null, relationship)
         } else {
@@ -2045,39 +2034,6 @@ object GalaxySSIMqttClient {
         chunkTransferId: String? = null
     ) {
         val context = appContext ?: return
-        if (GalaxySSIMqttWireChunking.isChunk(wire)) {
-            val localId = GalaxySSICrypto.localGalaxySSIId()
-            if (wire.optString("from") == localId && wire.optString("to") == link.desktopId) {
-                return
-            }
-            if (wire.optString("from") != link.desktopId || wire.optString("to") != localId) {
-                Log.w(TAG, "Rejected MQTT chunk with mismatched endpoint identity")
-                return
-            }
-            val assembled = try {
-                AndroidMqttChunks.accept(context, link.routes, wire)
-            } catch (exception: IllegalArgumentException) {
-                GalaxySSILinkTransportDiagnostics.record(
-                    context = context,
-                    kind = GalaxySSILinkTransportDiagnostics.classifyFragmentFailure(exception),
-                    endpointIdentity = link.desktopId,
-                    messageIdentity = wire.optString("transfer_id"),
-                    detailCode = exception.javaClass.simpleName
-                )
-                Log.w(TAG, "Rejected MQTT fragmented transfer", exception)
-                return
-            }
-            if (assembled == null) return
-            val reassembledWire = runCatching { JSONObject(assembled) }
-                .onFailure { Log.w(TAG, "Rejected reassembled MQTT wire payload", it) }
-                .getOrNull() ?: return
-            Log.i(
-                TAG,
-                "MQTT fragmented transfer reassembled bytes=${assembled.toByteArray(Charsets.UTF_8).size}"
-            )
-            handleIncomingDecoded(topic, link, reassembledWire, chunkTransferId = wire.getString("transfer_id"))
-            return
-        }
         if (wire.optString("type") == "pairing_rejected") {
             if (wire.optString("protocol") != GalaxySSILinkProtocol.NAME ||
                 wire.optInt("version") != GalaxySSILinkProtocol.VERSION ||

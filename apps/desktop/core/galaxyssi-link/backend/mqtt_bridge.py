@@ -94,6 +94,7 @@ from mqtt_wire_chunking import (
     is_chunk as is_mqtt_chunk,
 )
 from mqtt_durable_chunks import DurableChunkAssembler
+from mqtt_chunk_receipts import OutgoingChunks, Query as ChunkQuery, PROBE as CHUNK_PROBE, STATE as CHUNK_STATE
 from pairing_state import (
     DATA_DIR,
     active_pairing_topics,
@@ -534,11 +535,13 @@ class _OutboundFragmentTransfer:
     pending_mids: set[int] = field(default_factory=set)
     publishing: bool = False
     failed: bool = False
+    publications: list = field(default_factory=list)
 
 
 phone_tool_sessions: dict[str, _PhoneToolSession] = {}
 phone_tool_sessions_lock = threading.RLock()
 inbound_chunk_assembler = DurableChunkAssembler(lambda: link_delivery_storage._connect())
+outbound_chunk_states = OutgoingChunks(lambda: link_delivery_storage._connect())
 fragment_publish_lock = threading.RLock()
 fragment_publish_transfers: dict[int, _OutboundFragmentTransfer] = {}
 fragment_publish_transfer_by_mid: dict[tuple[int, int, int], int] = {}
@@ -2566,9 +2569,10 @@ def _publish_mqtt_wire_payload(
     timing_scope: tuple[str, str] | None = None,
     transport_traffic: str = "message",
 ):
+    raw_packets = encode_wire_payload(wire_payload)
     packets = [
         seal_wire_packet(packet, link_secret)
-        for packet in encode_wire_payload(wire_payload)
+        for packet in raw_packets
     ]
     if len(packets) == 1:
         timing = transport_timing.begin(*timing_scope) if timing_scope else None
@@ -2602,6 +2606,23 @@ def _publish_mqtt_wire_payload(
             active = fragment_publish_transfers.get(active_id)
             if active is not None:
                 return active.info
+        publications = []
+        if isinstance(mqttc, MqttPoolClient) and timing_scope:
+            paired = get_client(timing_scope[0])
+            if not paired or paired.get("link_secret") != link_secret or not mqttc.peer_routes.ready(timing_scope[0]):
+                return _DeferredPublishInfo()
+            scope = _receipt_binding_for_client(paired)
+            query, selected, paths = outbound_chunk_states.prepare(scope, [json.loads(part) for part in raw_packets])
+            packets = []
+            for index, payload in selected:
+                descriptor = mqttc.peer_routes.chunk_publication(topic, payload,
+                    authenticated_identity=_chunk_peer_identity(paired),
+                    attempted=outbound_chunk_states.attempted(paths, index),
+                    on_path=lambda broker, _generation, i=index: outbound_chunk_states.record_path(scope, query, i, broker))
+                if descriptor is None:
+                    return _DeferredPublishInfo()
+                packets.append(seal_wire_packet(json.dumps(payload, separators=(",", ":")), link_secret))
+                publications.append(descriptor)
         buffered = sum(sum(len(packet) for packet in item.packets)
                        for item in fragment_publish_transfers.values())
         if (len(fragment_publish_transfers) >= MAX_FRAGMENT_PENDING_TRANSFERS
@@ -2618,6 +2639,7 @@ def _publish_mqtt_wire_payload(
             info=publish_info,
             generation=mqtt_connection_generation,
             timing=transport_timing.begin(*timing_scope) if timing_scope else None,
+            publications=publications,
         )
         fragment_publish_transfers[transfer_id] = transfer
         fragment_publish_transfer_by_digest[digest] = transfer_id
@@ -2680,7 +2702,8 @@ def _pump_fragment_transfers() -> None:
                 fragment_publish_transfers.pop(transfer.transfer_id)
                 fragment_publish_transfers[transfer.transfer_id] = transfer
             try:
-                physical_info = transfer.mqttc.publish(transfer.topic, transfer.packets[packet_index], qos=MQTT_QOS)
+                options = {"publication": transfer.publications[packet_index]} if transfer.publications else {}
+                physical_info = transfer.mqttc.publish(transfer.topic, transfer.packets[packet_index], qos=MQTT_QOS, **options)
             except Exception as exc:
                 physical_info = None
                 log.warning("MQTT fragment publish deferred: %s", exc.__class__.__name__)
@@ -6795,6 +6818,24 @@ def _process_message(mqttc, userdata, msg):
                 return
         delivery_frame = None
         chunk_transfer = None
+        chunk_query = None
+        if wire_payload.get("type") in (CHUNK_PROBE, CHUNK_STATE):
+            if not isinstance(mqttc, MqttPoolClient) or not mqttc.peer_routes.chunk_ingress(client_route_id,
+                    broker_id=getattr(msg, "broker_id", ""), generation=getattr(msg, "broker_generation", 0),
+                    authenticated_identity=_chunk_peer_identity(paired_client)):
+                return
+            scope = _receipt_binding_for_client(paired_client)
+            if wire_payload["type"] == CHUNK_STATE:
+                outbound_chunk_states.accept(scope, wire_payload)
+                return
+            chunk_query = ChunkQuery.parse(wire_payload)
+            inbound_chunk_assembler.snapshot(scope, chunk_query)
+            assembled = inbound_chunk_assembler.recover_complete(scope, chunk_query)
+            if assembled is None:
+                _publish_chunk_state(mqttc, paired_client, chunk_query, msg, repeat_receipt=True)
+                return
+            chunk_transfer = (scope, chunk_query.transfer)
+            wire_payload = json.loads(assembled)
         from mqtt_delivery_envelope import FIELD, parse_verified_frame
         if FIELD in wire_payload:
             delivery_frame = parse_verified_frame(wire_payload,
@@ -6815,6 +6856,11 @@ def _process_message(mqttc, userdata, msg):
                 log.warning("Rejected MQTT chunk with mismatched protocol or endpoint identity")
                 return
             try:
+                chunk_query = ChunkQuery.from_chunk(wire_payload)
+                if chunk_query is not None and (not isinstance(mqttc, MqttPoolClient) or not mqttc.peer_routes.chunk_ingress(
+                        client_route_id, broker_id=getattr(msg, "broker_id", ""), generation=getattr(msg, "broker_generation", 0),
+                        authenticated_identity=_chunk_peer_identity(paired_client))):
+                    return
                 chunk_transfer = (_receipt_binding_for_client(paired_client), wire_payload["transfer_id"])
                 assembled = inbound_chunk_assembler.accept(chunk_transfer[0], wire_payload)
             except ValueError as exc:
@@ -6827,6 +6873,7 @@ def _process_message(mqttc, userdata, msg):
                 log.warning("Rejected MQTT fragmented transfer: %s", exc)
                 return
             if assembled is None:
+                _publish_chunk_state(mqttc, paired_client, chunk_query, msg, repeat_receipt=True)
                 return
             wire_payload = json.loads(assembled)
             log.info(
@@ -6913,8 +6960,27 @@ def _process_message(mqttc, userdata, msg):
         _deliver_stored_application(mqttc, paired_client, wire_payload, application_envelope, payload, trace,
                                     timings=timings, ciphertext_digest=ciphertext_digest, delivery_frame=delivery_frame,
                                     chunk_transfer=chunk_transfer)
+        _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
     except Exception as e:
         log.error("MQTT message handling error (%s)", type(e).__name__)
+
+
+def _chunk_peer_identity(paired):
+    return (paired["client_route_id"], paired["local_identity_fingerprint"], paired["identity_fingerprint"], paired["link_secret"])
+
+
+def _publish_chunk_state(mqttc, paired, query, ingress, *, repeat_receipt=False):
+    if query is None or not isinstance(mqttc, MqttPoolClient):
+        return
+    try:
+        state, proof = inbound_chunk_assembler.snapshot(_receipt_binding_for_client(paired), query)
+        mqttc.peer_routes.publish_chunk_state(paired["client_route_id"], state,
+            authenticated_identity=_chunk_peer_identity(paired), broker_id=getattr(ingress, "broker_id", ""))
+        if repeat_receipt and proof is not None and stored_wire_receipt(paired["client_route_id"], proof[0]) == proof[1]:
+            from mqtt_delivery_envelope import stored_receipt
+            _publish_phone_payload(mqttc, {"_client_route_id": paired["client_route_id"]}, stored_receipt(*proof))
+    except Exception as exc:
+        log.warning("Chunk state response deferred (%s)", type(exc).__name__)
 
 
 def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None):
@@ -6924,7 +6990,7 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
     wire_hash = stored_wire_receipt(route, message_id)
     if chunk_transfer is not None and wire_hash:
         try:
-            inbound_chunk_assembler.release_after_store(*chunk_transfer, wire_hash)
+            inbound_chunk_assembler.release_after_store(*chunk_transfer, wire_hash, message_id)
         except Exception as exc:
             log.warning("Wire fragment cleanup deferred (%s)", type(exc).__name__)
     if payload.get("type") == "delivery_ack":

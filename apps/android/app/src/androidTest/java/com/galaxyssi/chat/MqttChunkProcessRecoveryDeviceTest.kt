@@ -30,13 +30,21 @@ class MqttChunkProcessRecoveryDeviceTest {
         val wire = JSONObject().put("scheme", "signal").put("from", "phone").put("to", "desktop").put("body", "x".repeat(700_000)).toString()
         val parts = GalaxySSIMqttWireChunking.encode(wire).map(::JSONObject)
         val transfer = parts.first().getString("transfer_id")
+        val sender = MqttOutgoingChunks(database)
         if (phase == "prepare") {
             assertTrue(store.storedIndices("isolated-pair", transfer).isEmpty())
             assertNull(store.accept("isolated-pair", parts[0]))
+            val batch = sender.prepare("isolated-outgoing", parts)
+            sender.recordPath("isolated-outgoing", batch.query, 1, "emqx")
+            assertTrue(sender.accept("isolated-outgoing", store.snapshot("isolated-pair", batch.query).state))
         } else {
             assertEquals(listOf(0), store.storedIndices("isolated-pair", transfer))
+            val batch = sender.prepare("isolated-outgoing", parts)
+            assertEquals(listOf(1), batch.selected.map { it.first })
+            assertEquals(setOf("emqx"), batch.attempted(1))
             assertEquals(wire, store.accept("isolated-pair", parts[1]))
             assertTrue(store.releaseAfterStore("isolated-pair", transfer, MqttDeliveryEnvelope.contentHash(JSONObject(wire))))
+            database.indexedTransaction { it.execSQL("DROP TABLE mqtt_outgoing_chunks") }
         }
     }
 }

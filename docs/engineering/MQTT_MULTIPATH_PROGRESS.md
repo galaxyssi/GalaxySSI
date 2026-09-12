@@ -287,9 +287,12 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    rather than receive Topic. Complete bytes wait for a committed inbox proof
    before release. S20U storage and explicit process-stop recovery passed; see
    [durable fragments](../testing/MQTT_DURABLE_CHUNKS_20260913.md).
-   Authenticated bitmap acknowledgement, outbound persisted fragment state,
-   alternate-path missing-only retry, adaptive striping, handoff cleanup after
-   interrupted release, and final artifact acceptance remain unfinished.
+   Authenticated bitmap acknowledgement, persisted outbound fragment state,
+   alternate-path missing-only retry, and compact-proof queries are now wired
+   into both actual publishers/receivers; see
+   [fragment state exchange](../testing/MQTT_CHUNK_STATE_20260913.md).
+   Window-coalesced feedback, effective-throughput striping, finer retry timing,
+   coordinated revocation/quota cleanup and final artifact acceptance remain.
 7. Bounded Android ingress and both endpoints' per-Signal-identity serialization
    are integrated. Continue evaluating aggregate limits and real-device latency
    when the full transport is activated; isolated 10,000-peer lane cleanup is not
@@ -304,7 +307,11 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    passed 55 (including overlapping storage cases, not 190 distinct tests);
    the subsequent fragment checkpoint passed 68 device cases plus one separate
    two-phase process-stop recovery scenario (55 of the 68 overlap the prior
-   checkpoint). No shipping App installation or UI control has occurred on S20U. Test-owned
+   checkpoint). The subsequent chunk-state checkpoint passed 86 device tests
+   (including those 68) and repeated the two-phase actual process-stop case with
+   persisted outgoing bitmap/path attempts. See its linked verification record
+   for 216 backend and 178 JVM regression evidence and test boundaries.
+   No shipping App installation or UI control has occurred on S20U. Test-owned
    packages were removed after completion; the pre-existing test package remains.
    Do not operate S26U or SM-T575 in this round.
    Earlier 29-test S26U evidence remains historical, not S20U acceptance.

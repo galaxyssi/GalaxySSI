@@ -107,12 +107,13 @@ Retained non-shipping artifacts are under
 
 ## Remaining Before P2 Acceptance
 
-This checkpoint does not yet send authenticated `CHUNK_STORED` bitmaps or
-persist outbound per-fragment acknowledgement state. Adaptive cross-broker
-striping, missing-only retry, final durable proof/probe behavior, and recovery
-cleanup if a process exits between inbox commit and fragment release still
-need integration. Existing application attachment manifests and Blob transfers
-must continue to own artifact identity and final preview/open/save behavior.
+At this checkpoint authenticated bitmaps, persisted sender state and missing-only
+retry were not integrated. The subsequent
+[fragment-state checkpoint](MQTT_CHUNK_STATE_20260913.md) adds those actual paths
+and proof-backed probes. Throughput-informed striping, window-coalesced feedback,
+finer retry timing and full final artifact acceptance remain. Existing application
+attachment manifests and Blob transfers must continue to own artifact identity
+and final preview/open/save behavior.
 
 Pending work also includes revocation cleanup, coordinated sender/receiver quota
 and expiry handling, owned-broker fault/load matrices, actual native App/Desktop

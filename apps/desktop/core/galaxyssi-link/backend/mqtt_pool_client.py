@@ -49,6 +49,8 @@ class Publication:
     bootstrap: bool = False
     preferred_broker: str | None = None
     authorized_paths: tuple[tuple[str, int], ...] | None = None
+    attempted_brokers: frozenset[str] = frozenset()
+    on_path: object = None
 
 
 class MqttPoolClient:
@@ -243,7 +245,8 @@ class MqttPoolClient:
         else:
             plans = [(item.broker_id, item.generation) for item in self.policy.plan(
                 publication.peer, publication.message_id, publication.traffic, size,
-                set(publication.receive_topics), now=now, ingress=publication.preferred_broker)
+                set(publication.receive_topics), now=now, ingress=publication.preferred_broker,
+                attempted=publication.attempted_brokers)
                 if item.delay == 0]
             if publication.authorized_paths is not None:
                 plans = [item for item in plans if item in publication.authorized_paths]
@@ -255,6 +258,12 @@ class MqttPoolClient:
                               broker, generation, size, publication.traffic, now)
             if not self.policy.reserve(attempt_id, attempt):
                 continue
+            try:
+                if publication.on_path is not None:
+                    publication.on_path(broker, generation)
+            except Exception:
+                self.policy.discard_attempt(attempt_id)
+                raise
             with self._lock:
                 self._publications[attempt_id] = (info, publication, broker, generation)
             receipt = self._pool.publish(broker, generation, topic, encoded, attempt_id=attempt_id)

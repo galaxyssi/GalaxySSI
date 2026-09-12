@@ -18,7 +18,8 @@ internal class MqttPoolTransport(
     data class Publication(val peer: String, val messageId: String, val contentHash: String,
         val traffic: MqttMultipathPolicy.Traffic, val receiveTopics: Set<String>,
         val bootstrap: Boolean = false, val preferredBroker: String? = null,
-        val authorizedPaths: Map<String, Long>? = null)
+        val authorizedPaths: Map<String, Long>? = null,
+        val attemptedBrokers: Set<String> = emptySet(), val onPath: ((String, Long) -> Unit)? = null)
     interface Listener {
         fun onConnectionChanged(connected: Boolean) = Unit
         fun onSubscriptionsChanged() = Unit
@@ -194,13 +195,17 @@ internal class MqttPoolTransport(
                 .thenBy { MqttRouteAdvertisement.sha256("$tieSeed:${descriptor.messageId}:${it.key}") })
             .map { it.key to it.value }
         else policy.plan(descriptor.peer, descriptor.messageId, descriptor.traffic, size.toInt(),
-            descriptor.receiveTopics, at, descriptor.preferredBroker).filter { it.delayMs == 0L }
+            descriptor.receiveTopics, at, descriptor.preferredBroker, attempted = descriptor.attemptedBrokers).filter { it.delayMs == 0L }
             .filter { descriptor.authorizedPaths == null || descriptor.authorizedPaths[it.brokerId] == it.generation }
             .map { it.brokerId to it.generation }
         for ((broker, generation) in choices) {
             val attempt = UUID.randomUUID().toString()
             if (!policy.reserve(attempt, MqttMultipathPolicy.Attempt(descriptor.peer, descriptor.messageId,
                     descriptor.contentHash, broker, generation, size.toInt(), descriptor.traffic, at))) continue
+            try { descriptor.onPath?.invoke(broker, generation) } catch (error: Exception) {
+                policy.discardAttempt(attempt)
+                throw error
+            }
             synchronized(lock) { publications[attempt] = Pending(token, broker, generation, !descriptor.bootstrap) }
             if (pool.publish(broker, generation, topic, payload, attempt) != null) return token
             synchronized(lock) { publications.remove(attempt) }

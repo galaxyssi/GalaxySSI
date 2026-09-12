@@ -301,4 +301,53 @@ internal class MqttPeerRoutes(
         }
         transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(payload).apply { qos = 1 }, publication = publication)
     }
+
+    fun chunkBinding(topic: String): Binding? {
+        val peer = synchronized(lock) { outgoing[topic] } ?: return null
+        if (!ready(peer.binding.scope)) return null
+        return peer.lock.withLock { if (peer.active && peer.binding.enabled) peer.binding else null }
+    }
+
+    fun chunkPublication(topic: String, payload: JSONObject, identity: List<String>, attempted: Set<String>,
+                         onPath: (String, Long) -> Unit): MqttPoolTransport.Publication? {
+        val binding = chunkBinding(topic) ?: return null
+        if (binding.identity != identity) return null
+        val peer = synchronized(lock) { peers[binding.scope] } ?: return null
+        return peer.lock.withLock {
+            if (!peer.active || peer.binding.identity != identity) return null
+            val (id, digest, traffic) = if (payload.optString("type") == MqttChunkReceipts.PROBE) {
+                val query = MqttChunkReceipts.parse(payload)
+                Triple("${query.transfer}:probe", query.manifest, MqttMultipathPolicy.Traffic.RECEIPT)
+            } else {
+                val chunk = MqttChunkManifest.parse(payload)
+                Triple("${chunk.transfer}:${chunk.index}", chunk.digest, MqttMultipathPolicy.Traffic.CHUNK)
+            }
+            MqttPoolTransport.Publication(binding.scope, id, digest, traffic, binding.receiveTopics,
+                authorizedPaths = peer.generations.toMap(), attemptedBrokers = attempted, onPath = onPath)
+        }
+    }
+
+    fun chunkIngress(scope: String, ingress: MqttBrokerPool.Ingress, identity: List<String>): Boolean {
+        val peer = synchronized(lock) { peers[scope] } ?: return false
+        return peer.lock.withLock { peer.active && peer.binding.enabled && peer.binding.identity == identity &&
+            transport.readyPathGenerations(peer.binding.receiveTopics)[ingress.brokerId] == ingress.generation }
+    }
+
+    fun publishChunkState(scope: String, payload: JSONObject, identity: List<String>, broker: String) {
+        MqttChunkReceipts.parseState(payload)
+        val peer = synchronized(lock) { peers[scope] } ?: return
+        if (!ready(scope)) return
+        val binding: Binding
+        val encoded: ByteArray
+        val descriptor: MqttPoolTransport.Publication
+        peer.lock.withLock {
+            binding = peer.binding
+            if (!peer.active || !binding.enabled || binding.identity != identity) return
+            encoded = seal(payload.toString(), binding.secret).toByteArray(Charsets.UTF_8)
+            val digest = MqttRouteAdvertisement.sha256(encoded.toString(Charsets.UTF_8))
+            descriptor = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
+                binding.receiveTopics, preferredBroker = broker, authorizedPaths = peer.generations.toMap())
+        }
+        transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(encoded).apply { qos = 1 }, publication = descriptor)
+    }
 }
