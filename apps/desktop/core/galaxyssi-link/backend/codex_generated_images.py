@@ -202,7 +202,7 @@ def finalize_run_images(run, turn, codex_home) -> str:
                 for item in run.generated_images.values()}
     images = [item for item in images if (item["turn_id"], item["item_id"], item["sha256"]) in expected]
     if run.generated_image_errors or len(images) != len(expected):
-        message = ("图片生成结果未能保存为可交付附件，请重试。" if run.prefers_chinese else
+        message = ("\u56fe\u7247\u751f\u6210\u7ed3\u679c\u672a\u80fd\u4fdd\u5b58\u4e3a\u53ef\u4ea4\u4ed8\u9644\u4ef6\uff0c\u8bf7\u91cd\u8bd5\u3002" if run.prefers_chinese else
                    "The generated image could not be saved as a deliverable attachment. Please retry.")
         run.final_text = message
         return message
@@ -214,7 +214,7 @@ def finalize_run_images(run, turn, codex_home) -> str:
         seen.add(item["sha256"])
         target = f"galaxyssi-artifact://{run.task_id}/{item['relative_path']}"
         if target not in run.final_text:
-            label = "生成的图片" if run.prefers_chinese else "Generated image"
+            label = "\u751f\u6210\u7684\u56fe\u7247" if run.prefers_chinese else "Generated image"
             links.append(f"![{label}]({target})")
     if links:
         run.final_text = "\n\n".join(filter(None, [run.final_text, *links]))
