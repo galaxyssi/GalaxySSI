@@ -8,6 +8,13 @@ internal object ObsidianKnowledgeProjection {
         { group, budget -> ObsidianProjectionBatch.run(sequenceOf(spec(store, group)), budget, state::index, legacy, write) },
         state::saveProjectionCheckpoint)
 
+    fun runStreaming(store: SQLiteAgentKnowledgeStore, state: ObsidianAndroidStateStore, namespace: String, maximumWrites: Int,
+        legacy: (ObsidianProjectionSpec) -> ObsidianProjectionIndexEntry?,
+        write: (ObsidianProjectionSpec, ObsidianPreparedContent) -> Unit): ObsidianProjectionBatchResult = ObsidianProjectionCursor.run(
+        namespace, state.projectionCheckpoint(), maximumWrites, { store.sourcePage(it, 50) }, store::sourceRevision,
+        { group, budget -> ObsidianProjectionBatch.runStreaming(sequenceOf(spec(store, group)), budget, state::index, legacy, write) },
+        state::saveProjectionCheckpoint)
+
     fun specs(store: SQLiteAgentKnowledgeStore): Sequence<ObsidianProjectionSpec> = sequence {
         var cursor: AgentKnowledgeSourceCursor? = null
         do {
@@ -24,15 +31,10 @@ internal object ObsidianKnowledgeProjection {
         val type = if (source.startsWith("http://") || source.startsWith("https://")) "reading" else "knowledge"
         val folder = if (type == "reading") "60 Reading" else "10 Knowledge"
         val sourceKey = ObsidianKnowledgeIdentity.sourceKey(reference)
+        val prepare = { ObsidianStreamingKnowledge.prepare(snapshot, sourceKey, type, source) }
         return ObsidianProjectionSpec(sourceKey,
-            "$folder/${ObsidianAndroidBridge.fileName(group.title, sourceKey)}", snapshot.revision, reference) {
-            val items = snapshot.items().filter { ObsidianProjectionPrivacyPolicy.safeKnowledge(it.content) }
-            if (items.isEmpty()) "" else {
-                val title = items.first().title.replace(Regex("\\s+\\[\\d+/\\d+]$"), "").trim().ifBlank { "Knowledge" }
-                ObsidianAndroidBridge.note(sourceKey, type, title, source, items.maxOf(AgentKnowledgeItem::updatedAtMillis),
-                    items.flatMap(AgentKnowledgeItem::tags).distinct().take(16), items.joinToString("\n\n") { it.content.trim() })
-            }
-        }
+            "$folder/${ObsidianAndroidBridge.fileName(group.title, sourceKey)}", snapshot.revision, reference,
+            prepareContent = prepare) { prepare().use(ObsidianProjectionBatch::readSmallContent) }
     }
 }
 
@@ -43,7 +45,19 @@ internal object ObsidianProjectionBatch {
     fun run(specs: Sequence<ObsidianProjectionSpec>, maximumWrites: Int,
         indexed: (String) -> ObsidianProjectionIndexEntry?,
         legacy: (ObsidianProjectionSpec) -> ObsidianProjectionIndexEntry? = { null },
-        write: (ObsidianProjectionSpec, String) -> Unit): ObsidianProjectionBatchResult {
+        write: (ObsidianProjectionSpec, String) -> Unit): ObsidianProjectionBatchResult =
+        runStreaming(specs, maximumWrites, indexed, legacy) { spec, prepared -> write(spec, readSmallContent(prepared)) }
+
+    // Compatibility for small String-based callers and tests, not the production knowledge path.
+    internal fun readSmallContent(content: ObsidianPreparedContent): String = java.io.ByteArrayOutputStream().use {
+        content.writeTo(it)
+        it.toString("UTF-8")
+    }
+
+    fun runStreaming(specs: Sequence<ObsidianProjectionSpec>, maximumWrites: Int,
+        indexed: (String) -> ObsidianProjectionIndexEntry?,
+        legacy: (ObsidianProjectionSpec) -> ObsidianProjectionIndexEntry? = { null },
+        write: (ObsidianProjectionSpec, ObsidianPreparedContent) -> Unit): ObsidianProjectionBatchResult {
         var written = 0
         var unchanged = 0
         var remaining = 0
@@ -57,12 +71,14 @@ internal object ObsidianProjectionBatch {
                 remaining++
                 continue
             }
-            val content = spec.content()
-            if (content.isBlank()) { unchanged++; continue }
-            // Keep an existing note's path when its display title or grouping preview changes.
-            write(spec.copy(relativePath = previous?.relativePath?.takeIf(String::isNotBlank) ?: spec.relativePath,
-                retiredSourceKey = previous?.sourceKey?.takeIf { it != spec.sourceKey }.orEmpty()), content)
-            written++
+            spec.prepare().use { content ->
+                if (content.isBlank) unchanged++ else {
+                    // Keep an existing note's path when its display title or grouping preview changes.
+                    write(spec.copy(relativePath = previous?.relativePath?.takeIf(String::isNotBlank) ?: spec.relativePath,
+                        retiredSourceKey = previous?.sourceKey?.takeIf { it != spec.sourceKey }.orEmpty()), content)
+                    written++
+                }
+            }
         }
         return ObsidianProjectionBatchResult(written, unchanged, remaining)
     }

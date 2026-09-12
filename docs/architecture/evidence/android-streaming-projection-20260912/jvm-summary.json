@@ -1,0 +1,13 @@
+{
+  "version": "1.1.98",
+  "version_code": 984,
+  "suites": 541,
+  "tests": 3779,
+  "failures": 0,
+  "errors": 0,
+  "existing_skips": 5,
+  "focused_tests": [
+    {"class": "KnowledgeExternalOrderTest", "tests": 7, "seconds": 19.801, "failures": 0},
+    {"class": "ObsidianBoundedTextScanTest", "tests": 3, "seconds": 0.154, "failures": 0}
+  ]
+}

@@ -144,6 +144,7 @@ internal class AgentKnowledgeDatabase private constructor(
         KnowledgeSourceSnapshot(this, context.getDatabasePath(name).absolutePath, selection, expectedRevision)
     }
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
+    internal fun exportScratch() = KnowledgeEncryptedScratch(java.io.File(context.cacheDir, "knowledge-export-scratch"))
     internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
         "knowledge-native/${key("native-index", modelKey)}")
     @Synchronized override fun close() { retired = true; sourceMaintenance.close(); connection?.close(); connection = null }
