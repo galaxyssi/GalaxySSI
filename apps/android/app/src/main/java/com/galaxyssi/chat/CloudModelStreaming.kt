@@ -55,8 +55,20 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         citationPreviewEnabled: Boolean = false
     ): Flow<ModelStreamEvent> = flow {
         lifetimes.run(requestId) {
-            emitAll(streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
-                readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled))
+            val imageSession = CloudImageAnnotationSession(context, images, requestId)
+            var lastSequence = 0L
+            streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
+                readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled,
+                imageSession).collect { event ->
+                if (event is ModelStreamEvent.TextDelta) lastSequence = maxOf(lastSequence, event.sequence)
+                if (event is ModelStreamEvent.ToolCallDelta) lastSequence = maxOf(lastSequence, event.sequence)
+                if (event is ModelStreamEvent.Completed) {
+                    val suffix = imageSession.artifactSuffix()
+                    if (suffix.isNotEmpty()) emit(ModelStreamEvent.TextDelta(requestId, ++lastSequence, suffix,
+                        System.nanoTime() / 1_000_000L))
+                }
+                emit(event)
+            }
         }
     }.flowOn(Dispatchers.IO)
 
@@ -71,7 +83,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         onToolEvent: ((CloudToolEvent) -> Unit)?,
         allowExternalTools: Boolean,
         systemPromptOverride: String,
-        citationPreviewEnabled: Boolean
+        citationPreviewEnabled: Boolean,
+        imageSession: CloudImageAnnotationSession
     ): Flow<ModelStreamEvent> = flow {
         if (!contact.optBoolean("cloud_streaming_enabled", true)) {
             emitLegacy(context, contact, turns, requestId, images, onToolEvent, systemPromptOverride)
@@ -410,8 +423,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 ) { preparedCall ->
                     try {
                         budget.execute { token, checkpoint ->
-                            CloudWebGrounding.executeTool(context, preparedCall.call.name,
-                                preparedCall.arguments, token, checkpoint)
+                            imageSession.execute(preparedCall.call.name, preparedCall.arguments, token, checkpoint)
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -433,6 +445,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         }
                     )
                 }
+                completedCalls.forEach { imageSession.selectResult(it.output) }
                 val promptCalls = completedCalls.map { completed ->
                     val compact = evidencePrompt.project(completed.output)
                     Log.i("GalaxySSIWebLatency", "evidence_projection request=$requestId tool=${completed.call.name} " +

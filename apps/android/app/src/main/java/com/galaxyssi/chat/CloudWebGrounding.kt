@@ -241,7 +241,7 @@ object CloudWebGrounding {
             val name = start.groupValues[1].trim()
             val body = content.substring(start.range.last + 1, close.range.first)
             val arguments = parseInlineArguments(body)
-            if (operationForTool(name) != null) calls += InlineToolCall(name, arguments)
+            if (operationForTool(name) != null || name == CloudImageAnnotationPlan.TOOL) calls += InlineToolCall(name, arguments)
             cursor = close.range.last + 1
         }
         return calls

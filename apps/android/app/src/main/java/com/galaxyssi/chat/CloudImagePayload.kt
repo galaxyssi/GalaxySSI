@@ -8,7 +8,8 @@ import java.util.Base64
 internal data class CloudImagePayload(
     val displayName: String,
     val mimeType: String,
-    val bytes: ByteArray
+    val bytes: ByteArray,
+    val sourceUri: String = ""
 ) {
     init {
         require(bytes.isNotEmpty()) { "Cloud image payload must not be empty" }
@@ -40,7 +41,8 @@ internal object CloudImagePayloadFactory {
             CloudImagePayload(
                 displayName = encoded.transportName(attachment.displayName),
                 mimeType = encoded.mimeType,
-                bytes = encoded.bytes
+                bytes = encoded.bytes,
+                sourceUri = attachment.uri.toString()
             )
         }
 }
