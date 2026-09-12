@@ -235,6 +235,18 @@ internal class MqttMultipathPolicy(
         return completed
     }
 
+    @Synchronized fun acceptVerifiedMessage(peer: String, messageId: String, contentHash: String): Set<String> {
+        val completed = attempts.filterValues {
+            it.peer == peer && it.messageId == messageId && it.contentHash == contentHash
+        }.keys.toSet()
+        completed.forEach { key ->
+            val attempt = attempts.getValue(key)
+            attempt.peerAccepted = true
+            if (!attempt.slotHeld) attempts.remove(key)
+        }
+        return completed
+    }
+
     @Synchronized fun discardAttempt(attemptId: String) { attempts.remove(attemptId) }
     @Synchronized fun pending(peer: String, messageId: String): Boolean =
         attempts.values.any { it.peer == peer && it.messageId == messageId && !it.peerAccepted }

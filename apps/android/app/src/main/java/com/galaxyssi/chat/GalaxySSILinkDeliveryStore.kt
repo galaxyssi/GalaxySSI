@@ -52,7 +52,8 @@ object GalaxySSILinkDeliveryStore {
         val contactId: String,
         val brokerAckTimeoutMillis: Long,
         val attachmentTransferId: String,
-        val recoveryFirstAttemptMillis: Long = 0L
+        val recoveryFirstAttemptMillis: Long = 0L,
+        val transportTraffic: String = "message"
     )
 
     data class ExhaustedMessage(
@@ -104,8 +105,10 @@ object GalaxySSILinkDeliveryStore {
         brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
         attachmentTransferId: String = "",
         recoverableEnvelope: String = "",
-        receiptRoutes: GalaxySSILinkProtocol.Routes? = null
+        receiptRoutes: GalaxySSILinkProtocol.Routes? = null,
+        transportTraffic: String = "message"
     ) {
+        MqttTrafficPolicy.parse(transportTraffic)
         val database = outboxDatabase(context)
         if (database.contains(messageId)) return
         val item = JSONObject()
@@ -116,6 +119,7 @@ object GalaxySSILinkDeliveryStore {
             .put("requires_validated_network", requiresValidatedNetwork)
             .put("client_source_message_id", clientSourceMessageId)
             .put("contact_id", contactId)
+            .put("transport_traffic", transportTraffic)
             .put(
                 BROKER_ACK_TIMEOUT_MILLIS,
                 MqttBrokerAckTimeoutPolicy.normalize(brokerAckTimeoutMillis)
@@ -610,7 +614,8 @@ object GalaxySSILinkDeliveryStore {
                 item.optString(ATTACHMENT_TRANSFER_ID).lowercase(),
                 if (item.optInt("agent_recovery_attempts") > 0) {
                     item.optLong("first_attempt_at", item.optLong("created_at"))
-                } else 0L
+                } else 0L,
+                item.optString("transport_traffic", "message")
             )
             byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)
         }

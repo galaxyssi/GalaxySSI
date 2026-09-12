@@ -15,6 +15,29 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GalaxySSILinkOutboxDatabaseTest {
+    @Test fun messageTrafficSurvivesDatabaseReopenAndRetrySelection() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_traffic_${System.nanoTime()}.db"
+        val now = System.currentTimeMillis()
+        val kinds = MqttMultipathPolicy.Traffic.entries.map { it.name.lowercase(java.util.Locale.ROOT) }
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                kinds.forEachIndexed { index, kind ->
+                    database.insert(item(index, now).put("transport_traffic", kind))
+                }
+            }
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                val pending = GalaxySSILinkDeliveryStore.pendingFromArray(database.retryCandidates(now, true, 6, 9, 16), now)
+                    .associateBy { it.messageId }
+                assertEquals(kinds.size, pending.size)
+                kinds.forEachIndexed { index, kind ->
+                    assertEquals(kind, pending.getValue("message-$index").transportTraffic)
+                    assertEquals("encrypted-wire-$index", pending.getValue("message-$index").wirePayload)
+                }
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun onlyExactReceiptBindingAndHashCanDeleteDurableOutboxRow() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "mqtt_receipt_${System.nanoTime()}.db"

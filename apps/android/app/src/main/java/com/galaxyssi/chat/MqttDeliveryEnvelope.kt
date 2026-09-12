@@ -8,7 +8,7 @@ internal object MqttDeliveryEnvelope {
     const val FIELD = "_mqtt_delivery"
     const val ALGORITHM = "signal-wire-sha256-v1"
     const val RECEIPT_TYPE = "link_rx_stored"
-    private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
+    const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
     private const val MAX_WIRE_BODY = 4 * 1024 * 1024
     private val hash = Regex("[a-f0-9]{64}")
     private val token = Regex("[a-f0-9]{32}")
@@ -44,9 +44,15 @@ internal object MqttDeliveryEnvelope {
         }
 
         fun receiptAfterStore(storedMessageId: String, storedContentHash: String): JSONObject {
-            require(storedMessageId == message.messageId && storedContentHash == message.contentHash)
+            validateApplication(storedMessageId, storedContentHash)
             require(message.traffic != "receipt") { "Receipts cannot request receipts" }
             return metadata().put("type", RECEIPT_TYPE).put("status", "RX_STORED")
+        }
+
+        fun validateApplication(messageId: String, wireHash: String) {
+            require(message.messageId == messageId && message.contentHash == wireHash) {
+                "Delivery frame does not match Signal application message"
+            }
         }
     }
 

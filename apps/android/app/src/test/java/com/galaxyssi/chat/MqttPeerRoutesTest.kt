@@ -53,6 +53,128 @@ class MqttPeerRoutesTest {
         routes.handleVerified(ours.scope, payload, rig.ingress(broker), ours.identity)
     private fun sentCount() = rig.clients.values.flatten().sumOf { it.sent.size }
 
+    private fun wire() = JSONObject().put("scheme", "signal").put("from", "alice").put("to", "bob")
+        .put("signal_type", "prekey").put("message_type", 3).put("body", "AQIDBA==")
+    private fun deliveryFrames() = rig.clients.values.flatten().flatMap { it.sent }.mapNotNull {
+        val value = JSONObject(String(it.message.payload, Charsets.UTF_8))
+        if (!value.has(MqttDeliveryEnvelope.FIELD)) null else MqttDeliveryEnvelope.parseVerifiedFrame(value,
+            binding.sender, binding.receiver, value.getJSONObject(MqttDeliveryEnvelope.FIELD).getString("broker_id"))
+    }
+    private fun publishDelivery(traffic: MqttMultipathPolicy.Traffic = MqttMultipathPolicy.Traffic.MESSAGE) {
+        val delivery = requireNotNull(routes.prepareDelivery("outbox", wire(), "message", traffic))
+        rig.transport.publishDelivery("outbox", delivery)
+    }
+
+    @Test fun preparedDeliveryUsesAuthenticatedRouteAndOwnsImmutableSignalCopy() {
+        start()
+        assertNull(routes.prepareDelivery("outbox", wire(), "message", MqttMultipathPolicy.Traffic.MESSAGE))
+        receive(ack())
+        val original = wire()
+        val delivery = requireNotNull(routes.prepareDelivery("outbox", original, "message", MqttMultipathPolicy.Traffic.MESSAGE))
+        original.put("body", "changed")
+        rig.transport.publishDelivery("outbox", delivery)
+        val frame = deliveryFrames().single()
+        assertEquals("hivemq", frame.attempt.brokerId)
+        assertEquals(MqttDeliveryEnvelope.contentHash(wire()), frame.message.contentHash)
+        assertEquals(binding.scope, delivery.peer)
+        assertEquals(1, rig.completed.size)
+        assertEquals(1, rig.transport.delivery.diagnostics().messages)
+    }
+
+    @Test fun storedAckOnAnotherBrokerCommitsOnceAndCancelsOnlyUnsentCopies() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        publishDelivery()
+        val frame = deliveryFrames().single()
+        val receipt = frame.receiptAfterStore("message", frame.message.contentHash)
+        val alternate = MqttBrokerCatalog.brokers.keys.first { it != frame.attempt.brokerId }
+        var committed = 0
+        assertEquals(true to true, routes.acceptDeliveryReceipt(binding.scope, receipt, rig.ingress(alternate), binding.identity) { committed++ })
+        assertEquals(true to false, routes.acceptDeliveryReceipt(binding.scope, receipt, rig.ingress(alternate), binding.identity) { committed++ })
+        rig.clock.addAndGet(2_000)
+        rig.transport.delivery.tick()
+        assertEquals(1, committed)
+        assertEquals(1, deliveryFrames().size)
+        assertEquals(0, rig.transport.delivery.diagnostics().messages)
+    }
+
+    @Test fun failedReceiptCommitLeavesBackupEligible() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        publishDelivery()
+        val frame = deliveryFrames().single()
+        assertThrows(IllegalStateException::class.java) {
+            routes.acceptDeliveryReceipt(binding.scope, frame.receiptAfterStore("message", frame.message.contentHash),
+                rig.ingress(frame.attempt.brokerId), binding.identity) { error("storage unavailable") }
+        }
+        rig.clock.addAndGet(1_000)
+        rig.transport.delivery.tick()
+        assertEquals(3, deliveryFrames().size)
+    }
+
+    @Test fun receiptWrongIdentityOrChangedPairCannotCommit() {
+        start()
+        receive(ack())
+        publishDelivery()
+        val frame = deliveryFrames().single()
+        val receipt = frame.receiptAfterStore("message", frame.message.contentHash)
+        var committed = 0
+        assertThrows(IllegalArgumentException::class.java) {
+            routes.acceptDeliveryReceipt(binding.scope, receipt, rig.ingress("hivemq"), binding.identity.dropLast(1) + "d".repeat(43)) { committed++ }
+        }
+        routes.replace(listOf(binding.copy(secret = "d".repeat(43))))
+        assertThrows(IllegalArgumentException::class.java) {
+            routes.acceptDeliveryReceipt(binding.scope, receipt, rig.ingress("hivemq"), binding.identity) { committed++ }
+        }
+        assertEquals(0, committed)
+    }
+
+    @Test fun lateReceiptFromDisconnectedGenerationCannotCommit() {
+        start()
+        receive(ack())
+        publishDelivery()
+        val frame = deliveryFrames().single()
+        val ingress = rig.ingress("hivemq")
+        rig.client("hivemq").lose()
+        rig.await { rig.transport.readyPathGenerations(binding.receiveTopics)["hivemq"] == 2L }
+        var committed = 0
+        assertEquals(true to false, routes.acceptDeliveryReceipt(binding.scope,
+            frame.receiptAfterStore("message", frame.message.contentHash), ingress, binding.identity) { committed++ })
+        assertEquals(0, committed)
+    }
+
+    @Test fun preparedDeliveryCannotOutlivePairRevocation() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        publishDelivery()
+        routes.replace(emptyList())
+        rig.clock.addAndGet(1_000)
+        rig.transport.delivery.tick()
+        assertEquals(1, deliveryFrames().size)
+    }
+
+    @Test fun storedReceiptRequiresExactProofAndUsesOriginalPathWithoutRequestingAck() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        val message = MqttDeliveryEnvelope.Message("inbound", MqttDeliveryEnvelope.contentHash(wire()),
+            binding.receiver, binding.sender, "message")
+        val frame = MqttDeliveryEnvelope.Frame(message, MqttDeliveryEnvelope.Attempt("d".repeat(32), "mosquitto", 1))
+        val before = sentCount()
+        assertThrows(IllegalArgumentException::class.java) {
+            routes.publishStoredReceipt(binding.scope, frame, "wrong", message.contentHash, binding.identity)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            routes.publishStoredReceipt(binding.scope, frame, "inbound", "e".repeat(64), binding.identity)
+        }
+        assertEquals(before, sentCount())
+        routes.publishStoredReceipt(binding.scope, frame, "inbound", message.contentHash, binding.identity)
+        assertEquals(before + 1, sentCount())
+        val sent = rig.client("mosquitto").sent.last()
+        val receipt = JSONObject(String(sent.message.payload, Charsets.UTF_8))
+        assertFalse(receipt.has(MqttDeliveryEnvelope.FIELD))
+        assertEquals(frame, MqttDeliveryEnvelope.parseVerifiedReceipt(receipt, binding.receiver, binding.sender))
+    }
+
     @Test fun resumeUsesEveryReadyBootstrapPathButBusinessWaitsForAck() {
         start()
         assertTrue(rig.clients.values.all { it.first().sent.size == 1 })

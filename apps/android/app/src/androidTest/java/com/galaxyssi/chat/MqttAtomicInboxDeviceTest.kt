@@ -289,9 +289,12 @@ class MqttAtomicInboxDeviceTest {
             .put("to", "bob").put("signal_type", "prekey").put("message_type", 3)
             .put("body", Base64.encodeToString(wire, Base64.NO_WRAP)))
         val before = MqttImmutableContent.hash(bob.exportJson())
-        fun receive() = bob.transaction {
+        val frame = MqttDeliveryEnvelope.Frame(MqttDeliveryEnvelope.Message("message", receiptHash,
+            "a".repeat(64), "b".repeat(64), "message"), MqttDeliveryEnvelope.Attempt("c".repeat(32), "hivemq", 1))
+        fun receive(delivery: MqttDeliveryEnvelope.Frame = frame) = bob.transaction {
             val decrypted = SessionCipher(bob, aliceAddress).decrypt(PreKeySignalMessage(wire))
             val decoded = JSONObject(String(decrypted, Charsets.UTF_8))
+            delivery.validateApplication(decoded.getString("message_id"), receiptHash)
             inbox.accept(peer, "message", MqttImmutableContent.hash(decoded), decoded, digest, true, receiptHash)
         }
         assertThrows(IllegalStateException::class.java) {
@@ -301,6 +304,14 @@ class MqttAtomicInboxDeviceTest {
         assertFalse(bob.containsSession(aliceAddress)); assertTrue(bob.containsPreKey(bundle.getInt("preKeyId")))
         assertNull(inbox.replay(peer.scope, digest)); assertTrue(inbox.pending().isEmpty())
         assertNull(inbox.storedReceipt(peer.scope, "message"))
+        for (invalid in listOf(frame.copy(message = frame.message.copy(messageId = "other")),
+            frame.copy(message = frame.message.copy(contentHash = "e".repeat(64))))) {
+            assertThrows(IllegalArgumentException::class.java) { receive(invalid) }
+            assertEquals(before, MqttImmutableContent.hash(bob.exportJson()))
+            assertFalse(bob.containsSession(aliceAddress))
+            assertTrue(bob.containsPreKey(bundle.getInt("preKeyId")))
+            assertNull(inbox.storedReceipt(peer.scope, "message"))
+        }
         assertEquals(GalaxySSILinkInbox.Stage.STORED, receive().stage)
         assertTrue(bob.containsSession(aliceAddress)); assertFalse(bob.containsPreKey(bundle.getInt("preKeyId")))
         assertNotNull(inbox.replay(peer.scope, digest))

@@ -273,12 +273,14 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    Outgoing receipts now validate authenticated current pair/key, stable message
    ID, complete durable-receive status, and a shared Signal wire digest against
    the persisted outbox proof. See [receipt binding](../testing/MQTT_DURABLE_RECEIPTS_20260913.md).
-   Desktop small-message physical attempts are now integrated; Android's
-   symmetric dispatcher and actual cross-platform acceptance remain outstanding.
+   Both Desktop and Android small-message physical attempts are now integrated.
+   Android's actual publisher/receiver uses the symmetric dispatcher and stored
+   receipt guard; see [Android dispatch](../testing/MQTT_HEDGED_DISPATCH_ANDROID_20260913.md).
+   Actual cross-platform native Signal/MQTT acceptance remains outstanding.
 5. Authenticated per-attempt/frame metadata and transport receipt codecs now have
    shared Android/Python vectors and negative tests. Desktop small-message
-   dispatch/RTT is activated and uses the final encoded frame bound; activate
-   the Android counterpart. Account for frame overhead before current 512 KiB privacy buckets
+   dispatch/RTT and its Android counterpart are activated and use the final
+   encoded frame bound. Account for frame overhead before current 512 KiB privacy buckets
    and chunk splitting; do not silently overflow existing direct-wire limits.
 6. Add shared durable fragment/chunk bitmap acknowledgement, alternate-path
    retransmission, assembly validation, and final artifact handling. Current
@@ -293,8 +295,8 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    tests. The latest user update switched this round to connected S20U (SM-G9880,
    ADB serial `R5CN319CESA`). The prior 37-case pool verification completed; the
    durable-receipt checkpoint separately passed 47 isolated device cases and the
-   subsequent hedge-policy checkpoint passed 51 (including overlapping storage
-   cases, not 135 distinct tests);
+   subsequent hedge-policy checkpoint passed 51 and Android-dispatch checkpoint
+   passed 55 (including overlapping storage cases, not 190 distinct tests);
    no shipping App installation or UI control has occurred on S20U. Test-owned
    packages were removed after completion; the pre-existing test package remains.
    Do not operate S26U or SM-T575 in this round.

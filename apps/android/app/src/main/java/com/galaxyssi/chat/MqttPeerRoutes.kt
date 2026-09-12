@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import org.json.JSONObject
 import java.util.ArrayDeque
+import java.util.Locale
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -235,4 +236,69 @@ internal class MqttPeerRoutes(
 
     fun readyForTopic(topic: String): Boolean = synchronized(lock) { outgoing[topic]?.binding?.scope }?.let(::ready) == true
     fun anyReady(): Boolean = synchronized(lock) { peers.keys.toList() }.any(::ready)
+
+    fun prepareDelivery(topic: String, wire: JSONObject, messageId: String,
+                        traffic: MqttMultipathPolicy.Traffic): MqttDeliveryDispatch.Delivery? {
+        val peer = synchronized(lock) { outgoing[topic] } ?: return null
+        if (!ready(peer.binding.scope)) { request(peer.binding.scope); return null }
+        val binding = peer.lock.withLock {
+            if (!peer.active || !peer.binding.enabled) return null
+            peer.binding
+        }
+        val immutable = JSONObject(wire.toString())
+        val message = MqttDeliveryEnvelope.Message(messageId, MqttDeliveryEnvelope.contentHash(immutable),
+            binding.sender, binding.receiver, traffic.name.lowercase(Locale.ROOT))
+        val encode: (MqttDeliveryEnvelope.Frame) -> ByteArray = { frame ->
+            seal(frame.attach(immutable).toString(), binding.secret).toByteArray(Charsets.UTF_8)
+        }
+        val authorized: (String, Long) -> Boolean = { broker, generation ->
+            peer.lock.withLock {
+                val local = peer.local
+                peer.active && peer.binding == binding && binding.enabled && local != null &&
+                    local.expiresAtMs > wall() && peer.confirmedEpoch == local.epoch &&
+                    peer.generations[broker] == generation && transport.readyPathGenerations(binding.receiveTopics)[broker] == generation
+            }
+        }
+        val longest = MqttBrokerCatalog.brokers.keys.maxBy { it.length }
+        val preview = encode(MqttDeliveryEnvelope.Frame(message,
+            MqttDeliveryEnvelope.Attempt("0".repeat(32), longest, MqttDeliveryEnvelope.MAX_SAFE_INTEGER)))
+        val size = mqttPublishPacketBytes(topic, preview.size)
+        require(size <= Int.MAX_VALUE)
+        return MqttDeliveryDispatch.Delivery(binding.scope, message, binding.receiveTopics, encode, authorized, size.toInt())
+    }
+
+    fun acceptDeliveryReceipt(scope: String, payload: JSONObject, ingress: MqttBrokerPool.Ingress, identity: List<String>,
+                              commit: (MqttDeliveryEnvelope.Frame) -> Unit): Pair<Boolean, Boolean> {
+        if (payload.optString("type") != MqttDeliveryEnvelope.RECEIPT_TYPE) return false to false
+        val peer = synchronized(lock) { peers[scope] } ?: error("Unconfigured receipt peer")
+        return peer.lock.withLock {
+            val binding = peer.binding
+            require(peer.active && binding.enabled && binding.identity == identity) { "Receipt pair authentication changed" }
+            if (transport.readyPathGenerations(binding.receiveTopics)[ingress.brokerId] != ingress.generation) return true to false
+            val frame = MqttDeliveryEnvelope.parseVerifiedReceipt(payload, binding.sender, binding.receiver)
+            true to transport.delivery.acceptVerifiedReceipt(scope, frame) { commit(frame) }
+        }
+    }
+
+    fun publishStoredReceipt(scope: String, frame: MqttDeliveryEnvelope.Frame, messageId: String, wireHash: String,
+                             identity: List<String>) {
+        val peer = synchronized(lock) { peers[scope] } ?: return
+        if (!ready(scope)) return
+        val binding: Binding
+        val payload: ByteArray
+        val publication: MqttPoolTransport.Publication
+        peer.lock.withLock {
+            binding = peer.binding
+            val local = peer.local
+            if (!peer.active || !binding.enabled || binding.identity != identity || local == null ||
+                local.expiresAtMs <= wall() || peer.confirmedEpoch != local.epoch ||
+                frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return
+            val receipt = frame.receiptAfterStore(messageId, wireHash)
+            payload = seal(receipt.toString(), binding.secret).toByteArray(Charsets.UTF_8)
+            val digest = MqttRouteAdvertisement.sha256(payload.toString(Charsets.UTF_8))
+            publication = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
+                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = peer.generations.toMap())
+        }
+        transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(payload).apply { qos = 1 }, publication = publication)
+    }
 }

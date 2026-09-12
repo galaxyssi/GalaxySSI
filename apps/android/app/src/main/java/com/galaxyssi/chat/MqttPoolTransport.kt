@@ -82,19 +82,26 @@ internal class MqttPoolTransport(
         }
         override fun onPacket(ingress: MqttBrokerPool.Ingress, topic: String, payload: ByteArray) =
             listener.onPacket(ingress, topic, payload)
-        override fun onPublish(receipt: MqttBrokerPool.PublishReceipt) {
-            val pending = synchronized(lock) {
-                val item = publications[receipt.attemptId] ?: return
-                if (item.broker != receipt.physical.brokerId || item.generation != receipt.physical.generation) return
-                publications.remove(receipt.attemptId)
-                item
-            }
-            if (receipt.brokerAcked) policy.brokerAck(receipt.attemptId, pending.broker, pending.generation)
-            policy.discardAttempt(receipt.attemptId)
-            pending.token.finish(receipt.brokerAcked)
-            if (pending.notify) listener.onPublished(pending.token, receipt.brokerAcked)
-        }
+        override fun onPublish(receipt: MqttBrokerPool.PublishReceipt) = onPhysicalPublished(receipt)
     })
+    val delivery = MqttDeliveryDispatch(policy, pool::publish, { token, accepted ->
+        (token as LogicalToken).finish(accepted)
+        listener.onPublished(token, accepted)
+    }, now)
+
+    private fun onPhysicalPublished(receipt: MqttBrokerPool.PublishReceipt) {
+        if (delivery.published(receipt)) return
+        val pending = synchronized(lock) {
+            val item = publications[receipt.attemptId] ?: return
+            if (item.broker != receipt.physical.brokerId || item.generation != receipt.physical.generation) return
+            publications.remove(receipt.attemptId)
+            item
+        }
+        if (receipt.brokerAcked) policy.brokerAck(receipt.attemptId, pending.broker, pending.generation)
+        policy.discardAttempt(receipt.attemptId)
+        pending.token.finish(receipt.brokerAcked)
+        if (pending.notify) listener.onPublished(pending.token, receipt.brokerAcked)
+    }
 
     val isConnected: Boolean get() = synchronized(lock) { !closed && paths.values.any { it.connected } }
 
@@ -102,7 +109,7 @@ internal class MqttPoolTransport(
         synchronized(lock) { check(!closed); if (started) return; started = true }
         pool.start()
         maintenance.scheduleWithFixedDelay({
-            try { expireSubscriptions(); onTick?.invoke() } catch (error: Exception) {
+            try { expireSubscriptions(); delivery.tick(); onTick?.invoke() } catch (error: Exception) {
                 val at = now()
                 if (lastTickError == Long.MIN_VALUE || at - lastTickError >= 30_000) {
                     lastTickError = at
@@ -203,6 +210,11 @@ internal class MqttPoolTransport(
     }
 
     fun repair() { pool.refreshSubscriptions(); pool.repairStalledPublishes() }
+    fun publishDelivery(topic: String, descriptor: MqttDeliveryDispatch.Delivery, context: Any? = null,
+                        callback: IMqttActionListener? = null): IMqttDeliveryToken {
+        val token = LogicalToken(nextId(), MqttMessage().apply { qos = 1 }, arrayOf(topic), context, callback)
+        return delivery.submit(topic, descriptor, token)
+    }
     fun networkAvailable(networkKey: String = "available") { policy.setNetwork(networkKey); pool.networkAvailable() }
     fun networkUnavailable() { pool.networkUnavailable() }
     private fun nextId(): Int = sequence.incrementAndGet().also { check(it > 0) { "Logical MQTT token space exhausted" } }
@@ -210,6 +222,7 @@ internal class MqttPoolTransport(
     override fun close() {
         synchronized(lock) { if (closed) return; closed = true }
         maintenance.shutdownNow()
+        delivery.close()
         pool.close()
         val cancelled = synchronized(lock) { subscriptions.values.toList().also { subscriptions.clear() } }
         cancelled.forEach { it.token.finish(false) }

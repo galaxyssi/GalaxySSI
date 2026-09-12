@@ -330,7 +330,8 @@ object GalaxySSIMqttClient {
         val messageId = envelope.getString("message_id")
         val wirePayload = encrypted.toString()
         if (durable) {
-            GalaxySSILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload, receiptRoutes = link.routes)
+            GalaxySSILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload,
+                receiptRoutes = link.routes, transportTraffic = MqttTrafficPolicy.classify(payload))
             if (peerRoutes?.readyForTopic(link.routes.control) != true) {
                 scheduleOutboxRetries()
                 return true
@@ -342,7 +343,7 @@ object GalaxySSIMqttClient {
             link.routes.control,
             wirePayload,
             "desktop_control",
-            messageId
+            messageId, transportTraffic = MqttTrafficPolicy.classify(payload)
         )) {
             if (durable) {
                 scheduleOutboxRetries()
@@ -444,6 +445,16 @@ object GalaxySSIMqttClient {
         peerRoutes?.handleVerified(scope, wire, ingress,
             listOf(scope, routes.localFingerprint.lowercase(), routes.remoteFingerprint.lowercase(), routes.linkSecret))
         return true
+    }
+
+    private fun handleTransportReceipt(routes: GalaxySSILinkProtocol.Routes, wire: JSONObject,
+        ingress: MqttBrokerPool.Ingress, endpoint: String, phone: Boolean = false): Boolean {
+        val context = appContext ?: return false
+        return AndroidMqttDelivery.receiveReceipt(context, routes, wire, ingress, peerRoutes) { receipt ->
+            AgentLatencyTelemetry.transport.received(endpoint, receipt.getString("transport_message_id"))
+            retryHandler.post { scheduleOutboxRetries() }
+            if (!phone) notifyMessageListeners(receipt.put("desktop_id", endpoint))
+        }
     }
 
     private fun publishBootstrap(mqtt: MqttPoolTransport, topic: String, wire: String, receiveTopics: Set<String>): Boolean {
@@ -1304,6 +1315,7 @@ object GalaxySSIMqttClient {
             brokerAckTimeoutMillis = brokerAckTimeoutMillis,
             attachmentTransferId = attachmentTransferId,
             receiptRoutes = receiptRoutes,
+            transportTraffic = MqttTrafficPolicy.classify(payload),
             recoverableEnvelope = GalaxySSILinkDeliveryStore.recoverablePeerEnvelope(
                 payload,
                 applicationEnvelope,
@@ -1349,7 +1361,7 @@ object GalaxySSIMqttClient {
             wirePayload,
             "encrypted_message",
             messageId,
-            brokerAckTimeoutMillis
+            brokerAckTimeoutMillis, transportTraffic = MqttTrafficPolicy.classify(payload)
         )
         if (!published) {
             scheduleOutboxRetries()
@@ -1470,7 +1482,7 @@ object GalaxySSIMqttClient {
                 pending.wirePayload,
                 "outbox_retry",
                 pending.messageId,
-                pending.brokerAckTimeoutMillis
+                pending.brokerAckTimeoutMillis, transportTraffic = pending.transportTraffic
             )
             if (!published) break
             submitted += 1
@@ -1512,17 +1524,19 @@ object GalaxySSIMqttClient {
         topic: String,
         message: MqttMessage,
         purpose: String,
-        timing: AgentTransportTiming.Attempt? = null
+        timing: AgentTransportTiming.Attempt? = null,
+        delivery: MqttDeliveryDispatch.Delivery? = null
     ): IMqttDeliveryToken? = MqttPublishGuard.attempt {
-        val token = if (timing == null) mqtt.publish(topic, message) else mqtt.publish(topic, message, timing,
-            object : IMqttActionListener {
+        val callback = if (timing == null) null else object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) {
                     AgentLatencyTelemetry.transport.broker(timing)
                 }
                 override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
                     AgentLatencyTelemetry.transport.broker(timing, "failed")
                 }
-            })
+            }
+        val token = if (delivery == null) mqtt.publish(topic, message, timing, callback)
+            else mqtt.publishDelivery(topic, delivery, timing, callback)
         token.exception?.let { throw it }
         token
     }.onFailure {
@@ -1537,7 +1551,8 @@ object GalaxySSIMqttClient {
         purpose: String,
         durableMessageId: String? = null,
         brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
-        receiptAttempt: LinkTransportReceiptAttempt? = null
+        receiptAttempt: LinkTransportReceiptAttempt? = null,
+        transportTraffic: String = "message"
     ): Boolean {
         val context = appContext ?: return false
         val serverLink = GalaxySSILinkProtocol.allServerLinks(context).firstOrNull {
@@ -1558,13 +1573,20 @@ object GalaxySSIMqttClient {
             "max_packet_bytes=${packets.maxOf { it.length }} pending_ack=${brokerAckWatchdog.pendingCount()}")
         if (receiptAttempt != null && packets.size != 1) return false
         if (packets.size == 1) {
+            val delivery = if (durableMessageId.isNullOrBlank() || receiptAttempt != null) null else {
+                runCatching { peerRoutes?.prepareDelivery(topic, JSONObject(wirePayload), durableMessageId,
+                    MqttTrafficPolicy.parse(transportTraffic)) }
+                    .onFailure { Log.w(TAG, "MQTT attempt preparation deferred: ${it.javaClass.simpleName}") }
+                    .getOrNull() ?: return false
+            }
             val timing = AgentLatencyTelemetry.transport.begin(serverLink?.desktopId.orEmpty(), durableMessageId.orEmpty())
             val token = publishSafely(
                 mqtt,
                 topic,
                 mqttMessage(packets.first()),
                 purpose,
-                timing
+                timing,
+                delivery?.takeIf { it.sizeBound <= MqttBrokerCatalog.SMALL_PACKET_BYTES }
             ) ?: return false
             if (!durableMessageId.isNullOrBlank()) {
                 deliveryMessageIds[token.messageId] = durableMessageId
@@ -1820,7 +1842,10 @@ object GalaxySSIMqttClient {
             val routes = GalaxySSILinkProtocol.Routes(relationship.getString("client_route_id"), secret,
                 relationship.getString("local_identity_fingerprint"), relationship.getString("identity_fingerprint"))
             if (handleResume(routes, wire, ingress)) return
-            handlePhoneRelationshipWire(context, topic, relationship, wire)
+            val endpoint = relationship.optString("galaxyssi_id").ifBlank { relationship.optString("hermes_id") }
+                .ifBlank { relationship.optString("id") }
+            if (handleTransportReceipt(routes, wire, ingress, endpoint, phone = true)) return
+            handlePhoneRelationshipWire(context, topic, relationship, wire, AndroidMqttDelivery.frame(routes, wire, ingress))
             return
         }
         val link = GalaxySSILinkProtocol.allServerLinks(context).firstOrNull {
@@ -1838,14 +1863,16 @@ object GalaxySSIMqttClient {
             .onFailure { Log.w(TAG, "Rejected opaque packet content", it) }
             .getOrNull() ?: return
         if (handleResume(link.routes, wire, ingress)) return
-        handleIncomingDecoded(topic, link, wire)
+        if (handleTransportReceipt(link.routes, wire, ingress, link.desktopId)) return
+        handleIncomingDecoded(topic, link, wire, AndroidMqttDelivery.frame(link.routes, wire, ingress))
     }
 
     private fun handlePhoneRelationshipWire(
         context: Context,
         topic: String,
         relationship: JSONObject,
-        wire: JSONObject
+        wire: JSONObject,
+        deliveryFrame: MqttDeliveryEnvelope.Frame? = null
     ) {
         if (GalaxySSIMqttWireChunking.isChunk(wire)) {
             val localId = GalaxySSICrypto.localGalaxySSIId()
@@ -1874,7 +1901,7 @@ object GalaxySSIMqttClient {
         if (PhoneContactCard.isRelationshipControlType(wire.optString("type"))) {
             handlePhonePairingIncoming(context, wire, null, relationship)
         } else {
-            handlePhoneContactIncoming(context, topic, wire)
+            handlePhoneContactIncoming(context, topic, wire, deliveryFrame)
         }
     }
 
@@ -2012,7 +2039,8 @@ object GalaxySSIMqttClient {
     private fun handleIncomingDecoded(
         topic: String,
         link: GalaxySSILinkProtocol.ServerLink,
-        wire: JSONObject
+        wire: JSONObject,
+        deliveryFrame: MqttDeliveryEnvelope.Frame? = null
     ) {
         val context = appContext ?: return
         if (GalaxySSIMqttWireChunking.isChunk(wire)) {
@@ -2092,6 +2120,7 @@ object GalaxySSIMqttClient {
         val ciphertextDigest = GalaxySSILinkCiphertextReplayPolicy.digest(wire)
         inbox.replay(peer.scope, ciphertextDigest)?.let { known ->
             if (known.receiptRequired) publishInboundReceipt(link, known.messageId)
+            AndroidMqttDelivery.stored(context, link.routes, deliveryFrame, known.messageId, peerRoutes)
             if (!known.completed) schedulePendingIncomingReplay()
             GalaxySSILinkTransportDiagnostics.record(context, GalaxySSILinkDiagnosticKind.ENCRYPTED_REPLAY,
                 link.desktopId, known.messageId, "durable_pre_decrypt")
@@ -2100,7 +2129,7 @@ object GalaxySSIMqttClient {
         var accepted: GalaxySSILinkInbox.Accepted? = null
         when (val result = timedInbound("signal_decrypt") {
             GalaxySSICrypto.decryptEnvelopeDetailed(wire) { envelope ->
-                accepted = acceptSignalPlaintext(inbox, peer, envelope, ciphertextDigest, MqttDeliveryEnvelope.contentHash(wire))
+                accepted = acceptSignalPlaintext(inbox, peer, envelope, ciphertextDigest, MqttDeliveryEnvelope.contentHash(wire), deliveryFrame)
             }
         }) {
             is GalaxySSICrypto.EnvelopeDecryptionResult.Success -> Unit
@@ -2113,6 +2142,7 @@ object GalaxySSIMqttClient {
             GalaxySSICrypto.EnvelopeDecryptionResult.Rejected -> return
         }
         val stored = checkNotNull(accepted)
+        AndroidMqttDelivery.stored(context, link.routes, deliveryFrame, stored.payload.getString("message_id"), peerRoutes)
         if (!link.paired) GalaxySSILinkProtocol.markPaired(context, link.desktopId)
         setSecureReady(true)
         if (stored.payload.optString("type") != "delivery_ack") publishInboundReceipt(link, stored.payload.getString("message_id"))
@@ -2126,10 +2156,12 @@ object GalaxySSIMqttClient {
     }
 
     private fun acceptSignalPlaintext(
-        inbox: GalaxySSILinkInbox, peer: GalaxySSILinkInbox.Peer, envelope: JSONObject, ciphertextDigest: String, wireHash: String
+        inbox: GalaxySSILinkInbox, peer: GalaxySSILinkInbox.Peer, envelope: JSONObject, ciphertextDigest: String, wireHash: String,
+        deliveryFrame: MqttDeliveryEnvelope.Frame? = null
     ): GalaxySSILinkInbox.Accepted {
         require(envelope.optString("source_id") == peer.endpoint &&
             envelope.optString("target_id") == GalaxySSICrypto.localGalaxySSIId()) { "Signal application endpoint mismatch" }
+        deliveryFrame?.validateApplication(envelope.optString("message_id"), wireHash)
         val immutableHash = MqttImmutableContent.hash(envelope)
         val payload = GalaxySSILinkProtocol.unwrapEnvelope(envelope) ?: error("Invalid Signal application envelope")
         if (payload.optString("type") in setOf("input_attachment_receipt", AgentAttachmentRecoveryRequest.REQUEST_TYPE)) {
@@ -2149,7 +2181,8 @@ object GalaxySSIMqttClient {
         }
     }
 
-    private fun handlePhoneContactIncoming(context: Context, topic: String, wire: JSONObject) {
+    private fun handlePhoneContactIncoming(context: Context, topic: String, wire: JSONObject,
+                                          deliveryFrame: MqttDeliveryEnvelope.Frame? = null) {
         val localId = GalaxySSICrypto.localGalaxySSIId()
         val senderId = wire.optString("from")
         if (wire.optString("scheme") != "signal" || senderId.isBlank() || wire.optString("to") != localId ||
@@ -2161,14 +2194,16 @@ object GalaxySSIMqttClient {
         val ciphertextDigest = GalaxySSILinkCiphertextReplayPolicy.digest(wire)
         inbox.replay(peer.scope, ciphertextDigest)?.let { known ->
             if (known.receiptRequired) publishPhoneContactReceipt(context, senderId, known.messageId)
+            AndroidMqttDelivery.stored(context, routes, deliveryFrame, known.messageId, peerRoutes)
             if (!known.completed) schedulePendingIncomingReplay()
             return
         }
         var accepted: GalaxySSILinkInbox.Accepted? = null
         PeerSignalSessionRecoveryCoordinator.decryptOrRequestRefresh(context, senderId, wire) { envelope ->
-            accepted = acceptSignalPlaintext(inbox, peer, envelope, ciphertextDigest, MqttDeliveryEnvelope.contentHash(wire))
+            accepted = acceptSignalPlaintext(inbox, peer, envelope, ciphertextDigest, MqttDeliveryEnvelope.contentHash(wire), deliveryFrame)
         } ?: return
         val stored = checkNotNull(accepted)
+        AndroidMqttDelivery.stored(context, routes, deliveryFrame, stored.payload.getString("message_id"), peerRoutes)
         if (stored.payload.optString("type") != "delivery_ack") {
             publishPhoneContactReceipt(context, senderId, stored.payload.getString("message_id"))
         }
@@ -2194,7 +2229,9 @@ object GalaxySSIMqttClient {
             return
         }
         if (payload.optString("type") == "delivery_ack") {
-            GalaxySSILinkDeliveryStore.acknowledgeVerified(context, routes, payload)
+            if (GalaxySSILinkDeliveryStore.acknowledgeVerified(context, routes, payload)) {
+                AndroidMqttDelivery.acceptedMessage(client, routes, payload)
+            }
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
@@ -2292,6 +2329,7 @@ object GalaxySSIMqttClient {
         }
         if (payload.optString("type") == "delivery_ack") {
             if (GalaxySSILinkDeliveryStore.acknowledgeVerified(context, link.routes, payload)) {
+                AndroidMqttDelivery.acceptedMessage(client, link.routes, payload)
                 AgentLatencyTelemetry.transport.received(sourceDesktopId, payload.getString("transport_message_id"))
                 retryHandler.post { scheduleOutboxRetries() }
                 notifyMessageListeners(payload)
