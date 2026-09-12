@@ -4,6 +4,8 @@ import java.net.URI
 import java.util.UUID
 import org.commonmark.node.AbstractVisitor
 import org.commonmark.node.Image
+import org.commonmark.node.Link
+import org.commonmark.node.Node
 import org.commonmark.node.Text
 import org.commonmark.parser.IncludeSourceSpans
 import org.commonmark.parser.Parser
@@ -11,6 +13,35 @@ import org.commonmark.parser.Parser
 internal object AgentMarkdownImages {
     const val SOURCE = "markdown_image_source"
     private val parser = Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES).build()
+
+    fun withoutInternalArtifactLinks(text: String): String {
+        if (!text.contains("galaxyssi-artifact://", ignoreCase = true)) return text
+        val spans = mutableListOf<Pair<Int, Int>>()
+        fun collect(node: Node, destination: String) {
+            if (!destination.startsWith("galaxyssi-artifact://", ignoreCase = true)) return
+            val source = node.sourceSpans
+            if (source.isNotEmpty()) {
+                spans += source.first().inputIndex to source.last().let { it.inputIndex + it.length }
+            }
+        }
+        parser.parse(text).accept(object : AbstractVisitor() {
+            override fun visit(image: Image) = collect(image, image.destination)
+            override fun visit(link: Link) {
+                collect(link, link.destination)
+                super.visit(link)
+            }
+        })
+        var cursor = 0
+        return buildString {
+            spans.sortedBy { it.first }.forEach { (start, end) ->
+                if (start >= cursor && end <= text.length) {
+                    append(text, cursor, start)
+                    cursor = end
+                }
+            }
+            append(text, cursor, text.length)
+        }
+    }
 
     fun split(text: String): List<AgentRichBlock> {
         val images = mutableListOf<Image>()

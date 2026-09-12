@@ -91,3 +91,38 @@ acknowledgement is not a substitute for these UI checks.
   UI interaction. The app was not launched after installation; thumbnail,
   fullscreen, Save and a fresh native-image task remain pending. SM-T575 was
   not operated.
+
+## Follow-up: internal image reference displayed as text
+
+- A later S26U screenshot of fresh task
+  `7d548073-0abf-3d1a-9884-518e0421b60c` confirmed the image thumbnail arrived,
+  but the synthetic `galaxyssi-artifact://` Markdown link was also displayed
+  above it. The original tests checked for an image block, not absence of the
+  reference in visible text.
+- Desktop now removes internal Markdown image/file links from final rich text
+  and visible Codex output updates. Artifact selection and delivery retain the
+  original references and metadata. Markdown parsing preserves code examples
+  and ordinary web links/images.
+- Android uses the same presentation policy for streamed text and decoded rich
+  documents, including existing history. It keeps the actual image card, its
+  Blob URI and delivery metadata unchanged. No conversation database rewrite
+  is needed.
+- All 157 related backend tests passed, including final publication and replay
+  assertions for clean text plus exactly one deliverable image.
+- Android compilation succeeded and all 35 focused tests passed (14 Markdown
+  image, 18 rich-content and 3 incremental-update tests). Desktop also passed
+  all 29 Node tests and its structure check; `git diff --check` passed.
+- Follow-up release: Android 1.1.96 (982), Desktop 1.1.45. Based on latest main
+  `253069c46` after PR #3017 merged; the new branch contains only the follow-up
+  presentation fix, regression tests, version bumps and this verification log.
+- The default Android build passed embedded runtime verification and completed
+  `assembleDebug` in 6m 42s. APK: 418377419 bytes; SHA-256:
+  `7c8d90fe661e6ca5e5c5905c25fb13f8cf54e6ccf277d34e861a2704ff19d26f`.
+- S26U `adb install -r` succeeded, preserving app data. Package manager confirmed
+  version 1.1.96 (982), updated at 2026-09-12 10:14:09 +08:00. No other device
+  was operated, and no post-install phone UI actions were performed.
+- The previous Desktop had no active or pending tasks and exited normally.
+  Desktop 1.1.45 was started from this checkout; its window is open, health is
+  ready, MQTT is connected, and all 10 subscriptions are active.
+- A fresh model request, fullscreen and Save still require real-device visual
+  acceptance after this follow-up deployment.

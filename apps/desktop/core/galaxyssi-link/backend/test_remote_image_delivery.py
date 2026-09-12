@@ -124,10 +124,11 @@ class RemoteImageDeliveryTests(unittest.TestCase):
     def test_native_image_receipt_republishes_without_model_or_remote_download(self):
         task = {**self.task(), "result": "Image generated.", "thread_id": "native-thread",
                 "turn_id": "native-turn", "agent_id": "codex", "output_files": []}
-        capture_image(task["task_id"], task["thread_id"], task["turn_id"], {
+        receipt = capture_image(task["task_id"], task["thread_id"], task["turn_id"], {
             "type": "imageGeneration", "id": "native-image", "status": "completed",
             "result": base64.b64encode(image_bytes()).decode(),
         }, codex_home="unused")
+        task["result"] += f"\n\n![Generated image](galaxyssi-artifact://{task['task_id']}/{receipt['relative_path']})"
         stored = SimpleNamespace(**task, public=lambda: dict(task))
         with patch.object(mqtt_bridge, "agent_task_manager", SimpleNamespace(get=lambda _: stored)), \
                 patch("blob_artifact_replay.republish", return_value=None), \
@@ -141,6 +142,8 @@ class RemoteImageDeliveryTests(unittest.TestCase):
         wire = publish.call_args.args[2]
         self.assertEqual(task["client_turn_id"], wire["turn_id"])
         self.assertEqual(1, len([b for b in wire["rich_output"]["blocks"] if b["type"] == "image"]))
+        self.assertEqual("Image generated.", wire["content"])
+        self.assertEqual(["Image generated."], [b["text"] for b in wire["rich_output"]["blocks"] if b["type"] == "text"])
         self.assertEqual([], stored.output_files)
         self.bridge._publish_task_artifacts.assert_called_once()
 
@@ -161,6 +164,8 @@ class RemoteImageDeliveryTests(unittest.TestCase):
         wire = self.bridge._publish_to_registered_client.call_args.args[2]
         blocks = [block for block in wire["rich_output"]["blocks"] if block["type"] == "image"]
         self.assertEqual(1, len(blocks))
+        self.assertNotIn("galaxyssi-artifact://", wire["content"])
+        self.assertFalse(any(b["type"] == "text" for b in wire["rich_output"]["blocks"]))
         self.assertEqual("encrypted-blob", blocks[0]["metadata"]["transport"])
         self.assertEqual(str(self.payload["task_id"]), blocks[0]["metadata"]["blob_task_id"])
         self.assertEqual({"pending": 1}, self.runtime.sender.journal.snapshot())

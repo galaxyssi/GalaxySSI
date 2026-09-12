@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_image_file
+from artifact_reference_text import strip_internal_artifact_links
 
 
 MAX_BLOCKS = 100
@@ -99,7 +100,7 @@ def build_rich_output(
     blocks = _limit_inline_artifact_payload(blocks)
 
     if not blocks:
-        if had_explicit_document:
+        if had_explicit_document or (source.strip() and not clean_content):
             if clean_content:
                 return clean_content[:MAX_TEXT], None
             prefers_chinese = any("\u4e00" <= character <= "\u9fff" for character in source)
@@ -109,14 +110,14 @@ def build_rich_output(
                 "The generated file is unavailable. Please try again."
             )
             return unavailable, None
-        return source.strip(), None
+        return clean_content, None
     if not clean_content:
         clean_content = _fallback_text(blocks)
     return clean_content[:MAX_TEXT], {"version": 1, "blocks": blocks}
 
 
 def _clean_visible_content(content: str) -> str:
-    text = SANDBOX_ARTIFACT_LINK.sub("", str(content or ""))
+    text = SANDBOX_ARTIFACT_LINK.sub("", strip_internal_artifact_links(content))
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -166,6 +167,8 @@ def _normalize_block(raw: dict) -> dict:
         ("language", 80), ("fallback_text", MAX_TEXT),
     ):
         value = str(raw.get(key) or "").strip()[:limit]
+        if key == "text" and block_type in {"text", "heading", "quote", "notice"}:
+            value = strip_internal_artifact_links(value).strip()
         if value:
             block[key] = value
     encoded = str(raw.get("data_b64") or "").strip()

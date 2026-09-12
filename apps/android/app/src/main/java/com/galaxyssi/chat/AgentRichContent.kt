@@ -230,11 +230,12 @@ object AgentRichContentCodec {
     }
 
     fun fromText(text: String): List<AgentRichBlock> {
-        val clean = text.trim()
-        if (clean.isBlank()) return emptyList()
-        prettyJson(clean)?.let { formatted ->
+        if (text.isBlank()) return emptyList()
+        prettyJson(text.trim())?.let { formatted ->
             return listOf(AgentRichBlock(newId(), AgentRichBlockType.JSON, text = formatted, language = "json"))
         }
+        val clean = AgentMarkdownImages.withoutInternalArtifactLinks(text).trim()
+        if (clean.isBlank()) return emptyList()
         val blocks = mutableListOf<AgentRichBlock>()
         val lines = clean.lines()
         var index = 0
@@ -411,7 +412,7 @@ object AgentRichContentCodec {
         ) {
             value.trim('\r', '\n')
         } else {
-            value.trim()
+            AgentMarkdownImages.withoutInternalArtifactLinks(value).trim()
         }
 
     private fun decodeMetadata(value: JSONObject?): Map<String, String> {
