@@ -13,6 +13,14 @@ pub(super) struct Metadata {
     pub generation: u64,
     pub count: u64,
     pub instance: [u8; 16],
+    pub records: RecordLayout,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum RecordLayout {
+    Legacy = 0,
+    Migrating = 1,
+    Sharded = 2,
 }
 
 pub(super) struct Crypto {
@@ -58,29 +66,38 @@ impl Crypto {
             .map_err(|_| ANNError::message("Native index authentication failed"))
     }
     pub fn encode_meta(&self, meta: &Metadata) -> ANNResult<Vec<u8>> {
-        let mut bytes = Zeroizing::new(Vec::with_capacity(48));
-        bytes.extend_from_slice(b"GSAN0001");
+        let mut bytes = Zeroizing::new(Vec::with_capacity(49));
+        bytes.extend_from_slice(b"GSAN0002");
         bytes.extend_from_slice(&(meta.dimensions as u32).to_le_bytes());
         bytes.extend_from_slice(&(meta.shards as u32).to_le_bytes());
         bytes.extend_from_slice(&meta.generation.to_le_bytes());
         bytes.extend_from_slice(&meta.count.to_le_bytes());
         bytes.extend_from_slice(&meta.instance);
+        bytes.push(meta.records as u8);
         self.seal(&bytes, &self.aad(b"metadata"))
     }
     pub fn decode_meta(&self, envelope: &[u8]) -> ANNResult<Metadata> {
-        if envelope.len() != 76 {
+        if ![76, 77].contains(&envelope.len()) {
             return Err(ANNError::message("Invalid native index metadata size"));
         }
         let bytes = self.unseal(envelope, &self.aad(b"metadata"))?;
-        if &bytes[..8] != b"GSAN0001" {
-            return Err(ANNError::message("Unsupported native index format"));
-        }
+        let records = match (&bytes[..8], bytes.len()) {
+            (b"GSAN0001", 48) => RecordLayout::Legacy,
+            (b"GSAN0002", 49) => match bytes[48] {
+                0 => RecordLayout::Legacy,
+                1 => RecordLayout::Migrating,
+                2 => RecordLayout::Sharded,
+                _ => return Err(ANNError::message("Invalid native record layout")),
+            },
+            _ => return Err(ANNError::message("Unsupported native index format")),
+        };
         Ok(Metadata {
             dimensions: u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize,
             shards: u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize,
             generation: u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
             count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
             instance: bytes[32..48].try_into().unwrap(),
+            records,
         })
     }
     fn node_aad(&self, meta: &Metadata, id: u64, revision: u64) -> Vec<u8> {

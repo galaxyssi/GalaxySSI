@@ -10,6 +10,8 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
     private val feed = ledger.changes()
     private val handle = AtomicLong()
     private var sourceEpoch = ""
+    var needsMaintenance = false
+        private set
     var readyStamp: KnowledgeCorpusStamp? = null
         private set
 
@@ -34,6 +36,7 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
             active()
             // A null root opens an existing authenticated index; it cannot create a graph.
             handle.set(files.open(spec.dimensions, cacheBytes, null).also { check(it > 0) })
+            needsMaintenance = !KnowledgeNativeBridge.recordsPartitioned(handle.get())
         }
         active()
         val checkpoint = KnowledgeNativeWire.checkpoint(KnowledgeNativeBridge.checkpoint(handle.get()))
@@ -46,6 +49,17 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
 
     private fun validateBudget() {
         check(cacheBytes >= (KnowledgeNativeFiles.SHARDS + 1) * 16L * 1024) { "Insufficient native pager budget" }
+    }
+
+    /** Background maintenance only; ready foreground reads never migrate records. */
+    fun advance(active: () -> Unit): Boolean {
+        val caughtUp = tryReady(active) || synchronize(active = active)
+        active()
+        val id = handle.get()
+        val partitioned = id == 0L || !needsMaintenance || KnowledgeNativeBridge.migrateRecords(id)
+        needsMaintenance = !partitioned
+        active()
+        return caughtUp && partitioned
     }
 
     fun synchronize(maxPages: Int = 4, active: () -> Unit): Boolean {
@@ -69,6 +83,7 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
             val opened = try { files.open(spec.dimensions, cacheBytes, root) } finally { root?.fill(0f) }
             check(opened > 0)
             handle.set(opened)
+            needsMaintenance = !KnowledgeNativeBridge.recordsPartitioned(opened)
             active()
         }
         repeat(maxPages) {
@@ -143,5 +158,6 @@ internal class KnowledgeNativeIndex(private val storage: AgentKnowledgeDatabase,
     override fun close() {
         handle.getAndSet(0).takeIf { it != 0L }?.let(KnowledgeNativeBridge::closeIndex)
         readyStamp = null
+        needsMaintenance = false
     }
 }

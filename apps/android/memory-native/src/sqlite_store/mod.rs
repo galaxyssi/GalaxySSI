@@ -3,6 +3,7 @@
 mod cache;
 mod codec;
 mod compact;
+mod record_migration;
 mod records;
 mod session;
 use crate::store::{MAX_NEIGHBORS, Node, ROOT};
@@ -111,6 +112,7 @@ impl SqliteIndexStore {
             generation: 1,
             count: 1,
             instance,
+            records: codec::RecordLayout::Sharded,
         };
         let connection = connect(path, config, true)?;
         connection.execute_batch("BEGIN IMMEDIATE").ann()?;
@@ -119,6 +121,7 @@ impl SqliteIndexStore {
             connection.execute_batch("CREATE TABLE index_records (key BLOB PRIMARY KEY CHECK(length(key) BETWEEN 1 AND 64), \
                 revision INTEGER NOT NULL CHECK(revision>0), ciphertext BLOB NOT NULL) WITHOUT ROWID").ann()?;
             for shard in 0..config.shards {
+                records::create_table(&connection, &format!("s{shard}"))?;
                 connection.execute_batch(&format!("CREATE TABLE s{shard}.nodes (id BLOB PRIMARY KEY CHECK(length(id)=8), \
                     revision INTEGER NOT NULL CHECK(revision>0), ciphertext BLOB NOT NULL) WITHOUT ROWID")).ann()?;
             }
@@ -174,6 +177,7 @@ impl SqliteIndexStore {
         let connection = connect(path, config, false)?;
         connection.execute_batch("BEGIN").ann()?;
         let meta = read_meta(&connection, &crypto, config)?;
+        records::check_tables(&connection, &meta)?;
         read_node(&connection, &crypto, config, &meta, ROOT)?
             .ok_or_else(|| ANNError::message("Native index root is missing"))?;
         connection.execute_batch("COMMIT").ann()?;
@@ -340,7 +344,7 @@ fn connect(path: &Path, config: StoreConfig, create: bool) -> ANNResult<Connecti
 fn read_meta(connection: &Connection, crypto: &Crypto, config: StoreConfig) -> ANNResult<Metadata> {
     let encrypted: Option<Vec<u8>> = connection
         .query_row(
-            "SELECT CASE WHEN length(sealed)=76 THEN sealed END FROM index_state WHERE id=1",
+            "SELECT CASE WHEN length(sealed) IN (76,77) THEN sealed END FROM index_state WHERE id=1",
             [],
             |row| row.get(0),
         )
