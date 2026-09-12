@@ -149,6 +149,8 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
         db.commit()
     from task_result_outbox import ensure_schema
     ensure_schema(db)
+    from signal_receive_handoff import ensure_schema as ensure_receive_schema
+    ensure_receive_schema(db)
     return db
 
 
@@ -495,6 +497,9 @@ def discard_route(client_route_id: str) -> dict[str, int]:
     with _lock:
         db = _connect()
         try:
+            from signal_receive_handoff import discard_route_in_transaction
+            db.execute("BEGIN IMMEDIATE")
+            discard_route_in_transaction(db, sealed_route_id)
             db.execute("DELETE FROM inbound_content_hashes WHERE client_route_id=?", (sealed_route_id,))
             for result_key, table_name in tables.items():
                 cursor = db.execute(

@@ -8,10 +8,11 @@ from typing import Callable
 
 class SignalSidecarSupervisor:
     def __init__(self, probe: Callable[[], bool], recover: Callable[[], None], *,
-                 interval: float = 2, max_age: float = 6, clock=time.monotonic):
+                 interval: float = 2, max_age: float = 6, clock=time.monotonic, maintain: Callable[[], None] | None = None):
         if interval <= 0 or max_age < interval:
             raise ValueError("Invalid sidecar observation interval")
         self.probe, self.recover = probe, recover
+        self.maintain = maintain
         self.interval, self.max_age, self.clock = interval, max_age, clock
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -77,6 +78,12 @@ class SignalSidecarSupervisor:
                 self._observe(False, "signal_runtime_missing")
             except Exception:
                 self._observe(False, "signal_runtime_unavailable")
+            if self._ready and self.maintain is not None and not self._stop.is_set():
+                try:
+                    self.maintain()
+                except Exception:
+                    # Durable handoff cleanup can retry without marking encryption offline.
+                    pass
             self._stop.wait(self.interval)
 
     def stop(self, timeout: float = 30):
@@ -104,7 +111,8 @@ def start_supervisor():
     import galaxyssi_client
     with _runtime_lock:
         if _runtime is None:
-            _runtime = SignalSidecarSupervisor(galaxyssi_client._is_healthy, galaxyssi_client.start_signal_sidecar)
+            _runtime = SignalSidecarSupervisor(galaxyssi_client._is_healthy, galaxyssi_client.start_signal_sidecar,
+                                               maintain=galaxyssi_client.drain_signal_receive_handoffs)
         _runtime.start()
 
 

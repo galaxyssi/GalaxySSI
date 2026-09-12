@@ -146,11 +146,18 @@ local content digest includes the envelope headers, including timestamps. Retry
 copies reuse the original envelope/ciphertext, not a rebuilt envelope with a new
 timestamp. Changed content requires a new transport message ID.
 
-This binding is not a task claim, a durable full-message receipt, or an additional
-task ledger. It stores no plaintext payload and does not enable receipt races by
-itself. Atomic inbox/ciphertext/receipt recovery and Android's scoped durable
-content binding are still required before three-path activation. Existing
-time/count-pruned Android replay records must not be treated as that final ledger.
+The hash binding is not itself a task claim. Android now shares an atomic Signal
+and durable-inbox transaction; Desktop shares a Signal/receive-journal SQLite
+transaction and hands full bodies to the Python delivery database before releasing
+the JVM copy. Both preserve authenticated scope and immutable content. The
+Desktop body extension is not a second task ledger: the existing Run Kernel still
+owns execution and uncertain external effects.
+
+Desktop pending-body consumer recovery, completed-body retention, ordered wire
+acceptance, and authenticated content-bound receipts are still required before
+three-path activation. The existing ID-only/accepted-state bridge shortcuts must
+not be mistaken for that completed recovery integration. Fair local Signal locks
+avoid thread starvation but do not guarantee ordering across independent brokers.
 
 ## Verification Boundary
 

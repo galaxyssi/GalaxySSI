@@ -91,6 +91,35 @@ on the basis of these isolated modules passing their tests.
   on retry. This is exception-injection verification, not a physical process-kill
   or reboot test. See [device report](../testing/MQTT_ATOMIC_INBOX_S26U_20260912.md).
 
+## Desktop Atomic Receive Checkpoint
+
+- Desktop now stores encrypted individual Signal records in `signal_state_v3.db`
+  using SQLite WAL/FULL. Ratchet changes, validated plaintext, ciphertext binding,
+  and receive quota accounting commit together. No old JSON identity migration or
+  automatic deletion of production state is performed.
+- The actual sidecar `/decrypt` endpoint returns a durable handoff receipt. The
+  Python client persists the full authenticated envelope in the existing delivery
+  database before calling `/receive-stored`. It can replay from either database
+  after a JVM failure without decrypting an already-consumed ciphertext again.
+  This is a recoverable two-stage handoff, not a cross-database transaction.
+- Body and cipher identity are scoped to the configured pair and Signal peer;
+  conflicts, unreadable bodies, invalid UTF-8, and quota failures fail closed.
+  Per-record AEAD includes the record binding. No attachment-file AES is added.
+- Bounded background handoff cleanup retries a lost local cleanup response even
+  when no further duplicate MQTT packet arrives. Explicit peer/route revocation
+  clears the corresponding journal/body data and quota usage.
+- A repeated, unchanged in-memory concurrency probe failed 5/10 runs before the
+  lock adjustment. Fair striped Signal transaction locks prevent hot work from
+  repeatedly overtaking queued receive work; the same probe then passed 10/10
+  runs, each with ten workers and 1,000 round trips. This is local scheduling
+  evidence, not proof that arbitrary cross-broker network reordering is safe.
+- Remaining: business-consumer recovery still needs integration. The old bridge
+  `claim_message` / accepted-state shortcuts can skip pending work after a crash;
+  storing the full body alone does not fix every handler or authorize repeating
+  uncertain side effects. Pending-body replay, completed retention/cleanup, and
+  wire ordering/bounded skew must be completed before pool activation.
+- See [Desktop receive report](../testing/MQTT_ATOMIC_RECEIVE_DESKTOP_20260912.md).
+
 ## Verification So Far
 
 - Python: 127 tests passed, covering broker pools/policy/route epochs, immutable
@@ -156,9 +185,10 @@ on the basis of these isolated modules passing their tests.
    outbox, receipt handlers, timing, subscription coordinator, and Run Kernel.
    Do not reset global business state when one path disconnects.
 4. Complete immutable content binding and atomic durable acceptance before business
-   side effects. Desktop immutable binding is integrated and tested, but
-   `claim_message` still stores only IDs, and it is not atomic with persisted full
-   envelopes/task handoff. Android now uses a shared Signal/inbox transaction;
+   side effects. Desktop now atomically journals ratchet/plaintext and durably
+   hands the full body to Python, but old `claim_message` / accepted-state paths
+   still need pending-body dispatch and task-consumer recovery integration.
+   Android now uses a shared Signal/inbox transaction;
    verify real native rollback and process-death recovery before activation.
    Outgoing receipts still require the planned authenticated content/scope binding
    and physical-attempt integration; moving the inbox is not that integration.
@@ -175,8 +205,11 @@ on the basis of these isolated modules passing their tests.
 8. Read-only connection diagnostics, coalesced progress, prioritized final/control
    traffic, automatic internal rollback to one observed healthy common path.
 9. Run integration/fault matrices on owned test brokers, then designated-device
-   tests. The user designated S26U (SM-S9480, Android 16 / API 36). Do not operate
-   SM-T575 or S20U for this goal. Isolated verification must not replace production
+   tests. The latest user update switched this round to connected S20U (SM-G9880,
+   ADB serial `R5CN319CESA`). Only inventory was read; no installation or UI control
+   has occurred on S20U. Do not operate S26U or SM-T575 in this round.
+   Earlier 29-test S26U evidence remains historical, not S20U acceptance.
+   Isolated verification must not replace production
    app data; coordinated full installation and re-pairing remain separate steps.
 10. Collect honest cold/warm latency, p50/p95, redundant traffic, background,
     recovery, and power evidence. Do not load-test public brokers.

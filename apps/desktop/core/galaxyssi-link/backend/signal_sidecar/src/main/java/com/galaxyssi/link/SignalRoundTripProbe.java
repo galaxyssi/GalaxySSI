@@ -14,6 +14,7 @@ import org.signal.libsignal.protocol.state.KyberPreKeyRecord;
 import org.signal.libsignal.protocol.state.PreKeyBundle;
 import org.signal.libsignal.protocol.state.PreKeyRecord;
 import org.signal.libsignal.protocol.state.SignedPreKeyRecord;
+import org.signal.libsignal.protocol.state.SignalProtocolStore;
 import org.signal.libsignal.protocol.state.impl.InMemorySignalProtocolStore;
 import org.signal.libsignal.protocol.util.KeyHelper;
 
@@ -56,7 +57,7 @@ public final class SignalRoundTripProbe {
         return new InMemorySignalProtocolStore(IdentityKeyPair.generate(), KeyHelper.generateRegistrationId(false));
     }
 
-    static PreKeyBundle publishBundle(InMemorySignalProtocolStore store) throws Exception {
+    static PreKeyBundle publishBundle(SignalProtocolStore store) throws Exception {
         int preKeyId = 1;
         int signedPreKeyId = 1;
         int kyberPreKeyId = 1;
