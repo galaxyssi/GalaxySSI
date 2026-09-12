@@ -74,3 +74,20 @@ S26U USB disconnected before the after-fix visual check. Only SM-T575 remained
 attached and was not operated. Thumbnail rendering, fullscreen viewing, Save
 and a fresh model-generated task remain pending on S26U. A transport storage
 acknowledgement is not a substitute for these UI checks.
+
+## PR integration and installation
+
+- The prior PR #3015 was already merged. Created a separate native-image fix
+  branch and merged `origin/main` at `bc5bdbdcf`; the PR diff contains only this
+  Desktop fix, its tests, documentation and the Desktop 1.1.44 version bump.
+- All 68 focused Codex/image tests passed after integrating current main.
+- Built Android 1.1.95 (981) from that integrated checkout. The default embedded
+  runtime bundle verification passed; `assembleDebug` completed in 5m 30s.
+- APK: 418375463 bytes; SHA-256:
+  `59d80e16fbb3cae750b28f50ae616420432392e7dfa8c8caf39529c8ef4f649d`.
+- S26U reconnected. `adb install -r` succeeded, preserving app data, and package
+  manager confirmed version 1.1.95 (981), updated at 2026-09-12 09:27:09 +08:00.
+- The user explicitly requested installation and PR submission without further
+  UI interaction. The app was not launched after installation; thumbnail,
+  fullscreen, Save and a fresh native-image task remain pending. SM-T575 was
+  not operated.
