@@ -2509,7 +2509,8 @@ class CodexAppServer:
 
     @staticmethod
     def _clean_output_text(value: object) -> str:
-        text = str(value or "").replace("\x00", "").strip()
+        from artifact_reference_text import strip_internal_artifact_links
+        text = strip_internal_artifact_links(str(value or "").replace("\x00", "")).strip()
         return text[:MAX_VISIBLE_OUTPUT_TEXT]
 
     @staticmethod

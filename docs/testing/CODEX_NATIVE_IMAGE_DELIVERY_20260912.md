@@ -91,3 +91,26 @@ acknowledgement is not a substitute for these UI checks.
   UI interaction. The app was not launched after installation; thumbnail,
   fullscreen, Save and a fresh native-image task remain pending. SM-T575 was
   not operated.
+
+## Follow-up: internal image reference displayed as text
+
+- A later S26U screenshot of fresh task
+  `7d548073-0abf-3d1a-9884-518e0421b60c` confirmed the image thumbnail arrived,
+  but the synthetic `galaxyssi-artifact://` Markdown link was also displayed
+  above it. The original tests checked for an image block, not absence of the
+  reference in visible text.
+- Desktop now removes internal Markdown image/file links from final rich text
+  and visible Codex output updates. Artifact selection and delivery retain the
+  original references and metadata. Markdown parsing preserves code examples
+  and ordinary web links/images.
+- Android uses the same presentation policy for streamed text and decoded rich
+  documents, including existing history. It keeps the actual image card, its
+  Blob URI and delivery metadata unchanged. No conversation database rewrite
+  is needed.
+- All 157 related backend tests passed, including final publication and replay
+  assertions for clean text plus exactly one deliverable image.
+- Android compilation succeeded and all 35 focused tests passed (14 Markdown
+  image, 18 rich-content and 3 incremental-update tests). Desktop also passed
+  all 29 Node tests and its structure check; `git diff --check` passed.
+- These follow-up changes have not been installed on S26U or deployed to the
+  running Desktop; fullscreen and Save still require real-device acceptance.

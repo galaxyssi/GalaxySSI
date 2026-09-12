@@ -4,8 +4,41 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentMarkdownImagesTest {
+    private val internalImage = "![Generated image](galaxyssi-artifact://task/outputs/generated-image.png)"
     private val image = "![Mackerel](https://example.com/fish.jpg)"
     private fun parse(text: String) = AgentRichContentCodec.fromText(text)
+
+    @Test fun streamingTextOmitsInternalArtifactReference() {
+        assertEquals("Done.", parse("Done.\n\n$internalImage").single().text)
+        assertTrue(parse(internalImage).isEmpty())
+    }
+
+    @Test fun existingHistoryKeepsOneImageAndItsDeliveryMetadata() {
+        val attachment = AgentRichBlock("image", AgentRichBlockType.IMAGE,
+            title = "Image", uri = "galaxyssi-artifact://blob/transfer/image",
+            mimeType = "image/png", metadata = mapOf("artifact_source_uri" to
+                "galaxyssi-artifact://task/outputs/generated-image.png", "sha256" to "a".repeat(64)))
+        val raw = AgentRichContentCodec.encode(listOf(
+            AgentRichBlock("text", AgentRichBlockType.TEXT, text = "Done.\n\n$internalImage"), attachment))
+        val expected = listOf(AgentRichBlock("text", AgentRichBlockType.TEXT, text = "Done."), attachment)
+        assertEquals(expected, AgentRichContentCodec.decode(raw))
+        assertEquals(expected, AgentRichContentCodec.decode(AgentRichContentCodec.normalize(raw)))
+    }
+
+    @Test fun internalReferencesInCodeAndWebLinksArePreserved() {
+        listOf("`$internalImage`", "```markdown\n$internalImage\n```", "~~~\n$internalImage\n~~~",
+            "[Source](https://example.com/page)", image).forEach {
+            assertEquals(it, AgentMarkdownImages.withoutInternalArtifactLinks(it))
+        }
+    }
+
+    @Test fun internalFileLinksAndMultilineImagesAreRemoved() {
+        val target = "galaxyssi-artifact://task/outputs/image_(1).png"
+        listOf("[Download](<$target>)", "![Image](\n<$target>\n)",
+            "![Image](<$target> \"Title\")").forEach {
+            assertEquals("Before  after", AgentMarkdownImages.withoutInternalArtifactLinks("Before $it after"))
+        }
+    }
 
     @Test fun imageBecomesAnImageBlock() {
         val block = parse(image).single()

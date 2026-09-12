@@ -65,9 +65,18 @@ class CodexGeneratedImageTests(unittest.TestCase):
         self.assertEqual(self.data, (task_workspace("task-1") / files[0]["relative_path"]).read_bytes())
         _text, rich = build_rich_output(self.run.final_text, files, "task-1", inline_artifacts=False)
         self.assertIn('"image"', json.dumps(rich))
+        self.assertEqual("已生成小丑鱼图片。", _text)
+        self.assertEqual(["已生成小丑鱼图片。"], [b["text"] for b in rich["blocks"] if b["type"] == "text"])
         self.assertNotIn(str(self.root), self.run.final_text)
         artifacts = prepare_artifacts("task-1", files)
         self.assertEqual(1, len(artifacts))
+
+    def test_final_stream_hides_reference_without_losing_artifact_selection(self):
+        with patch("codex_app_server.agent_output_delta_enabled", return_value=True):
+            self.complete([self.item])
+        updates = [event["output_delta"]["text"] for event in self.events if "output_delta" in event]
+        self.assertEqual(["已生成小丑鱼图片。"], updates)
+        self.assertEqual(1, len(select_reply_artifacts(self.run.final_text, task_artifacts("task-1"), "task-1")))
 
     def test_terminal_snapshot_captures_missing_notification(self):
         self.complete([self.item])
