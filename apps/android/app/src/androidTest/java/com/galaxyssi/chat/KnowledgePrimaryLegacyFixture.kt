@@ -38,6 +38,11 @@ internal object KnowledgePrimaryLegacyFixture {
         if (!db.rawQuery("SELECT 1 FROM sqlite_master WHERE name='knowledge_primary_refs'", null).use { it.moveToFirst() }) return
         inlineForDowngrade(db)
         db.rawQuery("SELECT 1 FROM knowledge_primary_refs LIMIT 1", null).use { check(!it.moveToFirst()) }
+        for (trigger in listOf("knowledge_primary_dirty_insert", "knowledge_primary_dirty_delete", "knowledge_primary_dirty_move")) {
+            db.execSQL("DROP TRIGGER IF EXISTS $trigger")
+        }
+        db.execSQL("DROP TABLE IF EXISTS knowledge_primary_dirty")
+        db.execSQL("DROP TABLE IF EXISTS knowledge_primary_compaction")
         db.execSQL("DROP TABLE knowledge_primary_refs")
         db.execSQL("DROP TABLE knowledge_primary_migration")
         db.execSQL("DROP TABLE knowledge_primary_retired")

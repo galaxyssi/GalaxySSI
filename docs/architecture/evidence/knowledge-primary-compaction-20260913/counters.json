@@ -1,0 +1,120 @@
+{
+  "source": "build/knowledge-primary-runs/c853ad7684a147a9b1c9c355b5309af0/0-counters.txt",
+  "sha256": "50e2f9ad8d6f5d5013b3de00293e95be75ae6d2eea528099a5682bf8f5398000",
+  "result": [
+    "Time: 112.29",
+    "OK (22 tests)"
+  ],
+  "cases": [
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "simultaneousMaintenancePagesSerializeAndReopenWithExactCounts",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "manyChunksInOneDocumentSeekByNumericOrdinalAcrossRestart",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "missingCountsFailWithoutSilentlyResettingOrAcceptingSourceWrites",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "legacyUpgradeIsBoundedAndDoesNotDecryptSourcesOrVectors",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "ignoredTrackingOrCounterUpdatesCannotAdvanceTheCursor",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "queueConflictAndVectorReplaceDoNotDoubleCount",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "alreadyTrackedPrefixConsumesBoundedPagesWithoutDuplicateCounts",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "underflowCannotDeleteAnAcknowledgedSourceAndTrackingCannotBeReset",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "signed64BitOverflowAbortsWithoutCommittingTheNewVector",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "failedOrIgnoredCheckpointRollsBackAllTrackedRows",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "emptyAndUnregisteredModelsNeedOnlyPointReads",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "malformedAndMissingCursorFailWithoutRestartingOrDiscardingCounts",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "sourceReplacementDeletionAndUnregisterMaintainBothCounters",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "liveMutationsOnBothSidesOfLegacyCursorAreCountedExactlyOnce",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountsDeviceTest",
+      "test": "partiallyEncodedDocumentsCountCommittedVectorsBeforeDocumentCompletion",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeIndexedStatsDeviceTest",
+      "test": "rollbackCannotPublishCounterOrLatestTimeChanges",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeIndexedStatsDeviceTest",
+      "test": "countersRemain64BitAndMissingStateFailsExplicitly",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeIndexedStatsDeviceTest",
+      "test": "emptyStoreAndLiveMutationsMatchExactSqlCounts",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeIndexedStatsDeviceTest",
+      "test": "partialBackfillIsExplicitAndReadsDoNotAdvanceIt",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeIndexedStatsDeviceTest",
+      "test": "realEncryptedStoreStatsDoNotDecryptBodiesOrStartAnEmbeddingModel",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeIndexedStatsDeviceTest",
+      "test": "latestUsesCoveringIndexWithoutTemporarySort",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeCountWorkerDeviceTest",
+      "test": "durableMaintenanceCompletesWithoutInstallingOrEnablingAnEncoder",
+      "status": 0
+    }
+  ]
+}

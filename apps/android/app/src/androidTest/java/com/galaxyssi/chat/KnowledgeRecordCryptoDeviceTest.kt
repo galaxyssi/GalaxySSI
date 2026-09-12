@@ -42,7 +42,7 @@ class KnowledgeRecordCryptoDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 check(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); assertEquals(14, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); assertEquals(15, it.getInt(0)) }
         }
         f.store.upsert(item.copy(content = "updated"))
         AgentRowStorageCipher.clearCachedKeys()
