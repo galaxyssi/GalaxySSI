@@ -1618,6 +1618,13 @@ async function pasteAttachments(event) {
   }
 }
 
+function requirePeerSendSuccess(result) {
+  if (!result || result.ok !== true) {
+    throw new Error(t(result?.message || "Could not send message"));
+  }
+  return result;
+}
+
 async function sendTask() {
   const prompt = elements.prompt.value.trim();
   if (!prompt && !state.attachments.length) return;
@@ -1637,6 +1644,7 @@ async function sendTask() {
         attachments,
         attachmentMetadata
       });
+      requirePeerSendSuccess(result);
       if (result.message) {
         const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
         if (index >= 0) state.peerMessages[index] = result.message;
@@ -4801,6 +4809,7 @@ async function beginPeerVoiceHold(pointerId = null, startY = null) {
           audio,
           durationMillis
         });
+        requirePeerSendSuccess(result);
         if (result.message) {
           const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
           if (index >= 0) state.peerMessages[index] = result.message;

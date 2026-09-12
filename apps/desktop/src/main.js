@@ -2139,7 +2139,7 @@ async function sendPeerMessage(payload = {}) {
       attachment_metadata: Array.isArray(payload.attachmentMetadata) ? payload.attachmentMetadata : []
     })
   });
-  if (!result.ok) throw new Error(result.message || "Could not send message");
+  // Preserve expected API failures across IPC so the renderer can localize them.
   return result;
 }
 

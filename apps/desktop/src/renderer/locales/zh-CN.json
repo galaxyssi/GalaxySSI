@@ -1024,6 +1024,8 @@
 , "Voice message is too short": "\u8bf4\u8bdd\u65f6\u95f4\u592a\u77ed"
 , "Queued": "\u7b49\u5f85\u53d1\u9001"
 , "Could not send message": "\u65e0\u6cd5\u53d1\u9001\u6d88\u606f"
+, "Message server is busy or unavailable. Wait for reconnection and send again.": "\u6d88\u606f\u670d\u52a1\u5668\u7e41\u5fd9\u6216\u6682\u4e0d\u53ef\u7528\uff0c\u8bf7\u7b49\u5f85\u8fde\u63a5\u6062\u590d\u540e\u91cd\u65b0\u53d1\u9001\u3002"
+, "Message server is disconnected. Wait for reconnection and send again.": "\u6d88\u606f\u670d\u52a1\u5668\u672a\u8fde\u63a5\uff0c\u8bf7\u7b49\u5f85\u8fde\u63a5\u6062\u590d\u540e\u91cd\u65b0\u53d1\u9001\u3002"
 , "Chats": "\u5bf9\u8bdd"
 , "Chats will appear here after you send a task or message a paired device.": "\u53d1\u8d77\u4efb\u52a1\u6216\u5411\u5df2\u914d\u5bf9\u8bbe\u5907\u53d1\u9001\u6d88\u606f\u540e\uff0c\u5bf9\u8bdd\u4f1a\u663e\u793a\u5728\u8fd9\u91cc\u3002"
 , "Select conversations to delete": "\u9009\u62e9\u5220\u6389\u5bf9\u8bdd"
