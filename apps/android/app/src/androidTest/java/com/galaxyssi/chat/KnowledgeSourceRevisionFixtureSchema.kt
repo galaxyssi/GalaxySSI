@@ -11,6 +11,8 @@ internal object KnowledgeSourceRevisionFixtureSchema {
             db.execSQL("DROP TABLE knowledge_payloads")
         }
         db.execSQL("DROP TABLE IF EXISTS knowledge_payload_migration")
+        db.execSQL("DROP TABLE IF EXISTS knowledge_payload_usage")
+        db.execSQL("DROP TABLE IF EXISTS knowledge_payload_usage_scan")
         for (operation in listOf("insert", "update", "delete"))
             db.execSQL("DROP TRIGGER IF EXISTS knowledge_source_revision_$operation")
         db.execSQL("DROP TABLE IF EXISTS knowledge_source_revisions")

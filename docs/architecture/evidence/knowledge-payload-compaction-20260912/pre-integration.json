@@ -1,0 +1,26 @@
+{
+  "base_main": "64f22a9444076c3adabb1834133043ae18de5e49",
+  "feature_branch": "feat/knowledge-payload-compaction-20260912",
+  "device": "SM-T575",
+  "serial": "R52R90282TY",
+  "version": "1.1.102",
+  "version_code": 988,
+  "schema": 12,
+  "version_note": "This local pre-integration APK is not the separate main-branch 1.1.102 from PR3027. The final integrated feature version advances to 1.1.103.",
+  "app_sha256": "fd5f85905642ed563e552f58ea97983efc68322fe3c3b29c9826b86a19c2d5b3",
+  "test_apk_sha256": "849fe54495c690d51af38828301694c2d34c7d591bee85f5f11f69c2e7e5c5ad",
+  "build": {"successful": true, "seconds": 464, "gradle_heap_mib": 8192},
+  "jvm": {"suites": 543, "tests_including_skips": 3787, "passed": 3782, "failures": 0, "errors": 0, "existing_skips": 5},
+  "targeted": {"passed": 20, "failures": 0, "seconds": 28.723, "evidence": "targeted"},
+  "regression": {"passed": 144, "failures": 0, "seconds": 761.916, "evidence": "regression-before-main"},
+  "real_process_death": {
+    "phases_passed": 8,
+    "intentional_deaths": 3,
+    "cases": ["before relocation commit", "after relocation commit", "during large-record frame copy"],
+    "retained_fixture": "test-knowledge-payload-1dd69765-fe71-4190-80fb-3db156df370b.db",
+    "evidence": "recovery"
+  },
+  "android_aarch64_16kib_libraries_passed": 74,
+  "initial_build_failure": "A public test helper exposed an internal fixture type. Its visibility was fixed to internal; production compilation was already successful.",
+  "scope": "Correctness, storage reclamation and recovery on isolated fixtures; not a 100M capacity, end-to-end 200ms, UI latency, real-provider or device-reboot acceptance."
+}

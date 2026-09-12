@@ -52,7 +52,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..11) { "Unsupported knowledge schema $version" }
+                require(version in 0..12) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -94,6 +94,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 if (version < 11) {
                     KnowledgePayloadSegments.create(db)
                     db.execSQL("PRAGMA user_version=11")
+                }
+                if (version < 12) {
+                    KnowledgePayloadUsage.create(db)
+                    db.execSQL("PRAGMA user_version=12")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
@@ -146,13 +150,15 @@ internal class AgentKnowledgeDatabase private constructor(
     internal fun migratePayloadPage(checkActive: () -> Unit = {}) = access {
         KnowledgePayloadMigration.advance(this, it, checkActive = checkActive)
     }
-    @Synchronized internal fun reclaimPayloads(): KnowledgePayloadSegments.Reclaimed? {
+    internal fun advancePayloadUsage() = access { KnowledgePayloadUsage.advance(it) }
+    @Synchronized internal fun reclaimPayloads(checkActive: () -> Unit = {}): KnowledgePayloadSegments.Reclaimed? {
         checkActive()
         check(accessDepth == 0) { "Cannot reclaim payloads inside a source transaction" }
         return payloads.leases.tryReclaim {
             val db = open()
             db.beginTransaction()
-            try { payloads.reclaim(db).also { db.setTransactionSuccessful() } } finally { db.endTransaction() }
+            try { payloads.reclaim(db, checkActive = checkActive).also { db.setTransactionSuccessful() } }
+            finally { db.endTransaction() }
         }
     }
     internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
