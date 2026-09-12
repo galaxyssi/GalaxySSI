@@ -46,6 +46,9 @@ object CloudWebGrounding {
             "When the user asks to see pictures or photos, use web_image_search first with the concise exact subject, " +
             "not a long instruction or mixed unrelated synonyms. Preserve subject and qualifiers (interior, exterior, " +
             "real photograph, diagram, etc.). Inspect each image's own title/alt as well as its source; a page about " +
+            "the subject is not enough: drawings/illustrations require actual artwork, not photographs of toys, " +
+            "figurines, merchandise or a person holding artwork. Preserve the requested visual medium in the " +
+            "search query; reject candidates whose own title/alt identifies a different medium and refine if needed. A page about " +
             "a subject can contain unrelated pictures. Do not substitute a similarly named object or software. " +
             "When evidence is insufficient, refine the query; do not fill the requested count with adjacent topics. " +
             "Once suitable image candidates exist, answer with Markdown images and their source links. " +
@@ -60,7 +63,11 @@ object CloudWebGrounding {
             "answers the request, and do not repeat failed operations or broaden a simple lookup into deep research. " +
             "Never invent engine IDs; omit engines for automatic selection unless the user requires a specific source. " +
             "A daily news digest or weather lookup is not deep research. Start with one focused fast search or a " +
-            "structured weather endpoint, not web_research/web_agent. Stop once the requested facts are supported. " +
+            "web_weather lookup, not web_research/web_agent. Use the city and first-level region in English plus country_code " +
+            "so the tool can verify the location; do not guess coordinates. For dated news, set web_search read_pages=true " +
+            "to retrieve source text in the same operation. Prefer three to five supported news items over " +
+            "an exhaustive digest; search again only for a specific missing requested fact or date. " +
+            "Stop once the requested facts are supported. " +
             "For news, distinguish event date, article publication date, retrieval time and timezone. An aggregator's " +
             "refresh date does not make every event current. Label older events as recent background; keep a short " +
             "digest with dated source links instead of combining unrelated events in one item. For weather, cite the " +
@@ -78,10 +85,18 @@ object CloudWebGrounding {
             "Never print tool-call markup."
 
     fun openAiTools(): JSONArray = JSONArray().apply {
+        put(functionTool("web_weather", "Get today's structured weather-model estimate and forecast. " +
+            "Prefer this for ordinary weather questions. Supply city and first-level region names in English " +
+            "(not coordinates), and ISO country_code. The tool checks location and local forecast date. " +
+            "For other days, historical observations or warnings, use web_search.",
+            objectProperties("location" to stringProperty(), "region" to stringProperty(), "country_code" to stringProperty()),
+            listOf("location", "region", "country_code")))
         put(functionTool(
             "web_image_search",
             "Find actual images and photos, returning image URLs, previews and source pages as soon as enough candidates exist. " +
-                "Use for showing pictures, not web_search or web_research. Choose candidates relevant to the user's exact subject.",
+                "Use for showing pictures, not web_search or web_research. Preserve both the exact subject and requested " +
+                "visual medium in query. For drawings/illustrations, merchandise photos do not satisfy the request; " +
+                "include the artwork qualifier and refine if candidates are the wrong medium.",
             objectProperties("query" to stringProperty(), "max_results" to integerProperty(1, 12)),
             listOf("query")
         ))
@@ -89,11 +104,14 @@ object CloudWebGrounding {
             "web_search",
             "Search current public web sources with snippets. Fast lookup queries three preferred sources, not every engine. " +
                 "Review relevance and refine the query when evidence is insufficient; choose balanced for extra " +
-                "cross-engine corroboration or deep for comprehensive research.",
+                "cross-engine corroboration or deep for comprehensive research. Set read_pages=true when " +
+                "source dates/facts are needed, to read ranked source pages concurrently without a second model round.",
             objectProperties(
                 "query" to stringProperty(),
                 "max_results" to integerProperty(1, 100),
                 "profile" to enumProperty("fast", "balanced", "deep"),
+                "read_pages" to booleanProperty(),
+                "read_limit" to integerProperty(1, 4),
                 "verticals" to enumArrayProperty(
                     AgentWebIntelligenceVertical.entries.size,
                     *AgentWebIntelligenceVertical.entries
@@ -201,14 +219,30 @@ object CloudWebGrounding {
             ?: throw IllegalArgumentException("Unknown Web Intelligence tool: $name")
         val normalized = normalizeArguments(name, arguments)
         val serviceStarted = System.nanoTime()
-        val output = service(context).invoke(operation, normalized, cancellationToken, checkpoint)
+        var output = if (operation == "weather") CloudWeatherLookup.execute(arguments, { url ->
+            web.fetch(url, maxBytes = 128_000, timeoutMillis = 15_000,
+                cancellationToken = cancellationToken, checkpoint = checkpoint).body.toString(Charsets.UTF_8)
+        }) else service(context).invoke(operation, normalized, cancellationToken, checkpoint)
+        if (name == "web_search" && arguments.optBoolean("read_pages")) {
+            val results = (output["results"] as? List<*>)?.mapNotNull { it as? Map<*, *> }.orEmpty()
+            val urls = results.mapNotNull { it["url"] as? String }.filter { it.startsWith("https://") }
+                .take(arguments.optInt("read_limit", 3).coerceIn(1, 4))
+            if (urls.isNotEmpty()) {
+                val pages = service(context).prefetchDocuments(urls, timeoutMillis = 8_000,
+                    cancellationToken = cancellationToken, checkpoint = checkpoint)
+                output = AgentWebEvidencePack.attach(output + mapOf("documents" to pages.documents.map { it.publicValue() },
+                    "receipts" to ((output["receipts"] as? List<*>).orEmpty() + pages.receipts)), System.currentTimeMillis())
+            }
+        }
         val serviceCompleted = System.nanoTime()
         val encoded = boundedModelJson(if (name == "web_image_search") CloudImageSearchEvidence.prepare(output) else output)
         Log.i("GalaxySSIWebLatency", "web_tool tool=$name " +
             "service_ms=${(serviceCompleted - serviceStarted) / 1_000_000L} " +
             "encode_ms=${(System.nanoTime() - serviceCompleted) / 1_000_000L} " +
             "elapsed_ms=${(System.nanoTime() - started) / 1_000_000L} result_chars=${encoded.length} " +
-            "cache_hit=${(output["cache"] as? Map<*, *>)?.get("hit") == true}")
+            "cache_hit=${(output["cache"] as? Map<*, *>)?.get("hit") == true} " +
+            "profile=${normalized["profile"]} search_ms=${(output["metadata"] as? Map<*, *>)?.get("elapsed_millis")} " +
+            "selection_ms=${(output["metadata"] as? Map<*, *>)?.get("source_selection_millis")}")
         encoded
     }.onFailure {
         Log.w(TAG, "Web Intelligence tool failed name=$name", it)
@@ -397,6 +431,7 @@ object CloudWebGrounding {
     }
 
     private fun operationForTool(name: String): String? = when (name.lowercase(Locale.ROOT)) {
+        "web_weather" -> "weather"
         "web_search", "web_image_search", AgentWebIntelligenceNativeTools.SEARCH -> "search"
         "web_fetch", AgentWebIntelligenceNativeTools.FETCH -> "fetch"
         "web_crawl", AgentWebIntelligenceNativeTools.CRAWL -> "crawl"

@@ -9,6 +9,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudWebToolLoopProgressTest {
+    @Test fun aRetrievedPageIsReusedOnlyForEquivalentUnfocusedReads() {
+        val progress = CloudWebToolLoopProgress()
+        val args = JSONObject().put("url", "https://example.test/page")
+        val body = JSONObject().put("status", "completed").put("evidence_pack", JSONObject()
+            .put("items", JSONArray().put(JSONObject().put("url", args.getString("url"))
+                .put("evidence_level", "retrieved_body").put("excerpt", "The actual page body.")))).toString()
+        progress.record("web_fetch", args, body)
+        assertEquals(body, progress.cached("web_extract", args))
+        assertNull(progress.cached("web_extract", JSONObject(args.toString()).put("fields", JSONArray().put("date"))))
+        assertNull(progress.cached("web_fetch", JSONObject(args.toString()).put("force", true)))
+        assertNull(progress.cached("web_fetch", JSONObject(args.toString()).put("focus", "missing counterexample")))
+        assertNull(CloudWebToolLoopProgress().cached("web_extract", args))
+    }
+
+    @Test fun snippetsAndDifferentUrlsCannotSatisfyARequestedPageRead() {
+        val progress = CloudWebToolLoopProgress()
+        val args = JSONObject().put("url", "https://example.test/page")
+        val snippet = """{"status":"completed","evidence_pack":{"items":[{"url":"https://example.test/page","evidence_level":"discovery_snippet"}]}}"""
+        progress.record("web_fetch", args, snippet)
+        assertNull(progress.cached("web_extract", args))
+        assertNull(progress.cached("web_extract", JSONObject().put("url", "https://another.example.test/page")))
+    }
+
     @Test fun timedOutPageIsNotFetchedAgainThroughAnotherReadTool() {
         val progress = CloudWebToolLoopProgress()
         val arguments = JSONObject().put("url", "https://example.test/page?q=%E4%B8%AD")

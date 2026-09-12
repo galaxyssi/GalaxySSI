@@ -2,6 +2,10 @@ package com.galaxyssi.chat
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.commonmark.node.AbstractVisitor
+import org.commonmark.node.Image
+import org.commonmark.node.Link
+import org.commonmark.parser.Parser
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale
@@ -24,7 +28,7 @@ internal data class AgentWebCitationValidation(
 internal object AgentWebEvidenceVerification {
     private val SHA256 = Regex("[a-f0-9]{64}")
     private val CITATION_ID = Regex("[a-f0-9]{24}")
-    private val MARKDOWN_LINK = Regex("\\[[^]\\n]{0,300}]\\((https?://[^\\s)]+)(?:\\s+[^)]*)?\\)", RegexOption.IGNORE_CASE)
+    private val markdown = Parser.builder().build()
     private val SENTENCE_BREAK = Regex("[\\n.!?;。！？；]+")
     private val NUMBER_VALUE = Regex(
         "(?iu)(?<![\\p{L}\\p{N}])[+-]?\\d+(?:[.,]\\d+)*(?:\\s*(?:%|‰|°[cf]?|ms|s|sec|seconds?|" +
@@ -151,15 +155,18 @@ internal object AgentWebEvidenceVerification {
                 }
             }
         }
-        val links = MARKDOWN_LINK.findAll(answer).toList()
-        val cited = links.asSequence()
-            .map { canonical(it.groupValues[1].trimEnd('.', ',', ';')) }
-            .filter(String::isNotBlank)
-            .distinct()
-            .toList()
-        val invalid = links.mapNotNull { match ->
-            val url = canonical(match.groupValues[1].trimEnd('.', ',', ';'))
-            val isImage = match.range.first > 0 && answer[match.range.first - 1] == '!'
+        val links = mutableListOf<Pair<String, Boolean>>()
+        markdown.parse(answer).accept(object : AbstractVisitor() {
+            override fun visit(link: Link) {
+                canonical(link.destination).takeIf(::isWebUrl)?.let { links += it to false }
+                visitChildren(link)
+            }
+            override fun visit(image: Image) {
+                canonical(image.destination).takeIf(::isWebUrl)?.let { links += it to true }
+            }
+        })
+        val cited = links.map { it.first }.distinct()
+        val invalid = links.mapNotNull { (url, isImage) ->
             url.takeUnless { it in allowed || (isImage && it in allowedImages) }
         }.distinct()
         val status = when {

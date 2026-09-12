@@ -6,6 +6,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentWebEvidenceVerificationTest {
+    @Test fun standardMarkdownCitationsDoNotTriggerAnUnnecessaryRepair() {
+        val url = "https://example.com/report_(revision)"
+        val pack = AgentWebEvidencePack.build("fixture", "completed",
+            listOf(document(url, "Source evidence.", "a".repeat(64))), emptyList(), emptyList(), 1L)
+        val results = listOf("web_fetch" to AgentNativeJsonCodec.stringify(mapOf("evidence_pack" to pack)))
+        for (answer in listOf("See [source](<$url>).", "See [source][ref].\n\n[ref]: <$url>",
+            "See [source]($url).", "Source: <$url>")) {
+            assertTrue(answer, AgentWebEvidenceVerification.validateAnswer(answer, results).valid)
+        }
+        for (answer in listOf("`[source](<$url>)`", "```markdown\n[source](<$url>)\n```")) {
+            assertEquals("missing_citations", AgentWebEvidenceVerification.validateAnswer(answer, results).status)
+        }
+        assertEquals("foreign_citations", AgentWebEvidenceVerification.validateAnswer(
+            "See [source](<https://foreign.example/report>).", results).status)
+    }
+
     @Test
     fun packRecomputesIntegrityAndFlagsCrossDomainNumericConflict() {
         val pack = AgentWebEvidencePack.build(

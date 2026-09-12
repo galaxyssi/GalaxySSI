@@ -1782,6 +1782,7 @@ class AgentWebIntelligenceSearchCoordinator(
             AgentWebIntelligenceSearchAdapter(it.value, fetcher, credentialProvider)
         }
     )
+    private var learnedSourcesRefreshedAt: Long? = null
 
     fun search(
         query: String,
@@ -1973,7 +1974,7 @@ class AgentWebIntelligenceSearchCoordinator(
         if (requested.isEmpty()) return
         val invalid = requested.filter { !specs.containsKey(it) && !it.matches(Regex("learned_[a-f0-9]{16}")) }
         require(invalid.isEmpty()) { "Unknown web intelligence engines: ${invalid.joinToString()}" }
-        if (requested.any { !specs.containsKey(it) }) refreshLearnedSources()
+        if (requested.any { !specs.containsKey(it) }) refreshLearnedSources(force = true)
         val unknown = requested.filterNot(specs::containsKey)
         require(unknown.isEmpty()) { "Unknown web intelligence engines: ${unknown.joinToString()}" }
     }
@@ -2081,7 +2082,10 @@ class AgentWebIntelligenceSearchCoordinator(
         tags.isNotEmpty() || verticals.any { it !in generalWebVerticals && it != AgentWebIntelligenceVertical.IMAGE }
 
     @Synchronized
-    private fun refreshLearnedSources() {
+    private fun refreshLearnedSources(force: Boolean = false) {
+        val now = clock()
+        val previous = learnedSourcesRefreshedAt
+        if (!force && previous != null && now >= previous && now - previous < 30_000L) return
         learnedSourceProvider()
             .filter { it.status == "verified" }
             .sortedBy(AgentWebIntelligenceLearnedSource::sourceId)
@@ -2095,6 +2099,7 @@ class AgentWebIntelligenceSearchCoordinator(
                     credentialProvider
                 )
             }
+        learnedSourcesRefreshedAt = now
     }
 
 }

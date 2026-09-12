@@ -181,6 +181,25 @@ class AgentPublicImageSearchTest {
             listOf("web_image_search" to after)).valid)
     }
 
+    @Test fun imagePresentationOmitsHttpOnlyMediaButKeepsSecureDiscoveredPreview() {
+        val output = AgentWebEvidencePack.attach(mapOf("operation" to "search", "status" to "completed",
+            "query" to "drawing", "results" to listOf(
+                mapOf("url" to "https://source.example/old", "title" to "Old drawing",
+                    "image_url" to "http://old.example/drawing.jpg"),
+                mapOf("url" to "https://source.example/preview", "title" to "Preview drawing",
+                    "image_url" to "http://old.example/another.jpg",
+                    "thumbnail_url" to "https://preview.example/drawing.jpg"))), 123)
+        val pack = JSONObject(CloudWebGrounding.boundedModelJson(CloudImageSearchEvidence.prepare(output)))
+            .getJSONObject("evidence_pack")
+        val items = pack.getJSONArray("items")
+        assertEquals(0, items.getJSONObject(0).getJSONArray("images").length())
+        assertEquals("https://preview.example/drawing.jpg",
+            items.getJSONObject(1).getJSONArray("images").getJSONObject(0).getString("url"))
+        assertEquals("http://old.example/drawing.jpg",
+            JSONObject(CloudWebGrounding.boundedModelJson(output)).getJSONObject("evidence_pack")
+                .getJSONArray("items").getJSONObject(0).getJSONArray("images").getJSONObject(0).getString("url"))
+    }
+
     @Test fun enoughImagesReturnWithoutWaitingForSlowFallbackAndCancelItsTransport() {
         val waiting = CountDownLatch(1)
         val cancelled = CountDownLatch(1)
