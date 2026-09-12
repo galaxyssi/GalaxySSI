@@ -39,7 +39,10 @@ internal class AgentRuntimeTiming(
 
     companion object {
         val phases = setOf("action_dispatch", "screen_observe", "receipt_observe", "result_verify",
-            "image_prepare", "image_original_probe", "image_decode", "image_encode")
+            "image_prepare", "image_original_probe", "image_decode", "image_encode",
+            "knowledge_source_total", "knowledge_source_stage", "knowledge_source_prepare",
+            "knowledge_source_commit", "knowledge_source_ownership", "knowledge_source_apply",
+            "knowledge_source_observe")
         val NONE = AgentRuntimeTiming(null)
     }
 }

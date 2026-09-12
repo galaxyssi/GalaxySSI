@@ -13,12 +13,12 @@ if ($Fixture -notmatch '^test-knowledge-source-replace-[a-f0-9-]+\.db$') { throw
 $directory = Join-Path $OutputDirectory ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory | Out-Null
 $started = [long]((& $Adb -s $Serial shell date +%s | Out-String).Trim())
-$classes = @('KnowledgeSourcePreparationDeviceTest', 'KnowledgeSourcePreparationScaleDeviceTest',
+$classes = @('KnowledgeSourceTimingDeviceTest', 'KnowledgeSourcePreparationDeviceTest', 'KnowledgeSourcePreparationScaleDeviceTest',
     'KnowledgeSourceReplaceDeviceTest', 'KnowledgeSourceStagingDeviceTest', 'KnowledgeBackupDeviceTest',
     'KnowledgeSourceRevisionDeviceTest', 'KnowledgeSourceDirectoryDeviceTest', 'KnowledgeSourceExportSnapshotDeviceTest',
     'KnowledgeSourceSnapshotDeviceTest', 'KnowledgeReadAdmissionDeviceTest', 'KnowledgeReadAdmissionScaleDeviceTest',
     'KnowledgeSearchSnapshotDeviceTest', 'KnowledgeHybridSearchDeviceTest', 'KnowledgeVectorReadAdmissionDeviceTest')
-$expected = 92
+$expected = 97
 if ($Phase -eq 'rewrite') { $classes = @('KnowledgeCryptoRetainedScaleDeviceTest'); $expected = 1 }
 $selection = ($classes | ForEach-Object { "com.galaxyssi.chat.$_" }) -join ','
 Write-Output "Running source preparation $Phase. Evidence: $directory"
