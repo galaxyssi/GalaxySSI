@@ -1,0 +1,35 @@
+INSTRUMENTATION_RESULT: stream=
+
+Time: 70.268
+There were 2 failures:
+1) manyChunksInOneDocumentSeekByNumericOrdinalAcrossRestart(com.galaxyssi.chat.KnowledgeCountsDeviceTest)
+java.lang.IllegalStateException: Stale vector document metadata
+	at com.galaxyssi.chat.KnowledgeVectorLedger.state(KnowledgeVectorLedger.kt:158)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$lambda$23(KnowledgeVectorLedger.kt:102)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.$r8$lambda$L3oyCQeyXpMBGFGV3H4q0OTY0Jc(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorLedger$$ExternalSyntheticLambda5.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeSearchSnapshot.access(KnowledgeSearchSnapshot.kt:40)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.readCommitted$app_debug(AgentKnowledgeDatabase.kt:214)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug(KnowledgeVectorLedger.kt:100)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug$default(KnowledgeVectorLedger.kt:93)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page(KnowledgeVectorLedger.kt:91)
+	at com.galaxyssi.chat.KnowledgeCountsDeviceTest.manyChunksInOneDocumentSeekByNumericOrdinalAcrossRestart(KnowledgeCountsDeviceTest.kt:43)
+2) legacyUpgradeIsBoundedAndDoesNotDecryptSourcesOrVectors(com.galaxyssi.chat.KnowledgeCountsDeviceTest)
+java.lang.IllegalStateException: Stale vector document metadata
+	at com.galaxyssi.chat.KnowledgeVectorLedger.state(KnowledgeVectorLedger.kt:158)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$lambda$23(KnowledgeVectorLedger.kt:102)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.$r8$lambda$L3oyCQeyXpMBGFGV3H4q0OTY0Jc(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorLedger$$ExternalSyntheticLambda5.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeSearchSnapshot.access(KnowledgeSearchSnapshot.kt:40)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.readCommitted$app_debug(AgentKnowledgeDatabase.kt:214)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug(KnowledgeVectorLedger.kt:100)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.pageByKey$app_debug$default(KnowledgeVectorLedger.kt:93)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page(KnowledgeVectorLedger.kt:91)
+	at com.galaxyssi.chat.KnowledgeVectorLedger.page$default(KnowledgeVectorLedger.kt:90)
+	at com.galaxyssi.chat.KnowledgeCountsDeviceTest.legacyUpgradeIsBoundedAndDoesNotDecryptSourcesOrVectors(KnowledgeCountsDeviceTest.kt:94)
+
+FAILURES!!!
+Tests run: 22,  Failures: 2
+
+
+INSTRUMENTATION_CODE: -1

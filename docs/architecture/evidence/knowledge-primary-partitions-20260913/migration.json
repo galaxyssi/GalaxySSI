@@ -1,0 +1,15 @@
+{
+  "source": "build/knowledge-primary-runs/636de40ed96f4110882a3fa44b99915d/0-migration.txt",
+  "sha256": "d3e9688d91d11f30c0d5f99f0379bf4ec92ab7736ada5894509ceb5b970ec1ea",
+  "result": [
+    "Time: 153.76",
+    "OK (1 test)"
+  ],
+  "cases": [
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryRetainedDeviceTest",
+      "test": "migrateAndReopenAllRetainedRealBodiesWithoutRewritingLogicalRevisions",
+      "status": 0
+    }
+  ]
+}

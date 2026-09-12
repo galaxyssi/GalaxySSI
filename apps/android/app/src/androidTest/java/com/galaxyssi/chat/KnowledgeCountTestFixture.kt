@@ -28,6 +28,11 @@ internal class KnowledgeCountTestFixture(
         repeat(2000) { if (!indexer.runBatch(32).pending) return }
         error("Isolated index did not settle")
     }
+    fun indexLegacy() {
+        // Historical headers must exist before vector documents bind their fingerprints.
+        db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+        index()
+    }
     fun counts() = db.access { KnowledgeCounts.snapshot(it, ledger.modelKey) }
     fun actual(table: String, model: String = ledger.modelKey): Long = db.access { sql ->
         sql.rawQuery("SELECT count(*) FROM $table WHERE model_key=?", arrayOf(model)).use { check(it.moveToFirst()); it.getLong(0) }

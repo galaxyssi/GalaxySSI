@@ -1,0 +1,9 @@
+         1789235343.838 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE replace_ms=689018 rows=10001 fixture=test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db variant=primary-partitions-v1
+         1789235343.839 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=total elapsed_ms=688999.028545 rows=10001
+         1789235343.840 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=stage elapsed_ms=7883.25184 rows=10001
+         1789235343.841 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=prepare elapsed_ms=122002.485066 rows=10001
+         1789235343.842 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=commit elapsed_ms=519204.603937 rows=10001
+         1789235343.843 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=ownership elapsed_ms=84967.591478 rows=10001
+         1789235343.844 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=apply elapsed_ms=433160.891959 rows=10001
+         1789235343.845 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=observe elapsed_ms=39871.836202 rows=10001
+         1789235397.543 17430 17451 I System.out: KNOWLEDGE_CRYPTO_SCALE verify_ms=53681 verified=10001

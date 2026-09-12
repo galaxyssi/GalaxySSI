@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 class KnowledgeSourceMigrationDeviceTest {
     @Test fun automaticVersionSevenMigrationPreservesCiphertextAndDoesNotLoadModels() = KnowledgeBackupTestFixture().use { f ->
         f.seed(137)
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
         val before = KnowledgeSourceMigrationTestSupport.fingerprint(f.name)
         KnowledgeSourceMigrationTestSupport.versionSeven(f)
         f.db.access { db ->
@@ -39,6 +40,7 @@ class KnowledgeSourceMigrationDeviceTest {
 
     @Test fun workerFailureIsVisibleAndRetryContinuesWithoutSourceLoss() = KnowledgeBackupTestFixture().use { f ->
         f.seed(65)
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
         val before = KnowledgeSourceMigrationTestSupport.fingerprint(f.name)
         KnowledgeSourceMigrationTestSupport.versionSeven(f)
         f.db.access { db -> db.execSQL("CREATE TRIGGER reject_source_enrollment BEFORE INSERT ON knowledge_source_members " +

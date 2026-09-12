@@ -113,6 +113,7 @@ class KnowledgeSourcePagingDeviceTest {
         store.upsert(item(1))
         db.sourceMaintenance.close()
         val key = db.key("id", "source-item-1")
+        KnowledgePrimaryLegacyFixture.rewrite(db, context, name, key, inline = true)
         val aad = "$name:$key:header".toByteArray()
         val oldHeader = db.access { sql ->
             val encrypted = sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
@@ -149,7 +150,7 @@ class KnowledgeSourcePagingDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(13, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(14, it.getInt(0)) }
             sql.rawQuery("SELECT hex(ciphertext) FROM knowledge_vectors", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldVector, it.getString(0))
             }

@@ -28,6 +28,8 @@ internal class AgentKnowledgeDatabase private constructor(
     private var previewCipher: KnowledgeSourcePreviewCipher? = null
     private var indexMemo: KnowledgeIndexKeyMemo? = null
     private val recordCipher = AgentRowStorageCipher(context, "knowledge-records:v1:$name")
+    internal val primary = KnowledgePrimaryPartitions(context,
+        java.io.File(context.getDatabasePath(name).absolutePath + ".primary"), name)
     internal val hasActiveIndexMemo: Boolean get() = indexMemo != null
     internal val payloads = KnowledgePayloadSegments(java.io.File(context.getDatabasePath(name).absolutePath + ".payloads"), name)
     internal val hasActivePreviewKey: Boolean get() = previewCipher != null
@@ -57,7 +59,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..13) { "Unsupported knowledge schema $version" }
+                require(version in 0..14) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -106,6 +108,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 }
                 // Older clients must not mistake the new authenticated row envelope for corrupt legacy data.
                 if (version < 13) db.execSQL("PRAGMA user_version=13")
+                if (version < 14) {
+                    KnowledgePrimarySchema.create(db)
+                    db.execSQL("PRAGMA user_version=14")
+                }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             return db.also { connection = it }
@@ -129,9 +135,7 @@ internal class AgentKnowledgeDatabase private constructor(
             val db = open()
             migrate(db)
             // Header and chunks must be observed from one SQLite snapshot.
-            db.beginTransactionNonExclusive()
-            try { block(db).also { db.setTransactionSuccessful() } } finally {
-                db.endTransaction()
+            try { sourceTransaction(db) { block(db) } } finally {
                 scheduleIndexing(db)
                 sourceMaintenance.request(db)
             }
@@ -155,12 +159,34 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
+    private fun <T> sourceTransaction(db: KnowledgeSqlite, block: () -> T): T {
+        val ownPartitions = !primary.activeOnCurrentThread()
+        db.beginTransactionNonExclusive()
+        try {
+            if (ownPartitions) primary.begin()
+            return block().also {
+                // Every referenced frame is durable before the catalog can make it visible.
+                if (ownPartitions) primary.prepareCommit()
+                db.setTransactionSuccessful()
+            }
+        } finally {
+            try { db.endTransaction() } finally { if (ownPartitions && primary.activeOnCurrentThread()) primary.end() }
+        }
+    }
     internal fun checkActive() { check(!retired) { "Knowledge store was closed; reopen the store" } }
     internal fun payloadLease() = payloads.leases.acquire()
     internal fun migratePayloadPage(checkActive: () -> Unit = {}) = access {
         KnowledgePayloadMigration.advance(this, it, checkActive = checkActive)
     }
+    internal fun migratePrimaryPage(checkActive: () -> Unit = {}) = access {
+        KnowledgePrimaryMigration.advance(this, it, checkActive = checkActive)
+    }
     internal fun advancePayloadUsage() = access { KnowledgePayloadUsage.advance(it) }
+    @Synchronized internal fun reclaimPrimary(checkActive: () -> Unit = {}): KnowledgePrimaryReclaim.Page? {
+        checkActive()
+        check(!retired && accessDepth == 0) { "Primary reclamation requires an idle, open owner" }
+        return payloads.leases.tryReclaim { KnowledgePrimaryReclaim.advance(open(), primary, checkActive) }
+    }
     @Synchronized internal fun reclaimPayloads(checkActive: () -> Unit = {}): KnowledgePayloadSegments.Reclaimed? {
         checkActive()
         check(accessDepth == 0) { "Cannot reclaim payloads inside a source transaction" }
@@ -205,15 +231,17 @@ internal class AgentKnowledgeDatabase private constructor(
     internal fun exportScratch() = KnowledgeEncryptedScratch(java.io.File(context.cacheDir, "knowledge-export-scratch"))
     internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
         "knowledge-native/${key("native-index", modelKey)}")
-    @Synchronized override fun close() { retired = true; sourceMaintenance.close(); connection?.close(); connection = null }
+    @Synchronized override fun close() {
+        retired = true; sourceMaintenance.close()
+        try { primary.close() } finally { connection?.close(); connection = null }
+    }
 
     private fun migrate(db: KnowledgeSqlite) {
         val legacy = context.getSharedPreferences(legacyName, Context.MODE_PRIVATE)
         val migrated = db.rawQuery("SELECT 1 FROM knowledge_meta WHERE name='legacy-array-v1'", null)
             .use { it.moveToFirst() }
         if (!migrated) {
-            db.beginTransaction()
-            try {
+            sourceTransaction(db) {
                 val raw = legacy.getString("items", null)
                 if (raw != null) {
                     val plaintext = requireNotNull(AgentStorageCipher.decrypt(raw, "$legacyName:items".toByteArray())) {
@@ -231,8 +259,7 @@ internal class AgentKnowledgeDatabase private constructor(
                     }
                 }
                 db.execSQL("INSERT INTO knowledge_meta(name) VALUES ('legacy-array-v1')")
-                db.setTransactionSuccessful()
-            } finally { db.endTransaction() }
+            }
         }
         // Only remove the legacy copy after the complete migration transaction committed.
         if (legacy.contains("items")) AgentEncryptedPreferences(context, legacyName).removeDurably("items")
@@ -262,19 +289,9 @@ internal class AgentKnowledgeDatabase private constructor(
         val metadata = KnowledgeSourceMetadata.from(snapshot)
         val id = key("id", snapshot.id)
         val encoded = AgentKnowledgeCodec.encodeItem(snapshot).toString()
-        val external = encoded.length >= KnowledgePayloadSegments.INLINE_CHARS ||
-            KnowledgeSourceDirectory.state(db).items >= KnowledgePayloadSegments.LARGE_STORE_ROWS
-        val chunks = mutableListOf<String>()
-        var start = 0
-        while (!external && start < encoded.length) {
-            var end = minOf(start + 16 * 1024, encoded.length)
-            if (end < encoded.length && encoded[end - 1].isHighSurrogate() && encoded[end].isLowSurrogate()) end--
-            chunks += encoded.substring(start, end)
-            start = end
-        }
         val titleKey = key("title", "${snapshot.kind}:${snapshot.title.lowercase(java.util.Locale.US)}")
         val sourceKey = if (snapshot.source.isBlank()) "" else key("source", snapshot.source)
-        val header = JSONObject().put("chunks", chunks.size).put("sha256", AgentNativeJsonCodec.sha256(encoded))
+        val header = JSONObject().put("chunks", 0).put("sha256", AgentNativeJsonCodec.sha256(encoded))
             .put("title_key", titleKey).put("source_key", sourceKey).put("updated", snapshot.updatedAtMillis)
             .put("source_preview", metadata.encode()).toString()
         val encryptedHeader = recordCipher.encrypt(header, aad(id, "header"))
@@ -286,13 +303,7 @@ internal class AgentKnowledgeDatabase private constructor(
             put("updated", snapshot.updatedAtMillis)
             put("header", encryptedHeader)
         })
-        if (external) payloads.append(db, id, encoded)
-        chunks.forEachIndexed { index, chunk ->
-            db.insertOrThrow("knowledge_chunks", null, ContentValues().apply {
-                put("item_key", id); put("ordinal", index)
-                put("ciphertext", recordCipher.encrypt(chunk, aad(id, index.toString())))
-            })
-        }
+        primary.append(db, id, encoded)
         indexItem(db, id, snapshot)
         KnowledgeSourcePreviews.putValidated(db, KnowledgeSourceHeader(id, titleKey, sourceKey, snapshot.updatedAtMillis, encryptedHeader),
             metadata, sourcePreviewCipher())
@@ -343,6 +354,10 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     internal fun readEncoded(db: KnowledgeSqlite, id: String, header: JSONObject): String {
+        primary.read(db, id)?.let { encoded ->
+            check(AgentNativeJsonCodec.sha256(encoded) == header.getString("sha256")) { "Knowledge checksum mismatch" }
+            return encoded
+        }
         payloads.read(db, id)?.let { encoded ->
             check(AgentNativeJsonCodec.sha256(encoded) == header.getString("sha256")) { "Knowledge checksum mismatch" }
             return encoded

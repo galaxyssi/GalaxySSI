@@ -154,7 +154,9 @@ class KnowledgeVectorEnrollmentDeviceTest {
     }
 
     @Test fun versionFiveUpgradePreservesExistingQueueAndCompletedVectors() = isolated { f ->
-        f.seed(2); f.complete(); f.store.upsert(item("pending"))
+        f.seed(2)
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+        f.complete(); f.store.upsert(item("pending"))
         f.db.sourceMaintenance.close()
         f.db.access {
             KnowledgeCountFixtureSchema.remove(it)

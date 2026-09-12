@@ -79,7 +79,7 @@ class KnowledgeSourceExportSnapshotDeviceTest {
 
     @Test fun mutatedHeaderOrBodyIsNotTrustedBecauseARevisionTokenExists() = KnowledgeBackupTestFixture().use { f ->
         seed(f, 1)
-        f.db.access { it.execSQL("UPDATE knowledge_chunks SET ciphertext='corrupt'") }
+        f.db.access { it.execSQL("UPDATE knowledge_primary_refs SET reference='corrupt'") }
         assertThrows(Exception::class.java) { export(f).snapshot().use { it.items().toList() } }
         seed(f, 1)
         f.db.access { it.execSQL("UPDATE knowledge_items SET header='corrupt'") }

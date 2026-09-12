@@ -1,0 +1,4 @@
+         1789237356.753 20827 20860 I System.out: KNOWLEDGE_STATEMENTS_PROFILE round=0 capacity=0 rows=512 transaction_ns=238160730 prepared=2052 reused=0
+         1789237356.958 20827 20860 I System.out: KNOWLEDGE_STATEMENTS_PROFILE round=1 capacity=32 rows=512 transaction_ns=143292154 prepared=7 reused=2045
+         1789237357.155 20827 20860 I System.out: KNOWLEDGE_STATEMENTS_PROFILE round=2 capacity=32 rows=512 transaction_ns=133664385 prepared=7 reused=2045
+         1789237357.386 20827 20860 I System.out: KNOWLEDGE_STATEMENTS_PROFILE round=3 capacity=0 rows=512 transaction_ns=159447231 prepared=2052 reused=0

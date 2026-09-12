@@ -1,0 +1,85 @@
+{
+  "source": "build/knowledge-primary-runs/1d215ad0aeb84edb8c8c70f70001d9c1/0-focused.txt",
+  "sha256": "ad2cb7b560d2d3e4556d567fe36bcfd43826efb344b1ff7e575a6b17ecbf7037",
+  "result": [
+    "Time: 8.008",
+    "OK (15 tests)"
+  ],
+  "cases": [
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "committedFramesCannotEscapeAnUncommittedCatalog",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "gzipBombAndInvalidUtf8AreRejectedWithinOneFrame",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "swappedReferenceCannotAuthenticateAsAnotherRecord",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "failedAppendPoisonsPublicationEvenWhenCallerCatchesIt",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "pinnedCatalogRetainsOldImmutableRecordAfterReplacement",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "corruptOrMissingFramesNeverBecomeAnEmptyResult",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "test": "authoritativeBodiesRotateAcrossPhysicalPartitionsAndReopen",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "sourceReplacementRemainsAtomicWhenReferencePublicationFails",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "failedMigrationRollsBackMovedPrefixAndCheckpoint",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "migrationPreservesCompletedVectorDocumentsAndTheirSourceBinding",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "snapshotDefersWholePartitionRetirementAndSurvivesOwnerReopen",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "oldInlineAndSegmentBodiesMigrateAcrossReopeningWithoutLogicalChanges",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "actualStoreUsesPhysicalPrimaryPartitionsForSmallAndLargeBodies",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "backupAndSearchSnapshotsKeepOldBodiesButFinalValidationRejectsStaleResults",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "test": "livePartitionCannotBeReclaimed",
+      "status": 0
+    }
+  ]
+}

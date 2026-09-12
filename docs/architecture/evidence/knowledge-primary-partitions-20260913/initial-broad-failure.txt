@@ -1,0 +1,29 @@
+INSTRUMENTATION_RESULT: stream=
+
+Time: 230.737
+There was 1 failure:
+1) pinnedPayloadReadDoesNotSerializeAnActualEncryptedAppend(com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest)
+java.lang.AssertionError
+	at org.junit.Assert.fail(Assert.java:87)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertTrue(Assert.java:53)
+	at com.galaxyssi.chat.KnowledgePayloadCompactionFixture.row$lambda$3(KnowledgePayloadCompactionFixture.kt:21)
+	at com.galaxyssi.chat.KnowledgePayloadCompactionFixture.$r8$lambda$MhA1-tdE0W_nkO85qzvFF5RUhck(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgePayloadCompactionFixture$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.access$lambda$8$lambda$6$lambda$5(AgentKnowledgeDatabase.kt:138)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.$r8$lambda$f9Gio1r2FkkKtmZ5W1Fnrq-F8RU(Unknown Source:0)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase$$ExternalSyntheticLambda10.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.sourceTransaction(AgentKnowledgeDatabase.kt:167)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.access$lambda$8$lambda$6(AgentKnowledgeDatabase.kt:138)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.$r8$lambda$MrmyCnV4izOMrKH5ydI-LX915kY(Unknown Source:0)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase$$ExternalSyntheticLambda2.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeSegmentLeases.access(KnowledgeSegmentLeases.kt:46)
+	at com.galaxyssi.chat.AgentKnowledgeDatabase.access(AgentKnowledgeDatabase.kt:134)
+	at com.galaxyssi.chat.KnowledgePayloadCompactionFixture.row(KnowledgePayloadCompactionFixture.kt:18)
+	at com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest.pinnedPayloadReadDoesNotSerializeAnActualEncryptedAppend(KnowledgeSearchSnapshotDeviceTest.kt:85)
+
+FAILURES!!!
+Tests run: 97,  Failures: 1
+
+
+INSTRUMENTATION_CODE: -1

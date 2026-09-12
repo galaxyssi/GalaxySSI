@@ -7,19 +7,25 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.io.Closeable
 
 /** Small statement adapter; callers serialize the connection through AgentKnowledgeDatabase. */
-internal class KnowledgeSqlite(path: String) : Closeable {
+internal class KnowledgeSqlite(path: String, statementCacheCapacity: Int = 32) : Closeable {
+    init { require(statementCacheCapacity >= 0) }
     private val connection: SQLiteConnection = BundledSQLiteDriver().open(path)
+    private val statements = KnowledgeStatementPool(connection, statementCacheCapacity)
     private val transactions = mutableListOf<Boolean>()
     private var rollbackOnly = false
 
-    fun execSQL(sql: String) { connection.prepare(sql).use { it.step() } }
+    internal val statementStats get() = statements.stats()
+    fun execSQL(sql: String) { statements.acquire(sql).use { lease -> lease.access { it.step() } } }
 
     fun rawQuery(sql: String, args: Array<String>?): KnowledgeCursor {
-        val statement = connection.prepare(sql)
+        val lease = statements.acquire(sql)
         try {
-            args?.forEachIndexed { index, value -> statement.bindText(index + 1, value) }
-            return KnowledgeCursor(statement)
-        } catch (error: Throwable) { statement.close(); throw error }
+            lease.access { statement -> args?.forEachIndexed { index, value -> statement.bindText(index + 1, value) } }
+            return KnowledgeCursor(lease)
+        } catch (error: Throwable) {
+            try { lease.close() } catch (cleanup: Throwable) { error.addSuppressed(cleanup) }
+            throw error
+        }
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -28,23 +34,23 @@ internal class KnowledgeSqlite(path: String) : Closeable {
         require(columns.isNotEmpty())
         val sql = "INSERT INTO ${identifier(table)} (${columns.joinToString(",", transform = ::identifier)}) " +
             "VALUES (${columns.joinToString(",") { "?" }})"
-        connection.prepare(sql).use { statement ->
+        statements.acquire(sql).use { lease -> lease.access { statement ->
             columns.forEachIndexed { index, column ->
                 bind(statement, index + 1, values[column])
             }
             statement.step()
-        }
+        } }
     }
 
     fun update(table: String, values: ContentValues, where: String, args: Array<String>) {
         val columns = values.keySet().toList()
         require(columns.isNotEmpty())
-        connection.prepare("UPDATE ${identifier(table)} SET " + columns.joinToString(",") { "${identifier(it)}=?" } +
-            " WHERE $where").use { statement ->
+        statements.acquire("UPDATE ${identifier(table)} SET " + columns.joinToString(",") { "${identifier(it)}=?" } +
+            " WHERE $where").use { lease -> lease.access { statement ->
             columns.forEachIndexed { index, column -> bind(statement, index + 1, values[column]) }
             args.forEachIndexed { index, value -> statement.bindText(columns.size + index + 1, value) }
             statement.step()
-        }
+        } }
     }
 
     private fun bind(statement: SQLiteStatement, index: Int, value: Any?) = when (value) {
@@ -73,19 +79,19 @@ internal class KnowledgeSqlite(path: String) : Closeable {
             catch (error: Throwable) { runCatching { execSQL("ROLLBACK") }; throw error }
         }
     }
-    override fun close() = connection.close()
+    override fun close() { try { statements.close() } finally { connection.close() } }
     private fun identifier(value: String): String {
         require(value.matches(Regex("[a-zA-Z_][a-zA-Z0-9_]*")))
         return value
     }
 }
 
-internal class KnowledgeCursor(private val statement: SQLiteStatement) : Closeable {
-    fun moveToFirst(): Boolean = statement.step()
-    fun moveToNext(): Boolean = statement.step()
-    fun getString(index: Int): String = statement.getText(index)
-    fun getInt(index: Int): Int = statement.getLong(index).toInt()
-    fun getLong(index: Int): Long = statement.getLong(index)
-    fun getBlob(index: Int): ByteArray = statement.getBlob(index)
-    override fun close() = statement.close()
+internal class KnowledgeCursor(private val lease: KnowledgeStatementLease) : Closeable {
+    fun moveToFirst(): Boolean = lease.access { it.step() }
+    fun moveToNext(): Boolean = lease.access { it.step() }
+    fun getString(index: Int): String = lease.access { it.getText(index) }
+    fun getInt(index: Int): Int = lease.access { it.getLong(index).toInt() }
+    fun getLong(index: Int): Long = lease.access { it.getLong(index) }
+    fun getBlob(index: Int): ByteArray = lease.access { it.getBlob(index) }
+    override fun close() = lease.close()
 }

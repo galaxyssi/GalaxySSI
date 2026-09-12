@@ -8,7 +8,7 @@ import org.junit.Assert.*
 
 internal object KnowledgePayloadCompactionFixture {
     fun fragmented(f: KnowledgePayloadTestFixture): AgentKnowledgeItem {
-        repeat(8) { f.store.upsert(f.item(it)) }
+        repeat(8) { f.putLegacy(f.item(it)) }
         val keep = f.item(7)
         val key = f.db.key("id", keep.id)
         f.db.transaction { it.delete("knowledge_items", "item_key!=?", arrayOf(key)) }
@@ -29,7 +29,7 @@ internal object KnowledgePayloadCompactionFixture {
 
     fun large(f: KnowledgePayloadTestFixture): AgentKnowledgeItem {
         val item = f.item(99)
-        f.store.upsert(item)
+        f.putLegacy(item)
         val noise = ByteArray(1600 * 1024).also { Random(7123).nextBytes(it) }
         val padding = try { Base64.encodeToString(noise, Base64.NO_WRAP) } finally { noise.fill(0) }
         // Authenticated, incompressible fixture padding avoids coupling copy recovery to FTS throughput.

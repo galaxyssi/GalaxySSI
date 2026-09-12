@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 internal object KnowledgeSourceRevisionFixtureSchema {
     fun remove(db: KnowledgeSqlite) {
+        KnowledgePrimaryLegacyFixture.removePrimarySchemaBeforeDowngrade(db)
         val payloads = db.rawQuery("SELECT 1 FROM sqlite_master WHERE name='knowledge_payloads'", null).use { it.moveToFirst() }
         if (payloads) {
             // Old-format fixtures must be inline; never discard a live external body to fake a downgrade.

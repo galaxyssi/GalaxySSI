@@ -26,7 +26,9 @@ class KnowledgeSourcePreviewScaleDeviceTest {
         require(count >= 10001)
         KnowledgeBackupTestFixture(fixtureName).apply { retain = true; observe = false }.use { f ->
             val output = File(requireNotNull(f.context.getExternalFilesDir("knowledge-source-preview-test")), f.name).apply { mkdirs() }
-            KnowledgeSourcePreviewFixtureSchema.versionEight(f)
+            // Reset only the explicitly authorized derived previews, never retained primary bodies.
+            f.db.transaction { it.delete("knowledge_source_previews", null, null) }
+            f.reopen()
             assertEquals(0, KnowledgeSourcePreviewFixtureSchema.count(f))
             KnowledgeSourceMigrationTestSupport.awaitReady(f)
             val passes = JSONArray()

@@ -8,10 +8,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class KnowledgePayloadUsageDeviceTest {
     @Test fun insertReplaceDeleteAndRollbackKeepExactUsage() = KnowledgePayloadTestFixture().use { f ->
-        repeat(9) { f.store.upsert(f.item(it)) }
+        repeat(9) { f.putLegacy(f.item(it)) }
         exact(f)
         f.db.payloads.seal()
-        f.store.upsert(f.item(1, "\u66ff\u6362\u6d4b\u8bd5".repeat(3000)))
+        f.putLegacy(f.item(1, "\u66ff\u6362\u6d4b\u8bd5".repeat(3000)))
         exact(f)
         assertThrows(IllegalStateException::class.java) {
             f.db.transaction { it.delete("knowledge_items", null, null); error("rollback fixture") }
@@ -23,14 +23,14 @@ class KnowledgePayloadUsageDeviceTest {
     }
 
     @Test fun schemaElevenBackfillIsPagedAndSurvivesConcurrentWritesAndReopen() = KnowledgePayloadTestFixture().use { f ->
-        repeat(9) { f.store.upsert(f.item(it)) }
+        repeat(9) { f.putLegacy(f.item(it)) }
         versionEleven(f)
         assertFalse(f.db.access(KnowledgePayloadUsage::ready))
         assertFalse(f.db.access { KnowledgePayloadUsage.advance(it, 2) })
         val deleted = f.db.access { sql -> sql.rawQuery("SELECT item_key FROM knowledge_payloads WHERE live_counted=0 LIMIT 1", null)
             .use { assertTrue(it.moveToFirst()); it.getString(0) } }
         f.db.transaction { it.delete("knowledge_items", "item_key=?", arrayOf(deleted)) }
-        f.store.upsert(f.item(20)); f.store.upsert(f.item(21))
+        f.putLegacy(f.item(20)); f.putLegacy(f.item(21))
         f.reopen()
         var pages = 0
         while (!f.db.access { KnowledgePayloadUsage.advance(it, 2) }) { assertTrue(++pages < 10) }
@@ -40,7 +40,7 @@ class KnowledgePayloadUsageDeviceTest {
     }
 
     @Test fun failedAccountingAbortsDeletionAndTrackingCannotGoBackwards() = KnowledgePayloadTestFixture().use { f ->
-        f.store.upsert(f.item(1)); exact(f)
+        f.putLegacy(f.item(1)); exact(f)
         assertThrows(Exception::class.java) {
             f.db.transaction { sql ->
                 sql.delete("knowledge_payload_usage", null, null)
@@ -53,7 +53,7 @@ class KnowledgePayloadUsageDeviceTest {
     }
 
     @Test fun cancelledAccountingPageRollsBackItsCursorAndDeltas() = KnowledgePayloadTestFixture().use { f ->
-        repeat(7) { f.store.upsert(f.item(it)) }; versionEleven(f)
+        repeat(7) { f.putLegacy(f.item(it)) }; versionEleven(f)
         assertThrows(IllegalStateException::class.java) {
             f.db.transaction { KnowledgePayloadUsage.advance(it, 3); error("cancel page") }
         }
@@ -68,7 +68,7 @@ class KnowledgePayloadUsageDeviceTest {
     }
 
     @Test fun usageLookupUsesItsPrimaryKeyAndReadOnlyLookupDoesNotDecodeBodies() = KnowledgePayloadTestFixture().use { f ->
-        f.store.upsert(f.item(1))
+        f.putLegacy(f.item(1))
         val reads = f.db.decryptedItemReads
         f.db.access { sql ->
             val plans = sql.rawQuery("EXPLAIN QUERY PLAN SELECT bytes FROM knowledge_payload_usage WHERE segment=?", arrayOf("absent"))
@@ -99,6 +99,7 @@ class KnowledgePayloadUsageDeviceTest {
                     sql.execSQL("DROP TABLE knowledge_payload_usage")
                     sql.execSQL("DROP TABLE knowledge_payload_usage_scan")
                     sql.execSQL("ALTER TABLE knowledge_payloads DROP COLUMN live_counted")
+                    KnowledgePrimaryLegacyFixture.removePrimarySchemaBeforeDowngrade(sql)
                     sql.execSQL("PRAGMA user_version=11")
                     sql.setTransactionSuccessful()
                 } finally { sql.endTransaction() }

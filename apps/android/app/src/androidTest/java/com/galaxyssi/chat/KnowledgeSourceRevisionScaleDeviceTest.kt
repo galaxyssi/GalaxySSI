@@ -30,6 +30,7 @@ class KnowledgeSourceRevisionScaleDeviceTest {
                 } }
                 if (start % 1024 == 1) println("SOURCE_REVISION_SEED committed=${minOf(start + 63, 10001)}")
             }
+            f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
             val hash = KnowledgeSourceMigrationTestSupport.fingerprint(name)
             val reference = AgentKnowledgeSourceReference("\u5355\u6765\u6e90\u538b\u529b\u6d4b\u8bd5")
             val migrationStarted = System.nanoTime()

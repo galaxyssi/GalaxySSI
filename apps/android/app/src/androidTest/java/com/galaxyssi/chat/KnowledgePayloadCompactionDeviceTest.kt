@@ -41,7 +41,7 @@ class KnowledgePayloadCompactionDeviceTest {
         val old = KnowledgePayloadCompactionFixture.row(f, item.id)
         f.db.backupSnapshot().use { snapshot ->
             assertNull(f.db.reclaimPayloads())
-            f.store.upsert(f.item(20))
+            f.putLegacy(f.item(20))
             assertEquals(listOf(item), snapshot.items().toList())
             assertEquals(old.value, KnowledgePayloadCompactionFixture.row(f, item.id).value)
         }
@@ -72,7 +72,7 @@ class KnowledgePayloadCompactionDeviceTest {
         f.db.reclaimPayloads(); f.db.reclaimPayloads()
         assertNotNull(f.db.payloads.catalog.copyJob())
         val replacement = f.item(99, "\u7528\u6237\u65b0\u5185\u5bb9".repeat(3000))
-        f.store.upsert(replacement)
+        f.putLegacy(replacement)
         f.reopen(); KnowledgePayloadCompactionFixture.finish(f)
         assertNull(f.db.payloads.catalog.copyJob())
         assertEquals(replacement, f.store.findByIds(setOf(item.id)).single()); KnowledgePayloadUsageDeviceTest.exact(f)

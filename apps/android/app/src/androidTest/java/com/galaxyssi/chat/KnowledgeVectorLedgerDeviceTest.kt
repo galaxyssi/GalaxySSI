@@ -186,7 +186,7 @@ class KnowledgeVectorLedgerDeviceTest {
         f.store.upsert(item(text = "original"))
         val ledger = f.db.vectors(spec)
         finish(ledger, FixtureEncoder(spec))
-        f.db.access { it.execSQL("CREATE TRIGGER reject_replacement BEFORE INSERT ON knowledge_chunks " +
+        f.db.access { it.execSQL("CREATE TRIGGER reject_replacement BEFORE INSERT ON knowledge_primary_refs " +
             "BEGIN SELECT RAISE(ABORT,'fixture source failure'); END") }
         assertThrows(Exception::class.java) { f.store.upsert(item(text = "replacement")) }
         requireNotNull(ledger.page("first")).use { assertEquals(1, it.total) }
