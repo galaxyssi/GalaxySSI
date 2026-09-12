@@ -12,6 +12,7 @@ import link_protocol
 import link_delivery
 import mqtt_bridge
 from link_transport_diagnostics import LinkTransportDiagnostics
+from tests.receive_test_support import store_received_envelope, complete_received_envelope
 
 
 class FakeMessage:
@@ -82,10 +83,17 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             item.stop()
         self.temp.cleanup()
 
+    def stored(self, payload=None):
+        envelope = link_protocol.make_envelope(
+            payload or {"type": "text", "source_message_id": "210"},
+            source_id=self.signal_name, target_id=self.desktop_id)
+        complete_received_envelope(self.client_route_id, envelope)
+        return envelope["message_id"]
+
     def test_encrypted_replay_is_visible_before_signal_decrypt(self) -> None:
+        message_id = self.stored()
         with (
-            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="known-message"),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={}),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
         ):
             mqtt_bridge.on_message(
@@ -119,10 +127,9 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         self.assertEqual(1, snapshot["summary"]["old_counter"])
 
     def test_replayed_receipt_does_not_create_ack_of_ack(self) -> None:
+        message_id = self.stored({"type": "delivery_ack"})
         with (
-            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="known-receipt"),
-            patch.object(mqtt_bridge, "previous_acknowledgement",
-                         return_value={"status": "completed", "receipt_required": False}),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
@@ -134,10 +141,9 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         start_task.assert_not_called()
 
     def test_replayed_request_resends_ack_without_executing_again(self) -> None:
+        message_id = self.stored()
         with (
-            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="stable-request"),
-            patch.object(mqtt_bridge, "previous_acknowledgement",
-                         return_value={"status": "accepted", "client_source_message_id": "210"}),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
@@ -146,15 +152,14 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
                 mqtt_bridge.on_message(object(), None,
                     FakeMessage(self.topics.receive, self.wire, self.link_secret))
         self.assertEqual(12, publish.call_count)
-        self.assertEqual("stable-request", publish.call_args.args[2]["transport_message_id"])
+        self.assertEqual(message_id, publish.call_args.args[2]["transport_message_id"])
         self.assertEqual("210", publish.call_args.args[2]["client_source_message_id"])
         decrypt.assert_not_called()
         start_task.assert_not_called()
 
-    def test_pre_upgrade_receipt_replay_cannot_restart_ack_exchange(self) -> None:
+    def test_missing_durable_receipt_body_cannot_restart_ack_exchange(self) -> None:
         with (
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value="old-receipt"),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={"status": "completed"}),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
         ):
@@ -176,6 +181,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             target_id=self.desktop_id,
             conversation_id="conversation-1",
         )
+        complete_received_envelope(self.client_route_id, application_envelope)
         with (
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
             patch.object(
@@ -184,8 +190,6 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
                 return_value=application_envelope,
             ),
             patch.object(mqtt_bridge, "bind_ciphertext"),
-            patch.object(mqtt_bridge, "claim_message", return_value=False),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={}),
             patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
         ):
             mqtt_bridge.on_message(
@@ -201,15 +205,14 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
 
     def test_content_conflict_is_rejected_before_blob_persistence_or_ack(self) -> None:
         envelope = link_protocol.make_envelope(
-            {"type": "text", "content": "original"}, source_id=self.signal_name,
+            {"type": "text", "content": "original", "contact_id": "system"}, source_id=self.signal_name,
             target_id=self.desktop_id, conversation_id="c1")
+        store_received_envelope(self.client_route_id, envelope)
         with (
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch("blob_input_bridge.persist_before_ack") as persist,
             patch.object(mqtt_bridge, "bind_ciphertext") as bind_cipher,
-            patch.object(mqtt_bridge, "claim_message", return_value=False),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={}),
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch.object(mqtt_bridge, "_start_remote_agent_task") as task,
         ):

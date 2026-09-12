@@ -125,6 +125,8 @@ def persist_receive(client_route_id, remote_name, remote_device_id, receipt):
                 _adjust(db, route, size, 1, MAX_PEER_BYTES, MAX_PEER_RECORDS)
                 db.execute("INSERT INTO inbound_signal_bodies VALUES(?,?,?,?,?,?)",
                            (route, message_id, digest, protected, size, time.time()))
+            db.execute("""INSERT OR IGNORE INTO inbound_messages(client_route_id,message_id,received_at,status)
+                          VALUES(?,?,?,'RX_STORED')""", (route, message_id, time.time()))
             previous = db.execute("""SELECT message_id,content_hash FROM inbound_signal_handoffs
                                      WHERE client_route_id=? AND cipher_key=?""", (route, cipher)).fetchone()
             if previous and (previous[0] != message_id or previous[1] != raw_hash):

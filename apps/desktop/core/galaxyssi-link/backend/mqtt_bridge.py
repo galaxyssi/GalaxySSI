@@ -45,7 +45,6 @@ from link_delivery import (
     bind_ciphertext,
     bind_message_content,
     InboundContentConflict,
-    claim_message,
     complete_message,
     discard_route,
     ensure_transport_epoch,
@@ -58,7 +57,6 @@ from link_delivery import (
     outbound_status,
     pending_outbound,
     pending_task_results as pending_persisted_task_results,
-    previous_acknowledgement,
     queue_outbound,
     queue_task_result,
     task_result_is_current,
@@ -481,6 +479,14 @@ class _InboundMqttMessage:
     payload: bytes
     received_at_ms: int
     received_at_ns: int = 0
+
+
+@dataclass(frozen=True)
+class _StoredInboxMessage:
+    client_route_id: str
+    message_id: str
+    byte_count: int
+    admission_token: str
 
 
 class _FragmentPublishInfo:
@@ -6693,6 +6699,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
 def _process_message(mqttc, userdata, msg):
     try:
+        if isinstance(msg, _StoredInboxMessage):
+            _process_stored_message(mqttc, msg)
+            return
         handler_started_ns = timing_now_ns()
         received_at_ns = getattr(msg, "received_at_ns", 0) or handler_started_ns
         mqtt_received_at = int(getattr(msg, "received_at_ms", 0) or time.time() * 1000)
@@ -6774,57 +6783,32 @@ def _process_message(mqttc, userdata, msg):
                 and str(wire_payload.get("to") or "") == paired_client["signal_name"]
             ):
                 return
-            if str(wire_payload.get("from") or "") != paired_client["signal_name"]:
+            if (str(wire_payload.get("from") or "") != paired_client["signal_name"]
+                    or str(wire_payload.get("to") or "") != desktop_id()):
                 log.warning("Rejected MQTT message: cryptographic sender does not match route")
                 return
             ciphertext_digest = _signal_ciphertext_digest(wire_payload)
             replay_lookup_started_ns = timing_now_ns()
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
-            if replay_message_id:
-                link_transport_diagnostics().record(
-                    "encrypted_replay",
-                    route_id=client_route_id,
-                    message_id=replay_message_id,
-                    detail_code="pre_decrypt",
-                )
-                previous = previous_acknowledgement(client_route_id, replay_message_id)
-                if previous.get("receipt_required") is False or previous == {"status": "completed"}:
-                    # A redelivered receipt must not start an ACK-of-ACK exchange.
-                    # Older receipts stored only this exact completed marker;
-                    # application requests instead store accepted + source identity.
-                    return
-                client_source_message_id = str(
-                    previous.get("client_source_message_id") or ""
-                )
-                _publish_phone_payload(mqttc, wire_payload, {
-                    "type": "delivery_ack",
-                    "transport_message_id": replay_message_id,
-                    "source_message_id": client_source_message_id,
-                    "client_source_message_id": client_source_message_id,
-                    "delivery_status": previous.get("status", "duplicate"),
-                    "duplicate": True,
-                    "sender": "system",
-                    "time": time.time(),
-                })
-                log.info(
-                    "MQTT encrypted replay acknowledged before Signal decrypt message_id=%s",
-                    replay_message_id,
-                )
-                return
             decrypt_started_at = int(time.time() * 1000)
             decrypt_started_ns = timing_now_ns()
             try:
-                application_envelope = decrypt_signal_envelope(
-                    wire_payload,
-                    remote_name=paired_client["signal_name"],
-                )
+                if replay_message_id:
+                    from signal_receive_dispatch import load_envelope
+                    application_envelope = load_envelope(client_route_id, replay_message_id)
+                    link_transport_diagnostics().record(
+                        "encrypted_replay", route_id=client_route_id,
+                        message_id=replay_message_id, detail_code="durable_body",
+                    )
+                else:
+                    application_envelope = decrypt_signal_envelope(
+                        wire_payload, remote_name=paired_client["signal_name"],
+                    )
                 signal_decrypt_finished_ns = timing_now_ns()
             except Exception as exc:
                 link_transport_diagnostics().record(
-                    classify_decryption_error(exc),
-                    route_id=client_route_id,
-                    message_id=ciphertext_digest,
-                    detail_code=exc.__class__.__name__,
+                    classify_decryption_error(exc), route_id=client_route_id,
+                    message_id=ciphertext_digest, detail_code=exc.__class__.__name__,
                 )
                 raise
             validate_envelope(application_envelope)
@@ -6842,63 +6826,19 @@ def _process_message(mqttc, userdata, msg):
                 )
                 log.warning("Rejected conflicting authenticated MQTT message content")
                 return
-            # A transport ACK must never outrun durable acceptance of a Blob job.
-            from blob_input_bridge import persist_before_ack
-            persist_before_ack(sys.modules[__name__], application_envelope, client_route_id)
-            control_type = application_envelope["payload"].get("type")
-            if control_type == "artifact_blob_capability":
-                from blob_pair_configuration import record_artifact_capability
-                record_artifact_capability(sys.modules[__name__], client_route_id,
-                                           application_envelope["source_id"], application_envelope["payload"])
-            elif control_type == "artifact_blob_receipt":
-                from blob_artifact_ingress import persist_receipt_before_ack
-                persist_receipt_before_ack(sys.modules[__name__], application_envelope, client_route_id)
-            bind_ciphertext(client_route_id, ciphertext_digest, message_id)
-            if not claim_message(client_route_id, message_id):
-                duplicate_type = application_envelope.get("payload", {}).get("type")
-                link_transport_diagnostics().record(
-                    "duplicate_receipt" if duplicate_type == "delivery_ack" else "duplicate_message",
-                    route_id=client_route_id,
-                    message_id=message_id,
-                    detail_code="delivery_ack" if duplicate_type == "delivery_ack" else "claimed",
-                )
-                if duplicate_type == "delivery_ack":
-                    return
-                previous = previous_acknowledgement(client_route_id, message_id)
-                client_source_message_id = str(
-                    previous.get("client_source_message_id") or ""
-                )
-                _publish_phone_payload(mqttc, wire_payload, {
-                    "type": "delivery_ack",
-                    "transport_message_id": message_id,
-                    "source_message_id": client_source_message_id,
-                    "client_source_message_id": client_source_message_id,
-                    "delivery_status": previous.get("status", "duplicate"),
-                    "duplicate": True,
-                    "sender": "system",
-                    "time": time.time(),
-                })
-                return
-            payload = application_envelope["payload"]
+            payload = dict(application_envelope["payload"])
             payload.setdefault("message_id", message_id)
             payload.setdefault("conversation_id", application_envelope.get("conversation_id", ""))
             payload.setdefault("source_message_id", message_id)
-            timing_identity = _remote_task_identity(payload, client_route_id)
-            if timing_identity is not None:
-                from agent_latency import record_task
-                timing_task = timing_identity["task_id"]
-                record_task(timing_task, "desktop_request_received", at_ns=received_at_ns, once=True)
-                # Attribute only authenticated tasks; fragmented inputs describe the completing packet.
-                for stage, at_ns in (
-                    ("desktop_handler_started", handler_started_ns),
-                    ("desktop_wire_open_started", wire_open_started_ns),
-                    ("desktop_wire_open_finished", wire_open_finished_ns),
-                    ("desktop_replay_lookup_started", replay_lookup_started_ns),
-                    ("desktop_signal_decrypt_finished", signal_decrypt_finished_ns),
-                ):
-                    record_task(timing_task, stage, at_ns=at_ns, once=True)
-                record_task(timing_task, "desktop_decrypt_started", at_ns=decrypt_started_ns, once=True)
-                record_task(timing_task, "desktop_request_decrypted", once=True)
+            timings = [
+                ("desktop_request_received", received_at_ns),
+                ("desktop_handler_started", handler_started_ns),
+                ("desktop_wire_open_started", wire_open_started_ns),
+                ("desktop_wire_open_finished", wire_open_finished_ns),
+                ("desktop_replay_lookup_started", replay_lookup_started_ns),
+                ("desktop_signal_decrypt_finished", signal_decrypt_finished_ns),
+                ("desktop_decrypt_started", decrypt_started_ns),
+            ]
             touch_client(client_route_id)
             trace = _delivery_trace(
                 payload,
@@ -6906,458 +6846,561 @@ def _process_message(mqttc, userdata, msg):
                 {"stage": "desktop_decrypt_started", "at": decrypt_started_at, "detail": "Signal Protocol"},
                 _trace_event("desktop_decrypted", "GalaxySSI Link"),
             )
-            if payload.get("type") == "delivery_ack":
-                acknowledged_id = acknowledged_transport_message_id(payload, application_envelope)
-                task_progress_window.release(client_route_id, acknowledged_id)
-                transport_timing.received(client_route_id, acknowledged_id)
-                if acknowledge_outbound(client_route_id, acknowledged_id):
+
+        _deliver_stored_application(mqttc, paired_client, wire_payload, application_envelope, payload, trace,
+                                    timings=timings, ciphertext_digest=ciphertext_digest)
+    except Exception as e:
+        log.error("MQTT message handling error (%s)", type(e).__name__)
+
+
+def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False):
+    if payload.get("type") == "delivery_ack":
+        return
+    message_id = str(envelope["message_id"])
+    route = str(wire_payload["_client_route_id"])
+    receipt = accepted_delivery_ack_payload(payload, message_id, trace)
+    receipt.update(delivery_status="RX_STORED", duplicate=duplicate,
+                   content_hash=bind_message_content(route, message_id, envelope))
+    complete_message(route, message_id, "RX_STORED", {
+        "status": "RX_STORED", "content_hash": receipt["content_hash"],
+        "client_source_message_id": receipt["client_source_message_id"],
+    })
+    try:
+        _publish_phone_payload(mqttc, wire_payload, receipt)
+    except Exception as exc:
+        # Receipt delivery cannot prevent a durably received task from starting.
+        log.warning("Stored-message receipt deferred (%s)", type(exc).__name__)
+
+
+def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest=""):
+    import signal_receive_dispatch as dispatch
+
+    route = str(paired_client["client_route_id"])
+    message_id = str(envelope["message_id"])
+    with dispatch.DispatchGuard(route, message_id) as guard:
+        claim = dispatch.begin(guard, envelope, admission_token=admission_token)
+        if claim.state != "run":
+            link_transport_diagnostics().record(
+                "duplicate_receipt" if payload.get("type") == "delivery_ack" else "duplicate_message",
+                route_id=route, message_id=message_id, detail_code=claim.state,
+            )
+            if claim.state not in {"busy", "rejected"} and not admission_token:
+                if ciphertext_digest:
+                    bind_ciphertext(route, ciphertext_digest, message_id)
+                _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True)
+            return
+        handler_started = False
+        try:
+            from blob_input_bridge import persist_before_ack
+            persist_before_ack(sys.modules[__name__], envelope, route)
+            control_type = payload.get("type")
+            if control_type == "artifact_blob_capability":
+                from blob_pair_configuration import record_artifact_capability
+                record_artifact_capability(sys.modules[__name__], route, envelope["source_id"], payload)
+            elif control_type == "artifact_blob_receipt":
+                from blob_artifact_ingress import persist_receipt_before_ack
+                persist_receipt_before_ack(sys.modules[__name__], envelope, route)
+            if ciphertext_digest:
+                bind_ciphertext(route, ciphertext_digest, message_id)
+            identity = _remote_task_identity(payload, route)
+            if timings and identity is not None and not claim.recovered:
+                from agent_latency import record_task
+                for stage, at_ns in timings:
+                    record_task(identity["task_id"], stage, at_ns=at_ns, once=True)
+                record_task(identity["task_id"], "desktop_request_decrypted", once=True)
+            _ack_stored_application(mqttc, wire_payload, envelope, payload, trace)
+            handler_started = True
+            if control_type == "delivery_ack":
+                acknowledged_id = acknowledged_transport_message_id(payload, envelope)
+                task_progress_window.release(route, acknowledged_id)
+                transport_timing.received(route, acknowledged_id)
+                if acknowledge_outbound(route, acknowledged_id):
                     flush_outbound_messages(mqttc)
-                complete_message(client_route_id, message_id, "completed",
-                                 {"status": "completed", "receipt_required": False})
-                return
-            complete_message(
-                client_route_id,
-                message_id,
-                "accepted",
-                {
-                    "status": "accepted",
-                    "client_source_message_id": str(payload.get("source_message_id") or ""),
-                },
+                complete_message(route, message_id, "RX_STORED", {"status": "RX_STORED", "receipt_required": False})
+            else:
+                _dispatch_application_payload(mqttc, paired_client, wire_payload, envelope, payload, trace)
+        except Exception as exc:
+            dispatch.finish(guard, claim, error=exc,
+                            replayable=not handler_started or dispatch.retry_safe(envelope))
+            raise
+        else:
+            dispatch.finish(guard, claim)
+
+
+def _process_stored_message(mqttc, message: _StoredInboxMessage):
+    import signal_receive_dispatch as dispatch
+
+    paired = get_client(message.client_route_id)
+    if not paired or paired.get("revoked_at"):
+        dispatch.reject_stored(message.client_route_id, message.message_id, "pair_unavailable")
+        return
+    try:
+        envelope = dispatch.load_envelope(message.client_route_id, message.message_id)
+        validate_envelope(envelope)
+        if envelope["source_id"] != paired["signal_name"] or envelope["target_id"] != desktop_id():
+            raise ValueError("Recovered message endpoint mismatch")
+    except (ValueError, RuntimeError) as exc:
+        dispatch.reject_stored(message.client_route_id, message.message_id, type(exc).__name__)
+        raise
+    payload = dict(envelope["payload"])
+    payload.setdefault("message_id", message.message_id)
+    payload.setdefault("source_message_id", message.message_id)
+    payload.setdefault("conversation_id", envelope.get("conversation_id", ""))
+    wire = {"scheme": "signal", "_client_route_id": message.client_route_id,
+            "from": paired["signal_name"], "to": desktop_id()}
+    trace = _delivery_trace(payload, _trace_event("desktop_inbox_resumed", "durable_receive"))
+    _deliver_stored_application(mqttc, paired, wire, envelope, payload, trace,
+                               admission_token=message.admission_token)
+
+
+def flush_pending_inbound_messages(mqttc) -> int:
+    from signal_receive_dispatch import pending
+
+    admitted, remaining = 0, 4 * 1024 * 1024
+    for route, message_id, size, token in pending(limit=16):
+        paired = get_client(route)
+        if not paired or paired.get("revoked_at"):
+            from signal_receive_dispatch import reject_stored
+            reject_stored(route, message_id, "pair_unavailable")
+            continue
+        identity = str(paired.get("signal_name") or "")
+        if not identity or size > remaining:
+            continue
+        if _queue_inbound_message(mqttc, f"signal:{identity}", _StoredInboxMessage(route, message_id, size, token)):
+            admitted += 1
+            remaining -= size
+    return admitted
+
+
+def _dispatch_application_payload(mqttc, paired_client, wire_payload, application_envelope, payload, trace):
+    client_route_id = str(paired_client["client_route_id"])
+    channel = "control"
+    from agent_worker_mqtt import route_worker_payload
+    if route_worker_payload(sys.modules[__name__], mqttc, wire_payload, payload,
+                            client_route_id=client_route_id,
+                            source_id=application_envelope["source_id"]):
+        return
+
+    if payload.get("type") in {"input_attachment_blob_offer", "artifact_blob_capability", "artifact_blob_receipt"}:
+        return
+
+    if _local_only_transport_payload(payload):
+        log.warning(
+            "Ignored local-only payload received over MQTT type=%s client=%s",
+            payload.get("type"),
+            client_route_id[-8:],
+        )
+        return
+
+    if _route_remote_whisper_payload(
+        mqttc,
+        wire_payload,
+        payload,
+        client_route_id=client_route_id,
+        paired_client=paired_client,
+    ):
+        return
+
+    if payload.get("type") == ARTIFACT_RECEIPT_TYPE:
+        from artifact_delivery import acknowledge_artifact
+
+        accepted = acknowledge_artifact(payload, client_route_id=client_route_id)
+        if not accepted:
+            log.warning(
+                "Rejected artifact receipt artifact_id=%s client=%s",
+                str(payload.get("artifact_id") or "")[:12],
+                client_route_id[-8:],
+            )
+        return
+
+    if payload.get("type") == ARTIFACT_REDELIVERY_REQUEST_TYPE:
+        from artifact_delivery import artifact_for_redelivery
+
+        artifact = artifact_for_redelivery(
+            payload,
+            client_route_id=client_route_id,
+        )
+        if artifact is None:
+            log.warning(
+                "Rejected artifact redelivery request artifact_id=%s client=%s",
+                str(payload.get("artifact_id") or "")[:12],
+                client_route_id[-8:],
             )
             _publish_phone_payload(
                 mqttc,
                 wire_payload,
-                accepted_delivery_ack_payload(payload, message_id, trace),
-            )
-
-        from agent_worker_mqtt import route_worker_payload
-        if route_worker_payload(sys.modules[__name__], mqttc, wire_payload, payload,
-                                client_route_id=client_route_id,
-                                source_id=application_envelope["source_id"]):
-            return
-
-        if payload.get("type") in {"input_attachment_blob_offer", "artifact_blob_capability", "artifact_blob_receipt"}:
-            return
-
-        if _local_only_transport_payload(payload):
-            log.warning(
-                "Ignored local-only payload received over MQTT type=%s client=%s",
-                payload.get("type"),
-                client_route_id[-8:],
-            )
-            return
-
-        if _route_remote_whisper_payload(
-            mqttc,
-            wire_payload,
-            payload,
-            client_route_id=client_route_id,
-            paired_client=paired_client,
-        ):
-            return
-
-        if payload.get("type") == ARTIFACT_RECEIPT_TYPE:
-            from artifact_delivery import acknowledge_artifact
-
-            accepted = acknowledge_artifact(payload, client_route_id=client_route_id)
-            if not accepted:
-                log.warning(
-                    "Rejected artifact receipt artifact_id=%s client=%s",
-                    str(payload.get("artifact_id") or "")[:12],
-                    client_route_id[-8:],
-                )
-            return
-
-        if payload.get("type") == ARTIFACT_REDELIVERY_REQUEST_TYPE:
-            from artifact_delivery import artifact_for_redelivery
-
-            artifact = artifact_for_redelivery(
-                payload,
-                client_route_id=client_route_id,
-            )
-            if artifact is None:
-                log.warning(
-                    "Rejected artifact redelivery request artifact_id=%s client=%s",
-                    str(payload.get("artifact_id") or "")[:12],
-                    client_route_id[-8:],
-                )
-                _publish_phone_payload(
-                    mqttc,
-                    wire_payload,
-                    {
-                        "type": "artifact_redelivery_result",
-                        "artifact_id": payload.get("artifact_id", ""),
-                        "artifact_uri": payload.get("artifact_uri", ""),
-                        "task_id": payload.get("task_id", ""),
-                        "status": "unavailable",
-                        "sender": "system",
-                        "time": time.time(),
-                    },
-                )
-                return
-            original_task = agent_task_manager.get(artifact.task_id)
-            if original_task is None:
-                from peer_chat_store import peer_chat_store
-
-                peer_message = peer_chat_store().get_message(artifact.task_id)
-                if (
-                    peer_message is None
-                    or peer_message.get("client_route_id") != client_route_id
-                    or peer_message.get("direction") != "outbound"
-                ):
-                    log.warning(
-                        "Artifact redelivery lost task identity task_id=%s client=%s",
-                        artifact.task_id,
-                        client_route_id[-8:],
-                    )
-                    return
-                redelivery_common = {
-                    "source_message_id": artifact.task_id,
-                    "conversation_id": f"peer:{client_route_id}",
-                    "turn_id": f"peer-redelivery:{artifact.task_id}",
-                    "contact_id": desktop_id(),
-                    "desktop_id": desktop_id(),
-                    "desktop_name": desktop_name(),
-                    "peer_chat": True,
-                }
-            else:
-                if original_task.client_route_id != client_route_id:
-                    log.warning(
-                        "Artifact redelivery route mismatch task_id=%s client=%s",
-                        artifact.task_id,
-                        client_route_id[-8:],
-                    )
-                    return
-                redelivery_common = {
-                    "source_message_id": original_task.source_message_id,
-                    "conversation_id": original_task.client_conversation_id,
-                    "turn_id": original_task.client_turn_id,
-                    "contact_id": original_task.contact_id,
-                    "agent_id": original_task.agent_id,
-                    "desktop_id": desktop_id(),
-                    "desktop_name": desktop_name(),
-                }
-            _publish_task_artifacts(
-                mqttc,
-                wire_payload,
-                [artifact],
-                common=redelivery_common,
-            )
-            return
-
-        if payload.get("type") == INPUT_ATTACHMENT_REQUEST_RESULT_TYPE:
-            accepted = attachment_request_broker.accept_result(
-                payload,
-                client_route_id=client_route_id,
-            )
-            if not accepted:
-                log.warning(
-                    "Rejected attachment recovery result request=%s client=%s",
-                    str(payload.get("request_id") or "")[:12],
-                    client_route_id[-8:],
-                )
-            return
-
-        if payload.get("type") in {
-            INPUT_ATTACHMENT_MANIFEST_TYPE,
-            INPUT_ATTACHMENT_CHUNK_TYPE,
-        }:
-            from input_attachment_transfer import (
-                ingest_chunk,
-                ingest_manifest,
-                resume_after_rejection,
-            )
-
-            receipt = None
-            try:
-                if payload.get("type") == INPUT_ATTACHMENT_MANIFEST_TYPE:
-                    receipt = ingest_manifest(payload, client_route_id=client_route_id)
-                else:
-                    receipt = ingest_chunk(payload, client_route_id=client_route_id)
-            except ValueError as exc:
-                log.warning(
-                    "Rejected input attachment transfer transfer=%s reason=%s",
-                    str(payload.get("transfer_id") or "")[:12],
-                    exc,
-                )
-                receipt = resume_after_rejection(
-                    payload,
-                    client_route_id=client_route_id,
-                )
-            if receipt is not None:
-                attachment_request_broker.accept_receipt(receipt)
-                _publish_phone_payload(mqttc, wire_payload, receipt.payload())
-            return
-
-        if _route_peer_message_payload(
-            payload,
-            client_route_id=client_route_id,
-            paired_client=paired_client,
-        ):
-            return
-
-        if _route_desktop_control_payload(
-            mqttc,
-            paired_client,
-            application_envelope,
-            payload,
-            channel,
-        ):
-            return
-
-        if _route_desktop_tool_payload(
-            mqttc,
-            paired_client,
-            application_envelope,
-            payload,
-            channel,
-        ):
-            return
-
-        if _route_phone_tool_payload(
-            mqttc,
-            paired_client,
-            application_envelope,
-            payload,
-            channel,
-        ):
-            return
-
-        if _route_unified_command_payload(mqttc, wire_payload, payload, trace):
-            return
-
-        if _route_evolution_payload(mqttc, paired_client, payload):
-            return
-
-        content = payload.get("content", "")
-        contact_id = payload.get("contact_id", "hermes")
-        agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
-        msg_type = payload.get("type", "text")
-        file_id = payload.get("file_id", "")
-        name = payload.get("name") or file_id or "Voice message"
-        caption = payload.get("caption", "")
-        audio_mode = str(payload.get("audio_mode") or "agent_reply")
-
-        log.info(f"MQTT received: [{msg_type}] {content[:50]}")
-
-        if msg_type == "client_revoked":
-            from desktop_control import desktop_control_manager
-
-            desktop_control_manager().revoke_for_client(
-                client_route_id, "pairing_revoked_by_phone"
-            )
-            cleanup = forget_paired_client_transport(client_route_id, mqttc)
-            revoke_client(client_route_id, str(payload.get("reason") or "forgotten_by_client"))
-            reconciliation = reconcile_mqtt_subscriptions(mqttc)
-            remove_peer_signal_session(
-                paired_client["signal_name"], int(paired_client.get("signal_device_id") or 1)
-            )
-            log.info(
-                "Client relationship revoked client=%s deleted_peer_messages=%s",
-                client_route_id,
-                cleanup.get("deleted_peer_messages", 0),
-            )
-            log.info(
-                "MQTT subscriptions reconciled after client revocation client=%s result=%s",
-                client_route_id,
-                reconciliation,
-            )
-            return
-
-        if msg_type == "connector_status_request":
-            _schedule_requested_connector_state(
-                mqttc,
-                client_route_id,
-                include_capability_manifest=_capability_manifest_requested(payload),
-                include_blob_configuration=payload.get("request_blob_configuration") is True,
-            )
-            return
-
-        if msg_type == "agent_task_recovery_request":
-            from agent_task_recovery_query import recovery_query
-            from agent_recovery_timing import recovery_timing
-            from agent_task_result_archive import archive
-
-            response = recovery_query(
-                payload, client_route_id=client_route_id, manager=agent_task_manager, result_archive=archive,
-            )
-            if response is not None:
-                # One batch is one publish call, not one latency sample per item.
-                with recovery_timing(response["items"][0], "publish", request_id=response["request_id"]) as measurement:
-                    _publish_phone_payload(mqttc, wire_payload, response)
-                    measurement.completed = True
-            return
-
-        if msg_type in {"agent_task_result_page_request", "agent_task_result_received"}:
-            from agent_task_result_archive import archive
-            from agent_task_terminal_outcome import recover_terminal_outcome
-            from agent_recovery_timing import recovery_timing
-
-            if msg_type == "agent_task_result_received":
-                if "receipt_id" in payload:
-                    response = archive.receipt_confirmation(payload, client_route_id=client_route_id)
-                    if response is not None:
-                        _publish_phone_payload(mqttc, wire_payload, response)
-                else:
-                    archive.acknowledge(payload, client_route_id=client_route_id)
-            else:
-                response = archive.page(payload, client_route_id=client_route_id)
-                if response is not None and response["status"] == "unavailable":
-                    with recovery_timing(response, "restore") as measurement:
-                        restored = recover_terminal_outcome(payload, client_route_id=client_route_id,
-                                                            manager=agent_task_manager, result_archive=archive)
-                        measurement.completed = bool(restored)
-                    if restored:
-                        response = archive.page(payload, client_route_id=client_route_id)
-                if response is not None:
-                    with recovery_timing(response, "publish") as measurement:
-                        _publish_phone_payload(mqttc, wire_payload, response)
-                        measurement.completed = True
-            return
-
-        if msg_type == "agent_task_cancel":
-            task_id = str(payload.get("task_id") or "").strip()
-            conversation_id = str(payload.get("conversation_id") or "").strip()
-            turn_id = str(payload.get("turn_id") or "").strip()
-            existing_task = agent_task_manager.get_scoped(
-                task_id,
-                client_route_id=client_route_id,
-                conversation_id=conversation_id,
-                turn_id=turn_id,
-            )
-            source_message_id = str(payload.get("source_message_id") or "")
-            task_matches = (
-                str(payload.get("client_route_id") or "").strip() == client_route_id
-                and _task_control_matches(
-                    existing_task,
-                    client_route_id=client_route_id,
-                    conversation_id=conversation_id,
-                    task_id=task_id,
-                    turn_id=turn_id,
-                    contact_id=str(contact_id),
-                    source_message_id=source_message_id,
-                )
-            )
-            task = None
-            if task_matches:
-                _interrupt_agent_runtime(
-                    existing_task,
-                    on_event=lambda event: _publish_or_queue_task_event(
-                        mqttc,
-                        wire_payload,
-                        event,
-                        trace,
-                    ),
-                )
-                task = existing_task
-            if task is None:
-                _publish_phone_payload(mqttc, wire_payload, {
-                    "type": "agent_task_event",
-                    "task_id": task_id,
-                    "task_status": "not_found",
-                    "contact_id": contact_id,
-                    "agent_id": agent_id,
-                    "source_message_id": payload.get("source_message_id") or "",
-                    "conversation_id": conversation_id,
-                    "client_route_id": client_route_id,
-                    "turn_id": turn_id,
-                    "error": "Task was not found",
+                {
+                    "type": "artifact_redelivery_result",
+                    "artifact_id": payload.get("artifact_id", ""),
+                    "artifact_uri": payload.get("artifact_uri", ""),
+                    "task_id": payload.get("task_id", ""),
+                    "status": "unavailable",
                     "sender": "system",
                     "time": time.time(),
-                    "delivery_trace": _delivery_trace({"delivery_trace": trace}, _trace_event("agent_not_found", task_id)),
-                })
+                },
+            )
             return
+        original_task = agent_task_manager.get(artifact.task_id)
+        if original_task is None:
+            from peer_chat_store import peer_chat_store
 
-        if msg_type == "agent_task_approval":
-            result = _resolve_agent_task_approval(
-                payload,
-                client_route_id=client_route_id,
-                contact_id=str(contact_id),
-            )
-            result["delivery_trace"] = _delivery_trace(
-                {"delivery_trace": trace},
-                _trace_event(
-                    (
-                        "agent_approval_resolved"
-                        if result["resolved"]
-                        else "agent_approval_rejected"
-                    ),
-                    result["approval_id"],
-                ),
-            )
-            _publish_phone_payload(mqttc, wire_payload, result)
-            return
-
-        if msg_type == "agent_conversation_delete":
-            client_conversation_id = str(payload.get("conversation_id") or "").strip()
-            conversation_id = _scoped_agent_conversation_id(
-                client_route_id,
-                client_conversation_id,
-            )
-            requested_ids = {
-                str(value).strip() for value in (payload.get("task_ids") or [])
-                if str(value).strip()
-            }
-            requested_ids = {
-                task_id
-                for task_id in requested_ids
-                if (
-                    (requested_task := agent_task_manager.get(task_id)) is not None
-                    and requested_task.client_route_id == client_route_id
-                    and requested_task.client_conversation_id == client_conversation_id
-                    and requested_task.conversation_id == conversation_id
+            peer_message = peer_chat_store().get_message(artifact.task_id)
+            if (
+                peer_message is None
+                or peer_message.get("client_route_id") != client_route_id
+                or peer_message.get("direction") != "outbound"
+            ):
+                log.warning(
+                    "Artifact redelivery lost task identity task_id=%s client=%s",
+                    artifact.task_id,
+                    client_route_id[-8:],
                 )
-            }
-            deleted_ids = agent_task_manager.delete_conversation(conversation_id, requested_ids)
-            if codex_app_server is not None:
-                codex_app_server.delete_conversation(conversation_id)
-            from agent_conversation_sessions import agent_conversation_sessions
-            agent_conversation_sessions().delete_conversation(conversation_id)
-            from conversation_context import conversation_summary_store
-            conversation_summary_store().delete_conversation(conversation_id)
-            from task_workspace import cleanup_task_temporary_files
-            cleaned_ids = cleanup_task_temporary_files(deleted_ids or requested_ids)
-            log.info(
-                "Agent conversation cleanup conversation_id=%s tasks=%d temporary=%d",
-                conversation_id, len(deleted_ids), len(cleaned_ids),
-            )
-            return
-
-        if msg_type in {"audio", "voice"}:
-            content = _content_from_audio(file_id, caption, str(payload.get("audio_data_b64") or ""))
-        elif not str(content).strip() and msg_type in {"image", "file_notify"}:
-            content = caption or f"Received file: {name}"
-
-        if msg_type in {"audio", "voice"} and audio_mode == "transcribe_only":
-            transcript = str(content or "").strip()
-            transcription_success = not transcript.startswith("Reply exactly:")
-            if not transcription_success:
-                transcript = transcript.removeprefix("Reply exactly:").strip()
-            trace.append(_trace_event("voice_transcribed", f"success={transcription_success} chars={len(transcript)}"))
-            reply_payload = {
-                "type": "voice_transcript",
-                "content": transcript,
-                "transcription_success": transcription_success,
-                "contact_id": contact_id,
-                "agent_id": agent_id,
+                return
+            redelivery_common = {
+                "source_message_id": artifact.task_id,
+                "conversation_id": f"peer:{client_route_id}",
+                "turn_id": f"peer-redelivery:{artifact.task_id}",
+                "contact_id": desktop_id(),
                 "desktop_id": desktop_id(),
                 "desktop_name": desktop_name(),
-                "source_message_id": payload.get("client_message_id") or payload.get("message_id") or "",
-                "delivery_trace": _delivery_trace(
-                    {"delivery_trace": trace},
-                    _trace_event("desktop_transcript_publish_queued", _wire_down_topic(wire_payload)),
-                ),
-                "sender": "other",
-                "time": time.time(),
+                "peer_chat": True,
             }
-            _publish_phone_payload(mqttc, wire_payload, reply_payload)
-            return
+        else:
+            if original_task.client_route_id != client_route_id:
+                log.warning(
+                    "Artifact redelivery route mismatch task_id=%s client=%s",
+                    artifact.task_id,
+                    client_route_id[-8:],
+                )
+                return
+            redelivery_common = {
+                "source_message_id": original_task.source_message_id,
+                "conversation_id": original_task.client_conversation_id,
+                "turn_id": original_task.client_turn_id,
+                "contact_id": original_task.contact_id,
+                "agent_id": original_task.agent_id,
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+            }
+        _publish_task_artifacts(
+            mqttc,
+            wire_payload,
+            [artifact],
+            common=redelivery_common,
+        )
+        return
 
-        if contact_id not in {"system", "me"} and content.strip():
-            log.info(f"MQTT accepted Agent task contact_id={contact_id} agent_id={agent_id}")
-            _start_remote_agent_task(mqttc, wire_payload, payload, trace, content, msg_type)
-    except Exception as e:
-        log.error(f"MQTT message handling error: {e}")
+    if payload.get("type") == INPUT_ATTACHMENT_REQUEST_RESULT_TYPE:
+        accepted = attachment_request_broker.accept_result(
+            payload,
+            client_route_id=client_route_id,
+        )
+        if not accepted:
+            log.warning(
+                "Rejected attachment recovery result request=%s client=%s",
+                str(payload.get("request_id") or "")[:12],
+                client_route_id[-8:],
+            )
+        return
+
+    if payload.get("type") in {
+        INPUT_ATTACHMENT_MANIFEST_TYPE,
+        INPUT_ATTACHMENT_CHUNK_TYPE,
+    }:
+        from input_attachment_transfer import (
+            ingest_chunk,
+            ingest_manifest,
+            resume_after_rejection,
+        )
+
+        receipt = None
+        try:
+            if payload.get("type") == INPUT_ATTACHMENT_MANIFEST_TYPE:
+                receipt = ingest_manifest(payload, client_route_id=client_route_id)
+            else:
+                receipt = ingest_chunk(payload, client_route_id=client_route_id)
+        except ValueError as exc:
+            log.warning(
+                "Rejected input attachment transfer transfer=%s reason=%s",
+                str(payload.get("transfer_id") or "")[:12],
+                exc,
+            )
+            receipt = resume_after_rejection(
+                payload,
+                client_route_id=client_route_id,
+            )
+        if receipt is not None:
+            attachment_request_broker.accept_receipt(receipt)
+            _publish_phone_payload(mqttc, wire_payload, receipt.payload())
+        return
+
+    if _route_peer_message_payload(
+        payload,
+        client_route_id=client_route_id,
+        paired_client=paired_client,
+    ):
+        return
+
+    if _route_desktop_control_payload(
+        mqttc,
+        paired_client,
+        application_envelope,
+        payload,
+        channel,
+    ):
+        return
+
+    if _route_desktop_tool_payload(
+        mqttc,
+        paired_client,
+        application_envelope,
+        payload,
+        channel,
+    ):
+        return
+
+    if _route_phone_tool_payload(
+        mqttc,
+        paired_client,
+        application_envelope,
+        payload,
+        channel,
+    ):
+        return
+
+    if _route_unified_command_payload(mqttc, wire_payload, payload, trace):
+        return
+
+    if _route_evolution_payload(mqttc, paired_client, payload):
+        return
+
+    content = payload.get("content", "")
+    contact_id = payload.get("contact_id", "hermes")
+    agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
+    msg_type = payload.get("type", "text")
+    file_id = payload.get("file_id", "")
+    name = payload.get("name") or file_id or "Voice message"
+    caption = payload.get("caption", "")
+    audio_mode = str(payload.get("audio_mode") or "agent_reply")
+
+    log.info("MQTT received type=%s chars=%d", msg_type, len(content))
+
+    if msg_type == "client_revoked":
+        from desktop_control import desktop_control_manager
+
+        desktop_control_manager().revoke_for_client(
+            client_route_id, "pairing_revoked_by_phone"
+        )
+        cleanup = forget_paired_client_transport(client_route_id, mqttc)
+        revoke_client(client_route_id, str(payload.get("reason") or "forgotten_by_client"))
+        reconciliation = reconcile_mqtt_subscriptions(mqttc)
+        remove_peer_signal_session(
+            paired_client["signal_name"], int(paired_client.get("signal_device_id") or 1)
+        )
+        log.info(
+            "Client relationship revoked client=%s deleted_peer_messages=%s",
+            client_route_id,
+            cleanup.get("deleted_peer_messages", 0),
+        )
+        log.info(
+            "MQTT subscriptions reconciled after client revocation client=%s result=%s",
+            client_route_id,
+            reconciliation,
+        )
+        return
+
+    if msg_type == "connector_status_request":
+        _schedule_requested_connector_state(
+            mqttc,
+            client_route_id,
+            include_capability_manifest=_capability_manifest_requested(payload),
+            include_blob_configuration=payload.get("request_blob_configuration") is True,
+        )
+        return
+
+    if msg_type == "agent_task_recovery_request":
+        from agent_task_recovery_query import recovery_query
+        from agent_recovery_timing import recovery_timing
+        from agent_task_result_archive import archive
+
+        response = recovery_query(
+            payload, client_route_id=client_route_id, manager=agent_task_manager, result_archive=archive,
+        )
+        if response is not None:
+            # One batch is one publish call, not one latency sample per item.
+            with recovery_timing(response["items"][0], "publish", request_id=response["request_id"]) as measurement:
+                _publish_phone_payload(mqttc, wire_payload, response)
+                measurement.completed = True
+        return
+
+    if msg_type in {"agent_task_result_page_request", "agent_task_result_received"}:
+        from agent_task_result_archive import archive
+        from agent_task_terminal_outcome import recover_terminal_outcome
+        from agent_recovery_timing import recovery_timing
+
+        if msg_type == "agent_task_result_received":
+            if "receipt_id" in payload:
+                response = archive.receipt_confirmation(payload, client_route_id=client_route_id)
+                if response is not None:
+                    _publish_phone_payload(mqttc, wire_payload, response)
+            else:
+                archive.acknowledge(payload, client_route_id=client_route_id)
+        else:
+            response = archive.page(payload, client_route_id=client_route_id)
+            if response is not None and response["status"] == "unavailable":
+                with recovery_timing(response, "restore") as measurement:
+                    restored = recover_terminal_outcome(payload, client_route_id=client_route_id,
+                                                        manager=agent_task_manager, result_archive=archive)
+                    measurement.completed = bool(restored)
+                if restored:
+                    response = archive.page(payload, client_route_id=client_route_id)
+            if response is not None:
+                with recovery_timing(response, "publish") as measurement:
+                    _publish_phone_payload(mqttc, wire_payload, response)
+                    measurement.completed = True
+        return
+
+    if msg_type == "agent_task_cancel":
+        task_id = str(payload.get("task_id") or "").strip()
+        conversation_id = str(payload.get("conversation_id") or "").strip()
+        turn_id = str(payload.get("turn_id") or "").strip()
+        existing_task = agent_task_manager.get_scoped(
+            task_id,
+            client_route_id=client_route_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+        )
+        source_message_id = str(payload.get("source_message_id") or "")
+        task_matches = (
+            str(payload.get("client_route_id") or "").strip() == client_route_id
+            and _task_control_matches(
+                existing_task,
+                client_route_id=client_route_id,
+                conversation_id=conversation_id,
+                task_id=task_id,
+                turn_id=turn_id,
+                contact_id=str(contact_id),
+                source_message_id=source_message_id,
+            )
+        )
+        task = None
+        if task_matches:
+            _interrupt_agent_runtime(
+                existing_task,
+                on_event=lambda event: _publish_or_queue_task_event(
+                    mqttc,
+                    wire_payload,
+                    event,
+                    trace,
+                ),
+            )
+            task = existing_task
+        if task is None:
+            _publish_phone_payload(mqttc, wire_payload, {
+                "type": "agent_task_event",
+                "task_id": task_id,
+                "task_status": "not_found",
+                "contact_id": contact_id,
+                "agent_id": agent_id,
+                "source_message_id": payload.get("source_message_id") or "",
+                "conversation_id": conversation_id,
+                "client_route_id": client_route_id,
+                "turn_id": turn_id,
+                "error": "Task was not found",
+                "sender": "system",
+                "time": time.time(),
+                "delivery_trace": _delivery_trace({"delivery_trace": trace}, _trace_event("agent_not_found", task_id)),
+            })
+        return
+
+    if msg_type == "agent_task_approval":
+        result = _resolve_agent_task_approval(
+            payload,
+            client_route_id=client_route_id,
+            contact_id=str(contact_id),
+        )
+        result["delivery_trace"] = _delivery_trace(
+            {"delivery_trace": trace},
+            _trace_event(
+                (
+                    "agent_approval_resolved"
+                    if result["resolved"]
+                    else "agent_approval_rejected"
+                ),
+                result["approval_id"],
+            ),
+        )
+        _publish_phone_payload(mqttc, wire_payload, result)
+        return
+
+    if msg_type == "agent_conversation_delete":
+        client_conversation_id = str(payload.get("conversation_id") or "").strip()
+        conversation_id = _scoped_agent_conversation_id(
+            client_route_id,
+            client_conversation_id,
+        )
+        requested_ids = {
+            str(value).strip() for value in (payload.get("task_ids") or [])
+            if str(value).strip()
+        }
+        requested_ids = {
+            task_id
+            for task_id in requested_ids
+            if (
+                (requested_task := agent_task_manager.get(task_id)) is not None
+                and requested_task.client_route_id == client_route_id
+                and requested_task.client_conversation_id == client_conversation_id
+                and requested_task.conversation_id == conversation_id
+            )
+        }
+        deleted_ids = agent_task_manager.delete_conversation(conversation_id, requested_ids)
+        if codex_app_server is not None:
+            codex_app_server.delete_conversation(conversation_id)
+        from agent_conversation_sessions import agent_conversation_sessions
+        agent_conversation_sessions().delete_conversation(conversation_id)
+        from conversation_context import conversation_summary_store
+        conversation_summary_store().delete_conversation(conversation_id)
+        from task_workspace import cleanup_task_temporary_files
+        cleaned_ids = cleanup_task_temporary_files(deleted_ids or requested_ids)
+        log.info(
+            "Agent conversation cleanup conversation_id=%s tasks=%d temporary=%d",
+            conversation_id, len(deleted_ids), len(cleaned_ids),
+        )
+        return
+
+    if msg_type in {"audio", "voice"}:
+        content = _content_from_audio(file_id, caption, str(payload.get("audio_data_b64") or ""))
+    elif not str(content).strip() and msg_type in {"image", "file_notify"}:
+        content = caption or f"Received file: {name}"
+
+    if msg_type in {"audio", "voice"} and audio_mode == "transcribe_only":
+        transcript = str(content or "").strip()
+        transcription_success = not transcript.startswith("Reply exactly:")
+        if not transcription_success:
+            transcript = transcript.removeprefix("Reply exactly:").strip()
+        trace.append(_trace_event("voice_transcribed", f"success={transcription_success} chars={len(transcript)}"))
+        reply_payload = {
+            "type": "voice_transcript",
+            "content": transcript,
+            "transcription_success": transcription_success,
+            "contact_id": contact_id,
+            "agent_id": agent_id,
+            "desktop_id": desktop_id(),
+            "desktop_name": desktop_name(),
+            "source_message_id": payload.get("client_message_id") or payload.get("message_id") or "",
+            "delivery_trace": _delivery_trace(
+                {"delivery_trace": trace},
+                _trace_event("desktop_transcript_publish_queued", _wire_down_topic(wire_payload)),
+            ),
+            "sender": "other",
+            "time": time.time(),
+        }
+        _publish_phone_payload(mqttc, wire_payload, reply_payload)
+        return
+
+    if contact_id not in {"system", "me"} and content.strip():
+        log.info(f"MQTT accepted Agent task contact_id={contact_id} agent_id={agent_id}")
+        _start_remote_agent_task(mqttc, wire_payload, payload, trace, content, msg_type)
 
 
 def on_message(mqttc, userdata, msg):
@@ -7380,7 +7423,7 @@ def mqtt_ingress_status() -> dict:
         return status
 
 
-def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage) -> bool:
+def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage | _StoredInboxMessage) -> bool:
     global inbound_route_pool, inbound_rejection_last_log
     with inbound_route_pool_lock:
         if not inbound_route_accepting:
@@ -7388,7 +7431,8 @@ def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage) 
         current = inbound_route_pool.snapshot() if inbound_route_pool else None
         if current is None or (current["closed"] and current["workers"] == 0):
             inbound_route_pool = _new_inbound_pool()
-        size = len(message.payload) + len(message.topic.encode("utf-8")) + 256
+        size = (message.byte_count if isinstance(message, _StoredInboxMessage)
+                else len(message.payload) + len(message.topic.encode("utf-8"))) + 256
         result = inbound_route_pool.submit(route_key, (mqttc, message), size)
         should_log = result != "accepted" and time.monotonic() - inbound_rejection_last_log >= 5.0
         if should_log:
@@ -8245,7 +8289,13 @@ def _outbound_retry_loop() -> None:
     try:
         while not outbound_retry_stop_event.wait(OUTBOUND_RETRY_POLL_SECONDS):
             mqttc = client
-            if mqttc is None or not mqttc.is_connected():
+            if mqttc is None:
+                continue
+            try:
+                flush_pending_inbound_messages(mqttc)
+            except Exception as exc:
+                log.debug("MQTT inbox recovery deferred (%s)", type(exc).__name__)
+            if not mqttc.is_connected():
                 continue
             try:
                 # Task results are persisted before their encrypted MQTT

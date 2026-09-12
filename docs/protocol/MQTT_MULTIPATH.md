@@ -153,11 +153,27 @@ the JVM copy. Both preserve authenticated scope and immutable content. The
 Desktop body extension is not a second task ledger: the existing Run Kernel still
 owns execution and uncertain external effects.
 
-Desktop pending-body consumer recovery, completed-body retention, ordered wire
-acceptance, and authenticated content-bound receipts are still required before
-three-path activation. The existing ID-only/accepted-state bridge shortcuts must
-not be mistaken for that completed recovery integration. Fair local Signal locks
-avoid thread starvation but do not guarantee ordering across independent brokers.
+Desktop now hands stored bodies to the actual bridge consumers. The same delivery
+transaction creates the full body and an indexed RX_STORED dispatch row. A replay
+of known ciphertext reloads that body, rather than skipping business dispatch
+based only on a message-ID claim. Dispatch ownership uses bounded OS file locks;
+process death releases ownership, not an elapsed lease timer. Known idempotent
+handlers may resume. An interrupted operation without a verified replay contract
+remains uncertain and is not automatically executed again.
+
+The existing service retry loop admits at most 16 stored messages / 4 MiB per
+pass into the same bounded per-identity ingress pool, including while disconnected.
+Admission tokens expire for queue retry, but do not prove a handler has exited.
+The pending-only SQLite index avoids scanning completed history every second.
+Task requests retain their original identity and reuse the existing task manager.
+Transport RX_STORED is not TASK_ACCEPTED or RUN_FINISHED.
+
+Completed-body retention/compaction, cancellation execution-generation fencing,
+ordered wire acceptance, and end-to-end authenticated content/attempt-bound
+receipts are still required before three-path activation. Receive receipts now
+carry the canonical content hash; the outgoing receipt consumer and physical
+attempt bookkeeping are not yet migrated. Fair local Signal locks avoid thread
+starvation but do not guarantee ordering across independent brokers.
 
 ## Verification Boundary
 

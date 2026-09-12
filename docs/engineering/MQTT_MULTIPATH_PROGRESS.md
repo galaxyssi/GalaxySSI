@@ -176,6 +176,12 @@ on the basis of these isolated modules passing their tests.
 
 ## Remaining Integration
 
+The 2026-09-13 Desktop stored-message dispatch checkpoint passed 262 backend
+tests, including 34 focused ownership/real-bridge cases and live JVM recovery.
+See [Desktop stored dispatch](../testing/MQTT_STORED_DISPATCH_DESKTOP_20260913.md).
+This supersedes the earlier statement that the actual bridge still used an
+ID-only accepted-state skip; it does not activate the three-path transport.
+
 1. Connect both pool implementations to the actual application-owned transport
    lifecycle; preserve one shared application/service owner across ten windows.
 2. Complete authenticated resume request/response exchange and local capability
@@ -186,8 +192,12 @@ on the basis of these isolated modules passing their tests.
    Do not reset global business state when one path disconnects.
 4. Complete immutable content binding and atomic durable acceptance before business
    side effects. Desktop now atomically journals ratchet/plaintext and durably
-   hands the full body to Python, but old `claim_message` / accepted-state paths
-   still need pending-body dispatch and task-consumer recovery integration.
+   hands the full body to Python. Its actual bridge now dispatches and recovers
+   stored bodies through the existing business handlers and task manager; the
+   ID-only skip/early accepted shortcut has been removed. OS locks guard actual
+   handler ownership; pending work uses indexed, bounded service-owned admission.
+   Completed-body retention/compaction and broader side-effect reconciliation,
+   including interrupted cancel generation fencing, remain to be finished.
    Android now uses a shared Signal/inbox transaction;
    verify real native rollback and process-death recovery before activation.
    Outgoing receipts still require the planned authenticated content/scope binding

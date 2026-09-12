@@ -15,6 +15,7 @@ import pairing_state
 import phone_tool_broker
 import desktop_control
 from peer_chat_store import PeerChatStore
+from tests.receive_test_support import store_received_envelope
 
 
 class FakeInfo:
@@ -39,7 +40,7 @@ class FakeMessage:
         inner = (
             '{"scheme":"signal","from":"'
             + paired_client["signal_name"]
-            + '","body":"'
+            + '","to":"desktop_test","body":"'
             + uuid.uuid4().hex
             + '"}'
         )
@@ -75,12 +76,11 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
             patch.object(link_delivery, "DB_PATH", Path(self.temp.name) / "delivery.db"),
             patch.object(mqtt_bridge, "desktop_id", return_value=self.desktop_id),
             patch.object(mqtt_bridge, "desktop_name", return_value="Test Desktop"),
-            patch.object(mqtt_bridge, "claim_message", return_value=True),
             patch.object(mqtt_bridge, "complete_message"),
             patch.object(
                 mqtt_bridge,
                 "decrypt_signal_envelope",
-                side_effect=lambda *_args, **_kwargs: self.decrypted,
+                side_effect=lambda wire, **_kwargs: store_received_envelope(wire["_client_route_id"], self.decrypted),
             ),
             patch.object(
                 mqtt_bridge,

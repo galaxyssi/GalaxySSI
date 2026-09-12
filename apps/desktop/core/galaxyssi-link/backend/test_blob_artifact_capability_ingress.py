@@ -8,6 +8,7 @@ import blob_pair_configuration as settings
 import link_protocol
 import mqtt_bridge
 from tests import test_mqtt_link_diagnostics as fixture
+from tests.receive_test_support import store_received_envelope
 
 
 class ArtifactCapabilityIngressTests(unittest.TestCase):
@@ -23,6 +24,7 @@ class ArtifactCapabilityIngressTests(unittest.TestCase):
             target_id=self.desktop_id, conversation_id="blob-capabilities")
 
     def dispatch(self, envelope, events, fail_write=False):
+        store_received_envelope(self.client_route_id, envelope)
         original = settings.write_secure_json
         def persist(*args, **kwargs):
             if fail_write:
@@ -34,7 +36,7 @@ class ArtifactCapabilityIngressTests(unittest.TestCase):
             stack.enter_context(patch.object(mqtt_bridge, "DATA_DIR", Path(self.temp.name)))
             stack.enter_context(patch.object(settings, "write_secure_json", side_effect=persist))
             for name, value in (("message_for_ciphertext", None), ("decrypt_signal_envelope", envelope),
-                                ("claim_message", True), ("touch_client", None)):
+                                ("touch_client", None)):
                 stack.enter_context(patch.object(mqtt_bridge, name, return_value=value))
             for name, event in (("bind_ciphertext", "bound"), ("complete_message", "accepted"),
                                 ("_publish_phone_payload", "ack")):

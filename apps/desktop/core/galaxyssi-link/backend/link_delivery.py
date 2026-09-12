@@ -60,6 +60,13 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             received_at REAL NOT NULL,
             status TEXT NOT NULL,
             acknowledgement TEXT NOT NULL DEFAULT '{}',
+            dispatch_state TEXT NOT NULL DEFAULT 'stored',
+            dispatch_token TEXT NOT NULL DEFAULT '',
+            dispatch_admission_token TEXT NOT NULL DEFAULT '',
+            dispatch_attempts INTEGER NOT NULL DEFAULT 0,
+            dispatch_updated_at REAL NOT NULL DEFAULT 0,
+            dispatch_retry_at REAL NOT NULL DEFAULT 0,
+            dispatch_error TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
@@ -72,6 +79,8 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
+    db.execute("""CREATE INDEX IF NOT EXISTS inbound_dispatch_pending ON inbound_messages(dispatch_retry_at,received_at)
+                  WHERE dispatch_state IN ('stored','retry','running')""")
     db.execute(
         """CREATE TABLE IF NOT EXISTS inbound_ciphertexts (
             client_route_id TEXT NOT NULL,

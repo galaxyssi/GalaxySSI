@@ -12,6 +12,7 @@ from blob_input_contract import OFFER_TYPE, input_binding
 from blob_input_receiver import BlobInputReceiver
 from tests import test_mqtt_link_diagnostics as diagnostics_fixture
 from test_blob_input_journal import input_manifest
+from tests.receive_test_support import store_received_envelope
 
 
 class BlobMqttIngressTest(unittest.TestCase):
@@ -29,9 +30,10 @@ class BlobMqttIngressTest(unittest.TestCase):
             source_id=self.signal_name, target_id=self.desktop_id, conversation_id=manifest["conversation_id"])
 
     def patches(self, envelope, receiver, events):
+        store_received_envelope(self.client_route_id, envelope)
         stack = ExitStack()
         for name, value in (("message_for_ciphertext", None), ("decrypt_signal_envelope", envelope),
-                            ("claim_message", True), ("touch_client", None)):
+                            ("touch_client", None)):
             stack.enter_context(patch.object(mqtt_bridge, name, return_value=value))
         stack.enter_context(patch.object(blob_input_bridge, "_get_receiver", return_value=receiver))
         stack.enter_context(patch.object(mqtt_bridge, "bind_ciphertext", side_effect=lambda *_: events.append("bind")))

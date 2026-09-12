@@ -11,6 +11,7 @@ import link_protocol
 import mqtt_bridge
 from test_blob_artifact_journal import artifact_job
 from tests import test_mqtt_link_diagnostics as fixture
+from tests.receive_test_support import store_received_envelope
 
 
 class ArtifactReceiptIngressTests(unittest.TestCase):
@@ -31,6 +32,7 @@ class ArtifactReceiptIngressTests(unittest.TestCase):
             conversation_id=self.body["manifest"]["conversation_id"])
 
     def dispatch(self, envelope, events, fail_disk=False):
+        store_received_envelope(self.client_route_id, envelope)
         original = BlobArtifactJournal.accept_receipt
         def commit(journal, *args, **kwargs):
             if fail_disk:
@@ -43,7 +45,7 @@ class ArtifactReceiptIngressTests(unittest.TestCase):
             stack.enter_context(patch.object(mqtt_bridge, "DATA_DIR", Path(self.temp.name)))
             stack.enter_context(patch.object(BlobArtifactJournal, "accept_receipt", commit))
             for name, value in (("message_for_ciphertext", None), ("decrypt_signal_envelope", envelope),
-                                ("claim_message", True), ("touch_client", None)):
+                                ("touch_client", None)):
                 stack.enter_context(patch.object(mqtt_bridge, name, return_value=value))
             for name, event in (("bind_ciphertext", "bound"), ("complete_message", "accepted"),
                                 ("_publish_phone_payload", "ack")):

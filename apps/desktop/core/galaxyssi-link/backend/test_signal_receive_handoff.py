@@ -48,7 +48,10 @@ class SignalReceiveHandoffTest(unittest.TestCase):
     def test_complete_body_is_durable_before_any_task_claim(self):
         self.persist()
         self.assertEqual(self.envelope, json.loads(self.cached()["plaintext"]))
-        self.assertEqual(0, self.count("inbound_messages"))
+        self.assertEqual(1, self.count("inbound_messages"))
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(("RX_STORED", "stored", 0), db.execute(
+                "SELECT status,dispatch_state,dispatch_attempts FROM inbound_messages").fetchone())
         self.assertEqual(1, self.count("inbound_signal_bodies"))
 
     def test_same_id_is_scoped_to_pair(self):

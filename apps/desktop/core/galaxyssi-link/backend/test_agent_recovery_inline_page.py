@@ -22,6 +22,7 @@ class InlineRecoveryPageTest(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
         self.archive = TaskResultArchive(Path(directory.name) / "results.db")
         self.fields = dict(zip(IDENTITY_FIELDS, ("route", "conversation", "task", "turn", "contact", "42", "codex")))
         self.payload = {"request_id": "nonce", "client_route_id": "route", "items": [self.fields],
@@ -244,17 +245,21 @@ class InlineRecoveryPageTest(unittest.TestCase):
 
     def test_mqtt_dispatch_uses_archive_and_never_reexecutes(self):
         import agent_task_result_archive
+        import link_delivery
         import link_protocol
         import mqtt_bridge
+        from tests.receive_test_support import store_received_envelope
 
         client = {"client_route_id": "route", "signal_name": "phone", "link_secret": "A" * 43}
         wire = json.dumps({"scheme": "signal", "from": "phone", "to": "desktop", "body": "ciphertext"}).encode()
         envelope = link_protocol.make_envelope(self.payload | {"type": "agent_task_recovery_request"},
             source_id="phone", target_id="desktop", conversation_id="conversation")
         with ExitStack() as stack:
+            stack.enter_context(patch.object(link_delivery, "DB_PATH", self.directory / "inbound.db"))
+            store_received_envelope("route", envelope)
             for name, value in {"_resolve_inbound_topic": ("client", client), "desktop_id": "desktop",
                     "get_client": client, "message_for_ciphertext": "", "open_wire_packet": wire,
-                    "decrypt_signal_envelope": envelope, "bind_ciphertext": None, "claim_message": True,
+                    "decrypt_signal_envelope": envelope, "bind_ciphertext": None,
                     "touch_client": None, "complete_message": None}.items():
                 stack.enter_context(patch.object(mqtt_bridge, name, return_value=value))
             stack.enter_context(patch.object(mqtt_bridge, "agent_task_manager", self.manager))

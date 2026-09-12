@@ -5,12 +5,15 @@ import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import ANY, patch
 
 import link_protocol
+import link_delivery
 import mqtt_bridge
 import mqtt_wire_chunking
 from mqtt_inbound_pool import InboundRoutePool
+from tests.receive_test_support import store_received_envelope, complete_received_envelope
 
 
 LINK_SECRET = "A" * 43
@@ -100,6 +103,11 @@ class RacingPublishMqtt:
 
 class MqttRouteDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        storage = patch.object(link_delivery, "DB_PATH", Path(directory.name) / "inbound.db")
+        storage.start()
+        self.addCleanup(storage.stop)
         admission = patch.object(mqtt_bridge, "inbound_route_accepting", True)
         admission.start()
         self.addCleanup(admission.stop)
@@ -119,7 +127,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
     @staticmethod
     def _route(topic: str):
         route_id = "old-route" if topic == "old" else "current-route"
-        return "client", paired_client(route_id)
+        return "client", paired_client(route_id, signal_name=route_id + "-phone")
 
     def test_stalled_old_route_does_not_block_current_phone(self) -> None:
         old_started = threading.Event()
@@ -482,9 +490,9 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-signal-id"),
             patch.object(mqtt_bridge, "get_client", return_value=client_record),
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=""),
-            patch.object(mqtt_bridge, "decrypt_signal_envelope", return_value=decrypted) as decrypt,
+            patch.object(mqtt_bridge, "decrypt_signal_envelope",
+                         side_effect=lambda *_, **__: store_received_envelope("client-route", decrypted)) as decrypt,
             patch.object(mqtt_bridge, "bind_ciphertext"),
-            patch.object(mqtt_bridge, "claim_message", return_value=True),
             patch.object(mqtt_bridge, "touch_client"),
             patch.object(mqtt_bridge, "complete_message"),
             patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True),
@@ -514,6 +522,10 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
     def test_signal_ciphertext_replay_is_acknowledged_without_decrypting_again(self) -> None:
         message_id = "11111111-1111-4111-8111-111111111111"
+        envelope = link_protocol.make_envelope({"type": "text", "content": "hello"},
+            source_id="phone-signal-id", target_id="desktop-signal-id")
+        envelope["message_id"] = message_id
+        complete_received_envelope("client-route", envelope)
         encrypted_wire = {
             "scheme": "signal",
             "from": "phone-signal-id",
@@ -533,7 +545,6 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-signal-id"),
             patch.object(mqtt_bridge, "get_client", return_value=client_record),
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={"status": "accepted"}),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
         ):
