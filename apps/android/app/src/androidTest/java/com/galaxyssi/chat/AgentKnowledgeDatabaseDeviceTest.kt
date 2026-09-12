@@ -18,12 +18,12 @@ class AgentKnowledgeDatabaseDeviceTest {
     @Test fun moreThanFiveHundredItemsSurviveReopenWithoutEviction() = isolated { name, legacy ->
         var store = store(name, legacy)
         store.replaceSource("source", (1..1_200).map { item(it) })
-        assertEquals(1_200, store.stats().itemCount)
+        assertEquals(1_200L, store.stats().itemCount)
         store.upsert(item(1_201, "other"))
         store.close()
         store = store(name, legacy)
-        assertEquals(1_201, store.stats().itemCount)
-        assertEquals(2, store.stats().sourceCount)
+        assertEquals(1_201L, store.stats().itemCount)
+        assertEquals(2L, store.stats().sourceCount)
         assertEquals(1_201L, store.stats().lastUpdatedAtMillis)
         assertEquals(setOf("item-1", "item-1201"), store.findByIds(setOf("item-1", "item-1201")).map { it.id }.toSet())
         assertEquals(1_201, store.list(2_000).size)
@@ -39,13 +39,13 @@ class AgentKnowledgeDatabaseDeviceTest {
         preferences.writeString("items", JSONArray().also { a -> original.forEach { a.put(AgentKnowledgeCodec.encodeItem(it)) } }.toString())
         preferences.writeString("unrelated", "keep")
         val store = store(name, legacy)
-        assertEquals(12, store.stats().itemCount)
+        assertEquals(12L, store.stats().itemCount)
         assertEquals(original.map { it.copy(summary = AgentKnowledgeCodec.summarize(it.content)) }.toSet(),
             store.list(20).toSet())
         assertFalse(preferences.keys().contains("items"))
         assertEquals("keep", preferences.readString("unrelated", ""))
         store.close()
-        assertEquals(12, store(name, legacy).stats().itemCount)
+        assertEquals(12L, store(name, legacy).stats().itemCount)
     }
 
     @Test fun malformedLegacyDataDoesNotCommitAnEmptyMigration() = isolated { name, legacy ->
@@ -103,7 +103,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         assertEquals(listOf("trusted"), next.allowedAgentIds)
         assertEquals(1, store.searchRanked("uniqueerasemarker", 8).size)
         assertEquals(1, store.delete("uniqueerasemarker"))
-        assertEquals(0, store.stats().itemCount)
+        assertEquals(0L, store.stats().itemCount)
         KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { db ->
             db.rawQuery("SELECT count(*) FROM knowledge_chunks", null).use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
         }
@@ -115,11 +115,11 @@ class AgentKnowledgeDatabaseDeviceTest {
         val backup = store.exportJson()
         assertEquals(601, backup.length())
         store.replaceAllJson(JSONArray())
-        assertEquals(0, store.stats().itemCount)
+        assertEquals(0L, store.stats().itemCount)
         store.replaceAllJson(backup)
-        assertEquals(601, store.stats().itemCount)
+        assertEquals(601L, store.stats().itemCount)
         assertThrows(Exception::class.java) { store.replaceAllJson(JSONArray().put("invalid")) }
-        assertEquals(601, store.stats().itemCount)
+        assertEquals(601L, store.stats().itemCount)
         assertEquals("item-1", store.findByIds(setOf("item-1")).single().id)
     }
 
@@ -135,7 +135,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         store.upsert(item(1).copy(content = "large".repeat(20_000)))
         KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { it.execSQL("DELETE FROM knowledge_chunks WHERE ordinal=1") }
         assertThrows(Exception::class.java) { store.findByIds(setOf("item-1")) }
-        assertEquals(1, store.stats().itemCount)
+        assertEquals(1L, store.stats().itemCount)
     }
 
     @Test fun replacementCannotStealAnotherSourcesId() = isolated { name, legacy ->
@@ -146,7 +146,7 @@ class AgentKnowledgeDatabaseDeviceTest {
             store.replaceSource("second", listOf(item(1, "second")))
         }
         assertEquals(setOf("first", "second"), store.list(10).map { it.source }.toSet())
-        assertEquals(2, store.stats().itemCount)
+        assertEquals(2L, store.stats().itemCount)
     }
 
     private fun store(name: String, legacy: String) = SQLiteAgentKnowledgeStore(context, name, legacy) { _, _ -> }

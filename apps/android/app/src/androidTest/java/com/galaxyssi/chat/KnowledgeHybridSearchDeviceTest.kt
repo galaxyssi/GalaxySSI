@@ -56,7 +56,7 @@ class KnowledgeHybridSearchDeviceTest {
         val cloud = AgentKnowledgeRetriever.retrieve(f.store, "apple", "cloud-model:fixture")
         assertTrue(cloud.citations.isEmpty()); assertEquals(1, cloud.blockedMatchCount)
         val snapshot = f.store.querySnapshot("apple", 8)
-        assertEquals("fruit", snapshot.items.single().id); assertEquals(2, snapshot.stats.itemCount)
+        assertEquals("fruit", snapshot.items.single().id); assertEquals(2L, snapshot.stats.itemCount)
     }
     @Test fun sourceReplacementInvalidatesCachedVectorsAndDoesNotReturnOldExcerpt() = isolated { f ->
         prepare(f)
@@ -95,7 +95,7 @@ class KnowledgeHybridSearchDeviceTest {
         f.store.attachSemanticEncoder(spec, { f.encoder }, budgetBytes = 1)
         assertEquals("fruit", f.store.search("orchard", 8).single().id)
         assertTrue(f.store.semanticSearchStatus.startsWith("unavailable:"))
-        assertEquals(2, f.store.stats().itemCount)
+        assertEquals(2L, f.store.stats().itemCount)
     }
     @Test fun corruptAuthenticatedVectorFallsBackWithoutPublishingDerivedEvidence() = isolated { f ->
         val session = f.store.attachSemanticEncoder(spec, { f.encoder })

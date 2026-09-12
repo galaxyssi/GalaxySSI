@@ -49,7 +49,7 @@ class AgentKnowledgeFtsDeviceTest {
         }.sorted()
         println("KNOWLEDGE_FTS_HOT samples=100 p50_ms=${samples[49]} p95_ms=${samples[94]} p99_ms=${samples[98]}")
         assertTrue("Selective hot retrieval P95 exceeds 500 ms: ${samples[94]}", samples[94] < 500)
-        assertEquals(1201, store.stats().itemCount)
+        assertEquals(1201L, store.stats().itemCount)
     }
 
     @Test fun supportsChineseEnglishAndLateDocumentEvidence() = isolated { store, _ ->
@@ -71,7 +71,7 @@ class AgentKnowledgeFtsDeviceTest {
             "BEGIN SELECT RAISE(ABORT,'test index failure'); END") }
         assertThrows(Exception::class.java) { store.replaceSource("source", listOf(item("new", "cobaltplanet"))) }
         assertEquals("old", store.search("quartznebula", 8).single().id)
-        assertEquals(1, store.stats().itemCount)
+        assertEquals(1L, store.stats().itemCount)
         db.access { it.execSQL("DROP TRIGGER fail_fts") }
         store.replaceSource("source", listOf(item("new", "cobaltplanet")))
         assertTrue(store.search("quartznebula", 8).isEmpty())
@@ -107,7 +107,9 @@ class AgentKnowledgeFtsDeviceTest {
                 sql.execSQL("PRAGMA user_version=1")
             }
             store = SQLiteAgentKnowledgeStore(context, name, legacy) { _, _ -> }
-            assertEquals(80, store.stats().itemCount)
+            val initialStats = store.stats()
+            assertFalse(initialStats.countsComplete)
+            assertEquals(0L, initialStats.itemCount)
             store.close()
             store = SQLiteAgentKnowledgeStore(context, name, legacy) { _, _ -> }
             val db = AgentKnowledgeDatabase.shared(context, name, legacy)
@@ -116,8 +118,12 @@ class AgentKnowledgeFtsDeviceTest {
                 check(SystemClock.elapsedRealtime() < deadline) { "FTS backfill did not complete: ${db.indexFailure}" }
                 Thread.sleep(25)
             }
+            while (!store.stats().countsComplete) {
+                check(SystemClock.elapsedRealtime() < deadline) { "Source count backfill did not complete" }
+                Thread.sleep(25)
+            }
             assertEquals(24, store.search("backfillevidence", 24).size)
-            assertEquals(80, store.stats().itemCount)
+            assertEquals(80L, store.stats().itemCount)
             db.access { sql -> sql.rawQuery("SELECT count(*) FROM knowledge_fts", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(80, it.getInt(0))
             } }

@@ -17,7 +17,7 @@ class KnowledgeIdentityDeviceTest {
     @Test fun sameTitlePreservesBothSourcesPoliciesAndSearchResults() = isolated { store, _, _ ->
         store.upsert(note("alpha").copy(cloudAccess = AgentKnowledgeCloudAccess.DENY))
         store.upsert(note("beta").copy(cloudAccess = AgentKnowledgeCloudAccess.FULL))
-        assertEquals(2, store.stats().itemCount)
+        assertEquals(2L, store.stats().itemCount)
         assertEquals("alpha", store.search("identitymarkeralpha", 1).single().id)
         assertEquals("beta", store.search("identitymarkerbeta", 1).single().id)
         assertEquals(AgentKnowledgeCloudAccess.DENY, store.findByIds(setOf("alpha")).single().cloudAccess)
@@ -30,7 +30,7 @@ class KnowledgeIdentityDeviceTest {
         store.upsert(note("beta", "shared", "SHARED TITLE"))
         store.upsert(note("gamma", "shared"))
         store.upsert(note("alpha", "shared", "SHARED TITLE").copy(content = "replacementmarker"))
-        assertEquals(3, store.stats().itemCount)
+        assertEquals(3L, store.stats().itemCount)
         assertEquals(setOf("alpha", "beta", "gamma"), store.list(10).map { it.id }.toSet())
         assertEquals("replacementmarker", store.findByIds(setOf("alpha")).single().content)
         assertEquals("identitymarkerbeta", store.findByIds(setOf("beta")).single().content)
@@ -43,7 +43,7 @@ class KnowledgeIdentityDeviceTest {
         assertThrows(IllegalArgumentException::class.java) { store.upsert(note("owned", "")) }
         assertThrows(IllegalArgumentException::class.java) { store.upsert(note("  ")) }
         assertEquals("source-owned", store.findByIds(setOf("owned")).single().source)
-        assertEquals(1, store.stats().itemCount)
+        assertEquals(1L, store.stats().itemCount)
         assertTrue(events.isEmpty())
     }
 
@@ -64,7 +64,7 @@ class KnowledgeIdentityDeviceTest {
         assertEquals(before, checkpoint(db))
         assertTrue(events.isEmpty())
         assertNull(db.vectors(spec).nextJob())
-        assertEquals(1, store.stats().itemCount)
+        assertEquals(1L, store.stats().itemCount)
     }
 
     @Test fun failedIdentityUpdateRollsBackAndKeepsSameNamedPeer() = isolated { store, db, events ->
@@ -74,7 +74,7 @@ class KnowledgeIdentityDeviceTest {
         db.transaction { it.execSQL("CREATE TRIGGER fail_identity_update BEFORE INSERT ON knowledge_chunks " +
             "BEGIN SELECT RAISE(ABORT,'injected identity write failure'); END") }
         assertThrows(Exception::class.java) { store.upsert(note("alpha").copy(content = "new content")) }
-        assertEquals(2, store.stats().itemCount)
+        assertEquals(2L, store.stats().itemCount)
         assertEquals("identitymarkeralpha", store.findByIds(setOf("alpha")).single().content)
         assertEquals("identitymarkerbeta", store.findByIds(setOf("beta")).single().content)
         assertTrue(events.isEmpty())
@@ -83,12 +83,12 @@ class KnowledgeIdentityDeviceTest {
     @Test fun sixHundredAndOneSameNamedSourcesSurviveIncrementalUpsertsAndReopen() = isolated { store, db, _ ->
         val started = android.os.SystemClock.elapsedRealtime()
         repeat(601) { store.upsert(note("entry$it")) }
-        assertEquals(601, store.stats().itemCount)
-        assertEquals(601, store.stats().sourceCount)
+        assertEquals(601L, store.stats().itemCount)
+        assertEquals(601L, store.stats().sourceCount)
         val database = dbName(db)
         store.close()
         val reopened = SQLiteAgentKnowledgeStore(context, database, "legacy-$database") { _, _ -> }
-        assertEquals(601, reopened.stats().itemCount)
+        assertEquals(601L, reopened.stats().itemCount)
         assertEquals(601, reopened.exportJson().length())
         assertEquals("entry0", reopened.search("identitymarkerentry0", 1).single().id)
         assertEquals("entry600", reopened.search("identitymarkerentry600", 1).single().id)

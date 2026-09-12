@@ -14,9 +14,9 @@ class KnowledgeBackupDeviceTest {
     @Test fun emptyArchiveRemovesOldSourcesAndPublishesOnlyAfterCommit() = KnowledgeBackupTestFixture().use { f ->
         assertEquals(2L, f.export())
         f.store.upsert(f.item(1)); f.mutations.clear()
-        f.restore(); assertEquals(0, f.store.stats().itemCount)
+        f.restore(); assertEquals(0L, f.store.stats().itemCount)
         assertEquals(listOf(listOf(f.item(1)) to emptyList<AgentKnowledgeItem>()), f.mutations)
-        f.reopen(); assertEquals(0, f.store.stats().itemCount)
+        f.reopen(); assertEquals(0L, f.store.stats().itemCount)
     }
     @Test fun moreThanOnePageRoundTripsBodiesPoliciesAndStableIds() = KnowledgeBackupTestFixture().use { f ->
         f.seed(137)
@@ -27,7 +27,7 @@ class KnowledgeBackupDeviceTest {
         assertEquals(140L, f.export())
         f.db.transaction { it.delete("knowledge_items", null, null) }; f.store.upsert(f.item(900))
         f.mutations.clear(); f.restore(); f.reopen()
-        assertEquals(138, f.store.stats().itemCount)
+        assertEquals(138L, f.store.stats().itemCount)
         (1..137).forEach { assertEquals(f.item(it), f.store.findByIds(setOf(f.item(it).id)).single()) }
         assertEquals(special, f.store.findByIds(setOf(special.id)).single())
         assertTrue(f.mutations.all { it.first.size <= 1 && it.second.size <= 1 })
@@ -56,7 +56,7 @@ class KnowledgeBackupDeviceTest {
             val rows = snapshot.items().iterator(); rows.next(); f.store.close()
             assertThrows(IllegalStateException::class.java) { while (rows.hasNext()) rows.next() }
         }
-        f.reopen(); assertEquals(3, f.store.stats().itemCount)
+        f.reopen(); assertEquals(3L, f.store.stats().itemCount)
     }
     @Test fun archiveReencryptsSourcesForAnotherDatabaseNamespace() = KnowledgeBackupTestFixture().use { from ->
         KnowledgeBackupTestFixture().use { to ->
@@ -81,7 +81,7 @@ class KnowledgeBackupDeviceTest {
         f.db.access { it.execSQL("CREATE TRIGGER reject_backup BEFORE INSERT ON knowledge_items BEGIN SELECT RAISE(ABORT,'fixture write'); END") }
         try {
             f.staged(sequenceOf(f.item(20), f.item(21))) { stage -> assertThrows(Exception::class.java) { f.store.restoreRecords(stage) } }
-            assertEquals(3, f.store.stats().itemCount); assertTrue(f.mutations.isEmpty())
+            assertEquals(3L, f.store.stats().itemCount); assertTrue(f.mutations.isEmpty())
         } finally { f.db.access { it.execSQL("DROP TRIGGER reject_backup") } }
         f.reopen(); (1..3).forEach { assertEquals(f.item(it), f.store.findByIds(setOf(f.item(it).id)).single()) }
     }

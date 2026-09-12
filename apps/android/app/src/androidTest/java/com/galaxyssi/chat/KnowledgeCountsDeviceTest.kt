@@ -65,7 +65,7 @@ class KnowledgeCountsDeviceTest {
         f.ledger.unregister()
         assertEquals(KnowledgeCountSnapshot(0, 0, true), f.counts())
         assertEquals(before, f.db.access { KnowledgeCounts.snapshot(it, other.modelKey) })
-        assertEquals(3, f.store.stats().itemCount)
+        assertEquals(3L, f.store.stats().itemCount)
     }
 
     @Test fun queueConflictAndVectorReplaceDoNotDoubleCount() = KnowledgeCountTestFixture().use { f ->
@@ -144,7 +144,7 @@ class KnowledgeCountsDeviceTest {
         f.db.access { it.delete("knowledge_vector_counts", "model_key=?", arrayOf(f.ledger.modelKey)) }
         assertThrows(IllegalStateException::class.java) { f.counts() }
         assertThrows(Exception::class.java) { f.store.upsert(f.item("rejected")) }
-        assertEquals(1, f.store.stats().itemCount)
+        assertEquals(1L, f.store.stats().itemCount)
     }
 
     @Test fun signed64BitOverflowAbortsWithoutCommittingTheNewVector() = KnowledgeCountTestFixture().use { f ->
@@ -173,7 +173,7 @@ class KnowledgeCountsDeviceTest {
         assertThrows(Exception::class.java) { f.db.transaction { it.execSQL("UPDATE knowledge_vector_queue SET item_key='changed'") } }
         f.db.access { it.execSQL("UPDATE knowledge_vector_counts SET pending=0") }
         assertThrows(Exception::class.java) { f.db.transaction { it.execSQL("DELETE FROM knowledge_items") } }
-        assertEquals(1, f.store.stats().itemCount); assertEquals(1L, f.actual("knowledge_vector_queue"))
+        assertEquals(1L, f.store.stats().itemCount); assertEquals(1L, f.actual("knowledge_vector_queue"))
         f.db.access { it.execSQL("UPDATE knowledge_vector_counts SET pending=1") }
         f.index(); f.verify()
     }

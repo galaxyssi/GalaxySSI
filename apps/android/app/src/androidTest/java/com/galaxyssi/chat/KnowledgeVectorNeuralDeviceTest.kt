@@ -82,7 +82,7 @@ class KnowledgeVectorNeuralDeviceTest {
         val model = model()
         val content = "\u8bbe\u5907\u91cd\u542f\u4ee5\u540e\u4ece\u5df2\u7ecf\u5b8c\u6210\u7684\u5411\u91cf\u5206\u5757\u7ee7\u7eed\uff0c\u4e0d\u91cd\u590d\u63d0\u4ea4\u65e7\u5757\u3002".repeat(80)
         if (phase == "prepare") {
-            check(store(name).stats().itemCount == 0) { "Use a fresh named reboot fixture" }
+            check(store(name).stats().itemCount == 0L) { "Use a fresh named reboot fixture" }
             store(name).upsert(AgentKnowledgeItem("reboot-doc", AgentKnowledgeKind.DOCUMENT, "Reboot fixture", content))
             LlamaKnowledgeVectorEncoder.open(context, model, spec).use { encoder ->
                 assertEquals(1, store(name).indexVectorChunks(encoder, 1).committedChunks)

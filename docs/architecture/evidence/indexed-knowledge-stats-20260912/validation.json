@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-12",
+  "base_commit": "0eb47b7ef6681e6cd80b0cde345e844fd805cd17",
+  "device": "SM-T575",
+  "android_version": "1.1.100",
+  "android_version_code": 986,
+  "app_apk_sha256": "01ae8a61151dbf7457bcf928911733fc3d6ee3b07fed74822de1b8ec907048c4",
+  "test_apk_sha256": "bf27ad570d75d94b4ed8cc2a5c962c877fa185c56db8c7c0dc955e5107905408",
+  "build": {
+    "tasks": [":app:assembleDebug", ":app:assembleDebugAndroidTest", ":app:testDebugUnitTest"],
+    "success": true,
+    "seconds": 547,
+    "gradle_heap_mib": 8192
+  },
+  "jvm": {"suites": 542, "tests": 3781, "failures": 0, "errors": 0, "skipped": 5},
+  "device_regression": {
+    "tests": 63,
+    "success_marker": "OK (63 tests)",
+    "seconds": 394.952,
+    "classes": [
+      "KnowledgeIndexedStatsDeviceTest",
+      "KnowledgeHybridSearchDeviceTest",
+      "AgentKnowledgeFtsDeviceTest",
+      "AgentKnowledgeDatabaseDeviceTest",
+      "KnowledgeIdentityDeviceTest",
+      "KnowledgeBackupDeviceTest",
+      "KnowledgeSourceDirectoryDeviceTest"
+    ]
+  },
+  "scale": {
+    "class": "KnowledgeIndexedStatsScaleDeviceTest",
+    "arguments": {"indexedStatsScale": "true"},
+    "success_marker": "OK (1 test)",
+    "seconds_including_seeding": 53.249,
+    "rows": 1000000,
+    "samples_csv_rows": 288,
+    "indexed_samples": 256,
+    "indexed_samples_over_200ms": 0,
+    "retained_fixture": "test-indexed-stats-scale-210a88e1e08848618fd945b0da2dba1d.db"
+  },
+  "alignment": {"arm64_libraries": 74, "passed": true},
+  "limits": [
+    "Metadata-only SQL benchmark; no encrypted corpus, model inference or UI timings.",
+    "No separate insertion timing, OS cache drop, 100M capacity or universal latency acceptance.",
+    "No production data exported, no uninstall or reset, no other devices operated.",
+    "Canonical knowledge SQLite database still requires payload separation and partitioning."
+  ]
+}

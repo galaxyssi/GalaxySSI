@@ -1,0 +1,89 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.100",
+  "database": "test-indexed-stats-scale-210a88e1e08848618fd945b0da2dba1d.db",
+  "database_bytes": 973438976,
+  "results": [
+    {
+      "rows": 1024,
+      "phase": "old-aggregate",
+      "samples": 8,
+      "p50_ms": 0.772385,
+      "p95_ms": 0.839769,
+      "p99_ms": 0.839769,
+      "max_ms": 0.839769,
+      "over_200ms": 0
+    },
+    {
+      "rows": 1024,
+      "phase": "indexed",
+      "samples": 64,
+      "p50_ms": 0.176884,
+      "p95_ms": 0.217961,
+      "p99_ms": 3.631462,
+      "max_ms": 3.631462,
+      "over_200ms": 0
+    },
+    {
+      "rows": 10240,
+      "phase": "old-aggregate",
+      "samples": 8,
+      "p50_ms": 5.6535,
+      "p95_ms": 6.436193,
+      "p99_ms": 6.436193,
+      "max_ms": 6.436193,
+      "over_200ms": 0
+    },
+    {
+      "rows": 10240,
+      "phase": "indexed",
+      "samples": 64,
+      "p50_ms": 0.119346,
+      "p95_ms": 0.146077,
+      "p99_ms": 0.229423,
+      "max_ms": 0.229423,
+      "over_200ms": 0
+    },
+    {
+      "rows": 102400,
+      "phase": "old-aggregate",
+      "samples": 8,
+      "p50_ms": 67.404385,
+      "p95_ms": 68.446461,
+      "p99_ms": 68.446461,
+      "max_ms": 68.446461,
+      "over_200ms": 0
+    },
+    {
+      "rows": 102400,
+      "phase": "indexed",
+      "samples": 64,
+      "p50_ms": 0.115808,
+      "p95_ms": 0.138538,
+      "p99_ms": 0.287346,
+      "max_ms": 0.287346,
+      "over_200ms": 0
+    },
+    {
+      "rows": 1000000,
+      "phase": "old-aggregate",
+      "samples": 8,
+      "p50_ms": 758.809768,
+      "p95_ms": 789.712384,
+      "p99_ms": 789.712384,
+      "max_ms": 789.712384,
+      "over_200ms": 8
+    },
+    {
+      "rows": 1000000,
+      "phase": "indexed",
+      "samples": 64,
+      "p50_ms": 0.125192,
+      "p95_ms": 0.155115,
+      "p99_ms": 0.307,
+      "max_ms": 0.307,
+      "over_200ms": 0
+    }
+  ],
+  "scope": "Actual SQL metadata and transactional directory counts; no real body encryption, model inference, UI or OS cache drop. Seeding excluded from query timings. Original aggregate is compared on the same indexed fixture. Not 100M capacity or universal latency acceptance."
+}
