@@ -1,0 +1,34 @@
+{
+  "base_main": "ade1033cb1efa697805718d41aeb5411e7cdc5dc",
+  "feature_commit": "0379300ea",
+  "integration_commit": "46d1d0691",
+  "feature_branch": "feat/knowledge-payload-compaction-20260912",
+  "device": "SM-T575",
+  "serial": "R52R90282TY",
+  "version": "1.1.103",
+  "version_code": 989,
+  "schema": 12,
+  "installed_in_place": true,
+  "app_sha256": "39a71f9b7ff2dd19f3bb7985242ec2186fa8b535b498a63707f8df4c26564592",
+  "test_apk_sha256": "0d7bb7e3e1b533769f9ecf58741d71b91ac9686b2a840d4a4f221eda5240b759",
+  "build": {"successful": true, "seconds": 754, "gradle_heap_mib": 8192},
+  "jvm": {"suites": 544, "tests_including_skips": 3803, "passed": 3798, "failures": 0, "errors": 0, "existing_skips": 5},
+  "integrated_regression": {"passed": 51, "failures": 0, "seconds": 223.966, "evidence": "integrated-regression"},
+  "compaction_process_death": {
+    "phases_passed": 8,
+    "intentional_deaths": 3,
+    "cases": ["before relocation commit", "after relocation commit", "during large-record frame copy"],
+    "retained_fixture": "test-knowledge-payload-c2380b2e-5723-4025-b184-dfc52096d9d7.db",
+    "evidence": "integrated-compaction-recovery"
+  },
+  "payload_process_death": {
+    "phases_passed": 7,
+    "intentional_deaths": 3,
+    "cases": ["before payload commit", "after payload commit", "during snapshot lease"],
+    "retained_fixture": "test-payload-recovery-d59f87aa23274dd0aae16dcde98e9fb2.db",
+    "evidence": "integrated-payload-recovery"
+  },
+  "android_aarch64_16kib_libraries_passed": 74,
+  "previous_stage": "pre-integration.json records 20 targeted and 144 expanded cases against the earlier APK; the final integrated APK reran 51 focused cases and both recovery drivers.",
+  "scope": "Correctness, storage reclamation and recovery on isolated fixtures. No production reset, pairing change, model download or model-lifecycle modification. Not a 100M capacity, end-to-end 200ms, UI latency, real-provider, low-storage or device-reboot acceptance."
+}

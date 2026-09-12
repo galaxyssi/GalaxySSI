@@ -98,7 +98,20 @@ streaming backup and the new physical-storage behavior. These pre-integration
 results identify an exact APK hash; they do not describe the independently
 published main-branch 1.1.102, which does not yet include this feature.
 
-Latest-main integration will use Android 1.1.103 to avoid the version collision
-with PR #3027, and its verification will be recorded separately. This phase does
-not establish 100M-record capacity, full metadata/FTS sharding, end-to-end 200 ms
-performance, low-storage coverage or device-reboot acceptance.
+The final build integrates main `ade1033cb` (PR #3027) and advances Android to
+1.1.103 (989), avoiding the independent main-branch version collision. Both APKs
+were installed in place on SM-T575. The integrated build succeeded in 754 seconds;
+the JVM suite has 3,803 cases, zero failures/errors and five existing skips. All
+74 AArch64 libraries passed the 16 KiB audit again.
+
+The integrated 51-case storage regression passed in 223.966 seconds. Both host
+recovery drivers then passed: eight compaction phases and seven payload/snapshot
+phases, including six actual process deaths in total. Each driver retained its
+isolated fixture across deaths and verified the resulting durable state. The
+earlier 144-case result remains pre-integration evidence, not a claim that all
+144 cases were rerun against the final APK. Exact hashes, fixture names and
+bounded synthetic transcripts are in
+`evidence/knowledge-payload-compaction-20260912/summary.json`.
+
+This phase does not establish 100M-record capacity, full metadata/FTS sharding,
+end-to-end 200 ms performance, low-storage coverage or device-reboot acceptance.
