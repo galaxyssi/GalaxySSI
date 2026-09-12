@@ -4,6 +4,10 @@ Android 1.1.113 adds physical reclamation for primary partitions containing both
 live and obsolete records. This follows primary body sharding and bounded SQL
 statement reuse. It does not complete the 100-million-record memory goal.
 
+The schema-16 [durable frame checkpoint follow-up](android-knowledge-primary-copy-checkpoints.md)
+addresses the large-record retry limitation described below. This document's
+results and original bounds describe version 1.1.113.
+
 ## Selection and bounded discovery
 
 Schema 15 adds an indexed dirty-partition queue and a single persistent discovery

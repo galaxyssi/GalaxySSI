@@ -7,6 +7,11 @@ internal object KnowledgePrimaryCompaction {
     private const val RECORD_PAGE = 8
 
     fun advance(db: KnowledgeSqlite, primary: KnowledgePrimaryPartitions, checkActive: () -> Unit): Int {
+        if (KnowledgePrimaryCopy.pending(db)) {
+            val moved = primary.resumeCopy(db, checkActive)
+            finishSource(db)
+            return moved
+        }
         discover(db, checkActive)
         var source = db.rawQuery("SELECT source FROM knowledge_primary_compaction WHERE id=1", null).use {
             check(it.moveToFirst()); it.getString(0)
@@ -14,16 +19,29 @@ internal object KnowledgePrimaryCompaction {
         if (source.isEmpty()) source = select(db, checkActive) ?: return 0
         val keys = db.rawQuery("SELECT item_key FROM knowledge_primary_refs WHERE partition_key=? ORDER BY item_key LIMIT $RECORD_PAGE",
             arrayOf(source)).use { buildList { while (it.moveToNext()) add(it.getString(0)) } }
+        var moved = 0
         for (key in keys) {
-            checkActive()
-            primary.relocate(db, key, source, checkActive)
+            try {
+                checkActive()
+                if (!primary.relocate(db, key, source, checkActive)) break
+                moved++
+            } catch (yield: MemoryMaintenanceYield) { if (moved == 0) throw yield else break }
         }
+        finishSource(db)
+        return moved
+    }
+
+    private fun finishSource(db: KnowledgeSqlite) {
+        if (KnowledgePrimaryCopy.pending(db)) return
+        val source = db.rawQuery("SELECT source FROM knowledge_primary_compaction WHERE id=1", null).use {
+            check(it.moveToFirst()); it.getString(0)
+        }
+        if (source.isEmpty()) return
         val remains = db.rawQuery("SELECT 1 FROM knowledge_primary_refs WHERE partition_key=? LIMIT 1", arrayOf(source)).use { it.moveToFirst() }
         if (!remains) {
             retire(db, source)
             db.execSQL("UPDATE knowledge_primary_compaction SET source='' WHERE id=1")
         }
-        return keys.size
     }
 
     private fun discover(db: KnowledgeSqlite, checkActive: () -> Unit) {
@@ -67,13 +85,13 @@ internal object KnowledgePrimaryCompaction {
         return null
     }
 
-    private fun retire(db: KnowledgeSqlite, key: String) {
+    internal fun retire(db: KnowledgeSqlite, key: String) {
         db.rawQuery("INSERT OR IGNORE INTO knowledge_primary_retired VALUES(?)", arrayOf(key)).use { it.moveToNext() }
         db.delete("knowledge_primary_partitions", "partition_key=?", arrayOf(key))
         db.delete("knowledge_primary_dirty", "partition_key=?", arrayOf(key))
     }
 
     fun pending(db: KnowledgeSqlite) = db.rawQuery("SELECT 1 FROM knowledge_primary_dirty UNION ALL " +
-        "SELECT 1 FROM knowledge_primary_retired UNION ALL SELECT 1 FROM knowledge_primary_compaction " +
+        "SELECT 1 FROM knowledge_primary_retired UNION ALL SELECT 1 FROM knowledge_primary_copy UNION ALL SELECT 1 FROM knowledge_primary_compaction " +
         "WHERE discovered=0 OR source<>'' LIMIT 1", null).use { it.moveToFirst() }
 }

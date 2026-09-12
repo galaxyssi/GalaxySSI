@@ -1,0 +1,61 @@
+{
+  "scope": "Durable primary partition copy checkpoints; not 100-million-record acceptance",
+  "branch": "feat/knowledge-primary-copy-checkpoints-20260913",
+  "baseCommit": "6965d9c30720cdf4247a5f437d10bbec0d2f2b0a",
+  "device": { "model": "SM-T575", "serial": "R52R90282TY", "otherDevicesTouched": false },
+  "android": { "versionName": "1.1.114", "versionCode": 1000, "installedWithoutReset": true },
+  "desktopChanged": false,
+  "schema": 16,
+  "apkSha256": "b14b5ed1299c6eba817cdb816ba528e0c2bd05a0d7122c1ff9f64670f2aa55bb",
+  "initialTestApkSha256": "c5db0cc03a487afc894bb3630252a16396e319bf2e7d82d84030de0f6655ecf1",
+  "finalTestApkSha256": "74f93ccc720c52790a5b3b4bc7ffa5a377980879632fcf6c2ed9bfc240274ffc",
+  "build": { "fullSeconds": 498, "testOnlySeconds": 80, "success": true },
+  "jvm": { "suites": 547, "passed": 3823, "skipped": 5, "failures": 0, "errors": 0 },
+  "checks": { "repository": "passed", "aarch64AlignmentPassed": 74 },
+  "focused": { "passed": 12, "seconds": 5.025, "evidence": "focused.txt", "largestRecordUtf16Chars": 655361, "largestRecordFrames": 41 },
+  "initialFailure": { "evidence": "initial-test-signature-failure.txt", "reason": "JUnit rejected a non-void Kotlin test method before executing any cases", "fix": "Explicit Unit return type; production APK unchanged" },
+  "existingCompaction": { "passed": 10, "seconds": 9.323, "testApk": "initial", "evidence": "compaction.txt" },
+  "existingPrimary": { "passed": 15, "seconds": 9.11, "testApk": "initial", "evidence": "primary.txt" },
+  "recovery": {
+    "intentionalDeaths": 7,
+    "preparationAndRecoveryPasses": 7,
+    "fixture": "test-primary-copy-558eb4b9123143f6844287fa1f66be52.db",
+    "frames": 21,
+    "markersVerifiedByHost": true,
+    "evidenceDirectory": "recovery",
+    "boundaries": ["before-frames", "before-catalog", "after-copy", "before-verify-checkpoint", "after-verify-checkpoint", "before-publish", "after-publish"]
+  },
+  "legacy": { "passed": 95, "seconds": 588.507, "evidence": "legacy.json" },
+  "retained": {
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "realRecords": 10001,
+    "reseeded": false,
+    "digestBeforeAndAfterReopen": "6645e346b67a5f09c6a9e4c84d292a936a1147f778ab83f94df69199e8aaa431",
+    "seconds": 110.672,
+    "movedRecords": 0,
+    "pages": 1,
+    "pageMs": 6.030693,
+    "directoryBytesBefore": 7168000,
+    "directoryBytesAfter": 7168000,
+    "evidence": ["retained.txt", "retained-metrics.txt"],
+    "interpretation": "Complete-corpus consistency verification with no newly eligible compaction work"
+  },
+  "durableApi": {
+    "seconds": 13.337,
+    "samples": 300,
+    "within200ms": 300,
+    "read": { "samples": 100, "p95Ms": 12.04623, "maxMs": 135.851192 },
+    "upsert": { "samples": 100, "p95Ms": 74.394384, "maxMs": 126.705307 },
+    "restore": { "samples": 100, "p95Ms": 70.252538, "maxMs": 88.501769 },
+    "probeRecordsRestoredAndReopened": 100,
+    "evidence": ["durable.txt", "durable-metrics.txt"],
+    "exclusions": ["observers", "models", "UI", "network", "maintenance contention"]
+  },
+  "remaining": [
+    "No 100-million-real-record benchmark or universal 200 ms guarantee",
+    "Catalog, metadata, FTS and vector control remain centralized",
+    "Complete single-record reads still materialize that record",
+    "Unregistered orphan-file discovery remains unfinished",
+    "Device reboot, power loss and long-cycle WorkManager scheduling were not tested in this phase"
+  ]
+}

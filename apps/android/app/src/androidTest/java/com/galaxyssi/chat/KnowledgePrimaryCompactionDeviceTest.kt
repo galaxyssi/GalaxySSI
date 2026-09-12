@@ -91,6 +91,7 @@ class KnowledgePrimaryCompactionDeviceTest {
     @Test fun upgradeDiscoversExistingShardsInBoundedPages() = KnowledgePrimaryCompactionFixture(records = 1, schema = false).use { f ->
         f.transaction { repeat(40) { f.put(it) } }
         KnowledgePrimaryCompactionSchema.create(f.db)
+        KnowledgePrimaryCopySchema.create(f.db)
         val first = KnowledgePrimaryReclaim.advance(f.db, f.parts) { }
         assertFalse(first.complete)
         assertEquals(0L, f.number("SELECT discovered FROM knowledge_primary_compaction"))
