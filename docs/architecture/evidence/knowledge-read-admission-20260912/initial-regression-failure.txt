@@ -1,0 +1,26 @@
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=86
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=cancelledRestoreRollsBackAlreadyWrittenRowsAndPublishesNothing
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 362.536
+There was 1 failure:
+1) lifecycleInvalidationDuringPublicationCannotReturnStaleEvidence(com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest)
+java.lang.AssertionError: expected:<BLOCKED> but was:<WAITING>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest.lifecycleInvalidationDuringPublicationCannotReturnStaleEvidence$lambda$21(KnowledgeHybridSearchDeviceTest.kt:140)
+	at com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest.$r8$lambda$UyTXoiqt2uOXAKN01pb_AUHJZGE(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest$$ExternalSyntheticLambda14.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest.isolated(KnowledgeHybridSearchDeviceTest.kt:41)
+	at com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest.lifecycleInvalidationDuringPublicationCannotReturnStaleEvidence(KnowledgeHybridSearchDeviceTest.kt:116)
+
+FAILURES!!!
+Tests run: 86,  Failures: 1
+
+
+INSTRUMENTATION_CODE: -1

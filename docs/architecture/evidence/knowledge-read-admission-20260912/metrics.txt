@@ -1,0 +1,5 @@
+         1789217011.297 23422 23453 I System.out: KNOWLEDGE_READ_ADMISSION phase=validate elapsed_ns=7932038
+         1789217011.482 23422 23456 I System.out: KNOWLEDGE_READ_ADMISSION phase=open_and_read elapsed_ns=11024923
+         1789217020.058 23422 23462 I System.out: KNOWLEDGE_READ_ADMISSION_SCALE rows=10001 samples=100 results=8 p50_ns=82976308 p95_ns=107270461 p99_ns=117930384 over_200ms=0
+         1789217265.777 23422 23443 I System.out: KNOWLEDGE_FTS corpus=1201 decrypted=1 elapsed_ms=36
+         1789217269.463 23422 23443 I System.out: KNOWLEDGE_FTS_HOT samples=100 p50_ms=36 p95_ms=42 p99_ms=46

@@ -20,8 +20,10 @@ internal class AgentKnowledgeDatabase private constructor(
     private val context: Context, private val name: String, private val legacyName: String
 ) : Closeable {
     @Volatile private var retired = false
+    @Volatile private var readersReady = false
     private var connection: KnowledgeSqlite? = null
     private var indexing = false
+    private val indexRetryQueued = java.util.concurrent.atomic.AtomicBoolean()
     private var accessDepth = 0
     private var previewCipher: KnowledgeSourcePreviewCipher? = null
     private var indexMemo: KnowledgeIndexKeyMemo? = null
@@ -38,7 +40,7 @@ internal class AgentKnowledgeDatabase private constructor(
     internal val decryptedItemReads: Long get() = itemReads.get()
     internal var decryptedSourceSummaryReads = 0L
         private set
-    internal var indexFailure: String? = null
+    @Volatile internal var indexFailure: String? = null
         private set
 
     private fun open(): KnowledgeSqlite {
@@ -133,7 +135,7 @@ internal class AgentKnowledgeDatabase private constructor(
                 scheduleIndexing(db)
                 sourceMaintenance.request(db)
             }
-        } } finally {
+        }.also { if (accessDepth == 1) readersReady = true } } finally {
             accessDepth--
             if (accessDepth == 0) {
                 previewCipher?.close(); previewCipher = null
@@ -173,12 +175,23 @@ internal class AgentKnowledgeDatabase private constructor(
         KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
     }
     internal fun searchSnapshot(): KnowledgeSearchSnapshot {
-        var view: KnowledgeSearchSnapshot? = null
-        try {
-            return access { KnowledgeSearchSnapshot(this, context.getDatabasePath(name).absolutePath).also { view = it } }
-        } catch (failure: Throwable) {
-            try { view?.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
-            throw failure
+        checkActive()
+        check(!Thread.holdsLock(this) || accessDepth == 0) { "A search snapshot requires committed database state" }
+        // Only initialization/migration needs the writer. Warm readers pin committed WAL directly.
+        if (!readersReady) access { }
+        checkActive()
+        return KnowledgeSearchSnapshot(this, context.getDatabasePath(name).absolutePath).also { requestIndexRetry() }
+    }
+
+    private fun requestIndexRetry() {
+        if (retired || indexFailure == null || !indexRetryQueued.compareAndSet(false, true)) return
+        try { indexExecutor.execute {
+            try { if (!retired) access { } }
+            catch (error: Exception) { if (!retired) indexFailure = error.javaClass.simpleName }
+            finally { indexRetryQueued.set(false) }
+        } } catch (error: java.util.concurrent.RejectedExecutionException) {
+            indexRetryQueued.set(false)
+            if (!retired) indexFailure = error.javaClass.simpleName
         }
     }
     internal fun sourceSnapshot(selection: KnowledgeSourceSelection, expectedRevision: String): KnowledgeSourceSnapshot = access {
