@@ -1,0 +1,60 @@
+{
+  "suite": "com.galaxyssi.chat.KnowledgeSourceObservationTest",
+  "tests": 10,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "timestamp": "2026-09-12T09:56:12.989Z",
+  "cases": [
+    {
+      "name": "completedAccumulatorCannotBeReused",
+      "seconds": "0.001",
+      "passed": true
+    },
+    {
+      "name": "policyOnlyChangeMatchesLegacy",
+      "seconds": "0.007",
+      "passed": true
+    },
+    {
+      "name": "unorderedDuplicateAndCrossSourceInputAreRejected",
+      "seconds": "0.0",
+      "passed": true
+    },
+    {
+      "name": "summaryTagsAndLongAclNormalizationMatchLegacy",
+      "seconds": "0.022",
+      "passed": true
+    },
+    {
+      "name": "deletionMatchesLegacy",
+      "seconds": "0.002",
+      "passed": true
+    },
+    {
+      "name": "importMatchesLegacyAcrossPagesAndMixedMetadata",
+      "seconds": "0.019",
+      "passed": true
+    },
+    {
+      "name": "identicalSourceAndTimestampOnlyChangesAreNoOps",
+      "seconds": "0.007",
+      "passed": true
+    },
+    {
+      "name": "replacementMatchesLegacyIncludingRetraction",
+      "seconds": "0.007",
+      "passed": true
+    },
+    {
+      "name": "internalItemAndUnicodeOrderMatchLegacy",
+      "seconds": "0.001",
+      "passed": true
+    },
+    {
+      "name": "emptySourceHasNoEvent",
+      "seconds": "0.0",
+      "passed": true
+    }
+  ]
+}

@@ -7,9 +7,11 @@ import org.json.JSONArray
 /** Durable knowledge storage with keyed FTS5 candidate retrieval and lexical reranking. */
 class SQLiteAgentKnowledgeStore internal constructor(
     context: Context, private val databaseName: String, legacyName: String,
+    private val publishSource: ((KnowledgeSourceMutation) -> Unit)? = null,
     private val publish: (List<AgentKnowledgeItem>, List<AgentKnowledgeItem>) -> Unit
 ) : AgentKnowledgeStore {
     constructor(context: Context) : this(context, "galaxyssi_knowledge_v2.db", "galaxyssi_agent_knowledge",
+        { change -> GlobalConversationEventBus.publishKnowledgeSourceMutation(context.applicationContext, change) },
         { before, after -> GlobalConversationEventBus.publishKnowledgeMutations(context.applicationContext, before, after) })
     private val appContext = context.applicationContext
     private val storage by lazy { AgentKnowledgeDatabase.shared(appContext, databaseName, legacyName) }
@@ -45,30 +47,17 @@ class SQLiteAgentKnowledgeStore internal constructor(
         KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
 
-    override fun replaceSource(source: String, items: List<AgentKnowledgeItem>) {
+    override fun replaceSource(source: String, items: Sequence<AgentKnowledgeItem>) {
         val cleanSource = source.trim()
-        val incoming = items.filter { it.source == cleanSource && it.title.isNotBlank() && it.content.isNotBlank() }
-            .distinctBy { it.id }
-        if (cleanSource.isBlank() || incoming.isEmpty()) return
-        val changed = storage.transaction { db ->
-            val keys = storage.keys(db, "source_key=?", arrayOf(storage.key("source", cleanSource)))
-            val previous = keys.map { requireNotNull(storage.read(db, it)) }
-            val policy = previous.minByOrNull { it.updatedAtMillis }
-            val next = incoming.map { item -> item.copy(
-                summary = item.summary.trim().ifBlank { AgentKnowledgeCodec.summarize(item.content) },
-                cloudAccess = policy?.cloudAccess ?: item.cloudAccess,
-                agentAccess = policy?.agentAccess ?: item.agentAccess,
-                allowedAgentIds = policy?.allowedAgentIds ?: item.allowedAgentIds) }
-            // IDs cannot silently replace content belonging to another source.
-            next.forEach { item -> storage.read(db, storage.key("id", item.id))?.let {
-                require(it.source == cleanSource) { "Knowledge ID belongs to another source" }
-            } }
-            keys.forEach { db.delete("knowledge_items", "item_key=?", arrayOf(it)) }
-            next.forEach { storage.write(db, it) }
-            previous to next
+        if (cleanSource.isBlank()) return
+        KnowledgeBackupStaging(appContext).use { staging ->
+            if (staging.acceptSource(cleanSource, items) == 0L) return
+            val change = KnowledgeSourceReplacement(storage, staging, cleanSource).commit()
+            try {
+                if (publishSource != null) publishSource.invoke(change)
+                else publish(change.items(previous = true), change.items(previous = false))
+            } finally { KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex() }
         }
-        publish(changed.first, changed.second)
-        KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
 
     override fun list(limit: Int): List<AgentKnowledgeItem> = storage.access { db ->

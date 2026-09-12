@@ -3752,6 +3752,15 @@ object GlobalConversationEventBus {
         return enqueued
     }
 
+    internal fun publishKnowledgeSourceMutation(context: Context, change: KnowledgeSourceMutation): Boolean {
+        val repository = GlobalAgentRepository(context)
+        if (!repository.settings().enabled) return false
+        val events = GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(change, System.currentTimeMillis())
+        val enqueued = repository.enqueueAll(events) > 0
+        if (enqueued) requestProcessing(context)
+        return enqueued
+    }
+
     fun publishKnowledgeMutations(
         context: Context,
         before: List<AgentKnowledgeItem>,

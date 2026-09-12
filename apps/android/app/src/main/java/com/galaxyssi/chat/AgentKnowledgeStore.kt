@@ -64,7 +64,8 @@ enum class AgentKnowledgeAgentAccess {
 
 interface AgentKnowledgeStore {
     fun upsert(item: AgentKnowledgeItem)
-    fun replaceSource(source: String, items: List<AgentKnowledgeItem>)
+    fun replaceSource(source: String, items: List<AgentKnowledgeItem>) = replaceSource(source, items.asSequence())
+    fun replaceSource(source: String, items: Sequence<AgentKnowledgeItem>)
     fun search(query: String, limit: Int = 5): List<AgentKnowledgeItem>
     fun searchRanked(query: String, limit: Int = 8): List<AgentKnowledgeHit>
     fun list(limit: Int = 100): List<AgentKnowledgeItem>

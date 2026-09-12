@@ -43,6 +43,20 @@ object GlobalPersistentContextObservationExtractor {
         }
     }
 
+    internal fun knowledgeSourceMutation(change: KnowledgeSourceMutation, timestampMillis: Long): List<GlobalConversationEvent> {
+        val previous = KnowledgeSourceObservation().apply { change.visit(true, ::add) }.finish()
+        val current = KnowledgeSourceObservation().apply { change.visit(false, ::add) }.finish()
+        return knowledgeSourceSnapshots(previous, current, timestampMillis)
+    }
+
+    internal fun knowledgeSourceSnapshots(previous: KnowledgeSourceSnapshot?, current: KnowledgeSourceSnapshot?,
+        timestampMillis: Long): List<GlobalConversationEvent> = when {
+            previous == current -> emptyList()
+            current == null && previous != null -> listOf(knowledgeDeleted(previous, timestampMillis))
+            current != null -> listOf(knowledgeUpserted(previous, current, timestampMillis))
+            else -> emptyList()
+        }
+
     private fun memoryUpserted(
         previous: AgentMemoryItem?,
         item: AgentMemoryItem,
@@ -264,13 +278,13 @@ object GlobalPersistentContextObservationExtractor {
         )
     }
 
-    private fun knowledgeSourceKey(item: AgentKnowledgeItem): String = if (item.source.isBlank()) {
+    internal fun knowledgeSourceKey(item: AgentKnowledgeItem): String = if (item.source.isBlank()) {
         "item-${GlobalAgentText.stableKey(item.id)}"
     } else {
         "source-${GlobalAgentText.stableKey(item.source)}"
     }
 
-    private fun sourceKind(source: String): String = when {
+    internal fun sourceKind(source: String): String = when {
         source.startsWith("https://", ignoreCase = true) -> "https"
         source.startsWith("http://", ignoreCase = true) -> "http"
         source.startsWith("content://", ignoreCase = true) -> "content"
@@ -316,7 +330,7 @@ object GlobalPersistentContextObservationExtractor {
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
 
-    private data class KnowledgeSourceSnapshot(
+    internal data class KnowledgeSourceSnapshot(
         val sourceKey: String,
         val rootId: String,
         val eventId: String,

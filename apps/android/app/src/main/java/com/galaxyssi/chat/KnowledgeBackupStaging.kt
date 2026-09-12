@@ -57,6 +57,32 @@ internal class KnowledgeBackupStaging(context: Context) : Closeable {
         }
         ended = true
     }
+    internal fun acceptSource(source: String, items: Sequence<AgentKnowledgeItem>): Long {
+        check(!begun && !verified)
+        begun = true
+        for (item in items) {
+            check(!Thread.currentThread().isInterrupted)
+            if (item.source != source || item.title.isBlank() || item.content.isBlank()) continue
+            require(item.id.isNotBlank()) { "Knowledge item has no stable ID" }
+            // Preserve first-valid-ID wins without a corpus-sized plaintext set.
+            if (position(item.id) == null) add(item)
+        }
+        ended = true
+        validateArchive()
+        return rows
+    }
+    private fun position(id: String): Long? =
+        sql.rawQuery("SELECT seq FROM records WHERE token=?", arrayOf(index.token("item", id))).use {
+            if (it.moveToFirst()) it.getLong(0) else null
+        }
+    internal fun item(id: String, previous: Boolean): AgentKnowledgeItem? {
+        check(prepared)
+        return position(id)?.let { read(it, if (previous) "previous" else "incoming") }
+    }
+    internal fun previous(): Sequence<AgentKnowledgeItem> = sequence {
+        check(prepared)
+        for (seq in positions()) read(seq, "previous")?.let { yield(it) }
+    }
     private fun add(item: AgentKnowledgeItem) {
         val seq = next
         val token = index.token("item", item.id)
@@ -90,13 +116,13 @@ internal class KnowledgeBackupStaging(context: Context) : Closeable {
         check(verified)
         for (seq in positions()) read(seq, "incoming")?.let { yield(it) }
     }
-    fun changes(): Sequence<Pair<AgentKnowledgeItem?, AgentKnowledgeItem?>> = sequence {
+    fun changes(includeUnchanged: Boolean = false): Sequence<Pair<AgentKnowledgeItem?, AgentKnowledgeItem?>> = sequence {
         check(prepared)
         for (seq in positions()) {
             val before = read(seq, "previous")
             val after = read(seq, "incoming")
             check(before == null || after == null || before.id == after.id)
-            if (before != after) yield(before to after)
+            if (includeUnchanged || before != after) yield(before to after)
         }
     }
     private fun positions(): Sequence<Long> = sequence {

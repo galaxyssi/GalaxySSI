@@ -134,7 +134,7 @@ class AgentKnowledgeImporter(
         val semanticTags = AgentKnowledgeTextAnalyzer.tokens("$title ${indexedText.take(2_000)}")
             .filter { it.length in 2..40 }
             .take(12)
-        val items = chunks.mapIndexed { index, chunk ->
+        val items = chunks.asSequence().mapIndexed { index, chunk ->
             AgentKnowledgeItem(
                 id = UUID.nameUUIDFromBytes("$source#$index".toByteArray(Charsets.UTF_8)).toString(),
                 kind = AgentKnowledgeKind.DOCUMENT,
@@ -160,11 +160,11 @@ class AgentKnowledgeImporter(
             mimeType = mimeType,
             byteCount = byteCount,
             characterCount = indexedText.length,
-            chunkCount = items.size,
+            chunkCount = chunks.size,
             truncated = truncated,
             message = buildString {
                 append("Imported ").append(title)
-                append(" as ").append(items.size).append(" knowledge chunks")
+                append(" as ").append(chunks.size).append(" knowledge chunks")
                 if (truncated) append("; content truncated to ").append(MAX_EXTRACTED_CHARACTERS).append(" characters")
             }
         )

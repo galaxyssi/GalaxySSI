@@ -1,0 +1,10 @@
+{
+  "source": "Gradle JUnit XML results after successful full testDebugUnitTest",
+  "version": "1.1.105",
+  "versionCode": 991,
+  "suites": 545,
+  "tests": 3816.0,
+  "failures": 0.0,
+  "errors": 0.0,
+  "skipped": 5.0
+}
