@@ -12,7 +12,7 @@ internal object AgentWebEvidencePack {
     private const val MIN_EXCERPT_CHARS = 1_000
     private const val MAX_EXCERPT_CHARS = 8_000
     private val PACK_OPERATIONS = setOf(
-        "search", "fetch", "crawl", "extract", "find_similar", "research", "agent", "diff"
+        "search", "fetch", "crawl", "extract", "find_similar", "research", "agent", "diff", "cache"
     )
 
     fun attach(output: AgentNativeJsonObject, generatedAtMillis: Long): AgentNativeJsonObject {
@@ -38,6 +38,7 @@ internal object AgentWebEvidencePack {
             if (researchDetails.isNotEmpty()) {
                 put("research_context", compactResearchContext(researchDetails))
             }
+            if (operation == "cache") put("freshness", "Stored evidence, not a new fetch. Check source dates and retrieval time before using for current claims.")
         }
         val attached = linkedMapOf<String, Any?>()
         output["protocol"]?.let { attached["protocol"] = it }

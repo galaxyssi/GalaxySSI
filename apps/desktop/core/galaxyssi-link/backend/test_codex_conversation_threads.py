@@ -511,6 +511,14 @@ class CodexConversationThreadTests(unittest.TestCase):
                 "Prefer Codex native live web search",
                 thread_start["developerInstructions"],
             )
+            for instruction in (
+                "Use a dedicated weather lookup first when available",
+                "Batch independent queries and page opens",
+                "the specific missing fact, date or unresolved conflict",
+                "Do not duplicate that delivery work with shell downloads",
+                "Explicit editing, visual analysis and file-creation requests still use the required tools",
+            ):
+                self.assertIn(instruction, thread_start["developerInstructions"])
             self.assertIn(
                 "call `galaxyssi_parallel_web_search` once",
                 thread_start["developerInstructions"],
@@ -520,7 +528,9 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertNotIn("Do not synthesize replacement media or data.", turn_inputs[0])
             self.assertNotIn("GalaxySSI execution contract:", turn_inputs[0])
             self.assertIn("GalaxySSI response policy:", turn_inputs[0])
-            self.assertLess(len(turn_inputs[0]), 1_800)
+            from response_policy import apply_response_policy
+            self.assertEqual(apply_response_policy("first"), turn_inputs[0])
+            self.assertNotIn(codex_app_server.CODEX_TASK_POLICY, turn_inputs[0])
             turn_starts = [params for method, params, _ in calls if method == "turn/start"]
             self.assertEqual(["low", "low"], [params["effort"] for params in turn_starts])
             host_guard.assert_not_called()

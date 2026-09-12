@@ -11,10 +11,11 @@ internal object CloudImageSearchEvidence {
         val pack = output["evidence_pack"] as? Map<*, *> ?: return output
         val items = (pack["items"] as? Iterable<*>)?.mapNotNull { raw ->
             val item = raw as? Map<*, *> ?: return@mapNotNull null
-            val images = (item["images"] as? Iterable<*>)?.mapNotNull { entry ->
-                val media = entry as? Map<*, *> ?: return@mapNotNull null
+            val images = (item["images"] as? Iterable<*>)?.mapNotNull mediaLoop@ { entry ->
+                val media = entry as? Map<*, *> ?: return@mediaLoop null
                 val original = media["url"]?.toString().orEmpty()
                 val preview = media["thumbnail_url"]?.toString().orEmpty().takeIf(::secureUrl)
+                if (preview == null && !secureUrl(original)) return@mediaLoop null
                 media.entries.associate { it.key.toString() to it.value }.toMutableMap().apply {
                     if (preview != null && preview != original) {
                         put("url", preview)
@@ -39,8 +40,11 @@ internal object CloudImageSearchEvidence {
                     "For an object or species, prefer identity/appearance sources over recipes or comparison pages. " +
                     "Check each image's own title/alt, not only the parent page title. Preserve all requested " +
                     "subjects and qualifiers such as interior, exterior, diagram or real photograph. " +
+                    "Drawings/illustrations mean artwork, not photos of toys, figurines or other merchandise. " +
+                    "A relevant character on a product is still the wrong medium for an illustration request. " +
                     "If evidence is insufficient, refine the query instead of filling the count with off-topic pictures.",
-                "display" to "Use images.url, a search preview where available. Keep original_url for an explicit " +
+                "display" to "Use the HTTPS images.url, a search preview where available. A source page with no " +
+                    "displayable images is not an image candidate. Keep original_url for an explicit " +
                     "original-resolution request; it has not been downloaded or validated.",
                 "verification" to "Titles and source relevance are evidence, not visual identification."
             ))

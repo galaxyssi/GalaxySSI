@@ -54,8 +54,13 @@ internal object AgentMarkdownImages {
         val result = mutableListOf<AgentRichBlock>()
         var cursor = 0
         images.take(32).forEach { image ->
-            val start = image.sourceSpans.first().inputIndex
-            val end = image.sourceSpans.last().let { it.inputIndex + it.length }
+            val sourceLink = (image.parent as? Link)?.takeIf {
+                it.firstChild === image && it.lastChild === image &&
+                    isWebSource(it.destination) && it.sourceSpans.isNotEmpty()
+            }
+            val spans = (sourceLink ?: image).sourceSpans
+            val start = spans.first().inputIndex
+            val end = spans.last().let { it.inputIndex + it.length }
             if (start < cursor || end > text.length) return@forEach
             if (start > cursor) text.substring(cursor, start).trim().takeIf(String::isNotBlank)
                 ?.let { result += textBlock(it) }
@@ -68,6 +73,11 @@ internal object AgentMarkdownImages {
                 title = alt.toString().ifBlank { image.title.orEmpty() }.take(500),
                 uri = image.destination, metadata = mapOf(SOURCE to image.destination)
             )
+            sourceLink?.let { link ->
+                val label = alt.toString().ifBlank { "Source" }.replace("\\", "\\\\")
+                    .replace("[", "\\[").replace("]", "\\]").replace('\n', ' ').replace('\r', ' ')
+                result += textBlock("[$label](<${link.destination}>)")
+            }
             cursor = end
         }
         text.substring(cursor).trim().takeIf(String::isNotBlank)?.let { result += textBlock(it) }

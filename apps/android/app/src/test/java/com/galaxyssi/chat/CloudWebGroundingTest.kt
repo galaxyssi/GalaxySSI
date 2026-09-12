@@ -16,6 +16,7 @@ class CloudWebGroundingTest {
 
         assertEquals(
             listOf(
+                "web_weather",
                 "web_image_search",
                 "web_search",
                 "web_fetch",
@@ -31,6 +32,15 @@ class CloudWebGroundingTest {
             names
         )
         assertFalse(names.contains("get_weather"))
+        val search = (0 until tools.length()).map(tools::getJSONObject)
+            .first { it.getJSONObject("function").getString("name") == "web_search" }
+            .getJSONObject("function").getJSONObject("parameters").getJSONObject("properties")
+        assertTrue(search.has("read_pages"))
+        assertTrue(search.has("read_limit"))
+        val imageTool = (0 until tools.length()).map(tools::getJSONObject)
+            .first { it.getJSONObject("function").getString("name") == "web_image_search" }.getJSONObject("function")
+        assertTrue(imageTool.getString("description").contains("merchandise photos do not satisfy"))
+        assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("Preserve the requested visual medium"))
 
         val research = (0 until tools.length())
             .map(tools::getJSONObject)

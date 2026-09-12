@@ -116,6 +116,23 @@ class AgentPublicWebSearchParserTest {
             setOf(AgentWebIntelligenceVertical.GENERAL, AgentWebIntelligenceVertical.REGIONAL) })
     }
 
+    @Test fun specialistSelectionReusesAShortLivedCatalogButExplicitMissingSourcesForceRefresh() {
+        var now = 1_000L
+        var reads = 0
+        val coordinator = AgentWebIntelligenceSearchCoordinator(
+            fetcher = object : AgentWebIntelligenceFetcher {
+                override fun fetch(url: String, maxBytes: Long, timeoutMillis: Long,
+                    cancellationToken: AgentNativeToolCancellationToken, checkpoint: () -> Unit): AgentWebIntelligenceFetched = error("Network")
+            }, clock = { now }, learnedSourceProvider = { reads++; emptyList() })
+        repeat(3) { coordinator.selectEngines("technology", 3, emptyList(), emptySet(), setOf("technology")) }
+        assertEquals(1, reads)
+        now += 30_000L
+        coordinator.selectEngines("technology", 3, emptyList(), emptySet(), setOf("technology"))
+        assertEquals(2, reads)
+        runCatching { coordinator.validateEngines(listOf("learned_" + "a".repeat(16))) }
+        assertEquals(3, reads)
+    }
+
     @Test fun earlyCompletionRequiresRelevantSnippetsAndIndependentSitesNotEngineCount() {
         val good = (1..4).map { AgentWebIntelligenceRawResult("sogou", it, "Fish taxonomy", "https://source$it.org/fish",
             excerpt = "Fish taxonomy and scientific identification, with independent source details.") }
