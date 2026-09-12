@@ -208,11 +208,29 @@ requires this digest, stable message ID, `RX_STORED`, and the current pair/key
 binding persisted in the outbox. Local JSON hashes still enforce content
 conflicts independently. The Desktop small-message dispatcher and peer-RTT
 accounting now use this frame in the actual durable publisher/bridge ingress.
-Android's symmetric dispatcher and attachment bitmap integration remain pending.
+Android's symmetric small-message dispatcher is also integrated. Attachment
+bitmap/striping integration remains pending.
 See [durable receipt verification](../testing/MQTT_DURABLE_RECEIPTS_20260913.md)
 and [Desktop hedge verification](../testing/MQTT_HEDGED_DISPATCH_DESKTOP_20260913.md).
 Fair local Signal locks avoid thread
 starvation but do not guarantee ordering across independent brokers.
+
+## Durable Wire Fragment Ingress
+
+Both actual receive paths now persist authenticated `signal-chunk` fragments in
+their existing Link/Signal databases. The local storage scope includes pair/key
+identity and does not change with broker or rotating Topic. A domain-separated
+manifest hash binds transfer SHA-256, fragment count, total byte count, and both
+application endpoints. Strict fragment hashes and final-wire validation precede
+the original Signal/inbox transaction. Only that committed inbox's matching
+wire proof authorizes release of completed fragment bytes.
+
+Global reserved storage is bounded at 16 transfers / 32 MiB, per pair at eight
+transfers / 16 MiB, with fixed eight-day retention. Existing fragment geometry
+and application attachment IDs are unchanged. The new storage is not itself
+a network `CHUNK_STORED` implementation: acknowledged bitmaps, persisted sender
+state, adaptive striping, and missing-only cross-path retry remain pending.
+See [fragment verification](../testing/MQTT_DURABLE_CHUNKS_20260913.md).
 
 ## Verification Boundary
 

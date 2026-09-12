@@ -40,6 +40,7 @@ from agent_task_manager import (
 from codex_app_server import CodexAppServer, CodexConversationBusyError
 import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
+import link_delivery as link_delivery_storage
 from link_delivery import (
     acknowledge_outbound,
     acknowledge_verified_outbound,
@@ -89,10 +90,10 @@ from latency_feature_flags import agent_output_delta_enabled
 from mqtt_wire_chunking import (
     CHUNK_DATA_BYTES,
     DIRECT_LIMIT_BYTES,
-    MqttWireChunkAssembler,
     encode_wire_payload,
     is_chunk as is_mqtt_chunk,
 )
+from mqtt_durable_chunks import DurableChunkAssembler
 from pairing_state import (
     DATA_DIR,
     active_pairing_topics,
@@ -537,7 +538,7 @@ class _OutboundFragmentTransfer:
 
 phone_tool_sessions: dict[str, _PhoneToolSession] = {}
 phone_tool_sessions_lock = threading.RLock()
-inbound_chunk_assembler = MqttWireChunkAssembler()
+inbound_chunk_assembler = DurableChunkAssembler(lambda: link_delivery_storage._connect())
 fragment_publish_lock = threading.RLock()
 fragment_publish_transfers: dict[int, _OutboundFragmentTransfer] = {}
 fragment_publish_transfer_by_mid: dict[tuple[int, int, int], int] = {}
@@ -2746,7 +2747,6 @@ def _complete_fragment_publish(mqttc, mid: int, *, ack_ns=None, failed=False) ->
 
 def _clear_mqtt_wire_transport_state() -> None:
     global fragment_publish_inflight
-    inbound_chunk_assembler.clear()
     transport_timing.disconnected()
     with pending_outbound_acks_lock:
         pending_outbound_acks.clear()
@@ -6794,6 +6794,7 @@ def _process_message(mqttc, userdata, msg):
                     flush_outbound_messages(mqttc)
                 return
         delivery_frame = None
+        chunk_transfer = None
         from mqtt_delivery_envelope import FIELD, parse_verified_frame
         if FIELD in wire_payload:
             delivery_frame = parse_verified_frame(wire_payload,
@@ -6814,10 +6815,8 @@ def _process_message(mqttc, userdata, msg):
                 log.warning("Rejected MQTT chunk with mismatched protocol or endpoint identity")
                 return
             try:
-                assembled = inbound_chunk_assembler.accept(
-                    client_route_id,
-                    wire_payload,
-                )
+                chunk_transfer = (_receipt_binding_for_client(paired_client), wire_payload["transfer_id"])
+                assembled = inbound_chunk_assembler.accept(chunk_transfer[0], wire_payload)
             except ValueError as exc:
                 link_transport_diagnostics().record(
                     classify_fragment_error(exc),
@@ -6912,18 +6911,24 @@ def _process_message(mqttc, userdata, msg):
             )
 
         _deliver_stored_application(mqttc, paired_client, wire_payload, application_envelope, payload, trace,
-                                    timings=timings, ciphertext_digest=ciphertext_digest, delivery_frame=delivery_frame)
+                                    timings=timings, ciphertext_digest=ciphertext_digest, delivery_frame=delivery_frame,
+                                    chunk_transfer=chunk_transfer)
     except Exception as e:
         log.error("MQTT message handling error (%s)", type(e).__name__)
 
 
-def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None):
-    if payload.get("type") == "delivery_ack":
-        return
+def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None):
     message_id = str(envelope["message_id"])
     route = str(wire_payload["_client_route_id"])
     from mqtt_delivery_envelope import stored_receipt
     wire_hash = stored_wire_receipt(route, message_id)
+    if chunk_transfer is not None and wire_hash:
+        try:
+            inbound_chunk_assembler.release_after_store(*chunk_transfer, wire_hash)
+        except Exception as exc:
+            log.warning("Wire fragment cleanup deferred (%s)", type(exc).__name__)
+    if payload.get("type") == "delivery_ack":
+        return
     if not wire_hash:
         # A recovered body without its wire proof waits for the sender's durable retry.
         return
@@ -6950,7 +6955,7 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
         log.warning("Stored-message receipt deferred (%s)", type(exc).__name__)
 
 
-def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest="", delivery_frame=None):
+def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest="", delivery_frame=None, chunk_transfer=None):
     import signal_receive_dispatch as dispatch
 
     route = str(paired_client["client_route_id"])
@@ -6966,7 +6971,8 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 if ciphertext_digest:
                     from mqtt_delivery_envelope import content_hash
                     bind_ciphertext(route, ciphertext_digest, message_id, receipt_hash=content_hash(wire_payload))
-                _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True, delivery_frame=delivery_frame)
+                _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True,
+                                        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer)
             return
         handler_started = False
         try:
@@ -6988,7 +6994,8 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 for stage, at_ns in timings:
                     record_task(identity["task_id"], stage, at_ns=at_ns, once=True)
                 record_task(identity["task_id"], "desktop_request_decrypted", once=True)
-            _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, delivery_frame=delivery_frame)
+            _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, delivery_frame=delivery_frame,
+                                    chunk_transfer=chunk_transfer)
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)

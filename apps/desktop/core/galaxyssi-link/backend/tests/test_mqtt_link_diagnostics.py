@@ -212,7 +212,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch("blob_input_bridge.persist_before_ack") as persist,
-            patch.object(mqtt_bridge, "bind_ciphertext") as bind_cipher,
+            patch.object(mqtt_bridge, "bind_ciphertext", wraps=link_delivery.bind_ciphertext) as bind_cipher,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch.object(mqtt_bridge, "_start_remote_agent_task") as task,
         ):

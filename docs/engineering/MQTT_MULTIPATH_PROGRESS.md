@@ -282,9 +282,14 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    dispatch/RTT and its Android counterpart are activated and use the final
    encoded frame bound. Account for frame overhead before current 512 KiB privacy buckets
    and chunk splitting; do not silently overflow existing direct-wire limits.
-6. Add shared durable fragment/chunk bitmap acknowledgement, alternate-path
-   retransmission, assembly validation, and final artifact handling. Current
-   `signal-chunk` assembly is memory-only and must not be described as durable.
+6. Android and Desktop actual `signal-chunk` receive paths now persist fragments
+   in their existing Link/Signal databases, scoped to authenticated pair/key
+   rather than receive Topic. Complete bytes wait for a committed inbox proof
+   before release. S20U storage and explicit process-stop recovery passed; see
+   [durable fragments](../testing/MQTT_DURABLE_CHUNKS_20260913.md).
+   Authenticated bitmap acknowledgement, outbound persisted fragment state,
+   alternate-path missing-only retry, adaptive striping, handoff cleanup after
+   interrupted release, and final artifact acceptance remain unfinished.
 7. Bounded Android ingress and both endpoints' per-Signal-identity serialization
    are integrated. Continue evaluating aggregate limits and real-device latency
    when the full transport is activated; isolated 10,000-peer lane cleanup is not
@@ -297,7 +302,9 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    durable-receipt checkpoint separately passed 47 isolated device cases and the
    subsequent hedge-policy checkpoint passed 51 and Android-dispatch checkpoint
    passed 55 (including overlapping storage cases, not 190 distinct tests);
-   no shipping App installation or UI control has occurred on S20U. Test-owned
+   the subsequent fragment checkpoint passed 68 device cases plus one separate
+   two-phase process-stop recovery scenario (55 of the 68 overlap the prior
+   checkpoint). No shipping App installation or UI control has occurred on S20U. Test-owned
    packages were removed after completion; the pre-existing test package remains.
    Do not operate S26U or SM-T575 in this round.
    Earlier 29-test S26U evidence remains historical, not S20U acceptance.
