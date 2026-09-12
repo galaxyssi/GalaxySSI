@@ -5,9 +5,17 @@ import org.json.JSONObject
 import java.util.UUID
 
 /** Route metadata shares the durable Link inbox database, never an Activity or a broker connection. */
-internal class MqttRouteState(private val database: AgentEncryptedDatabase) {
+internal class MqttRouteState(private val database: AgentEncryptedDatabase) : MqttPeerRoutes.Persistence {
     constructor(context: Context) : this(GalaxySSILinkDeliveryStore.transportMetadataDatabase(context.applicationContext))
     enum class Result { NEW, DUPLICATE, STALE, CONFLICT }
+
+    override fun issue(peer: String, sender: String, receiver: String, brokers: Set<String>, at: Long) =
+        issueLocalResume(peer, sender, receiver, brokers, at)
+
+    override fun record(peer: String, advertisement: MqttRouteAdvertisement, at: Long) =
+        recordVerifiedResume(peer, advertisement, at) in setOf(Result.NEW, Result.DUPLICATE)
+
+    override fun forget(peer: String) = forgetRoute(peer)
 
     fun issueLocalResume(peer: String, sender: String, receiver: String, receiveBrokers: Set<String>,
                          nowMs: Long, packetBytes: Int = MqttBrokerCatalog.PACKET_BYTES): MqttRouteAdvertisement {

@@ -3,7 +3,6 @@ package com.galaxyssi.chat
 import android.util.Log
 import org.eclipse.paho.client.mqttv3.IMqttActionListener
 import org.eclipse.paho.client.mqttv3.IMqttToken
-import org.eclipse.paho.client.mqttv3.MqttAsyncClient
 import java.util.concurrent.ConcurrentHashMap
 
 /** Keeps the broker subscription set equal to the current opaque receive windows. */
@@ -11,10 +10,10 @@ internal class GalaxySSILinkSubscriptionCoordinator(
     private val qos: Int,
     private val onAttemptCompleted: (generation: Int, succeeded: Boolean) -> Unit
 ) {
-    private val activeTopics = ConcurrentHashMap.newKeySet<String>()
+    private val desiredTopics = ConcurrentHashMap.newKeySet<String>()
 
     fun reconcile(
-        mqtt: MqttAsyncClient,
+        mqtt: MqttPoolTransport,
         links: List<GalaxySSILinkProtocol.ServerLink>,
         phoneTopics: Set<String>,
         rendezvousTopics: Set<String>,
@@ -42,7 +41,7 @@ internal class GalaxySSILinkSubscriptionCoordinator(
         }
     }
 
-    fun unsubscribe(mqtt: MqttAsyncClient, topics: Set<String>, label: String) {
+    fun unsubscribe(mqtt: MqttPoolTransport, topics: Set<String>, label: String) {
         if (topics.isEmpty()) return
         runCatching {
             mqtt.unsubscribe(
@@ -50,7 +49,7 @@ internal class GalaxySSILinkSubscriptionCoordinator(
                 topics,
                 object : IMqttActionListener {
                     override fun onSuccess(asyncActionToken: IMqttToken?) {
-                        activeTopics.removeAll(topics)
+                        desiredTopics.removeAll(topics)
                     }
 
                     override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
@@ -61,16 +60,13 @@ internal class GalaxySSILinkSubscriptionCoordinator(
         }.onFailure { Log.w(TAG, "Opaque mailbox unsubscribe could not start scope=$label", it) }
     }
 
-    fun invalidate() {
-        activeTopics.clear()
-    }
-
     private fun subscribe(
-        mqtt: MqttAsyncClient,
+        mqtt: MqttPoolTransport,
         topics: Set<String>,
         scope: String,
         generation: Int
     ) {
+        desiredTopics.addAll(topics)
         runCatching {
             mqtt.subscribe(
                 topics.toTypedArray(),
@@ -78,7 +74,6 @@ internal class GalaxySSILinkSubscriptionCoordinator(
                 scope,
                 object : IMqttActionListener {
                     override fun onSuccess(asyncActionToken: IMqttToken?) {
-                        activeTopics.addAll(topics)
                         onAttemptCompleted(generation, true)
                     }
 
@@ -94,10 +89,10 @@ internal class GalaxySSILinkSubscriptionCoordinator(
         }
     }
 
-    private fun unsubscribeStale(mqtt: MqttAsyncClient, expectedTopics: Set<String>) {
+    private fun unsubscribeStale(mqtt: MqttPoolTransport, expectedTopics: Set<String>) {
         unsubscribe(
             mqtt,
-            activeTopics.filterNot(expectedTopics::contains).toSet(),
+            desiredTopics.filterNot(expectedTopics::contains).toSet(),
             "expired_rotation_window"
         )
     }

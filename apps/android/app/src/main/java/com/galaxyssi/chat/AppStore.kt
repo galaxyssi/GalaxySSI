@@ -574,7 +574,10 @@ object AppStore {
     fun phoneReceiveTopics(context: Context): Set<String> =
         phoneReceiveBindings(context).flatMapTo(linkedSetOf()) { it.second }
 
-    internal fun phoneReceiveBindings(context: Context): List<Pair<String, Set<String>>> {
+    internal fun phoneReceiveBindings(context: Context): List<Pair<String, Set<String>>> =
+        phoneTransportBindings(context).map { it.first to it.second.receiveWindow }
+
+    internal fun phoneTransportBindings(context: Context): List<Pair<String, GalaxySSILinkProtocol.Routes>> {
         normalizeVerifiedPhoneRelationshipRoutes(context)
         return buildList {
             listOf(contacts(context), friendRequests(context)).forEach { records ->
@@ -582,7 +585,7 @@ object AppStore {
                     val record = records.optJSONObject(index) ?: continue
                     val identity = galaxyssiIdOf(record)
                     val routes = phoneRoutes(record) ?: continue
-                    if (identity.isNotBlank()) add(identity to routes.receiveWindow)
+                    if (identity.isNotBlank()) add(identity to routes)
                 }
             }
         }

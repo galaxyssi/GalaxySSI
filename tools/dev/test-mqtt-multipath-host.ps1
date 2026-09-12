@@ -26,7 +26,8 @@ try {
         (CachedJar 'org.jetbrains.kotlin' 'kotlin-reflect'), (CachedJar 'org.jetbrains.intellij.deps' 'trove4j'),
         (CachedJar 'org.jetbrains.kotlinx' 'kotlinx-coroutines-core-jvm'), $annotations) -join [IO.Path]::PathSeparator
     $sources = @('MqttBrokerCatalog', 'MqttMultipathPolicy', 'MqttBrokerPool', 'MqttRouteAdvertisement',
-        'MqttInboundRoutePool', 'MqttInboundBindings', 'MqttImmutableContent', 'MqttInboxDispatchGate') |
+        'MqttInboundRoutePool', 'MqttInboundBindings', 'MqttImmutableContent', 'MqttInboxDispatchGate',
+        'MqttPoolTransport', 'MqttPeerRoutes', 'GalaxySSIMqttPolicies') |
         ForEach-Object { "apps/android/app/src/main/java/com/galaxyssi/chat/$_.kt" }
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttMultipathPolicyTest.kt'
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttBrokerPoolTest.kt'
@@ -35,6 +36,10 @@ try {
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttInboundBindingsTest.kt'
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttImmutableContentTest.kt'
     $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttInboxDispatchGateTest.kt'
+    $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttPoolTestRig.kt'
+    $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttPoolTransportTest.kt'
+    $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttPeerRoutesTest.kt'
+    $sources += 'apps/android/app/src/test/java/com/galaxyssi/chat/MqttPublishGuardTest.kt'
     $jar = Join-Path $OutputDirectory 'tests.jar'
     $compileLog = Join-Path $OutputDirectory 'compile.log'
     & $Java -Xmx1g -cp $compiler org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect `
@@ -45,7 +50,8 @@ try {
         com.galaxyssi.chat.MqttMultipathPolicyTest com.galaxyssi.chat.MqttBrokerPoolTest `
         com.galaxyssi.chat.MqttRouteAdvertisementTest com.galaxyssi.chat.MqttInboundRoutePoolTest `
         com.galaxyssi.chat.MqttInboundBindingsTest com.galaxyssi.chat.MqttImmutableContentTest `
-        com.galaxyssi.chat.MqttInboxDispatchGateTest *> $log
+        com.galaxyssi.chat.MqttInboxDispatchGateTest com.galaxyssi.chat.MqttPoolTransportTest `
+        com.galaxyssi.chat.MqttPeerRoutesTest com.galaxyssi.chat.MqttPublishGuardTest *> $log
     $code = $LASTEXITCODE
     Get-Content -LiteralPath $log
     if ($code -ne 0) { throw 'MQTT multipath host tests failed' }

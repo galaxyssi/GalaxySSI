@@ -28,8 +28,8 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 Desktop `mqtt_bridge.start` now owns the three-path pool in this development
 branch, with authenticated per-pair resume exchange and shared physical publish
-tokens. Android `GalaxySSIMqttClient.connect` still needs the corresponding
-activation. Installed applications are unchanged. Do not launch this worktree
+tokens. Android `GalaxySSIMqttClient.connect` now owns `MqttPoolTransport` and
+`MqttPeerRoutes` as well. Shipping applications are unchanged. Do not launch this worktree
 against the existing installed Android application as a completed upgrade.
 
 Do not claim automatic fallback, hedging, or striping in the shipping application
@@ -68,7 +68,7 @@ on the basis of these isolated modules passing their tests.
   peer readiness. It exposes per-broker counts/generations, not private mailboxes.
 - This adapter currently submits one physical publication per logical token.
   The policy's full hedges/races, authenticated attempt receipts, durable chunk
-  scheduling, and Android activation remain unfinished. Do not infer those
+  scheduling, and coordinated phone/Desktop acceptance remain unfinished. Do not infer those
   capabilities from this checkpoint or install it as the complete feature.
 
 Verification is documented in
@@ -78,6 +78,15 @@ pool/resume/pairing/ownership cases and both live JVM recovery modules. It is no
 a phone end-to-end or public multi-broker delivery score.
 
 ## Integrated Ingress Hardening
+
+The Android pool activation checkpoint now has 126 pure JVM tests and 123 normal
+Gradle focused tests (with overlap), plus **37 completed S20U isolated device
+tests**. The latter includes SQLite/Signal/security/outbox coverage and one small
+synthetic TLS loopback per public broker. All three paths succeeded in that run;
+this does not certify real App/Desktop pairing, task delivery, or attachments.
+Paho's unbounded zero close timeout was replaced and the completed device close
+took 1.53 seconds. An earlier prematurely cleaned-up run is not counted as a pass.
+See [Android pool activation](../testing/MQTT_POOL_ACTIVATION_ANDROID_20260913.md).
 
 - Android's actual `messageArrived` now uses one bounded, fair four-worker pool,
   not a permanent executor per Topic. Admission counts retained active payloads;
@@ -225,12 +234,12 @@ See [Desktop stored dispatch](../testing/MQTT_STORED_DISPATCH_DESKTOP_20260913.m
 This supersedes the earlier statement that the actual bridge still used an
 ID-only accepted-state skip; it does not activate the three-path transport.
 
-1. Activate the Android pool in the actual application/service-owned lifecycle;
-   Desktop activation now has host integration coverage. Preserve one shared
-   application/service owner across ten windows and verify real device lifecycle.
-2. Complete Android authenticated resume and pairing/app-to-app integration.
-   Desktop request/response, epoch refresh, and QR bootstrap are integrated and
-   host-tested, but cross-platform wire/device acceptance remains outstanding.
+1. Android and Desktop actual connection entry points now own their pools.
+   Verify one shared application/service owner across ten real windows and the
+   full device lifecycle; host compilation is not this acceptance.
+2. Android authenticated resume and pairing/app-to-app publishing are integrated.
+   Both endpoints' request/response and epoch refresh have host coverage, but
+   cross-platform wire/device pairing acceptance remains outstanding.
 3. Integrate generation-scoped physical attempts with the current publisher,
    outbox, receipt handlers, timing, subscription coordinator, and Run Kernel.
    Do not reset global business state when one path disconnects.
@@ -260,8 +269,10 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    traffic, automatic internal rollback to one observed healthy common path.
 9. Run integration/fault matrices on owned test brokers, then designated-device
    tests. The latest user update switched this round to connected S20U (SM-G9880,
-   ADB serial `R5CN319CESA`). Only inventory was read; no installation or UI control
-   has occurred on S20U. Do not operate S26U or SM-T575 in this round.
+   ADB serial `R5CN319CESA`). 37 isolated storage/security/pool tests completed;
+   no shipping App installation or UI control has occurred on S20U. Test-owned
+   packages were removed after completion; the pre-existing test package remains.
+   Do not operate S26U or SM-T575 in this round.
    Earlier 29-test S26U evidence remains historical, not S20U acceptance.
    Isolated verification must not replace production
    app data; coordinated full installation and re-pairing remain separate steps.

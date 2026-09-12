@@ -222,6 +222,10 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
                 GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)
             }
 
+            override fun onLost(network: Network) {
+                GalaxySSIMqttClient.waitForNetwork(this@MessageService)
+            }
+
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                 if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
                     GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)

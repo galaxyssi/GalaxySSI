@@ -1,8 +1,8 @@
 # Automatic Multi-Broker Transport
 
 Status: implementation in progress. Ingress hardening is integrated. The Desktop
-connection entry point now owns the three-path pool in this development branch;
-Android activation and coordinated device acceptance remain unfinished. No
+and Android connection entry points now own the three-path pool in this development branch;
+coordinated device acceptance remains unfinished. No
 shipping installation or complete-feature release is claimed.
 
 ## Product Contract
@@ -86,7 +86,7 @@ revocation or re-pairing removes the watermark.
 The Android and Desktop canonical capability digest is cross-checked with the
 same fixed contract vector in both test suites.
 
-### Desktop Resume Acknowledgement
+### Resume Acknowledgement
 
 The existing relationship AEAD carries `link_resume_ack` with:
 
@@ -112,8 +112,8 @@ application code, not by a packet's untrusted `type` field.
 
 ## Scheduling
 
-The table describes the target policy. The current Desktop physical adapter
-submits one packet per token; full logical-message hedging, racing, and durable
+The table describes the target policy. The current Android and Desktop physical
+adapters submit one packet per token; full logical-message hedging, racing, and durable
 chunk scheduling are still being integrated above it. Policy unit tests alone
 are not evidence that the complete product already uses these strategies.
 

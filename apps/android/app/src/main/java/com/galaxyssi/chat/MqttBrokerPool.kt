@@ -42,7 +42,7 @@ internal class MqttBrokerPool(
     }
     data class PathSnapshot(val generation: Long, val connected: Boolean, val activeSubscriptions: Int,
                             val pendingSubscriptions: Int, val pendingPublishes: Int, val lastError: String)
-    private data class PendingPublish(val logicalId: Long, val attemptId: String, var packetId: Int = 0)
+    private data class PendingPublish(val logicalId: Long, val attemptId: String, val startedAt: Long, var packetId: Int = 0)
     private class Path(val brokerId: String) {
         val lock = Any()
         var generation = 0L
@@ -65,6 +65,7 @@ internal class MqttBrokerPool(
     }.apply { removeOnCancelPolicy = true }
     private val started = AtomicBoolean()
     private val closed = AtomicBoolean()
+    private val networkPresent = AtomicBoolean(true)
     private val sequence = AtomicLong()
 
     private inline fun emit(callback: () -> Unit) { runCatching(callback) }
@@ -82,7 +83,7 @@ internal class MqttBrokerPool(
     private fun connect(path: Path) {
         val generation = synchronized(path.lock) {
             path.retryScheduled = false
-            if (closed.get() || path.connected || path.connecting) return
+            if (closed.get() || !networkPresent.get() || path.connected || path.connecting) return
             path.connecting = true
             ++path.generation
         }
@@ -91,7 +92,7 @@ internal class MqttBrokerPool(
         try {
             client = clientFactory(path.brokerId, MqttBrokerCatalog.brokers.getValue(path.brokerId))
             synchronized(path.lock) {
-                if (closed.get() || path.generation != generation) {
+                if (closed.get() || !networkPresent.get() || path.generation != generation) {
                     client.close()
                     return
                 }
@@ -169,7 +170,7 @@ internal class MqttBrokerPool(
         emit { listener.onState(ingress(path, generation), "disconnected", reason) }
         if (client != null) executorCleanup(client)
         synchronized(path.lock) {
-            if (closed.get() || path.retryScheduled) return
+            if (closed.get() || !networkPresent.get() || path.retryScheduled) return
             path.retryScheduled = true
             val ceiling = (1000L shl path.failures.coerceAtMost(5)).coerceAtMost(30_000)
             path.failures = (path.failures + 1).coerceAtMost(5)
@@ -180,14 +181,16 @@ internal class MqttBrokerPool(
 
     private fun executorCleanup(client: IMqttAsyncClient) {
         if (closed.get()) {
-            runCatching { client.disconnectForcibly(0, 0) }
-            runCatching { client.close() }
+            disposeClient(client)
         } else {
-            runCatching { executor.execute {
-                runCatching { client.disconnectForcibly(0, 0) }
-                runCatching { client.close() }
-            } }
+            runCatching { executor.execute { disposeClient(client) } }
         }
+    }
+
+    private fun disposeClient(client: IMqttAsyncClient) {
+        // Paho interprets a zero completion timeout as an unbounded wait.
+        runCatching { client.disconnectForcibly(0, 500) }
+        runCatching { client.close() }
     }
 
     fun subscribe(topics: Map<String, Int>) {
@@ -266,7 +269,7 @@ internal class MqttBrokerPool(
         val path = paths[broker] ?: return null
         val logicalId = sequence.incrementAndGet()
         val client: IMqttAsyncClient
-        val pending = PendingPublish(logicalId, attemptId)
+        val pending = PendingPublish(logicalId, attemptId, now())
         synchronized(path.lock) {
             client = path.client ?: return null
             if (!current(path, client, generation) || !path.connected ||
@@ -298,6 +301,30 @@ internal class MqttBrokerPool(
         PathSnapshot(path.generation, path.connected, path.activeTopics.size, path.pendingTopics.size,
             path.publications.size, path.lastError)
     } }
+
+    fun networkAvailable() {
+        if (closed.get() || networkPresent.getAndSet(true)) return
+        paths.values.forEach { path -> executor.execute { connect(path) } }
+    }
+
+    fun networkUnavailable() {
+        if (closed.get() || !networkPresent.getAndSet(false)) return
+        paths.values.forEach { path ->
+            val old = synchronized(path.lock) { path.client to path.generation }
+            lost(path, old.first, old.second, "network_unavailable")
+        }
+    }
+
+    fun repairStalledPublishes(timeoutMs: Long = 30_000) {
+        if (closed.get()) return
+        paths.values.forEach { path ->
+            val stalled = synchronized(path.lock) {
+                if (path.publications.values.any { now() - it.startedAt >= timeoutMs })
+                    path.client?.let { it to path.generation } else null
+            }
+            stalled?.let { lost(path, it.first, it.second, "publish_timeout") }
+        }
+    }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return

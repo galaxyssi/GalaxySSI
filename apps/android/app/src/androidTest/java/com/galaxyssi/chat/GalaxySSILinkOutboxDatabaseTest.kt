@@ -15,6 +15,38 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GalaxySSILinkOutboxDatabaseTest {
+    @Test fun bulkWakeReadsIndexedScheduleInsteadOfStaleEncryptedRetryDate() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_wake_${System.nanoTime()}.db"
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                val now = System.currentTimeMillis()
+                database.insert(item(1, now).put("status", "publishing").put("next_attempt_at", now + 60_000))
+                database.makePendingImmediatelyRetryable(now)
+                val result = database.retryCandidates(now, true, 6, 9, 4)
+                assertEquals(1, result.length())
+                assertEquals(now, result.getJSONObject(0).getLong("next_attempt_at"))
+                assertEquals("queued", result.getJSONObject(0).getString("status"))
+                assertEquals(1, GalaxySSILinkDeliveryStore.pendingFromArray(result, now).size)
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
+    @Test fun deferredOfflineRowsCannotStarveOlderDueRowsPastLookahead() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_fair_${System.nanoTime()}.db"
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                val now = System.currentTimeMillis()
+                repeat(40) { database.insert(item(it, now + it).put("next_attempt_at", now)) }
+                repeat(32) { index -> database.update("message-$index") { it.put("next_attempt_at", now + 5_000) } }
+                val result = database.retryCandidates(now + 6_000, true, 6, 9, 4)
+                assertEquals("message-32", result.getJSONObject(0).getString("message_id"))
+                assertEquals(0, result.getJSONObject(0).getInt("attempts"))
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test
     fun indexedOutboxUpdatesOneRowWithoutRewritingTheQueue() {
         val context = ApplicationProvider.getApplicationContext<Context>()

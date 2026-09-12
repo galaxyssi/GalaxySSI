@@ -115,7 +115,8 @@ internal class MqttBrokerDeliveryRegistration(
     private enum class State {
         ACKNOWLEDGED_BEFORE_REGISTRATION,
         REGISTERED,
-        COMPLETED
+        COMPLETED,
+        FAILED
     }
 
     init {
@@ -126,6 +127,7 @@ internal class MqttBrokerDeliveryRegistration(
 
     @Synchronized
     fun onPublished(messageId: Int): Boolean {
+        if (states[messageId] == State.FAILED) return false
         val acknowledgedEarly = states[messageId] == State.ACKNOWLEDGED_BEFORE_REGISTRATION
         states[messageId] = State.REGISTERED
         trimCompleted()
@@ -140,6 +142,7 @@ internal class MqttBrokerDeliveryRegistration(
             true
         }
         State.COMPLETED,
+        State.FAILED,
         State.ACKNOWLEDGED_BEFORE_REGISTRATION -> false
         null -> {
             states[messageId] = State.ACKNOWLEDGED_BEFORE_REGISTRATION
@@ -148,16 +151,22 @@ internal class MqttBrokerDeliveryRegistration(
     }
 
     @Synchronized
+    fun onFailed(messageId: Int) {
+        if (states[messageId] != State.COMPLETED) states[messageId] = State.FAILED
+        trimCompleted()
+    }
+
+    @Synchronized
     fun clear() {
         states.clear()
     }
 
     private fun trimCompleted() {
-        var removeCount = states.values.count { it == State.COMPLETED } - maxCompletedMessageIds
+        var removeCount = states.values.count { it == State.COMPLETED || it == State.FAILED } - maxCompletedMessageIds
         if (removeCount <= 0) return
         val iterator = states.entries.iterator()
         while (iterator.hasNext() && removeCount > 0) {
-            if (iterator.next().value == State.COMPLETED) {
+            if (iterator.next().value in setOf(State.COMPLETED, State.FAILED)) {
                 iterator.remove()
                 removeCount -= 1
             }

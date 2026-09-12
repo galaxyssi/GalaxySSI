@@ -36,6 +36,7 @@ class MqttBrokerPoolTest {
         var options: MqttConnectOptions? = null
         var connected = false
         var closed = false
+        var disconnectTimeout = -1L
         var mid = 1
         val published = CopyOnWriteArrayList<MqttMessage>()
         val publishListeners = ConcurrentHashMap<Int, Pair<IMqttActionListener, IMqttToken>>()
@@ -71,7 +72,8 @@ class MqttBrokerPoolTest {
                     if (early) listener.onSuccess(token)
                     token
                 }
-                "disconnectForcibly", "disconnect" -> { connected = false; null }
+                "disconnectForcibly" -> { disconnectTimeout = args[1] as Long; connected = false; null }
+                "disconnect" -> { connected = false; null }
                 "close" -> { closed = true; null }
                 "toString" -> "Fake($broker)"
                 "hashCode" -> System.identityHashCode(this)
@@ -234,5 +236,11 @@ class MqttBrokerPoolTest {
         assertTrue(mqttPublishPacketBytes("abc", 1_048_576) > 1_048_576)
         ready()
         assertNull(pool.publish("emqx", 1, "outbox", ByteArray(1_048_576), "too-large"))
+    }
+
+    @Test fun shutdownNeverUsesPahosInfiniteCompletionTimeout() {
+        ready()
+        pool.close()
+        assertTrue(clients.values.all { it.first().disconnectTimeout in 1..1_000 })
     }
 }

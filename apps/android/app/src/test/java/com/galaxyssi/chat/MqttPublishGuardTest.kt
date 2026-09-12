@@ -7,6 +7,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MqttPublishGuardTest {
+    @Test fun `early publish failure cannot turn into a later successful delivery`() {
+        val registration = MqttBrokerDeliveryRegistration()
+        registration.onFailed(8)
+        assertFalse(registration.onPublished(8))
+        assertFalse(registration.onAcknowledged(8))
+    }
+
+    @Test fun `failure of one token preserves another registered token`() {
+        val registration = MqttBrokerDeliveryRegistration()
+        registration.onPublished(8)
+        registration.onPublished(9)
+        registration.onFailed(8)
+        assertFalse(registration.onAcknowledged(8))
+        assertTrue(registration.onAcknowledged(9))
+    }
+
+    @Test fun `duplicate failure cannot undo already completed token`() {
+        val registration = MqttBrokerDeliveryRegistration()
+        registration.onPublished(8)
+        assertTrue(registration.onAcknowledged(8))
+        registration.onFailed(8)
+        assertFalse(registration.onAcknowledged(8))
+    }
+
     @Test
     fun `successful publish preserves delivery token`() {
         val result = MqttPublishGuard.attempt { 42 }

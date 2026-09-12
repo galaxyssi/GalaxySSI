@@ -305,6 +305,13 @@ object GalaxySSILinkDeliveryStore {
     }
 
     @Synchronized
+    internal fun waitForPeerRoute(context: Context, messageId: String) {
+        updateOutbox(context, messageId) { item ->
+            item.put("next_attempt_at", System.currentTimeMillis() + 5_000L)
+        }
+    }
+
+    @Synchronized
     fun acknowledge(context: Context, messageId: String) {
         removePendingMessage(context, messageId)
     }

@@ -7,6 +7,14 @@ model startup. The app's CMake outputs and embedded model/runtime assets are not
 needed by the SQLite/Keystore/Signal tests and are omitted. Libsignal's dependency
 and native library are retained. This is not a shipping APK or full product test.
 
+The manifest permits Internet access only for explicit network test cases; no
+service or connection starts with the package. `MqttPublicPoolDeviceTest` is
+skipped unless `-e publicMqttSmoke true` is passed to AndroidJUnitRunner. It sends
+at most one small synthetic packet per public broker, using a fresh exact test
+topic, no wildcard subscription, no user identity, and no chat or pairing data.
+Select the designated phone explicitly and report each path independently.
+This small loopback test is not App/Desktop delivery or a throughput benchmark.
+
 Run from `apps/android` with the usual JDK and Android SDK configured:
 
 ```powershell
