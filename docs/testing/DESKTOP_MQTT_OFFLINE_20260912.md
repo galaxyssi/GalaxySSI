@@ -43,5 +43,19 @@ probe, subscription, blob peer delivery, and phone-tool routing suites.
 `npm run check` passed all 34 Node tests and the Desktop structure check.
 `git diff --check` passed.
 
-The runtime has not been restarted in this investigation, to avoid discarding
-the user's currently unsent message. No phone interface was operated.
+## Deployment verification
+
+After the user requested a restart, the fix was applied to current `main`
+(`58f01509d`) on a dedicated branch. All 63 backend tests (plus 10 subtests),
+34 Node tests, and structure checks passed again on that integrated checkout.
+
+The old Desktop was closed normally after confirming there were no active
+Desktop tasks. Desktop 1.1.49 started from the integrated checkout with a
+responsive `GalaxySSI Desktop` window. Its HTTP backend and Signal sidecar were
+healthy. MQTT still received `connect_rc=Server unavailable` and had 0 of 10
+subscriptions active. The specific connection rejection now survives the
+generic disconnect callback as intended. Real message delivery remains blocked
+by this external broker refusal; it has not been declared successful.
+
+No phone interface was operated. Uncommitted Android news-latency changes in
+the previous checkout were preserved and excluded from this branch.
