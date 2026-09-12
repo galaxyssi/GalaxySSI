@@ -27,10 +27,12 @@ internal object KnowledgePayloadWork {
         if (!context.getDatabasePath(name).isFile) return MemorySegmentSweep.Outcome.COMPLETE
         val db = AgentKnowledgeDatabase.shared(context, name, "galaxyssi_agent_knowledge")
         return MemorySegmentSweep(shouldYield, step = { checkActive ->
+            checkActive()
+            if (!db.advancePayloadUsage()) return@MemorySegmentSweep false
             val page = db.migratePayloadPage(checkActive)
             if (!page.complete) false else {
                 checkActive()
-                db.reclaimPayloads()?.complete
+                db.reclaimPayloads(checkActive)?.complete
             }
         }).run()
     }

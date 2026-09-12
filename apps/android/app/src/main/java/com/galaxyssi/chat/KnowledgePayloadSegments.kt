@@ -12,8 +12,8 @@ import java.nio.charset.CodingErrorAction
 /** Compressed, authenticated payload files; source SQLite publishes only bounded references. */
 internal class KnowledgePayloadSegments(root: File, private val namespace: String) {
     val leases = KnowledgeSegmentLeases(File(root.absolutePath + ".lock"))
-    private val catalog = AgentMemorySegmentCatalog(File(root.absolutePath + ".catalog.db"))
-    private val files = MemorySegmentFile(root, AgentStorageCipher::encryptBinary, AgentStorageCipher::decryptBinary,
+    internal val catalog = AgentMemorySegmentCatalog(File(root.absolutePath + ".catalog.db"))
+    internal val files = MemorySegmentFile(root, AgentStorageCipher::encryptBinary, AgentStorageCipher::decryptBinary,
         syncDirectory = ::sync, register = { catalog.register(it); sync(requireNotNull(root.parentFile)) })
 
     fun append(db: KnowledgeSqlite, key: String, encoded: String) {
@@ -26,24 +26,31 @@ internal class KnowledgePayloadSegments(root: File, private val namespace: Strin
             }
             records.finish()
         }
+        db.insertOrThrow("knowledge_payloads", null, encodeReference(key, reference))
+    }
+
+    internal fun encodeReference(key: String, reference: MemorySegmentFile.Reference): ContentValues {
         val plain = reference.bytes()
         val cipher = try { AgentStorageCipher.encryptBinary(plain, referenceAad(key)) } finally { plain.fill(0) }
-        try {
-            db.insertOrThrow("knowledge_payloads", null, ContentValues().apply {
+        return try {
+            ContentValues().apply {
                 put("item_key", key); put("segment", reference.segment.toString()); put("bytes", reference.length)
                 put("reference", Base64.encodeToString(cipher, Base64.NO_WRAP))
-            })
+            }
         } finally { cipher.fill(0) }
+    }
+
+    internal fun decodeReference(key: String, value: String): MemorySegmentFile.Reference {
+        require(value.length <= 256) { "Invalid knowledge payload reference size" }
+        val cipher = Base64.decode(value, Base64.NO_WRAP)
+        val plain = try { AgentStorageCipher.decryptBinary(cipher, referenceAad(key)) } finally { cipher.fill(0) }
+        return try { MemorySegmentFile.Reference.parse(plain) } finally { plain.fill(0) }
     }
 
     fun read(db: KnowledgeSqlite, key: String): String? {
         val reference = db.rawQuery("SELECT reference,segment,bytes FROM knowledge_payloads WHERE item_key=?", arrayOf(key)).use { c ->
             if (!c.moveToFirst()) return null
-            val value = c.getString(0)
-            require(value.length <= 256) { "Invalid knowledge payload reference size" }
-            val cipher = Base64.decode(value, Base64.NO_WRAP)
-            val plain = try { AgentStorageCipher.decryptBinary(cipher, referenceAad(key)) } finally { cipher.fill(0) }
-            val parsed = try { MemorySegmentFile.Reference.parse(plain) } finally { plain.fill(0) }
+            val parsed = decodeReference(key, c.getString(0))
             parsed.also { check(it.segment.toString() == c.getString(1) && it.length == c.getLong(2)) { "Knowledge payload membership mismatch" } }
         }
         return files.read(reference, aad(key)) { input ->
@@ -61,21 +68,12 @@ internal class KnowledgePayloadSegments(root: File, private val namespace: Strin
 
     /** Exclusive lease and SQLite writer reservation are held before checking references. */
     data class Reclaimed(val bytes: Long, val complete: Boolean)
-    fun reclaim(db: KnowledgeSqlite, limit: Int = 2): Reclaimed {
-        var removed = 0L
-        var last: Long? = null
-        for (entry in catalog.next(limit)) {
-            val live = db.rawQuery("SELECT 1 FROM knowledge_payloads WHERE segment=? LIMIT 1",
-                arrayOf(entry.segment.toString())).use { it.moveToFirst() }
-            if (!live) removed = Math.addExact(removed, files.remove(entry.segment))
-            catalog.advance(entry, removed = !live)
-            last = entry.id
-        }
-        return Reclaimed(removed, last?.let { !catalog.hasAfter(it) } ?: true)
-    }
+    fun reclaim(db: KnowledgeSqlite, limit: Int = 2, checkActive: () -> Unit = {}): Reclaimed =
+        KnowledgePayloadCompaction(this).run(db, limit, checkActive)
 
     internal fun seal() = files.seal()
-    private fun aad(key: String) = "$namespace:knowledge-payload:v1:$key".toByteArray(Charsets.UTF_8)
+    internal fun aad(key: String) = "$namespace:knowledge-payload:v1:$key".toByteArray(Charsets.UTF_8)
+    internal fun copyAad(key: String) = "$namespace:knowledge-payload-copy:v1:$key".toByteArray(Charsets.UTF_8)
     private fun referenceAad(key: String) = "$namespace:knowledge-payload-reference:v1:$key".toByteArray(Charsets.UTF_8)
 
     companion object {

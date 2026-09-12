@@ -6,9 +6,9 @@ import java.io.Closeable
 import java.io.File
 import java.util.UUID
 
-internal class KnowledgePayloadTestFixture : Closeable {
+internal class KnowledgePayloadTestFixture(val name: String = "test-knowledge-payload-${UUID.randomUUID()}.db") : Closeable {
+    init { require(name.matches(Regex("test-knowledge-payload-[a-f0-9-]{36}\\.db"))) }
     val context = InstrumentationRegistry.getInstrumentation().targetContext
-    val name = "test-knowledge-payload-${UUID.randomUUID()}.db"
     private val legacy = "legacy-$name"
     var store = open(); private set
     val db get() = AgentKnowledgeDatabase.shared(context, name, legacy)
