@@ -1,0 +1,292 @@
+{
+  "source": "build/knowledge-primary-reader-runs/59b6129b53eb43f7936eb5c9bd40839d/instrumentation.txt",
+  "sha256": "568da33deccc6329f57b6f7c595e23bbe1fdd071221fd46cdae3cc73c70cc418",
+  "passed": 55,
+  "terminal": [
+    "INSTRUMENTATION_RESULT: stream=",
+    "",
+    "Time: 33.645",
+    "",
+    "OK (55 tests)",
+    "",
+    "",
+    "INSTRUMENTATION_CODE: -1"
+  ],
+  "cases": [
+    {
+      "test": "missingFileCannotReadAnUnlinkedCachedHandle",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "runtimeTrimClosesIdleCacheWithoutLosingStoredRecords",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "activeWriterReadDoesNotBorrowACommittedReader",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "replacementInodeIsReopenedAndAuthenticated",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "repeatedReadsReuseOneConnectionWithoutRetainingBindings",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "symlinkCannotReuseThePreviouslyCachedFile",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "manyPartitionsKeepFixedCapacityAndEvictedFilesRemainReadable",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "equivalentRootPathsShareTheSamePhysicalConnection",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "externalCorruptionIsNotHiddenByAnIdleReadTransaction",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "retirementClosesCachedConnectionsBeforeUnlink",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryReadConnectionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "authenticatedButAlteredFrameFailsDigestVerification",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "corruptCheckpointFailsClosedAndLeavesSourceReadable",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "corruptedDestinationIsRejectedBeforePublication",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "cooperativeYieldCommitsOnlyCompletedFramePrefix",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "boundedCopyAndVerificationResumeBetweenReopens",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "deletionWinsWhileCopyIsInProgress",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "ignoredPublicationMustNotClaimSuccess",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "physicalCommitBeforeCatalogRollbackReplaysUnpublishedTail",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "replacementWinsWhileCopyIsInProgress",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "checkpointCannotBeReboundToAnotherOriginal",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "smallRecordYieldKeepsAlreadyMovedPrefix",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "hardCancellationRollsBackCopyCheckpoint",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCopyDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "cancellationRollsBackRelocatedPrefixAndCheckpoint",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "corruptedFrameFailsClosedWithoutRetiringSource",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "catalogFailureCannotPublishOrRetireAnyMovedRecord",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "upgradeDiscoversExistingShardsInBoundedPages",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "publishedRetirementSurvivesReopenBeforeUnlink",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "repeatedUpdatesRequeuePreviouslyHealthyPartitions",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "ownerSnapshotDefersCompactionAndLogicalRevisionsStayUnchanged",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "streamingRelocationPreservesLargeUnicodeBodyAndEncryption",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "lastLiveRecordsDeletedBetweenPagesAreRetiredSafely",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "partialLiveShardMovesInPagesAndResumesAfterReopen",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryCompactionDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "committedFramesCannotEscapeAnUncommittedCatalog",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "gzipBombAndInvalidUtf8AreRejectedWithinOneFrame",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "swappedReferenceCannotAuthenticateAsAnotherRecord",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "failedAppendPoisonsPublicationEvenWhenCallerCatchesIt",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "pinnedCatalogRetainsOldImmutableRecordAfterReplacement",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "corruptOrMissingFramesNeverBecomeAnEmptyResult",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "authoritativeBodiesRotateAcrossPhysicalPartitionsAndReopen",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryPartitionsDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "sourceReplacementRemainsAtomicWhenReferencePublicationFails",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "failedMigrationRollsBackMovedPrefixAndCheckpoint",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "migrationPreservesCompletedVectorDocumentsAndTheirSourceBinding",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "snapshotDefersWholePartitionRetirementAndSurvivesOwnerReopen",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "oldInlineAndSegmentBodiesMigrateAcrossReopeningWithoutLogicalChanges",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "actualStoreUsesPhysicalPrimaryPartitionsForSmallAndLargeBodies",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "backupAndSearchSnapshotsKeepOldBodiesButFinalValidationRejectsStaleResults",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "livePartitionCannotBeReclaimed",
+      "class": "com.galaxyssi.chat.KnowledgePrimaryStoreDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "queryOnlyViewClosesIdempotentlyAndReleasesLeaseOnFailure",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "interruptionStopsBeforeDecryptingAndStillReleasesLease",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "indexedSnapshotAndPublicationRespectConcurrentPermissionChanges",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "selectiveReadsAreBoundedAndNeverSilentlyIgnoreCorruptBodies",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "pendingKeysetPagesDoNotBlockWritersOrMixRevisions",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "pinnedPayloadReadDoesNotSerializeAnActualEncryptedAppend",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "searchPinsEncryptedFilesUntilItsReadViewCloses",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    },
+    {
+      "test": "retirementInvalidatesOpenReadView",
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "status": "passed"
+    }
+  ]
+}

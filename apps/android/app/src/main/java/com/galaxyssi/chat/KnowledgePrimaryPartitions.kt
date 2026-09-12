@@ -10,8 +10,9 @@ import java.util.UUID
 import org.json.JSONObject
 
 /** Durable immutable partitions. The caller may publish catalog references only after prepareCommit. */
-internal class KnowledgePrimaryPartitions(context: Context, private val root: File, private val namespace: String,
+internal class KnowledgePrimaryPartitions(context: Context, root: File, private val namespace: String,
     private val partitionBytes: Long = 64L * 1024 * 1024, private val partitionRecords: Long = 65_536) : Closeable {
+    private val root = root.canonicalFile
     private val cipher = AgentRowStorageCipher(context, "knowledge-primary:v1:$namespace")
     private val writers = linkedMapOf<String, KnowledgeSqlite>()
     @Volatile private var writerThread: Thread? = null
@@ -163,11 +164,7 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
     internal fun framePage(key: String, reference: Reference, start: Int, budget: Int,
         checkActive: () -> Unit, consume: (String, Int) -> Unit): FramePage {
         require(start in 0 until reference.chunks && budget in 1..KnowledgePrimaryCopy.FRAME_PAGE)
-        val pending = if (activeOnCurrentThread()) writers[reference.partition] else null
-        if (pending == null) readerSlots.acquire()
-        val db = try { pending ?: openExisting(reference.partition, readOnly = true) }
-        catch (failure: Throwable) { if (pending == null) readerSlots.release(); throw failure }
-        try {
+        return withReader(reference.partition) { db ->
             var count = 0
             var length = 0L
             db.rawQuery("SELECT ordinal,substr(ciphertext,1,262145) FROM frames WHERE entry_key=? AND ordinal>=? " +
@@ -175,7 +172,7 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
                 while (count < budget && start + count < reference.chunks) {
                     check(!Thread.currentThread().isInterrupted)
                     try { checkActive() } catch (yield: MemoryMaintenanceYield) {
-                        if (count == 0) throw yield else return FramePage(count, length)
+                        if (count == 0) throw yield else return@withReader FramePage(count, length)
                     }
                     check(cursor.moveToNext() && cursor.getInt(0) == start + count) { "Primary frames are missing or not contiguous" }
                     val sealed = cursor.getString(1)
@@ -189,17 +186,13 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
                 }
                 if (start + count == reference.chunks) check(!cursor.moveToNext()) { "Primary frames contain an unexpected tail" }
             }
-            return FramePage(count, length)
-        } finally { if (pending == null) try { db.close() } finally { readerSlots.release() } }
+            FramePage(count, length)
+        }
     }
 
     private fun frames(key: String, reference: Reference, consume: (String, String, Int) -> Unit) {
         val (partition, entry, chunks, chars) = reference
-        val pending = if (Thread.currentThread() === writerThread) writers[partition] else null
-        if (pending == null) readerSlots.acquire()
-        val db = try { pending ?: openExisting(partition, readOnly = true) }
-        catch (failure: Throwable) { if (pending == null) readerSlots.release(); throw failure }
-        try {
+        withReader(partition) { db ->
             var length = 0L
             db.rawQuery("SELECT ordinal,substr(ciphertext,1,262145) FROM frames WHERE entry_key=? ORDER BY ordinal", arrayOf(entry)).use { cursor ->
                 var next = 0
@@ -216,7 +209,13 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
                 }
                 check(next == chunks && length == chars.toLong()) { "Primary frames are missing" }
             }
-        } finally { if (pending == null) try { db.close() } finally { readerSlots.release() } }
+        }
+    }
+
+    private fun <T> withReader(id: String, action: (KnowledgeSqlite) -> T): T {
+        val pending = if (activeOnCurrentThread()) writers[id] else null
+        return if (pending != null) action(pending)
+        else KnowledgePrimaryReadConnections.read(root, path(id), { openExisting(id, readOnly = true) }, action)
     }
 
     /** A partial partition commit is harmless until the separate catalog transaction commits. */
@@ -299,6 +298,7 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
     internal fun removeRetired(id: String): Long {
         check(writerThread == null)
         val file = path(id)
+        KnowledgePrimaryReadConnections.retire(file)
         var bytes = 0L
         for (suffix in listOf("", "-wal", "-shm", "-journal")) {
             val part = File(file.absolutePath + suffix)
@@ -324,6 +324,7 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
         val fd = Os.open(directory.absolutePath, OsConstants.O_RDONLY, 0)
         try { Os.fsync(fd) } finally { Os.close(fd) }
     }
-    override fun close() { if (writerThread != null) end() }
-    companion object { private val readerSlots = java.util.concurrent.Semaphore(8, true) }
+    override fun close() {
+        try { if (writerThread != null) end() } finally { KnowledgePrimaryReadConnections.clear(root) }
+    }
 }
