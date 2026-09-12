@@ -1,0 +1,27 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.106",
+  "version_code": 992,
+  "base_commit": "2c4a764154e64871a130e7e7e58229eb8de230bb",
+  "app_apk_sha256": "3dcdd985b98ea8f4ab18d664ba8190b72ec1c27aae114dbce7e8d2e2add96ba8",
+  "test_apk_sha256": "e916e61f2cbd1d1bbb94013a47742681f2fb71bd6e7e5c62c9e4d85da884aadc",
+  "device_tests": {"new": 7, "regression": 106, "passed": 113, "failed": 0},
+  "jvm_tests": {"total": 3822, "passed": 3817, "skipped": 5, "failed": 0, "errors": 0},
+  "retained_fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+  "retained_fixture_sha256": "bee085bde215000750866600d54c0b291efd3c2fd7d55ebb5e5bbd3db6a8e8e1",
+  "retained_body_count": 10001,
+  "retained_replace_ms": 433278,
+  "retained_verify_ms": 58031,
+  "fresh_body_count": 10001,
+  "fresh_seed_ms": 280261,
+  "fresh_replace_ms": 399466,
+  "fresh_verify_ms": 57850,
+  "hot_fts": {"corpus": 1201, "samples": 100, "p50_ms": 19, "p95_ms": 28, "p99_ms": 30},
+  "limitations": [
+    "Read microbenchmarks repeat one record inside one database operation.",
+    "Write microbenchmarks use distinct IDs inside one transaction, excluding standalone commit latency.",
+    "Retained bulk comparisons are sequential mutations with overlapping ID ranges, not byte-identical A/B replays.",
+    "No physical reboot or 100-million-body acceptance in this phase.",
+    "Source replacement still owns a long writer transaction; admission and final search validation can wait for that writer."
+  ]
+}

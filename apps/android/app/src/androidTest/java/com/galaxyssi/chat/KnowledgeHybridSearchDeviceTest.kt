@@ -115,29 +115,23 @@ class KnowledgeHybridSearchDeviceTest {
     }
     @Test fun lifecycleInvalidationDuringPublicationCannotReturnStaleEvidence() = isolated { f ->
         val session = prepare(f)
-        val locked = CountDownLatch(1)
+        val prepared = CountDownLatch(1)
         val release = CountDownLatch(1)
-        val queryThread = java.util.concurrent.atomic.AtomicReference<Thread>()
-        val executor = Executors.newFixedThreadPool(2)
+        val executor = Executors.newSingleThreadExecutor()
         try {
             val result = executor.submit<List<AgentKnowledgeHit>> {
-                queryThread.set(Thread.currentThread())
                 session.search("apple", 8) { read ->
                     if (read == null) emptyList() else {
                         val hits = KnowledgeLexicalSearch.search(read, "orchard", 8)
-                        executor.submit { f.db.access {
-                            locked.countDown()
-                            check(release.await(10, TimeUnit.SECONDS))
-                        } }
-                        check(locked.await(10, TimeUnit.SECONDS))
+                        // Pause after candidate calculation, before validation and publication.
+                        prepared.countDown()
+                        check(release.await(10, TimeUnit.SECONDS))
                         hits
                     }
                 }
             }
-            assertTrue(locked.await(10, TimeUnit.SECONDS))
-            val until = SystemClock.elapsedRealtime() + 5000
-            while (queryThread.get()?.state != Thread.State.BLOCKED && SystemClock.elapsedRealtime() < until) Thread.sleep(5)
-            assertEquals(Thread.State.BLOCKED, queryThread.get()?.state)
+            assertTrue(prepared.await(10, TimeUnit.SECONDS))
+            assertFalse(result.isDone)
             session.invalidate()
             release.countDown()
             assertTrue(result.get(10, TimeUnit.SECONDS).isEmpty())

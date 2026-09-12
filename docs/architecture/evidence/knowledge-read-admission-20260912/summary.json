@@ -1,0 +1,22 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.107",
+  "version_code": 993,
+  "parent_commit": "eb723edef164135688bbcb501829f3bc4f38d00b",
+  "app_apk_sha256": "b98a9e411678734a4f823339c0a287bb484040b0969810585b1c4f95d3f5fedc",
+  "test_apk_sha256": "6197cd406f1a042c4f5e6b8f53f7d20884177cc2a8332d3579e44d022fcb5820",
+  "baseline_device_tests": {"version": "1.1.106", "failed": 2, "total": 2},
+  "initial_regression": {"passed": 85, "failed": 1, "reason": "Obsolete BLOCKED-thread-state test synchronization"},
+  "final_device_tests": {"passed": 86, "failed": 0, "skipped": 0, "seconds": 391.068},
+  "jvm_tests": {"total": 3822, "passed": 3817, "skipped": 5, "failed": 0, "errors": 0},
+  "retained_fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+  "retained_fixture_sha256_before_and_after": "bee085bde215000750866600d54c0b291efd3c2fd7d55ebb5e5bbd3db6a8e8e1",
+  "held_writer_recent_read_and_validation": {"rows": 10001, "samples": 100, "results": 8, "p50_ns": 82976308, "p95_ns": 107270461, "p99_ns": 117930384, "over_200ms": 0},
+  "hot_fts": {"rows": 1201, "samples": 100, "p50_ms": 36, "p95_ms": 42, "p99_ms": 46},
+  "limitations": [
+    "Writer holds a real uncommitted update using a test latch, then rolls back.",
+    "Recent-read probe is not semantic ranking or sustained full-source rewrite contention.",
+    "Cold migration, reclamation and native index initialization may retain existing lock waits.",
+    "No new physical reboot, UI rendering or 100-million-record acceptance in this phase."
+  ]
+}

@@ -118,7 +118,7 @@ class KnowledgeSourcePagingDeviceTest {
             val encrypted = sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 assertTrue(it.moveToFirst()); it.getString(0)
             }
-            val header = JSONObject(requireNotNull(AgentStorageCipher.decrypt(encrypted, aad)))
+            val header = JSONObject(requireNotNull(AgentRowStorageCipher(context, "knowledge-records:v1:$name").decrypt(encrypted, aad)))
             header.remove("source_preview")
             val legacy = AgentStorageCipher.encrypt(header.toString(), aad)
             sql.rawQuery("UPDATE knowledge_items SET header=? WHERE item_key=?", arrayOf(legacy, key)).use { it.moveToNext() }
@@ -149,7 +149,7 @@ class KnowledgeSourcePagingDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(12, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(13, it.getInt(0)) }
             sql.rawQuery("SELECT hex(ciphertext) FROM knowledge_vectors", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldVector, it.getString(0))
             }

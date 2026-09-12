@@ -15,6 +15,7 @@ internal class KnowledgeSearchSnapshot(private val owner: AgentKnowledgeDatabase
             sql.execSQL("PRAGMA mmap_size=0")
             sql.execSQL("BEGIN")
             sql.rawQuery("SELECT revision FROM knowledge_browse_revision WHERE id=1", null).use { check(it.moveToFirst()) }
+            checkActive()
         } catch (failure: Throwable) { try { sql.close() } finally { lease.close() }; throw failure }
     }
 
@@ -42,16 +43,14 @@ internal class KnowledgeSearchSnapshot(private val owner: AgentKnowledgeDatabase
     /** A concurrent replacement or access-policy change must not publish stale evidence. */
     fun validate(hits: List<AgentKnowledgeHit>): List<AgentKnowledgeHit> {
         checkActive()
-        return hits.chunked(32).flatMap { page ->
-            val expected = page.associate { hit ->
-                val key = owner.key("id", hit.item.id)
-                key to header(sql, key)
-            }
-            owner.access { live -> page.filter { hit ->
+        if (hits.isEmpty()) return emptyList()
+        return owner.searchSnapshot().use { committed ->
+            committed.access { live -> hits.chunked(32).flatMap { page -> page.mapNotNull { hit ->
                 checkActive()
                 val key = owner.key("id", hit.item.id)
-                expected[key]?.let { it == header(live, key) } == true
-            } }
+                val expected = header(sql, key)
+                if (expected != null && expected == header(live, key)) hit else null
+            } } }
         }.also { checkActive() }
     }
 

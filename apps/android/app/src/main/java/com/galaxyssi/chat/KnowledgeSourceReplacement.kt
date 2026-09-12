@@ -31,7 +31,7 @@ internal class KnowledgeSourceReplacement(private val storage: AgentKnowledgeDat
         // Validate every incoming identity before any canonical mutation.
         for (item in staging.incoming()) {
             check(!Thread.currentThread().isInterrupted)
-            storage.read(db, storage.key("id", item.id))?.let {
+            storage.readSourceMetadata(db, storage.key("id", item.id))?.let {
                 require(it.source == source) { "Knowledge ID belongs to another source" }
             }
         }

@@ -1,0 +1,14 @@
+         1789211929.345 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=retained_scale_full_read samples=100 sum_ns=1556510920 p50_ns=13534423 p95_ns=23460693 p99_ns=26393000
+         1789211929.348 16532 16555 I System.out: KNOWLEDGE_CRYPTO_RETAINED_FIXTURE test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db
+         1789211930.010 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=hardware_aes_encrypt samples=100 sum_ns=634241961 p50_ns=5557808 p95_ns=9862731 p99_ns=11150692
+         1789211930.031 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=wrapped_aes_encrypt samples=100 sum_ns=20961967 p50_ns=184731 p95_ns=290038 p99_ns=448231
+         1789211930.613 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=hardware_aes_decrypt samples=100 sum_ns=581338389 p50_ns=5502923 p95_ns=8591269 p99_ns=9939731
+         1789211930.632 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=wrapped_aes_decrypt samples=100 sum_ns=19018970 p50_ns=201693 p95_ns=241154 p99_ns=267885
+         1789211931.083 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=index_hmac_repeated samples=100 sum_ns=359368381 p50_ns=3047038 p95_ns=6336961 p99_ns=9107923
+         1789211931.454 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=index_hmac_distinct samples=100 sum_ns=370038273 p50_ns=3382539 p95_ns=5139000 p99_ns=6178500
+         1789211931.473 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=index_hmac_operation_repeated samples=100 sum_ns=17941308 p50_ns=127000 p95_ns=199231 p99_ns=295654
+         1789211931.527 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=canonical_header_read samples=100 sum_ns=53830225 p50_ns=501230 p95_ns=692808 p99_ns=940731
+         1789211931.655 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=canonical_full_read samples=100 sum_ns=127149463 p50_ns=1105653 p95_ns=1880000 p99_ns=2602808
+         1789211933.517 16532 16555 I System.out: KNOWLEDGE_CRYPTO_PROFILE phase=canonical_write samples=100 sum_ns=1861143233 p50_ns=17073923 p95_ns=30517808 p99_ns=33942000
+         1789212366.824 16532 16555 I System.out: KNOWLEDGE_CRYPTO_SCALE replace_ms=433278 rows=10001 fixture=test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db
+         1789212424.889 16532 16555 I System.out: KNOWLEDGE_CRYPTO_SCALE verify_ms=58031 verified=10001
