@@ -1,5 +1,6 @@
 """Remote images through the production final callback and existing byte transport."""
 import unittest
+import base64
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -7,7 +8,8 @@ from agent_execution_harness import ArtifactFinalization
 import mqtt_bridge
 from remote_reply_images import _image_spans
 from task_workspace import task_artifacts
-from test_remote_reply_images import FakeTransport
+from test_remote_reply_images import FakeTransport, image_bytes
+from codex_generated_images import capture_image
 import test_blob_artifact_final_callback as fixture
 
 
@@ -118,6 +120,50 @@ class RemoteImageDeliveryTests(unittest.TestCase):
         self.assertFalse(result["ok"], result)
         publish.assert_not_called()
         self.bridge._publish_task_artifacts.assert_not_called()
+
+    def test_native_image_receipt_republishes_without_model_or_remote_download(self):
+        task = {**self.task(), "result": "Image generated.", "thread_id": "native-thread",
+                "turn_id": "native-turn", "agent_id": "codex", "output_files": []}
+        capture_image(task["task_id"], task["thread_id"], task["turn_id"], {
+            "type": "imageGeneration", "id": "native-image", "status": "completed",
+            "result": base64.b64encode(image_bytes()).decode(),
+        }, codex_home="unused")
+        stored = SimpleNamespace(**task, public=lambda: dict(task))
+        with patch.object(mqtt_bridge, "agent_task_manager", SimpleNamespace(get=lambda _: stored)), \
+                patch("blob_artifact_replay.republish", return_value=None), \
+                patch("blob_artifact_deferred.resume", return_value=None), \
+                patch("remote_reply_images.PublicImageTransport") as transport, \
+                patch.object(mqtt_bridge, "mobile_connector_agents", return_value=[]), \
+                patch.object(mqtt_bridge, "_publish_or_queue_task_result", return_value=True) as publish:
+            result = mqtt_bridge.republish_agent_task_result(task["task_id"])
+        self.assertTrue(result["ok"], result)
+        transport.assert_not_called()
+        wire = publish.call_args.args[2]
+        self.assertEqual(task["client_turn_id"], wire["turn_id"])
+        self.assertEqual(1, len([b for b in wire["rich_output"]["blocks"] if b["type"] == "image"]))
+        self.assertEqual([], stored.output_files)
+        self.bridge._publish_task_artifacts.assert_called_once()
+
+    def test_native_image_exits_chat_fast_path_and_enters_scoped_blob_delivery(self):
+        task = {**self.task(), "thread_id": "native-thread", "turn_id": "native-turn"}
+        receipt = capture_image(task["task_id"], task["thread_id"], task["turn_id"], {
+            "type": "imageGeneration", "id": "native-image", "status": "completed",
+            "result": base64.b64encode(image_bytes()).decode(),
+        }, codex_home="unused")
+        task["result"] = f"![Generated image](galaxyssi-artifact://{task['task_id']}/{receipt['relative_path']})"
+        callback = self.callback()
+        callback.__globals__["fast_chat_delivery"] = True
+        with patch("agent_execution_harness.finalize_task_artifacts", side_effect=lambda task_id, *a, **kw:
+                   ArtifactFinalization(tuple(task_artifacts(task_id)), {"status": "passed"})), \
+                patch("agent_latency.record_task"):
+            callback(task)
+        self.runtime.sender._register_batches()
+        wire = self.bridge._publish_to_registered_client.call_args.args[2]
+        blocks = [block for block in wire["rich_output"]["blocks"] if block["type"] == "image"]
+        self.assertEqual(1, len(blocks))
+        self.assertEqual("encrypted-blob", blocks[0]["metadata"]["transport"])
+        self.assertEqual(str(self.payload["task_id"]), blocks[0]["metadata"]["blob_task_id"])
+        self.assertEqual({"pending": 1}, self.runtime.sender.journal.snapshot())
 
 
 if __name__ == "__main__":
