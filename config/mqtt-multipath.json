@@ -1,0 +1,27 @@
+{
+  "transport_version": 1,
+  "selection": "automatic",
+  "brokers": {
+    "emqx": { "host": "broker.emqx.io", "tls_port": 8883 },
+    "hivemq": { "host": "broker.hivemq.com", "tls_port": 8883 },
+    "mosquitto": { "host": "test.mosquitto.org", "tls_port": 8886 }
+  },
+  "limits": {
+    "encoded_packet_bytes": 1048576,
+    "small_packet_bytes": 65536,
+    "global_inflight_packets": 12,
+    "reserved_control_packets": 2,
+    "global_inflight_bytes": 8388608,
+    "per_peer_inflight_bytes": 2097152,
+    "max_peer_routes": 10000,
+    "max_tracked_attempts": 4096
+  },
+  "timing": {
+    "keepalive_seconds": 30,
+    "metric_ttl_seconds": 300,
+    "resume_ttl_seconds": 300,
+    "hedge_min_ms": 100,
+    "hedge_max_ms": 2000,
+    "unmeasured_hedge_ms": 500
+  }
+}

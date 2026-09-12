@@ -784,6 +784,8 @@ object GalaxySSILinkDeliveryStore {
     private fun inboundDatabase(context: Context): AgentEncryptedDatabase =
         AgentEncryptedDatabase(context.applicationContext, INBOUND_DATABASE)
 
+    internal fun transportMetadataDatabase(context: Context): AgentEncryptedDatabase = inboundDatabase(context)
+
     private fun recoveryDatabase(context: Context): AgentEncryptedDatabase =
         AgentEncryptedDatabase(context.applicationContext, RECOVERY_DATABASE)
 
