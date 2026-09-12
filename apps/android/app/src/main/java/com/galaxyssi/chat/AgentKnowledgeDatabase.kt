@@ -24,6 +24,7 @@ internal class AgentKnowledgeDatabase private constructor(
     private var indexing = false
     private var accessDepth = 0
     private var previewCipher: KnowledgeSourcePreviewCipher? = null
+    internal val payloads = KnowledgePayloadSegments(java.io.File(context.getDatabasePath(name).absolutePath + ".payloads"), name)
     internal val hasActivePreviewKey: Boolean get() = previewCipher != null
     internal var sourcePreviewHits = 0L
         private set
@@ -51,7 +52,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..10) { "Unsupported knowledge schema $version" }
+                require(version in 0..11) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -90,6 +91,10 @@ internal class AgentKnowledgeDatabase private constructor(
                     KnowledgeSourceRevisionSchema.create(db)
                     db.execSQL("PRAGMA user_version=10")
                 }
+                if (version < 11) {
+                    KnowledgePayloadSegments.create(db)
+                    db.execSQL("PRAGMA user_version=11")
+                }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             return db.also { connection = it }
@@ -109,7 +114,7 @@ internal class AgentKnowledgeDatabase private constructor(
     fun <T> access(block: (KnowledgeSqlite) -> T): T = synchronized(this) {
         check(!retired) { "Knowledge store was closed; reopen the store" }
         accessDepth++
-        try {
+        try { payloads.leases.access {
             val db = open()
             migrate(db)
             // Header and chunks must be observed from one SQLite snapshot.
@@ -119,7 +124,7 @@ internal class AgentKnowledgeDatabase private constructor(
                 scheduleIndexing(db)
                 sourceMaintenance.request(db)
             }
-        } finally {
+        } } finally {
             accessDepth--
             if (accessDepth == 0) { previewCipher?.close(); previewCipher = null }
         }
@@ -137,6 +142,19 @@ internal class AgentKnowledgeDatabase private constructor(
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
     internal fun checkActive() { check(!retired) { "Knowledge store was closed; reopen the store" } }
+    internal fun payloadLease() = payloads.leases.acquire()
+    internal fun migratePayloadPage(checkActive: () -> Unit = {}) = access {
+        KnowledgePayloadMigration.advance(this, it, checkActive = checkActive)
+    }
+    @Synchronized internal fun reclaimPayloads(): KnowledgePayloadSegments.Reclaimed? {
+        checkActive()
+        check(accessDepth == 0) { "Cannot reclaim payloads inside a source transaction" }
+        return payloads.leases.tryReclaim {
+            val db = open()
+            db.beginTransaction()
+            try { payloads.reclaim(db).also { db.setTransactionSuccessful() } } finally { db.endTransaction() }
+        }
+    }
     internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
         KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
     }
@@ -190,9 +208,11 @@ internal class AgentKnowledgeDatabase private constructor(
         val metadata = KnowledgeSourceMetadata.from(snapshot)
         val id = key("id", snapshot.id)
         val encoded = AgentKnowledgeCodec.encodeItem(snapshot).toString()
+        val external = encoded.length >= KnowledgePayloadSegments.INLINE_CHARS ||
+            KnowledgeSourceDirectory.state(db).items >= KnowledgePayloadSegments.LARGE_STORE_ROWS
         val chunks = mutableListOf<String>()
         var start = 0
-        while (start < encoded.length) {
+        while (!external && start < encoded.length) {
             var end = minOf(start + 16 * 1024, encoded.length)
             if (end < encoded.length && encoded[end - 1].isHighSurrogate() && encoded[end].isLowSurrogate()) end--
             chunks += encoded.substring(start, end)
@@ -212,6 +232,7 @@ internal class AgentKnowledgeDatabase private constructor(
             put("updated", snapshot.updatedAtMillis)
             put("header", encryptedHeader)
         })
+        if (external) payloads.append(db, id, encoded)
         chunks.forEachIndexed { index, chunk ->
             db.insertOrThrow("knowledge_chunks", null, ContentValues().apply {
                 put("item_key", id); put("ordinal", index)
@@ -228,7 +249,7 @@ internal class AgentKnowledgeDatabase private constructor(
         return readBody(db, id, header)
     }
 
-    private fun readHeader(db: KnowledgeSqlite, id: String): JSONObject? =
+    internal fun readHeader(db: KnowledgeSqlite, id: String): JSONObject? =
         db.rawQuery("SELECT header,title_key,source_key,updated FROM knowledge_items WHERE item_key=?", arrayOf(id)).use {
             if (!it.moveToFirst()) return@use null
             JSONObject(requireNotNull(AgentStorageCipher.decrypt(it.getString(0), aad(id, "header")))).apply {
@@ -261,6 +282,17 @@ internal class AgentKnowledgeDatabase private constructor(
 
     private fun readBody(db: KnowledgeSqlite, id: String, header: JSONObject): AgentKnowledgeItem {
         decryptedItemReads++
+        val encoded = readEncoded(db, id, header)
+        return requireNotNull(AgentKnowledgeCodec.decodeItem(JSONObject(encoded))).also {
+            check(key("id", it.id) == id) { "Knowledge identity mismatch" }
+        }
+    }
+
+    internal fun readEncoded(db: KnowledgeSqlite, id: String, header: JSONObject): String {
+        payloads.read(db, id)?.let { encoded ->
+            check(AgentNativeJsonCodec.sha256(encoded) == header.getString("sha256")) { "Knowledge checksum mismatch" }
+            return encoded
+        }
         val count = header.getInt("chunks")
         require(count > 0)
         val body = StringBuilder()
@@ -281,9 +313,7 @@ internal class AgentKnowledgeDatabase private constructor(
         }
         val encoded = body.toString()
         check(AgentNativeJsonCodec.sha256(encoded) == header.getString("sha256")) { "Knowledge checksum mismatch" }
-        return requireNotNull(AgentKnowledgeCodec.decodeItem(JSONObject(encoded))).also {
-            check(key("id", it.id) == id) { "Knowledge identity mismatch" }
-        }
+        return encoded
     }
 
     fun keys(db: KnowledgeSqlite, where: String = "", args: Array<String> = emptyArray(), limit: Int? = null): List<String> =

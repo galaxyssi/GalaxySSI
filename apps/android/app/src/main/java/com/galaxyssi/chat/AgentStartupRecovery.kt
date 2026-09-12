@@ -40,6 +40,8 @@ class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters)
     override suspend fun doWork(): Result = try {
         runCatching { AgentMemorySegmentWork.enqueue(applicationContext) }
             .onFailure { Log.w("GalaxySSIRecovery", "Memory maintenance enqueue failed: ${it.javaClass.simpleName}") }
+        runCatching { KnowledgePayloadWork.enqueue(applicationContext) }
+            .onFailure { Log.w("GalaxySSIRecovery", "Knowledge maintenance enqueue failed: ${it.javaClass.simpleName}") }
         AgentMemoryRetractionRecovery.enqueue(applicationContext)
         var reconciled = 0
         AgentStartupRecoverySequence(
