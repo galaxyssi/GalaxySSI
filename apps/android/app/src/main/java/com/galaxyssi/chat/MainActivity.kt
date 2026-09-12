@@ -1574,8 +1574,15 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             ?.takeIf { envelope -> envelope.optString("type") == "agent_task_event" }
         if (taskEnvelope != null) {
             runCatching {
-                agentTaskEventExecutor.execute { handleAgentTaskEvent(taskEnvelope) }
+                agentTaskEventExecutor.execute {
+                    runCatching {
+                        if (handleAgentTaskEvent(taskEnvelope)) {
+                            GalaxySSIMqttClient.completeIncomingDelivery(this, payload)
+                        } else GalaxySSIMqttClient.retryIncomingDelivery(payload)
+                    }.onFailure { GalaxySSIMqttClient.retryIncomingDelivery(payload) }
+                }
             }.onFailure { error ->
+                GalaxySSIMqttClient.retryIncomingDelivery(payload)
                 if (!isFinishing && !isDestroyed) {
                     Log.w("GalaxySSIAgent", "Agent task event could not be scheduled", error)
                 }
@@ -1831,6 +1838,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                 Log.e("GalaxySSILink", "Deferred inbound message after UI handling failure", error)
             } finally {
                 if (handled) GalaxySSIMqttClient.completeIncomingDelivery(this, payload)
+                else GalaxySSIMqttClient.retryIncomingDelivery(payload)
             }
         }
     }

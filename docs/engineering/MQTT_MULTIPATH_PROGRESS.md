@@ -20,9 +20,9 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 - Capability schema and canonical digest on both endpoints, rejecting legacy or
   partial single-broker capability announcements.
 - Desktop durable per-pair local/remote route epochs in Link delivery metadata.
-- Android route-state implementation sharing the existing Link inbox database;
-  application and instrumentation Kotlin compilation passed. Six device
-  persistence tests are implemented and compiled, but have not run on a phone.
+- Android route-state implementation sharing the Link inbox database; application
+  and instrumentation Kotlin compilation passed, followed by six S26U persistence
+  tests in the isolated verification package.
 
 ## Important Activation Boundary
 
@@ -52,9 +52,44 @@ on the basis of these isolated modules passing their tests.
   and stores only hashes, not a new task ledger or plaintext body. Conflicts are
   rejected before Blob persistence and dispatch, with privacy-safe diagnostics.
 - Do not confuse this hash binding with durable full-message acceptance. It does
-  not fix the existing gap between Signal ciphertext binding, message storage,
-  receipt emission, and downstream task creation; that remains the next safety
-  prerequisite for activating the three-path connection pools.
+  not by itself fix the Desktop gap between Signal ciphertext binding, message
+  storage, receipt emission, and downstream task creation. Desktop atomic receive
+  remains a prerequisite for activating the three-path connection pools.
+
+## Android Atomic Receive
+
+- The real Desktop and phone ingress callbacks now commit Signal ratchet changes,
+  the decrypted message body, immutable content binding, and verified-ciphertext
+  replay binding in one SQLite transaction, before emitting a transport receipt.
+  Commit rejection rolls back Signal state as well as the inbox, and is not
+  misclassified as a reason to replace a phone's Signal session.
+- Signal records moved from per-collection preferences JSON to encrypted individual
+  rows in `galaxyssi_link_state_v3`. The inbox and route epochs share that database.
+  The new installation format does not migrate old Signal preferences or old inbox
+  claims. No current phone or Desktop user data is automatically deleted.
+- Inbox keys bind authenticated pairing scope plus message ID, with SQL uniqueness
+  and immutable-content checks. A completed record retains its replay tombstone;
+  a pending record requires a readable durable body before any replay receipt.
+- Bounded paging, eight-day completed-record retention, aggregate and per-peer
+  quotas, and bounded alternate ciphertext bindings replace count-pruned global
+  IDs. Accepted pending work is never evicted to admit new traffic. Transactional
+  usage counters avoid scanning every retained record on each new message.
+- Desktop and phone replay use their original handler and revalidate the current
+  pair. Local pairing/Blob publication records are likewise pair-scoped. A bounded
+  dispatch gate protects asynchronous work from concurrent fresh/replay dispatch.
+- Attachment processing remains pending on missing/failed persistence. A foreground
+  notification observer no longer completes a message before the foreground UI's
+  asynchronous consumer commits it. Existing task/attachment stores remain the
+  business idempotency boundary; inbox acceptance is not TASK_ACCEPTED or exactly
+  once execution of arbitrary external effects.
+- These changes are compiled, with host regressions passing. Real Android storage
+  verification uses a separate, non-launchable package and the production Kotlin
+  classes, not the production app identity. It is not full transport activation.
+- S26U verification passed 29 tests: atomic inbox (17), durable route epochs (6),
+  and sensitive-state regressions (6). Real libsignal ratchet/pre-key consumption
+  rolled back with a failed inbox transaction, then the same ciphertext succeeded
+  on retry. This is exception-injection verification, not a physical process-kill
+  or reboot test. See [device report](../testing/MQTT_ATOMIC_INBOX_S26U_20260912.md).
 
 ## Verification So Far
 
@@ -67,21 +102,23 @@ on the basis of these isolated modules passing their tests.
   `GALAXYSSI_STATE_DIR` under this worktree's ignored build directory. The routing
   fixture now supplies a fake Desktop display name instead of requiring a live
   Signal sidecar, and altered envelopes use a new immutable transport message ID.
-- Android host JVM: 64 tests passed, including real Paho interface compilation,
+- Android host JVM: 77 tests passed, including real Paho interface compilation,
   fake asynchronous connections, races, policy tests, cross-platform digest
   validation, bounded/fair ingress, concurrent broker callbacks, alias identity
-  binding, and cleanup after 10,000 historical peers. These are host tests, not
+  binding, canonical immutable hashes, async dispatch gate races, and cleanup
+  after 10,000 historical peers. These are host tests, not
   real 10,000-peer network load. Command: `tools/dev/test-mqtt-multipath-host.ps1`.
 - Catalog generation check passed: `python tools/generate_mqtt_catalog.py --check`.
 - Five catalog-generation regression tests passed:
   `python -m unittest tools.test_generate_mqtt_catalog -q`.
-- Total distinct executed host tests above: 196 (127 backend + 64 Android JVM + 5
+- Total distinct executed host tests above: 209 (127 backend + 77 Android JVM + 5
   catalog). Re-running a test through Gradle is not counted as another distinct test.
-- Full Gradle focused tests also passed: 53 tests, zero failures/errors:
+- Full Gradle focused tests also passed: 66 tests, zero failures/errors:
   `GalaxySSILinkProtocolTest` (35), `MqttInboundRoutePoolTest` (13), and
-  `MqttInboundBindingsTest` (5). The latter 18 overlap the host suite, so the
-  combined distinct executed test count is 231, not 249. Command from
-  `apps/android`: `./gradlew.bat :app:testDebugUnitTest --tests com.galaxyssi.chat.MqttInboundRoutePoolTest --tests com.galaxyssi.chat.MqttInboundBindingsTest --tests com.galaxyssi.chat.GalaxySSILinkProtocolTest -x :app:buildNativeMemory '-Pgalaxyssi.requireEmbeddedRuntime=false' --max-workers=2 --console=plain`.
+  `MqttInboundBindingsTest` (5), `MqttImmutableContentTest` (7), and
+  `MqttInboxDispatchGateTest` (6). These latter 31 overlap the host suite, so the
+  combined distinct executed host test count is 244. Command from
+  `apps/android`: `./gradlew.bat :app:testDebugUnitTest --tests com.galaxyssi.chat.MqttInboundRoutePoolTest --tests com.galaxyssi.chat.MqttInboundBindingsTest --tests com.galaxyssi.chat.GalaxySSILinkProtocolTest --tests com.galaxyssi.chat.MqttImmutableContentTest --tests com.galaxyssi.chat.MqttInboxDispatchGateTest -x :app:buildNativeMemory '-Pgalaxyssi.requireEmbeddedRuntime=false' --max-workers=2 --console=plain`.
 - Low-volume real public loopback: one 75-byte synthetic packet on each available
   path, without app data or pairing keys. HiveMQ: connect 2516 ms, subscribed
   2907 ms, loopback 390 ms. Mosquitto: connect 3813 ms, subscribed 4188 ms,
@@ -102,6 +139,11 @@ on the basis of these isolated modules passing their tests.
   3m 49s. Subsequent removal of the obsolete Topic-only helper is being checked
   by the full Gradle focused unit-test task, which passed in 6m 27s including
   recompilation of main and test Kotlin. This is not APK packaging or phone installation.
+- Atomic receive: normal main compilation passed in 6m 23s, followed by normal
+  instrumentation compilation plus 66 focused unit tests in 2m 57s. The final
+  isolated package compiled the later quota/dispatch changes and built successfully
+  in 13m 9s; S26U passed 29 selected tests. Combined distinct executed tests across
+  the documented host/device suites are 273; this is not 273 end-to-end MQTT tests.
 
 ## Remaining Integration
 
@@ -113,14 +155,13 @@ on the basis of these isolated modules passing their tests.
 3. Integrate generation-scoped physical attempts with the current publisher,
    outbox, receipt handlers, timing, subscription coordinator, and Run Kernel.
    Do not reset global business state when one path disconnects.
-4. Add immutable content binding and atomic durable acceptance before business
+4. Complete immutable content binding and atomic durable acceptance before business
    side effects. Desktop immutable binding is integrated and tested, but
    `claim_message` still stores only IDs, and it is not atomic with persisted full
-   envelopes/task handoff. Android's count-pruned global inbox IDs and separate
-   ciphertext writes require scoped, atomic durable acceptance. In particular,
-   Android currently binds some ciphertexts before `stageIncoming`; a crash in
-   that gap can make a replay incorrectly send a receipt for an unstored payload.
-   This must be removed before multipath activation, not hidden by queue tests.
+   envelopes/task handoff. Android now uses a shared Signal/inbox transaction;
+   verify real native rollback and process-death recovery before activation.
+   Outgoing receipts still require the planned authenticated content/scope binding
+   and physical-attempt integration; moving the inbox is not that integration.
 5. Define and integrate authenticated per-attempt/frame metadata and transport
    receipts. Account for frame overhead before current 512 KiB privacy buckets
    and chunk splitting; do not silently overflow existing direct-wire limits.
@@ -134,12 +175,16 @@ on the basis of these isolated modules passing their tests.
 8. Read-only connection diagnostics, coalesced progress, prioritized final/control
    traffic, automatic internal rollback to one observed healthy common path.
 9. Run integration/fault matrices on owned test brokers, then designated-device
-   tests. The user has not yet designated a phone for this goal's reinstall.
+   tests. The user designated S26U (SM-S9480, Android 16 / API 36). Do not operate
+   SM-T575 or S20U for this goal. Isolated verification must not replace production
+   app data; coordinated full installation and re-pairing remain separate steps.
 10. Collect honest cold/warm latency, p50/p95, redundant traffic, background,
     recovery, and power evidence. Do not load-test public brokers.
 11. Sync latest main before PR, bump Android/Desktop versions, compile full APK,
-    and submit PR after required verification. No APK installation, uninstall,
-    running Desktop replacement, or PR has occurred in this worktree yet. Local
+    and submit PR after required verification. No production APK installation,
+    production uninstall, running Desktop replacement, or PR has occurred in this
+    worktree yet. S26U's isolated verification packages were installed, tested,
+    and removed; the new shipping transport is not installed. Local
     commits are development checkpoints, not complete-feature releases.
 
 ## Compatibility Decision

@@ -22,27 +22,35 @@ import org.signal.libsignal.protocol.state.SignedPreKeyRecord
 import org.signal.libsignal.protocol.util.KeyHelper
 import java.util.UUID
 
-class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
-    private val appContext: Context = context.applicationContext
-    private val prefs = AgentEncryptedPreferences(appContext, PREFS)
+class AndroidPersistentSignalStore(
+    context: Context,
+    private val prefs: AgentEncryptedDatabase = database(context)
+) : SignalProtocolStore {
     private val identityKeyPair: IdentityKeyPair
     private val registrationId: Int
 
     init {
-        val identityRaw = prefs.readString(KEY_IDENTITY, "")
-        if (identityRaw.isBlank()) {
-            identityKeyPair = IdentityKeyPair.generate()
-            registrationId = KeyHelper.generateRegistrationId(false)
-            prefs.writeString(KEY_IDENTITY, b64e(identityKeyPair.serialize()))
-            prefs.writeString(KEY_REGISTRATION_ID, registrationId.toString())
-        } else {
-            identityKeyPair = IdentityKeyPair(b64d(identityRaw))
-            registrationId = prefs.readString(KEY_REGISTRATION_ID, "")
-                .toIntOrNull()
-                ?: error("Encrypted Signal registration ID is missing")
+        val material = transaction {
+            val identityRaw = prefs.readString(KEY_IDENTITY, "")
+            if (identityRaw.isBlank()) {
+                check(!prefs.contains(KEY_IDENTITY)) { "Encrypted Signal identity is unreadable" }
+                val identity = IdentityKeyPair.generate()
+                val registration = KeyHelper.generateRegistrationId(false)
+                prefs.writeString(KEY_IDENTITY, b64e(identity.serialize()))
+                prefs.writeString(KEY_REGISTRATION_ID, registration.toString())
+                Triple(identity, registration, true)
+            } else {
+                Triple(IdentityKeyPair(b64d(identityRaw)),
+                    prefs.readString(KEY_REGISTRATION_ID, "").toIntOrNull()
+                        ?: error("Encrypted Signal registration ID is missing"), false)
+            }
         }
-        ensurePreKeyMaterial(newIdentity = identityRaw.isBlank())
+        identityKeyPair = material.first
+        registrationId = material.second
+        transaction { ensurePreKeyMaterial(newIdentity = material.third) }
     }
+
+    internal fun <T> transaction(block: () -> T): T = prefs.indexedTransaction { block() }
 
     override fun getIdentityKeyPair(): IdentityKeyPair = identityKeyPair
 
@@ -51,10 +59,8 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     override fun saveIdentity(address: SignalProtocolAddress, identityKey: IdentityKey): IdentityKeyStore.IdentityChange {
         val key = addressKey(address)
         val encoded = b64e(identityKey.serialize())
-        val identities = readJson(KEY_IDENTITIES)
-        val existing = identities.optString(key, "")
-        identities.put(key, encoded)
-        writeJson(KEY_IDENTITIES, identities)
+        val existing = readRecord(KEY_IDENTITIES, key)
+        prefs.writeString(recordKey(KEY_IDENTITIES, key), encoded)
         return if (existing.isNotBlank() && existing != encoded) {
             IdentityKeyStore.IdentityChange.REPLACED_EXISTING
         } else {
@@ -67,17 +73,17 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
         identityKey: IdentityKey,
         direction: IdentityKeyStore.Direction
     ): Boolean {
-        val existing = readJson(KEY_IDENTITIES).optString(addressKey(address), "")
+        val existing = readRecord(KEY_IDENTITIES, addressKey(address))
         return existing.isBlank() || existing == b64e(identityKey.serialize())
     }
 
     override fun getIdentity(address: SignalProtocolAddress): IdentityKey? {
-        val encoded = readJson(KEY_IDENTITIES).optString(addressKey(address), "")
+        val encoded = readRecord(KEY_IDENTITIES, addressKey(address))
         return if (encoded.isBlank()) null else runCatching { IdentityKey(b64d(encoded)) }.getOrNull()
     }
 
     override fun loadPreKey(preKeyId: Int): PreKeyRecord {
-        val encoded = readJson(KEY_PRE_KEYS).optString(preKeyId.toString(), "")
+        val encoded = readRecord(KEY_PRE_KEYS, preKeyId.toString())
         if (encoded.isBlank()) throw InvalidKeyIdException("No pre-key: $preKeyId")
         return PreKeyRecord(b64d(encoded))
     }
@@ -87,16 +93,15 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     override fun containsPreKey(preKeyId: Int): Boolean =
-        readJson(KEY_PRE_KEYS).has(preKeyId.toString())
+        prefs.contains(recordKey(KEY_PRE_KEYS, preKeyId.toString()))
 
-    @Synchronized
     override fun removePreKey(preKeyId: Int) {
         removeRecord(KEY_PRE_KEYS, preKeyId.toString())
     }
 
     override fun loadSession(address: SignalProtocolAddress): SessionRecord {
-        val encoded = readJson(KEY_SESSIONS).optString(addressKey(address), "")
-        return if (encoded.isBlank()) SessionRecord() else runCatching { SessionRecord(b64d(encoded)) }.getOrDefault(SessionRecord())
+        val encoded = readRecord(KEY_SESSIONS, addressKey(address))
+        return if (encoded.isBlank()) SessionRecord() else SessionRecord(b64d(encoded))
     }
 
     override fun loadExistingSessions(addresses: MutableList<SignalProtocolAddress>): MutableList<SessionRecord> {
@@ -110,8 +115,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
 
     override fun getSubDeviceSessions(name: String): MutableList<Int> {
         val prefix = "$name|"
-        val sessions = readJson(KEY_SESSIONS)
-        return sessions.keys().asSequence()
+        return recordNames(KEY_SESSIONS).asSequence()
             .filter { it.startsWith(prefix) }
             .mapNotNull { it.removePrefix(prefix).toIntOrNull() }
             .toMutableList()
@@ -122,7 +126,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     override fun containsSession(address: SignalProtocolAddress): Boolean =
-        readJson(KEY_SESSIONS).has(addressKey(address))
+        prefs.contains(recordKey(KEY_SESSIONS, addressKey(address)))
 
     override fun deleteSession(address: SignalProtocolAddress) {
         removeRecord(KEY_SESSIONS, addressKey(address))
@@ -130,34 +134,24 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
 
     override fun deleteAllSessions(name: String) {
         val prefix = "$name|"
-        val sessions = readJson(KEY_SESSIONS)
-        sessions.keys().asSequence().filter { it.startsWith(prefix) }.toList().forEach { sessions.remove(it) }
-        writeJson(KEY_SESSIONS, sessions)
+        prefs.removeAll(recordNames(KEY_SESSIONS).filter { it.startsWith(prefix) }.map { recordKey(KEY_SESSIONS, it) })
     }
 
     fun deleteIdentity(address: SignalProtocolAddress) {
-        val identities = readJson(KEY_IDENTITIES)
-        identities.remove(addressKey(address))
-        writeJson(KEY_IDENTITIES, identities)
+        removeRecord(KEY_IDENTITIES, addressKey(address))
     }
 
     fun deleteSenderKeys(name: String) {
-        val senderKeys = readJson(KEY_SENDER_KEYS)
         val prefix = "$name|"
-        senderKeys.keys().asSequence()
-            .filter { it.startsWith(prefix) }
-            .toList()
-            .forEach { senderKeys.remove(it) }
-        writeJson(KEY_SENDER_KEYS, senderKeys)
+        prefs.removeAll(recordNames(KEY_SENDER_KEYS).filter { it.startsWith(prefix) }.map { recordKey(KEY_SENDER_KEYS, it) })
     }
 
-    @Synchronized
-    fun currentBundleJson(name: String, deviceId: Int): JSONObject {
+    fun currentBundleJson(name: String, deviceId: Int): JSONObject = transaction {
         val preKeyId = ensurePreKeyMaterial()
         val preKey = loadPreKey(preKeyId)
         val signedPreKey = loadSignedPreKey(DEFAULT_SIGNED_PRE_KEY_ID)
         val kyberPreKey = loadKyberPreKey(DEFAULT_KYBER_PRE_KEY_ID)
-        return JSONObject()
+        JSONObject()
             .put("version", 1)
             .put("scheme", "signal")
             .put("name", name)
@@ -175,7 +169,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     override fun loadSignedPreKey(signedPreKeyId: Int): SignedPreKeyRecord {
-        val encoded = readJson(KEY_SIGNED_PRE_KEYS).optString(signedPreKeyId.toString(), "")
+        val encoded = readRecord(KEY_SIGNED_PRE_KEYS, signedPreKeyId.toString())
         if (encoded.isBlank()) throw InvalidKeyIdException("No signed pre-key: $signedPreKeyId")
         return SignedPreKeyRecord(b64d(encoded))
     }
@@ -192,7 +186,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     override fun containsSignedPreKey(signedPreKeyId: Int): Boolean =
-        readJson(KEY_SIGNED_PRE_KEYS).has(signedPreKeyId.toString())
+        prefs.contains(recordKey(KEY_SIGNED_PRE_KEYS, signedPreKeyId.toString()))
 
     override fun removeSignedPreKey(signedPreKeyId: Int) {
         removeRecord(KEY_SIGNED_PRE_KEYS, signedPreKeyId.toString())
@@ -203,12 +197,12 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     override fun loadSenderKey(address: SignalProtocolAddress, distributionId: UUID): SenderKeyRecord? {
-        val encoded = readJson(KEY_SENDER_KEYS).optString("${addressKey(address)}|$distributionId", "")
+        val encoded = readRecord(KEY_SENDER_KEYS, "${addressKey(address)}|$distributionId")
         return if (encoded.isBlank()) null else runCatching { SenderKeyRecord(b64d(encoded)) }.getOrNull()
     }
 
     override fun loadKyberPreKey(kyberPreKeyId: Int): KyberPreKeyRecord {
-        val encoded = readJson(KEY_KYBER_PRE_KEYS).optString(kyberPreKeyId.toString(), "")
+        val encoded = readRecord(KEY_KYBER_PRE_KEYS, kyberPreKeyId.toString())
         if (encoded.isBlank()) throw InvalidKeyIdException("No kyber pre-key: $kyberPreKeyId")
         return KyberPreKeyRecord(b64d(encoded))
     }
@@ -225,7 +219,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     override fun containsKyberPreKey(kyberPreKeyId: Int): Boolean =
-        readJson(KEY_KYBER_PRE_KEYS).has(kyberPreKeyId.toString())
+        prefs.contains(recordKey(KEY_KYBER_PRE_KEYS, kyberPreKeyId.toString()))
 
     override fun markKyberPreKeyUsed(kyberPreKeyId: Int, signedPreKeyId: Int, baseKey: ECPublicKey) = Unit
 
@@ -304,35 +298,38 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     private fun nextPreKeyId(preKeyId: Int): Int =
         if (preKeyId in 1 until MAX_PRE_KEY_ID) preKeyId + 1 else DEFAULT_PRE_KEY_ID
 
-    private fun putRecord(prefKey: String, recordKey: String, bytes: ByteArray) {
-        val json = readJson(prefKey)
-        json.put(recordKey, b64e(bytes))
-        writeJson(prefKey, json)
+    private fun putRecord(prefKey: String, recordId: String, bytes: ByteArray) {
+        prefs.writeString(recordKey(prefKey, recordId), b64e(bytes))
     }
 
-    private fun removeRecord(prefKey: String, recordKey: String) {
-        val json = readJson(prefKey)
-        json.remove(recordKey)
-        writeJson(prefKey, json)
+    private fun removeRecord(prefKey: String, recordId: String) {
+        prefs.remove(recordKey(prefKey, recordId))
     }
 
-    private fun readJson(prefKey: String): JSONObject =
-        runCatching { JSONObject(prefs.readString(prefKey, "{}")) }.getOrDefault(JSONObject())
-
-    private fun writeJson(prefKey: String, json: JSONObject) {
-        prefs.writeString(prefKey, json.toString())
+    private fun readRecord(prefKey: String, key: String): String {
+        val storageKey = recordKey(prefKey, key)
+        val value = prefs.readString(storageKey, "")
+        check(value.isNotBlank() || !prefs.contains(storageKey)) { "Encrypted Signal record is unreadable" }
+        return value
     }
 
-    fun exportJson(): JSONObject {
+    private fun recordNames(prefKey: String): List<String> = prefs.keys(recordPrefix(prefKey)).map { it.removePrefix(recordPrefix(prefKey)) }
+
+    private fun readJson(prefKey: String): JSONObject = JSONObject().also { result ->
+        recordNames(prefKey).forEach { result.put(it, readRecord(prefKey, it)) }
+    }
+
+    fun exportJson(): JSONObject = transaction {
         val root = JSONObject()
         STORED_KEYS.forEach { key ->
-            prefs.readString(key, "").takeIf(String::isNotBlank)?.let { root.put(key, it) }
+            val value = if (key in RECORD_COLLECTIONS) readJson(key).toString() else prefs.readString(key, "")
+            value.takeIf(String::isNotBlank)?.let { root.put(key, it) }
         }
-        return root
+        root
     }
 
     companion object {
-        private const val PREFS = "galaxyssi_signal_store"
+        internal const val DATABASE = "galaxyssi_link_state_v3"
         private const val KEY_IDENTITY = "identity_key_pair"
         private const val KEY_REGISTRATION_ID = "registration_id"
         private const val KEY_IDENTITIES = "identities"
@@ -357,17 +354,31 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
             KEY_SESSIONS,
             KEY_SENDER_KEYS
         )
+        private val RECORD_COLLECTIONS = setOf(KEY_IDENTITIES, KEY_PRE_KEYS, KEY_SIGNED_PRE_KEYS,
+            KEY_KYBER_PRE_KEYS, KEY_SESSIONS, KEY_SENDER_KEYS)
+
+        internal fun database(context: Context): AgentEncryptedDatabase =
+            AgentEncryptedDatabase(context.applicationContext, DATABASE)
+
+        private fun recordPrefix(collection: String): String = "signal:record:$collection:"
+        private fun recordKey(collection: String, id: String): String = recordPrefix(collection) + id
 
         fun clear(context: Context) {
-            AgentEncryptedPreferences(context.applicationContext, PREFS).clear()
+            val db = database(context)
+            db.removeAll(STORED_KEYS + db.keys("signal:record:"))
         }
 
         fun importJson(context: Context, value: JSONObject) {
-            val preferences = AgentEncryptedPreferences(context.applicationContext, PREFS)
-            preferences.clear()
-            STORED_KEYS.forEach { key ->
-                value.optString(key).takeIf(String::isNotBlank)?.let {
-                    preferences.writeString(key, it)
+            val preferences = database(context)
+            preferences.indexedTransaction {
+                clear(context)
+                STORED_KEYS.forEach { key ->
+                    value.optString(key).takeIf(String::isNotBlank)?.let { raw ->
+                        if (key in RECORD_COLLECTIONS) {
+                            val records = JSONObject(raw)
+                            records.keys().forEach { name -> preferences.writeString(recordKey(key, name), records.getString(name)) }
+                        } else preferences.writeString(key, raw)
+                    }
                 }
             }
         }

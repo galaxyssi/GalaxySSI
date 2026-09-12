@@ -100,6 +100,8 @@ object GalaxySSIMqttClient {
     private val initialOutboxRecoveryPrepared = AtomicBoolean(false)
     private val transportRecoveryInProgress = AtomicBoolean(false)
     private val inboundReplayScheduled = AtomicBoolean(false)
+    private val inboundReplayTimerLock = Any()
+    private val inboundReplayRetryRunnable = Runnable { schedulePendingIncomingReplay() }
     private val inboundReplayExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "galaxyssi-inbound-replay").apply { isDaemon = true }
     }
@@ -224,11 +226,13 @@ object GalaxySSIMqttClient {
     }
 
     fun completeIncomingDelivery(context: Context, payload: String) {
-        val messageId = runCatching { JSONObject(payload).optString("message_id") }
-            .getOrDefault("")
-        if (messageId.isNotBlank()) {
-            GalaxySSILinkDeliveryStore.completeIncoming(context.applicationContext, messageId)
-        }
+        val value = runCatching { JSONObject(payload) }.getOrNull() ?: return
+        GalaxySSILinkDeliveryStore.completeIncoming(context.applicationContext, value)
+    }
+
+    fun retryIncomingDelivery(payload: String) {
+        val value = runCatching { JSONObject(payload) }.getOrNull() ?: return
+        retryStoredIncoming(value)
     }
 
     fun forgetSecureChannel() {
@@ -1152,7 +1156,10 @@ object GalaxySSIMqttClient {
 
     internal fun persistBlobArtifactEvent(context: Context, payload: JSONObject): Boolean {
         require(payload.optString("type") in setOf("artifact_available", "artifact_download_failed"))
-        val stage = GalaxySSILinkDeliveryStore.stageIncoming(context, payload.getString("message_id"), payload.toString())
+        val link = GalaxySSILinkProtocol.serverLink(context, payload.getString("desktop_id")) ?: return false
+        if (!link.paired || link.routes.clientRouteId != payload.optString("client_route_id")) return false
+        val stage = GalaxySSILinkDeliveryStore.stageLocalIncoming(context,
+            "blob:" + GalaxySSILinkDeliveryStore.peerScope(link.routes), link.desktopId, payload)
         if (stage == GalaxySSILinkDeliveryStore.IncomingStageResult.INVALID) return false
         com.galaxyssi.chat.blob.BlobArtifactCardUpdates.publish(payload)
         schedulePendingIncomingReplay()
@@ -2084,190 +2091,56 @@ object GalaxySSIMqttClient {
             Log.w(TAG, "Rejected Signal envelope with mismatched endpoint identity")
             return
         }
+        val peer = GalaxySSILinkInbox.Peer(GalaxySSILinkDeliveryStore.peerScope(link.routes), link.desktopId, false)
+        val inbox = GalaxySSILinkDeliveryStore.inbox(context)
         val ciphertextDigest = GalaxySSILinkCiphertextReplayPolicy.digest(wire)
-        GalaxySSILinkDeliveryStore.messageForCiphertext(context, ciphertextDigest)?.let { known ->
+        inbox.replay(peer.scope, ciphertextDigest)?.let { known ->
             if (known.receiptRequired) publishInboundReceipt(link, known.messageId)
-            GalaxySSILinkTransportDiagnostics.record(
-                context = context,
-                kind = GalaxySSILinkDiagnosticKind.ENCRYPTED_REPLAY,
-                endpointIdentity = link.desktopId,
-                messageIdentity = known.messageId,
-                detailCode = "pre_decrypt"
-            )
-            Log.i(TAG, "MQTT encrypted replay handled before Signal decrypt message=${known.messageId}")
+            if (!known.completed) schedulePendingIncomingReplay()
+            GalaxySSILinkTransportDiagnostics.record(context, GalaxySSILinkDiagnosticKind.ENCRYPTED_REPLAY,
+                link.desktopId, known.messageId, "durable_pre_decrypt")
             return
         }
-        val decrypted = when (val result = timedInbound("signal_decrypt") { GalaxySSICrypto.decryptEnvelopeDetailed(wire) }) {
-            is GalaxySSICrypto.EnvelopeDecryptionResult.Success -> result.payload
+        var accepted: GalaxySSILinkInbox.Accepted? = null
+        when (val result = timedInbound("signal_decrypt") {
+            GalaxySSICrypto.decryptEnvelopeDetailed(wire) { envelope ->
+                accepted = acceptSignalPlaintext(inbox, peer, envelope, ciphertextDigest)
+            }
+        }) {
+            is GalaxySSICrypto.EnvelopeDecryptionResult.Success -> Unit
             is GalaxySSICrypto.EnvelopeDecryptionResult.Failure -> {
-                GalaxySSILinkTransportDiagnostics.record(
-                    context = context,
-                    kind = GalaxySSILinkTransportDiagnostics.classifyDecryptionFailure(result.error),
-                    endpointIdentity = link.desktopId,
-                    messageIdentity = ciphertextDigest,
-                    detailCode = result.error.javaClass.simpleName
-                )
+                GalaxySSILinkTransportDiagnostics.record(context,
+                    GalaxySSILinkTransportDiagnostics.classifyDecryptionFailure(result.error),
+                    link.desktopId, ciphertextDigest, result.error.javaClass.simpleName)
                 return
             }
             GalaxySSICrypto.EnvelopeDecryptionResult.Rejected -> return
         }
-        if (decrypted.optString("source_id") != link.desktopId ||
-            decrypted.optString("target_id") != GalaxySSICrypto.localGalaxySSIId()
-        ) {
-            Log.w(TAG, "Rejected application envelope with mismatched endpoint identity")
-            return
-        }
-        if (!link.paired) {
-            GalaxySSILinkProtocol.markPaired(context, link.desktopId)
-            Log.i(TAG, "Recovered pairing state from an authenticated Signal envelope")
-        }
+        val stored = checkNotNull(accepted)
+        if (!link.paired) GalaxySSILinkProtocol.markPaired(context, link.desktopId)
         setSecureReady(true)
-        val payload = GalaxySSILinkProtocol.unwrapEnvelope(decrypted) ?: return
+        if (stored.payload.optString("type") != "delivery_ack") publishInboundReceipt(link, stored.payload.getString("message_id"))
+        when (stored.stage) {
+            GalaxySSILinkInbox.Stage.COMPLETED -> return
+            GalaxySSILinkInbox.Stage.PENDING -> { schedulePendingIncomingReplay(); return }
+            GalaxySSILinkInbox.Stage.STORED -> timedInbound("dispatch") {
+                dispatchIncomingPayload(context, stored.payload, link.desktopId)
+            }
+        }
+    }
+
+    private fun acceptSignalPlaintext(
+        inbox: GalaxySSILinkInbox, peer: GalaxySSILinkInbox.Peer, envelope: JSONObject, ciphertextDigest: String
+    ): GalaxySSILinkInbox.Accepted {
+        require(envelope.optString("source_id") == peer.endpoint &&
+            envelope.optString("target_id") == GalaxySSICrypto.localGalaxySSIId()) { "Signal application endpoint mismatch" }
+        val immutableHash = MqttImmutableContent.hash(envelope)
+        val payload = GalaxySSILinkProtocol.unwrapEnvelope(envelope) ?: error("Invalid Signal application envelope")
         if (payload.optString("type") in setOf("input_attachment_receipt", AgentAttachmentRecoveryRequest.REQUEST_TYPE)) {
-            payload.put("source_id", link.desktopId)
+            payload.put("source_id", peer.endpoint)
         }
-        val incomingMessageId = payload.optString("message_id")
-        if (payload.optString("type") == "artifact_blob_offer") {
-            AndroidBlobArtifactReceives.receive(context, link.desktopId, decrypted.optString("conversation_id"), payload) { result ->
-                result.onSuccess {
-                    runCatching {
-                        val current = GalaxySSILinkProtocol.serverLink(context, link.desktopId)
-                        if (current?.paired != true || current.routes.clientRouteId != link.routes.clientRouteId ||
-                            current.routes.localFingerprint != link.routes.localFingerprint ||
-                            current.routes.remoteFingerprint != link.routes.remoteFingerprint) return@runCatching
-                        GalaxySSILinkDeliveryStore.bindCiphertext(context, ciphertextDigest, incomingMessageId, receiptRequired = true)
-                        GalaxySSILinkDeliveryStore.claimIncoming(context, incomingMessageId)
-                        publishInboundReceipt(current, incomingMessageId)
-                    }.onFailure { Log.w(TAG, "Blob offer ACK deferred: ${it.javaClass.simpleName}") }
-                }.onFailure { Log.w(TAG, "Blob offer persistence deferred: ${it.javaClass.simpleName}") }
-            }
-            return
-        }
-        if (payload.optString("type") == BlobRelayConfiguration.TYPE) {
-            try {
-                BlobRelayConfigurations.ingest(context, payload, link.desktopId)
-            } catch (error: Exception) {
-                Log.w(TAG, "Rejected Blob relay configuration: ${error.javaClass.simpleName}")
-                return
-            }
-            GalaxySSILinkDeliveryStore.bindCiphertext(context, ciphertextDigest, incomingMessageId, receiptRequired = true)
-            GalaxySSILinkDeliveryStore.claimIncoming(context, incomingMessageId)
-            publishInboundReceipt(link, incomingMessageId)
-            AndroidBlobTransfers.wake(context)
-            AndroidBlobArtifactReceives.wake(context)
-            AndroidBlobArtifactCapability.refresh(context)
-            return
-        }
-        GalaxySSILinkDeliveryStore.bindCiphertext(
-            context,
-            ciphertextDigest,
-            incomingMessageId,
-            receiptRequired = payload.optString("type") != "delivery_ack"
-        )
-        if (GalaxySSITransportPrivacyPolicy.isLocalOnly(payload)) {
-            val stage = GalaxySSILinkDeliveryStore.stageIncoming(
-                context,
-                incomingMessageId,
-                payload.toString()
-            )
-            if (stage != GalaxySSILinkDeliveryStore.IncomingStageResult.INVALID) {
-                publishInboundReceipt(link, incomingMessageId)
-                GalaxySSILinkDeliveryStore.completeIncoming(context, incomingMessageId)
-            }
-            Log.w(
-                TAG,
-                "Dropped local-only payload received from transport type=${payload.optString("type")}"
-            )
-            return
-        }
-        if (
-            !payload.optBoolean("peer_chat", false) &&
-            payload.optString("task_id").isNotBlank() &&
-            payload.optString("type") in setOf(
-                "agent_task_event",
-                "agent_task_approval_result",
-                "text",
-                "artifact_chunk",
-                AgentAttachmentRecoveryRequest.REQUEST_TYPE
-            )
-        ) {
-            val identity = AgentTaskIdentity(
-                clientRouteId = payload.optString("client_route_id"),
-                conversationId = payload.optString("conversation_id"),
-                taskId = payload.optString("task_id"),
-                turnId = payload.optString("turn_id")
-            )
-            if (!identity.isComplete || identity.clientRouteId != link.routes.clientRouteId) {
-                Log.w(TAG, "Rejected Agent payload with mismatched task identity")
-                return
-            }
-            if (!AgentTaskIdentityStore.matches(context, payload)) {
-                Log.w(TAG, "Rejected Agent payload outside its originating task turn")
-                return
-            }
-            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.received(context, payload)
-        }
-        if (payload.optString("type") == "delivery_ack") {
-            GalaxySSILinkDeliveryAckPolicy.transportMessageId(payload)
-                .takeIf(String::isNotBlank)
-                ?.let {
-                    AgentLatencyTelemetry.transport.received(link.desktopId, it)
-                    GalaxySSILinkDeliveryStore.acknowledge(context, it)
-                    retryHandler.post { scheduleOutboxRetries() }
-                }
-            val firstReceipt = GalaxySSILinkDeliveryStore.claimIncoming(context, incomingMessageId)
-            if (!firstReceipt) {
-                GalaxySSILinkTransportDiagnostics.record(
-                    context = context,
-                    kind = GalaxySSILinkDiagnosticKind.DUPLICATE_RECEIPT,
-                    endpointIdentity = link.desktopId,
-                    messageIdentity = incomingMessageId,
-                    detailCode = "delivery_ack"
-                )
-                Log.i(TAG, "Ignored duplicate inbound receipt $incomingMessageId")
-                return
-            }
-            dispatchIncomingPayload(context, payload, link.desktopId)
-            return
-        }
-        when (
-            GalaxySSILinkDeliveryStore.stageIncoming(
-                context,
-                incomingMessageId,
-                payload.toString()
-            )
-        ) {
-            GalaxySSILinkDeliveryStore.IncomingStageResult.INVALID -> return
-            GalaxySSILinkDeliveryStore.IncomingStageResult.COMPLETED -> {
-                publishInboundReceipt(link, incomingMessageId)
-                GalaxySSILinkTransportDiagnostics.record(
-                    context = context,
-                    kind = GalaxySSILinkDiagnosticKind.DUPLICATE_MESSAGE,
-                    endpointIdentity = link.desktopId,
-                    messageIdentity = incomingMessageId,
-                    detailCode = "completed"
-                )
-                Log.i(TAG, "Ignored completed duplicate inbound message $incomingMessageId")
-                return
-            }
-            GalaxySSILinkDeliveryStore.IncomingStageResult.PENDING -> {
-                publishInboundReceipt(link, incomingMessageId)
-                schedulePendingIncomingReplay()
-                GalaxySSILinkTransportDiagnostics.record(
-                    context = context,
-                    kind = GalaxySSILinkDiagnosticKind.PENDING_REPLAY,
-                    endpointIdentity = link.desktopId,
-                    messageIdentity = incomingMessageId,
-                    detailCode = "pending"
-                )
-                Log.i(TAG, "Replaying pending inbound message $incomingMessageId")
-                return
-            }
-            GalaxySSILinkDeliveryStore.IncomingStageResult.STAGED -> {
-                publishInboundReceipt(link, incomingMessageId)
-            }
-        }
-        timedInbound("dispatch") { dispatchIncomingPayload(context, payload, link.desktopId) }
+        return inbox.accept(peer, envelope.getString("message_id"), immutableHash, payload,
+            ciphertextDigest, receiptRequired = payload.optString("type") != "delivery_ack")
     }
 
     private inline fun <T> timedInbound(stage: String, block: () -> T): T {
@@ -2283,50 +2156,55 @@ object GalaxySSIMqttClient {
     private fun handlePhoneContactIncoming(context: Context, topic: String, wire: JSONObject) {
         val localId = GalaxySSICrypto.localGalaxySSIId()
         val senderId = wire.optString("from")
-        if (wire.optString("scheme") != "signal" ||
-            senderId.isBlank() || wire.optString("to") != localId ||
-            !AppStore.canCommunicateWith(context, senderId)
-        ) return
-        val ciphertextDigest = GalaxySSILinkCiphertextReplayPolicy.digest(wire)
-        GalaxySSILinkDeliveryStore.messageForCiphertext(context, ciphertextDigest)?.let { known ->
-            if (known.receiptRequired) publishPhoneContactReceipt(context, senderId, known.messageId)
-            return
-        }
-        val decrypted = PeerSignalSessionRecoveryCoordinator.decryptOrRequestRefresh(
-            context,
-            senderId,
-            wire
-        ) ?: return
-        if (decrypted.optString("source_id") != senderId || decrypted.optString("target_id") != localId) return
-        val payload = GalaxySSILinkProtocol.unwrapEnvelope(decrypted) ?: return
+        if (wire.optString("scheme") != "signal" || senderId.isBlank() || wire.optString("to") != localId ||
+            !AppStore.canCommunicateWith(context, senderId)) return
         val routes = AppStore.phoneRoutesForIdentity(context, senderId) ?: return
-        if (routes.receiveWindow.none { it == topic }) return
-        if (payload.optString("type") == "input_attachment_receipt") payload.put("source_id", senderId)
-        val incomingMessageId = payload.optString("message_id")
-        GalaxySSILinkDeliveryStore.bindCiphertext(
-            context,
-            ciphertextDigest,
-            incomingMessageId,
-            receiptRequired = payload.optString("type") != "delivery_ack"
-        )
-        if (payload.optString("type") == "delivery_ack") {
-            GalaxySSILinkDeliveryAckPolicy.transportMessageId(payload)
-                .takeIf(String::isNotBlank)
-                ?.let { GalaxySSILinkDeliveryStore.acknowledge(context, it) }
+        if (topic !in routes.receiveWindow) return
+        val peer = GalaxySSILinkInbox.Peer(GalaxySSILinkDeliveryStore.peerScope(routes), senderId, true)
+        val inbox = GalaxySSILinkDeliveryStore.inbox(context)
+        val ciphertextDigest = GalaxySSILinkCiphertextReplayPolicy.digest(wire)
+        inbox.replay(peer.scope, ciphertextDigest)?.let { known ->
+            if (known.receiptRequired) publishPhoneContactReceipt(context, senderId, known.messageId)
+            if (!known.completed) schedulePendingIncomingReplay()
             return
         }
-        when (GalaxySSILinkDeliveryStore.stageIncoming(context, incomingMessageId, payload.toString())) {
-            GalaxySSILinkDeliveryStore.IncomingStageResult.INVALID -> return
-            GalaxySSILinkDeliveryStore.IncomingStageResult.COMPLETED,
-            GalaxySSILinkDeliveryStore.IncomingStageResult.PENDING -> {
-                publishPhoneContactReceipt(context, senderId, incomingMessageId)
-                return
-            }
-            GalaxySSILinkDeliveryStore.IncomingStageResult.STAGED -> Unit
+        var accepted: GalaxySSILinkInbox.Accepted? = null
+        PeerSignalSessionRecoveryCoordinator.decryptOrRequestRefresh(context, senderId, wire) { envelope ->
+            accepted = acceptSignalPlaintext(inbox, peer, envelope, ciphertextDigest)
+        } ?: return
+        val stored = checkNotNull(accepted)
+        if (stored.payload.optString("type") != "delivery_ack") {
+            publishPhoneContactReceipt(context, senderId, stored.payload.getString("message_id"))
         }
-        publishPhoneContactReceipt(context, senderId, incomingMessageId)
+        when (stored.stage) {
+            GalaxySSILinkInbox.Stage.COMPLETED -> return
+            GalaxySSILinkInbox.Stage.PENDING -> { schedulePendingIncomingReplay(); return }
+            GalaxySSILinkInbox.Stage.STORED -> dispatchPhoneStored(context, stored.payload, senderId, routes)
+        }
+    }
+
+    private fun dispatchPhoneStored(context: Context, payload: JSONObject, senderId: String, routes: GalaxySSILinkProtocol.Routes) {
+        if (!GalaxySSILinkDeliveryStore.beginIncomingDispatch(context, payload)) {
+            deferPendingIncomingReplay(2_000)
+            return
+        }
+        try { dispatchPhonePayload(context, payload, senderId, routes) }
+        catch (error: Exception) { retryStoredIncoming(payload, error) }
+    }
+
+    private fun dispatchPhonePayload(context: Context, payload: JSONObject, senderId: String, routes: GalaxySSILinkProtocol.Routes) {
+        if (GalaxySSITransportPrivacyPolicy.isLocalOnly(payload)) {
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+            return
+        }
+        if (payload.optString("type") == "delivery_ack") {
+            GalaxySSILinkDeliveryAckPolicy.transportMessageId(payload).takeIf(String::isNotBlank)
+                ?.let { GalaxySSILinkDeliveryStore.acknowledge(context, it) }
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+            return
+        }
         if (payload.optString("type") == BlobRelayConfiguration.TYPE) {
-            GalaxySSILinkDeliveryStore.completeIncoming(context, incomingMessageId)
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "input_attachment_receipt") {
@@ -2336,22 +2214,7 @@ object GalaxySSIMqttClient {
             return
         }
         if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk")) {
-            attachmentTransferExecutor.execute {
-                val result = runCatching {
-                    PeerIncomingAttachmentStore.ingest(context, payload, senderId, routes)
-                }.onFailure { Log.w(TAG, "Rejected phone attachment transfer", it) }
-                    .getOrNull()
-                if (result != null) {
-                    dispatchIncomingAttachmentResult(
-                        context,
-                        result,
-                        senderId,
-                        notifyProgress = true,
-                        routesOverride = routes
-                    )
-                }
-                GalaxySSILinkDeliveryStore.completeIncoming(context, incomingMessageId)
-            }
+            dispatchStoredAttachment(context, payload, senderId, routes)
             return
         }
         if (payload.optString("type") == "peer_message" && payload.optJSONArray("attachments") != null) {
@@ -2361,6 +2224,7 @@ object GalaxySSIMqttClient {
                 payload
             ) ?: run {
                 Log.w(TAG, "Deferred peer message until verified attachments are available")
+                retryStoredIncoming(payload)
                 return
             }
             payload.put("attachments", attachments)
@@ -2378,17 +2242,67 @@ object GalaxySSIMqttClient {
         payload: JSONObject,
         sourceDesktopId: String = payload.optString("desktop_id")
     ) {
+        if (!GalaxySSILinkDeliveryStore.beginIncomingDispatch(context, payload)) {
+            deferPendingIncomingReplay(2_000)
+            return
+        }
+        try { dispatchDesktopPayload(context, payload, sourceDesktopId) }
+        catch (error: Exception) { retryStoredIncoming(payload, error) }
+    }
+
+    private fun dispatchDesktopPayload(context: Context, payload: JSONObject, sourceDesktopId: String) {
         if (payload.optBoolean("blob_publication") &&
             payload.optString("type") in setOf("artifact_available", "artifact_download_failed")) {
             if (listeners.isNotEmpty()) {
                 notifyMessageListeners(payload)
-                GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+                GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+            } else retryStoredIncoming(payload)
+            return
+        }
+        val link = GalaxySSILinkProtocol.serverLink(context, sourceDesktopId)
+            ?.takeIf { it.paired } ?: run { retryStoredIncoming(payload); return }
+        if (payload.optString("type") == "artifact_blob_offer") {
+            AndroidBlobArtifactReceives.receive(context, sourceDesktopId, payload.optString("conversation_id"), payload) { result ->
+                result.onSuccess {
+                    runCatching { GalaxySSILinkDeliveryStore.completeIncoming(context, payload) }
+                        .onFailure { retryStoredIncoming(payload, it) }
+                }.onFailure { retryStoredIncoming(payload, it) }
             }
             return
         }
         if (payload.optString("type") == BlobRelayConfiguration.TYPE) {
-            // Configuration is accepted only at the authenticated Desktop ingress above.
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            BlobRelayConfigurations.ingest(context, payload, sourceDesktopId)
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+            AndroidBlobTransfers.wake(context)
+            AndroidBlobArtifactReceives.wake(context)
+            AndroidBlobArtifactCapability.refresh(context)
+            return
+        }
+        if (GalaxySSITransportPrivacyPolicy.isLocalOnly(payload)) {
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+            return
+        }
+        if (!payload.optBoolean("peer_chat") && payload.optString("task_id").isNotBlank() &&
+            payload.optString("type") in setOf("agent_task_event", "agent_task_approval_result", "text",
+                "artifact_chunk", AgentAttachmentRecoveryRequest.REQUEST_TYPE)) {
+            val identity = AgentTaskIdentity(payload.optString("client_route_id"), payload.optString("conversation_id"),
+                payload.optString("task_id"), payload.optString("turn_id"))
+            if (!identity.isComplete || identity.clientRouteId != link.routes.clientRouteId ||
+                !AgentTaskIdentityStore.matches(context, payload)) {
+                Log.w(TAG, "Rejected Agent payload outside its authenticated task turn")
+                GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+                return
+            }
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.received(context, payload)
+        }
+        if (payload.optString("type") == "delivery_ack") {
+            GalaxySSILinkDeliveryAckPolicy.transportMessageId(payload).takeIf(String::isNotBlank)?.let {
+                AgentLatencyTelemetry.transport.received(sourceDesktopId, it)
+                GalaxySSILinkDeliveryStore.acknowledge(context, it)
+                retryHandler.post { scheduleOutboxRetries() }
+            }
+            notifyMessageListeners(payload)
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (!payload.optBoolean("peer_chat") && payload.optString("task_id").isNotBlank() &&
@@ -2400,7 +2314,7 @@ object GalaxySSIMqttClient {
                 else AgentRemoteOutcomeCodec.observation(payload)
             if (observation == null || !AgentConnectorResponseStore.observeExecution(context, observation,
                     finalReply = finalReply)) {
-                GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+                GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
                 return
             }
             if (payload.optString("type") == "text" && payload.optString("task_status") in AgentRemoteOutcomeCodec.FAILURES) {
@@ -2409,43 +2323,21 @@ object GalaxySSIMqttClient {
         }
         if (payload.optString("type") == "agent_task_result_receipt_confirmed") {
             AndroidAgentResultReceipts.receive(context, payload, sourceDesktopId)
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "agent_task_result_page") {
             AndroidAgentResultRecovery.receive(context, payload, sourceDesktopId)
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "agent_task_recovery_result") {
             AndroidAgentRemoteRecovery.receive(context, payload, sourceDesktopId)
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk")) {
-            val sourceId = payload.optString("source_id").ifBlank { sourceDesktopId }
-            val routes = AppStore.phoneRoutesForIdentity(context, sourceId)
-            if (routes != null) {
-                attachmentTransferExecutor.execute {
-                    val result = runCatching {
-                        PeerIncomingAttachmentStore.ingest(context, payload, sourceId, routes)
-                    }.onFailure { Log.w(TAG, "Rejected replayed phone attachment transfer", it) }
-                        .getOrNull()
-                    if (result != null) {
-                        dispatchIncomingAttachmentResult(
-                            context,
-                            result,
-                            sourceId,
-                            notifyProgress = true,
-                            routesOverride = routes
-                        )
-                    }
-                    GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
-                }
-            } else {
-                Log.w(TAG, "Discarded attachment replay without a verified phone route")
-                GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
-            }
+            dispatchStoredAttachment(context, payload, sourceDesktopId, link.routes)
             return
         }
         AgentRemoteReputation.ingest(context, payload)?.let { result ->
@@ -2495,7 +2387,7 @@ object GalaxySSIMqttClient {
                         .put("save_requested", requestedDownload)
                 )
             }
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "artifact_redelivery_result") {
@@ -2510,7 +2402,7 @@ object GalaxySSIMqttClient {
                         .put("artifact_uri", artifactUri)
                 )
             }
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "input_attachment_receipt") {
@@ -2527,7 +2419,7 @@ object GalaxySSIMqttClient {
         }
         if (payload.optString("type") == "proactive_task_event") {
             AgentRemoteProactiveEventStore(context).ingest(payload, sourceDesktopId)
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "proactive_webhook_event") {
@@ -2538,15 +2430,15 @@ object GalaxySSIMqttClient {
                 payload = payload.optJSONObject("payload") ?: JSONObject(),
                 sourceDesktopId = sourceDesktopId
             )
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (DesktopRemoteControl.handleInbound(context, payload)) {
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (AgentDesktopRemoteNativeTools.handleInbound(payload)) {
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (handleSecureControlMessage(payload)) {
@@ -2558,45 +2450,85 @@ object GalaxySSIMqttClient {
     }
 
     private fun processAttachmentControl(context: Context, payload: JSONObject, process: () -> Unit) {
-        val id = payload.optString("message_id")
+        val id = payload.optString(MqttImmutableContent.RECORD_KEY)
         attachmentControlInbox.enqueue(id, process,
-            complete = { GalaxySSILinkDeliveryStore.completeIncoming(context, id) },
+            complete = { GalaxySSILinkDeliveryStore.completeIncoming(context, payload) },
             failed = { error ->
-                Log.w(TAG, "Attachment control retained for replay: ${error.javaClass.simpleName}")
-                retryHandler.postDelayed({ schedulePendingIncomingReplay() }, 2_000)
+                retryStoredIncoming(payload, error)
             })
     }
 
+    private fun dispatchStoredAttachment(context: Context, payload: JSONObject, sourceId: String,
+                                         routes: GalaxySSILinkProtocol.Routes) {
+        processAttachmentControl(context, payload) {
+            val result = checkNotNull(PeerIncomingAttachmentStore.ingest(context, payload, sourceId, routes)) {
+                "Attachment chunk or manifest is not durably accepted"
+            }
+            dispatchIncomingAttachmentResult(context, result, sourceId, notifyProgress = true, routesOverride = routes)
+        }
+    }
+
+    private fun retryStoredIncoming(payload: JSONObject, error: Throwable? = null) {
+        if (error != null) Log.w(TAG, "Inbound work retained for replay: ${error.javaClass.simpleName}")
+        GalaxySSILinkDeliveryStore.retryIncoming(payload)
+        if (listeners.isNotEmpty()) deferPendingIncomingReplay(2_000)
+    }
+
+    private fun deferPendingIncomingReplay(delayMillis: Long) = synchronized(inboundReplayTimerLock) {
+        retryHandler.removeCallbacks(inboundReplayRetryRunnable)
+        retryHandler.postDelayed(inboundReplayRetryRunnable, delayMillis)
+    }
+
     private fun notifyMessageListeners(payload: JSONObject) {
+        if (listeners.isEmpty()) {
+            GalaxySSILinkDeliveryStore.retryIncoming(payload)
+            return
+        }
         com.galaxyssi.chat.blob.BlobArtifactCardUpdates.publish(payload)
         val encoded = payload.toString()
         listeners.forEach { listener ->
             runCatching { listener.onMessage(encoded) }
-                .onFailure { Log.e(TAG, "Inbound listener failed", it) }
+                .onFailure { retryStoredIncoming(payload, it) }
         }
     }
 
     private fun schedulePendingIncomingReplay() {
         val context = appContext ?: return
-        if (listeners.isEmpty() || !inboundReplayScheduled.compareAndSet(false, true)) return
+        if (!inboundReplayScheduled.compareAndSet(false, true)) return
         inboundReplayExecutor.execute {
+            var more = false
             try {
                 val pending = GalaxySSILinkDeliveryStore.pendingIncoming(context)
+                more = pending.isNotEmpty()
                 if (pending.isNotEmpty()) {
                     Log.i(TAG, "Replaying durable inbound messages count=${pending.size}")
                 }
                 pending.forEach { incoming ->
-                    if (listeners.isEmpty()) return@forEach
                     val payload = runCatching { JSONObject(incoming.payload) }
                         .onFailure {
-                            Log.w(TAG, "Discarding invalid durable inbound message ${incoming.messageId}", it)
-                            GalaxySSILinkDeliveryStore.completeIncoming(context, incoming.messageId)
+                            Log.w(TAG, "Unreadable durable inbound message retained: ${it.javaClass.simpleName}")
                         }
                         .getOrNull() ?: return@forEach
-                    dispatchIncomingPayload(context, payload)
+                    if (incoming.phone) {
+                        val routes = AppStore.phoneRoutesForIdentity(context, incoming.endpointId)
+                        if (routes != null && AppStore.canCommunicateWith(context, incoming.endpointId) &&
+                            GalaxySSILinkDeliveryStore.peerScope(routes) == incoming.peerScope) {
+                            dispatchPhoneStored(context, payload, incoming.endpointId, routes)
+                        } else GalaxySSILinkDeliveryStore.inbox(context).forget(incoming.peerScope)
+                    } else {
+                        val link = GalaxySSILinkProtocol.serverLink(context, incoming.endpointId)
+                        val scope = link?.let { GalaxySSILinkDeliveryStore.peerScope(it.routes) }
+                        if (link?.paired == true && incoming.peerScope in setOf(scope, "pair:$scope", "blob:$scope")) {
+                            dispatchIncomingPayload(context, payload, incoming.endpointId)
+                        } else GalaxySSILinkDeliveryStore.inbox(context).forget(incoming.peerScope)
+                    }
                 }
+            } catch (error: Exception) {
+                Log.w(TAG, "Durable inbox replay deferred: ${error.javaClass.simpleName}")
+                more = true
             } finally {
                 inboundReplayScheduled.set(false)
+                if (more) deferPendingIncomingReplay(if (listeners.isEmpty()) 15_000 else 2_000)
             }
         }
     }
@@ -2656,7 +2588,8 @@ object GalaxySSIMqttClient {
         setSecureReady(true)
         dispatchPendingMessages()
         json.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
-        val stage = GalaxySSILinkDeliveryStore.stageIncoming(context, messageId, json.toString())
+        val stage = GalaxySSILinkDeliveryStore.stageLocalIncoming(context,
+            "pair:" + GalaxySSILinkDeliveryStore.peerScope(link.routes), desktopId, json)
         if (!PairingConfirmationDeliveryPolicy.isFirstDelivery(stage)) return
         requestConnectorStatuses(
             context = context,

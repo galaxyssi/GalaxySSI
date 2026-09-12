@@ -10,13 +10,9 @@ import java.util.UUID
 
 object GalaxySSILinkDeliveryStore {
     private const val PREFS = "opaque_link_delivery_v2"
-    private const val INBOUND_DATABASE = "opaque_link_inbound_v2"
     private const val RECOVERY_DATABASE = "opaque_link_peer_recovery_v1"
     private const val KEY_OUTBOX = "outbox"
-    private const val KEY_INBOX = "inbox"
     private const val KEY_TRANSPORT_EPOCH = "transport_epoch"
-    private const val PENDING_INBOUND_PREFIX = "pending:"
-    private const val CIPHERTEXT_PREFIX = "ciphertext:"
     private const val WIRE_PAYLOAD_FILE = "wire_payload_file"
     private const val BLOCKED_BY_ATTACHMENT_TRANSFERS = "blocked_by_attachment_transfers"
     private const val BROKER_ACK_TIMEOUT_MILLIS = "broker_ack_timeout_millis"
@@ -25,18 +21,8 @@ object GalaxySSILinkDeliveryStore {
     private const val MAX_RECOVERABLE_ENVELOPE_BYTES = 64 * 1024
     private const val OUTBOX_DIRECTORY = "opaque-link-outbox-v2"
     private const val RECOVERY_PREFIX = "envelope:"
-    private const val MAX_INBOX_IDS = 4096
-    private const val MAX_PENDING_INBOUND = 256
-    private const val MAX_CIPHERTEXT_BINDINGS = 4096
-    private const val MAX_PENDING_INBOUND_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
-    private const val MAX_CIPHERTEXT_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
-    private const val PENDING_PRUNE_INTERVAL = 64
-    private const val CIPHERTEXT_PRUNE_INTERVAL = 256
-    private const val CIPHERTEXT_AGE_SCAN_LIMIT = 64
-    private val INBOUND_LOCK = Any()
-    private val CIPHERTEXT_LOCK = Any()
-    private var pendingWritesSincePrune = 0
-    private var ciphertextWritesSincePrune = 0
+    private var pendingReplayCursor = ""
+    @Volatile private var inboxInstance: GalaxySSILinkInbox? = null
     private val SHA256 = Regex("[a-f0-9]{64}")
     private val WIRE_PAYLOAD_NAME = Regex("[a-f0-9]{64}\\.wire")
 
@@ -81,12 +67,10 @@ object GalaxySSILinkDeliveryStore {
     data class PendingIncoming(
         val messageId: String,
         val payload: String,
-        val createdAt: Long
-    )
-
-    data class KnownCiphertext(
-        val messageId: String,
-        val receiptRequired: Boolean
+        val createdAt: Long,
+        val peerScope: String,
+        val endpointId: String,
+        val phone: Boolean
     )
 
     data class AttachmentDependencyRelease(
@@ -465,6 +449,10 @@ object GalaxySSILinkDeliveryStore {
 
     @Synchronized
     fun discardRoutes(context: Context, routes: GalaxySSILinkProtocol.Routes): Int {
+        inbox(context).forget(peerScope(routes))
+        inbox(context).forget("pair:" + peerScope(routes))
+        inbox(context).forget("blob:" + peerScope(routes))
+        MqttRouteState(context).forgetRoute(peerScope(routes))
         val source = outboxArray(context)
         val discardedTopics = routes.receiveWindow + routes.up
         for (index in 0 until source.length()) {
@@ -622,134 +610,62 @@ object GalaxySSILinkDeliveryStore {
     private fun isRecoverableAttachmentTransfer(item: JSONObject): Boolean =
         item.optString(ATTACHMENT_TRANSFER_ID).lowercase().matches(SHA256)
 
-    fun claimIncoming(context: Context, messageId: String): Boolean = synchronized(INBOUND_LOCK) {
-        if (messageId.isBlank()) return@synchronized false
-        val values = readArray(context, KEY_INBOX)
-        for (index in 0 until values.length()) {
-            if (values.optString(index) == messageId) return@synchronized false
-        }
-        values.put(messageId)
-        val trimmed = JSONArray()
-        val start = (values.length() - MAX_INBOX_IDS).coerceAtLeast(0)
-        for (index in start until values.length()) trimmed.put(values.optString(index))
-        writeArray(context, KEY_INBOX, trimmed)
-        true
+    internal fun inbox(context: Context): GalaxySSILinkInbox = inboxInstance ?: synchronized(this) {
+        inboxInstance ?: GalaxySSILinkInbox(inboundDatabase(context)).also { inboxInstance = it }
     }
 
-    fun stageIncoming(
-        context: Context,
-        messageId: String,
-        payload: String
-    ): IncomingStageResult = synchronized(INBOUND_LOCK) {
-        if (messageId.isBlank() || payload.isBlank()) {
-            return@synchronized IncomingStageResult.INVALID
-        }
-        val completed = readArray(context, KEY_INBOX)
-        for (index in 0 until completed.length()) {
-            if (completed.optString(index) == messageId) {
-                return@synchronized IncomingStageResult.COMPLETED
-            }
-        }
-        val database = inboundDatabase(context)
-        val key = pendingInboundKey(messageId)
-        if (database.contains(key)) return@synchronized IncomingStageResult.PENDING
-        val now = System.currentTimeMillis()
-        database.writeString(
-            key,
-            JSONObject()
-                .put("message_id", messageId)
-                .put("payload", payload)
-                .put("created_at", now)
-                .toString()
-        )
-        pendingWritesSincePrune += 1
-        if (pendingWritesSincePrune >= PENDING_PRUNE_INTERVAL) {
-            pendingWritesSincePrune = 0
-            prunePendingIncoming(database, now)
-        }
-        IncomingStageResult.STAGED
-    }
+    internal fun peerScope(routes: GalaxySSILinkProtocol.Routes): String =
+        "${routes.clientRouteId}|${routes.localFingerprint}|${routes.remoteFingerprint}"
 
-    fun pendingIncoming(context: Context): List<PendingIncoming> = synchronized(INBOUND_LOCK) {
-        val database = inboundDatabase(context)
-        val now = System.currentTimeMillis()
-        database.entries(PENDING_INBOUND_PREFIX)
-            .mapNotNull { (_, raw) ->
-                val value = runCatching { JSONObject(raw) }.getOrNull()
-                    ?: return@mapNotNull null
-                val messageId = value.optString("message_id")
-                val payload = value.optString("payload")
-                if (messageId.isBlank() || payload.isBlank()) return@mapNotNull null
-                PendingIncoming(
-                    messageId = messageId,
-                    payload = payload,
-                    createdAt = value.optLong("created_at", now)
-                )
-            }
-            .sortedBy(PendingIncoming::createdAt)
-    }
-
-    fun completeIncoming(context: Context, messageId: String): Unit = synchronized(INBOUND_LOCK) {
-        if (messageId.isBlank()) return@synchronized
-        inboundDatabase(context).remove(pendingInboundKey(messageId))
-        val values = readArray(context, KEY_INBOX)
-        for (index in 0 until values.length()) {
-            if (values.optString(index) == messageId) return@synchronized
-        }
-        values.put(messageId)
-        val trimmed = JSONArray()
-        val start = (values.length() - MAX_INBOX_IDS).coerceAtLeast(0)
-        for (index in start until values.length()) trimmed.put(values.optString(index))
-        writeArray(context, KEY_INBOX, trimmed)
-    }
-
-    fun bindCiphertext(
-        context: Context,
-        ciphertextDigest: String,
-        messageId: String,
-        receiptRequired: Boolean
-    ): Unit = synchronized(CIPHERTEXT_LOCK) {
-        if (ciphertextDigest.isBlank() || messageId.isBlank()) return@synchronized
-        val database = inboundDatabase(context)
-        val key = ciphertextKey(ciphertextDigest)
-        val existing = runCatching { JSONObject(database.readString(key, "")) }.getOrNull()
-        if (existing != null && existing.optString("message_id") != messageId) {
-            throw IllegalArgumentException("Signal ciphertext is already bound to another message")
-        }
-        database.writeString(
-            key,
-            JSONObject()
-                .put("message_id", messageId)
-                .put("receipt_required", receiptRequired)
-                .put("created_at", existing?.optLong("created_at") ?: System.currentTimeMillis())
-                .toString()
-        )
-        ciphertextWritesSincePrune += 1
-        if (ciphertextWritesSincePrune >= CIPHERTEXT_PRUNE_INTERVAL) {
-            ciphertextWritesSincePrune = 0
-            pruneCiphertextBindings(database, System.currentTimeMillis())
+    internal fun stageLocalIncoming(context: Context, scope: String, endpoint: String, payload: JSONObject): IncomingStageResult {
+        val clean = JSONObject(payload.toString()).apply { remove(MqttImmutableContent.RECORD_KEY) }
+        val accepted = inbox(context).accept(GalaxySSILinkInbox.Peer(scope, endpoint, false),
+            payload.getString("message_id"), MqttImmutableContent.hash(clean), payload)
+        return when (accepted.stage) {
+            GalaxySSILinkInbox.Stage.STORED -> IncomingStageResult.STAGED
+            GalaxySSILinkInbox.Stage.PENDING -> IncomingStageResult.PENDING
+            GalaxySSILinkInbox.Stage.COMPLETED -> IncomingStageResult.COMPLETED
         }
     }
 
-    fun messageForCiphertext(context: Context, ciphertextDigest: String): KnownCiphertext? {
-        if (ciphertextDigest.isBlank()) return null
-        val value = runCatching {
-            JSONObject(inboundDatabase(context).readString(ciphertextKey(ciphertextDigest), ""))
-        }.getOrNull() ?: return null
-        val messageId = value.optString("message_id")
-        if (messageId.isBlank()) return null
-        return KnownCiphertext(
-            messageId = messageId,
-            receiptRequired = value.optBoolean("receipt_required", true)
-        )
+    @Synchronized
+    fun pendingIncoming(context: Context): List<PendingIncoming> {
+        val store = inbox(context)
+        store.pruneCompleted()
+        var rows = store.pending(pendingReplayCursor)
+        if (rows.isEmpty() && pendingReplayCursor.isNotEmpty()) rows = store.pending()
+        pendingReplayCursor = rows.lastOrNull()?.recordKey.orEmpty()
+        return rows.map { PendingIncoming(it.messageId, it.payload, it.createdAt, it.peer.scope, it.peer.endpoint, it.peer.phone) }
     }
+
+    private val inboundDispatch = MqttInboxDispatchGate()
+
+    internal fun beginIncomingDispatch(context: Context, payload: JSONObject): Boolean {
+        val key = payload.optString(MqttImmutableContent.RECORD_KEY)
+        if (!inboundDispatch.acquire(key)) return false
+        return try {
+            inbox(context).isPending(payload).also { if (!it) inboundDispatch.release(key) }
+        } catch (error: Exception) {
+            inboundDispatch.release(key)
+            throw error
+        }
+    }
+
+    internal fun retryIncoming(payload: JSONObject) =
+        inboundDispatch.release(payload.optString(MqttImmutableContent.RECORD_KEY))
+
+    fun completeIncoming(context: Context, payload: JSONObject): Boolean =
+        inbox(context).complete(payload).also { retryIncoming(payload) }
 
     @Synchronized
     fun clear(context: Context) {
         clearOutboxFiles(context)
         outboxDatabase(context).clear()
         preferences(context).clear()
-        inboundDatabase(context).clear()
+        inbox(context).clear()
+        inboundDispatch.clear()
+        inboundDatabase(context).let { it.removeAll(it.keys("multipath:")) }
+        pendingReplayCursor = ""
         recoveryDatabase(context).clear()
         outboxMigrationChecked = true
     }
@@ -782,7 +698,7 @@ object GalaxySSILinkDeliveryStore {
     }
 
     private fun inboundDatabase(context: Context): AgentEncryptedDatabase =
-        AgentEncryptedDatabase(context.applicationContext, INBOUND_DATABASE)
+        AndroidPersistentSignalStore.database(context.applicationContext)
 
     internal fun transportMetadataDatabase(context: Context): AgentEncryptedDatabase = inboundDatabase(context)
 
@@ -790,48 +706,6 @@ object GalaxySSILinkDeliveryStore {
         AgentEncryptedDatabase(context.applicationContext, RECOVERY_DATABASE)
 
     private fun recoveryKey(messageId: String): String = "$RECOVERY_PREFIX$messageId"
-
-    private fun pendingInboundKey(messageId: String): String = "$PENDING_INBOUND_PREFIX$messageId"
-
-    private fun ciphertextKey(ciphertextDigest: String): String = "$CIPHERTEXT_PREFIX$ciphertextDigest"
-
-    private fun prunePendingIncoming(database: AgentEncryptedDatabase, nowMillis: Long) {
-        val pending = database.entries(PENDING_INBOUND_PREFIX)
-            .mapNotNull { (key, raw) ->
-                val value = runCatching { JSONObject(raw) }.getOrNull()
-                if (value == null) {
-                    null
-                } else {
-                    key to value.optLong("created_at", nowMillis)
-                }
-            }
-            .sortedBy { it.second }
-        val cutoff = nowMillis - MAX_PENDING_INBOUND_AGE_MILLIS
-        val overflow = (pending.size - MAX_PENDING_INBOUND).coerceAtLeast(0)
-        database.removeAll(
-            pending.mapIndexedNotNull { index, (key, createdAt) ->
-                key.takeIf { index < overflow || createdAt < cutoff }
-            }
-        )
-    }
-
-    private fun pruneCiphertextBindings(database: AgentEncryptedDatabase, nowMillis: Long) {
-        val allKeys = database.keys(CIPHERTEXT_PREFIX)
-        val retainedKeys = database.recentKeys(CIPHERTEXT_PREFIX, MAX_CIPHERTEXT_BINDINGS).toHashSet()
-        val overflowKeys = allKeys.filterNot(retainedKeys::contains)
-        if (overflowKeys.isNotEmpty()) {
-            database.removeAll(overflowKeys)
-            return
-        }
-
-        val oldestKeys = database.oldestKeys(CIPHERTEXT_PREFIX, CIPHERTEXT_AGE_SCAN_LIMIT)
-        val oldestValues = database.readStrings(oldestKeys)
-        val cutoff = nowMillis - MAX_CIPHERTEXT_AGE_MILLIS
-        database.removeAll(oldestKeys.filter { key ->
-            val value = oldestValues[key]?.let { runCatching { JSONObject(it) }.getOrNull() }
-            value == null || value.optLong("created_at", nowMillis) < cutoff
-        })
-    }
 
     private fun readArray(context: Context, key: String): JSONArray {
         val raw = preferences(context).readString(key, "[]")
