@@ -183,6 +183,10 @@ internal class AgentKnowledgeDatabase private constructor(
         return KnowledgeSearchSnapshot(this, context.getDatabasePath(name).absolutePath).also { requestIndexRetry() }
     }
 
+    /** Standalone committed reads never borrow a writer transaction or its monitor. */
+    internal fun <T> readCommitted(block: (KnowledgeSqlite) -> T): T =
+        searchSnapshot().use { it.access(block) }
+
     private fun requestIndexRetry() {
         if (retired || indexFailure == null || !indexRetryQueued.compareAndSet(false, true)) return
         try { indexExecutor.execute {

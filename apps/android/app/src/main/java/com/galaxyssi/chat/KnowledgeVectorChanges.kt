@@ -12,7 +12,7 @@ internal data class KnowledgeVectorChangePage(val state: KnowledgeVectorFeedStat
 
 /** Bounded keyset replay. No automatic truncation before a native consumer has durably applied a checkpoint. */
 internal class KnowledgeVectorChanges(private val storage: AgentKnowledgeDatabase, private val modelKey: String) {
-    fun state(): KnowledgeVectorFeedState? = storage.access(::state)
+    fun state(): KnowledgeVectorFeedState? = storage.readCommitted(::state)
 
     internal fun state(db: KnowledgeSqlite): KnowledgeVectorFeedState? = db.rawQuery(
         "SELECT CASE WHEN length(epoch)=32 THEN epoch ELSE '' END,head,completed_chunks," +
@@ -26,7 +26,7 @@ internal class KnowledgeVectorChanges(private val storage: AgentKnowledgeDatabas
         result
     }
 
-    fun page(epoch: String, after: Long = 0, limit: Int = 128): KnowledgeVectorChangePage = storage.access { db ->
+    fun page(epoch: String, after: Long = 0, limit: Int = 128): KnowledgeVectorChangePage = storage.readCommitted { db ->
         require(after >= 0 && limit in 1..512)
         val current = requireNotNull(state(db)) { "Vector change feed is not registered" }
         check(current.epoch == epoch) { "Vector change feed was replaced; rebuild this consumer" }

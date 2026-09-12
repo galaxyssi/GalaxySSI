@@ -1,0 +1,57 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.108",
+  "version_code": 994,
+  "parent_commit": "c3dfac0d11032188f94455474e7bd56f466c4979",
+  "app_apk_sha256": "aa94b4e31c0d88cb25116242c51ce09535cc82e34ff6dc9d51e15d3f09a677c1",
+  "test_apk_sha256": "8b1ec848ab265e8a18eb2afa857afbf9e6012d3c89bbefc358fb709dcaaacd9d",
+  "baseline": {
+    "tests": 3,
+    "seconds": 32.636,
+    "version": "1.1.107",
+    "failure": "TimeoutException while writer was held",
+    "failures": 3
+  },
+  "device_tests": {
+    "skipped": 0,
+    "failed": 0,
+    "passed": 80,
+    "seconds": 237.893
+  },
+  "jvm_tests": {
+    "total": 3822,
+    "passed": 3817,
+    "skipped": 5,
+    "failures": 0,
+    "errors": 0,
+    "suites": 546
+  },
+  "ranked_native": {
+    "over_200ms": 0,
+    "p99_ns": 46488269,
+    "dimensions": 2,
+    "encoder": "deterministic test encoder",
+    "source_rows": 1,
+    "samples": 100,
+    "p50_ns": 27245807,
+    "p95_ns": 39841923
+  },
+  "reopen_ns": 31640576,
+  "retained_read": {
+    "over_200ms": 0,
+    "sha256_before_and_after": "bee085bde215000750866600d54c0b291efd3c2fd7d55ebb5e5bbd3db6a8e8e1",
+    "rows": 10001,
+    "samples": 100,
+    "results": 8,
+    "p99_ns": 110348077,
+    "p50_ns": 86280347,
+    "p95_ns": 102082923
+  },
+  "aligned_libraries": 74,
+  "limitations": [
+    "Ranked test uses one real encrypted body and a deterministic encoder, not a production model or a large ANN corpus.",
+    "Writers are held with a test latch; this is not sustained full-source write contention.",
+    "No new physical reboot, UI or 100-million-record acceptance.",
+    "Cold migration, exclusive reclamation, graph I/O, inference and maintenance coordination may still wait."
+  ]
+}

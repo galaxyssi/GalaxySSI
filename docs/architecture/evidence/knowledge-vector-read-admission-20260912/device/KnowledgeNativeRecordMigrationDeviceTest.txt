@@ -1,0 +1,15 @@
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeNativeRecordMigrationDeviceTest
+INSTRUMENTATION_STATUS: current=47
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=80
+INSTRUMENTATION_STATUS: stream=
+com.galaxyssi.chat.KnowledgeNativeRecordMigrationDeviceTest:
+INSTRUMENTATION_STATUS: test=realJniMigratesOldCatalogInBoundedPagesWithoutChangingGraphOrReplay
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeNativeRecordMigrationDeviceTest
+INSTRUMENTATION_STATUS: current=47
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=80
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=realJniMigratesOldCatalogInBoundedPagesWithoutChangingGraphOrReplay
+INSTRUMENTATION_STATUS_CODE: 0

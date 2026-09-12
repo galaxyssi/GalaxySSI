@@ -1,0 +1,137 @@
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest:
+INSTRUMENTATION_STATUS: test=feedCatalogAndVectorPagesReadCommittedStateDuringReplacement
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.feedCatalogAndVectorPagesReadCommittedStateDuringReplacement$lambda$5(KnowledgeVectorReadAdmissionDeviceTest.kt:50)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$ql6YEQ-9AD4HK3NQhW4mhP5V3ss(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.feedCatalogAndVectorPagesReadCommittedStateDuringReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:44)
+
+INSTRUMENTATION_STATUS: stream=
+Error in feedCatalogAndVectorPagesReadCommittedStateDuringReplacement(com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest):
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.feedCatalogAndVectorPagesReadCommittedStateDuringReplacement$lambda$5(KnowledgeVectorReadAdmissionDeviceTest.kt:50)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$ql6YEQ-9AD4HK3NQhW4mhP5V3ss(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.feedCatalogAndVectorPagesReadCommittedStateDuringReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:44)
+
+INSTRUMENTATION_STATUS: test=feedCatalogAndVectorPagesReadCommittedStateDuringReplacement
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=rankedSemanticQueriesCompleteBeforeSourceWriterCommits
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.rankedSemanticQueriesCompleteBeforeSourceWriterCommits$lambda$15(KnowledgeVectorReadAdmissionDeviceTest.kt:87)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$rALGTfd6zH7oav1E8b5-q3ue1zY(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda13.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.rankedSemanticQueriesCompleteBeforeSourceWriterCommits(KnowledgeVectorReadAdmissionDeviceTest.kt:84)
+
+INSTRUMENTATION_STATUS: stream=
+Error in rankedSemanticQueriesCompleteBeforeSourceWriterCommits(com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest):
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.rankedSemanticQueriesCompleteBeforeSourceWriterCommits$lambda$15(KnowledgeVectorReadAdmissionDeviceTest.kt:87)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$rALGTfd6zH7oav1E8b5-q3ue1zY(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda13.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.rankedSemanticQueriesCompleteBeforeSourceWriterCommits(KnowledgeVectorReadAdmissionDeviceTest.kt:84)
+
+INSTRUMENTATION_STATUS: test=rankedSemanticQueriesCompleteBeforeSourceWriterCommits
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=reopenedNativeGraphDoesNotWaitForSourceWriter
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.reopenedNativeGraphDoesNotWaitForSourceWriter$lambda$11(KnowledgeVectorReadAdmissionDeviceTest.kt:72)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$U1tYI9dDja9LfOrbxhBjSFRdT4k(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda6.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.reopenedNativeGraphDoesNotWaitForSourceWriter(KnowledgeVectorReadAdmissionDeviceTest.kt:70)
+
+INSTRUMENTATION_STATUS: stream=
+Error in reopenedNativeGraphDoesNotWaitForSourceWriter(com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest):
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.reopenedNativeGraphDoesNotWaitForSourceWriter$lambda$11(KnowledgeVectorReadAdmissionDeviceTest.kt:72)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$U1tYI9dDja9LfOrbxhBjSFRdT4k(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda6.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.reopenedNativeGraphDoesNotWaitForSourceWriter(KnowledgeVectorReadAdmissionDeviceTest.kt:70)
+
+INSTRUMENTATION_STATUS: test=reopenedNativeGraphDoesNotWaitForSourceWriter
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 32.636
+There were 3 failures:
+1) feedCatalogAndVectorPagesReadCommittedStateDuringReplacement(com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest)
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.feedCatalogAndVectorPagesReadCommittedStateDuringReplacement$lambda$5(KnowledgeVectorReadAdmissionDeviceTest.kt:50)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$ql6YEQ-9AD4HK3NQhW4mhP5V3ss(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.feedCatalogAndVectorPagesReadCommittedStateDuringReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:44)
+2) rankedSemanticQueriesCompleteBeforeSourceWriterCommits(com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest)
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.rankedSemanticQueriesCompleteBeforeSourceWriterCommits$lambda$15(KnowledgeVectorReadAdmissionDeviceTest.kt:87)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$rALGTfd6zH7oav1E8b5-q3ue1zY(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda13.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.rankedSemanticQueriesCompleteBeforeSourceWriterCommits(KnowledgeVectorReadAdmissionDeviceTest.kt:84)
+3) reopenedNativeGraphDoesNotWaitForSourceWriter(com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest)
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.heldReplacement(KnowledgeVectorReadAdmissionDeviceTest.kt:112)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.reopenedNativeGraphDoesNotWaitForSourceWriter$lambda$11(KnowledgeVectorReadAdmissionDeviceTest.kt:72)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.$r8$lambda$U1tYI9dDja9LfOrbxhBjSFRdT4k(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest$$ExternalSyntheticLambda6.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.isolated(KnowledgeVectorReadAdmissionDeviceTest.kt:36)
+	at com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest.reopenedNativeGraphDoesNotWaitForSourceWriter(KnowledgeVectorReadAdmissionDeviceTest.kt:70)
+
+FAILURES!!!
+Tests run: 3,  Failures: 3
+
+
+INSTRUMENTATION_CODE: -1

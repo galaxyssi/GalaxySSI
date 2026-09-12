@@ -1,0 +1,16 @@
+         1789220438.726 27617 27637 I System.out: KNOWLEDGE_VECTOR_READ retained_fixture=test-vector-read-admission-41d6cf1d-d84c-4f91-b9bb-b9ed422f55d9.db
+         1789220442.084 27617 27648 I System.out: KNOWLEDGE_VECTOR_READ phase=ranked n=100 p50_ns=27245807 p95_ns=39841923 p99_ns=46488269 over_200ms=0
+         1789220442.110 27617 27637 I System.out: KNOWLEDGE_VECTOR_READ retained_fixture=test-vector-read-admission-1590842c-78fb-4da0-8f66-2e83193ea464.db
+         1789220442.653 27617 27662 I System.out: KNOWLEDGE_VECTOR_READ phase=reopen elapsed_ns=31640576
+         1789220442.665 27617 27637 I System.out: KNOWLEDGE_VECTOR_READ retained_fixture=test-vector-read-admission-efbd3c0d-8721-4aae-9792-4acc39c2c622.db
+         1789220643.842 27617 27637 I System.out: KNOWLEDGE_ADMISSION_CORPUS dimensions=512 chunks=204 backlog_records=512
+         1789220645.515 27617 27637 I System.out: KNOWLEDGE_ADMISSION phase=actual_512d_replay n=32 p50_ms=51 p95_ms=68 max_ms=79 raw_ms=[40, 41, 41, 43, 43, 43, 44, 45, 45, 46, 47, 48, 48, 49, 51, 51, 51, 51, 52, 53, 54, 55, 55, 56, 56, 57, 59, 60, 62, 65, 68, 79]
+         1789220647.136 27617 27637 I System.out: KNOWLEDGE_ADMISSION_REPLAY dimensions=512 chunks=204 elapsed_ms=3293
+         1789220651.070 27617 27637 I System.out: KNOWLEDGE_ADMISSION phase=slow_encoder n=32 p50_ms=67 p95_ms=76 max_ms=78 raw_ms=[51, 59, 61, 61, 62, 63, 63, 65, 65, 65, 65, 65, 66, 66, 66, 67, 67, 67, 67, 68, 68, 68, 69, 70, 70, 71, 71, 71, 73, 73, 76, 78]
+         1789220652.334 27617 27637 I System.out: KNOWLEDGE_ADMISSION phase=decrypt_replace n=32 p50_ms=20 p95_ms=23 max_ms=24 raw_ms=[14, 15, 15, 16, 16, 16, 17, 17, 18, 18, 18, 20, 20, 20, 20, 20, 20, 20, 20, 20, 21, 21, 21, 21, 21, 22, 23, 23, 23, 23, 23, 24]
+         1789220653.094 27617 27637 I System.out: KNOWLEDGE_ADMISSION phase=decrypt_delete n=32 p50_ms=17 p95_ms=24 max_ms=25 raw_ms=[13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14, 15, 15, 16, 17, 17, 17, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 21, 23, 24, 25]
+         1789220653.798 27617 27637 I System.out: KNOWLEDGE_ADMISSION phase=decrypt_unregister n=32 p50_ms=17 p95_ms=24 max_ms=26 raw_ms=[13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 15, 15, 17, 17, 17, 17, 17, 17, 18, 18, 18, 19, 19, 20, 21, 22, 22, 24, 26]
+         1789220656.140 27617 27637 I System.out: KNOWLEDGE_ADMISSION phase=replay_owner n=32 p50_ms=68 p95_ms=78 max_ms=82 raw_ms=[49, 56, 60, 60, 62, 64, 64, 65, 65, 66, 66, 66, 67, 68, 68, 68, 68, 69, 70, 70, 71, 71, 72, 72, 73, 73, 74, 74, 76, 77, 78, 82]
+         1789220657.159 27617 28014 I System.out: KNOWLEDGE_READ_ADMISSION phase=validate elapsed_ns=6791500
+         1789220657.322 27617 28017 I System.out: KNOWLEDGE_READ_ADMISSION phase=open_and_read elapsed_ns=8145616
+         1789220666.445 27617 28026 I System.out: KNOWLEDGE_READ_ADMISSION_SCALE rows=10001 samples=100 results=8 p50_ns=86280347 p95_ns=102082923 p99_ns=110348077 over_200ms=0
