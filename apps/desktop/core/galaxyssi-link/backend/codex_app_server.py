@@ -26,6 +26,7 @@ from agent_execution_harness import (
     replan_instruction,
 )
 from latency_feature_flags import agent_output_delta_enabled
+from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -172,6 +173,8 @@ class CodexRun:
     reasoning_effort: str = "medium"
     web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
     citation_repair_attempted: bool = False
+    generated_images: dict[str, dict] = field(default_factory=dict)
+    generated_image_errors: dict[str, str] = field(default_factory=dict)
     host_config_guard: object | None = field(default=None, repr=False)
     turn_started_event: threading.Event = field(
         default_factory=threading.Event,
@@ -559,6 +562,17 @@ class CodexAppServer:
             run.final_text = self._latest_agent_message(turn)
             turn_status = str(turn.get("status") or "")
             if turn_status == "completed":
+                image_error = finalize_run_images(run, turn, self.env.get("CODEX_HOME") or Path.home() / ".codex")
+                if image_error:
+                    self._finish_host_config_guard(run)
+                    run.finished = True
+                    self._remove_turn_mapping(run)
+                    self.on_event(task_id, {
+                        "thread_id": clean_thread_id, "turn_id": clean_turn_id,
+                        "status": "failed", "current_step": "",
+                        "result": run.final_text, "error": image_error,
+                    })
+                    return run
                 if not run.final_text:
                     raise RuntimeError(
                         "The original Codex turn completed without a final response"
@@ -1699,6 +1713,8 @@ class CodexAppServer:
                 )[:MAX_VISIBLE_PROGRESS_TEXT]
         elif method == "item/started":
             item = params.get("item") or {}
+            if is_generated_image(item) and str(item.get("id") or "missing") not in run.generated_images:
+                run.generated_image_errors[str(item.get("id") or "missing")] = "image_generation_pending"
             if str(item.get("type") or "") == "agentMessage":
                 item_id = str(item.get("id") or params.get("itemId") or "agent-message")
                 run.agent_message_phases[item_id] = str(item.get("phase") or "").strip()
@@ -1713,6 +1729,8 @@ class CodexAppServer:
             self._record_failed_item(run, item)
             item_type = str(item.get("type") or "")
             item_id = str(item.get("id") or params.get("itemId") or "")
+            if is_generated_image(item):
+                capture_run_image(run, item, self.env.get("CODEX_HOME") or Path.home() / ".codex")
             if item_type == "agentMessage":
                 text = self._clean_output_text(
                     item.get("text") or run.agent_message_deltas.get(item_id, "")
@@ -1789,6 +1807,11 @@ class CodexAppServer:
             turn_error = self._turn_error(completed_turn)
             if not run.final_text:
                 run.final_text = run.last_agent_text
+            if mapped == "completed":
+                image_error = finalize_run_images(
+                    run, completed_turn, self.env.get("CODEX_HOME") or Path.home() / ".codex")
+                if image_error:
+                    mapped, turn_error = "failed", image_error
             if (
                 mapped == "completed"
                 and run.final_text

@@ -8847,6 +8847,12 @@ def republish_agent_task_result(task_id: str) -> dict:
         return api_error("agent_task_result_changed", task_id=public_task["task_id"])
     public_task["result"] = remote_images.content
     public_task["output_files"] = remote_images.include_files(public_task.get("output_files") or [])
+    if public_task.get("agent_id") == "codex" and public_task.get("thread_id") and public_task.get("turn_id"):
+        from codex_generated_images import verified_images
+        native_images = verified_images(public_task["task_id"], public_task["thread_id"], public_task["turn_id"])
+        by_path = {item["relative_path"]: item for item in public_task["output_files"]}
+        by_path.update({item["relative_path"]: item for item in native_images})
+        public_task["output_files"] = list(by_path.values())
     from artifact_delivery import prepare_artifacts, register_artifact_batch
 
     artifacts = prepare_artifacts(task.task_id, public_task["output_files"])
