@@ -113,8 +113,10 @@ and staged whitespace checks also passed.
 ## Remaining Acceptance
 
 This advances fragment transport but does not finish the full multi-broker goal.
-Remaining work includes window-coalesced bitmap feedback, throughput-informed
-striping, finer retry/probe timing, coordinated retention/quotas and revocation
+Window-coalesced bitmap feedback and acknowledged encoded-wire throughput
+scheduling were subsequently integrated; see
+[chunk flow](MQTT_CHUNK_FLOW_20260913.md) for the newer evidence and limitations.
+Remaining work includes finer retry/probe timing, coordinated retention/quotas and revocation
 cleanup, all application attachment and Blob paths, real native Android/Desktop
 and App/App pairing, controlled broker failures and large-file matrices, ten
 real windows/background lifecycle, resource/power measurements, full-runtime

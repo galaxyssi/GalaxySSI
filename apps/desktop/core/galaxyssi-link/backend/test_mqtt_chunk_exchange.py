@@ -44,7 +44,7 @@ class ChunkExchangeTest(unittest.TestCase):
         self.receiver.accept("phone-inbound", raw)
         state, _ = self.receiver.snapshot("phone-inbound", query)
         self.base.phone.peer_routes.publish_chunk_state("phone-pair", state,
-            authenticated_identity=self.base.phone_binding.identity, broker_id=packet[0])
+            authenticated_identity=self.base.phone_binding.identity, broker_id=packet[0], urgent=True)
         self.base.deliver_desktop(self.base.phone._pool.sent[-1])
 
     def test_actual_sender_retries_only_missing_fragment_on_another_broker(self):

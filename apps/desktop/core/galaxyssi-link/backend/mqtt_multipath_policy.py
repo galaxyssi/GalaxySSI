@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from mqtt_broker_catalog import BROKER_IDS, CATALOG
+from mqtt_chunk_throughput import ChunkThroughput
 
 TRANSPORT_VERSION = CATALOG["transport_version"]
 
@@ -112,12 +113,14 @@ class MultipathPolicy:
         self._lock = threading.RLock()
         self._tie_seed = tie_seed if tie_seed is not None else secrets.token_bytes(16)
         self._network = ""
+        self.chunks = ChunkThroughput()
 
     def set_network(self, network: str) -> None:
         with self._lock:
             if network != self._network:
                 self._network = network
                 self._rtt.clear()
+                self.chunks.reset()
 
     def connected(self, broker: str, generation: int, *, packet_bytes: int | None = None) -> bool:
         packet_limit = self.limits.packet_bytes if packet_bytes is None else packet_bytes
@@ -187,6 +190,7 @@ class MultipathPolicy:
 
     def forget_peer(self, peer: str) -> None:
         with self._lock:
+            self.chunks.forget(peer)
             self._routes.pop(peer, None)
             self._rtt = {key: values for key, values in self._rtt.items() if key[0] != peer}
             for key in [key for key, value in self._attempts.items() if value.peer == peer]:
@@ -205,12 +209,14 @@ class MultipathPolicy:
             samples.popleft()
         return [value for _, value in samples]
 
-    def _rank(self, peer: str, broker: str, message_id: str, now: float) -> tuple[float, bytes]:
+    def _rank(self, peer: str, broker: str, message_id: str, now: float, traffic=None, wire_bytes=0) -> tuple[float, bytes]:
         samples = self._samples(peer, broker, now)
         latency = sum(samples) / len(samples) if samples else self.limits.unmeasured_hedge
         load = sum(value.wire_bytes for value in self._attempts.values()
                    if value.path == broker and value.slot_held)
         score = latency * (1 + load / self.limits.peer_inflight_bytes)
+        if traffic == Traffic.CHUNK:
+            score = latency + (wire_bytes + max(load, self.chunks.pending_bytes(broker))) / self.chunks.rate(peer, broker)
         # An unpredictable per-process tie-break avoids a permanently preferred provider.
         tie = hashlib.sha256(self._tie_seed + f"{peer}\0{message_id}\0{broker}".encode()).digest()
         return score, tie
@@ -221,6 +227,7 @@ class MultipathPolicy:
         if not message_id or wire_bytes <= 0 or wire_bytes > self.limits.packet_bytes:
             return ()
         with self._lock:
+            self.chunks.expire(now)
             route = self._routes.get(peer)
             if route is None or route.expires_at <= now or wire_bytes > route.packet_bytes:
                 return ()
@@ -231,7 +238,7 @@ class MultipathPolicy:
             unused = [key for key in candidates if key not in attempted]
             if unused:
                 candidates = unused
-            candidates.sort(key=lambda key: self._rank(peer, key, message_id, now))
+            candidates.sort(key=lambda key: self._rank(peer, key, message_id, now, traffic, wire_bytes))
             if not candidates:
                 return ()
             if traffic == Traffic.RECEIPT and ingress in candidates:
@@ -328,6 +335,21 @@ class MultipathPolicy:
     def discard_attempt(self, attempt_id: str) -> None:
         with self._lock:
             self._attempts.pop(attempt_id, None)
+
+    def track_chunk(self, peer, chunk, broker, generation, size, now):
+        with self._lock:
+            if peer in self._routes and self.paths[broker].generation == generation:
+                self.chunks.track(peer, chunk, broker, generation, size, now)
+
+    def discard_chunk(self, peer, chunk):
+        with self._lock:
+            self.chunks.discard(peer, chunk)
+
+    def confirm_chunk_state(self, peer, transfer, request, indices, now):
+        """Called only after the solicited, pair-authenticated bitmap commit succeeded."""
+        with self._lock:
+            generations = {key: value.generation for key, value in self.paths.items() if value.connected}
+            self.chunks.confirmed(peer, transfer, request, indices, generations, now)
 
     def pending(self, peer: str, message_id: str) -> bool:
         with self._lock:

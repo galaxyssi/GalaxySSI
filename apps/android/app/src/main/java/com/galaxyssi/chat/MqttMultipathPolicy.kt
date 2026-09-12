@@ -43,11 +43,13 @@ internal class MqttMultipathPolicy(
     private val attempts = mutableMapOf<String, Attempt>()
     private val rtt = mutableMapOf<Pair<String, String>, ArrayDeque<Pair<Long, Long>>>()
     private var network = ""
+    private val chunks = MqttChunkThroughput()
 
     @Synchronized fun setNetwork(value: String) {
         if (value != network) {
             network = value
             rtt.clear()
+            chunks.reset()
         }
     }
 
@@ -105,6 +107,7 @@ internal class MqttMultipathPolicy(
     }
 
     @Synchronized fun forgetPeer(peer: String) {
+        chunks.forget(peer)
         routes.remove(peer)
         rtt.keys.removeAll { it.first == peer }
         attempts.entries.removeAll { it.value.peer == peer }
@@ -122,10 +125,12 @@ internal class MqttMultipathPolicy(
         return values.map { it.second }
     }
 
-    private fun score(peer: String, broker: String, now: Long): Double {
+    private fun score(peer: String, broker: String, now: Long, traffic: Traffic, wireBytes: Int): Double {
         val values = samples(peer, broker, now)
         val latency = if (values.isEmpty()) MqttBrokerCatalog.UNMEASURED_HEDGE_MS.toDouble() else values.average()
         val load = attempts.values.filter { it.brokerId == broker && it.slotHeld }.sumOf { it.wireBytes.toLong() }
+        if (traffic == Traffic.CHUNK)
+            return latency + (wireBytes + maxOf(load, chunks.pendingBytes(broker))) * 1000.0 / chunks.rate(peer, broker)
         return latency * (1 + load.toDouble() / MqttBrokerCatalog.PEER_INFLIGHT_BYTES)
     }
 
@@ -145,6 +150,7 @@ internal class MqttMultipathPolicy(
         peer: String, messageId: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>,
         now: Long, ingress: String? = null, attempted: Set<String> = emptySet()
     ): List<Dispatch> {
+        chunks.expire(now)
         if (messageId.isBlank() || wireBytes !in 1..MqttBrokerCatalog.PACKET_BYTES) return emptyList()
         val route = routes[peer] ?: return emptyList()
         if (route.expiresAt <= now || wireBytes > route.packetBytes ||
@@ -153,7 +159,7 @@ internal class MqttMultipathPolicy(
             .filter { wireBytes <= paths.getValue(it).packetBytes }
         val unused = common.filterNot(attempted::contains)
         val candidates = (unused.ifEmpty { common }).sortedWith(
-            compareBy<String> { score(peer, it, now) }.thenBy { tie(peer, messageId, it) }
+            compareBy<String> { score(peer, it, now, traffic, wireBytes) }.thenBy { tie(peer, messageId, it) }
         ).toMutableList()
         if (candidates.isEmpty()) return emptyList()
         if (traffic == Traffic.RECEIPT && ingress in candidates) {
@@ -248,6 +254,14 @@ internal class MqttMultipathPolicy(
     }
 
     @Synchronized fun discardAttempt(attemptId: String) { attempts.remove(attemptId) }
+    @Synchronized fun trackChunk(peer: String, chunk: MqttChunkThroughput.Chunk, broker: String, generation: Long, bytes: Int, now: Long) {
+        if (peer in routes && paths.getValue(broker).generation == generation) chunks.track(peer, chunk, broker, generation, bytes, now)
+    }
+    @Synchronized fun discardChunk(peer: String, chunk: MqttChunkThroughput.Chunk) { chunks.discard(peer, chunk) }
+    /** Called only after the solicited pair-authenticated bitmap commit succeeds. */
+    @Synchronized fun confirmChunkState(peer: String, transfer: String, request: String, indices: Collection<Int>, now: Long) {
+        chunks.confirmed(peer, transfer, request, indices, paths.filterValues { it.connected }.mapValues { it.value.generation }, now)
+    }
     @Synchronized fun pending(peer: String, messageId: String): Boolean =
         attempts.values.any { it.peer == peer && it.messageId == messageId && !it.peerAccepted }
 

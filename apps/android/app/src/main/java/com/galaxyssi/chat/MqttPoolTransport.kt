@@ -19,7 +19,8 @@ internal class MqttPoolTransport(
         val traffic: MqttMultipathPolicy.Traffic, val receiveTopics: Set<String>,
         val bootstrap: Boolean = false, val preferredBroker: String? = null,
         val authorizedPaths: Map<String, Long>? = null,
-        val attemptedBrokers: Set<String> = emptySet(), val onPath: ((String, Long) -> Unit)? = null)
+        val attemptedBrokers: Set<String> = emptySet(), val onPath: ((String, Long) -> Unit)? = null,
+        val chunk: MqttChunkThroughput.Chunk? = null)
     interface Listener {
         fun onConnectionChanged(connected: Boolean) = Unit
         fun onSubscriptionsChanged() = Unit
@@ -207,7 +208,9 @@ internal class MqttPoolTransport(
                 throw error
             }
             synchronized(lock) { publications[attempt] = Pending(token, broker, generation, !descriptor.bootstrap) }
+            descriptor.chunk?.let { policy.trackChunk(descriptor.peer, it, broker, generation, size.toInt(), at) }
             if (pool.publish(broker, generation, topic, payload, attempt) != null) return token
+            descriptor.chunk?.let { policy.discardChunk(descriptor.peer, it) }
             synchronized(lock) { publications.remove(attempt) }
             policy.discardAttempt(attempt)
         }

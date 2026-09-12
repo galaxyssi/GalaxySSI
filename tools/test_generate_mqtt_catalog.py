@@ -41,6 +41,9 @@ class BrokerCatalogTests(unittest.TestCase):
                        lambda value: value["limits"].update(reserved_control_packets=12),
                        lambda value: value["limits"].update(small_packet_bytes=2_097_152),
                        lambda value: value["timing"].update(hedge_min_ms=3000),
+                       lambda value: value["timing"].update(chunk_throughput_min_samples=33),
+                       lambda value: value["timing"].update(chunk_feedback_window_ms=30000),
+                       lambda value: value["limits"].update(per_peer_chunk_feedback=2048),
                        lambda value: value["timing"].update(keepalive_seconds=True)]:
             with self.assertRaises(ValueError):
                 outputs(self.fixture(mutate))

@@ -53,6 +53,8 @@ class _Peer:
 
 class PeerRoutes:
     def __init__(self, client, *, on_ready=None, clock=time.monotonic, wall_clock=time.time):
+        from mqtt_chunk_feedback import ChunkFeedback
+        self._chunk_feedback = ChunkFeedback()
         self.client = client
         self._on_ready = on_ready or (lambda *_: None)
         self._clock, self._wall = clock, wall_clock
@@ -88,6 +90,7 @@ class PeerRoutes:
                         forget_route(binding.scope)
                         previous.active = False
                         self.client.policy.forget_peer(binding.scope)
+                        self._chunk_feedback.forget(binding.scope)
                     previous = None
                 if previous is None:
                     previous = _Peer(binding)
@@ -104,6 +107,7 @@ class PeerRoutes:
                     forget_route(scope)
                     self._peers[scope].active = False
                     self.client.policy.forget_peer(scope)
+                    self._chunk_feedback.forget(scope)
             self._peers, self._outbound = retained, outbound
             existing_order = [scope for scope in self._rotation if scope in retained]
             existing = set(existing_order)
@@ -133,6 +137,11 @@ class PeerRoutes:
     def maintenance(self, limit=16):
         if not 1 <= limit <= 64:
             raise ValueError("Bounded resume admission required")
+        for send in self._chunk_feedback.drain(self._clock(), limit):
+            try:
+                send()
+            except Exception as exc:
+                log.warning("Chunk feedback deferred (%s)", type(exc).__name__)
         with self._lock:
             scopes = list(self._urgent)[:limit]
             for scope in scopes:
@@ -361,6 +370,7 @@ class PeerRoutes:
 
     def chunk_publication(self, topic, payload, *, authenticated_identity, attempted=frozenset(), on_path=None):
         from mqtt_chunk_receipts import PROBE, Query
+        from mqtt_chunk_throughput import ChunkAttempt
         from mqtt_durable_chunks import Chunk
         with self._lock:
             peer = self._outbound.get(topic)
@@ -370,15 +380,25 @@ class PeerRoutes:
             if not peer.active or peer.binding.identity != authenticated_identity:
                 return None
             binding = peer.binding
+            observation = None
             if payload.get("type") == PROBE:
                 query = Query.parse(payload)
                 identity, digest, traffic = query.transfer + ":probe", query.manifest, Traffic.RECEIPT
             else:
                 chunk = Chunk.parse(payload)
                 identity, digest, traffic = f"{chunk.transfer}:{chunk.index}", chunk.digest, Traffic.CHUNK
+                query = Query.from_chunk(payload)
+                if query is not None:
+                    observation = ChunkAttempt(chunk.transfer, query.request, chunk.index, not attempted)
             return Publication(binding.scope, identity, digest, traffic, binding.receive_topics,
                                authorized_paths=tuple(peer.local_generations.items()),
-                               attempted_brokers=attempted, on_path=on_path)
+                               attempted_brokers=attempted, on_path=on_path, chunk=observation)
+
+    def committed_chunk_state(self, scope, payload):
+        from mqtt_chunk_receipts import parse_state
+        query, _, _, bitmap = parse_state(payload)
+        indices = [index for index in range(query.count) if bitmap[index // 8] & (1 << (index % 8))]
+        self.client.policy.confirm_chunk_state(scope, query.transfer, query.request, indices, self._clock())
 
     def chunk_ingress(self, scope, *, broker_id, generation, authenticated_identity):
         with self._lock:
@@ -389,9 +409,24 @@ class PeerRoutes:
             return (peer.active and peer.binding.identity == authenticated_identity
                     and self.client.ready_path_generations(peer.binding.receive_topics).get(broker_id) == generation)
 
-    def publish_chunk_state(self, scope, payload, *, authenticated_identity, broker_id):
+    def publish_chunk_state(self, scope, payload, *, authenticated_identity, broker_id, urgent=False):
         from mqtt_chunk_receipts import parse_state
-        parse_state(payload)
+        query, _, revision, bitmap = parse_state(payload)
+        complete = all(bitmap[index // 8] & (1 << (index % 8)) for index in range(query.count))
+        frozen = json.dumps(payload, separators=(",", ":"))
+        with self._lock:
+            peer = self._peers.get(scope)
+        if peer is None:
+            return
+        with peer.lock:
+            if not peer.active or peer.binding.identity != authenticated_identity:
+                return
+            send = self._chunk_feedback.offer(scope, query.transfer, query.request, revision,
+                lambda: self._send_chunk_state(scope, frozen, authenticated_identity, broker_id), self._clock(), urgent or complete)
+        if send:
+            return send()
+
+    def _send_chunk_state(self, scope, frozen, authenticated_identity, broker_id):
         with self._lock:
             peer = self._peers.get(scope)
         if peer is None or not self.ready(scope):
@@ -400,7 +435,7 @@ class PeerRoutes:
             binding = peer.binding
             if not peer.active or binding.identity != authenticated_identity:
                 return None
-            encoded = seal_wire_packet(json.dumps(payload, separators=(",", ":")), binding.secret)
+            encoded = seal_wire_packet(frozen, binding.secret)
             digest = hashlib.sha256(encoded.encode()).hexdigest()
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=broker_id,

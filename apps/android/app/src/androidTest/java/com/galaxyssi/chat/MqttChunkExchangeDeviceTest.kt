@@ -87,6 +87,7 @@ class MqttChunkExchangeDeviceTest {
         val parts = parts()
         parts.forEach { receive(it) }
         assertEquals(1, deliveries)
+        assertEquals(1, rig.sent.size)
         assertEquals("Aw==", rig.decode(rig.sent.last().message.payload).getString("stored_bitmap"))
         assertTrue(receipts.isEmpty())
         receive(requireNotNull(MqttChunkReceipts.fromChunk(parts[0])).wire())
@@ -127,6 +128,18 @@ class MqttChunkExchangeDeviceTest {
         receive(requireNotNull(MqttChunkReceipts.fromChunk(parts[0])).wire())
         assertEquals(1, rig.sent.size)
         assertTrue(receipts.isEmpty())
+        assertEquals(0, deliveries)
+    }
+
+    @Test fun partialStateWaitsForBoundedWindowButProbeDoesNot() {
+        val parts = parts()
+        receive(parts[0])
+        assertTrue(rig.sent.isEmpty())
+        Thread.sleep(MqttBrokerCatalog.CHUNK_FEEDBACK_WINDOW_MS + 20)
+        rig.peers.maintenance()
+        assertEquals("AQ==", rig.decode(rig.sent.single().message.payload).getString("stored_bitmap"))
+        receive(requireNotNull(MqttChunkReceipts.fromChunk(parts[0])).wire())
+        assertEquals(2, rig.sent.size)
         assertEquals(0, deliveries)
     }
 }

@@ -14,7 +14,10 @@
     "global_inflight_bytes": 8388608,
     "per_peer_inflight_bytes": 2097152,
     "max_peer_routes": 10000,
-    "max_tracked_attempts": 4096
+    "max_tracked_attempts": 4096,
+    "max_chunk_feedback": 1024,
+    "per_peer_chunk_feedback": 64,
+    "unmeasured_chunk_bytes_per_second": 262144
   },
   "timing": {
     "keepalive_seconds": 30,
@@ -24,6 +27,8 @@
     "hedge_min_samples": 20,
     "hedge_min_ms": 100,
     "hedge_max_ms": 2000,
-    "unmeasured_hedge_ms": 500
+    "unmeasured_hedge_ms": 500,
+    "chunk_feedback_window_ms": 200,
+    "chunk_throughput_min_samples": 3
   }
 }

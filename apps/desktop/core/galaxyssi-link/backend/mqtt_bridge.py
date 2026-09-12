@@ -6826,13 +6826,14 @@ def _process_message(mqttc, userdata, msg):
                 return
             scope = _receipt_binding_for_client(paired_client)
             if wire_payload["type"] == CHUNK_STATE:
-                outbound_chunk_states.accept(scope, wire_payload)
+                if outbound_chunk_states.accept(scope, wire_payload):
+                    mqttc.peer_routes.committed_chunk_state(client_route_id, wire_payload)
                 return
             chunk_query = ChunkQuery.parse(wire_payload)
             inbound_chunk_assembler.snapshot(scope, chunk_query)
             assembled = inbound_chunk_assembler.recover_complete(scope, chunk_query)
             if assembled is None:
-                _publish_chunk_state(mqttc, paired_client, chunk_query, msg, repeat_receipt=True)
+                _publish_chunk_state(mqttc, paired_client, chunk_query, msg, repeat_receipt=True, urgent=True)
                 return
             chunk_transfer = (scope, chunk_query.transfer)
             wire_payload = json.loads(assembled)
@@ -6969,13 +6970,13 @@ def _chunk_peer_identity(paired):
     return (paired["client_route_id"], paired["local_identity_fingerprint"], paired["identity_fingerprint"], paired["link_secret"])
 
 
-def _publish_chunk_state(mqttc, paired, query, ingress, *, repeat_receipt=False):
+def _publish_chunk_state(mqttc, paired, query, ingress, *, repeat_receipt=False, urgent=False):
     if query is None or not isinstance(mqttc, MqttPoolClient):
         return
     try:
         state, proof = inbound_chunk_assembler.snapshot(_receipt_binding_for_client(paired), query)
         mqttc.peer_routes.publish_chunk_state(paired["client_route_id"], state,
-            authenticated_identity=_chunk_peer_identity(paired), broker_id=getattr(ingress, "broker_id", ""))
+            authenticated_identity=_chunk_peer_identity(paired), broker_id=getattr(ingress, "broker_id", ""), urgent=urgent)
         if repeat_receipt and proof is not None and stored_wire_receipt(paired["client_route_id"], proof[0]) == proof[1]:
             from mqtt_delivery_envelope import stored_receipt
             _publish_phone_payload(mqttc, {"_client_route_id": paired["client_route_id"]}, stored_receipt(*proof))

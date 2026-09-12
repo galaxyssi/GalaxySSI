@@ -43,6 +43,7 @@ internal class MqttPeerRoutes(
     private var outgoing = mapOf<String, Peer>()
     private val rotation = ArrayDeque<String>()
     private val urgent = linkedSetOf<String>()
+    private val chunkFeedback = MqttChunkFeedback()
 
     fun replace(bindings: List<Binding>) {
         require(bindings.size <= MqttBrokerCatalog.MAX_PEER_ROUTES && bindings.map { it.scope }.toSet().size == bindings.size)
@@ -88,6 +89,7 @@ internal class MqttPeerRoutes(
         store.forget(peer.binding.scope)
         peer.active = false
         transport.policy.forgetPeer(peer.binding.scope)
+        chunkFeedback.forget(peer.binding.scope)
     }
 
     fun request(scope: String) = synchronized(lock) {
@@ -110,6 +112,7 @@ internal class MqttPeerRoutes(
 
     fun maintenance(limit: Int = 16) {
         require(limit in 1..64)
+        chunkFeedback.drain(now(), limit).forEach { send -> runCatching(send).onFailure(onFailure) }
         val selected = synchronized(lock) {
             val scopes = urgent.take(limit).toMutableList()
             urgent.removeAll(scopes.toSet())
@@ -315,15 +318,17 @@ internal class MqttPeerRoutes(
         val peer = synchronized(lock) { peers[binding.scope] } ?: return null
         return peer.lock.withLock {
             if (!peer.active || peer.binding.identity != identity) return null
+            var observation: MqttChunkThroughput.Chunk? = null
             val (id, digest, traffic) = if (payload.optString("type") == MqttChunkReceipts.PROBE) {
                 val query = MqttChunkReceipts.parse(payload)
                 Triple("${query.transfer}:probe", query.manifest, MqttMultipathPolicy.Traffic.RECEIPT)
             } else {
                 val chunk = MqttChunkManifest.parse(payload)
+                MqttChunkReceipts.fromChunk(payload)?.let { observation = MqttChunkThroughput.Chunk(chunk.transfer, it.request, chunk.index, attempted.isEmpty()) }
                 Triple("${chunk.transfer}:${chunk.index}", chunk.digest, MqttMultipathPolicy.Traffic.CHUNK)
             }
             MqttPoolTransport.Publication(binding.scope, id, digest, traffic, binding.receiveTopics,
-                authorizedPaths = peer.generations.toMap(), attemptedBrokers = attempted, onPath = onPath)
+                authorizedPaths = peer.generations.toMap(), attemptedBrokers = attempted, onPath = onPath, chunk = observation)
         }
     }
 
@@ -333,8 +338,26 @@ internal class MqttPeerRoutes(
             transport.readyPathGenerations(peer.binding.receiveTopics)[ingress.brokerId] == ingress.generation }
     }
 
-    fun publishChunkState(scope: String, payload: JSONObject, identity: List<String>, broker: String) {
-        MqttChunkReceipts.parseState(payload)
+    fun committedChunkState(scope: String, payload: JSONObject) {
+        val state = MqttChunkReceipts.parseState(payload)
+        val indices = (0 until state.query.count).filter { state.bitmap[it / 8].toInt() and (1 shl (it % 8)) != 0 }
+        transport.policy.confirmChunkState(scope, state.query.transfer, state.query.request, indices, now())
+    }
+
+    fun publishChunkState(scope: String, payload: JSONObject, identity: List<String>, broker: String, urgent: Boolean = false) {
+        val state = MqttChunkReceipts.parseState(payload)
+        val complete = (0 until state.query.count).all { state.bitmap[it / 8].toInt() and (1 shl (it % 8)) != 0 }
+        val frozen = payload.toString()
+        val peer = synchronized(lock) { peers[scope] } ?: return
+        val send = peer.lock.withLock {
+            if (!peer.active || !peer.binding.enabled || peer.binding.identity != identity) return
+            chunkFeedback.offer(scope, state.query.transfer, state.query.request, state.revision,
+                { sendChunkState(scope, frozen, identity, broker) }, now(), urgent || complete)
+        }
+        send?.invoke()
+    }
+
+    private fun sendChunkState(scope: String, frozen: String, identity: List<String>, broker: String) {
         val peer = synchronized(lock) { peers[scope] } ?: return
         if (!ready(scope)) return
         val binding: Binding
@@ -343,7 +366,7 @@ internal class MqttPeerRoutes(
         peer.lock.withLock {
             binding = peer.binding
             if (!peer.active || !binding.enabled || binding.identity != identity) return
-            encoded = seal(payload.toString(), binding.secret).toByteArray(Charsets.UTF_8)
+            encoded = seal(frozen, binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(encoded.toString(Charsets.UTF_8))
             descriptor = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
                 binding.receiveTopics, preferredBroker = broker, authorizedPaths = peer.generations.toMap())

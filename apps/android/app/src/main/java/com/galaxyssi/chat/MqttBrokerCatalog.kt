@@ -27,4 +27,9 @@ internal object MqttBrokerCatalog {
     const val HEDGE_MIN_MS = 100L
     const val HEDGE_MAX_MS = 2000L
     const val UNMEASURED_HEDGE_MS = 500L
+    const val CHUNK_FEEDBACK_WINDOW_MS = 200L
+    const val CHUNK_MIN_SAMPLES = 3
+    const val MAX_CHUNK_FEEDBACK = 1024
+    const val PEER_CHUNK_FEEDBACK = 64
+    const val UNMEASURED_CHUNK_BYTES_PER_SECOND = 262144
 }

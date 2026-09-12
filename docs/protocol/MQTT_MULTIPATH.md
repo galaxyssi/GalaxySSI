@@ -270,8 +270,30 @@ Each retry batch selects only missing indices. A path attempt is persisted befor
 physical publication; a retry prefers another healthy common path using the
 existing policy and total reservations. A full bitmap causes a small probe, not
 full re-upload and not a business completion claim. Current scheduling still
-uses the existing retry cadence, peer latency and in-flight bytes; per-window
-state coalescing and effective-throughput feedback remain to be completed.
+uses the existing retry cadence. Chunk scheduling now considers peer latency,
+physical in-flight bytes and unconfirmed chunk bytes, together with a smoothed
+rate derived only from committed, solicited, pair-authenticated bitmap feedback.
+
+An observation binds pair, transfer, query nonce, index, broker and connection
+generation. Only unambiguous first attempts contribute speed samples; retries,
+duplicate possible paths, obsolete queries and changed generations do not.
+Broker PUBACK releases physical slots but does not erase unconfirmed chunk load
+or count as successful peer delivery. Rates aggregate newly confirmed encoded
+wire bytes by broker per feedback batch. They include receiver persistence,
+feedback-window and return-path latency, not raw link bandwidth or attachment
+goodput. An EWMA weights the latest sample 25%; at least three samples are
+required before replacing the configurable 256 KiB/s cold estimate. Observations
+expire after 30 seconds, rates after five minutes; network changes clear both.
+The existing 4,096 observation cap and 10,000 configured-peer cap remain.
+
+Partial bitmap feedback coalesces by pair/transfer/query over a 200ms window,
+preserving the first deadline and latest revision. The existing 250ms pool
+maintenance tick flushes up to 16 due entries, without new timers or workers.
+Completion and explicit probe responses bypass that window and cancel the
+queued partial response. The queue is capped at 1,024 entries globally and 64
+per pair; identity replacement or removal clears its pending feedback. A delayed
+callback revalidates the current pair and path before publication. These are
+bounded scheduling intervals, not guarantees while Android suspends execution.
 
 After original inbox commit, fragment bytes are removed while a compact proof
 remains for the receiver's fixed eight-day retention. A probe can retry a complete

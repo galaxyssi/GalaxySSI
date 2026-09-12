@@ -66,7 +66,8 @@ internal object AndroidMqttChunks {
         val identity = identity(routes)
         if (!router.chunkIngress(peer, ingress, identity)) return true
         if (type == MqttChunkReceipts.STATE) {
-            sender(context).accept(MqttDeliveryEnvelope.receiptBinding(peer, identity[1], identity[2], identity[3]), wire)
+            if (sender(context).accept(MqttDeliveryEnvelope.receiptBinding(peer, identity[1], identity[2], identity[3]), wire))
+                router.committedChunkState(peer, wire)
             return true
         }
         val query: MqttChunkReceipts.Query?
@@ -88,7 +89,7 @@ internal object AndroidMqttChunks {
         if (complete != null) onWire(JSONObject(complete), transfer)
         if (query != null) runCatching {
             val snapshot = store(context).snapshot(scope(routes), query)
-            router.publishChunkState(peer, snapshot.state, identity, ingress.brokerId)
+            router.publishChunkState(peer, snapshot.state, identity, ingress.brokerId, urgent = type == MqttChunkReceipts.PROBE)
             snapshot.proof?.let { (messageId, hash) ->
                 if (complete == null && GalaxySSILinkDeliveryStore.inbox(context).storedReceipt(peer, messageId)?.wireHash == hash) repeatReceipt(messageId)
             }

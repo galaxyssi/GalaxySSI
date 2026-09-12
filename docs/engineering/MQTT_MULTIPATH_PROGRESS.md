@@ -291,8 +291,11 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    alternate-path missing-only retry, and compact-proof queries are now wired
    into both actual publishers/receivers; see
    [fragment state exchange](../testing/MQTT_CHUNK_STATE_20260913.md).
-   Window-coalesced feedback, effective-throughput striping, finer retry timing,
-   coordinated revocation/quota cleanup and final artifact acceptance remain.
+   Window-coalesced feedback and acknowledged encoded-wire throughput scheduling
+   are now integrated in both actual pools. See
+   [chunk flow checkpoint](../testing/MQTT_CHUNK_FLOW_20260913.md).
+   Finer retry timing, coordinated revocation/quota cleanup and final artifact
+   acceptance remain. Reported speed is not raw attachment goodput.
 7. Bounded Android ingress and both endpoints' per-Signal-identity serialization
    are integrated. Continue evaluating aggregate limits and real-device latency
    when the full transport is activated; isolated 10,000-peer lane cleanup is not
@@ -311,6 +314,12 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    (including those 68) and repeated the two-phase actual process-stop case with
    persisted outgoing bitmap/path attempts. See its linked verification record
    for 216 backend and 178 JVM regression evidence and test boundaries.
+   The chunk-flow checkpoint subsequently passed 87 S20U tests, the separate
+   two-phase process-stop case, 228 backend and 190 host JVM cases, plus 105
+   ordinary-configuration Android unit tests. Counts overlap prior checkpoints.
+   An owned loopback TLS lab also exercises the real Desktop pool, authenticated
+   resume, bidirectional transport and one-broker stop/restart; it is not native
+   Signal, full UI/attachment, public-provider performance or phone power proof.
    No shipping App installation or UI control has occurred on S20U. Test-owned
    packages were removed after completion; the pre-existing test package remains.
    Do not operate S26U or SM-T575 in this round.

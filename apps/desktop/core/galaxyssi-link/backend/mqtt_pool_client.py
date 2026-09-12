@@ -20,6 +20,7 @@ import paho.mqtt.client as mqtt
 from mqtt_broker_catalog import BROKER_IDS, CATALOG
 from mqtt_broker_pool import BrokerPool, Ingress, publish_packet_bytes
 from mqtt_multipath_policy import Attempt, MultipathPolicy, Traffic
+from mqtt_chunk_throughput import ChunkAttempt
 from mqtt_delivery_dispatch import DeliveryDispatch
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class Publication:
     authorized_paths: tuple[tuple[str, int], ...] | None = None
     attempted_brokers: frozenset[str] = frozenset()
     on_path: object = None
+    chunk: ChunkAttempt | None = None
 
 
 class MqttPoolClient:
@@ -266,9 +268,13 @@ class MqttPoolClient:
                 raise
             with self._lock:
                 self._publications[attempt_id] = (info, publication, broker, generation)
+            if publication.chunk is not None:
+                self.policy.track_chunk(publication.peer, publication.chunk, broker, generation, size, now)
             receipt = self._pool.publish(broker, generation, topic, encoded, attempt_id=attempt_id)
             if receipt is not None:
                 return info
+            if publication.chunk is not None:
+                self.policy.discard_chunk(publication.peer, publication.chunk)
             with self._lock:
                 self._publications.pop(attempt_id, None)
             self.policy.discard_attempt(attempt_id)
