@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -36,13 +37,26 @@ class CloudImageAnnotationLiveTest {
             "No configured DeepSeek provider; credentials must not be modified by this test"
         }
         val contact = CloudModelRequestRoutingPolicy.resolve(selected, requestedModelId = "", hasImageInput = true)
-        val bitmap = Bitmap.createBitmap(1000, 700, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        val dense = InstrumentationRegistry.getArguments().getString("dense_annotation") == "true"
+        val imageHeight = if (dense) 1400 else 700
+        val bitmap = Bitmap.createBitmap(1000, imageHeight, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
         Canvas(bitmap).apply {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 52f }
             drawText("Math homework", 70f, 90f, paint)
-            drawText("1) 2 + 3 = 5", 70f, 230f, paint)
-            drawText("2) 6 - 2 = 5", 70f, 380f, paint)
-            drawText("3) 3 x 4 = 12", 70f, 530f, paint)
+            if (dense) {
+                paint.textSize = 36f
+                for (column in 0..1) for (row in 0..9) {
+                    val index = column * 10 + row
+                    val a = 50 + index
+                    val b = 10 + index % 7
+                    val answer = a - b + if (index == 13) 1 else 0
+                    drawText("$a - $b = $answer", 60f + column * 500f, 200f + row * 120f, paint)
+                }
+            } else {
+                drawText("1) 2 + 3 = 5", 70f, 230f, paint)
+                drawText("2) 6 - 2 = 5", 70f, 380f, paint)
+                drawText("3) 3 x 4 = 12", 70f, 530f, paint)
+            }
         }
         val bytes = ByteArrayOutputStream().use {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
@@ -58,6 +72,7 @@ class CloudImageAnnotationLiveTest {
         var complete = false
         val directory = File(context.getExternalFilesDir("reports"), requestId).apply { mkdirs() }
         val report = JSONObject().put("model", contact.optString("cloud_model"))
+            .put("fixture_questions", if (dense) 20 else 3)
         try {
             withTimeout(180_000) {
                 CloudConversationStreamEngine.streamConversation(context, contact,
@@ -83,6 +98,11 @@ class CloudImageAnnotationLiveTest {
             context.contentResolver.openInputStream(Uri.parse(block.uri))!!.use { input ->
                 File(directory, "annotated.png").outputStream().use { input.copyTo(it) }
             }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(File(directory, "annotated.png").absolutePath, bounds)
+            assertEquals(1000, bounds.outWidth)
+            assertEquals("No extra legend or second page", imageHeight, bounds.outHeight)
+            report.put("image_width", bounds.outWidth).put("image_height", bounds.outHeight)
             report.put("image_count", images.size).put("image_sha256", block.metadata["sha256"])
             File(context.filesDir, "agent-rich-output/image-annotations/${block.metadata["annotation_id"]}.png").delete()
         } finally {

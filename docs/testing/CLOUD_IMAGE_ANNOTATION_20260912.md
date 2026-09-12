@@ -4,10 +4,9 @@
 
 Before submission, origin/main at `ced9fd5f4` was merged, preserving its memory
 enrollment/count performance changes. Since main had advanced to 1.1.92 (978),
-this PR advances Android to 1.1.93 (979). The device/live evidence below was
-captured on the feature build 1.1.91 (977), before that merge; it must not be
-described as a device acceptance run of 1.1.93. No device reinstall was requested
-as part of PR submission.
+this PR advances Android to 1.1.93 (979). The initial device/live evidence below
+was captured on feature build 1.1.91 (977). The subsequent compact-grading
+revision and its acceptance results are recorded separately.
 
 ## Problem and implementation
 
@@ -19,9 +18,12 @@ When the current request has image attachments, its cloud tool catalog now
 includes `image_annotate`. The model provides an image index, normalized upright
 rectangles, a verdict, and correction notes. Android renders the annotation onto
 a separate PNG and appends the verified local image block to the final response.
-The uploaded original is not modified. Notes are below the source image, with
-numbered boxes and verdict marks on the source image. Ordinary text requests do
-not receive this extra tool or its instructions.
+The uploaded original is not modified. The returned copy preserves the decoded
+source dimensions and aspect ratio, adding only compact ticks, crosses, question
+marks and short wrong-answer corrections. Rectangles only locate answers for
+placement; they are not drawn. There are no numbering labels, frames, legend,
+appended explanation area or second summary image. Explanations stay in the text
+reply. Ordinary text requests do not receive this extra tool or its instructions.
 
 This is model-guided local image editing, not native generative-image inference.
 It does not require a Desktop executor and cannot make a text-only provider see
@@ -34,7 +36,12 @@ images. The existing provider vision routing remains in effect.
 - Coordinates, verdicts, note lengths and mark counts are validated. Unreadable
   handwriting must be marked uncertain, not guessed.
 - At most 24 marks are accepted per invocation. Preview decoding is bounded to
-  2000 x 2000, output to 12 million pixels and 12 MiB.
+  2000 x 2000 and the output to 12 MiB, with no additional canvas area.
+- Nearby mark placement prefers whitespace outside the model's answer bounds
+  and avoids the other supplied answer/annotation bounds. This is not a proof
+  of perfect placement on arbitrary handwriting or inaccurate model coordinates.
+- Repeated input bytes are deduplicated into one returned result. Correction
+  text is limited to a short replacement answer, while longer notes are not drawn.
 - One renderer runs at a time across windows. Web tools keep their existing
   parallel execution. Waiting is cancellable and bounded.
 - Atomic files and SHA-256 metadata back the image cards. Saving rechecks the
@@ -45,7 +52,7 @@ images. The existing provider vision routing remains in effect.
 - Existing thumbnail, fullscreen and Save interfaces are reused without changing
   the conversation layout or background colors.
 
-## Verification
+## Initial verification (before compact grading)
 
 - Android version: 1.1.91 (977).
 - Build: debug APK and test APK compiled successfully with an 8 GiB build-only

@@ -83,6 +83,9 @@ python -m unittest test_remote_reply_images test_remote_image_delivery test_rich
 - `npm run check`: 29 Desktop tests passed; structure check passed.
 - `git diff --check`: passed.
 - Full local test log: `build/reports/desktop-remote-image-unit.log`.
+- After merging main at `ced9fd5f4` for PR submission, the same 189 backend
+  tests passed again in 58.402 seconds, and all 29 Desktop checks plus the
+  structure check passed. Log: `build/reports/desktop-remote-image-pr-tests.log`.
 
 ## Real network check
 

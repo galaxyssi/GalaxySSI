@@ -8,13 +8,14 @@ import org.junit.Test
 class CloudImageAnnotationPlanTest {
     private fun arguments() = JSONObject().put("image_index", 0).put("marks", JSONArray().put(
         JSONObject().put("left", 0.1).put("top", 0.2).put("right", 0.8).put("bottom", 0.4)
-            .put("verdict", "incorrect").put("note", "1 + 1 = 2")))
+            .put("verdict", "incorrect").put("note", "1 + 1 = 2").put("correction", "2")))
 
     @Test fun parsesCoordinatesAndCorrectionWithoutChangingThem() {
         val plan = CloudImageAnnotationPlan.parse(arguments(), 1)
         assertEquals(0, plan.imageIndex)
         assertEquals(0.2f, plan.marks.single().top)
         assertEquals("1 + 1 = 2", plan.marks.single().note)
+        assertEquals("2", plan.marks.single().correction)
     }
 
     @Test fun onlyCurrentRequestImagesAreAddressable() {
@@ -80,5 +81,15 @@ class CloudImageAnnotationPlanTest {
         assertFalse(progress.observeEvidenceBatch(listOf(result("4".repeat(64)))))
         assertFalse(progress.observeEvidenceBatch(listOf(result("4".repeat(64)))))
         assertTrue(progress.observeEvidenceBatch(listOf(result("4".repeat(64)))))
+    }
+
+    @Test fun incorrectAnswersRequireShortCorrectionsAndNoBoxInstruction() {
+        listOf("", "x".repeat(41), "2\n3").forEach { correction ->
+            val input = arguments()
+            input.getJSONArray("marks").getJSONObject(0).put("correction", correction)
+            assertTrue(runCatching { CloudImageAnnotationPlan.parse(input, 1) }.isFailure)
+        }
+        assertTrue(CloudImageAnnotationPlan.instruction(1).contains("they are NEVER drawn"))
+        assertTrue(CloudImageAnnotationPlan.instruction(1).contains("a second image"))
     }
 }

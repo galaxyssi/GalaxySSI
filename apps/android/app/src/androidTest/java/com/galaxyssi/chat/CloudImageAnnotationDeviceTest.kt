@@ -40,7 +40,7 @@ class CloudImageAnnotationDeviceTest {
     }
     private fun arguments() = JSONObject().put("image_index", 0).put("marks", JSONArray().put(
         JSONObject().put("left", 0.1).put("top", 0.15).put("right", 0.7).put("bottom", 0.35)
-            .put("verdict", "incorrect").put("note", "\u8ba1\u7b97\u9519\u8bef\uff0c1 + 1 = 2")))
+            .put("verdict", "incorrect").put("note", "\u8ba1\u7b97\u9519\u8bef\uff0c1 + 1 = 2").put("correction", "2")))
     private fun block(session: CloudImageAnnotationSession): AgentRichBlock =
         AgentRichContentCodec.decode(session.artifactSuffix().substringAfter("```galaxyssi-rich\n").substringBeforeLast("```"))
             .single()
@@ -60,10 +60,21 @@ class CloudImageAnnotationDeviceTest {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             try {
                 assertEquals(800, bitmap.width)
-                assertTrue(bitmap.height > 600)
-                val color = bitmap.getPixel(80, 120)
-                assertTrue("Red annotation outline must exist", Color.red(color) > Color.green(color) * 2)
+                assertEquals("No explanation page may be appended", 600, bitmap.height)
+                assertEquals("No rectangle outline", Color.WHITE, bitmap.getPixel(80, 120))
+                assertTrue("A red cross/correction must exist", (0 until bitmap.height step 2).any { y ->
+                    (0 until bitmap.width step 2).any { x ->
+                        val color = bitmap.getPixel(x, y)
+                        Color.red(color) > Color.green(color) * 2
+                    }
+                })
                 assertEquals(Color.WHITE, bitmap.getPixel(20, 20))
+                val original = BitmapFactory.decodeByteArray(before, 0, before.size)
+                try {
+                    for (y in 90..210 step 6) for (x in 80..560 step 6) {
+                        assertEquals("Question pixels must remain readable", original.getPixel(x, y), bitmap.getPixel(x, y))
+                    }
+                } finally { original.recycle() }
             } finally { bitmap.recycle() }
             assertArrayEquals(before, input.bytes)
             assertEquals(block, AgentRichContentCodec.decode(AgentRichContentCodec.encode(listOf(block))).single())
@@ -154,7 +165,7 @@ class CloudImageAnnotationDeviceTest {
         val firstResult = session.execute(CloudImageAnnotationPlan.TOOL, arguments())
         val first = block(session)
         val revised = arguments()
-        revised.getJSONArray("marks").getJSONObject(0).put("note", "Revised correction")
+        revised.getJSONArray("marks").getJSONObject(0).put("note", "Revised correction").put("correction", "4")
         session.execute(CloudImageAnnotationPlan.TOOL, revised)
         val second = block(session)
         try {
@@ -162,6 +173,19 @@ class CloudImageAnnotationDeviceTest {
             session.selectResult(firstResult)
             assertEquals(first.uri, block(session).uri)
         } finally { clean(first); clean(second) }
+    }
+
+    @Test fun duplicateInputImageReturnsOnlyOneResult() {
+        val input = image()
+        val session = CloudImageAnnotationSession(context, listOf(input, input))
+        session.execute(CloudImageAnnotationPlan.TOOL, arguments())
+        val first = block(session)
+        session.execute(CloudImageAnnotationPlan.TOOL, arguments().put("image_index", 1))
+        val only = block(session)
+        try {
+            assertEquals(first.metadata["annotation_source_sha256"], only.metadata["annotation_source_sha256"])
+            assertNotEquals(first.uri, only.uri)
+        } finally { clean(first); clean(only) }
     }
 
     private fun sse(delta: JSONObject, finish: String): MockResponse {

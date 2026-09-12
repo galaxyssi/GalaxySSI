@@ -3,18 +3,10 @@ package com.galaxyssi.chat
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextPaint
 import android.util.AtomicFile
 import androidx.core.content.FileProvider
 import org.json.JSONObject
@@ -76,7 +68,9 @@ internal class CloudImageAnnotationSession(
 
     @Synchronized fun artifactSuffix(): String {
         if (completed.isEmpty()) return ""
-        return "\n\n```galaxyssi-rich\n" + AgentRichContentCodec.encode(completed.toSortedMap().values.toList()) + "\n```"
+        val unique = completed.toSortedMap().values.toList().asReversed()
+            .distinctBy { it.metadata["annotation_source_sha256"].orEmpty().ifBlank { it.id } }.asReversed()
+        return "\n\n```galaxyssi-rich\n" + AgentRichContentCodec.encode(unique) + "\n```"
     }
 
     fun appendTo(text: String): String = text + artifactSuffix()
@@ -103,39 +97,8 @@ internal class CloudImageAnnotationSession(
             ?: error("Input image could not be decoded")
         try {
             require(source.width.toLong() * source.height <= 8_000_000L) { "Input image is too large to annotate" }
-            val width = source.width.coerceAtLeast(640)
-            val imageHeight = (source.height.toLong() * width / source.width).toInt()
-            val padding = (width * 0.025f).coerceAtLeast(12f)
-            val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.rgb(35, 35, 35)
-                textSize = (width * 0.019f).coerceAtLeast(16f)
-            }
-            val notes = plan.marks.mapIndexed { index, mark ->
-                StaticLayout.Builder.obtain("${index + 1}. ${mark.note}", 0,
-                    "${index + 1}. ${mark.note}".length, textPaint, (width - padding * 2).toInt())
-                    .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).build()
-            }
-            val height = imageHeight + (padding * 2 + notes.sumOf { it.height + padding.toInt() }).toInt()
-            require(width.toLong() * height <= 12_000_000L) { "Too many annotations for one image" }
-            val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val output = CloudImageAnnotationDrawing.render(source, plan, checkpoint)
             try {
-                val canvas = Canvas(output)
-                canvas.drawColor(Color.WHITE)
-                canvas.drawBitmap(source, null, RectF(0f, 0f, width.toFloat(), imageHeight.toFloat()), null)
-                plan.marks.forEachIndexed { index, mark ->
-                    checkpoint()
-                    drawMark(canvas, mark, index + 1, width, imageHeight, textPaint.textSize)
-                }
-                var y = imageHeight + padding
-                notes.forEachIndexed { index, layout ->
-                    checkpoint()
-                    textPaint.color = verdictColor(plan.marks[index].verdict)
-                    canvas.save()
-                    canvas.translate(padding, y)
-                    layout.draw(canvas)
-                    canvas.restore()
-                    y += layout.height + padding
-                }
                 val id = digest((sessionId + "\u0000" + plan.imageIndex + "\u0000" + arguments).toByteArray())
                 val file = File(root(context), "$id.png")
                 val atomic = AtomicFile(file)
@@ -159,31 +122,10 @@ internal class CloudImageAnnotationSession(
                     title = "\u6279\u6ce8\u56fe\u7247 ${plan.imageIndex + 1}", mimeType = "image/png",
                     uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file).toString(),
                     metadata = mapOf(LOCAL to "true", "annotation_id" to id, "sha256" to sha,
+                        "annotation_source_sha256" to digest(image.bytes),
                         "size_bytes" to file.length().toString()))
             } finally { output.recycle() }
         } finally { source.recycle() }
-    }
-
-    private fun drawMark(canvas: Canvas, mark: CloudImageMark, number: Int, width: Int, height: Int, size: Float) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = verdictColor(mark.verdict); style = Paint.Style.STROKE; strokeWidth = (size * 0.10f).coerceAtLeast(2f)
-        }
-        val rect = RectF(mark.left * width, mark.top * height, mark.right * width, mark.bottom * height)
-        canvas.drawRect(rect, paint)
-        val x = (rect.right - size).coerceIn(0f, width - size * 1.2f)
-        val y = rect.top.coerceIn(size, height - size)
-        when (mark.verdict) {
-            "correct" -> canvas.drawPath(Path().apply { moveTo(x, y); lineTo(x + size * 0.35f, y + size * 0.35f)
-                lineTo(x + size, y - size * 0.5f) }, paint)
-            "incorrect" -> {
-                canvas.drawLine(x, y - size * 0.5f, x + size * 0.8f, y + size * 0.3f, paint)
-                canvas.drawLine(x + size * 0.8f, y - size * 0.5f, x, y + size * 0.3f, paint)
-            }
-        }
-        paint.style = Paint.Style.FILL
-        paint.textSize = size
-        canvas.drawText("[$number]", rect.left.coerceAtMost(width - size * 3),
-            (rect.top - size * 0.2f).coerceAtLeast(size), paint)
     }
 
     companion object {
@@ -192,13 +134,6 @@ internal class CloudImageAnnotationSession(
         private fun root(context: Context) = File(context.filesDir, "agent-rich-output/image-annotations").apply { mkdirs() }
         private fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
-        private fun verdictColor(verdict: String) = when (verdict) {
-            "correct" -> Color.rgb(0, 125, 75)
-            "incorrect" -> Color.rgb(195, 35, 40)
-            "uncertain" -> Color.rgb(145, 95, 0)
-            else -> Color.rgb(35, 85, 160)
-        }
-
         fun isLocalImage(block: AgentRichBlock) = block.metadata[LOCAL] == "true"
 
         fun save(context: Context, block: AgentRichBlock): Result<String> = runCatching {
