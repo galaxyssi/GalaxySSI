@@ -51,7 +51,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..9) { "Unsupported knowledge schema $version" }
+                require(version in 0..10) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -85,6 +85,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 if (version < 9) {
                     KnowledgeSourcePreviews.create(db)
                     db.execSQL("PRAGMA user_version=9")
+                }
+                if (version < 10) {
+                    KnowledgeSourceRevisionSchema.create(db)
+                    db.execSQL("PRAGMA user_version=10")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
@@ -135,6 +139,9 @@ internal class AgentKnowledgeDatabase private constructor(
     internal fun checkActive() { check(!retired) { "Knowledge store was closed; reopen the store" } }
     internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
         KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
+    }
+    internal fun sourceSnapshot(selection: KnowledgeSourceSelection, expectedRevision: String): KnowledgeSourceSnapshot = access {
+        KnowledgeSourceSnapshot(this, context.getDatabasePath(name).absolutePath, selection, expectedRevision)
     }
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
     internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,

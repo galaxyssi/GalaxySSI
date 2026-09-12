@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 internal object KnowledgeSourcePreviewFixtureSchema {
     fun remove(db: KnowledgeSqlite) {
+        KnowledgeSourceRevisionFixtureSchema.remove(db)
         db.execSQL("DROP TRIGGER IF EXISTS knowledge_source_preview_invalidate")
         db.execSQL("DROP TABLE IF EXISTS knowledge_source_previews")
     }

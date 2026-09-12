@@ -1,0 +1,20 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.96",
+  "rows": 10001,
+  "source_count": 1,
+  "ciphertext_sha256": "c847fabe9875782c74e5b9fd9043320feedba59e3c921ada5f01b66ef3bac7af",
+  "migration_and_first_token_ms": 37.402461,
+  "query_p95_ms": 8.173461,
+  "legacy_digest_p95_ms": 176.894999,
+  "legacy_digest_p99_ms": 177.730153,
+  "query_p99_ms": 11.262923,
+  "query_max_ms": 12.323462,
+  "write_p95_ms": 71.445154,
+  "write_p99_ms": 85.176154,
+  "write_max_ms": 98.552885,
+  "snapshot_rows": 10001,
+  "largest_key_page": 64,
+  "full_source_traversal_ms": 119520.108069,
+  "scope": "10,001 real encrypted members in one synthetic source; not 100M capacity, UI latency or a <200ms full export"
+}

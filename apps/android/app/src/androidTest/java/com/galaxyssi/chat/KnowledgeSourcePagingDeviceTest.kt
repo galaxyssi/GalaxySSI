@@ -149,7 +149,7 @@ class KnowledgeSourcePagingDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(9, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { assertTrue(it.moveToFirst()); assertEquals(10, it.getInt(0)) }
             sql.rawQuery("SELECT hex(ciphertext) FROM knowledge_vectors", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(oldVector, it.getString(0))
             }
