@@ -1,0 +1,78 @@
+{
+  "date": "2026-09-13",
+  "base": "6e303ed067c0f2fb5ae4310ac229b8e32cb428d8",
+  "scope": "Resumable mixed-live/dead primary body partition compaction",
+  "device": "SM-T575",
+  "android": {"versionName": "1.1.113", "versionCode": 999, "knowledgeSchema": 15},
+  "desktopChanged": false,
+  "appApkSha256": "0c51a301c65676b5cf5181d80168174fce693ada67a3773b16a5d9b8c5ed55dd",
+  "finalTestApkSha256": "79d3dd3e4fe18894819eb701e423edd458bfb12af0534872e2ddf6528ad963ba",
+  "beforeFixtureCorrectionTestApkSha256": "17764b3ca8acd2353ad491a4a52ffde6ae81c51c64208187b8b08d0bf28184b6",
+  "artifactScope": "Production APK unchanged throughout acceptance. Later test-only rebuild corrected the historical downgrade helper; final APK reran legacy, counters, source/search/backup, real process recovery and complete retained-record verification.",
+  "build": {"fullSeconds": 466, "testOnlySeconds": [58, 59]},
+  "bounds": {"discoveryPartitionKeys": 32, "candidateKeys": 8, "recordsPerPage": 8, "wholeBodyMaterializationDuringRelocation": false},
+  "deviceSuites": {
+    "focused": {"passed": 10, "seconds": 8.382},
+    "primaryRegression": {"passed": 15, "seconds": 8.939},
+    "initialLegacy": {"passed": 84, "failed": 11, "seconds": 709.573, "cause": "Historical downgrade fixture retained schema-15 tables while resetting user_version"},
+    "correctedLegacy": {"passed": 95, "seconds": 694.526},
+    "counters": {"passed": 22, "seconds": 112.290},
+    "sourceBackupSearch": {"passed": 97, "seconds": 264.312},
+    "durableApi": {"passed": 1, "seconds": 11.876},
+    "retainedCompaction": {"passed": 1, "seconds": 143.699},
+    "postRegressionRetainedVerification": {"passed": 1, "seconds": 118.486}
+  },
+  "finalRecovery": {
+    "fixture": "test-primary-compact-939d4a8882224539839ce484f71d8baf.db",
+    "normalPreparationAndVerificationTests": 4,
+    "verifiedIntentionalDeaths": ["before-frames", "before-catalog", "after-catalog"],
+    "devicePowerCycle": false,
+    "evidence": "recovery-final"
+  },
+  "retainedCompaction": {
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "recordsMovedAndIndividuallyVerified": 10001,
+    "encodedRecordDigest": "6645e346b67a5f09c6a9e4c84d292a936a1147f778ab83f94df69199e8aaa431",
+    "logicalSourceRevisionUnchanged": true,
+    "pages": 1253,
+    "retiredPartitions": 4,
+    "apiCompactionMs": 33486,
+    "pageP95Ms": 41.973115,
+    "pageMaximumMs": 82.662538,
+    "beforeBytes": 21127168,
+    "afterBytes": 7008256,
+    "unlinkedOldPartitionBytes": 21127168,
+    "includesWorkManagerScheduling": false
+  },
+  "publicDurableApi": {
+    "corpusRecords": 10001,
+    "samplesPerOperation": 100,
+    "individualWritesIncludePartitionAndCatalogCommits": true,
+    "warmStore": true,
+    "observersModelsUiAndNetworkMeasured": false,
+    "probeRecordsRestoredAndReopened": 100,
+    "read": {"p50Ms": 6.365154, "p95Ms": 13.268731, "p99Ms": 18.162462, "maximumMs": 108.740500, "within200Ms": 100},
+    "upsert": {"p50Ms": 40.805231, "p95Ms": 61.521577, "p99Ms": 65.689769, "maximumMs": 100.921730, "within200Ms": 100},
+    "restore": {"p50Ms": 40.690423, "p95Ms": 66.285770, "p99Ms": 87.747077, "maximumMs": 100.715615, "within200Ms": 100}
+  },
+  "postRegressionVerification": {
+    "recordsVerified": 10001,
+    "digestMatchesInitialCompaction": true,
+    "logicalRevisionUnchangedDuringVerification": true,
+    "pages": 1,
+    "moved": 0,
+    "pageMs": 113.912346,
+    "beforeAndAfterBytes": 7168000
+  },
+  "guards": {"repository": "passed", "aarch64Libraries16KiBPassed": 74, "jvmPassed": 3823, "jvmSkipped": 5, "jvmFailures": 0, "jvmErrors": 0, "jvmSuites": 547},
+  "limitations": [
+    "No 100-million-real-record acceptance or universal 200 ms guarantee",
+    "Metadata, FTS and vector control catalog remain centralized",
+    "Unknown orphan discovery and exact dead-byte accounting remain open",
+    "A single exceptionally large record may repeatedly exceed the worker quantum; durable per-frame checkpoints remain required",
+    "Exclusive snapshot lease duration and scheduled background completion depend on record size, idle constraints and retries",
+    "Large-record ordinary read/index memory peaks remain unresolved",
+    "No physical device power-loss or cross-device recovery acceptance in this phase",
+    "Run Kernel full-path integration, complete tracing/performance gates and ordinary Agent Loop DAG goals remain unfinished"
+  ]
+}
