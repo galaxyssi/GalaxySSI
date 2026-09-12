@@ -1,0 +1,71 @@
+{
+  "phase": "Canonical encrypted knowledge payload segments",
+  "date": "2026-09-12",
+  "branch": "feat/knowledge-payload-segments-20260912",
+  "integrated_main": "cef237557f5f8f422f93832a535e3d63e3ba81ed",
+  "schema": 11,
+  "device": {
+    "model": "SM-T575",
+    "serial": "R52R90282TY",
+    "installed_version": "1.1.101",
+    "version_code": 987,
+    "installation": "adb install -r; user data and pairing retained",
+    "available_data_kib_before_integrated_tests": 39631272,
+    "other_devices_operated": false
+  },
+  "artifacts": {
+    "app_sha256": "b567ce0ab2d228710bc8dd957d3a0309988b13f898baba260d0b3aff54dd786e",
+    "test_apk_sha256": "a6cf65610789df88956de737840c7f18a4e23edda8921da06ddc3547c48763a0",
+    "pre_integration_app_sha256": "8c6579da6b5dae490b319fcaadbb71252f2ed20afb226844302c6100ff0e70f6"
+  },
+  "build": {
+    "tasks": [":app:assembleDebug", ":app:assembleDebugAndroidTest", ":app:testDebugUnitTest"],
+    "successful": true,
+    "seconds": 494,
+    "gradle_heap_mib": 8192,
+    "kotlin_execution": "in-process"
+  },
+  "jvm_integrated": {
+    "suites": 543,
+    "tests_including_skips": 3787,
+    "passed": 3782,
+    "skipped_existing": 5,
+    "failures": 0,
+    "errors": 0
+  },
+  "device_regression": {
+    "pre_integration": {"passed": 133, "failures": 0, "seconds": 807.132, "evidence": "regression-before-main"},
+    "integrated": {"passed": 44, "failures": 0, "seconds": 412.574, "evidence": "regression-integrated"},
+    "earlier_targeted": {"passed": 9, "failures": 0, "seconds": 9.731, "evidence": "targeted.txt"},
+    "integrated_classes": [
+      "KnowledgePayloadDeviceTest",
+      "AgentKnowledgeDatabaseDeviceTest",
+      "KnowledgeBackupDeviceTest",
+      "KnowledgeSourceMigrationDeviceTest",
+      "KnowledgeSourceRevisionDeviceTest",
+      "KnowledgeSourceSnapshotDeviceTest"
+    ]
+  },
+  "real_process_death": {
+    "integrated_phases_passed": 7,
+    "intentional_deaths": 3,
+    "cases": ["before source commit", "after source commit", "while holding a deleted-body WAL snapshot"],
+    "integrated_retained_fixture": "test-payload-recovery-f008047494b840ceadce6a120a45454d.db",
+    "pre_integration_retained_fixture": "test-payload-recovery-ca091221a209454a925ff7ce747987b4.db",
+    "evidence": "recovery-integrated",
+    "driver": "tools/dev/test-knowledge-payload-recovery.ps1"
+  },
+  "gates": {"repository_guard": "passed", "android_aarch64_16kib_libraries_passed": 74, "diff_check": "passed"},
+  "earlier_failures": [
+    "The first 103-case run had five legacy-fixture failures because synthetic downgraded databases retained new schema tables. The shared fixture helper now checks that no live payload references would be discarded. All five passed the expanded 133-case rerun and the integrated focused rerun.",
+    "The first recovery attempt had a test-only trailing-whitespace expectation mismatch before any intentional death. The bounded assertion was corrected and the same fixture resumed successfully; the integrated APK also passed a fresh complete seven-phase run."
+  ],
+  "not_claimed": [
+    "100 million complete records or end-to-end 200 ms retrieval/write acceptance",
+    "Canonical metadata, FTS and source replay database sharding",
+    "Partially live segment compaction and secure immediate physical erasure",
+    "Low-storage, device-reboot or sustained long-cycle acceptance",
+    "Constant-memory decoding of an arbitrarily large single record",
+    "UI timing or real-provider regression acceptance"
+  ]
+}

@@ -5,7 +5,8 @@ import java.io.Closeable
 /** Closeable WAL snapshot; keyset reads do not hold the live writer's monitor. */
 internal class KnowledgeSourceSnapshot(private val owner: AgentKnowledgeDatabase, path: String,
     private val selection: KnowledgeSourceSelection, expectedRevision: String) : Closeable {
-    private val sql = KnowledgeSqlite(path)
+    private val lease = owner.payloadLease()
+    private val sql = try { KnowledgeSqlite(path) } catch (failure: Throwable) { lease.close(); throw failure }
     private var closed = false
     internal var loadedKeys = 0L
         private set
@@ -26,7 +27,7 @@ internal class KnowledgeSourceSnapshot(private val owner: AgentKnowledgeDatabase
             check(expectedCount >= 0 && (expectedCount == 0L) == expectedRevision.endsWith(":absent")) {
                 "Knowledge source directory does not match source presence"
             }
-        } catch (failure: Throwable) { sql.close(); throw failure }
+        } catch (failure: Throwable) { try { sql.close() } finally { lease.close() }; throw failure }
     }
     fun items(): Sequence<AgentKnowledgeItem> = sequence {
         var after = ""
@@ -64,7 +65,7 @@ internal class KnowledgeSourceSnapshot(private val owner: AgentKnowledgeDatabase
     override fun close() {
         if (closed) return
         closed = true
-        try { sql.execSQL("ROLLBACK") } finally { sql.close() }
+        try { sql.execSQL("ROLLBACK") } finally { try { sql.close() } finally { lease.close() } }
     }
     companion object {
         const val PAGE_SQL = "SELECT item_key,sort_updated FROM knowledge_source_members " +
