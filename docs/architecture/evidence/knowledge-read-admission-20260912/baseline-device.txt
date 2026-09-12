@@ -1,0 +1,125 @@
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=
+com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest:
+INSTRUMENTATION_STATUS: test=finalValidationDoesNotWaitForUnrelatedWriter
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stack=java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter(KnowledgeReadAdmissionDeviceTest.kt:54)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.finalValidationDoesNotWaitForUnrelatedWriter(KnowledgeReadAdmissionDeviceTest.kt:28)
+
+INSTRUMENTATION_STATUS: stream=
+Error in finalValidationDoesNotWaitForUnrelatedWriter(com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest):
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter(KnowledgeReadAdmissionDeviceTest.kt:54)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.finalValidationDoesNotWaitForUnrelatedWriter(KnowledgeReadAdmissionDeviceTest.kt:28)
+
+INSTRUMENTATION_STATUS: test=finalValidationDoesNotWaitForUnrelatedWriter
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stack=java.util.concurrent.ExecutionException: java.lang.AssertionError: expected:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=\u52a0\u5bc6\u6b63\u6587 1, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)> but was:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=uncommitted replacement, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)>
+	at java.util.concurrent.FutureTask.report(FutureTask.java:122)
+	at java.util.concurrent.FutureTask.get(FutureTask.java:205)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter(KnowledgeReadAdmissionDeviceTest.kt:56)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges(KnowledgeReadAdmissionDeviceTest.kt:16)
+	... 32 trimmed
+Caused by: java.lang.AssertionError: expected:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=\u52a0\u5bc6\u6b63\u6587 1, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)> but was:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=uncommitted replacement, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges$lambda$3$lambda$2(KnowledgeReadAdmissionDeviceTest.kt:19)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.$r8$lambda$cjmv0BwqYgFXR-Q8jwnKYMmyJAM(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest$$ExternalSyntheticLambda6.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter$lambda$11(KnowledgeReadAdmissionDeviceTest.kt:53)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.$r8$lambda$QkT8yE16AhVJ--uJDSwE-WL1-j4(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest$$ExternalSyntheticLambda4.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:463)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1137)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:637)
+	at java.lang.Thread.run(Thread.java:1012)
+
+INSTRUMENTATION_STATUS: stream=
+Error in admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges(com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest):
+java.util.concurrent.ExecutionException: java.lang.AssertionError: expected:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=\u52a0\u5bc6\u6b63\u6587 1, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)> but was:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=uncommitted replacement, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)>
+	at java.util.concurrent.FutureTask.report(FutureTask.java:122)
+	at java.util.concurrent.FutureTask.get(FutureTask.java:205)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter(KnowledgeReadAdmissionDeviceTest.kt:56)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges(KnowledgeReadAdmissionDeviceTest.kt:16)
+	... 32 trimmed
+Caused by: java.lang.AssertionError: expected:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=\u52a0\u5bc6\u6b63\u6587 1, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)> but was:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=uncommitted replacement, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges$lambda$3$lambda$2(KnowledgeReadAdmissionDeviceTest.kt:19)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.$r8$lambda$cjmv0BwqYgFXR-Q8jwnKYMmyJAM(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest$$ExternalSyntheticLambda6.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter$lambda$11(KnowledgeReadAdmissionDeviceTest.kt:53)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.$r8$lambda$QkT8yE16AhVJ--uJDSwE-WL1-j4(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest$$ExternalSyntheticLambda4.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:463)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1137)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:637)
+	at java.lang.Thread.run(Thread.java:1012)
+
+INSTRUMENTATION_STATUS: test=admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 4.421
+There were 2 failures:
+1) finalValidationDoesNotWaitForUnrelatedWriter(com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest)
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:204)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter(KnowledgeReadAdmissionDeviceTest.kt:54)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.finalValidationDoesNotWaitForUnrelatedWriter(KnowledgeReadAdmissionDeviceTest.kt:28)
+2) admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges(com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest)
+java.util.concurrent.ExecutionException: java.lang.AssertionError: expected:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=\u52a0\u5bc6\u6b63\u6587 1, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)> but was:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=uncommitted replacement, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)>
+	at java.util.concurrent.FutureTask.report(FutureTask.java:122)
+	at java.util.concurrent.FutureTask.get(FutureTask.java:205)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter(KnowledgeReadAdmissionDeviceTest.kt:56)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges(KnowledgeReadAdmissionDeviceTest.kt:16)
+	... 32 trimmed
+Caused by: java.lang.AssertionError: expected:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=\u52a0\u5bc6\u6b63\u6587 1, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)> but was:<AgentKnowledgeItem(id=replace-1, kind=DOCUMENT, title=\u6d4b\u8bd5 1, content=uncommitted replacement, source=\u6765\u6e90, tags=[], summary=\u6458\u8981 1, cloudAccess=DENY, agentAccess=LOCAL_ONLY, allowedAgentIds=[], chunkIndex=1, chunkCount=200, updatedAtMillis=1)>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges$lambda$3$lambda$2(KnowledgeReadAdmissionDeviceTest.kt:19)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.$r8$lambda$cjmv0BwqYgFXR-Q8jwnKYMmyJAM(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest$$ExternalSyntheticLambda6.invoke(D8$$SyntheticClass:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.heldWriter$lambda$11(KnowledgeReadAdmissionDeviceTest.kt:53)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest.$r8$lambda$QkT8yE16AhVJ--uJDSwE-WL1-j4(Unknown Source:0)
+	at com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest$$ExternalSyntheticLambda4.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:463)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1137)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:637)
+	at java.lang.Thread.run(Thread.java:1012)
+
+FAILURES!!!
+Tests run: 2,  Failures: 2
+
+
+INSTRUMENTATION_CODE: -1
