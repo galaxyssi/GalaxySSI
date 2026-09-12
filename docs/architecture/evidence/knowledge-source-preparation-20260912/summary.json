@@ -1,0 +1,60 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.109",
+  "version_code": 995,
+  "parent_commit": "9a75150e1d96263016fd3bea0b9d093769d7ea4b",
+  "app_apk_sha256": "3b0bbdfa80c74c8d5c5b4bc88c1797a3e9ec8cc90f28b66d8fe57d6a987015b1",
+  "test_apk_sha256": "370aa7fc9533c028162dd01206b1eaff254d34a547becb3db8c38dbb85005381",
+  "regressions": {
+    "failed": 0,
+    "passed": 92,
+    "seconds": 194.052,
+    "skipped": 0
+  },
+  "retained_rewrite": {
+    "verified": 10001,
+    "failed": 0,
+    "passed": 1,
+    "verify_ms": 69238,
+    "rows": 10001,
+    "skipped": 0,
+    "replace_ms": 333044,
+    "seconds": 402.369,
+    "variant": "source-prepare-v1"
+  },
+  "jvm_tests": {
+    "total": 3822,
+    "passed": 3817,
+    "skipped": 5,
+    "failures": 0,
+    "errors": 0,
+    "suites": 546
+  },
+  "durable_writes_during_preparation": {
+    "p95_ns": 56792423,
+    "samples": 50,
+    "p50_ns": 29746962,
+    "source_rows": 1,
+    "p99_ns": 77283077,
+    "over_200ms": 0
+  },
+  "retained_preparation": {
+    "rolled_back_writes": 20,
+    "elapsed_ns": 65514975646,
+    "published": false,
+    "verified": 10001,
+    "callback_ns": 787218653,
+    "rows": 10001
+  },
+  "retained_fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+  "sha256_before_and_after_preparation": "bee085bde215000750866600d54c0b291efd3c2fd7d55ebb5e5bbd3db6a8e8e1",
+  "sha256_after_intentional_full_rewrite": "0e81fc45d13278b978ee261de805fe46b980d9f3f38de96639c25073ce5e5da0",
+  "aligned_libraries": 74,
+  "limitations": [
+    "Canonical source metadata is still one database; the canonical apply transaction is still large.",
+    "The 50 durable writes use a small fixture; retained scale writer probes roll back and do not measure durable commit.",
+    "No controlled before/after full replacement speedup is claimed.",
+    "No 100-million-record, physical reboot, production model or UI acceptance in this phase.",
+    "Concurrent source changes require a new preparation/import, not an automatic retry guarantee."
+  ]
+}
