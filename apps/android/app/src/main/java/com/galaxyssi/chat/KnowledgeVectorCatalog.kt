@@ -4,9 +4,10 @@ internal data class KnowledgeCorpusStamp(val epoch: String, val changes: Long, v
 
 /** Keyset pages of opaque metadata, never an eager list of source text or all vectors. */
 internal class KnowledgeVectorCatalog(private val storage: AgentKnowledgeDatabase, private val ledger: KnowledgeVectorLedger) {
-    fun stamp(): KnowledgeCorpusStamp = storage.access { db ->
+    fun stamp(): KnowledgeCorpusStamp = storage.access(::stamp)
+    private fun stamp(db: KnowledgeSqlite): KnowledgeCorpusStamp {
         val state = ledger.changes().state(db)
-        KnowledgeCorpusStamp(state?.epoch.orEmpty(), state?.head ?: 0, state?.completedChunks ?: 0)
+        return KnowledgeCorpusStamp(state?.epoch.orEmpty(), state?.head ?: 0, state?.completedChunks ?: 0)
     }
     fun count(): Int = storage.access { db ->
         ledger.changes().state(db)?.takeIf { it.bootstrapComplete }?.let {
@@ -27,10 +28,11 @@ internal class KnowledgeVectorCatalog(private val storage: AgentKnowledgeDatabas
             buildList { while (it.moveToNext()) add(it.getString(0)) }
         }
     }
-    fun resolve(matches: List<KnowledgeVectorMatch>, stamp: KnowledgeCorpusStamp): List<Pair<KnowledgeVectorMatch, AgentKnowledgeItem>> =
-        storage.access { db ->
-            check(stamp() == stamp) { "Knowledge changed during semantic retrieval" }
+    fun resolve(snapshot: KnowledgeSearchSnapshot, matches: List<KnowledgeVectorMatch>, stamp: KnowledgeCorpusStamp): List<Pair<KnowledgeVectorMatch, AgentKnowledgeItem>> =
+        snapshot.access { db ->
+            check(stamp(db) == stamp) { "Knowledge changed during semantic retrieval" }
             matches.distinctBy { it.key }.mapNotNull { match ->
+                snapshot.checkActive()
                 val revision = db.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(match.key)).use {
                     if (it.moveToFirst()) AgentNativeJsonCodec.sha256(it.getString(0)) else null
                 }

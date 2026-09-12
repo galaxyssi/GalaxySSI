@@ -1,0 +1,23 @@
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgePayloadCompactionRecoveryDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+com.galaxyssi.chat.KnowledgePayloadCompactionRecoveryDeviceTest:
+INSTRUMENTATION_STATUS: test=hostDrivenRecovery
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgePayloadCompactionRecoveryDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=hostDrivenRecovery
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 1.515
+
+OK (1 test)
+
+
+INSTRUMENTATION_CODE: -1

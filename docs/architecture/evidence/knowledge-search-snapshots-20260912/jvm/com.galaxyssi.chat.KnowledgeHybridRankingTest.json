@@ -1,0 +1,25 @@
+{
+  "name": "com.galaxyssi.chat.KnowledgeHybridRankingTest",
+  "tests": 3,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.007,
+  "cases": [
+    {
+      "name": "emptyLegsAndLimitsRemainDeterministic",
+      "seconds": 0.004,
+      "outcome": "passed"
+    },
+    {
+      "name": "duplicateChunksCannotInflateOneDocumentsRank",
+      "seconds": 0.002,
+      "outcome": "passed"
+    },
+    {
+      "name": "twoIndependentRankingsPromoteSharedEvidence",
+      "seconds": 0.001,
+      "outcome": "passed"
+    }
+  ]
+}

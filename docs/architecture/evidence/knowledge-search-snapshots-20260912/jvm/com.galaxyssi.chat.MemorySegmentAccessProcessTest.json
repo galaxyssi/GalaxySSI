@@ -1,0 +1,20 @@
+{
+  "name": "com.galaxyssi.chat.MemorySegmentAccessProcessTest",
+  "tests": 2,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.835,
+  "cases": [
+    {
+      "name": "processDeathReleasesPublicationLockAndUnblocksMaintenance",
+      "seconds": 0.447,
+      "outcome": "passed"
+    },
+    {
+      "name": "processDeathReleasesMaintenanceLockAndUnblocksReaders",
+      "seconds": 0.388,
+      "outcome": "passed"
+    }
+  ]
+}

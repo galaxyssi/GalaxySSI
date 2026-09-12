@@ -2,7 +2,6 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import java.util.Locale
-import java.util.PriorityQueue
 import org.json.JSONArray
 
 /** Durable knowledge storage with keyed FTS5 candidate retrieval and lexical reranking. */
@@ -140,34 +139,13 @@ class SQLiteAgentKnowledgeStore internal constructor(
     override fun searchRanked(query: String, limit: Int): List<AgentKnowledgeHit> {
         if (query.isBlank() || limit <= 0) return searchLexical(query, limit)
         val semantic = semanticSearch ?: KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.searchSession()
-        return semantic?.search(query, limit.coerceAtMost(24)) { searchLexical(query, 24) }
+        return semantic?.search(query, limit.coerceAtMost(24)) { snapshot -> searchLexical(query, 24, snapshot) }
             ?: searchLexical(query, limit)
     }
-    private fun searchLexical(query: String, limit: Int): List<AgentKnowledgeHit> = storage.access { db ->
-        val size = limit.coerceAtLeast(0)
-        if (size == 0) return@access emptyList()
-        if (query.isBlank()) return@access storage.keys(db, limit = size).map {
-            val item = requireNotNull(storage.read(db, it))
-            AgentKnowledgeHit(item, 0.0, AgentKnowledgeCodec.excerpt(item.content, emptyList()), emptyList())
-        }
-        val clean = AgentKnowledgeTextAnalyzer.normalize(query).trim()
-        val tokens = AgentKnowledgeTextAnalyzer.tokens(clean)
-        val trigrams = AgentKnowledgeTextAnalyzer.trigrams(clean)
-        val order = compareBy<AgentKnowledgeHit> { it.score }.thenBy { it.item.updatedAtMillis }.thenBy { it.item.id }
-        val capacity = size.coerceAtMost(24)
-        val best = PriorityQueue(capacity, order)
-        storage.candidates(db, clean, 256).forEach { item ->
-            val score = AgentKnowledgeCodec.semanticScore(item, clean, tokens, trigrams)
-            if (score >= 1.2) {
-                val text = "${item.title} ${item.summary} ${item.tags.joinToString(" ")} ${item.content}".lowercase(Locale.US)
-                val matched = tokens.filter(text::contains).distinct()
-                val hit = AgentKnowledgeHit(item, score, AgentKnowledgeCodec.excerpt(item.content, matched), matched)
-                if (best.size < capacity) best.add(hit) else if (order.compare(hit, best.peek()) > 0) {
-                    best.poll(); best.add(hit)
-                }
-            }
-        }
-        best.toList().sortedWith(order.reversed())
+    private fun searchLexical(query: String, limit: Int, snapshot: KnowledgeSearchSnapshot? = null): List<AgentKnowledgeHit> {
+        if (limit <= 0) return emptyList()
+        return snapshot?.let { KnowledgeLexicalSearch.search(it, query, limit) }
+            ?: storage.searchSnapshot().use { it.validate(KnowledgeLexicalSearch.search(it, query, limit)) }
     }
 
     override fun updateAccess(itemIds: Set<String>, cloudAccess: AgentKnowledgeCloudAccess,

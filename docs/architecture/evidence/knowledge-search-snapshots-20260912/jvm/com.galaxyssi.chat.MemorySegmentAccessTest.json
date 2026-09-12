@@ -1,0 +1,35 @@
+{
+  "name": "com.galaxyssi.chat.MemorySegmentAccessTest",
+  "tests": 5,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.163,
+  "cases": [
+    {
+      "name": "upgradesFailAndExceptionsReleaseAllLocks",
+      "seconds": 0.013,
+      "outcome": "passed"
+    },
+    {
+      "name": "backgroundMaintenanceDoesNotWaitForAnotherThread",
+      "seconds": 0.01,
+      "outcome": "passed"
+    },
+    {
+      "name": "nestedWrappersReuseTheSameProcessLock",
+      "seconds": 0.007,
+      "outcome": "passed"
+    },
+    {
+      "name": "nonBlockingMaintenanceRejectsNestingAndReleasesOnFailure",
+      "seconds": 0.014,
+      "outcome": "passed"
+    },
+    {
+      "name": "maintenanceWaitsUntilTheEntirePublicationOrReadFinishes",
+      "seconds": 0.118,
+      "outcome": "passed"
+    }
+  ]
+}

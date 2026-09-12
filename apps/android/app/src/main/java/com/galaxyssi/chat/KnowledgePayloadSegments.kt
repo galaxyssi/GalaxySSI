@@ -47,13 +47,13 @@ internal class KnowledgePayloadSegments(root: File, private val namespace: Strin
         return try { MemorySegmentFile.Reference.parse(plain) } finally { plain.fill(0) }
     }
 
-    fun read(db: KnowledgeSqlite, key: String): String? {
+    fun read(db: KnowledgeSqlite, key: String): String? = leases.access {
         val reference = db.rawQuery("SELECT reference,segment,bytes FROM knowledge_payloads WHERE item_key=?", arrayOf(key)).use { c ->
-            if (!c.moveToFirst()) return null
+            if (!c.moveToFirst()) return@access null
             val parsed = decodeReference(key, c.getString(0))
             parsed.also { check(it.segment.toString() == c.getString(1) && it.length == c.getLong(2)) { "Knowledge payload membership mismatch" } }
         }
-        return files.read(reference, aad(key)) { input ->
+        files.readPinned(reference, aad(key)) { input ->
             var result: String? = null
             val count = BackupRecordStream.read(input) { section, recordKey, payload ->
                 check(section == "knowledge-payload" && recordKey == key && result == null) { "Knowledge payload identity mismatch" }
