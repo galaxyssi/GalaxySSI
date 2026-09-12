@@ -13,6 +13,7 @@ class KnowledgeRecordCryptoDeviceTest {
         f.store.upsert(item)
         val owner = f.db
         val key = owner.key("id", item.id)
+        KnowledgePrimaryLegacyFixture.rewrite(owner, f.context, f.name, key, inline = true)
         val cipher = AgentRowStorageCipher(f.context, "knowledge-records:v1:${f.name}")
         val oldHeader = owner.transaction { sql ->
             val header = sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
@@ -31,6 +32,7 @@ class KnowledgeRecordCryptoDeviceTest {
                     put("ciphertext", AgentStorageCipher.encrypt(requireNotNull(cipher.decrypt(value, chunkAad)), chunkAad))
                 }, "item_key=? AND ordinal=?", arrayOf(key, ordinal.toString()))
             }
+            KnowledgePrimaryLegacyFixture.removePrimarySchemaBeforeDowngrade(sql)
             sql.execSQL("PRAGMA user_version=12")
             legacy
         }
@@ -40,7 +42,7 @@ class KnowledgeRecordCryptoDeviceTest {
             sql.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
                 check(it.moveToFirst()); assertEquals(oldHeader, it.getString(0))
             }
-            sql.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); assertEquals(13, it.getInt(0)) }
+            sql.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); assertEquals(14, it.getInt(0)) }
         }
         f.store.upsert(item.copy(content = "updated"))
         AgentRowStorageCipher.clearCachedKeys()
@@ -58,7 +60,7 @@ class KnowledgeRecordCryptoDeviceTest {
         val first = f.db.key("id", f.item(1).id)
         val second = f.db.key("id", f.item(2).id)
         f.db.transaction { sql ->
-            sql.rawQuery("UPDATE knowledge_chunks SET ciphertext=(SELECT ciphertext FROM knowledge_chunks WHERE item_key=? AND ordinal=0) WHERE item_key=? AND ordinal=0", arrayOf(first, second)).use { it.moveToNext() }
+            sql.rawQuery("UPDATE knowledge_primary_refs SET reference=(SELECT reference FROM knowledge_primary_refs WHERE item_key=?) WHERE item_key=?", arrayOf(first, second)).use { it.moveToNext() }
         }
         assertThrows(Exception::class.java) { f.store.findByIds(setOf(f.item(2).id)) }
         assertEquals(f.item(1), f.store.findByIds(setOf(f.item(1).id)).single())

@@ -193,7 +193,9 @@ class KnowledgeVectorChangesDeviceTest {
         } }
     }
     @Test fun versionFourMigrationIsLazyAndBackfillResumesAfterReopen() = isolated { f ->
-        repeat(11) { f.put("item-$it") }; f.finish()
+        repeat(11) { f.put("item-$it") }
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+        f.finish()
         f.asVersionFour()
         val catalog = KnowledgeVectorCatalog(f.db, f.ledger())
         val before = state(f.ledger())
@@ -213,7 +215,9 @@ class KnowledgeVectorChangesDeviceTest {
     }
     @Test fun replacementAndDeletionDuringLegacyBackfillDoNotDoubleCount() = isolated { f ->
         val ids = (1..12).map { "item-$it" }
-        ids.forEach { f.put(it) }; f.finish()
+        ids.forEach { f.put(it) }
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+        f.finish()
         f.asVersionFour()
         assertFalse(f.ledger().changes().bootstrap(3))
         val ordered = ids.sortedBy { f.db.key("id", it) }

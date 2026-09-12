@@ -28,6 +28,8 @@ internal object KnowledgePayloadMigration {
                 break
             }
             visited++
+            val primary = db.rawQuery("SELECT 1 FROM knowledge_primary_refs WHERE item_key=?", arrayOf(key)).use { it.moveToFirst() }
+            if (primary) continue
             val external = db.rawQuery("SELECT 1 FROM knowledge_payloads WHERE item_key=?", arrayOf(key)).use { it.moveToFirst() }
             if (external) continue
             val header = requireNotNull(owner.readHeader(db, key))

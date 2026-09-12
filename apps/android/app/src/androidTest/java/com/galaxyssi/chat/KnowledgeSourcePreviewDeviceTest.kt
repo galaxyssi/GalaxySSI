@@ -20,7 +20,9 @@ class KnowledgeSourcePreviewDeviceTest {
         assertEquals(before, KnowledgeSourceMigrationTestSupport.fingerprint(f.name))
     }
     @Test fun legacyUpgradeOnlyMaterializesRequestedRowsAndKeepsBrowseRevision() = KnowledgeBackupTestFixture().use { f ->
-        f.seed(65); val before = KnowledgeSourceMigrationTestSupport.fingerprint(f.name)
+        f.seed(65)
+        f.db.transaction(KnowledgePrimaryLegacyFixture::inlineForDowngrade)
+        val before = KnowledgeSourceMigrationTestSupport.fingerprint(f.name)
         KnowledgeSourcePreviewFixtureSchema.versionEight(f)
         assertEquals(0, KnowledgeSourcePreviewFixtureSchema.count(f))
         val revision = f.store.sourceRevision()

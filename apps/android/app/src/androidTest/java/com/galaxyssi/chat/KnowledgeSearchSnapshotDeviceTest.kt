@@ -57,7 +57,7 @@ class KnowledgeSearchSnapshotDeviceTest {
 
     @Test fun searchPinsEncryptedFilesUntilItsReadViewCloses() = KnowledgePayloadTestFixture().use { f ->
         val item = f.item(1)
-        f.store.upsert(item)
+        f.putLegacy(item)
         assertEquals(1L, f.count("knowledge_payloads"))
         f.db.searchSnapshot().use { read ->
             writer { f.db.transaction { it.delete("knowledge_items", null, null) } }
@@ -81,14 +81,14 @@ class KnowledgeSearchSnapshotDeviceTest {
 
     @Test fun pinnedPayloadReadDoesNotSerializeAnActualEncryptedAppend() = KnowledgePayloadTestFixture().use { f ->
         val item = f.item(1)
-        f.store.upsert(item)
+        f.putLegacy(item)
         val row = KnowledgePayloadCompactionFixture.row(f, item.id)
         val reference = f.db.payloads.decodeReference(row.key, row.value)
         f.db.searchSnapshot().use { read ->
             val before = f.db.payloads.files.read(reference, f.db.payloads.aad(row.key)) { it.readBytes() }
             val after = f.db.payloads.files.readPinned(reference, f.db.payloads.aad(row.key)) { input ->
                 val first = input.read()
-                writer { f.store.upsert(f.item(2)) }
+                writer { f.putLegacy(f.item(2)) }
                 byteArrayOf(first.toByte()) + input.readBytes()
             }
             assertArrayEquals(before, after)
@@ -129,7 +129,7 @@ class KnowledgeSearchSnapshotDeviceTest {
         val before = f.db.decryptedItemReads
         assertEquals("payload-100", f.store.search("quartzneedle", 8).single().id)
         assertEquals(1L, f.db.decryptedItemReads - before)
-        f.db.transaction { sql -> sql.execSQL("UPDATE knowledge_chunks SET ciphertext='invalid' WHERE item_key='" +
+        f.db.transaction { sql -> sql.execSQL("UPDATE knowledge_primary_refs SET reference='invalid' WHERE item_key='" +
             f.db.key("id", "payload-100") + "'") }
         assertThrows(Exception::class.java) { f.store.search("quartzneedle", 8) }
         assertNotNull(f.db.reclaimPayloads())

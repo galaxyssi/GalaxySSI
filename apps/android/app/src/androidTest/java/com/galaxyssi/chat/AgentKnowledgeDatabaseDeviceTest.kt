@@ -73,8 +73,8 @@ class AgentKnowledgeDatabaseDeviceTest {
             db.rawQuery("SELECT count(*) FROM knowledge_chunks", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
             }
-            db.rawQuery("SELECT count(*),max(length(reference)) FROM knowledge_payloads", null).use {
-                assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0)); assertTrue(it.getInt(1) <= 256)
+            db.rawQuery("SELECT count(*),max(length(reference)) FROM knowledge_primary_refs", null).use {
+                assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0)); assertTrue(it.getInt(1) <= 2048)
             }
             db.rawQuery("SELECT count(*) FROM knowledge_items WHERE header LIKE '%Private%' OR title_key LIKE '%Record%' OR source_key='source'", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
@@ -88,7 +88,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         store.upsert(item(1))
         mutations = 0
         KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { db ->
-            db.execSQL("CREATE TRIGGER reject_new_chunks BEFORE INSERT ON knowledge_chunks BEGIN SELECT RAISE(ABORT,'test storage failure'); END")
+            db.execSQL("CREATE TRIGGER reject_new_chunks BEFORE INSERT ON knowledge_primary_refs BEGIN SELECT RAISE(ABORT,'test storage failure'); END")
         }
         assertThrows(Exception::class.java) { store.replaceSource("source", listOf(item(2))) }
         assertEquals(listOf("item-1"), store.list(5).map { it.id })
@@ -136,7 +136,7 @@ class AgentKnowledgeDatabaseDeviceTest {
     @Test fun missingChunkIsNotTreatedAsMissingKnowledge() = isolated { name, legacy ->
         val store = store(name, legacy)
         store.upsert(item(1))
-        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { it.execSQL("DELETE FROM knowledge_chunks WHERE ordinal=0") }
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { it.execSQL("DELETE FROM knowledge_primary_refs") }
         assertThrows(Exception::class.java) { store.findByIds(setOf("item-1")) }
         assertEquals(1L, store.stats().itemCount)
     }

@@ -95,7 +95,7 @@ class KnowledgeSourceReplaceDeviceTest {
 
     @Test fun corruptedPreviousBodyPreventsReplacement() = KnowledgeSourceReplaceFixture().use { f ->
         f.store.upsert(f.item(0))
-        f.db.transaction { it.execSQL("UPDATE knowledge_chunks SET ciphertext='invalid'") }
+        f.db.transaction { it.execSQL("UPDATE knowledge_primary_refs SET reference='invalid'") }
         assertThrows(Exception::class.java) { f.store.replaceSource("\u6765\u6e90", sequenceOf(f.item(1))) }
         assertEquals(1L, f.store.stats().itemCount); assertEquals(0, f.visits)
     }

@@ -1,0 +1,11 @@
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=retained_scale_full_read samples=100 sum_ns=914122696 p50_ns=7531116 p95_ns=12798731 p99_ns=14832039
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=hardware_aes_encrypt samples=100 sum_ns=417520112 p50_ns=3497538 p95_ns=5796461 p99_ns=9132077
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=wrapped_aes_encrypt samples=100 sum_ns=23411928 p50_ns=234423 p95_ns=312000 p99_ns=351154
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=hardware_aes_decrypt samples=100 sum_ns=413224110 p50_ns=3400038 p95_ns=5963654 p99_ns=8640308
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=wrapped_aes_decrypt samples=100 sum_ns=18442072 p50_ns=202577 p95_ns=227884 p99_ns=248346
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=index_hmac_repeated samples=100 sum_ns=255042313 p50_ns=2176077 p95_ns=5133192 p99_ns=7707423
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=index_hmac_distinct samples=100 sum_ns=249121382 p50_ns=2111577 p95_ns=3528769 p99_ns=8116231
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=index_hmac_operation_repeated samples=100 sum_ns=8426033 p50_ns=57000 p95_ns=83115 p99_ns=126231
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=canonical_header_read samples=100 sum_ns=55615425 p50_ns=543077 p95_ns=698269 p99_ns=752000
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=canonical_full_read samples=100 sum_ns=269858382 p50_ns=2192461 p95_ns=3937653 p99_ns=8525731
+I/System.out(18271): KNOWLEDGE_CRYPTO_PROFILE phase=canonical_write samples=100 sum_ns=2515886120 p50_ns=22915846 p95_ns=54022423 p99_ns=73658269

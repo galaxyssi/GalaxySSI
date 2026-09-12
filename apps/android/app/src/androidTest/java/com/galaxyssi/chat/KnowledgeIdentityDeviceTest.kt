@@ -71,7 +71,7 @@ class KnowledgeIdentityDeviceTest {
         store.upsert(note("alpha"))
         store.upsert(note("beta"))
         events.clear()
-        db.transaction { it.execSQL("CREATE TRIGGER fail_identity_update BEFORE INSERT ON knowledge_chunks " +
+        db.transaction { it.execSQL("CREATE TRIGGER fail_identity_update BEFORE INSERT ON knowledge_primary_refs " +
             "BEGIN SELECT RAISE(ABORT,'injected identity write failure'); END") }
         assertThrows(Exception::class.java) { store.upsert(note("alpha").copy(content = "new content")) }
         assertEquals(2L, store.stats().itemCount)

@@ -1,0 +1,495 @@
+{
+  "source": "build/knowledge-source-preparation-runs/2c20f6de2ec54c1db9adc731a9e4ae97/instrumentation.txt",
+  "sha256": "3189a811a435ed15d4d098aa47234d64d4dab54890a0534556b4575a995635a0",
+  "result": [
+    "Time: 271.132",
+    "OK (97 tests)"
+  ],
+  "cases": [
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceTimingDeviceTest",
+      "test": "emptyInputHasNoCommitAndBrokenSinkDoesNotLoseTheWrite",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceTimingDeviceTest",
+      "test": "productionReplacementReportsAllSevenStagesAndPersistsTheBody",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceTimingDeviceTest",
+      "test": "stageFailureDoesNotPrepareOrPublishAndPreservesItsException",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceTimingDeviceTest",
+      "test": "ownershipFailureNeverAppearsAsSuccessfulApply",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceTimingDeviceTest",
+      "test": "observationFailureIsDistinctFromTheAlreadyCommittedWrite",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationDeviceTest",
+      "test": "deletionAndIdenticalRecreationCannotPassAnOldRevision",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationDeviceTest",
+      "test": "formerlyAbsentSourceCannotOverwriteAConcurrentCreation",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationDeviceTest",
+      "test": "cancelledPreparationAndRepeatedPublicationCannotMutateSources",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationDeviceTest",
+      "test": "incomingIdentityClaimedByAnotherSourceStillFailsBeforeAnyMutation",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationDeviceTest",
+      "test": "concurrentBodyAndPermissionChangesRejectThePreparedReplacement",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationDeviceTest",
+      "test": "unrelatedWriterCommitsWhileOldBodiesAreBeingPrepared",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourcePreparationScaleDeviceTest",
+      "test": "retainedTenThousandBodiesPrepareWithoutReservingWriter",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "replayDoesNotInvalidateSourceRevisionOrEmitAnUpdate",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "oldestPolicyTieUsesTheExistingKeyOrder",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "lateSqlFailureRollsBackSourceAndEmitsNothing",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "corruptedPreviousBodyPreventsReplacement",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "publicationRunsAfterCommitAndCannotRollItBack",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "duplicatesUseFirstValidItemAndInvalidInputCannotEraseSource",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "lateCrossSourceCollisionCannotStealIdentity",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "interruptedProducerPublishesNothing",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "producerFailureNeverMutatesCanonicalSource",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "unchangedInputStillInheritsOldestSourcePolicy",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceReplaceDeviceTest",
+      "test": "replacementCrossesKeyPagesAndKeepsOneSourceEvent",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceStagingDeviceTest",
+      "test": "invalidStableIdFailsBeforeCanonicalMutation",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceStagingDeviceTest",
+      "test": "stagingIsEncryptedAndDuplicateHandlingDoesNotChangeBackupValidation",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceStagingDeviceTest",
+      "test": "tamperedIncomingRecordCannotCommitAReplacement",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceStagingDeviceTest",
+      "test": "largeStagedBodyAvoidsCursorWindowLimit",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "largeStagingRecordIsEncryptedAndAvoidsCursorWindowOverflow",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "moreThanOnePageRoundTripsBodiesPoliciesAndStableIds",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "truncatedOrTamperedArchiveDoesNotApplyStagedRecords",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "replacementPublishesMatchedOldAndNewRowsWithoutReplayingUnchangedItems",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "snapshotSurvivesConcurrentReplacementInsertAndDeleteWithoutBlockingWriter",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "unchangedRestoreKeepsDerivedVectorsAndBrowseRevision",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "legacyArrayIsConsumedIncrementallyAndRejectsDuplicateEnvelopeKeys",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "closedOwnerInvalidatesPendingSnapshot",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "archiveReencryptsSourcesForAnotherDatabaseNamespace",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "duplicateRecordsWrongIdsPoliciesAndCountsAreRejected",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "emptyArchiveRemovesOldSourcesAndPublishesOnlyAfterCommit",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "sourceWriteFailureRollsBackEntireRestoreAndPublishesNothing",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeBackupDeviceTest",
+      "test": "cancelledRestoreRollsBackAlreadyWrittenRowsAndPublishesNothing",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "directSourceIndexMoveRemovesOldLocalRevisionAndCannotReturnUnauthenticatedMembership",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "invalidReferencesAreRejectedAndDatabaseNamespacesDoNotShareTokens",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "nonHeadSameTimestampChangesVersionButUnrelatedSourcesAndReplayDoNot",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "versionNineUpgradeDoesNotScanOrRewriteExistingSources",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "sequenceOverflowAndIgnoredSourceVersionWritesFailAtomically",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "deletesRecreatesMovesAndBlankSourceIdsHaveIndependentVersions",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceRevisionDeviceTest",
+      "test": "rollbackMissingClockAndIgnoredClockWritesNeverCommitSourceChanges",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "tupleSeekHandlesTiesAndLongTimestampExtremes",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "updateMovesSourceGroupAndTimestampAtomically",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "editsOnBothSidesOfCursorRemainExact",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "invalidCursorCannotSilentlyRestartEnrollment",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "missingStateRejectsLiveWritesInsteadOfRecreatingCounters",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "queryPlansSeekExistingIndexesWithoutAggregationOrTempSort",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "deletingLatestTiedAndLastMembersUpdatesTheHead",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "emptyDirectoryTracksLiveSourcesAndLocalNotesImmediately",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "migrationIsBoundedAndDoesNotBuildAnIndexOverOldSources",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "rollbackRestoresMembersCountsAndCheckpoint",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "reopenContinuesCommittedCursorAndVerifiesAllGroups",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceDirectoryDeviceTest",
+      "test": "ignoredCheckpointRollsBackEnrolledRows",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "partialConsumptionCloseAndOwnerRetirementInvalidateLazyIterators",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "uncommittedRevisionCannotOpenACommittedSnapshotAndFailureClosesItsConnection",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "missingDirectoryIsAnErrorNotAnEmptyExport",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "mutatedHeaderOrBodyIsNotTrustedBecauseARevisionTokenExists",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "missingSourceIsEmptyAndLocalNotesAreIsolated",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "writerCommitsWhileReaderKeepsOriginalSourceAndNextSnapshotRejectsStaleToken",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "snapshotUsesBoundedIndexedPagesAndLegacyAdapterPreservesChunkOrder",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceExportSnapshotDeviceTest",
+      "test": "timestampExtremesAndTiesTraverseOnceWithoutSkippingOrDuplicating",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSourceSnapshotDeviceTest",
+      "test": "bodyHeaderAndPreviewShareOnePermissionSnapshot",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest",
+      "test": "failedColdMigrationCannotPublishReadyState",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest",
+      "test": "finalValidationDoesNotWaitForUnrelatedWriter",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest",
+      "test": "admissionReadsCommittedBodiesWhileWriterHasUncommittedChanges",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest",
+      "test": "warmSearchRetriesFailedFtsMaintenanceWithoutWriterAdmission",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeReadAdmissionDeviceTest",
+      "test": "snapshotsInsideWriterAreRejectedAndRollbackPreservesCommittedView",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeReadAdmissionScaleDeviceTest",
+      "test": "retainedTenThousandBodySearchCompletesDuringUncommittedWrite",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "queryOnlyViewClosesIdempotentlyAndReleasesLeaseOnFailure",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "interruptionStopsBeforeDecryptingAndStillReleasesLease",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "indexedSnapshotAndPublicationRespectConcurrentPermissionChanges",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "selectiveReadsAreBoundedAndNeverSilentlyIgnoreCorruptBodies",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "pendingKeysetPagesDoNotBlockWritersOrMixRevisions",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "pinnedPayloadReadDoesNotSerializeAnActualEncryptedAppend",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "searchPinsEncryptedFilesUntilItsReadViewCloses",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeSearchSnapshotDeviceTest",
+      "test": "retirementInvalidatesOpenReadView",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "ttlExpirationDoesNotCancelAQueryAlreadyUsingTheCache",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "permissionChangesCannotReuseAnOlderMorePermissiveSource",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "shortTtlAndExplicitCloseInvalidateTheGraph",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "corruptAuthenticatedVectorFallsBackWithoutPublishingDerivedEvidence",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "sourceReplacementInvalidatesCachedVectorsAndDoesNotReturnOldExcerpt",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "insufficientAnnMemoryIsExplicitAndKeepsLexicalResultsAndAllSources",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "lifecycleInvalidationDoesNotBlockUiOrAllowLateResults",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "mutationWhileQueryModelRunsCannotPublishAnOldVectorMatch",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "normalStoreAndRagRetrieveWithoutAnyLexicalOverlapAndHonorCloudPolicy",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "hybridRankingSharesAReadViewWithoutHoldingWriterAndRevalidatesEvidence",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "lifecycleInvalidationDuringPublicationCannotReturnStaleEvidence",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeHybridSearchDeviceTest",
+      "test": "uiThreadNeverOpensAnEmbeddingModel",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest",
+      "test": "feedCatalogAndVectorPagesReadCommittedStateDuringReplacement",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest",
+      "test": "rankedSemanticQueriesCompleteBeforeSourceWriterCommits",
+      "status": 0
+    },
+    {
+      "class": "com.galaxyssi.chat.KnowledgeVectorReadAdmissionDeviceTest",
+      "test": "reopenedNativeGraphDoesNotWaitForSourceWriter",
+      "status": 0
+    }
+  ]
+}
