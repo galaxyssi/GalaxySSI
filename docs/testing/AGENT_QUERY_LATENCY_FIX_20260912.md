@@ -9,7 +9,7 @@ Date: September 12, 2026. Baseline: [Doubao comparison](DOUBAO_COMPARISON_202609
 - PR preparation integrates main `0eb47b7ef` and advances Android to 1.1.100 (986), above upstream 1.1.99 (985). Desktop remains 1.1.47. Device timings below belong to the earlier tested builds, not a claimed retest of 986.
 - Only S26U / SM-S9480 was operated during the implementation retests, not S20U or SM-T575. Installation preserved existing app data.
 - Questions, models, and reasoning settings were unchanged, with a fresh conversation each time. No extra instruction forced short answers.
-- Timings run from the send tap to the `已处理` completion indicator, not first token. Image cases include another 15 seconds of observation.
+- Timings run from the send tap to the localized processed status, not first token. Image cases include another 15 seconds of observation.
 - r2 contains one trial per combination, followed by targeted r3-r5 diagnostics. Network, caches, output length, and paths vary; this is not a statistical performance gate.
 
 ## Changes
@@ -30,14 +30,14 @@ Date: September 12, 2026. Baseline: [Doubao comparison](DOUBAO_COMPARISON_202609
 
 ## r2 Retest
 
-| Entry | Question | Baseline | r2 |
+| Entry | Question (English translation) | Baseline | r2 |
 | --- | --- | ---: | ---: |
-| DeepSeek | 广州今天的天气。 | 43.9 s | 25.1 s |
-| DeepSeek | 给出2张七龙珠里的图画。 | 23.5 s | 10.7 s |
-| DeepSeek | 给出今天的科技新闻。 | 53.5 s | 37.9 s |
-| Codex | 广州今天的天气。 | 87.4 s | 51.9 s |
-| Codex | 给出2张七龙珠里的图画。 | 140.5 s | 67.8 s |
-| Codex | 给出今天的科技新闻。 | 170.2 s | 99.6 s |
+| DeepSeek | Today's weather in Guangzhou. | 43.9 s | 25.1 s |
+| DeepSeek | Show two pictures from Dragon Ball. | 23.5 s | 10.7 s |
+| DeepSeek | Give today's technology news. | 53.5 s | 37.9 s |
+| Codex | Today's weather in Guangzhou. | 87.4 s | 51.9 s |
+| Codex | Show two pictures from Dragon Ball. | 140.5 s | 67.8 s |
+| Codex | Give today's technology news. | 170.2 s | 99.6 s |
 
 Codex mistakenly generated two original images in the baseline and retrieved existing images in r2. That row demonstrates corrected task behavior, not faster execution of the same generation tool.
 
@@ -51,7 +51,7 @@ DeepSeek r2 used one weather search/fetch sequence with search around 6.1 s, one
 
 | Entry | Case | Observation |
 | --- | --- | --- |
-| DeepSeek | Weather r3 | Final reply controls appeared around 29.5 s; UI recorded `已处理 28秒`. A long answer scrolled the terminal indicator offscreen, causing the old script to report a false 180 s timeout. Scrolling back verified completion; this is not an app timeout. |
+| DeepSeek | Weather r3 | Final reply controls appeared around 29.5 s; UI recorded the localized processed status with a 28-second duration. A long answer scrolled the terminal indicator offscreen, causing the old script to report a false 180 s timeout. Scrolling back verified completion; this is not an app timeout. |
 | DeepSeek | Images r3 | No response within the 180 s measurement window. The initial HTTP request wrote its body but received no response headers and never started image search. The trial was explicitly cancelled around 215 s. |
 | DeepSeek | Images r4, after connection fix | Completed in 7.07 s with two relevant images visible. Image search took 793 ms without a search-cache hit. Fresh connection: DNS 18 ms, connect 63 ms including TLS 36 ms, header wait 131 ms. The following model round successfully reused the connection. |
 | DeepSeek | News r3, after connection fix | After about three minutes idle, a fresh connection took DNS 20 ms, connect 46 ms including TLS 23 ms, header wait 171 ms. Total remained 59.55 s; news latency is not consistently improved. |
@@ -85,7 +85,11 @@ Before integrating the subsequent main changes:
 - Android debug APK assembly, the 150 KB Kotlin source-size gate, and `git diff --check` passed.
 - Android 1.1.98 (984) was installed on S26U and Desktop 1.1.47 restarted from this worktree. User data was not cleared.
 
-PR-preparation checks on the integrated revision are recorded in the PR. The version 986 build is not represented as a newly installed or device-benchmarked APK.
+After integrating main `0eb47b7ef`, the same 164 Desktop backend tests and 48 Android tests passed again. `npm --prefix apps/desktop run check` passed 29 tests and the Desktop structural check. `npm run check` and `git diff --check` also passed.
+
+The first integrated Android build could not locate Rust. Setting `CARGO_HOME` and `RUSTUP_HOME` to the existing local toolchain cache resolved the environment issue without source changes or skipping native packaging. Rust native-memory compilation and 16 KiB ELF alignment checks passed, followed by `:app:assembleDebug`. APK metadata confirms Android 1.1.100 (986); Desktop package and lockfile both specify 1.1.47.
+
+The version 986 APK was built but not newly installed or device-benchmarked during PR preparation. Broad device and packaged Desktop smoke matrices were not rerun; the device evidence above remains associated with the earlier tested builds.
 
 Raw screenshots, XML, polling samples, and logs remain in the ignored local directory `build/reports/doubao-comparison-20260912/`; they are not committed.
 

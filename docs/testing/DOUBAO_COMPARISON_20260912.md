@@ -20,18 +20,28 @@ The main opportunities are proportional research, slow-source handling, Codex de
 - Every question started a new conversation. No extra brevity instruction, source restriction, or generation instruction was added.
 - Tests ran sequentially over Wi-Fi, with system battery-saving modes disabled.
 - Timing starts at the host-injected send tap. UIAutomator observations, screenshots, XML, timing samples, and GalaxySSI diagnostic logs were retained locally.
-- Completion means the reply copy button appeared in Doubao, or the `已处理` status appeared in GalaxySSI. Image cases were observed for another 15 seconds.
+- Completion means the reply copy button appeared in Doubao, or the localized processed status appeared in GalaxySSI. Image cases were observed for another 15 seconds.
 - These are externally observed completion times, not time to first token or isolated model inference time. Polling, screenshots, and UI updates introduce sampling error.
 - Hardware, application architecture, models, execution modes, and network paths differ. The results cannot isolate a model-only or hardware-only performance difference.
 - A greeting warm-up and one missed send tap were excluded from the nine valid interactions.
 
 ## Observed Completion Times
 
-| Unchanged prompt | Doubao | GalaxySSI DeepSeek | GalaxySSI Codex |
+| Prompt (English translation) | Doubao | GalaxySSI DeepSeek | GalaxySSI Codex |
 | --- | ---: | ---: | ---: |
-| 广州今天的天气。 | 7.7 s | 43.9 s | 87.4 s |
-| 给出2张七龙珠里的图画。 | 8.8 s | 23.5 s | 140.5 s |
-| 给出今天的科技新闻。 | 18.5 s | 53.5 s | 170.2 s |
+| Today's weather in Guangzhou. | 7.7 s | 43.9 s | 87.4 s |
+| Show two pictures from Dragon Ball. | 8.8 s | 23.5 s | 140.5 s |
+| Give today's technology news. | 18.5 s | 53.5 s | 170.2 s |
+
+The actual inputs were Chinese, not these English translations. Exact prompts as JSON-escaped Unicode:
+
+```json
+[
+  "\u5e7f\u5dde\u4eca\u5929\u7684\u5929\u6c14\u3002",
+  "\u7ed9\u51fa2\u5f20\u4e03\u9f99\u73e0\u91cc\u7684\u56fe\u753b\u3002",
+  "\u7ed9\u51fa\u4eca\u5929\u7684\u79d1\u6280\u65b0\u95fb\u3002"
+]
+```
 
 All nine interactions returned content. Returning content does not establish that every answer was correct or complete.
 
