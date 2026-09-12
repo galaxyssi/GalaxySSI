@@ -47,7 +47,8 @@ class KnowledgeSourcePageProfileDeviceTest {
                         }
                     } }
                     measure(pass, "header_aead_only") { headers.forEach { (key, value) ->
-                        val decoded = requireNotNull(AgentStorageCipher.decrypt(value, "${f.name}:$key:header".toByteArray()))
+                        val decoded = requireNotNull(AgentRowStorageCipher(f.context, "knowledge-records:v1:${f.name}")
+                            .decrypt(value, "${f.name}:$key:header".toByteArray()))
                         assertTrue(JSONObject(decoded).has("source_preview"))
                     } }
                     measure(pass, "identity_hmac_only") {

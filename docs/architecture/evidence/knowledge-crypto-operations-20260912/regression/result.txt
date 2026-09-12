@@ -1,0 +1,8 @@
+INSTRUMENTATION_RESULT: stream=
+
+Time: 1,375.957
+
+OK (106 tests)
+
+
+INSTRUMENTATION_CODE: -1

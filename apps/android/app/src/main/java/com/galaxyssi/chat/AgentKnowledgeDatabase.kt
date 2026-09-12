@@ -24,6 +24,9 @@ internal class AgentKnowledgeDatabase private constructor(
     private var indexing = false
     private var accessDepth = 0
     private var previewCipher: KnowledgeSourcePreviewCipher? = null
+    private var indexMemo: KnowledgeIndexKeyMemo? = null
+    private val recordCipher = AgentRowStorageCipher(context, "knowledge-records:v1:$name")
+    internal val hasActiveIndexMemo: Boolean get() = indexMemo != null
     internal val payloads = KnowledgePayloadSegments(java.io.File(context.getDatabasePath(name).absolutePath + ".payloads"), name)
     internal val hasActivePreviewKey: Boolean get() = previewCipher != null
     internal var sourcePreviewHits = 0L
@@ -52,7 +55,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..12) { "Unsupported knowledge schema $version" }
+                require(version in 0..13) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -99,6 +102,8 @@ internal class AgentKnowledgeDatabase private constructor(
                     KnowledgePayloadUsage.create(db)
                     db.execSQL("PRAGMA user_version=12")
                 }
+                // Older clients must not mistake the new authenticated row envelope for corrupt legacy data.
+                if (version < 13) db.execSQL("PRAGMA user_version=13")
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             return db.also { connection = it }
@@ -130,7 +135,10 @@ internal class AgentKnowledgeDatabase private constructor(
             }
         } } finally {
             accessDepth--
-            if (accessDepth == 0) { previewCipher?.close(); previewCipher = null }
+            if (accessDepth == 0) {
+                previewCipher?.close(); previewCipher = null
+                indexMemo?.close(); indexMemo = null
+            }
         }
     }
 
@@ -213,9 +221,23 @@ internal class AgentKnowledgeDatabase private constructor(
         if (legacy.contains("items")) AgentEncryptedPreferences(context, legacyName).removeDurably("items")
     }
 
-    fun key(kind: String, value: String): String = Mac.getInstance("HmacSHA256").run {
+    fun key(kind: String, value: String): String {
+        // Read snapshots run outside this monitor; they must not borrow a writer's memo.
+        if (!Thread.holdsLock(this) || accessDepth == 0) return calculateKey(kind, value)
+        val memo = indexMemo ?: KnowledgeIndexKeyMemo().also { indexMemo = it }
+        return memo.key(kind, value) { calculateKey(kind, value) }
+    }
+
+    private fun calculateKey(kind: String, value: String): String = Mac.getInstance("HmacSHA256").run {
         init(indexKey())
-        doFinal("$name:$kind:$value".toByteArray()).joinToString("") { "%02x".format(it) }
+        val bytes = "$name:$kind:$value".toByteArray(Charsets.UTF_8)
+        val digest = try { doFinal(bytes) } finally { bytes.fill(0) }
+        try { buildString(digest.size * 2) {
+            for (byte in digest) {
+                append("0123456789abcdef"[(byte.toInt() and 255) ushr 4])
+                append("0123456789abcdef"[byte.toInt() and 15])
+            }
+        } } finally { digest.fill(0) }
     }
 
     fun write(db: KnowledgeSqlite, item: AgentKnowledgeItem) {
@@ -238,7 +260,7 @@ internal class AgentKnowledgeDatabase private constructor(
         val header = JSONObject().put("chunks", chunks.size).put("sha256", AgentNativeJsonCodec.sha256(encoded))
             .put("title_key", titleKey).put("source_key", sourceKey).put("updated", snapshot.updatedAtMillis)
             .put("source_preview", metadata.encode()).toString()
-        val encryptedHeader = AgentStorageCipher.encrypt(header, aad(id, "header"))
+        val encryptedHeader = recordCipher.encrypt(header, aad(id, "header"))
         db.delete("knowledge_items", "item_key=?", arrayOf(id))
         db.insertOrThrow("knowledge_items", null, ContentValues().apply {
             put("item_key", id)
@@ -251,7 +273,7 @@ internal class AgentKnowledgeDatabase private constructor(
         chunks.forEachIndexed { index, chunk ->
             db.insertOrThrow("knowledge_chunks", null, ContentValues().apply {
                 put("item_key", id); put("ordinal", index)
-                put("ciphertext", AgentStorageCipher.encrypt(chunk, aad(id, index.toString())))
+                put("ciphertext", recordCipher.encrypt(chunk, aad(id, index.toString())))
             })
         }
         indexItem(db, id, snapshot)
@@ -267,7 +289,7 @@ internal class AgentKnowledgeDatabase private constructor(
     internal fun readHeader(db: KnowledgeSqlite, id: String): JSONObject? =
         db.rawQuery("SELECT header,title_key,source_key,updated FROM knowledge_items WHERE item_key=?", arrayOf(id)).use {
             if (!it.moveToFirst()) return@use null
-            JSONObject(requireNotNull(AgentStorageCipher.decrypt(it.getString(0), aad(id, "header")))).apply {
+            JSONObject(requireNotNull(recordCipher.decrypt(it.getString(0), aad(id, "header")))).apply {
                 check(getString("title_key") == it.getString(1) && getString("source_key") == it.getString(2) &&
                     getLong("updated") == it.getLong(3)) { "Knowledge index metadata mismatch" }
             }
@@ -318,7 +340,7 @@ internal class AgentKnowledgeDatabase private constructor(
                 "ORDER BY ordinal LIMIT 32", arrayOf(id, next.toString())).use { cursor ->
                 while (cursor.moveToNext()) {
                     check(cursor.getInt(0) == next && next < count) { "Knowledge chunks are not contiguous" }
-                    body.append(requireNotNull(AgentStorageCipher.decrypt(cursor.getString(1), aad(id, next.toString()))) {
+                    body.append(requireNotNull(recordCipher.decrypt(cursor.getString(1), aad(id, next.toString()))) {
                         "Knowledge chunk cannot be decrypted"
                     })
                     next++
