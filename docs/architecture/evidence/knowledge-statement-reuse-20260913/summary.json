@@ -1,0 +1,85 @@
+{
+  "date": "2026-09-13",
+  "base": "7b8b6d2a840e8db70deca680233603113d53f36b",
+  "scope": "Bounded compiled statement reuse in the Android knowledge SQLite adapter",
+  "device": "SM-T575",
+  "android": {"versionName": "1.1.112", "versionCode": 998},
+  "desktopChanged": false,
+  "appApkSha256": "0e6f45a7ef6299277c6ac31f70251cfc40cc25be41043b701ace8abdcb1824c3",
+  "testApkSha256": "1d344d181d4d43198dfc368ab565faa16c9714c4e1fd9e30aefd0c90a508873b",
+  "build": {"fullBuildSeconds": 674, "durableTestOnlyRebuildSeconds": 58},
+  "pool": {"maximumIdleStatementsPerConnection": 32, "maximumIdleSqlChars": 65536,
+    "resetsResultsBeforeReuse": true, "clearsBindingsBeforeReuse": true,
+    "activeCursorsAreExclusive": true, "failedStatementsDiscarded": true},
+  "deviceSuites": {
+    "statementFocused": {"passed": 12, "seconds": 1.918},
+    "primaryFocused": {"passed": 15, "seconds": 8.699},
+    "legacyVector": {"passed": 95, "seconds": 722.440},
+    "counters": {"passed": 22, "seconds": 110.997},
+    "sourceBackupSearch": {"passed": 97, "seconds": 235.545},
+    "profile": {"passed": 3, "seconds": 8.885},
+    "retainedRewrite": {"passed": 1, "seconds": 506.920},
+    "durableApi": {"passed": 1, "seconds": 14.088}
+  },
+  "recovery": {
+    "fixture": "test-primary-recovery-f3850fbe030541c5b3bf7c76f88a5a32.db",
+    "normalPreparationAndVerificationTests": 4,
+    "verifiedIntentionalDeaths": ["before-frames", "before-catalog", "after-catalog"],
+    "devicePowerCycle": false
+  },
+  "microComparison": {
+    "rowsPerTransaction": 512,
+    "transactionIncludesDurableCommit": true,
+    "allRowsVerifiedAfterEachTransaction": true,
+    "rounds": [
+      {"cache": 0, "transactionMs": 238.160730, "prepared": 2052, "reused": 0},
+      {"cache": 32, "transactionMs": 143.292154, "prepared": 7, "reused": 2045},
+      {"cache": 32, "transactionMs": 133.664385, "prepared": 7, "reused": 2045},
+      {"cache": 0, "transactionMs": 159.447231, "prepared": 2052, "reused": 0}
+    ]
+  },
+  "retainedRewrite": {
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "variant": "statement-reuse-v1",
+    "recordsWrittenAndIndividuallyVerified": 10001,
+    "replacementMs": 448713,
+    "previousPrimaryPartitionReplacementMs": 689018,
+    "earlierPrePartitionReplacementMs": 327999,
+    "controlledThermalCpuComparison": false,
+    "stageMs": 3533.187113,
+    "prepareMs": 61962.585032,
+    "commitMs": 352546.589709,
+    "ownershipNestedInCommitMs": 42665.563200,
+    "applyNestedInCommitMs": 308774.012587,
+    "observeMs": 30630.817632,
+    "verifyMs": 58087,
+    "catalogExplicitPrepares": 30,
+    "catalogStatementReuses": 160011,
+    "catalogIdleStatements": 30,
+    "catalogIdleSqlChars": 1700
+  },
+  "publicDurableApi": {
+    "corpusRecords": 10001,
+    "samplesPerOperation": 100,
+    "individualWritesIncludePartitionAndCatalogCommits": true,
+    "warmStore": true,
+    "observersModelsAndUiMeasured": false,
+    "eachProbeRestoredAndReopened": true,
+    "read": {"p50Ms": 7.549116, "p95Ms": 21.420308, "p99Ms": 55.664538, "maximumMs": 141.401961, "within200Ms": 100},
+    "upsert": {"p50Ms": 41.580962, "p95Ms": 81.285385, "p99Ms": 110.837500, "maximumMs": 164.754461, "within200Ms": 100},
+    "restore": {"p50Ms": 45.220846, "p95Ms": 76.484885, "p99Ms": 95.666616, "maximumMs": 100.495269, "within200Ms": 100}
+  },
+  "internalProfile": {"retainedReadP95Ms": 18.815000, "writeP95Ms": 38.552577, "writeIncludesFinalCommit": false},
+  "legacyProcessMemoryObservation": {"vmHwmKiB": 1333240, "laterVmRssKiB": 283368, "causalComparisonEstablished": false},
+  "guards": {"repository": "passed", "aarch64Libraries16KiBPassed": 74},
+  "limitations": [
+    "The single shared catalog still owns metadata, FTS and vector control state",
+    "Mixed live/dead primary partition compaction and unknown orphan discovery remain open",
+    "Full-source replacement remains slower than the earlier pre-partition observation",
+    "Large individual record materialization and indexing memory peaks remain unresolved",
+    "No 100-million-real-record acceptance or universal latency guarantee",
+    "Public API latency samples do not include observers, model work, UI or network work",
+    "Compiled statement cache bounds do not bound all caller-held active cursors or total application native memory",
+    "Unified Run Kernel, complete tracing and ordinary Agent Loop DAG goals remain separate unfinished work"
+  ]
+}

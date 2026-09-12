@@ -1,0 +1,10 @@
+         1789237914.797 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE replace_ms=448713 rows=10001 fixture=test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db variant=statement-reuse-v1
+         1789237914.799 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=total elapsed_ms=448703.06514 rows=10001
+         1789237914.800 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=stage elapsed_ms=3533.187113 rows=10001
+         1789237914.801 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=prepare elapsed_ms=61962.585032 rows=10001
+         1789237914.802 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=commit elapsed_ms=352546.589709 rows=10001
+         1789237914.803 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=ownership elapsed_ms=42665.5632 rows=10001
+         1789237914.804 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=apply elapsed_ms=308774.012587 rows=10001
+         1789237914.805 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=observe elapsed_ms=30630.817632 rows=10001
+         1789237914.806 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE prepared=30 reused=160011 idle_statements=30 idle_sql_chars=1700
+         1789237972.912 21108 21128 I System.out: KNOWLEDGE_CRYPTO_SCALE verify_ms=58087 verified=10001

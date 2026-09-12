@@ -47,6 +47,9 @@ class KnowledgeCryptoRetainedScaleDeviceTest {
                 println("KNOWLEDGE_CRYPTO_SCALE phase=$phase elapsed_ms=${metric.p95Ms} rows=10001")
             }
             assertEquals(1, observed)
+            val statements = AgentKnowledgeDatabase.shared(context, name, "legacy-$name").access { it.statementStats }
+            println("KNOWLEDGE_CRYPTO_SCALE prepared=${statements.prepared} reused=${statements.reused} " +
+                "idle_statements=${statements.idle} idle_sql_chars=${statements.sqlChars}")
         } finally { store.close() }
         AgentRowStorageCipher.clearCachedKeys()
         val reopened = SQLiteAgentKnowledgeStore(context, name, "legacy-$name") { _, _ -> }
