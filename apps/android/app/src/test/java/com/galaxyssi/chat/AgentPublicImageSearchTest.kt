@@ -68,9 +68,35 @@ class AgentPublicImageSearchTest {
         assertEquals("fast", args["profile"])
         assertEquals(listOf("image"), args["verticals"])
         assertFalse(args.containsKey("timeout_ms"))
-        assertEquals(12, args["limit"])
+        assertEquals(3, args["limit"])
         assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("do not append galaxyssi-rich JSON"))
         assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("not recipes, comparisons"))
+    }
+
+    @Test fun imageToolHonorsRequestedCountWithoutWaitingForSixImages() {
+        for (count in 1..12) {
+            val args = CloudWebGrounding.normalizeArguments("web_image_search",
+                JSONObject().put("query", "Dragon Ball").put("max_results", count))
+            assertEquals(count, args["limit"])
+            assertFalse(args.containsKey("timeout_ms"))
+        }
+    }
+
+    @Test fun unplannedResearchDoesNotDefaultToEightPagesButExplicitResearchIsPreserved() {
+        val simple = CloudWebGrounding.normalizeArguments("web_research", JSONObject().put("query", "news"))
+        assertEquals("fast", simple["profile"])
+        assertEquals(3, simple["evidence_limit"])
+        val deep = CloudWebGrounding.normalizeArguments("web_research",
+            JSONObject().put("query", "research").put("profile", "deep"))
+        assertEquals("deep", deep["profile"])
+        assertFalse(deep.containsKey("evidence_limit"))
+        val planned = CloudWebGrounding.normalizeArguments("web_research",
+            JSONObject().put("query", "research").put("query_plan", org.json.JSONArray().put(JSONObject().put("query", "first"))))
+        assertFalse(planned.containsKey("evidence_limit"))
+        val explicit = CloudWebGrounding.normalizeArguments("web_research",
+            JSONObject().put("query", "research").put("evidence_limit", 9).put("engine_fanout", 6))
+        assertEquals(9, explicit["evidence_limit"])
+        assertEquals(6, explicit["engine_fanout"])
     }
 
     @Test fun imageRouteDoesNotFillSlotsWithGenericWebSearchOrSiteIndexes() {

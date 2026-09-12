@@ -400,8 +400,11 @@ object GalaxySSIMqttClient {
                             ).apply { isDaemon = true }
                         }
                     }
+                    val enqueuedAt = android.os.SystemClock.elapsedRealtime()
                     routeExecutor.execute {
-                        runCatching { handleIncoming(incomingTopic, payload) }
+                        if (BuildConfig.DEBUG) Log.d("GalaxySSILatency",
+                            "mqtt_inbound stage=queue ms=${android.os.SystemClock.elapsedRealtime() - enqueuedAt} bytes=${payload.size}")
+                        runCatching { timedInbound("handle") { handleIncoming(incomingTopic, payload) } }
                             .onFailure { Log.e(TAG, "Failed to handle incoming MQTT message", it) }
                     }
                 }
@@ -2093,7 +2096,7 @@ object GalaxySSIMqttClient {
             Log.i(TAG, "MQTT encrypted replay handled before Signal decrypt message=${known.messageId}")
             return
         }
-        val decrypted = when (val result = GalaxySSICrypto.decryptEnvelopeDetailed(wire)) {
+        val decrypted = when (val result = timedInbound("signal_decrypt") { GalaxySSICrypto.decryptEnvelopeDetailed(wire) }) {
             is GalaxySSICrypto.EnvelopeDecryptionResult.Success -> result.payload
             is GalaxySSICrypto.EnvelopeDecryptionResult.Failure -> {
                 GalaxySSILinkTransportDiagnostics.record(
@@ -2263,7 +2266,17 @@ object GalaxySSIMqttClient {
                 publishInboundReceipt(link, incomingMessageId)
             }
         }
-        dispatchIncomingPayload(context, payload, link.desktopId)
+        timedInbound("dispatch") { dispatchIncomingPayload(context, payload, link.desktopId) }
+    }
+
+    private inline fun <T> timedInbound(stage: String, block: () -> T): T {
+        if (!BuildConfig.DEBUG) return block()
+        val started = android.os.SystemClock.elapsedRealtime()
+        try {
+            return block()
+        } finally {
+            Log.d("GalaxySSILatency", "mqtt_inbound stage=$stage ms=${android.os.SystemClock.elapsedRealtime() - started}")
+        }
     }
 
     private fun handlePhoneContactIncoming(context: Context, topic: String, wire: JSONObject) {

@@ -22,6 +22,10 @@ class ConnectedMqtt:
 
 class MqttTaskTurnRoutingTests(unittest.TestCase):
     def setUp(self):
+        from task_progress_window import TaskProgressWindow
+        self.progress_patch = patch.object(mqtt_bridge, "task_progress_window", TaskProgressWindow())
+        self.progress_patch.start()
+        self.addCleanup(self.progress_patch.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.database_patch = patch.object(
             link_delivery,
@@ -35,6 +39,30 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             mqtt_bridge.pending_task_events.clear()
         self.database_patch.stop()
         self.temporary.cleanup()
+
+    def test_slow_phone_keeps_only_latest_plaintext_progress_and_terminal_clears_it(self):
+        window = mqtt_bridge.task_progress_window
+        self.assertTrue(window.reserve("phone-1", "held-1"))
+        self.assertTrue(window.reserve("phone-1", "held-2"))
+        task = {"task_id": "slow", "status": "running", "client_route_id": "phone-1",
+                "client_conversation_id": "conversation-1", "client_turn_id": "turn-1"}
+        with (patch.object(mqtt_bridge, "_ensure_outbound_retry_thread"),
+              patch.object(mqtt_bridge, "desktop_id", return_value="desktop"),
+              patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+              patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish):
+            for sequence in range(10):
+                mqtt_bridge._publish_or_queue_task_event(ConnectedMqtt(), {"_client_route_id": "phone-1"},
+                    {**task, "status_seq": sequence, "updated_at": sequence}, [])
+            publish.assert_not_called()
+            self.assertFalse(mqtt_bridge.pending_task_events["slow"].replay_progress)
+            self.assertTrue(window.release("phone-1", "held-1"))
+            mqtt_bridge.flush_pending_task_events(ConnectedMqtt())
+            self.assertEqual(9, publish.call_args.args[2]["status_seq"])
+            self.assertNotIn("slow", mqtt_bridge.pending_task_events)
+            mqtt_bridge._publish_or_queue_task_event(ConnectedMqtt(), {"_client_route_id": "phone-1"}, task, [])
+            self.assertIn("slow", mqtt_bridge.pending_task_events)
+            mqtt_bridge._drop_queued_task_progress("slow")
+            self.assertNotIn("slow", mqtt_bridge.pending_task_events)
 
     def test_phone_turn_id_is_preserved_when_agent_has_internal_turn(self):
         task = {

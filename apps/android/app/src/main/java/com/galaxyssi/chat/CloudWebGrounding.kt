@@ -59,6 +59,22 @@ object CloudWebGrounding {
             "do not claim to have visually verified them. Prefer the fast profile for simple lookups; stop when evidence " +
             "answers the request, and do not repeat failed operations or broaden a simple lookup into deep research. " +
             "Never invent engine IDs; omit engines for automatic selection unless the user requires a specific source. " +
+            "A daily news digest or weather lookup is not deep research. Start with one focused fast search or a " +
+            "structured weather endpoint, not web_research/web_agent. Stop once the requested facts are supported. " +
+            "For news, distinguish event date, article publication date, retrieval time and timezone. An aggregator's " +
+            "refresh date does not make every event current. Label older events as recent background; keep a short " +
+            "digest with dated source links instead of combining unrelated events in one item. For weather, cite the " +
+            "location, forecast date and update time; distinguish observations from forecasts. Do not add tomorrow's " +
+            "forecast, air quality or a duplicate table unless requested. For pictures, make one exact-subject image " +
+            "query first and pass the requested count as max_results; use another query only if relevant evidence is " +
+            "missing, not a simultaneous translation of the same lookup. Show the pictures with short captions and " +
+            "sources; keep internal search failures in diagnostics, not a long disclaimer in the answer. " +
+            "For image-only replies, put the caption only in each Markdown image's alt text; do not also list " +
+            "those captions above a gallery. Use short neutral captions based on the requested subject, not " +
+            "keyword-stuffed search titles or character names that you have not visually verified. " +
+            "Before finalizing a simple weather/news lookup, remove unrequested future-day forecasts, " +
+            "duplicate rich tables and background introductions. An unknown source update time stays unknown: " +
+            "never invent it from today's date, and never present a future publication timestamp as a current observation. " +
             "Never print tool-call markup."
 
     fun openAiTools(): JSONArray = JSONArray().apply {
@@ -142,7 +158,8 @@ object CloudWebGrounding {
         ))
         put(functionTool(
             "web_research",
-            "Execute a model-authored multi-query plan and build a cited evidence pack with per-query coverage.",
+            "For an explicit in-depth investigation with multiple subquestions, execute a model-authored query_plan. " +
+                "Not for a daily news digest, weather or a simple lookup: use web_search/web_fetch instead.",
             researchProperties(),
             listOf("query")
         ))
@@ -399,7 +416,7 @@ object CloudWebGrounding {
         if (name.equals("web_image_search", true)) {
             return linkedMapOf(
                 "query" to source.optString("query"),
-                "limit" to source.optInt("max_results", 12).coerceIn(6, 12),
+                "limit" to source.optInt("max_results", 3).coerceIn(1, 12),
                 "profile" to "fast", "verticals" to listOf("image"),
                 "engine_fanout" to 3
             )
@@ -411,6 +428,13 @@ object CloudWebGrounding {
             if (result["profile"] == "fast" && !result.containsKey("engine_fanout") && !result.containsKey("engines")) {
                 result["engine_fanout"] = 3
             }
+        }
+        if (name.equals("web_research", true) && !source.has("profile") &&
+            source.optJSONArray("query_plan").let { it == null || it.length() == 0 }) {
+            // An unplanned lookup must not implicitly fan out into an eight-page investigation.
+            result.putIfAbsent("profile", "fast")
+            result.putIfAbsent("evidence_limit", 3)
+            result.putIfAbsent("engine_fanout", 3)
         }
         return result
     }

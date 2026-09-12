@@ -24,7 +24,9 @@ import java.util.concurrent.atomic.AtomicLong
 object SharedCloudModelHttpClient {
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+            // Mobile NATs can silently expire idle sockets before the provider does.
+            .connectionPool(ConnectionPool(8, 1, TimeUnit.MINUTES))
+            .pingInterval(20, TimeUnit.SECONDS)
             .connectTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.MINUTES)

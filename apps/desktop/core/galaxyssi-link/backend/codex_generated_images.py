@@ -201,6 +201,10 @@ def finalize_run_images(run, turn, codex_home) -> str:
     expected = {(item["turn_id"], item["item_id"], item["sha256"])
                 for item in run.generated_images.values()}
     images = [item for item in images if (item["turn_id"], item["item_id"], item["sha256"]) in expected]
+    # Receipt filenames are hashes, not the order in which the images were created.
+    order = {(item["turn_id"], item["item_id"]): index
+             for index, item in enumerate(run.generated_images.values())}
+    images.sort(key=lambda item: order[(item["turn_id"], item["item_id"])])
     if run.generated_image_errors or len(images) != len(expected):
         message = ("\u56fe\u7247\u751f\u6210\u7ed3\u679c\u672a\u80fd\u4fdd\u5b58\u4e3a\u53ef\u4ea4\u4ed8\u9644\u4ef6\uff0c\u8bf7\u91cd\u8bd5\u3002" if run.prefers_chinese else
                    "The generated image could not be saved as a deliverable attachment. Please retry.")

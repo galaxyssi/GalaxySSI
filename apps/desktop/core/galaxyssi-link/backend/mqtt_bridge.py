@@ -24,6 +24,7 @@ import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
 from mqtt_inbound_pool import InboundRoutePool
+from task_progress_window import TaskProgressWindow
 from attachment_request_broker import (
     REQUEST_TYPE as INPUT_ATTACHMENT_REQUEST_TYPE,
     RESULT_TYPE as INPUT_ATTACHMENT_REQUEST_RESULT_TYPE,
@@ -2015,6 +2016,7 @@ class _PendingTaskEvent:
     task: dict
     trace: list[dict]
     replay_progress: bool = False
+    flow_limited: bool = False
 
 
 pending_task_events: dict[str, _PendingTaskEvent] = {}
@@ -2029,6 +2031,7 @@ task_event_publish_snapshots_lock = threading.Lock()
 task_event_publisher_started = threading.Event()
 task_event_publisher_lock = threading.Lock()
 TASK_EVENT_DELTA_COALESCE_SECONDS = 0.15
+task_progress_window = TaskProgressWindow()
 
 PHONE_DEVELOPMENT_MANIFEST_SCHEMAS = {
     "galaxyssi.phone-development-manifest.v1",
@@ -3853,6 +3856,21 @@ def _task_event_order(task: dict) -> tuple[int, int]:
 def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
     if mqttc is None or not mqttc.is_connected():
         return False
+    status = str(pending.task.get("status") or "").strip().lower()
+    route = str(pending.wire_payload.get("_client_route_id") or "")
+    progress_id = str(uuid.uuid4()) if status == "running" and route else ""
+    pending.flow_limited = bool(progress_id and not task_progress_window.reserve(route, progress_id))
+    if pending.flow_limited:
+        _ensure_outbound_retry_thread()
+        return False
+    try:
+        return _publish_task_event_with_credit(mqttc, pending, progress_id)
+    except Exception:
+        task_progress_window.release(route, progress_id)
+        raise
+
+
+def _publish_task_event_with_credit(mqttc, pending: _PendingTaskEvent, progress_id: str) -> bool:
     payload = _agent_task_payload(
         pending.task,
         pending.trace,
@@ -3864,7 +3882,9 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
     durable = status in TERMINAL_STATES or status in {
         "waiting_approval", "waiting_input", "paused", "interrupted",
     }
-    return bool(
+    if progress_id:
+        payload["message_id"] = progress_id
+    published = bool(
         _publish_phone_payload(
             mqttc,
             pending.wire_payload,
@@ -3872,6 +3892,9 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
             durable=durable,
         )
     )
+    if not published and progress_id:
+        task_progress_window.release(str(pending.wire_payload.get("_client_route_id") or ""), progress_id)
+    return published
 
 
 def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: list[dict]) -> bool:
@@ -3924,7 +3947,7 @@ def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: l
             if queued is None or _task_event_order(queued.task) <= _task_event_order(task):
                 pending_task_events.pop(task_id, None)
         elif task_id:
-            pending.replay_progress = True
+            pending.replay_progress = not pending.flow_limited
             queued = pending_task_events.get(task_id)
             if queued is None or _task_event_order(queued.task) <= _task_event_order(task):
                 pending_task_events[task_id] = pending
@@ -6857,6 +6880,7 @@ def _process_message(mqttc, userdata, msg):
             )
             if payload.get("type") == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, application_envelope)
+                task_progress_window.release(client_route_id, acknowledged_id)
                 transport_timing.received(client_route_id, acknowledged_id)
                 if acknowledge_outbound(client_route_id, acknowledged_id):
                     flush_outbound_messages(mqttc)
@@ -7978,7 +8002,7 @@ def _ordered_outbound_clients(preferred_client_route_id: str = "") -> list[dict]
 
 def _outbound_delivery_priority(payload: dict) -> int:
     payload_type = str(payload.get("type") or "").strip().lower()
-    status = str(payload.get("status") or "").strip().lower()
+    status = str(payload.get("task_status") or payload.get("status") or "").strip().lower()
     # Dependency and recovery controls unblock task progress or receipt cleanup.
     # Ordinary backlog must not starve them; the reserved lane stays bounded.
     if payload_type in {
@@ -8202,6 +8226,7 @@ def _outbound_retry_loop() -> None:
                 # leave a completed task invisible until Desktop reconnects.
                 flush_pending_task_results(mqttc)
                 flush_outbound_messages(mqttc)
+                flush_pending_task_events(mqttc)
                 from agent_worker_mqtt import flush_worker_notifications
                 flush_worker_notifications(sys.modules[__name__], mqttc)
             except Exception as exc:

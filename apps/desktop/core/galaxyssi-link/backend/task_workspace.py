@@ -174,7 +174,7 @@ def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) ->
     if not artifacts:
         return artifacts
     root = task_workspace(task_id).resolve()
-    references: set[Path] = set()
+    references: dict[Path, int] = {}
     for match in MARKDOWN_TARGET.finditer(str(content or "")):
         value = unquote(match.group(1).strip().strip("<>"))
         parsed = urlparse(value)
@@ -196,7 +196,7 @@ def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) ->
         try:
             candidate = (root / value).resolve()
             candidate.relative_to(root)
-            references.add(candidate)
+            references.setdefault(candidate, len(references))
         except (OSError, ValueError):
             continue
     selected = []
@@ -205,8 +205,8 @@ def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) ->
             continue
         source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
         if source is not None and source.resolve() in references:
-            selected.append(item)
-    return selected or artifacts
+            selected.append((references[source.resolve()], item))
+    return [item for _, item in sorted(selected, key=lambda entry: entry[0])] or artifacts
 
 
 def referenced_task_artifact_paths(content: str, limit: int = 20) -> list[Path]:
