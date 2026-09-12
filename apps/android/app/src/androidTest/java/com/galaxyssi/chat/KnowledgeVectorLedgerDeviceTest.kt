@@ -149,7 +149,7 @@ class KnowledgeVectorLedgerDeviceTest {
         first.unregister()
         assertNull(first.page("first"))
         requireNotNull(other.page("first")).use { assertEquals(8, it.rows.single().values.size) }
-        assertEquals(1, f.store.stats().itemCount)
+        assertEquals(1L, f.store.stats().itemCount)
     }
 
     @Test fun checkpointTamperingAndMissingChunksFailInsteadOfReturningPartialResults() = isolated { f ->
@@ -249,7 +249,7 @@ class KnowledgeVectorLedgerDeviceTest {
         }
         requireNotNull(ledger.page("scale-1")).close()
         requireNotNull(ledger.page("scale-1201")).close()
-        assertEquals(1201, f.store.stats().itemCount)
+        assertEquals(1201L, f.store.stats().itemCount)
         println("KNOWLEDGE_VECTOR_SCALE documents=1201 elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started}")
     }
 }

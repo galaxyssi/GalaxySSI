@@ -56,6 +56,7 @@ data class AgentRuntimeContext(
         )
         append("; memories=").append(memories.size)
         append("; knowledge=").append(knowledgeStats.itemCount)
+        if (!knowledgeStats.countsComplete) append("; knowledge_count_status=partial_indexing")
         append("; knowledge_hits=").append(knowledgeItems.size)
         append("; mode=").append(permissionMode.name)
         append("; memory_capture=").append(memoryCapture)

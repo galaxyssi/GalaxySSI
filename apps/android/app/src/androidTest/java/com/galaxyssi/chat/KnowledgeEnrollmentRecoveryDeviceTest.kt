@@ -51,7 +51,7 @@ class KnowledgeEnrollmentRecoveryDeviceTest {
             assertFalse(cursor.moveToNext())
         } }
         val store = SQLiteAgentKnowledgeStore(context, name, legacy) { _, _ -> }
-        assertEquals(131, store.stats().itemCount)
+        assertEquals(131L, store.stats().itemCount)
         db.access { sql -> (1..131).forEach {
             assertEquals("\u91cd\u542f\u6062\u590d-$it", requireNotNull(db.read(sql, db.key("id", "recovery-$it"))).content)
         } }

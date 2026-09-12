@@ -94,7 +94,7 @@ class KnowledgeVectorEnrollmentDeviceTest {
         for (id in (ordered - deleted) + "new-during-enrollment") requireNotNull(f.ledger.page(id)).use {
             assertEquals(1, it.total)
         }
-        assertEquals(131, f.store.stats().itemCount); assertEquals(0L, f.queued())
+        assertEquals(131L, f.store.stats().itemCount); assertEquals(0L, f.queued())
     }
 
     @Test fun completedLiveSourcesAheadOfDiscoveryAreNotReencoded() = isolated { f ->
@@ -184,6 +184,6 @@ class KnowledgeVectorEnrollmentDeviceTest {
         }
         f.db.access { it.execSQL("DELETE FROM knowledge_vector_enrollment") }
         assertThrows(IllegalStateException::class.java) { f.ledger.nextJob() }
-        assertEquals(65, f.store.stats().itemCount)
+        assertEquals(65L, f.store.stats().itemCount)
     }
 }

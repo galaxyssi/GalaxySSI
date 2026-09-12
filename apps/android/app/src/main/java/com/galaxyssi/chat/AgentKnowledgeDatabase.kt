@@ -303,10 +303,7 @@ internal class AgentKnowledgeDatabase private constructor(
         }
     }
 
-    fun stats(db: KnowledgeSqlite): AgentKnowledgeStats = db.rawQuery("SELECT count(*)," +
-        "count(DISTINCT NULLIF(source_key,'')),COALESCE(max(updated),0) FROM knowledge_items", null).use {
-        check(it.moveToFirst()); AgentKnowledgeStats(it.getInt(0), it.getInt(1), it.getLong(2))
-    }
+    fun stats(db: KnowledgeSqlite): AgentKnowledgeStats = KnowledgeIndexedStats.read(db)
     private fun aad(id: String, part: String) = "$name:$id:$part".toByteArray()
 
     private fun searchTokens() = AgentKnowledgeSearchTokens(Mac.getInstance("HmacSHA256").run {

@@ -28,10 +28,14 @@ data class AgentKnowledgeHit(
 )
 
 data class AgentKnowledgeStats(
-    val itemCount: Int = 0,
-    val sourceCount: Int = 0,
-    val lastUpdatedAtMillis: Long = 0L
-)
+    val itemCount: Long = 0L,
+    val sourceCount: Long = 0L,
+    val lastUpdatedAtMillis: Long = 0L,
+    val countsComplete: Boolean = true
+) {
+    fun countSummary(): String = if (countsComplete) "$itemCount items; sources=$sourceCount"
+        else "at least $itemCount items; at least $sourceCount sources; counts are still indexing"
+}
 
 data class AgentKnowledgeQuerySnapshot(
     val items: List<AgentKnowledgeItem> = emptyList(),

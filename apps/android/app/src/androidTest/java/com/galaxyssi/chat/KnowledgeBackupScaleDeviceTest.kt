@@ -67,7 +67,7 @@ class KnowledgeBackupScaleDeviceTest {
                 restoreMillis = SystemClock.elapsedRealtime() - restoreAt
             } } finally { stageSamples.close() }
             f.reopen()
-            assertEquals(count, f.store.stats().itemCount)
+            assertEquals(count.toLong(), f.store.stats().itemCount)
             assertEquals(count.toLong(), writeSamples)
             val verifyAt = SystemClock.elapsedRealtime()
             f.db.backupSnapshot().use { snapshot ->

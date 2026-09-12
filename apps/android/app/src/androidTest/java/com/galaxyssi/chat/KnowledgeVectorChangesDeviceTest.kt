@@ -148,7 +148,7 @@ class KnowledgeVectorChangesDeviceTest {
         assertNotEquals(before.epoch, after.epoch)
         assertEquals(1, rows(f.ledger()).size)
         assertThrows(IllegalStateException::class.java) { f.ledger().changes().page(before.epoch, before.head) }
-        assertEquals(1, f.store.stats().itemCount)
+        assertEquals(1L, f.store.stats().itemCount)
     }
     @Test fun interleavedModelsAndSmallKeysetPagesHaveNoDuplicatesOrMissingEvents() = isolated { f ->
         for (id in 1..137) f.put("item-$id")
@@ -222,7 +222,7 @@ class KnowledgeVectorChangesDeviceTest {
         f.finish()
         assertTrue(state(f.ledger()).bootstrapComplete)
         assertEquals(11L, state(f.ledger()).completedChunks)
-        assertEquals(11, f.store.stats().itemCount)
+        assertEquals(11L, f.store.stats().itemCount)
         assertNull(f.ledger().page(ordered.last()))
         assertNotNull(f.ledger().page(ordered.first())?.also { it.close() })
     }

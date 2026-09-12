@@ -710,8 +710,7 @@ internal fun MobileNativeAgent.showKnowledgeOverviewCommand(): AgentUiState {
     val stats = knowledgeStore.stats()
     val recent = knowledgeStore.search(query = "", limit = 10)
     val result = buildString {
-        append("Knowledge base: ").append(stats.itemCount)
-        append(" items; sources=").append(stats.sourceCount)
+        append("Knowledge base: ").append(stats.countSummary())
         if (recent.isEmpty()) {
             append("\nNo knowledge items")
         } else {
@@ -729,7 +728,8 @@ internal fun MobileNativeAgent.showKnowledgeOverviewCommand(): AgentUiState {
         result = result,
         parameters = mapOf(
             "item_count" to stats.itemCount.toString(),
-            "source_count" to stats.sourceCount.toString()
+            "source_count" to stats.sourceCount.toString(),
+            "counts_complete" to stats.countsComplete.toString()
         )
     )
 }
