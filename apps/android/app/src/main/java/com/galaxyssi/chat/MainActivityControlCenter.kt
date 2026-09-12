@@ -266,7 +266,7 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
         .count { it.status == AgentConnectorStatus.AVAILABLE }
     val trustedDeviceCount = desktopSecuritySummaries(activePcConnectorContacts()).size
     val memoryCount = mobileNativeAgent.memoryStore.count()
-    val knowledgeCount = mobileNativeAgent.knowledgeStore.sourceCount()
+    val (knowledgeCount, knowledgeCountLabel) = knowledgeSourceCountState()
     val recentTasks = state.recentTasks.size
     val safety = mobileNativeAgent.safetySettings()
     val planner = mobileNativeAgent.modelPlannerSettings()
@@ -369,9 +369,9 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
         ControlCenterRoute.KNOWLEDGE to ccRouteRow(
             ControlCenterRoute.KNOWLEDGE,
             getString(R.string.cc_knowledge_title),
-            getString(R.string.cc_knowledge_subtitle, knowledgeCount),
+            knowledgeCount?.let { getString(R.string.cc_knowledge_subtitle, it) } ?: knowledgeCountLabel,
             R.drawable.ic_agent_knowledge,
-            knowledgeCount.toString(),
+            knowledgeCountLabel,
             ControlCenterTone.AMBER
         ),
         ControlCenterRoute.LEARNING to ccRouteRow(

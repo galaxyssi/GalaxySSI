@@ -155,6 +155,7 @@ class KnowledgeVectorEnrollmentDeviceTest {
 
     @Test fun versionFiveUpgradePreservesExistingQueueAndCompletedVectors() = isolated { f ->
         f.seed(2); f.complete(); f.store.upsert(item("pending"))
+        f.db.sourceMaintenance.close()
         f.db.access {
             KnowledgeCountFixtureSchema.remove(it)
             it.execSQL("DROP TRIGGER knowledge_vector_enrollment_model")

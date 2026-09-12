@@ -37,12 +37,12 @@ object AgentBackupData {
             val memoryState = EncryptedAgentMemoryDeletionIndex(context).exportState()
             fields.put("memory", memoryState.getJSONArray("memory"))
                 .put("memory_deletion_index", memoryState.getJSONArray("memory_deletion_index"))
+            fields.put("knowledge", SQLiteAgentKnowledgeStore(context).exportJson())
         }
         fields
             .put("version", 33)
             .put("interface_language", AppLanguage.current(context))
             .put("agent_preference_mode", preferenceMode.wireValue)
-            .put("knowledge", SQLiteAgentKnowledgeStore(context).exportJson())
             .put("tasks", if (includeSessionHistory) SQLiteAgentTaskStore(context).exportJson() else JSONArray())
             .put("transcript", if (includeSessionHistory) readAgentTranscriptArray(context) else JSONArray())
             .put("agent_conversations", if (includeSessionHistory) readAgentConversationArray(context) else JSONArray())

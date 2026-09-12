@@ -47,6 +47,7 @@ internal class KnowledgeCountTestFixture(
         assertEquals(actual("knowledge_vector_queue"), measured.pending)
     }
     fun downgrade() {
+        db.sourceMaintenance.close()
         db.transaction { KnowledgeCountFixtureSchema.remove(it); it.execSQL("PRAGMA user_version=6") }
         reopen()
     }

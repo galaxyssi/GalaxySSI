@@ -19,9 +19,10 @@ import org.json.JSONObject
 internal class AgentKnowledgeDatabase private constructor(
     private val context: Context, private val name: String, private val legacyName: String
 ) : Closeable {
-    private var retired = false
+    @Volatile private var retired = false
     private var connection: KnowledgeSqlite? = null
     private var indexing = false
+    internal val sourceMaintenance = KnowledgeSourceMaintenance(this)
     internal var decryptedItemReads = 0L
         private set
     internal var decryptedSourceSummaryReads = 0L
@@ -43,7 +44,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..7) { "Unsupported knowledge schema $version" }
+                require(version in 0..8) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -70,6 +71,10 @@ internal class AgentKnowledgeDatabase private constructor(
                     KnowledgeCountSchema.create(db)
                     db.execSQL("PRAGMA user_version=7")
                 }
+                if (version < 8) {
+                    KnowledgeSourceDirectorySchema.create(db)
+                    db.execSQL("PRAGMA user_version=8")
+                }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             return db.also { connection = it }
@@ -95,14 +100,19 @@ internal class AgentKnowledgeDatabase private constructor(
         try { block(db).also { db.setTransactionSuccessful() } } finally {
             db.endTransaction()
             scheduleIndexing(db)
+            sourceMaintenance.request(db)
         }
     }
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
+    internal fun checkActive() { check(!retired) { "Knowledge store was closed; reopen the store" } }
+    internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
+        KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
+    }
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
     internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
         "knowledge-native/${key("native-index", modelKey)}")
-    @Synchronized override fun close() { retired = true; connection?.close(); connection = null }
+    @Synchronized override fun close() { retired = true; sourceMaintenance.close(); connection?.close(); connection = null }
 
     private fun migrate(db: KnowledgeSqlite) {
         val legacy = context.getSharedPreferences(legacyName, Context.MODE_PRIVATE)
