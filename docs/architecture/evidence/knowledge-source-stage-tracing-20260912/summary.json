@@ -1,0 +1,41 @@
+{
+  "schema": "galaxyssi.knowledge-source-stage-evidence.v1",
+  "device": "SM-T575",
+  "android_version": "1.1.110",
+  "version_code": 996,
+  "app_sha256": "00a84916d638574357b6e8a449d4443ddc586b4f91f53b2de516348e1be1318a",
+  "test_apk_sha256": "f664e13c35296d1160bd7abd6e06ed5d552d1b8beec9afe1568cb56bd38a3e73",
+  "base_main": "c45dd948ac4d6833dc7e8cf371e7f1c6d1d194da",
+  "regressions": { "passed": 97, "failures": 0, "skipped": 0, "seconds": 179.937 },
+  "retained_rewrite": {
+    "passed": 1,
+    "seconds": 401.278,
+    "rows": 10001,
+    "verified_bodies": 10001,
+    "variant": "source-stage-v1",
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "fixture_sha256_after": "816e4e7dd1d352d5fa2544379f28e7215fbc4a1a219c6f4cd08e03a63fc1ba09",
+    "caller_replacement_ms": 327999,
+    "reopen_verify_ms": 73125,
+    "stage_ms": {
+      "total": 327981.510727,
+      "stage": 3558.811844,
+      "prepare": 47515.85735,
+      "commit": 243306.49548,
+      "ownership": 44555.530469,
+      "apply": 197580.335244,
+      "observe": 33542.688092
+    },
+    "nested_inside_commit": ["ownership", "apply"]
+  },
+  "jvm": { "suites": 547, "total": 3828, "passed": 3823, "skipped": 5, "failures": 0, "errors": 0 },
+  "native_16kb_libraries_passed": 74,
+  "repository_guard": "passed",
+  "limits": [
+    "Single retained rewrite measurement, not population percentiles or a controlled speedup comparison.",
+    "The benchmark executes source observation extraction, without enabling a global Agent or enqueueing events.",
+    "No real model was invoked and no private memories were exported.",
+    "Canonical storage remains one database; complete sharding and 100-million-row capacity remain unverified.",
+    "Storage operation traces are independent random IDs, not yet joined to Agent task traces."
+  ]
+}
