@@ -25,13 +25,17 @@ internal data class KnowledgeSourceMetadata(val id: String, val title: String, v
 
 /** Pagination scans keyed SQL metadata, never all source bodies or all member IDs. */
 internal class KnowledgeSourcePaging(private val storage: AgentKnowledgeDatabase) {
-    private data class Row(val key: String, val updated: Long, val count: Int)
+    private data class Row(val key: String, val updated: Long, val count: Int, val head: String)
     fun count(): Int = storage.access(::count)
-    private fun count(db: KnowledgeSqlite): Int = db.rawQuery("SELECT count(DISTINCT $GROUP) FROM knowledge_items", null).use {
-        check(it.moveToFirst()); it.getInt(0)
+    private fun count(db: KnowledgeSqlite): Int {
+        storage.sourceMaintenance.failure?.let { error(it) }
+        val state = KnowledgeSourceDirectory.state(db)
+        state.requireReady()
+        return Math.toIntExact(state.groups)
     }
     fun page(cursor: AgentKnowledgeSourceCursor?, limit: Int): AgentKnowledgeSourcePage = storage.access { db ->
         require(limit in 1..50) { "Knowledge source page size must be between 1 and 50" }
+        val total = count(db)
         val scope = storage.key("source-page", "v1")
         val revision = db.rawQuery("SELECT revision FROM knowledge_browse_revision WHERE id=1", null).use {
             check(it.moveToFirst()); it.getLong(0)
@@ -40,25 +44,25 @@ internal class KnowledgeSourcePaging(private val storage: AgentKnowledgeDatabase
             require(cursor.scope == scope && cursor.groupKey.matches(Regex("[si]:[a-f0-9]{64}"))) { "Invalid source cursor" }
             if (cursor.revision != revision) throw KnowledgeSourcePageChanged()
         }
-        val having = if (cursor == null) "" else " HAVING max(updated)<CAST(? AS INTEGER) OR (max(updated)=CAST(? AS INTEGER) AND $GROUP>?)"
-        val args = cursor?.let { arrayOf(it.updated.toString(), it.updated.toString(), it.groupKey) } ?: emptyArray()
-        val rows = db.rawQuery("SELECT $GROUP AS group_key,max(updated),count(*) FROM knowledge_items GROUP BY group_key" +
-            having + " ORDER BY max(updated) DESC,group_key LIMIT ${limit + 1}", args).use { c ->
-            buildList { while (c.moveToNext()) add(Row(c.getString(0), c.getLong(1), c.getInt(2))) }
+        val args = arrayOf((cursor?.updated?.inv() ?: Long.MIN_VALUE).toString(), cursor?.groupKey.orEmpty(), (limit + 1).toString())
+        val rows = db.rawQuery(KnowledgeSourceDirectory.BROWSE_SQL, args).use { c ->
+            buildList { while (c.moveToNext()) add(Row(c.getString(0), c.getLong(1), Math.toIntExact(c.getLong(2)), c.getString(3))) }
         }
         val shown = rows.take(limit)
         val groups = shown.map { row ->
-            val (where, value) = predicate(row.key)
-            val key = db.rawQuery("SELECT item_key FROM knowledge_items WHERE $where ORDER BY updated DESC,item_key LIMIT 1",
-                arrayOf(value)).use { check(it.moveToFirst()); it.getString(0) }
-            val summary = requireNotNull(storage.readSourceMetadata(db, key))
+            val key = row.head
+            val authenticated = requireNotNull(storage.readAuthenticatedSource(db, key))
+            val summary = authenticated.metadata
+            check((if (authenticated.sourceKey.isBlank()) "i:$key" else "s:${authenticated.sourceKey}") == row.key) {
+                "Knowledge source directory identity mismatch"
+            }
             check(summary.updated == row.updated) { "Knowledge source order mismatch" }
             AgentKnowledgeSourceGroup(summary.source, summary.title.substringBeforeLast(" [").ifBlank { summary.title },
                 emptySet(), row.count, summary.cloud, summary.agent, summary.allowed, row.updated,
                 AgentKnowledgeSourceReference(summary.source, if (summary.source.isBlank()) summary.id else ""))
         }
         val positions = shown.map { AgentKnowledgeSourceCursor(it.updated, it.key, revision, scope) }
-        AgentKnowledgeSourcePage(groups, count(db), if (rows.size > limit) positions.last() else null, positions, revision)
+        AgentKnowledgeSourcePage(groups, total, if (rows.size > limit) positions.last() else null, positions, revision)
     }
 
     // Access edits resolve membership only on demand, not while constructing the source list.
@@ -82,12 +86,7 @@ internal class KnowledgeSourcePaging(private val storage: AgentKnowledgeDatabase
         }
         result
     }
-    private fun predicate(groupKey: String): Pair<String, String> =
-        if (groupKey.startsWith("s:")) "source_key=?" to groupKey.substring(2)
-        else "source_key='' AND item_key=?" to groupKey.substring(2)
-
     companion object {
-        private const val GROUP = "CASE WHEN source_key='' THEN 'i:'||item_key ELSE 's:'||source_key END"
         fun create(db: KnowledgeSqlite) {
             db.execSQL("CREATE TABLE knowledge_browse_revision(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL)")
             db.execSQL("INSERT INTO knowledge_browse_revision VALUES(1,0)")
@@ -95,7 +94,6 @@ internal class KnowledgeSourcePaging(private val storage: AgentKnowledgeDatabase
                 db.execSQL("CREATE TRIGGER knowledge_browse_${operation.lowercase()} AFTER $operation ON knowledge_items " +
                     "BEGIN UPDATE knowledge_browse_revision SET revision=revision+1 WHERE id=1; END")
             }
-            db.execSQL("CREATE INDEX knowledge_source_recent ON knowledge_items(source_key,updated DESC,item_key)")
         }
     }
 }

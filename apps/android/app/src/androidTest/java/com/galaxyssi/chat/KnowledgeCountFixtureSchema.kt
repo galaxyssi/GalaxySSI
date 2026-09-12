@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 /** Downgrade only isolated fixtures; production never drops or rescans these columns. */
 internal object KnowledgeCountFixtureSchema {
     fun remove(db: KnowledgeSqlite) {
+        KnowledgeSourceDirectoryFixtureSchema.remove(db)
         val present = db.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_vector_counts'", null)
             .use { it.moveToFirst() }
         if (!present) return

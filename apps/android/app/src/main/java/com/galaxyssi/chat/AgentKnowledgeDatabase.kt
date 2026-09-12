@@ -19,9 +19,17 @@ import org.json.JSONObject
 internal class AgentKnowledgeDatabase private constructor(
     private val context: Context, private val name: String, private val legacyName: String
 ) : Closeable {
-    private var retired = false
+    @Volatile private var retired = false
     private var connection: KnowledgeSqlite? = null
     private var indexing = false
+    private var accessDepth = 0
+    private var previewCipher: KnowledgeSourcePreviewCipher? = null
+    internal val hasActivePreviewKey: Boolean get() = previewCipher != null
+    internal var sourcePreviewHits = 0L
+        private set
+    internal var sourcePreviewMisses = 0L
+        private set
+    internal val sourceMaintenance = KnowledgeSourceMaintenance(this)
     internal var decryptedItemReads = 0L
         private set
     internal var decryptedSourceSummaryReads = 0L
@@ -43,7 +51,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..7) { "Unsupported knowledge schema $version" }
+                require(version in 0..9) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -70,6 +78,14 @@ internal class AgentKnowledgeDatabase private constructor(
                     KnowledgeCountSchema.create(db)
                     db.execSQL("PRAGMA user_version=7")
                 }
+                if (version < 8) {
+                    KnowledgeSourceDirectorySchema.create(db)
+                    db.execSQL("PRAGMA user_version=8")
+                }
+                if (version < 9) {
+                    KnowledgeSourcePreviews.create(db)
+                    db.execSQL("PRAGMA user_version=9")
+                }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             return db.also { connection = it }
@@ -88,21 +104,42 @@ internal class AgentKnowledgeDatabase private constructor(
     }
     fun <T> access(block: (KnowledgeSqlite) -> T): T = synchronized(this) {
         check(!retired) { "Knowledge store was closed; reopen the store" }
-        val db = open()
-        migrate(db)
-        // Header and chunks must be observed from one SQLite snapshot.
-        db.beginTransactionNonExclusive()
-        try { block(db).also { db.setTransactionSuccessful() } } finally {
-            db.endTransaction()
-            scheduleIndexing(db)
+        accessDepth++
+        try {
+            val db = open()
+            migrate(db)
+            // Header and chunks must be observed from one SQLite snapshot.
+            db.beginTransactionNonExclusive()
+            try { block(db).also { db.setTransactionSuccessful() } } finally {
+                db.endTransaction()
+                scheduleIndexing(db)
+                sourceMaintenance.request(db)
+            }
+        } finally {
+            accessDepth--
+            if (accessDepth == 0) { previewCipher?.close(); previewCipher = null }
         }
     }
 
+    private fun sourcePreviewCipher(): KnowledgeSourcePreviewCipher {
+        check(Thread.holdsLock(this) && accessDepth > 0) { "Source preview key requires an active database operation" }
+        previewCipher?.takeUnless { it.expired() }?.let { return it }
+        previewCipher?.close(); previewCipher = null
+        val bytes = Mac.getInstance("HmacSHA256").run {
+            init(indexKey()); doFinal("$name:source-preview-aead-key:v1".toByteArray(Charsets.UTF_8))
+        }
+        return KnowledgeSourcePreviewCipher(bytes).also { previewCipher = it }
+    }
+
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
+    internal fun checkActive() { check(!retired) { "Knowledge store was closed; reopen the store" } }
+    internal fun backupSnapshot(): KnowledgeBackupSnapshot = access {
+        KnowledgeBackupSnapshot(this, context.getDatabasePath(name).absolutePath)
+    }
     fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
     internal fun nativeIndexDirectory(modelKey: String) = java.io.File(context.noBackupFilesDir,
         "knowledge-native/${key("native-index", modelKey)}")
-    @Synchronized override fun close() { retired = true; connection?.close(); connection = null }
+    @Synchronized override fun close() { retired = true; sourceMaintenance.close(); connection?.close(); connection = null }
 
     private fun migrate(db: KnowledgeSqlite) {
         val legacy = context.getSharedPreferences(legacyName, Context.MODE_PRIVATE)
@@ -141,8 +178,10 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     fun write(db: KnowledgeSqlite, item: AgentKnowledgeItem) {
-        val id = key("id", item.id)
-        val encoded = AgentKnowledgeCodec.encodeItem(item).toString()
+        val snapshot = item.copy(allowedAgentIds = item.allowedAgentIds.toList())
+        val metadata = KnowledgeSourceMetadata.from(snapshot)
+        val id = key("id", snapshot.id)
+        val encoded = AgentKnowledgeCodec.encodeItem(snapshot).toString()
         val chunks = mutableListOf<String>()
         var start = 0
         while (start < encoded.length) {
@@ -151,18 +190,19 @@ internal class AgentKnowledgeDatabase private constructor(
             chunks += encoded.substring(start, end)
             start = end
         }
-        val titleKey = key("title", "${item.kind}:${item.title.lowercase(java.util.Locale.US)}")
-        val sourceKey = if (item.source.isBlank()) "" else key("source", item.source)
+        val titleKey = key("title", "${snapshot.kind}:${snapshot.title.lowercase(java.util.Locale.US)}")
+        val sourceKey = if (snapshot.source.isBlank()) "" else key("source", snapshot.source)
         val header = JSONObject().put("chunks", chunks.size).put("sha256", AgentNativeJsonCodec.sha256(encoded))
-            .put("title_key", titleKey).put("source_key", sourceKey).put("updated", item.updatedAtMillis)
-            .put("source_preview", KnowledgeSourceMetadata.from(item).encode()).toString()
+            .put("title_key", titleKey).put("source_key", sourceKey).put("updated", snapshot.updatedAtMillis)
+            .put("source_preview", metadata.encode()).toString()
+        val encryptedHeader = AgentStorageCipher.encrypt(header, aad(id, "header"))
         db.delete("knowledge_items", "item_key=?", arrayOf(id))
         db.insertOrThrow("knowledge_items", null, ContentValues().apply {
             put("item_key", id)
             put("title_key", titleKey)
             put("source_key", sourceKey)
-            put("updated", item.updatedAtMillis)
-            put("header", AgentStorageCipher.encrypt(header, aad(id, "header")))
+            put("updated", snapshot.updatedAtMillis)
+            put("header", encryptedHeader)
         })
         chunks.forEachIndexed { index, chunk ->
             db.insertOrThrow("knowledge_chunks", null, ContentValues().apply {
@@ -170,7 +210,9 @@ internal class AgentKnowledgeDatabase private constructor(
                 put("ciphertext", AgentStorageCipher.encrypt(chunk, aad(id, index.toString())))
             })
         }
-        indexItem(db, id, item)
+        indexItem(db, id, snapshot)
+        KnowledgeSourcePreviews.putValidated(db, KnowledgeSourceHeader(id, titleKey, sourceKey, snapshot.updatedAtMillis, encryptedHeader),
+            metadata, sourcePreviewCipher())
     }
 
     fun read(db: KnowledgeSqlite, id: String): AgentKnowledgeItem? {
@@ -187,7 +229,15 @@ internal class AgentKnowledgeDatabase private constructor(
             }
         }
 
-    internal fun readSourceMetadata(db: KnowledgeSqlite, id: String): KnowledgeSourceMetadata? {
+    internal fun readSourceMetadata(db: KnowledgeSqlite, id: String): KnowledgeSourceMetadata? = readAuthenticatedSource(db, id)?.metadata
+
+    internal fun readAuthenticatedSource(db: KnowledgeSqlite, id: String): AuthenticatedKnowledgeSource? {
+        val row = KnowledgeSourcePreviews.readHeader(db, id) ?: return null
+        KnowledgeSourcePreviews.read(db, row, ::sourcePreviewCipher)?.let {
+            decryptedSourceSummaryReads++; sourcePreviewHits++
+            return AuthenticatedKnowledgeSource(it, row.sourceKey)
+        }
+        sourcePreviewMisses++
         val header = readHeader(db, id) ?: return null
         decryptedSourceSummaryReads++
         // Older records remain readable without a bulk plaintext migration.
@@ -197,7 +247,8 @@ internal class AgentKnowledgeDatabase private constructor(
         check((if (preview.source.isBlank()) "" else key("source", preview.source)) == header.getString("source_key")) {
             "Knowledge summary source mismatch"
         }
-        return preview
+        KnowledgeSourcePreviews.putValidated(db, row, preview, sourcePreviewCipher())
+        return AuthenticatedKnowledgeSource(preview, row.sourceKey)
     }
 
     private fun readBody(db: KnowledgeSqlite, id: String, header: JSONObject): AgentKnowledgeItem {

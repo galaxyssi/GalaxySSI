@@ -1,0 +1,54 @@
+{
+  "device": "SM-T575",
+  "version": "1.1.95",
+  "rows": 10001,
+  "ciphertext_sha256": "95b4ea281213622780074760c1fa15afccce5ded8c1594ea55c76b7c7718eb1e",
+  "passes": [
+    {
+      "label": "legacy_build",
+      "open_ms": 3,
+      "mid_reopen_ms": 11,
+      "pages": 201,
+      "groups": 10001,
+      "first_page_ms": 876.426692,
+      "page_p50_ms": 544.306768,
+      "page_p95_ms": 816.803269,
+      "page_p99_ms": 852.8185,
+      "page_max_ms": 893.674922,
+      "preview_hits": 0,
+      "preview_misses": 10001,
+      "body_reads": 0
+    },
+    {
+      "label": "ready_after_reopen",
+      "open_ms": 5,
+      "mid_reopen_ms": 4,
+      "pages": 201,
+      "groups": 10001,
+      "first_page_ms": 18.8225,
+      "page_p50_ms": 23.821654,
+      "page_p95_ms": 35.268077,
+      "page_p99_ms": 41.984039,
+      "page_max_ms": 73.937539,
+      "preview_hits": 10001,
+      "preview_misses": 0,
+      "body_reads": 0
+    },
+    {
+      "label": "ready_repeat",
+      "open_ms": 3,
+      "mid_reopen_ms": 2,
+      "pages": 201,
+      "groups": 10001,
+      "first_page_ms": 20.474885,
+      "page_p50_ms": 23.411461,
+      "page_p95_ms": 31.646769,
+      "page_p99_ms": 36.922539,
+      "page_max_ms": 38.927115,
+      "preview_hits": 10001,
+      "preview_misses": 0,
+      "body_reads": 0
+    }
+  ],
+  "scope": "Real encrypted sources; not 100M capacity, UI latency or cold legacy <200ms"
+}

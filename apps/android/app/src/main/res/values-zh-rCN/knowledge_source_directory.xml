@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="knowledge_sources_preparing">正在整理来源索引，已索引 %1$d 条记录</string>
+</resources>
