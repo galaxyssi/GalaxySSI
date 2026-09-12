@@ -10,6 +10,8 @@ internal object KnowledgeNativeBridge {
     @JvmStatic external fun openIndex(path: String, key: ByteArray, identity: ByteArray, epoch: ByteArray,
         dimensions: Int, shards: Int, cacheBytes: Long, root: FloatArray?): Long
     @JvmStatic external fun checkpoint(handle: Long): ByteArray
+    @JvmStatic external fun migrateRecords(handle: Long): Boolean
+    @JvmStatic external fun recordsPartitioned(handle: Long): Boolean
     @JvmStatic external fun beginEvent(handle: Long, event: ByteArray, skip: Boolean): ByteArray
     @JvmStatic external fun append(handle: Long, event: ByteArray, metadata: LongArray, values: FloatArray): ByteArray
     @JvmStatic external fun search(handle: Long, query: FloatArray, count: Int, breadth: Int): ByteArray

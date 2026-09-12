@@ -98,6 +98,32 @@ pub extern "system" fn Java_com_galaxyssi_chat_KnowledgeNativeBridge_openIndex(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_galaxyssi_chat_KnowledgeNativeBridge_recordsPartitioned(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+) -> jboolean {
+    guard(env, |_| {
+        owner::access(handle, |engine| {
+            Ok(u8::from(engine.index.records_partitioned().checked()?))
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_galaxyssi_chat_KnowledgeNativeBridge_migrateRecords(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+) -> jboolean {
+    guard(env, |_| {
+        owner::access(handle, |engine| {
+            Ok(u8::from(engine.index.migrate_records(64).checked()?))
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_galaxyssi_chat_KnowledgeNativeBridge_checkpoint(
     env: JNIEnv,
     _: JClass,

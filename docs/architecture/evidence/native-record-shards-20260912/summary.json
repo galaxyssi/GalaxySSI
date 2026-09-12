@@ -1,0 +1,18 @@
+{
+  "device": "SM-T575",
+  "serial": "R52R90282TY",
+  "androidVersion": "1.1.99",
+  "androidVersionCode": 985,
+  "nativeVersion": "0.6.0",
+  "appSha256": "3e73bbaf3fb6c73905d04f8364d36404fdcf5f2927fa3bc58e56d58e99f21a2a",
+  "instrumentationSha256": "191446273d364fd14d79b1b4d1cce6152d87b9f82a411c3e10d0b94bf6c42a66",
+  "nativeTestSha256": "528c3a48688f694aa22dcc5d4894bfa3f9ce744dc7ab76722ff5ad47f3485450",
+  "native": {"passed": 37, "failed": 0, "ignoredChildHelper": 1, "seconds": 43.80},
+  "app": {"passed": 16, "failed": 0, "seconds": 51.985},
+  "jvm": {"total": 3779, "suites": 541, "failures": 0, "errors": 0, "skipped": 5},
+  "alignedArm64Libraries": 74,
+  "fullBuildSeconds": 800,
+  "supplementaryTestBuildSeconds": 144,
+  "capacity100MVerified": false,
+  "universal200msVerified": false
+}

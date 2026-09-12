@@ -1,0 +1,124 @@
+
+running 38 tests
+test a_reader_snapshot_blocks_cross_connection_commit_and_writer_can_retry ... ok
+test cache::a_new_snapshot_reauthenticates_nodes_after_prior_cache_hits ... ok
+test cache::node_cache_shares_the_fixed_budget_and_eviction_retains_correctness ... ok
+test cache::transaction_cache_does_not_outlive_rollback_cancellation_or_commit ... ok
+test cache::transaction_cache_reuses_authenticated_nodes_and_updates_neighbors ... ok
+test committed_process_exit_preserves_all_shards ... ok
+test compact::authenticated_invalid_compact_layouts_are_rejected_and_rollback ... ok
+test compact::compact_ann_is_measured_against_full_precision_exact_neighbors ... ok
+test compact::compact_nodes_reduce_encrypted_payload_and_reopen_without_drift ... ok
+test compact::legacy_fp32_nodes_survive_mixed_codec_reads_and_adjacency_updates ... ok
+test compact::outlier_fp16_nodes_do_not_drift_and_nonfinite_payloads_fail ... ok
+test compact::sparse_vectors_use_lossless_fp16_instead_of_exceeding_sq8_error_bound ... ok
+test crash_child ... ignored, Spawned by process-exit tests with an isolated fixture
+test dropped_and_cancelled_sessions_do_not_publish_or_invalidate_new_owners ... ok
+test encrypted_graph_round_trip_uses_physical_shards_and_bounded_cache ... ok
+test failed_insert_rolls_back_nodes_edges_and_metadata_across_shards ... ok
+test growth::increasing_cardinality_retains_nodes_with_fixed_pager_target ... ok
+test modified_ciphertext_or_revision_is_reported_as_authentication_failure ... ok
+test read_only_session_cannot_mutate_and_concurrent_lease_is_rejected ... ok
+test record_shards::corrupt_legacy_record_rolls_back_schema_and_all_prior_rows_in_page ... ok
+test record_shards::duplicate_and_missing_partition_tables_are_not_treated_as_empty_memory ... ok
+test record_shards::legacy_and_partitioned_updates_remain_atomic_during_migration ... ok
+test record_shards::legacy_migration_is_bounded_resumable_and_preserves_every_record ... ok
+test record_shards::migration_survives_process_exit_before_and_after_commit ... ok
+test record_shards::migration_validates_bounds_read_only_and_cancellation ... ok
+test record_shards::new_records_use_all_shards_and_indexed_point_lookups ... ok
+test replay::encrypted_records_are_bounded_bound_to_their_key_and_poison_failed_transactions ... ok
+test replay::migration_preserves_live_graph_pending_replay_and_source_removal_barriers ... ok
+test replay::replay_cancellation_and_corruption_cannot_return_partial_matches ... ok
+test replay::replay_partial_pages_survive_reopen_and_retries_do_not_duplicate_nodes ... ok
+test replay::replay_provenance_failure_rolls_back_graph_and_cursor_in_the_same_transaction ... ok
+test replay::replay_readding_the_same_revision_does_not_resurrect_older_vectors ... ok
+test replay::replay_rejects_gaps_foreign_epochs_and_changed_retries_but_can_skip_obsolete_work ... ok
+test replay::replay_replacement_and_removal_filter_stale_sources_without_loading_the_corpus ... ok
+test replay::replay_resumes_after_real_process_exit_without_reinserting_a_committed_page ... ok
+test topology_and_cache_targets_do_not_change_node_identity ... ok
+test uncommitted_process_exit_rolls_back_all_shards ... ok
+test wrong_key_identity_dimensions_or_missing_shard_never_create_empty_memory ... ok
+
+successes:
+
+---- committed_process_exit_preserves_all_shards stdout ----
+process_exit committed=true physical_nodes=1025 sqlite=3.53.2
+
+---- compact::compact_ann_is_measured_against_full_precision_exact_neighbors stdout ----
+sq8_ann rows=320 dims=512 queries=64 recall_at_10=0.990625 insert_ms=4131.454
+sq8_ann_raw_ms=[24.550769, 20.666077, 18.298923000000002, 18.032961, 10.630307, 10.248192, 10.163231, 10.108923, 10.061616, 9.965653999999999, 10.228693, 10.212731, 10.050307, 10.08127, 10.18323, 10.014923, 9.991693, 10.059577, 10.1425, 10.062230999999999, 10.033885, 10.183269, 10.018308, 10.068192, 10.20623, 10.124384000000001, 10.090038000000002, 10.100615, 10.175346, 10.258346, 10.004077, 10.019846000000001, 10.034961000000001, 10.117808, 10.169808000000002, 10.058693, 10.153654, 10.074269000000001, 10.040923, 9.941347, 10.123808, 10.141462, 10.042116, 10.080383999999999, 10.088038000000001, 10.014962, 10.025885, 9.977461, 9.998076999999999, 10.016653999999999, 10.092538, 10.016961, 10.111885, 10.064154, 10.137, 9.951922999999999, 9.969346, 10.046269, 10.057731, 10.027423, 9.997807, 10.134962000000002, 10.084116, 10.01377]
+sq8_ann p50_ms=10.074 p95_ms=18.033 p99_ms=24.551
+
+---- growth::increasing_cardinality_retains_nodes_with_fixed_pager_target stdout ----
+point_io_seed rows=100 elapsed_ms=85.394
+point_io_reopen rows=100 elapsed_ms=4.305 os_cache_not_dropped=true
+point_io rows=100 phase=read n=32 p50_ms=0.432 p95_ms=4.042 p99_ms=4.107 max_ms=4.107
+point_io_raw rows=100 phase=read ms=[0.540885, 4.042462, 2.309231, 2.985423, 2.2053849999999997, 0.45346200000000003, 0.43723, 0.582654, 0.521346, 0.428, 0.426769, 2.585154, 2.817154, 0.43069199999999996, 0.42976899999999996, 0.428769, 0.438154, 0.426923, 0.43238499999999996, 0.427039, 0.42269300000000004, 0.424462, 0.43196199999999996, 0.508193, 0.423308, 0.42634599999999995, 0.424154, 0.422077, 0.42765400000000003, 0.424231, 4.106692000000001, 0.918615]
+point_io rows=100 phase=durable_write n=32 p50_ms=34.573 p95_ms=42.665 p99_ms=50.167 max_ms=50.167
+point_io_raw rows=100 phase=durable_write ms=[36.858154, 32.888385, 33.101077, 32.866539, 36.149384, 31.3315, 39.266616, 30.684269, 36.879154, 31.858653, 28.495807000000003, 32.779384, 33.094615, 36.411538, 34.655269000000004, 42.664652999999994, 35.50727, 35.362269000000005, 37.485308, 34.389846, 31.927846000000002, 36.083923, 32.570384000000004, 40.272769, 35.271961999999995, 36.183962, 33.947461999999994, 34.128731, 37.102693, 32.746731000000004, 50.167, 34.573115]
+point_io_storage rows=132 disk_bytes=245760 pager_target_bytes=2097152
+point_io_process rows=132 VmHWM:	    7960 kB
+point_io_process rows=132 VmRSS:	    6808 kB
+point_io_seed rows=1000 elapsed_ms=622.475
+point_io_reopen rows=1000 elapsed_ms=5.007 os_cache_not_dropped=true
+point_io rows=1000 phase=read n=32 p50_ms=0.507 p95_ms=1.954 p99_ms=2.468 max_ms=2.468
+point_io_raw rows=1000 phase=read ms=[0.6080770000000001, 0.5208079999999999, 0.531693, 0.778769, 0.49073100000000003, 0.501692, 0.625731, 0.5398850000000001, 0.527, 0.5697690000000001, 0.434769, 0.518154, 0.439461, 0.520692, 0.43196199999999996, 0.44830800000000004, 0.437039, 0.434307, 0.528962, 2.467654, 0.425923, 1.953616, 0.433462, 0.43323100000000003, 0.42976899999999996, 0.428654, 0.735385, 0.591077, 0.507269, 0.430538, 1.535769, 0.43103899999999995]
+point_io rows=1000 phase=durable_write n=32 p50_ms=34.809 p95_ms=40.584 p99_ms=44.877 max_ms=44.877
+point_io_raw rows=1000 phase=durable_write ms=[32.221462, 40.321999999999996, 34.866192, 37.091462, 23.689769, 36.356, 37.651539, 28.684731000000003, 38.225962, 34.700230999999995, 40.583923, 35.709654, 31.348308, 36.349846, 32.748654, 35.872, 34.809461999999996, 30.747923, 28.830424, 28.693077000000002, 36.615577, 44.877306999999995, 32.953807000000005, 39.6355, 30.895423, 37.065461, 31.088077, 29.781423, 34.9195, 33.604885, 28.213731, 36.762346]
+point_io_storage rows=1032 disk_bytes=737280 pager_target_bytes=2097152
+point_io_process rows=1032 VmHWM:	    7960 kB
+point_io_process rows=1032 VmRSS:	    7420 kB
+point_io_seed rows=10000 elapsed_ms=8788.080
+point_io_reopen rows=10000 elapsed_ms=4.800 os_cache_not_dropped=true
+point_io rows=10000 phase=read n=32 p50_ms=0.535 p95_ms=2.270 p99_ms=2.386 max_ms=2.386
+point_io_raw rows=10000 phase=read ms=[0.6449999999999999, 0.588, 0.7195, 0.513, 2.27027, 0.46496200000000004, 0.524, 0.756, 0.49484599999999995, 0.527423, 0.8836539999999999, 0.5923849999999999, 0.906462, 0.529654, 0.524269, 0.557077, 0.447308, 0.43911500000000003, 0.535077, 0.5456150000000001, 0.923192, 0.474461, 1.151116, 1.196347, 2.385961, 0.559423, 1.828, 0.49996100000000004, 0.45373100000000005, 0.43988499999999997, 0.510884, 0.448]
+point_io rows=10000 phase=durable_write n=32 p50_ms=34.547 p95_ms=42.760 p99_ms=49.600 max_ms=49.600
+point_io_raw rows=10000 phase=durable_write ms=[28.334616, 38.287231, 35.427385, 29.5935, 33.698693, 35.532269, 34.79627, 41.25, 30.857346, 39.222, 39.757231, 40.319769, 37.582116, 27.502231, 36.086, 35.926885, 49.600384, 29.725384000000002, 38.074154, 42.76, 30.861731, 28.183654, 33.656923, 29.097692000000002, 32.829115, 37.301461, 34.5465, 31.874577000000002, 32.159808, 33.731231, 25.671346, 38.337192]
+point_io_storage rows=10032 disk_bytes=5160960 pager_target_bytes=2097152
+point_io_process rows=10032 VmHWM:	    8776 kB
+point_io_process rows=10032 VmRSS:	    8572 kB
+
+---- uncommitted_process_exit_rolls_back_all_shards stdout ----
+process_exit committed=false physical_nodes=1 sqlite=3.53.2
+
+
+successes:
+    a_reader_snapshot_blocks_cross_connection_commit_and_writer_can_retry
+    cache::a_new_snapshot_reauthenticates_nodes_after_prior_cache_hits
+    cache::node_cache_shares_the_fixed_budget_and_eviction_retains_correctness
+    cache::transaction_cache_does_not_outlive_rollback_cancellation_or_commit
+    cache::transaction_cache_reuses_authenticated_nodes_and_updates_neighbors
+    committed_process_exit_preserves_all_shards
+    compact::authenticated_invalid_compact_layouts_are_rejected_and_rollback
+    compact::compact_ann_is_measured_against_full_precision_exact_neighbors
+    compact::compact_nodes_reduce_encrypted_payload_and_reopen_without_drift
+    compact::legacy_fp32_nodes_survive_mixed_codec_reads_and_adjacency_updates
+    compact::outlier_fp16_nodes_do_not_drift_and_nonfinite_payloads_fail
+    compact::sparse_vectors_use_lossless_fp16_instead_of_exceeding_sq8_error_bound
+    dropped_and_cancelled_sessions_do_not_publish_or_invalidate_new_owners
+    encrypted_graph_round_trip_uses_physical_shards_and_bounded_cache
+    failed_insert_rolls_back_nodes_edges_and_metadata_across_shards
+    growth::increasing_cardinality_retains_nodes_with_fixed_pager_target
+    modified_ciphertext_or_revision_is_reported_as_authentication_failure
+    read_only_session_cannot_mutate_and_concurrent_lease_is_rejected
+    record_shards::corrupt_legacy_record_rolls_back_schema_and_all_prior_rows_in_page
+    record_shards::duplicate_and_missing_partition_tables_are_not_treated_as_empty_memory
+    record_shards::legacy_and_partitioned_updates_remain_atomic_during_migration
+    record_shards::legacy_migration_is_bounded_resumable_and_preserves_every_record
+    record_shards::migration_survives_process_exit_before_and_after_commit
+    record_shards::migration_validates_bounds_read_only_and_cancellation
+    record_shards::new_records_use_all_shards_and_indexed_point_lookups
+    replay::encrypted_records_are_bounded_bound_to_their_key_and_poison_failed_transactions
+    replay::migration_preserves_live_graph_pending_replay_and_source_removal_barriers
+    replay::replay_cancellation_and_corruption_cannot_return_partial_matches
+    replay::replay_partial_pages_survive_reopen_and_retries_do_not_duplicate_nodes
+    replay::replay_provenance_failure_rolls_back_graph_and_cursor_in_the_same_transaction
+    replay::replay_readding_the_same_revision_does_not_resurrect_older_vectors
+    replay::replay_rejects_gaps_foreign_epochs_and_changed_retries_but_can_skip_obsolete_work
+    replay::replay_replacement_and_removal_filter_stale_sources_without_loading_the_corpus
+    replay::replay_resumes_after_real_process_exit_without_reinserting_a_committed_page
+    topology_and_cache_targets_do_not_change_node_identity
+    uncommitted_process_exit_rolls_back_all_shards
+    wrong_key_identity_dimensions_or_missing_shard_never_create_empty_memory
+
+test result: ok. 37 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 43.80s

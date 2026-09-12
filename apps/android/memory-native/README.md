@@ -1,6 +1,6 @@
 # Native memory index candidate
 
-Version **0.5.1** provides the JNI backend used by Android knowledge semantic
+Version **0.6.0** provides the JNI backend used by Android knowledge semantic
 retrieval. It replaces the transient whole-corpus JVM graph, not the authoritative
 encrypted source database. This is **not a completed 100M-memory implementation**.
 The isolated probe still never reads or changes App data; the App bridge maintains
@@ -44,6 +44,11 @@ its own derived index and Keystore-wrapped key.
   SQ8/FP16 bytes; v1 remains readable and is not rewritten on opening.
   Both working vectors and byte codes count toward the fixed cache target and are
   wiped on release. See [compact node design](../../../docs/architecture/android-memory-compact-nodes.md).
+
+Source state, node provenance and replay checkpoints now share the physical
+node shards. Existing catalog records migrate in authenticated, bounded
+background transactions without rebuilding graph nodes. See
+[record sharding and recovery](../../../docs/architecture/android-native-record-shards.md).
 
 ## Build prerequisites
 

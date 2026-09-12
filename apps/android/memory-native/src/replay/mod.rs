@@ -90,6 +90,19 @@ impl ReplayIndex {
         session.commit()?;
         Ok(count)
     }
+    pub fn migrate_records(&self, limit: usize) -> ANNResult<bool> {
+        let session = self.store.begin(true, self.cancelled.clone())?;
+        self.checkpoint_in(&session)?;
+        let complete = session.migrate_records(limit)?;
+        session.commit()?;
+        Ok(complete)
+    }
+    pub fn records_partitioned(&self) -> ANNResult<bool> {
+        let session = self.store.begin(false, self.cancelled.clone())?;
+        let complete = session.records_partitioned()?;
+        session.commit()?;
+        Ok(complete)
+    }
     /// Skip is used when the authoritative source no longer matches a ready event.
     pub fn begin_event(&self, event: &Event, skip: bool) -> ANNResult<Checkpoint> {
         event.validate()?;

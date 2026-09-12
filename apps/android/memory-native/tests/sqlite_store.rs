@@ -22,6 +22,8 @@ mod cache;
 mod compact;
 #[path = "sqlite_store/growth.rs"]
 mod growth;
+#[path = "sqlite_store/record_shards.rs"]
+mod record_shards;
 #[path = "sqlite_store/replay.rs"]
 mod replay;
 
@@ -458,6 +460,9 @@ fn crash_child() {
     );
     if std::env::var("GALAXYSSI_NATIVE_REPLAY_RESUME").as_deref() == Ok("1") {
         replay::crash_replay(&root);
+    }
+    if let Ok(mode) = std::env::var("GALAXYSSI_NATIVE_MIGRATION_CRASH") {
+        record_shards::crash(&root, mode == "commit");
     }
     let mut cfg = config();
     cfg.cache_bytes = (cfg.shards + 1) * 16 * 1024;
