@@ -31,6 +31,7 @@ class KnowledgeSourceRecoveryDeviceTest {
                 try {
                     KnowledgeSourceDirectoryFixtureSchema.remove(db)
                     KnowledgeSourceDirectorySchema.create(db)
+                    db.execSQL("PRAGMA user_version=8")
                     assertFalse(KnowledgeSourceDirectory.advance(db))
                     db.setTransactionSuccessful()
                 } finally { db.endTransaction() }

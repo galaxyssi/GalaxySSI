@@ -51,8 +51,9 @@ internal class KnowledgeSourcePaging(private val storage: AgentKnowledgeDatabase
         val shown = rows.take(limit)
         val groups = shown.map { row ->
             val key = row.head
-            val summary = requireNotNull(storage.readSourceMetadata(db, key))
-            check((if (summary.source.isBlank()) "i:$key" else "s:${storage.key("source", summary.source)}") == row.key) {
+            val authenticated = requireNotNull(storage.readAuthenticatedSource(db, key))
+            val summary = authenticated.metadata
+            check((if (authenticated.sourceKey.isBlank()) "i:$key" else "s:${authenticated.sourceKey}") == row.key) {
                 "Knowledge source directory identity mismatch"
             }
             check(summary.updated == row.updated) { "Knowledge source order mismatch" }
