@@ -13,10 +13,11 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 from markdown_it import MarkdownIt
 from markdown_it.rules_inline import image as image_rule
+from markdown_it.rules_inline import link as link_rule
 from PIL import Image
 
 from remote_image_transport import ImageDownloadError, MAX_IMAGE_BYTES, PublicImageTransport, remaining
@@ -57,9 +58,21 @@ def _image_with_position(state, silent):
     return found
 
 
-def _image_spans(source):
+def _linked_image_with_position(state, silent):
+    start, count = state.pos, len(state.tokens)
+    found = link_rule(state, silent)
+    if found and not silent:
+        tokens = state.tokens[count:]
+        # A clickable image becomes one attachment, including its outer Markdown link.
+        if [token.type for token in tokens] == ["link_open", "image", "link_close"]:
+            tokens[1].meta["reply_image_span"] = (start, state.pos)
+    return found
+
+
+def _image_spans(source, remote_only=True):
     parser = MarkdownIt("commonmark")
     parser.inline.ruler.at("image", _image_with_position)
+    parser.inline.ruler.at("link", _linked_image_with_position)
     offsets, total = [0], 0
     for line in source.splitlines(keepends=True):
         total += len(line)
@@ -88,7 +101,8 @@ def _image_spans(source):
         for token in block.children or []:
             span = token.meta.get("reply_image_span") if token.type == "image" else None
             url = token.attrGet("src") or ""
-            if span and positions and span[1] <= len(positions) and url.lower().startswith(("http://", "https://")):
+            if (span and positions and span[1] <= len(positions)
+                    and (not remote_only or url.lower().startswith(("http://", "https://")))):
                 yield positions[span[0]], positions[span[1] - 1] + 1, url, token.content or "Image"
 
 
@@ -161,7 +175,13 @@ def image_link_preview(content: str) -> str:
     if "![" not in content and "galaxyssi-rich" not in content:
         return content
     source = content.replace("\r\n", "\n")
-    edits = [(start, start + 1, "") for start, _, _, _ in _image_spans(source)]
+    edits = []
+    for start, end, url, label in _image_spans(source):
+        if source[start] == "!":
+            edits.append((start, start + 1, ""))
+        else:
+            clean_label = label.replace("[", "").replace("]", "")
+            edits.append((start, end, f"[{clean_label}](<{url}>)"))
     for start, end, document, blocks in _explicit_documents(source):
         for block in blocks:
             block["type"] = "link"
@@ -243,6 +263,45 @@ def _download(task_id, scope_key, url, label, deadline, transport):
         lock.release()
 
 
+def _bind_local_images(task_id, source):
+    root = task_workspace(task_id).resolve()
+    edits, files = [], {}
+    for start, end, url, label in _image_spans(source, remote_only=False):
+        value = unquote(url)
+        parsed = urlparse(value)
+        if parsed.scheme == "galaxyssi-artifact" and parsed.netloc == task_id:
+            value = parsed.path.lstrip("/")
+        elif parsed.scheme == "file" and not parsed.netloc:
+            value = parsed.path
+        elif value.startswith("sandbox:"):
+            value = value.removeprefix("sandbox:").lstrip("/")
+        elif parsed.scheme and not re.match(r"^[A-Za-z]:[\\/]", value):
+            continue
+        if re.match(r"^/[A-Za-z]:[\\/]", value):
+            value = value[1:]
+        value = value.replace("\\", "/")
+        if value.startswith(("/outputs/", "/downloads/", "/screenshots/")):
+            value = value.lstrip("/")
+        try:
+            relative = (root / value).resolve().relative_to(root).as_posix()
+            path = task_artifact_path(task_id, relative)
+            if path is None or relative.startswith(("downloads/input/", "downloads/context/")):
+                continue
+            if path.stat().st_size > MAX_IMAGE_BYTES:
+                continue
+            extension, mime = _validate_image(path.read_bytes())
+        except (ValueError, OSError):
+            continue
+        name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", label).strip()[:80] or "Image"
+        files.setdefault(relative, {"name": name + "." + extension, "relative_path": relative,
+                                   "category": relative.split("/", 1)[0], "size": path.stat().st_size,
+                                   "mime_type": mime})
+        edits.append((start, end, f"![Image](<{relative}>)"))
+    for start, end, replacement in sorted(edits, reverse=True):
+        source = source[:start] + replacement + source[end:]
+    return source, files
+
+
 def prepare_reply_images(task_id: str, content: str, *, scope: dict, transport=None,
                          budget_seconds=DOWNLOAD_SECONDS) -> PreparedReplyImages:
     source = str(content or "").replace("\r\n", "\n")
@@ -252,13 +311,14 @@ def prepare_reply_images(task_id: str, content: str, *, scope: dict, transport=N
             or any(not scope.get(key) for key in ("client_route_id", "conversation_id", "turn_id", "source_message_id"))
             or type(scope.get("execution_generation")) is not int or scope["execution_generation"] < 1):
         return PreparedReplyImages(image_link_preview(content), failures=({"error_code": "missing_image_delivery_scope"},))
+    source, local_files = _bind_local_images(task_id, source)
     source_spans = list(_image_spans(source))
     documents = list(_explicit_documents(source))
     candidates = [(url, label) for _, _, url, label in source_spans]
     candidates += [(str(block["uri"]), str(block.get("title") or "Image"))
                    for _, _, _, blocks in documents for block in blocks]
     if not candidates:
-        return PreparedReplyImages(content)
+        return PreparedReplyImages(source, tuple(local_files.values()))
     scope_key = _digest(json.dumps(scope, sort_keys=True) + _digest(source))[:32]
     deadline = time.monotonic() + max(0.1, min(budget_seconds, 60))
     downloader = transport or PublicImageTransport()
@@ -311,6 +371,6 @@ def prepare_reply_images(task_id: str, content: str, *, scope: dict, transport=N
         edits.append((start, end, "```galaxyssi-rich\n" + json.dumps(document, ensure_ascii=False) + "\n```\n"))
     for start, end, replacement in sorted(edits, reverse=True):
         source = source[:start] + replacement + source[end:]
-    files = {record["relative_path"]: record for record in outcomes.values()}
+    files = {**local_files, **{record["relative_path"]: record for record in outcomes.values()}}
     return PreparedReplyImages(source, tuple(files.values()), tuple({"source_url": url, "error_code": code}
                                                                   for url, code in failures.items()))

@@ -73,6 +73,29 @@ class OkHttpCloudModelStreamClientTest {
     }
 
     @Test
+    fun `shared client probes HTTP2 liveness without shortening active model deadlines`() {
+        val client = SharedCloudModelHttpClient.client
+        assertEquals(20_000, client.pingIntervalMillis)
+        assertEquals(300_000, client.readTimeoutMillis)
+        assertEquals(0, client.callTimeoutMillis)
+    }
+
+    @Test
+    fun `healthy connections remain reusable across model turns`() = runBlocking {
+        repeat(2) {
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream")
+                .setBody("data: [DONE]\n\n"))
+        }
+        val transport = client()
+        repeat(2) { index ->
+            val events = transport.stream(request(requestId = "reuse-$index")).toList()
+            assertTrue(events.any { it is ModelStreamEvent.Completed })
+        }
+        assertEquals(0, server.takeRequest(2, TimeUnit.SECONDS)!!.sequenceNumber)
+        assertEquals(1, server.takeRequest(2, TimeUnit.SECONDS)!!.sequenceNumber)
+    }
+
+    @Test
     fun `first delta carries its actual arrival time`() = runBlocking {
         server.enqueue(
             MockResponse()

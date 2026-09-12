@@ -30,6 +30,40 @@ class DurableMqttClient:
 
 
 class MqttDurableDeliveryTest(unittest.TestCase):
+    def test_progress_waits_before_encryption_while_final_bypasses_window(self):
+        from task_progress_window import TaskProgressWindow
+        window = TaskProgressWindow(limit=1)
+        running = mqtt_bridge._PendingTaskEvent({"_client_route_id": "phone"}, {"status": "running"}, [])
+        final = mqtt_bridge._PendingTaskEvent({"_client_route_id": "phone"}, {"status": "completed"}, [])
+        with (patch.object(mqtt_bridge, "task_progress_window", window),
+              patch.object(mqtt_bridge, "_ensure_outbound_retry_thread"),
+              patch.object(mqtt_bridge, "_agent_task_payload", return_value={"type": "agent_task_event"}),
+              patch.object(mqtt_bridge, "desktop_id", return_value="desktop"),
+              patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+              patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish):
+            self.assertTrue(mqtt_bridge._try_publish_task_event(DurableMqttClient(), running))
+            message = publish.call_args.args[2]["message_id"]
+            self.assertFalse(mqtt_bridge._try_publish_task_event(DurableMqttClient(), running))
+            self.assertTrue(running.flow_limited)
+            self.assertEqual(1, publish.call_count)
+            self.assertTrue(mqtt_bridge._try_publish_task_event(DurableMqttClient(), final))
+            self.assertTrue(publish.call_args.kwargs["durable"])
+            self.assertTrue(window.release("phone", message))
+            self.assertTrue(mqtt_bridge._try_publish_task_event(DurableMqttClient(), running))
+
+    def test_task_wire_status_selects_reserved_priority(self):
+        for status in mqtt_bridge.TERMINAL_STATES:
+            with self.subTest(status=status):
+                self.assertEqual(mqtt_bridge.OUTBOUND_PRIORITY_TERMINAL,
+                    mqtt_bridge._outbound_delivery_priority({
+                        "type": "agent_task_event", "task_status": status, "status": "running"}))
+        for status in ("waiting_approval", "waiting_input", "paused", "interrupted"):
+            with self.subTest(status=status):
+                self.assertEqual(mqtt_bridge.OUTBOUND_PRIORITY_INTERACTIVE,
+                    mqtt_bridge._outbound_delivery_priority({"type": "agent_task_event", "task_status": status}))
+        self.assertEqual(mqtt_bridge.OUTBOUND_PRIORITY_PROGRESS,
+            mqtt_bridge._outbound_delivery_priority({"type": "agent_task_event", "task_status": "running"}))
+
     def test_attachment_controls_have_reserved_priority_below_final_results(self):
         for kind in ("input_attachment_receipt", "input_attachment_request"):
             with self.subTest(kind=kind):

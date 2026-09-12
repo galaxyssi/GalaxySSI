@@ -94,6 +94,59 @@ class RemoteReplyImagesTest(unittest.TestCase):
         third = self.prepare("![Fish](https://example.com/fish.png)")
         self.assertNotEqual(second.files[0]["relative_path"], third.files[0]["relative_path"])
 
+    def test_clickable_image_replaces_entire_wrapper_without_removing_ordinary_links(self):
+        for image in (
+            '[![Fish](https://example.com/fish.png)](https://example.com/source)',
+            '[![Fish][image]][page]\n\n[image]: https://example.com/fish.png\n'
+            '[page]: https://example.com/source',
+        ):
+            with self.subTest(image=image):
+                text = image + '\n\n[Source](https://example.com/article)'
+                result = self.prepare(text)
+                clean, rich = build_rich_output(result.content, result.include_files([]),
+                                               "image-task", inline_artifacts=False)
+                self.assertEqual(1, len([block for block in rich["blocks"] if block["type"] == "image"]))
+                self.assertNotIn('](https://example.com/source)', clean)
+                self.assertIn('[Source](https://example.com/article)', clean)
+                self.assertNotIn('[![', result.content)
+
+    def test_clickable_image_failure_and_progress_leave_a_valid_single_source_link(self):
+        text = '[![Fish](https://example.com/fish.png)](https://example.com/source)'
+        preview = image_link_preview(text)
+        self.assertEqual('[Fish](<https://example.com/fish.png>)', preview)
+        result = self.prepare(text, FakeTransport(error="image_http_403"))
+        self.assertNotIn('[![', result.content)
+        self.assertNotIn('](https://example.com/source)', result.content)
+        self.assertIn('[Fish](<https://example.com/fish.png>)', result.content)
+
+    def test_local_image_captions_belong_to_cards_not_a_duplicate_text_list(self):
+        from response_policy import sanitize_assistant_response
+        from task_workspace import task_workspace
+        root = task_workspace("image-task")
+        path = root / "outputs" / "one.png"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(image_bytes())
+        for url in (path.as_posix(), "outputs/one.png", "galaxyssi-artifact://image-task/outputs/one.png"):
+            with self.subTest(url=url):
+                transport = FakeTransport(error="must_not_fetch")
+                prepared = self.prepare(f"[![Caption](<{url}>)](https://example.com/page)", transport)
+                content = sanitize_assistant_response(prepared.content, [str(path)])
+                _, rich = build_rich_output(content, list(prepared.files), "image-task", inline_artifacts=False)
+                self.assertEqual([], transport.calls)
+                self.assertEqual(["image"], [block["type"] for block in rich["blocks"]])
+                self.assertEqual("Caption.png", rich["blocks"][0]["title"])
+                self.assertEqual(image_bytes(), path.read_bytes())
+
+    def test_local_caption_binding_cannot_import_other_task_or_input_files(self):
+        from task_workspace import task_workspace
+        for task, relative in (("another-task", "outputs/one.png"),
+                               ("image-task", "downloads/input/one.png")):
+            path = task_workspace(task) / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(image_bytes())
+            prepared = self.prepare(f"![Not an output](<{path.as_posix()}>)")
+            self.assertEqual((), prepared.files)
+
     def test_failure_does_not_leave_an_automatic_external_image(self):
         result = self.prepare("\u9c7c\uff1a![Fish](https://example.com/fish.webp)", FakeTransport(error="image_http_403"))
         self.assertEqual((), result.files)

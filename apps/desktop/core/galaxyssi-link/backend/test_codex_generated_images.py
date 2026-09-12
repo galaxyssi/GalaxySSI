@@ -78,6 +78,20 @@ class CodexGeneratedImageTests(unittest.TestCase):
         self.assertEqual(["已生成小丑鱼图片。"], updates)
         self.assertEqual(1, len(select_reply_artifacts(self.run.final_text, task_artifacts("task-1"), "task-1")))
 
+    def test_multiple_images_keep_creation_and_markdown_order(self):
+        self.event("item/completed", item=self.item)
+        stream = io.BytesIO()
+        Image.new("RGB", (96, 64), "blue").save(stream, "PNG")
+        second_data = stream.getvalue()
+        self.event("item/completed", item={**self.item, "id": "image-2",
+                   "result": base64.b64encode(second_data).decode()})
+        verified = images.verified_images("task-1", "thread-1", "turn-1")
+        with patch.object(images, "verified_images", return_value=list(reversed(verified))):
+            self.complete()
+        files = select_reply_artifacts(self.run.final_text, list(reversed(task_artifacts("task-1"))), "task-1")
+        self.assertEqual([self.data, second_data], [
+            (task_workspace("task-1") / item["relative_path"]).read_bytes() for item in files])
+
     def test_terminal_snapshot_captures_missing_notification(self):
         self.complete([self.item])
         self.assertEqual("completed", self.events[-1]["status"])
