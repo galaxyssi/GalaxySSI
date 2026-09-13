@@ -1112,9 +1112,10 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
     turnId: String,
     state: AgentUiState,
     runtime: MobileNativeAgent = mobileNativeAgent,
-    interruptedRecoveryReason: String = ""
+    interruptedRecoveryReason: String = "",
+    required: Boolean = false
 ) {
-    runCatching {
+    val persisted = runCatching {
         val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
             .distinctBy(AgentAction::id)
         val result = state.lastActionResult
@@ -1242,6 +1243,7 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
     }.onFailure { error ->
         Log.w("GalaxySSIAgent", "workspace_snapshot_failed turn=${turnId.take(8)}", error)
     }
+    if (required) persisted.getOrThrow()
 }
 
 internal fun MainActivity.recordAgentRunFromState(turnId: String, state: AgentUiState) {

@@ -1023,6 +1023,36 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         }
     }
 
+    internal fun recordConnectorUsage(conversationId: String, response: AgentConnectorResponse) {
+        ensureConversationMigration()
+        val mutation = conversationDatabase.recordUsageOnce(conversationId, AgentConnectorUsage.from(response)) ?: return
+        GlobalConversationEventBus.publishConversationUpdated(appContext, mutation.first, mutation.second)
+        AgentConversationWindows.changed()
+    }
+
+    internal fun persistConnectorReply(
+        conversationId: String,
+        turnId: String,
+        taskId: String,
+        response: AgentConnectorResponse
+    ): Boolean {
+        require(conversationId.isNotBlank() && turnId.isNotBlank() && response.content.isNotBlank())
+        val changed = upsert(
+            role = AgentTranscriptRole.ASSISTANT,
+            text = response.content,
+            dedupeKey = AgentFinalResponseIdentity.dedupeKey(turnId, response.sourceMessageId, taskId),
+            timestampMillis = response.receivedAtMillis,
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = taskId,
+            richOutputJson = response.richOutputJson
+        )
+        // An unchanged entry is a successful replay, including a crash before draft promotion/usage.
+        synchronized(this) { persistDraftIfNeeded(conversationId) }
+        recordConnectorUsage(conversationId, response)
+        return changed
+    }
+
     @Synchronized
     fun archiveConversation(conversationId: String): Boolean {
         val changed = updateConversation(conversationId) { it.copy(status = AgentConversationStatus.ARCHIVED) }

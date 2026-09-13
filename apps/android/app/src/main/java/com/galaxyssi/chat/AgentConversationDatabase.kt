@@ -55,6 +55,7 @@ internal class AgentConversationDatabase(
         createMigrationMetadata(db, complete = true)
         createConversationState(db)
         createWindowDrafts(db)
+        createUsageReceipts(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -98,6 +99,38 @@ internal class AgentConversationDatabase(
             createWindowDrafts(db)
             db.execSQL("DROP TABLE IF EXISTS agent_conversation_history_drafts")
         }
+        if (oldVersion < 7) createUsageReceipts(db)
+    }
+
+    /** Usage and its replay marker commit together, across all window/helper instances. */
+    @Synchronized
+    fun recordUsageOnce(conversationId: String, usage: AgentConnectorUsage): Pair<AgentConversation, AgentConversation>? {
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            val existing = db.query(TABLE_USAGE_RECEIPTS, arrayOf("conversation_id", "usage_digest"),
+                "usage_key = ?", arrayOf(usage.key), null, null, null, "1").use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
+            }
+            if (existing != null) {
+                check(existing.first == conversationId && existing.second == usage.digest) {
+                    "Conflicting connector usage projection"
+                }
+                db.setTransactionSuccessful()
+                null
+            } else {
+                val previous = checkNotNull(read(conversationId)) { "Connector usage conversation is missing" }
+                val current = usage.applyTo(previous)
+                check(upsert(current)) { "Connector usage write failed" }
+                db.insertOrThrow(TABLE_USAGE_RECEIPTS, null, ContentValues().apply {
+                    put("usage_key", usage.key)
+                    put("conversation_id", conversationId)
+                    put("usage_digest", usage.digest)
+                })
+                db.setTransactionSuccessful()
+                previous to current
+            }
+        } finally { db.endTransaction() }
     }
 
     @Synchronized
@@ -347,11 +380,7 @@ internal class AgentConversationDatabase(
     @Synchronized
     fun delete(conversationId: String): AgentConversation? {
         val current = read(conversationId) ?: return null
-        writableDatabase.delete(
-            TABLE_CONVERSATIONS,
-            "conversation_id = ?",
-            arrayOf(conversationId)
-        )
+        deleteConversations(listOf(conversationId))
         return current
     }
 
@@ -370,6 +399,7 @@ internal class AgentConversationDatabase(
                     "conversation_id IN ($placeholders)",
                     chunk.toTypedArray()
                 )
+                db.delete(TABLE_USAGE_RECEIPTS, "conversation_id IN ($placeholders)", chunk.toTypedArray())
             }
             db.setTransactionSuccessful()
             deleted
@@ -392,6 +422,8 @@ internal class AgentConversationDatabase(
                     SQLiteDatabase.CONFLICT_REPLACE
                 )
             }
+            db.execSQL("DELETE FROM $TABLE_USAGE_RECEIPTS WHERE conversation_id NOT IN " +
+                "(SELECT conversation_id FROM $TABLE_CONVERSATIONS)")
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -400,8 +432,14 @@ internal class AgentConversationDatabase(
 
     @Synchronized
     fun clear() {
-        writableDatabase.delete(TABLE_CONVERSATIONS, null, null)
-        writableDatabase.delete(TABLE_WINDOW_DRAFTS, null, null)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete(TABLE_CONVERSATIONS, null, null)
+            db.delete(TABLE_WINDOW_DRAFTS, null, null)
+            db.delete(TABLE_USAGE_RECEIPTS, null, null)
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
 
     @Synchronized
@@ -631,14 +669,21 @@ internal class AgentConversationDatabase(
             "(conversation_id TEXT PRIMARY KEY NOT NULL, encrypted_payload TEXT NOT NULL)")
     }
 
+    private fun createUsageReceipts(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_USAGE_RECEIPTS " +
+            "(usage_key TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, usage_digest TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS agent_usage_conversation ON $TABLE_USAGE_RECEIPTS(conversation_id)")
+    }
+
     internal companion object {
         const val DATABASE_NAME = "galaxyssi_agent_conversations_v2.db"
         const val STORAGE_CIPHER_NAMESPACE = DATABASE_NAME
-        const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
         const val TABLE_CONVERSATIONS = "agent_conversations"
         const val TABLE_CONVERSATION_STATE = "agent_conversation_state"
         const val TABLE_ROW_STORAGE_METADATA = "row_storage_metadata"
         const val TABLE_WINDOW_DRAFTS = "agent_window_conversation_drafts"
+        const val TABLE_USAGE_RECEIPTS = "agent_conversation_usage_receipts"
         const val KEY_WINDOW_DRAFTS = "window_draft_storage_migrated"
         const val KEY_LEGACY_ROWS_MIGRATED = "legacy_rows_migrated"
         const val KEY_ACTIVE_CONVERSATION = "active_conversation"

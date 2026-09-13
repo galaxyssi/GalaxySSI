@@ -407,12 +407,7 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
     }
     deleteAgentTranscriptByDedupeKey(binding.conversationId, "connector-task:$taskId")
     completedConnectorTaskIds.add(AgentRemoteOutcomeCodec.taskKey(taskId, response.executionGeneration))
-    agentTranscriptStore.recordUsage(
-        binding.conversationId,
-        response.inputTokens,
-        response.outputTokens,
-        response.costMicros
-    )
+    agentTranscriptStore.recordConnectorUsage(binding.conversationId, response)
     if ((stored || removedLiveStream) &&
         binding.conversationId == agentTranscriptStore.activeConversation().id
     ) {
@@ -837,31 +832,35 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         .put("success", response.success)
                         .toString()
                 )
-                persistAgentWorkspaceSnapshot(turnId, state, runtime)
-                // A continuation response can arrive before this hook finishes. Keep later
-                // responses for a live turn and clear the whole turn only after terminal state.
-                AgentConnectorResponseStore.removeHandled(
-                    this@resumeAgentConnectorResponse,
-                    response,
-                    terminal = state.phase.isTerminalAgentPhase()
-                )
-                AgentPendingDeliveryStore.completeResponse(
-                    this@resumeAgentConnectorResponse,
-                    durableDelivery
-                )
+                try {
+                    AgentConnectorReplyCommit.run(
+                        checkpoint = { persistAgentWorkspaceSnapshot(turnId, state, runtime, required = true) },
+                        project = {
+                            syncAgentTranscript(state, conversationId, turnId)
+                            agentTranscriptStore.recordConnectorUsage(conversationId, response)
+                        },
+                        completeDelivery = {
+                            AgentPendingDeliveryStore.completeResponse(this@resumeAgentConnectorResponse, durableDelivery)
+                        },
+                        bindContinuation = {
+                            rebindAgentConnectorContinuation(response, runtime, state, conversationId, turnId)
+                        },
+                        retire = {
+                            // Later continuation replies remain queued until their own outcome is committed.
+                            AgentConnectorResponseStore.removeHandled(this@resumeAgentConnectorResponse,
+                                response, terminal = state.phase.isTerminalAgentPhase())
+                        }
+                    )
+                } catch (failure: Throwable) {
+                    agentConnectorResponsesInFlight.remove(responseKey)
+                    throw failure
+                }
                 com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
                     this@resumeAgentConnectorResponse, response.taskId, "phone_final_checkpointed"
                 )
                 runOnUiThread {
                     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
                         this@resumeAgentConnectorResponse, response.taskId, "phone_final_ui_started"
-                    )
-                    rebindAgentConnectorContinuation(
-                        response,
-                        runtime,
-                        state,
-                        conversationId,
-                        turnId
                     )
                     finishAgentConnectorResponseUi(
                         response = response,
@@ -969,16 +968,23 @@ internal fun MainActivity.consumeLegacyAgentConnectorResponse(
         if (turnId.isNotBlank()) {
             state = finalizeAgentExecutionLoop(runtime, turnId, state)
         }
-        if (turnId.isNotBlank()) persistAgentWorkspaceSnapshot(turnId, state, runtime)
-        AgentConnectorResponseStore.remove(this, response)
-        runOnUiThread {
-            rebindAgentConnectorContinuation(
-                response,
-                runtime,
-                state,
-                conversationId,
-                turnId
+        try {
+            AgentConnectorReplyCommit.run(
+                checkpoint = { if (turnId.isNotBlank()) persistAgentWorkspaceSnapshot(turnId, state, runtime, required = true) },
+                project = {
+                    syncAgentTranscript(state, conversationId, turnId)
+                    agentTranscriptStore.recordConnectorUsage(conversationId, response)
+                },
+                completeDelivery = {},
+                bindContinuation = { rebindAgentConnectorContinuation(response, runtime, state, conversationId, turnId) },
+                retire = { AgentConnectorResponseStore.remove(this, response) }
             )
+        } catch (failure: Throwable) {
+            agentConnectorResponsesInFlight.remove(responseKey)
+            Log.w("GalaxySSIAgent", "Connector reply projection deferred", failure)
+            return@thread
+        }
+        runOnUiThread {
             finishAgentConnectorResponseUi(
                 response,
                 runtime,
@@ -1052,9 +1058,6 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
     updateAgentExecutionTarget(
         conversationId = conversationId,
         contactId = response.executionContactId
-    )
-    agentTranscriptStore.recordUsage(
-        conversationId, response.inputTokens, response.outputTokens, response.costMicros
     )
     if (turnId.isNotBlank()) finishStructuredAgentHandoff(turnId, response)
     if (turnId.isNotBlank() && state.phase.isTerminalAgentPhase()) {
@@ -1246,7 +1249,10 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
         indexedTurnId = indexedTurnId,
         conversationEntries = entries
     )
-    if (!AgentLateConnectorResponsePolicy.canAccept(
+    val committedReply = AgentLateConnectorResponsePolicy.isCommittedReply(
+        response, conversationId, turnId, response.taskId.ifBlank { turnId.orEmpty() }, entries
+    )
+    if (!committedReply && !AgentLateConnectorResponsePolicy.canAccept(
             sourceIsTerminal = false,
             exactTurnId = turnId,
             conversationEntries = entries
@@ -1257,28 +1263,15 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
     }
     val exactTurnId = checkNotNull(turnId)
     val taskId = response.taskId.ifBlank { exactTurnId }
-    val stored = AgentConnectorStreamHandoff.persistThenRetire(
+    AgentConnectorStreamHandoff.persistThenRetire(
         persistFinal = {
-            agentTranscriptStore.upsert(
-                role = AgentTranscriptRole.ASSISTANT,
-                text = response.content,
-                dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-                    turnId = exactTurnId,
-                    sourceMessageId = response.sourceMessageId,
-                    taskId = taskId
-                ),
-                conversationId = conversationId,
-                turnId = exactTurnId,
-                taskId = taskId,
-                richOutputJson = response.richOutputJson
-            )
+            agentTranscriptStore.persistConnectorReply(conversationId, exactTurnId, taskId, response)
         },
         retireLiveStream = {
             deferAgentConnectorStreamRetirement(response.sourceMessageId, conversationId)
         }
     )
-    if (!stored) return false
-    pendingDirectConnectorActions.remove(exactTurnId)?.let { action ->
+    pendingDirectConnectorActions[exactTurnId]?.let { action ->
         recordDirectAgentRun(
             turnId = exactTurnId,
             action = action,
@@ -1297,9 +1290,9 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
                 )
             )
         )
+        pendingDirectConnectorActions.remove(exactTurnId, action)
     }
     deleteAgentTranscriptByDedupeKey(conversationId, "connector-task:$taskId")
-    AgentConnectorResponseStore.remove(this, response)
     AgentPendingDeliveryStore.remove(this, response.sourceMessageId)
     deleteAgentTranscriptByDedupeKey(
         conversationId,
@@ -1307,9 +1300,7 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
     )
     pendingDirectConnectorRuns.remove(response.sourceMessageId)
     completedConnectorTaskIds.add(AgentRemoteOutcomeCodec.taskKey(taskId, response.executionGeneration))
-    agentTranscriptStore.recordUsage(
-        conversationId, response.inputTokens, response.outputTokens, response.costMicros
-    )
+    AgentConnectorResponseStore.remove(this, response)
     if (conversationId == agentTranscriptStore.activeConversation().id) {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) {

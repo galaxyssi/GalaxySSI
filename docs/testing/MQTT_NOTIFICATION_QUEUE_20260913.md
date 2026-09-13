@@ -1,8 +1,14 @@
 # Durable Notification Acceptance
 
-Date: 2026-09-13. Source version: Desktop 1.1.52, not yet packaged or deployed.
+Date: 2026-09-13. Original checkpoint source: Desktop 1.1.52, not then deployed.
 Installed/running versions remain App 1.1.114 (1000) / Desktop 1.1.51.
 This is a development checkpoint, not complete multi-broker acceptance.
+
+Later deployment update: the user requested coordinated v1.2.0 versions and
+installation/startup. Desktop 1.2.0 now runs from the full Python/Signal JVM
+package; these notification changes are included. The UI version and three
+TLS/subscription paths were inspected. This does not substitute for the
+remaining notification, phone artifact or outage acceptance tests below.
 
 ## Changes
 

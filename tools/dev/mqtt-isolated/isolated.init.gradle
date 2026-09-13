@@ -3,13 +3,15 @@
 gradle.beforeProject { project ->
     if (project.path == ':app') {
         project.plugins.withId('com.android.application') {
+            project.dependencies.add('androidTestImplementation', 'androidx.work:work-testing:2.11.2')
             project.extensions.getByName('androidComponents').finalizeDsl { android ->
                 if (gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }) {
                     throw new GradleException('Isolated MQTT verification only supports debug builds')
                 }
                 android.defaultConfig.applicationId = 'com.galaxyssi.chat.mqttverification'
                 android.defaultConfig.testApplicationId = 'com.galaxyssi.chat.mqttverification.test'
-                android.defaultConfig.testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
+                android.defaultConfig.testInstrumentationRunner = 'com.galaxyssi.chat.MqttIsolatedTestRunner'
+                android.sourceSets.androidTest.java.srcDir(project.rootProject.file('../../tools/dev/mqtt-isolated/src'))
                 android.sourceSets.main.manifest.srcFile(project.rootProject.file('../../tools/dev/mqtt-isolated/AndroidManifest.xml'))
                 android.sourceSets.debug.manifest.srcFile(project.rootProject.file('../../tools/dev/mqtt-isolated/AndroidManifest.xml'))
                 android.sourceSets.main.assets.setSrcDirs([])

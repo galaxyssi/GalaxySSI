@@ -10,7 +10,24 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
-Installed App 1.1.115 (1001) and running Desktop 1.1.51 retain the real S20U
+The next coordinated PR must use Android/Desktop **v1.2.0**, as explicitly
+requested by the user. Source versions are Android 1.2.0 (1002) and Desktop
+1.2.0, committed in `90bb10c5a`. The user subsequently requested installation and
+Desktop startup. Desktop 1.2.0 is now packaged with Python/Signal JVM and running;
+its visible window shows v1.2.0 and all three TLS/subscription paths are ready.
+Android 1.2.0 (1002) passed the final full-runtime build and 54 focused JVM cases,
+then installed successfully with `adb install -r` on S26U (`R5GL546G3LZ`). Its
+package metadata and nonblank MainActivity were inspected; pairing/data were
+preserved. No other phone was installed or operated in this continuation.
+The latest code adds ordered connector reply commits, transactionally idempotent
+usage and safe resumption of an already-written orphan reply. The prior checkpoint
+passed 51 focused JVM and 12 isolated S26U storage cases. The broader window
+regression hit a missing WorkManager initializer; a test-only runner fix is
+written but that full suite still needs rerunning. See
+[reply commit checkpoint](../testing/MQTT_REPLY_COMMIT_20260913.md).
+This is still not a complete headless consumer or the full multi-broker release.
+
+Installed App 1.1.115 (1001) and previously running Desktop 1.1.51 retained the real S20U
 QR pairing. The App update passed 43 focused unit tests and a full-runtime build.
 It keeps weak final-response consumers available for paused windows and selects
 one live consumer per dispatch. Stream UI and plaintext clearing are unchanged.
@@ -31,7 +48,8 @@ See [S20U background evidence](../testing/MQTT_S20U_BACKGROUND_20260913.md).
 Source Desktop 1.1.52 additionally queues Agent push/mobile diagnostics while
 offline and reports acceptance truthfully. Tests and native process-recovery
 evidence are in [notification acceptance](../testing/MQTT_NOTIFICATION_QUEUE_20260913.md).
-These latest notification changes are not deployed. Earlier checkpoint sections
+These notification changes are now in the running Desktop 1.2.0 package, but
+their new real-phone notification acceptance remains to be tested. Earlier checkpoint sections
 below are historical; their pre-install/pre-scan statements do not override this
 update. The entire remaining artifact, lifecycle, performance, diagnostics,
 power and PR scope is still required.
