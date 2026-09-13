@@ -1,0 +1,3 @@
+         1789251616.652 10811 10830 I System.out: KNOWLEDGE_PRIMARY_READ_PROFILE phase=after operation=fts_256 warmup=1 samples=5 p50_ns=28820461 p95_ns=34569192 max_ns=34569192 first_ns=120240654 opened=0 reused=0 peak=0 decrypted=0
+         1789251626.982 10811 10830 I System.out: KNOWLEDGE_PRIMARY_READ_PROFILE phase=after operation=read_256 warmup=1 samples=5 p50_ns=1321474422 p95_ns=1763854230 max_ns=1763854230 first_ns=3379674382 opened=4 reused=1532 peak=4 decrypted=1536
+         1789251637.275 10811 10830 I System.out: KNOWLEDGE_PRIMARY_READ_PROFILE phase=after operation=lexical_search warmup=1 samples=5 p50_ns=1565516384 p95_ns=1672364922 max_ns=1672364922 first_ns=2455945883 opened=0 reused=1536 peak=4 decrypted=1536

@@ -1,0 +1,1 @@
+KNOWLEDGE_COMPACTION_SCALE verified=10001 digest=6645e346b67a5f09c6a9e4c84d292a936a1147f778ab83f94df69199e8aaa431 pages=1 moved=0 retired=0 elapsed_ms=113 page_p95_ms=113.912346 page_max_ms=113.912346 before_bytes=7168000 after_bytes=7168000 reclaimed_bytes=0

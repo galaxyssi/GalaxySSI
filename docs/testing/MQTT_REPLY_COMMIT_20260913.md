@@ -157,6 +157,11 @@ remain Electron's; application version metadata and the visible App version are
 
 ## Remaining Boundaries
 
+PR preparation merges main `f66030ecb` after this deployment. Its versionCode
+1004 requires the merged Android source to advance to 1005 while retaining
+versionName 1.2.0. The installed 1002 artifact and its checks above precede that
+merge. Desktop source and deployed application version remain 1.2.0.
+
 The ordered sequence is not a transaction spanning workspace, transcript,
 pending-delivery and inbox databases. Partial commits need idempotent replay;
 keeping the reply pending does not itself prove every crash point automatically

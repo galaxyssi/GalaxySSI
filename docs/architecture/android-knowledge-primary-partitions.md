@@ -4,9 +4,12 @@
 
 New knowledge writes store the complete encoded record in physical encrypted SQLite
 partitions. This is the authoritative body store, not a vector-index shard or a
-second copy of a canonical JSON corpus. The existing SQLite catalog still owns
-identity, source membership, authenticated previews, full-text indexes and vector
-change ledgers. Metadata and index partitioning are not included in this phase.
+second copy of a canonical JSON corpus. Since Android 1.1.118, newly written
+authoritative record headers share the body's physical partition and commit;
+see [primary metadata](android-knowledge-primary-metadata.md). The existing
+SQLite catalog still owns identity, source membership, authenticated derived
+previews, full-text indexes and vector change ledgers. Sharding these catalog
+and index tables is not included in this phase.
 
 Four opaque-ID buckets select independently rotating files. A partition rotates
 after approximately 64 MiB or 65,536 appended records; these are file targets,
@@ -26,7 +29,8 @@ mandatory; missing, reordered or corrupted frames fail closed.
 Physical entries are immutable and use independent DELETE-mode rollback journals.
 The existing catalog uses WAL; partition files do not add concurrent WAL checkpoint
 paths on the bundled SQLite version. All referenced partition transactions commit
-with FULL synchronization before the catalog transaction can publish references.
+with EXTRA synchronization (since Android 1.1.117; previously FULL) before the
+catalog transaction can publish references. The main catalog remains WAL/FULL.
 The catalog remains the logical visibility boundary. A failure before publication
 preserves the old source, policies and index state, even when some new encrypted
 frames already reached disk. Nested failures cannot publish a caught failed write.
@@ -39,9 +43,12 @@ Existing WAL snapshots pin the external-body lease. Replacements preserve old
 immutable entries until snapshot readers finish. Fully unreferenced registered
 partitions are retired under an exclusive cross-process lease. A durable queue
 separates catalog retirement from unlink and makes interrupted deletion retryable.
-Mixed live/dead partition compaction and discovery of unregistered files left by
-an aborted first publication remain separate follow-up work. No live body is
-deleted to reclaim an unverified orphan.
+Mixed live/dead partition compaction is added by the
+[schema-15 maintenance phase](android-knowledge-primary-compaction.md).
+New files have a durable allocation intent for bounded unpublished-file recovery;
+see [allocation recovery](android-knowledge-primary-allocations.md). Older files
+without such intents still require a bounded migration inventory. No live body
+is deleted to reclaim an unverified orphan.
 
 ## Migration
 

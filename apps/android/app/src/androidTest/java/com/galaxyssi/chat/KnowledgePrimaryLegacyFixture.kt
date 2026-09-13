@@ -9,6 +9,10 @@ internal object KnowledgePrimaryLegacyFixture {
         inline: Boolean, hardwareEnvelope: Boolean = false) = owner.transaction { db ->
         val header = requireNotNull(owner.readHeader(db, key))
         val encoded = owner.readEncoded(db, key, header)
+        // Historical headers embedded the preview before it moved to a derived cache.
+        header.put("source_preview", KnowledgeSourceMetadata.from(
+            requireNotNull(AgentKnowledgeCodec.decodeItem(org.json.JSONObject(encoded)))
+        ).encode())
         val cipher = AgentRowStorageCipher(context, "knowledge-records:v1:$name")
         fun seal(value: String, part: String): String {
             val aad = "$name:$key:$part".toByteArray(Charsets.UTF_8)
@@ -38,6 +42,12 @@ internal object KnowledgePrimaryLegacyFixture {
         if (!db.rawQuery("SELECT 1 FROM sqlite_master WHERE name='knowledge_primary_refs'", null).use { it.moveToFirst() }) return
         inlineForDowngrade(db)
         db.rawQuery("SELECT 1 FROM knowledge_primary_refs LIMIT 1", null).use { check(!it.moveToFirst()) }
+        for (trigger in listOf("knowledge_primary_dirty_insert", "knowledge_primary_dirty_delete", "knowledge_primary_dirty_move")) {
+            db.execSQL("DROP TRIGGER IF EXISTS $trigger")
+        }
+        db.execSQL("DROP TABLE IF EXISTS knowledge_primary_copy")
+        db.execSQL("DROP TABLE IF EXISTS knowledge_primary_dirty")
+        db.execSQL("DROP TABLE IF EXISTS knowledge_primary_compaction")
         db.execSQL("DROP TABLE knowledge_primary_refs")
         db.execSQL("DROP TABLE knowledge_primary_migration")
         db.execSQL("DROP TABLE knowledge_primary_retired")
@@ -61,8 +71,11 @@ internal object KnowledgePrimaryLegacyFixture {
                     val encoded = requireNotNull(primary.read(db, key))
                     val aad = "${path.name}:$key:header".toByteArray()
                     val header = db.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
-                        check(it.moveToFirst()); org.json.JSONObject(requireNotNull(cipher.decrypt(it.getString(0), aad)))
+                        check(it.moveToFirst()); org.json.JSONObject(requireNotNull(cipher.decrypt(primary.resolveHeader(db, key, it.getString(0)), aad)))
                     }
+                    header.put("source_preview", KnowledgeSourceMetadata.from(
+                        requireNotNull(AgentKnowledgeCodec.decodeItem(org.json.JSONObject(encoded)))
+                    ).encode())
                     db.delete("knowledge_chunks", "item_key=?", arrayOf(key))
                     var offset = 0
                     var ordinal = 0

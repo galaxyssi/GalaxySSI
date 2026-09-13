@@ -1,0 +1,46 @@
+
+[check] testing matrix
+
+[check] documented npm scripts
+
+[check] Agent benchmark
+
+[check] core regressions
+
+[check] evolution candidate gates
+
+[check] Kotlin source size
+Kotlin source size policy passed (153600 byte default limit).
+
+[check] version health score
+
+[check] memory LoCoMo benchmark
+
+[check] product requirements
+
+[check] README
+
+[check] trust model
+
+[check] protocol spec
+
+[check] unified Run Kernel protocol
+
+[check] trusted PR review
+
+[check] windows package workflow
+
+[check] release audit
+
+[check] tracked artifact policy
+
+[check] i18n text policy
+Chinese text guard OK
+
+[check] iOS structure
+iOS project structure check passed.
+
+[check] desktop structure
+GalaxySSI Desktop structure OK
+
+GalaxySSI repository checks OK

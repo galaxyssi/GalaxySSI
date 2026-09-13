@@ -178,6 +178,7 @@ internal class KnowledgeSemanticSearch(
             Thread(task, "knowledge-native-index").apply { isDaemon = true }
         }
         fun clearRuntime(suspend: Boolean = false) {
+            KnowledgePrimaryReadConnections.requestTrim()
             if (suspend) suspended.set(true)
             sessions.forEach { it.invalidate() }
         }

@@ -10,6 +10,13 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+PR preparation has synchronized `origin/main` at `f66030ecb`. That main revision
+already uses Android versionCode 1004, so the merged PR source retains versionName
+1.2.0 and advances versionCode to 1005. Desktop stays 1.2.0. The deployed Android
+artifact described below is still the pre-main-sync 1.2.0 (1002) build; do not
+confuse its device evidence with a new 1005 installation. Full acceptance remains
+unfinished and the PR is intended to be a draft.
+
 The next coordinated PR must use Android/Desktop **v1.2.0**, as explicitly
 requested by the user. Source versions are Android 1.2.0 (1002) and Desktop
 1.2.0, committed in `90bb10c5a`. The user subsequently requested installation and

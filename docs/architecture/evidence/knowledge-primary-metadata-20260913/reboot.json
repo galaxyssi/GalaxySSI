@@ -1,0 +1,9 @@
+{
+  "fixture": "test-primary-reboot-ac810df7153944cc983ad67bc5f4e7d5.db",
+  "device": "R52R90282TY",
+  "model": "SM-T575",
+  "before": "4413e571-0c06-4b67-b14c-bd479ee826e4",
+  "after": "4f96f606-7aad-49d8-b2f0-b3ecd5e72061",
+  "credentialStorageReady": true,
+  "waitSeconds": 43.6441554
+}

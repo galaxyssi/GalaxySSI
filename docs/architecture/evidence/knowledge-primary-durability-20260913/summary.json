@@ -1,0 +1,97 @@
+{
+  "scope": "EXTRA durability for primary-body partitions and allocation journals, with real OS reboot checkpoint acceptance",
+  "branch": "fix/knowledge-primary-durable-commit-20260913",
+  "baseCommit": "4cde61543e8ad09e995f4906ba81877e5233c9d2",
+  "parentPr": 3042,
+  "fetchedMain": "6e303ed067c0f2fb5ae4310ac229b8e32cb428d8",
+  "device": {"model": "SM-T575", "serial": "R52R90282TY", "otherDevicesTouched": false},
+  "android": {"versionName": "1.1.117", "versionCode": 1003, "installedWithoutReset": true},
+  "desktopChanged": false,
+  "catalogSchema": 16,
+  "formatsChanged": false,
+  "apkSha256": "731f6fd2691c1f71377c2d233bdba9ad3acc0206f9c0e1980e6da920a49755fc",
+  "testApkSha256": "166ec4b93ac76100b039294021c3a9ef024006149891008e9b326c3ad6c7b2a2",
+  "build": {"fullSeconds": 837, "testSignatureCorrectionSeconds": 130, "bothSucceeded": true},
+  "jvm": {"suites": 548, "passed": 3836, "skipped": 5, "failures": 0, "errors": 0},
+  "checks": {"repository": "passed", "repositoryEvidence": "repository.txt", "aarch64AlignmentPassed": 74},
+  "initialFailure": {
+    "type": "JUnit initialization error: inferred non-void test method",
+    "productionCasesExecuted": 0,
+    "fix": "Explicit Kotlin Unit return type; only the test APK required rebuilding",
+    "evidence": "initial-test-signature-failure.txt"
+  },
+  "focused": {"passed": 7, "seconds": 1.777, "evidence": "focused.txt"},
+  "hostRunnerRepeat": {"passed": 7, "seconds": 2.096, "evidence": "host-runner-repeat.txt"},
+  "allocations": {"passed": 14, "seconds": 10.118, "evidence": "allocations.txt"},
+  "readersAndPrimary": {"passed": 55, "seconds": 46.127, "evidence": "readers.json"},
+  "sourceBackupSearch": {"passed": 97, "seconds": 224.004, "evidence": "source-regressions.json"},
+  "allocationRecovery": {
+    "intentionalDeaths": 4, "recoveryPasses": 3,
+    "fixture": "test-primary-alloc-95713f4acb8249fdb6516fc1b94fb1e6.db",
+    "durableMarkersVerifiedByHost": true, "evidenceDirectory": "allocation-recovery"
+  },
+  "copyRecovery": {
+    "intentionalDeaths": 7, "preparationAndRecoveryPasses": 7,
+    "fixture": "test-primary-copy-5e48ce72498f4ae99b2620738e5e3728.db",
+    "durableMarkersVerifiedByHost": true, "evidenceDirectory": "copy-recovery"
+  },
+  "reboot": {
+    "actualOsBootIdentityChanged": true, "preparationAndVerificationPasses": 2,
+    "fixture": "test-primary-reboot-34cdf963abc74b199bdbe6c9ea892934.db",
+    "copiedFramesBeforeAndAfterBoot": 16, "verifiedFramesBeforeContinuation": 0,
+    "checkpointOpenAndRestoreMs": 324.113231, "copyCompletedAfterBoot": true,
+    "hostWaitUntilStorageReadySeconds": 48.0094276,
+    "timingExcludes": ["OS boot", "instrumentation startup", "Agent task restoration"],
+    "evidenceDirectory": "reboot"
+  },
+  "newPartitionProfile": {
+    "samples": 100, "within200ms": 100, "p50Ms": 56.672039, "p95Ms": 83.553346,
+    "maxMs": 101.604884, "firstPartitionMs": 116.339847, "journalBytesAfterReplay": 12288,
+    "fixtureRecordsPerPartition": 1, "evidence": "allocation-metrics.txt",
+    "scope": "Short encrypted synthetic body; allocation, parent sync, body creation/commit and catalog publication",
+    "excludes": ["full public metadata/FTS write", "App initialization", "model", "UI"]
+  },
+  "retained": {
+    "realRecords": 10001, "reseeded": false,
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "digestBeforeAndAfterReopen": "6645e346b67a5f09c6a9e4c84d292a936a1147f778ab83f94df69199e8aaa431",
+    "seconds": 196.56, "previousPhaseSeconds": 107.806,
+    "bodyDirectoryBytesBeforeAndAfter": 7626752,
+    "pages": 1, "movedRecords": 0, "retired": 0, "pageMs": 131.436538,
+    "interpretation": "Full-corpus verification after OS reboot; no eligible compaction. Slower than prior phase, not a controlled causal comparison.",
+    "evidence": ["retained.txt", "retained-metrics.txt"]
+  },
+  "durableApi": {
+    "runs": 2, "samplesPerRun": 300, "within200ms": 597, "totalSamples": 600,
+    "run1": {
+      "seconds": 24.557, "within200ms": 298,
+      "read": {"p95Ms": 22.380846, "maxMs": 236.459577},
+      "upsert": {"p95Ms": 112.012808, "maxMs": 209.660769},
+      "restore": {"p95Ms": 110.703731, "maxMs": 126.603846}
+    },
+    "run2": {
+      "seconds": 23.294, "within200ms": 299,
+      "read": {"p95Ms": 22.862269, "maxMs": 246.482346},
+      "upsert": {"p95Ms": 107.172038, "maxMs": 160.623846},
+      "restore": {"p95Ms": 104.734538, "maxMs": 111.305385}
+    },
+    "probeRecordsRestoredAndReopenedPerRun": 100,
+    "evidence": ["durable-after-reboot.txt", "durable-after-reboot-metrics.txt", "durable-repeat.txt", "durable-repeat-metrics.txt"],
+    "exclusions": ["observers", "models", "UI", "network", "maintenance contention"],
+    "allSamplesUnder200ms": false
+  },
+  "environmentAfterFirstDurableRun": {
+    "loadAverages": [22.94, 19.17, 9.27], "thermalStatus": 1,
+    "memoryAvailableKiB": 1615880, "batteryPercent": 100,
+    "note": "Post-run snapshot only; no causal attribution of latency outliers"
+  },
+  "remaining": [
+    "Catalog, metadata, FTS and vector control remain centralized",
+    "Old unjournaled orphan files need bounded migration inventory",
+    "No 100-million-real-record acceptance or universal 200 ms guarantee",
+    "Three of 600 individual API samples exceeded 200 ms; retained verification was slower than the previous phase",
+    "Complete retrieval last measured around 1.7 seconds in the prior phase; not reprofiled here",
+    "Graceful OS reboot and process death do not prove physical power-cut durability",
+    "Unified Run Kernel, complete tracing and long-cycle Agent DAG acceptance remain separate"
+  ]
+}

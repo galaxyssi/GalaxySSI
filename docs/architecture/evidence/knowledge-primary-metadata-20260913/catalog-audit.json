@@ -1,0 +1,14 @@
+{
+  "device": "R52R90282TY",
+  "model": "SM-T575",
+  "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+  "integrity": "ok",
+  "catalog": {
+    "schema": 17,
+    "records": 10001,
+    "partitioned_headers": 10001,
+    "primary_references": 10001,
+    "orphan_references": 0,
+    "registered_partitions": 4
+  }
+}

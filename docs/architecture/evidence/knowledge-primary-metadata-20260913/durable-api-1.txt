@@ -1,0 +1,4 @@
+         1789265760.944 15607 15629 I System.out: KNOWLEDGE_DURABLE_PROFILE operation=public_read samples=100 p50_ns=16314346 p95_ns=25170192 p99_ns=27246500 max_ns=260037077 within_200ms=99
+         1789265760.944 15607 15629 I System.out: KNOWLEDGE_DURABLE_PROFILE operation=durable_upsert samples=100 p50_ns=89294462 p95_ns=115931384 p99_ns=122016731 max_ns=183259500 within_200ms=100
+         1789265760.944 15607 15629 I System.out: KNOWLEDGE_DURABLE_PROFILE operation=durable_restore samples=100 p50_ns=85969731 p95_ns=109602500 p99_ns=117603961 max_ns=120517115 within_200ms=100
+         1789265762.357 15607 15629 I System.out: KNOWLEDGE_DURABLE_PROFILE corpus=10001 restored=100 reopened=100 observers=disabled models=disabled

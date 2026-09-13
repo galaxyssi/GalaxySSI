@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-09-12T22:11:53.357Z" hostname="DESKTOP-T14" time="0.253">
+  <properties/>
+  <testcase name="closingDuringFactoryDoesNotLeakOrPublishTheOpenedResource" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.009"/>
+  <testcase name="factoryFailureReturnsReservedCapacity" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.005"/>
+  <testcase name="strictRetirementRefusesActiveLeaseWithoutInvalidatingIt" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.001"/>
+  <testcase name="failingOneCloseDoesNotSkipOtherResources" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.002"/>
+  <testcase name="waitingReaderCanBeInterruptedWithoutLeakingCapacity" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.002"/>
+  <testcase name="fullPoolWaitsWithoutOpeningAnExtraConnection" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.12"/>
+  <testcase name="invalidIdentityReopensWithoutReturningStaleResource" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.001"/>
+  <testcase name="ownerInvalidationDiscardsBusyResourceOnlyAfterRelease" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.001"/>
+  <testcase name="idleEvictionIsLeastRecentlyUsed" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.001"/>
+  <testcase name="failedReadDiscardsConnectionAndLeaseClosesOnce" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.001"/>
+  <testcase name="shutdownDefersActiveCloseAndRejectsNewReaders" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.001"/>
+  <testcase name="closingResourceStillCountsAgainstCapacity" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.103"/>
+  <testcase name="reuseHasFixedCapacityAndDoesNotReopen" classname="com.galaxyssi.chat.KnowledgeReadConnectionPoolTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

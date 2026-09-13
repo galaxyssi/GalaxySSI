@@ -1,0 +1,10 @@
+         1789265311.839  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE replace_ms=671597 rows=10001 fixture=test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db variant=primary-metadata-v1
+         1789265311.843  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=total elapsed_ms=671580.279481 rows=10001
+         1789265311.846  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=stage elapsed_ms=7074.872649 rows=10001
+         1789265311.848  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=prepare elapsed_ms=113312.663726 rows=10001
+         1789265311.850  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=commit elapsed_ms=501843.774641 rows=10001
+         1789265311.852  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=ownership elapsed_ms=83721.583863 rows=10001
+         1789265311.854  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=apply elapsed_ms=416809.528894 rows=10001
+         1789265311.856  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE phase=observe elapsed_ms=49294.538195 rows=10001
+         1789265311.861  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE prepared=30 reused=160011 idle_statements=30 idle_sql_chars=1700
+         1789265415.973  8966  9175 I System.out: KNOWLEDGE_CRYPTO_SCALE verify_ms=104040 verified=10001

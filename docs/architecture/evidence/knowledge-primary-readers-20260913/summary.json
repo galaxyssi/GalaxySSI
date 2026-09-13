@@ -1,0 +1,105 @@
+{
+  "scope": "Bounded read connections for partitioned primary bodies, not full metadata/index sharding or 100-million-record acceptance",
+  "branch": "perf/knowledge-partition-read-cache-20260913",
+  "baseCommit": "01aa45e25",
+  "fetchedMain": "6e303ed067c0f2fb5ae4310ac229b8e32cb428d8",
+  "device": { "model": "SM-T575", "serial": "R52R90282TY", "otherDevicesTouched": false },
+  "android": { "versionName": "1.1.115", "versionCode": 1001, "installedWithoutReset": true },
+  "desktopChanged": false,
+  "schema": 16,
+  "apkSha256": "121aacbd08f8a399bdb15687f389ec4cc97e04d3d23f19ffd8bab560cb1dd500",
+  "testApkSha256": "6f90c58d7591d203dfe12f78591b002ffffde2880d328c8548dbb27173652d0d",
+  "build": { "success": true, "seconds": 633 },
+  "jvm": { "suites": 548, "passed": 3836, "skipped": 5, "failures": 0, "errors": 0, "newPoolCases": 13 },
+  "checks": { "repository": "passed", "aarch64AlignmentPassed": 74 },
+  "readers": { "passed": 55, "seconds": 33.645, "evidence": "readers.json" },
+  "sourceBackupAndSearch": { "passed": 97, "seconds": 217.613, "evidence": "source-regressions.json" },
+  "recovery": {
+    "intentionalDeaths": 7,
+    "preparationAndRecoveryPasses": 7,
+    "fixture": "test-primary-copy-cef9fe6ec3f24f5a8fbe44975c594c64.db",
+    "durableMarkersVerifiedByHost": true,
+    "evidenceDirectory": "recovery",
+    "boundaries": ["before-frames", "before-catalog", "after-copy", "before-verify-checkpoint", "after-verify-checkpoint", "before-publish", "after-publish"]
+  },
+  "retained": {
+    "realRecords": 10001,
+    "reseeded": false,
+    "fixture": "test-knowledge-source-replace-621d79d8-9ce1-4d12-95b8-ebde10511a3f.db",
+    "digestBeforeAndAfterReopen": "6645e346b67a5f09c6a9e4c84d292a936a1147f778ab83f94df69199e8aaa431",
+    "seconds": 105.269,
+    "pages": 1,
+    "movedRecords": 0,
+    "retired": 0,
+    "pageMs": 78.039462,
+    "directoryBytesBeforeAndAfter": 7282688,
+    "interpretation": "Complete-corpus verification; no newly eligible compaction work",
+    "evidence": ["retained.txt", "retained-metrics.txt"]
+  },
+  "durableApi": {
+    "seconds": 12.458,
+    "samples": 300,
+    "within200ms": 300,
+    "read": { "samples": 100, "p95Ms": 11.854346, "maxMs": 156.877615 },
+    "upsert": { "samples": 100, "p95Ms": 79.150153, "maxMs": 124.870115 },
+    "restore": { "samples": 100, "p95Ms": 61.059192, "maxMs": 83.039038 },
+    "probeRecordsRestoredAndReopened": 100,
+    "evidence": ["durable.txt", "durable-metrics.txt"],
+    "exclusions": ["observers", "models", "UI", "network", "maintenance contention"]
+  },
+  "readProfile": {
+    "samplesPerOperation": 5,
+    "warmupsPerOperation": 1,
+    "sameRetainedCorpus": true,
+    "allRunsPassedFunctionalChecks": true,
+    "baseline": {
+      "android": "1.1.114",
+      "apkSha256": "b14b5ed1299c6eba817cdb816ba528e0c2bd05a0d7122c1ff9f64670f2aa55bb",
+      "testApkSha256": "81a3bdd978bed701ef57c03a4214574d2821df9b53bb8eb88dceb56320a016dd",
+      "seconds": 20.490,
+      "ftsP95Ms": 34.973,
+      "read256P95Ms": 1576.625845,
+      "lexicalP95Ms": 1764.972999,
+      "evidence": ["before.txt", "before-metrics.txt"]
+    },
+    "corrected": {
+      "seconds": 20.993,
+      "ftsP95Ms": 34.569192,
+      "read256P95Ms": 1763.854230,
+      "lexicalP95Ms": 1672.364922,
+      "batchOpens": 4,
+      "batchReuses": 1532,
+      "lexicalOpens": 0,
+      "lexicalReuses": 1536,
+      "peakConnections": 4,
+      "decodedBodiesPerOperationIncludingWarmup": 1536,
+      "evidence": ["after.txt", "after-metrics.txt"]
+    },
+    "interpretation": "Connection churn removed; complete retrieval still exceeds 200 ms. Batch-read P95 and first samples regressed; five samples do not establish production percentiles."
+  },
+  "developmentFailures": [
+    { "stage": "baseline test compilation", "reason": "Store is not Closeable; replaced use with explicit try/finally", "resolved": true },
+    { "stage": "first reader test APK compilation", "seconds": 281, "reason": "Unavailable Os.unlink method; corrected test-created symlink cleanup", "resolved": true },
+    {
+      "stage": "prototype pool",
+      "buildSeconds": 437,
+      "jvmFailures": 3,
+      "cause": "Idle eviction before unused capacity reduced the pool to one slot",
+      "prototypeApkSha256": "b7912a8873916628f48c1b0b80cffc987ed5e6fe61b62c817335889988f1c693",
+      "prototypeTestApkSha256": "56ed1d8fd3c76026d6ebf46b601fd046f383399d75445336d82dfdc7f29e230d",
+      "prototypeLexicalP95Ms": 2786.740152,
+      "prototypeNotCommitted": true,
+      "correctedApkReinstalled": true,
+      "evidence": ["prototype.txt", "prototype-metrics.txt", "prototype-pool-tests.xml"],
+      "resolved": true
+    }
+  ],
+  "remaining": [
+    "Catalog, metadata, FTS and vector control remain centralized",
+    "No 100-million-real-record benchmark or universal 200 ms guarantee",
+    "Complete retrieval requires further authentication, decoding and ranking profiling",
+    "Full-record memory and sustained multi-owner contention profiling remain necessary",
+    "Unregistered orphan-file discovery remains unfinished",
+    "Device reboot, power loss and long-cycle WorkManager scheduling were not tested in this phase"
+  ]
+}

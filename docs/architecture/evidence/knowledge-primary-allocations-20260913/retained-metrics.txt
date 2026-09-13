@@ -1,0 +1,1 @@
+         1789255356.174 16582 16602 I System.out: KNOWLEDGE_COMPACTION_SCALE verified=10001 digest=6645e346b67a5f09c6a9e4c84d292a936a1147f778ab83f94df69199e8aaa431 pages=1 moved=0 retired=0 elapsed_ms=56 page_p95_ms=56.071115 page_max_ms=56.071115 before_bytes=7430144 after_bytes=7430144 reclaimed_bytes=0
