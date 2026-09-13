@@ -10,6 +10,17 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+User requested "submit PR and stop" on 2026-09-13. Work stops at PR #3045;
+the acceptance backlog below is retained, not declared passed. No further
+installation, device operation or live latency/power runs are authorized by this
+closeout. The last addition is test-only bounded receive-stage observation;
+five focused unit tests pass, but no new live profile was run before stopping.
+Broad test discovery encountered separate runtime dependency gaps (amqtt in the
+endpoint runtime, Pillow in the controller runtime), not a fully passing suite.
+No application source changed after the recorded development artifacts.
+
+## Previous Probe Checkpoint
+
 Current-code probes completed without changing implementation or thresholds.
 Three public providers each returned one 75-byte synthetic test payload; this is
 connectivity only. Owned native healthy and primary-loss cohorts each validated

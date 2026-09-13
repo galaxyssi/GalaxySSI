@@ -196,9 +196,12 @@ class Endpoint:
 
     def install_measurements(self):
         from native_measurements import Measurements
+        from native_receive_timing import ReceiveTiming
         from mqtt_broker_pool import publish_packet_bytes
         from mqtt_delivery_envelope import parse_stored_receipt
         metrics = self.measurements = Measurements()
+        self.receive_timing = ReceiveTiming()
+        self.receive_timing.install(self.bridge)
         actual_queue = self.bridge.queue_outbound
         actual_ack = self.bridge.acknowledge_verified_outbound
         dispatch = self.client.delivery
@@ -439,6 +442,7 @@ def main():
                     result = endpoint.measurements.snapshot(request.get("message_id"))
                     if request.get("message_id") is None:
                         result["policy_limits"] = asdict(endpoint.client.policy.limits)
+                        result["receive_timing"] = endpoint.receive_timing.snapshot()
                 elif command == "send":
                     result = endpoint.send(request)
                 elif command == "attachment":

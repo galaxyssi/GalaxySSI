@@ -143,6 +143,7 @@ def run(lab, loop, python, report_dir, samples, seed, fault_primary=False):
             print(json.dumps({"completed_block": index, "strategy": strategy, "samples": len(grouped[strategy])}), flush=True)
         measurements = left.call("measurements")["samples"]
         report["raw_samples"] = measurements
+        report["receive_timing"] = {worker.label: worker.call("measurements")["receive_timing"] for worker in workers}
         report["results"] = {strategy: summarize([measurements[mid] for mid in ids]) for strategy, ids in grouped.items()}
         ratio = (report["results"]["automatic_multi"]["request_to_rx_stored_ms"]["p95"] /
                  report["results"]["single_available"]["request_to_rx_stored_ms"]["p95"])
@@ -198,7 +199,7 @@ async def main():
     async with OwnedBrokers() as lab:
         report = await asyncio.to_thread(run, lab, asyncio.get_running_loop(), args.endpoint_python,
                                         args.report_dir, args.samples, args.seed, args.fault_primary)
-    print(json.dumps({key: value for key, value in report.items() if key not in {"raw_samples", "blocks"}}, indent=2))
+    print(json.dumps({key: value for key, value in report.items() if key not in {"raw_samples", "blocks", "receive_timing"}}, indent=2))
     gate = report.get("provisional_fault_gate") or report["provisional_small_message_gate"]
     return 0 if gate["passed"] else 2
 
