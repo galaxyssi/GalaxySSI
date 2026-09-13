@@ -90,12 +90,16 @@ class Worker:
         self.process.wait(timeout=10)
 
 
-def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=False):
+def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=False, path_cycles=0,
+        defer_after_selection=False):
+    if not 0 <= path_cycles <= 100:
+        raise ValueError("Path cycles must be between 0 and 100")
     reject_bad_tls(lab)
     workers = []
     observations = []
     expected = {"left": {}, "right": {}}
     configs = {}
+    last_snapshots = {}
 
     def create(label):
         config = lab.directory / f"{label}.json"
@@ -111,6 +115,7 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
         last = None
         while time.monotonic() < deadline:
             last = worker.call("snapshot")
+            last_snapshots[worker.label] = last
             if predicate(last):
                 return last
             time.sleep(.05)
@@ -124,7 +129,7 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
     def delivered(worker, mid):
         return wait_state(worker, lambda state: any(row["id"] == mid for row in state["messages"])
                           and any(row["id"] == mid and row["state"] == "dispatched" for row in state["inbox"]),
-                          "Business row missing")
+                          f"Business row missing: {mid}")
 
     def received_once(state, mid, content):
         matches = [row for row in state["messages"] if row["id"] == mid]
@@ -148,10 +153,15 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
         started = time.perf_counter()
         mid = enqueue(sender, content, padding)
         expected[receiver.label][mid] = content
-        state = delivered(receiver, mid)
+        try:
+            state = delivered(receiver, mid)
+        except AssertionError:
+            last_snapshots[sender.label] = sender.call("snapshot")
+            raise
         received_once(state, mid, content)
         accepted(sender, mid)
         observations.append({"case": label, "complete_ms": round((time.perf_counter()-started)*1000, 3)})
+        print(json.dumps({"completed_case": label, "business_messages": sum(map(len, expected.values()))}), flush=True)
         return mid, content
 
     def broker(label, start):
@@ -185,6 +195,26 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
             observations.append({"case": "late-resume-ack-after-path-rotation", "old_epoch_ignored": True})
         first, first_content = send(left, right, "native-prekey")
         send(right, left, "native-ratchet-reply")
+        if defer_after_selection:
+            mid, content = str(uuid.uuid4()), "owned-native-subscription-loss-after-selection"
+            require(left.call("send", message_id=mid, content=content, pause_before_publish=True)["queued"],
+                    "Unsent message was not accepted into the durable outbox")
+            expected["right"][mid] = content
+            state = left.call("snapshot")
+            last_snapshots["left"] = state
+            require(state["paused_publications"] == 1 and not state["ready"], "Subscription fault was not exercised")
+            require(not any(item["id"] == mid for item in state["broker_pending"]), "Unsent message owns a ghost broker token")
+            queued = [item for item in state["outbox"] if item["id"] == mid]
+            require(len(queued) == 1 and queued[0]["state"] == "queued" and queued[0]["attempts"] == 0,
+                    "Unsent selection consumed retry budget or did not return to the queue")
+            require(not any(row["id"] == mid for row in right.call("snapshot")["messages"]),
+                    "Unsent message was incorrectly delivered")
+            left.call("restore_subscriptions")
+            ready(left, paths)
+            received_once(delivered(right, mid), mid, content)
+            accepted(left, mid)
+            observations.append({"case": "subscription-loss-after-selection", "same_message_recovered": True,
+                                 "ghost_broker_tokens": 0, "unsent_retry_attempts": 0})
         replay = left.call("replay", message_id=first)
         require(replay["copies"] == 3, "Did not publish three real MQTT copies")
         state = wait_state(right, lambda value: set(value["wire_observed"].get(replay["packet_hash"], {})) == paths
@@ -246,6 +276,17 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
         ready(left, paths)
         ready(right, paths)
         send(left, right, "all-paths-restored")
+        for cycle in range(path_cycles):
+            failed = sorted(paths)[cycle % len(paths)]
+            broker(failed, False)
+            ready(left, paths - {failed})
+            ready(right, paths - {failed})
+            send(left, right, f"rotation-{cycle + 1}-{failed}-down")
+            send(right, left, f"rotation-{cycle + 1}-{failed}-reply")
+            broker(failed, True)
+            ready(left, paths)
+            ready(right, paths)
+            send(left, right, f"rotation-{cycle + 1}-{failed}-restored")
         for item in (left, right):
             state = item.call("snapshot")
             require(not state["errors"], f"Unexpected native ingress errors: {state['errors']}")
@@ -294,6 +335,7 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
                                  "phone_delivery_tested": False})
         return {"status": "passed", "native_signal": True, "real_contact_store": True,
                 "business_messages": sum(map(len, expected.values())),
+                "path_cycles": path_cycles,
                 "desktop_offline_send_entry_tested": offline_peer_entry, "observations": observations}
     finally:
         failures = []
@@ -303,6 +345,7 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
             except Exception as error:
                 failures.append(str(error))
         report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "last-snapshots.json").write_text(json.dumps(last_snapshots, indent=2), encoding="utf-8")
         for label, config in configs.items():
             if config.with_suffix(".log").exists():
                 (report_dir / f"{label}.log").write_bytes(config.with_suffix(".log").read_bytes())
@@ -316,10 +359,12 @@ async def main():
     parser.add_argument("--report-dir", type=Path, required=True)
     parser.add_argument("--delay-resume", action="store_true", help="Hold real resume ACKs across a path change")
     parser.add_argument("--offline-peer-entry", action="store_true", help="Verify Desktop-to-phone offline enqueue and process recovery")
+    parser.add_argument("--path-cycles", type=int, default=0, help="Repeat owned broker loss/recovery, rotating all three paths (0-100)")
+    parser.add_argument("--defer-after-selection", action="store_true", help="Withdraw real subscriptions after outbox selection, then recover")
     args = parser.parse_args()
     async with OwnedBrokers() as lab:
         report = await asyncio.to_thread(run, lab, asyncio.get_running_loop(), args.endpoint_python, args.report_dir,
-                                        args.delay_resume, args.offline_peer_entry)
+                                        args.delay_resume, args.offline_peer_entry, args.path_cycles, args.defer_after_selection)
     (args.report_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
 

@@ -500,6 +500,22 @@ def mark_outbound_retryable(client_route_id: str, message_id: str) -> None:
             db.close()
 
 
+def mark_outbound_deferred(client_route_id: str, message_id: str) -> None:
+    """Release an unsent selection without consuming the physical retry budget."""
+    with _lock:
+        db = _connect()
+        try:
+            db.execute(
+                """UPDATE outbound_messages
+                   SET status='queued', attempts=MAX(0, attempts-1), updated_at=?
+                   WHERE client_route_id=? AND message_id=? AND status='sending'""",
+                (time.time(), _route(client_route_id), message_id),
+            )
+            db.commit()
+        finally:
+            db.close()
+
+
 def fail_exhausted_outbound(
     max_attempts: int = OUTBOUND_MAX_ATTEMPTS,
     *,

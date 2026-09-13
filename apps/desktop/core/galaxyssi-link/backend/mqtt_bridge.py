@@ -50,6 +50,7 @@ from link_delivery import (
     complete_message,
     discard_route,
     fail_exhausted_outbound,
+    mark_outbound_deferred,
     mark_outbound_published,
     mark_outbound_retryable,
     mark_outbound_sending,
@@ -8486,6 +8487,11 @@ def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, s
                 timing_scope=(client_route_id, message_id),
                 transport_traffic=str(pending.get("transport_traffic") or "message"),
             )
+            # The authenticated path can change after queue selection. A
+            # deferred result owns no packet and will never receive a PUBACK.
+            if getattr(info, "deferred", False) is True:
+                mark_outbound_deferred(client_route_id, message_id)
+                continue
             if info.rc == mqtt.MQTT_ERR_SUCCESS:
                 track_outbound_publish(info, client_route_id, message_id,
                                        mqttc=mqttc, generation=generation)

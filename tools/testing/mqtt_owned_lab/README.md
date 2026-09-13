@@ -123,3 +123,23 @@ The notification APIs start the normal shared retry owner, which the endpoint
 explicitly stops and joins during cleanup. This final scenario does not feed
 Desktop-to-phone envelopes to another Desktop or claim an Android receipt.
 See [notification queue checkpoint](../../../docs/testing/MQTT_NOTIFICATION_QUEUE_20260913.md).
+
+Add `--path-cycles 30` for repeated owned-listener loss/recovery. The failed
+listener rotates across the three catalog IDs; each cycle sends in both
+directions while that listener is down and again after its restoration. This
+adds 90 business messages to the basic nine-message suite. The option is bounded
+to 0-100 cycles and never uses public brokers. These controller-polled timings
+are not a performance comparison or an unbiased latency percentile.
+
+Add `--defer-after-selection` to withdraw the endpoint's real MQTT subscriptions
+after the outbox selects a message but before wire preparation. The message must
+remain queued without a nonexistent broker token or a consumed send attempt.
+Restoring subscriptions must resume the original ciphertext/identity into one
+real business row. TLS, native Signal and receipt validation remain unchanged.
+This adds one business message. See
+[deferred selection checkpoint](../../../docs/testing/MQTT_DEFERRED_SELECTION_20260913.md).
+
+Failure diagnostics retain each inbox entry's payload type, pending broker token
+IDs and both endpoints' last snapshots. Receipts must not be mistaken for missing
+chat rows simply by comparing inbox and history counts. Per-message completion
+markers are printed during long runs; the final JSON report remains the verdict.

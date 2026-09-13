@@ -10,6 +10,17 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+An owned-network timeout led to a deterministic Desktop publisher defect:
+authenticated readiness can expire after outbox selection, and the deferred
+result was incorrectly registered as a nonexistent broker token zero. The
+publisher now preserves the queued ciphertext and releases the unsent selection
+without consuming retry budget. Final expanded Desktop regression passed 169
+cases. Native TLS/Signal boundary verification and three path rotations passed
+19 business messages with empty endpoint logs. The earlier pre-fix 30-cycle
+baseline passed 99 messages but did not reproduce the first intermittent timeout.
+S26U remains absent and no other phone was operated. See
+[deferred selection checkpoint](../testing/MQTT_DEFERRED_SELECTION_20260913.md).
+
 The ordinary connector inbox now has a process-owned WorkManager fallback after
 page consumers, using the original task runtime, supervisor lease and shared
 finalization/projection. Startup scans restore its durable wake-ups. Seven device

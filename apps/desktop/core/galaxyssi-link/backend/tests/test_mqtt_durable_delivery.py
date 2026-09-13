@@ -3,9 +3,12 @@ from __future__ import annotations
 import threading
 import unittest
 import hashlib
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import link_delivery
 import mqtt_bridge
 
 
@@ -30,6 +33,65 @@ class DurableMqttClient:
 
 
 class MqttDurableDeliveryTest(unittest.TestCase):
+    def test_actual_wire_preparation_deferral_replays_same_durable_message(self):
+        peer = paired_client("current")
+        client = Mock(spec=mqtt_bridge.MqttPoolClient)
+        client.is_connected.return_value = True
+        client.peer_routes = SimpleNamespace(ready=lambda _: True, prepare_delivery=Mock(
+            side_effect=[None, SimpleNamespace(size_bound=1024)]))
+        client.policy = SimpleNamespace(limits=SimpleNamespace(small_packet_bytes=65536))
+        client.publish_delivery.return_value = SimpleNamespace(rc=0, mid=91, is_published=lambda: True)
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(link_delivery, "DB_PATH", Path(temporary) / "delivery.db"),
+            patch.object(mqtt_bridge, "list_clients", return_value=[peer]),
+            patch.object(mqtt_bridge, "get_client", return_value=peer),
+            patch.object(mqtt_bridge, "pending_outbound_acks", {}) as pending,
+            patch.object(mqtt_bridge, "pending_outbound_priorities", {}),
+            patch.object(mqtt_bridge, "outbound_publish_reservations", {}) as reservations,
+            patch.object(mqtt_bridge, "early_outbound_acks", {}),
+            patch.object(mqtt_bridge, "transport_timing"),
+            patch.object(mqtt_bridge, "encrypt_signal_payload") as encrypt,
+        ):
+            # Readiness passes selection but expires at the real wire preparation
+            # boundary. No MQTT packet has been submitted at that point.
+            wire = '{"scheme":"signal","body":"immutable-test-ciphertext"}'
+            link_delivery.queue_outbound("current", "stable-message", "topic", wire)
+            self.assertEqual({}, mqtt_bridge.flush_outbound_messages(client))
+            self.assertEqual({}, pending)
+            self.assertEqual({}, reservations)
+            self.assertEqual("queued", link_delivery.outbound_status("current", "stable-message"))
+            queued = link_delivery.pending_outbound()
+            self.assertEqual([(0, wire)], [(item["attempts"], item["wire_payload"]) for item in queued])
+            client.publish_delivery.assert_not_called()
+
+            result = mqtt_bridge.flush_outbound_messages(client)
+            self.assertEqual([("current", "stable-message")], list(result))
+            client.publish_delivery.assert_called_once()
+            self.assertEqual("published", link_delivery.outbound_status("current", "stable-message"))
+            self.assertEqual({}, pending)
+            self.assertEqual({}, reservations)
+            encrypt.assert_not_called()
+
+    def test_route_change_after_selection_does_not_track_a_deferred_token(self):
+        client = paired_client("current")
+        selected = [{"client_route_id": "current", "message_id": "stable-message",
+                     "wire_payload": "immutable-ciphertext", "transport_traffic": "message"}]
+        with (
+            patch.object(mqtt_bridge, "get_client", return_value=client),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", return_value=mqtt_bridge._DeferredPublishInfo()),
+            patch.object(mqtt_bridge, "pending_outbound_acks", {}) as pending,
+            patch.object(mqtt_bridge, "pending_outbound_priorities", {}),
+            patch.object(mqtt_bridge, "early_outbound_acks", {}),
+            patch.object(mqtt_bridge, "mark_outbound_deferred") as retry,
+            patch.object(mqtt_bridge, "mark_outbound_published") as published,
+        ):
+            result = mqtt_bridge._publish_reserved_outbound(DurableMqttClient(), selected)
+            self.assertEqual({}, pending, "No MQTT packet exists to acknowledge a deferred publication")
+            self.assertEqual({}, result)
+            retry.assert_called_once_with("current", "stable-message")
+            published.assert_not_called()
+
     def test_progress_waits_before_encryption_while_final_bypasses_window(self):
         from task_progress_window import TaskProgressWindow
         window = TaskProgressWindow(limit=1)

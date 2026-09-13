@@ -68,6 +68,8 @@ class Endpoint:
         self.paths = {}
         self.wire_observed = {}
         self.wires = {}
+        self.pause_before_publish = ""
+        self.paused_publications = 0
         self.error_capture = ErrorCapture(self.root / "errors.jsonl")
         logging.getLogger("galaxyssi.mqtt").addHandler(self.error_capture)
 
@@ -106,6 +108,7 @@ class Endpoint:
         self.client = bridge.client = client
         bridge._refresh_pool_peers(client)
         topics = bridge._topics_for_client(paired[0])
+        self.receive_topics = frozenset(topics.receive_window)
         with bridge.mqtt_subscription_lock:
             bridge.mqtt_subscription_expected.clear()
             bridge.mqtt_subscription_expected.update({topic: self.route for topic in topics.receive_window})
@@ -121,6 +124,19 @@ class Endpoint:
             return wire
 
         bridge.encrypt_signal_payload = observed_encrypt
+        actual_publish = bridge._publish_mqtt_wire_payload
+
+        def publish_after_subscription_fault(*args, **kwargs):
+            scope = kwargs.get("timing_scope")
+            if scope and scope == (self.route, self.pause_before_publish):
+                self.pause_before_publish = ""
+                self.paused_publications += 1
+                # Exercise the exact selection/preparation boundary with real
+                # UNSUBSCRIBE. Do not forge readiness, ACKs or business results.
+                client.unsubscribe(self.receive_topics)
+            return actual_publish(*args, **kwargs)
+
+        bridge._publish_mqtt_wire_payload = publish_after_subscription_fault
         self.worker = threading.Thread(target=client.loop_forever, name="owned-native-pool", daemon=True)
         self.worker.start()
         return {"started": True, "identity": self.bundle["identityKeySha256"]}
@@ -161,6 +177,7 @@ class Endpoint:
 
     def snapshot(self):
         import link_delivery as delivery
+        from signal_receive_dispatch import load_envelope
         from peer_chat_store import peer_chat_store, _REMOTE_PURPOSE
         from secure_state import unseal_identifier
         store = peer_chat_store()
@@ -174,6 +191,9 @@ class Endpoint:
             outbox = [{"id": row[0], "state": row[1], "attempts": row[2],
                        "wire_hash": hashlib.sha256(delivery._reveal(row[3], "wire-payload").encode()).hexdigest()}
                       for row in db.execute("SELECT message_id,status,attempts,wire_payload FROM outbound_messages")]
+        for row in inbox:
+            envelope = load_envelope(self.route, row["id"])
+            row["type"] = str(envelope.get("payload", {}).get("type") or "")
         with self.observation_lock:
             observations = {"received_paths": dict(self.paths), "dropped": self.dropped,
                             "wire_observed": {digest: dict(counts) for digest, counts in self.wire_observed.items()}}
@@ -186,12 +206,17 @@ class Endpoint:
                 observations["held_resume_acks"].append({"broker": message.broker_id,
                     "epoch": payload.get("acknowledged_route_epoch")})
         peer = self.client.peer_routes._peers[self.route]
+        with self.bridge.pending_outbound_acks_lock:
+            observations["broker_pending"] = [{"token": token, "id": key[1]}
+                for token, key in self.bridge.pending_outbound_acks.items() if key[0] == self.route]
         with peer.lock:
             observations["local_epoch"] = peer.local.epoch if peer.local else 0
             observations["local_brokers"] = sorted(peer.local.receive_brokers) if peer.local else []
         return {"pid": os.getpid(), "ready": self.client.peer_routes.ready(self.route),
                 "paths": self.client.path_snapshot()["paths"], **observations,
                 "ingress": self.bridge.mqtt_ingress_status(), "inbox": inbox, "outbox": outbox,
+                "delivery": self.client.delivery.diagnostics(),
+                "paused_publications": self.paused_publications,
                 "errors": list(self.error_capture.errors),
                 "messages": [{"id": row["message_id"] if row["direction"] == "outbound" else remote_ids[row["message_id"]],
                               "direction": row["direction"], "delivery_status": row["delivery_status"],
@@ -200,6 +225,8 @@ class Endpoint:
 
     def send(self, value):
         mid = value["message_id"]
+        if value.get("pause_before_publish"):
+            self.pause_before_publish = mid
         payload = {"type": "peer_message", "message_id": mid, "source_message_id": mid,
                    "contact_id": self.remote, "conversation_id": "owned-native-conversation",
                    "content": value["content"], "attachments": [], "time": time.time(), "peer_chat": True}
@@ -261,6 +288,8 @@ def main():
                     result = endpoint.snapshot()
                 elif command == "send":
                     result = endpoint.send(request)
+                elif command == "restore_subscriptions":
+                    result = endpoint.client.subscribe({topic: 1 for topic in endpoint.receive_topics})
                 elif command == "send_peer":
                     result = endpoint.bridge.publish_peer_message(endpoint.route, request["content"])
                 elif command == "notify":
