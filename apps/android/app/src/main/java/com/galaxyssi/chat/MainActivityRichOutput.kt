@@ -931,7 +931,7 @@ internal fun MainActivity.runRemoteAgentTaskDecision(
     Toast.makeText(this, R.string.agent_remote_approval_sent, Toast.LENGTH_SHORT).show()
 }
 
-internal fun MainActivity.agentExecutionLine(state: AgentUiState, entry: AgentAuditEntry): String? {
+internal fun Context.agentExecutionLine(state: AgentUiState, entry: AgentAuditEntry): String? {
     val route = state.plan?.route?.targetTitle
         .orEmpty()
         .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() }
@@ -1034,7 +1034,7 @@ internal fun MainActivity.agentExecutionLoopTimelineText(label: AgentExecutionLo
         AgentExecutionLoopTimelineLabel.CANCELLED -> R.string.agent_loop_timeline_cancelled
     })
 
-internal fun MainActivity.auditDetailValue(detail: String, key: String): String = detail
+internal fun Context.auditDetailValue(detail: String, key: String): String = detail
     .split(';')
     .asSequence()
     .map(String::trim)
@@ -1042,7 +1042,7 @@ internal fun MainActivity.auditDetailValue(detail: String, key: String): String 
     ?.substringAfter('=')
     .orEmpty()
 
-internal fun MainActivity.agentTraceDuration(durationMillis: Long): String =
+internal fun Context.agentTraceDuration(durationMillis: Long): String =
     AgentTranscriptPresentationPolicy.formatElapsedSeconds(durationMillis)
 
 internal fun MainActivity.agentProcessedDuration(durationMillis: Long): String {
@@ -1116,7 +1116,7 @@ private fun MainActivity.scheduleAgentProcessCompletionLookup(
     }
 }
 
-internal fun MainActivity.agentTraceTargetLabel(target: String): String {
+internal fun Context.agentTraceTargetLabel(target: String): String {
     val normalized = target.lowercase(Locale.US)
     return when {
         normalized == "local llm" || normalized == "local model" || normalized == "local-llm" ->
@@ -1131,7 +1131,7 @@ internal fun MainActivity.agentTraceTargetLabel(target: String): String {
     }
 }
 
-internal fun MainActivity.connectorAgentDisplayName(agentId: String, fallbackName: String): String {
+internal fun Context.connectorAgentDisplayName(agentId: String, fallbackName: String): String {
     val contacts = AppStore.contacts(this)
     for (index in 0 until contacts.length()) {
         val contact = contacts.optJSONObject(index) ?: continue
@@ -1143,7 +1143,7 @@ internal fun MainActivity.connectorAgentDisplayName(agentId: String, fallbackNam
     return fallbackName
 }
 
-internal fun MainActivity.localizedAgentProcessText(value: String): String {
+internal fun Context.localizedAgentProcessText(value: String): String {
     val replacements = listOf(
         "Execute in the on-device Linux sandbox",
         "Run and verify in the phone's on-device Linux runtime",

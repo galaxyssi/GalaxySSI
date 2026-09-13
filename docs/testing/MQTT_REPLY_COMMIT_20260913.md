@@ -3,6 +3,12 @@
 Date: 2026-09-13. This continues the full multi-broker objective; it is not
 all-windows-closed acceptance or a release completion claim.
 
+Follow-up: the isolated WorkManager fixture and two new projection device cases
+have now been verified, then the shared application-Context transcript projection
+passed a 24-case S26U run. See
+[window-independent projection](MQTT_WINDOW_PROJECTION_20260913.md). This clears
+the specific fixture/device-test gaps below, not the full headless recovery gap.
+
 ## Failure Boundary
 
 The normal Android connector resume hook persisted a workspace, retired its

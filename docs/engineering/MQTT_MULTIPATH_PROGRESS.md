@@ -10,6 +10,15 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+The previously failing isolated window/history suite now passes on S26U, twice
+with different class order (20 cases). Production transcript projection was then
+made callable with application Context, preserving the existing UI entry point
+and output rules. Its four new no-Activity cases plus those 20 cases passed as
+one 24-case run. The subsequent normal full-runtime build and 67 JVM tests passed;
+its 1.2.0 (1005) APK is built but not installed. This is shared persistence infrastructure, not yet a complete
+process-owned reply consumer. See
+[window-independent projection](../testing/MQTT_WINDOW_PROJECTION_20260913.md).
+
 PR preparation has synchronized `origin/main` at `f66030ecb`. That main revision
 already uses Android versionCode 1004, so the merged PR source retains versionName
 1.2.0 and advances versionCode to 1005. Desktop stays 1.2.0. The deployed Android
