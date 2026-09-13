@@ -8,7 +8,7 @@
   "scripts": {
     "test:pairing-readiness": "node --test scripts/pairing-readiness.test.js",
     "start": "node .electron-runtime/node_modules/electron/cli.js .",
-    "check": "node --test scripts/connecting-animation.test.js scripts/peer-voice-playback.test.js scripts/peer-hold-to-talk.test.js scripts/peer-conversation-preview.test.js scripts/peer-send-result.test.js scripts/text-context-menu.test.js scripts/blob-settings.test.js scripts/backend-readiness.test.js && node scripts/check.js",
+    "check": "node --test scripts/connecting-animation.test.js scripts/peer-voice-playback.test.js scripts/peer-hold-to-talk.test.js scripts/peer-conversation-preview.test.js scripts/peer-send-result.test.js scripts/text-context-menu.test.js scripts/blob-settings.test.js scripts/backend-readiness.test.js scripts/windows-exe-resources.test.js && node scripts/check.js",
     "status:connectors": "node scripts/connector-status.js",
     "smoke": "node scripts/smoke.js",
     "smoke:pairing": "node scripts/smoke-pairing.js",

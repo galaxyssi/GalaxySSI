@@ -3,9 +3,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { acquireGalaxySSILock } = require("./smoke-lock");
+const { resourceMetadata, findResourceTool, applyExecutableResources } = require("./windows-exe-resources");
 
 const root = path.resolve(__dirname, "..");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const expectedResources = resourceMetadata(packageMetadata.version);
+const rcedit = findResourceTool(root);
 const workspaceRoot = path.resolve(root, "..");
 const electronDistCandidates = [
   path.join(root, ".electron-runtime", "node_modules", "electron", "dist"),
@@ -130,15 +133,6 @@ function run(command, args, options = {}) {
     stdio: options.stdio || "inherit",
     windowsHide: true
   });
-}
-
-function findRceditExecutable() {
-  const candidates = [
-    process.env.RCEDIT_EXE,
-    path.join(root, "node_modules", "rcedit", "bin", "rcedit.exe"),
-    path.join(root, ".electron-runtime", "node_modules", "rcedit", "bin", "rcedit.exe")
-  ].filter(Boolean);
-  return candidates.find((candidate) => fs.existsSync(candidate));
 }
 
 function findPythonExecutable() {
@@ -283,29 +277,7 @@ if (bundlePython) {
 }
 
 const iconPath = path.join(root, "assets", "galaxyssi.ico");
-const rcedit = findRceditExecutable();
-if (rcedit) {
-  try {
-    const versionParts = String(packageMetadata.version || "0.0.0").split(".");
-    const fileVersion = [...versionParts, "0", "0", "0", "0"].slice(0, 4).join(".");
-    const resourceArgs = [
-      signalExe,
-      "--set-file-version", fileVersion,
-      "--set-product-version", String(packageMetadata.version || "0.0.0"),
-      "--set-version-string", "ProductName", "GalaxySSI Desktop",
-      "--set-version-string", "FileDescription", "GalaxySSI Desktop super agent and mobile gateway",
-      "--set-version-string", "CompanyName", "GalaxySSI",
-      "--set-version-string", "OriginalFilename", `${appName}.exe`,
-      "--set-version-string", "LegalCopyright", "Copyright GalaxySSI contributors"
-    ];
-    if (fs.existsSync(iconPath)) resourceArgs.push("--set-icon", iconPath);
-    run(rcedit, resourceArgs);
-  } catch (error) {
-    console.warn(`Unable to embed GalaxySSI executable resources: ${error.message}`);
-  }
-} else {
-  console.warn("rcedit not found; packaged exe will keep the Electron file resources.");
-}
+applyExecutableResources(rcedit, signalExe, expectedResources, fs.existsSync(iconPath) ? iconPath : undefined);
 
 fs.writeFileSync(
   path.join(packageDir, "install-backend-deps.bat"),

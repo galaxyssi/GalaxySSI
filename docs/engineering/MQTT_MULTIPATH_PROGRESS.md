@@ -10,6 +10,18 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Desktop packaging now requires its declared executable-resource tool before any
+sidecar build or packaged-process stop, and verifies Windows resource readback
+instead of warning and reporting success with Electron metadata. Seven focused
+tests and all 44 Desktop checks pass. An isolated copied executable now reports
+FileVersion 1.2.0.0 / ProductVersion 1.2.0 and the correct product fields using the
+lockfile-verified rcedit binary. The full production package was not rebuilt or
+started. See [resource gate evidence](../testing/MQTT_DESKTOP_PACKAGE_RESOURCES_20260913.md).
+This clears the source-level silent-failure defect, not the final package/runtime
+release gate. PR #3045 remains the user's stop boundary.
+
+## Previous Diagnostic Checkpoint
+
 Both endpoint policies now provide bounded recent verified-delivery observations,
 with 32 samples per path, TTL filtering, peer removal and network-reset cleanup.
 PUBACKs, wrong/duplicate receipts and unattributed completion do not become RTT
@@ -537,8 +549,8 @@ remaining work rather than replacing those requirements with six narrow tests.
 | Failure and safety matrix | Owned native process deaths, path losses, receipt loss, duplicates and negative host tests cover subsets | Full cross-platform network/Doze/reboot/reordering/concurrent-artifact matrix, correct status and no duplicated effects or task reassignment |
 | Diagnostics and resources | Per-path transport observations and bounded ownership exist; verified-delivery windows are now exposed in Android protocol diagnostics and the Desktop diagnostic response | Product diagnostic/status acceptance, retry/byte/throughput presentation, single/three-connection PSS/CPU/threads/network/power comparison on Wi-Fi/mobile/weak links; repeated screen-off long runs |
 
-Release closure is additional: finish gates, package the final Desktop, resolve
-its Windows executable resource metadata, install the coordinated final APK on
+Release closure is additional: finish gates, package the final Desktop, verify
+its Windows executable resource metadata on the final package, install the coordinated final APK on
 the explicitly authorized device, and finalize the evidence/PR. PR #3045 is
 already OPEN/DRAFT. Public versions are Android/Desktop 1.2.0; the current
 Android source/build uses versionCode 1005. Source/test changes after packaging
