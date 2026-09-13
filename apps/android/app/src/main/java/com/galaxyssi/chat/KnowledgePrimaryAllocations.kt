@@ -55,7 +55,7 @@ internal class KnowledgePrimaryAllocations(private val file: File) {
         val db = KnowledgeSqlite(file.absolutePath)
         try {
             db.execSQL("PRAGMA journal_mode=DELETE")
-            db.execSQL("PRAGMA synchronous=FULL")
+            KnowledgePrimaryDurability.configureWriter(db)
             db.execSQL("PRAGMA busy_timeout=5000")
             db.execSQL("PRAGMA cache_size=-256")
             db.execSQL("PRAGMA mmap_size=0")

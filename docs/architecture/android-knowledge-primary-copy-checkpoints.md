@@ -39,7 +39,8 @@ An ignored or stale update must fail rather than retire a still-live source.
 
 1. Register the sealed destination and copy job in the catalog.
 2. Copy a bounded page into a destination transaction.
-3. Commit destination frames with FULL durability before the catalog checkpoint.
+3. Commit destination frames with EXTRA synchronization before the catalog checkpoint
+   (Android 1.1.117 and later; earlier versions used FULL).
 4. On replay, delete only the job entry's unpublished tail at or after its durable
    copied cursor, then copy that page again.
 5. Verify destination pages and persist the independent verification cursor.

@@ -1,0 +1,23 @@
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgePrimaryRebootDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+com.galaxyssi.chat.KnowledgePrimaryRebootDeviceTest:
+INSTRUMENTATION_STATUS: test=incompleteCopyResumesAfterDeviceReboot
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.galaxyssi.chat.KnowledgePrimaryRebootDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=incompleteCopyResumesAfterDeviceReboot
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 1.303
+
+OK (1 test)
+
+
+INSTRUMENTATION_CODE: -1

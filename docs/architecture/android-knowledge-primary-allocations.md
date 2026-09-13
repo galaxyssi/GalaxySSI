@@ -10,7 +10,8 @@ retirement could never discover it.
 
 1. Generate a random partition identifier and reject an existing physical path.
 2. Commit that identifier to the separate allocation journal using SQLite
-   DELETE journaling and synchronous FULL. Sync its parent directory before
+   DELETE journaling and synchronous EXTRA (since 1.1.117; originally FULL).
+   Sync its parent directory before
    returning, including when a prior process created the journal but died before
    syncing that directory entry.
 3. Create and sync the body partition, then write and commit its frames.
@@ -71,10 +72,11 @@ the committed insert; replay acknowledgements are idempotent if rolled back.
 See [SQLite synchronous](https://www.sqlite.org/pragma.html#pragma_synchronous)
 and [atomic commit assumptions](https://www.sqlite.org/atomiccommit.html#hardware_assumptions).
 
-The real-process-death sequence is not a power-cut experiment. The older body
-partition writer still uses FULL/DELETE; its journal-unlink durability must be
-audited separately for the entire body-before-catalog power-loss guarantee.
-No physical power-loss acceptance is claimed here.
+The real-process-death sequence is not a power-cut experiment. Android 1.1.116
+still used FULL/DELETE for body writers; Android 1.1.117 applies the stricter
+[primary commit policy](android-knowledge-primary-durability.md). The historical
+acceptance results below remain for 1.1.116. No physical power-loss acceptance is
+claimed here.
 
 ## T575 acceptance
 
