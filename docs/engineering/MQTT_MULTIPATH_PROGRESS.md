@@ -10,6 +10,18 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Current-code probes completed without changing implementation or thresholds.
+Three public providers each returned one 75-byte synthetic test payload; this is
+connectivity only. Owned native healthy and primary-loss cohorts each validated
+66 business messages (30 measured per strategy, six warm-ups). Healthy automatic
+multi-path p95 1255.935ms versus single-path 1108.872ms fails the existing 1.10
+ratio gate (1.132625). Selected-primary loss passes the existing 8s gate at
+2679.745ms p95, with alternate delivery proven in all 30 fault observations.
+See [candidate probes](../testing/MQTT_CANDIDATE_PROBES_20260913.md). No phone or
+production Desktop operation; healthy performance and full acceptance stay open.
+
+## Previous Artifact Checkpoint
+
 Latest development artifacts were built from code revision `a36b6b240`: Android
 1.2.0 (1005), 421,145,752 bytes, valid debug v2 signature, embedded-runtime/16KB/QNN
 checks passed; all 293 prior lib/assets entries remain byte-identical. A separate
@@ -568,16 +580,18 @@ remaining work rather than replacing those requirements with six narrow tests.
 
 | Group | Current evidence | Still required |
 | --- | --- | --- |
-| Performance | Prior lock-fix failures are retained; receive admission was then fixed, with two native control/load passes at 4.906s / 6.291s p95 under the unchanged 8s budget | Repeat single/hedged/striped cold/warm and faulted-path comparisons; verify Android and real model/control latency |
+| Performance | Prior control/load passes and failures are retained. Current healthy small-message p95 ratio 1.132625 fails 1.10; selected-primary loss passes at 2.680s under the unchanged 8s budget, each run with 66 correct business messages | Establish healthy non-regression; finish single/hedged/striped cold/warm and faulted-path comparisons; verify Android and real model/control latency |
 | Pairing and devices | Both endpoint pools and authenticated routing are integrated; earlier device/host checkpoints exist | Fresh coordinated S26U/Desktop pairing, all discovery paths, App/App and multiple-phone route isolation, controlled small public-provider compatibility checks |
 | End-to-end artifacts | Native Desktop ingress verifies PNG/video/5/21/32 MiB, hashes, recovery and one artifact | Real Android/P2 striping, both directions, preview/open/save, missing-only alternate-path recovery and full revocation/quota cleanup |
 | Windows and background tasks | Shared stores, supervisor ownership and partial no-Activity result projection are implemented/tested | Ten real windows/model tasks, closing all Activities, complete continuation/learning/handoff projection and interrupted commit recovery |
 | Failure and safety matrix | Owned native process deaths, path losses, receipt loss, duplicates and negative host tests cover subsets | Full cross-platform network/Doze/reboot/reordering/concurrent-artifact matrix, correct status and no duplicated effects or task reassignment |
 | Diagnostics and resources | Per-path transport observations and bounded ownership exist; verified-delivery windows are now exposed in Android protocol diagnostics and the Desktop diagnostic response | Product diagnostic/status acceptance, retry/byte/throughput presentation, single/three-connection PSS/CPU/threads/network/power comparison on Wi-Fi/mobile/weak links; repeated screen-off long runs |
 
-Release closure is additional: finish gates, package the final Desktop, verify
-its Windows executable resource metadata on the final package, install the coordinated final APK on
-the explicitly authorized device, and finalize the evidence/PR. PR #3045 is
+Release closure is additional: finish gates, deploy/verify the coordinated builds
+on the explicitly authorized device and current-user Desktop, and finalize the
+evidence/PR. Current code has a newly built full APK and a separately packaged
+Desktop with verified Windows executable resources and isolated startup/UI smoke;
+see the artifact checkpoint above. Those packages are not deployed. PR #3045 is
 already OPEN/DRAFT. Public versions are Android/Desktop 1.2.0; the current
 Android source/build uses versionCode 1005. Source/test changes after packaging
 are not deployed merely because the version string matches.
