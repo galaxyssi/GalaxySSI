@@ -14,12 +14,15 @@ PR preparation has synchronized `origin/main` at `f66030ecb`. That main revision
 already uses Android versionCode 1004, so the merged PR source retains versionName
 1.2.0 and advances versionCode to 1005. Desktop stays 1.2.0. The deployed Android
 artifact described below is still the pre-main-sync 1.2.0 (1002) build; do not
-confuse its device evidence with a new 1005 installation. Full acceptance remains
-unfinished and the PR is intended to be a draft.
+confuse its device evidence with a new 1005 installation. Draft
+[PR #3045](https://github.com/galaxyssi/GalaxySSI/pull/3045) is now open against main,
+without auto-merge. Post-sync verification passed 67 JVM tests, Android-test
+Kotlin compilation, full-runtime APK packaging and 37 Desktop checks. Full
+acceptance remains unfinished; the new 1005 APK has not been installed.
 
 The next coordinated PR must use Android/Desktop **v1.2.0**, as explicitly
-requested by the user. Source versions are Android 1.2.0 (1002) and Desktop
-1.2.0, committed in `90bb10c5a`. The user subsequently requested installation and
+requested by the user. The earlier version checkpoint set Android 1.2.0 (1002)
+and Desktop 1.2.0 in `90bb10c5a`. The user subsequently requested installation and
 Desktop startup. Desktop 1.2.0 is now packaged with Python/Signal JVM and running;
 its visible window shows v1.2.0 and all three TLS/subscription paths are ready.
 Android 1.2.0 (1002) passed the final full-runtime build and 54 focused JVM cases,

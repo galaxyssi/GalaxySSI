@@ -155,12 +155,27 @@ warned that rcedit was unavailable, so the executable's Windows file resources
 remain Electron's; application version metadata and the visible App version are
 1.2.0. This startup observation does not prove all outage or artifact scenarios.
 
-## Remaining Boundaries
+## Post-Main-Sync PR Verification
 
 PR preparation merges main `f66030ecb` after this deployment. Its versionCode
 1004 requires the merged Android source to advance to 1005 while retaining
 versionName 1.2.0. The installed 1002 artifact and its checks above precede that
 merge. Desktop source and deployed application version remain 1.2.0.
+
+Draft [PR #3045](https://github.com/galaxyssi/GalaxySSI/pull/3045) is open against
+main without auto-merge. Source checkpoint `7ee3cbd45` passed the ordinary full
+runtime build in 9m 10s (`build/mqtt-1.2.0-main-sync-v1.log`). All 67 JVM cases
+passed with zero failures, errors or skips: the 54 connector cases plus the 13
+knowledge read-connection-pool cases merged from main. Android-test Kotlin
+compilation passed, but this does not claim the new device cases have run.
+Desktop `npm run check` again passed 37 cases and its structure check.
+
+The generated APK is 1.2.0 (1005), 418,773,434 bytes, SHA-256
+`14DD9FD342A377A285E5C9108EE066DACE168088CD7343098DC20DC32899FE02`.
+It was not installed during PR preparation. S26U still runs the previously
+verified 1002 artifact; the running Desktop and phone data were not modified.
+
+## Remaining Boundaries
 
 The ordered sequence is not a transaction spanning workspace, transcript,
 pending-delivery and inbox databases. Partial commits need idempotent replay;
