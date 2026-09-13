@@ -275,7 +275,8 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
         allocations.remember(id)
         KnowledgeSqlite(path.absolutePath).use { db ->
             // Immutable body files do not need WAL snapshots; the catalog owns logical snapshots.
-            db.execSQL("PRAGMA journal_mode=DELETE"); db.execSQL("PRAGMA synchronous=FULL")
+            db.execSQL("PRAGMA journal_mode=DELETE")
+            KnowledgePrimaryDurability.configureWriter(db)
             db.execSQL("CREATE TABLE frames(entry_key TEXT NOT NULL,ordinal INTEGER NOT NULL,ciphertext TEXT NOT NULL," +
                 "PRIMARY KEY(entry_key,ordinal)) WITHOUT ROWID")
             db.execSQL("PRAGMA user_version=1")
@@ -290,7 +291,7 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
         try {
             db.execSQL("PRAGMA busy_timeout=5000")
             db.execSQL("PRAGMA cache_size=-2048"); db.execSQL("PRAGMA mmap_size=0")
-            db.execSQL(if (readOnly) "PRAGMA query_only=ON" else "PRAGMA synchronous=FULL")
+            if (readOnly) db.execSQL("PRAGMA query_only=ON") else KnowledgePrimaryDurability.configureWriter(db)
             db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst() && it.getInt(0) == 1) }
             return db
         } catch (failure: Throwable) { db.close(); throw failure }

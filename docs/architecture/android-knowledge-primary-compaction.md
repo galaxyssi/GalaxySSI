@@ -45,7 +45,8 @@ compressed frame and its decoded text are handled at a time. The compressed
 frame is re-encrypted with destination-bound AAD; relocation does not assemble
 the entire body or alter logical item rows, revisions, FTS or vector documents.
 
-All destination transactions commit with the existing FULL durability settings
+All destination transactions commit with EXTRA synchronization since Android
+1.1.117 (previously FULL), verified on each physical writer connection,
 before the catalog publishes new references and its checkpoint. A crash before
 catalog commit leaves old references authoritative. A crash after catalog commit
 leaves destination frames durable. The old source enters the persistent retirement
