@@ -13,6 +13,7 @@ import org.json.JSONObject
 internal class KnowledgePrimaryPartitions(context: Context, root: File, private val namespace: String,
     private val partitionBytes: Long = 64L * 1024 * 1024, private val partitionRecords: Long = 65_536) : Closeable {
     private val root = root.canonicalFile
+    internal val allocations = KnowledgePrimaryAllocations(File(this.root.absolutePath + ".allocations.sqlite"))
     private val cipher = AgentRowStorageCipher(context, "knowledge-primary:v1:$namespace")
     private val writers = linkedMapOf<String, KnowledgeSqlite>()
     @Volatile private var writerThread: Thread? = null
@@ -271,6 +272,7 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
         if (!root.isDirectory) { check(root.mkdirs()); sync(requireNotNull(root.parentFile)) }
         val path = path(id)
         check(!path.exists())
+        allocations.remember(id)
         KnowledgeSqlite(path.absolutePath).use { db ->
             // Immutable body files do not need WAL snapshots; the catalog owns logical snapshots.
             db.execSQL("PRAGMA journal_mode=DELETE"); db.execSQL("PRAGMA synchronous=FULL")
@@ -295,14 +297,19 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
     }
 
     private fun path(id: String): File { require(validToken(id)); return File(root, "$id.sqlite") }
+    internal fun verifyRegistered(id: String) {
+        check(KnowledgePrimaryAllocations.regularOrMissing(path(id))) { "Registered primary partition is missing" }
+    }
     internal fun removeRetired(id: String): Long {
         check(writerThread == null)
         val file = path(id)
         KnowledgePrimaryReadConnections.retire(file)
         var bytes = 0L
-        for (suffix in listOf("", "-wal", "-shm", "-journal")) {
-            val part = File(file.absolutePath + suffix)
-            if (part.exists()) {
+        val parts = listOf("", "-wal", "-shm", "-journal").map { File(file.absolutePath + it) }
+        // Validate the complete set before unlinking anything; never follow a link or remove a directory.
+        parts.forEach { KnowledgePrimaryAllocations.regularOrMissing(it) }
+        for (part in parts) {
+            if (KnowledgePrimaryAllocations.regularOrMissing(part)) {
                 bytes = Math.addExact(bytes, part.length())
                 check(part.delete()) { "Retired primary partition could not be removed" }
             }

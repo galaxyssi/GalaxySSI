@@ -2,7 +2,8 @@ package com.galaxyssi.chat
 
 /** Called under the cross-process exclusive snapshot lease, outside any writer transaction. */
 internal object KnowledgePrimaryReclaim {
-    data class Page(val partitions: Int, val bytes: Long, val complete: Boolean, val movedRecords: Int = 0)
+    data class Page(val partitions: Int, val bytes: Long, val complete: Boolean, val movedRecords: Int = 0,
+        val allocationEntries: Int = 0, val orphanAllocations: Int = 0)
 
     fun advance(db: KnowledgeSqlite, primary: KnowledgePrimaryPartitions, checkActive: () -> Unit): Page {
         checkActive()
@@ -24,6 +25,13 @@ internal object KnowledgePrimaryReclaim {
             bytes = Math.addExact(bytes, primary.removeRetired(key))
             db.delete("knowledge_primary_retired", "partition_key=?", arrayOf(key))
         }
-        return Page(keys.size, bytes, !KnowledgePrimaryCompaction.pending(db), moved)
+        val allocations = primary.allocations.replay(isReferenced = { id ->
+            db.rawQuery("SELECT 1 FROM knowledge_primary_partitions WHERE partition_key=? UNION ALL " +
+                "SELECT 1 FROM knowledge_primary_refs WHERE partition_key=? UNION ALL " +
+                "SELECT 1 FROM knowledge_primary_copy WHERE source_partition=? OR destination_partition=? LIMIT 1",
+                arrayOf(id, id, id, id)).use { it.moveToFirst() }
+        }, verifyReferenced = primary::verifyRegistered, remove = primary::removeRetired, checkActive = checkActive)
+        return Page(keys.size, Math.addExact(bytes, allocations.bytes),
+            allocations.complete && !KnowledgePrimaryCompaction.pending(db), moved, allocations.visited, allocations.orphaned)
     }
 }
