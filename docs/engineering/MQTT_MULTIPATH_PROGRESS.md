@@ -10,6 +10,19 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+The production background recovery worker now commits its result to the original
+transcript before workspace completion, with a scoped pending checkpoint and a
+projection-only replay path that does not instantiate the Agent runtime. Its
+redundant approval loop was removed. Four new real-worker cases plus the prior
+24 cases passed on S26U (28 total, 6.322s); the four new cases passed independently
+again. This includes ten concurrent saved-result workers, not ten live models or
+Activity windows. The ordinary connector inbox's complete process-owned consumer
+remains unfinished. See [recovery result projection](../testing/MQTT_RECOVERY_TRANSCRIPT_20260913.md).
+The normal full-runtime build then passed in 7m 38s with 129 JVM tests across
+17 suites. Its 1.2.0 (1005) APK is built but not installed; S26U production remains
+1002 and both isolated test packages were removed. No Desktop changes in this
+follow-up.
+
 The previously failing isolated window/history suite now passes on S26U, twice
 with different class order (20 cases). Production transcript projection was then
 made callable with application Context, preserving the existing UI entry point
