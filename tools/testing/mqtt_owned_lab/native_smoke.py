@@ -63,20 +63,22 @@ class Worker:
         return response["result"]
 
     def stop(self, *, crash=False):
-        if self.process.poll() is None:
-            if crash:
-                self._kill_tree()
-            else:
-                self.process.stdin.write(json.dumps({"id": 0, "command": "shutdown"}) + "\n")
-                self.process.stdin.flush()
-                try:
-                    self.process.wait(timeout=35)
-                except subprocess.TimeoutExpired:
+        try:
+            if self.process.poll() is None:
+                if crash:
                     self._kill_tree()
-                    raise AssertionError(f"{self.label} did not stop gracefully")
-                require(self.process.returncode == 0, f"{self.label} cleanup failed")
-        self.reader.join(5)
-        self.log.close()
+                else:
+                    self.process.stdin.write(json.dumps({"id": 0, "command": "shutdown"}) + "\n")
+                    self.process.stdin.flush()
+                    try:
+                        self.process.wait(timeout=35)
+                    except subprocess.TimeoutExpired:
+                        self._kill_tree()
+                        raise AssertionError(f"{self.label} did not stop gracefully")
+                    require(self.process.returncode == 0, f"{self.label} cleanup failed")
+        finally:
+            self.reader.join(5)
+            self.log.close()
 
     def _kill_tree(self):
         if os.name == "nt":

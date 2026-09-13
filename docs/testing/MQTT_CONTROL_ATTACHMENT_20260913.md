@@ -136,6 +136,113 @@ structure check passed. The test code rejects mismatched task events, missing
 cancel completion, absent chunk overlap, exhausted fixture bounds and a failed
 performance gate. These tests are not additional measured control samples.
 
+## ACK Profiling And Lock Regression
+
+`build/mqtt-native-control-ack-profile-v1/report.json` retained a failed run:
+all 60 measured cancellations completed, but the final attachment receipt stayed
+at 29,360,128 bytes, with chunks 112-127 missing. The sender's diagnostic RPC
+then timed out and its worker could not stop gracefully. This report is **not**
+an artifact pass. No deadlock stack was captured, so its precise cause remains
+unproven. Cleanup also exposed a test-worker log handle that was not closed
+after a shutdown exception; the cleanup helper now closes it in `finally`
+without suppressing the failed shutdown.
+
+The unchanged-production repeat,
+`build/mqtt-native-control-ack-profile-v2/report.json`, passed all 61 cancels and
+the full 32 MiB artifact with no cleanup errors, but failed the same 8000ms
+provisional latency budget (exit 2):
+
+| Cohort | n | RX_STORED p50 | RX_STORED p95 | Cancel result p50 | Cancel result p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Idle | 30 | 1048.44ms | 2058.23ms | 3334.32ms | 6716.76ms |
+| Attachment active | 30 | 3108.50ms | 4999.01ms | 6768.03ms | 10532.62ms |
+
+Artifact controller completion was 355.125s, with the same source/stream hash.
+This is additional evidence of variability, not an improvement or a release
+pass. Completed control samples are now retained incrementally even if a later
+artifact/cleanup check fails. Isolated workers dump stacks when an RPC or
+shutdown runs longer than 25s; this records evidence, not a transport timeout.
+
+Code inspection found a concrete lock inversion: `BrokerPool.publish` held
+`path.lock` while entering Paho's outgoing-message mutex; Paho's PUBACK handler
+can hold that mutex while entering the pool callback, which needs `path.lock`.
+A deterministic bounded two-thread regression failed before the fix. A second
+pre-fix regression showed that disconnecting inside `publish` could still
+register the old client's packet after its disconnect cleanup.
+
+The pool now reserves the existing packet budget under its state lock, calls
+Paho outside that lock, and revalidates the client/generation/connection and
+reservation before registering its packet ID. Disconnect clears reservations.
+Concurrent early PUBACKs remain per-path/per-generation; the last in-progress
+publication retires unmatched early ACKs. This does not change routing policy,
+queue limits, durable receipt semantics, encryption or the UI. It fixes the
+demonstrated lock ordering, but does not prove that every previous native hang
+had this cause or that performance is now acceptable.
+
+ACK probes initially retained first-observed timestamps per task. Different
+copies can overlap, so those timestamps must not be subtracted to estimate a
+single ACK call or the time between its return and business dispatch. The
+updated probe retains paired stages for each call, including its duplicate
+flag, with at most 16 records per task and an explicit overflow count. It never
+suppresses a real ACK when the observation cap is reached.
+
+## Post-Lock-Fix Measurement
+
+`build/mqtt-native-control-lock-fix-v1/report.json` used the fixed production
+pool and the original ACK profiling probes. All 61 cancellations, all 30 load
+overlap checks and all 128 chunks passed; the 32 MiB source/stream hash matched,
+with one available artifact. Both workers exited normally and cleanup errors
+were empty. The process still exited **2**, because loaded cancellation-result
+p95 was **9556.26ms**, above the unchanged 8000ms provisional budget.
+
+| Cohort | n | RX_STORED p50 | RX_STORED p95 | Cancel result p50 | Cancel result p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Idle | 30 | 1214.05ms | 2147.52ms | 3504.74ms | 5719.20ms |
+| Attachment active | 30 | 3420.75ms | 6188.88ms | 6299.92ms | 9556.26ms |
+
+Artifact controller completion was 352.968s. Each cohort submitted the same
+90 control packets and counted bytes as the earlier runs. No concurrent builds
+or other owned load tests ran during measurement; unrelated host activity was
+not controlled. This is a successful business-correctness regression, **not**
+performance acceptance or proof of a causal end-to-end speedup.
+
+The paired-ACK repeat, `build/mqtt-native-control-lock-fix-v2/report.json`, used
+the same fixed production code. Again all 61 cancellations, 30 overlap checks,
+128 chunks and source/stream hashes passed with one available artifact and no
+cleanup errors. Controller completion was 378.484s. The provisional performance
+gate **failed again** (exit 2):
+
+| Cohort | n | RX_STORED p50 | RX_STORED p95 | Cancel result p50 | Cancel result p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Idle | 30 | 1231.60ms | 2132.61ms | 3387.11ms | 6250.42ms |
+| Attachment active | 30 | 3850.04ms | 6749.64ms | 6564.98ms | 12504.30ms |
+
+The loaded cohort contained exactly one non-duplicate ACK call per task (30
+calls total), plus 70 duplicate ACK calls. Paired original ACK duration was
+p50 214.55ms / p95 313.07ms / maximum 335.16ms. Duplicate ACK duration was p50
+214.42ms / p95 350.32ms / maximum 848.89ms; these 70 calls are not 70 independent
+tasks. The original ACK return-to-dispatch gap was 0.0044-0.0147ms on the same
+receiver clock, so there is no measured multi-second gap at that specific
+boundary. Earlier task-wide first-observed stages mixed invocations and cannot
+support such a claim. The remaining delay needs receive-queue/decrypt/store and
+return-delivery observations; these results do not justify removing durable
+ACKs, encryption, validation or changing the budget.
+
+Final focused verification passed 167 backend cases, 36 native-tool cases and
+Desktop's 37 checks/structure check. The native-tool tests are split between the
+endpoint environment (Pillow/backend dependencies, 25 tests) and controller
+environment (aMQTT/TLS, 11 tests); running the whole discovery under either
+environment fails missing-dependency imports. Those setup failures are not
+counted as passing tests or production transport failures.
+
+The final owned recovery regression,
+`build/mqtt-native-lock-recovery-v1/report.json`, passed **20 business messages
+and three path cycles** with native Signal and the real contact store. It
+includes process recovery, all-path restoration, held resume/receive receipts
+and subscription withdrawal after selection. Both endpoint logs were empty and
+the command exited 0. This checks the changed pool across connection generations;
+it is not a phone/public-network or full chaos-matrix acceptance claim.
+
 ## Remaining Acceptance
 
 Single-path comparisons, cross-time/order repetitions, faulted large-file

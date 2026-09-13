@@ -11,15 +11,58 @@ class ControlEndpoint:
         self.pending = {}
         self.tasks = set()
         self.timings = {}
+        self.current_ack = threading.local()
+
+    def install_ack_timing(self, bridge):
+        actual_ack, actual_publish = bridge._ack_stored_application, bridge._publish_phone_payload
+
+        def acknowledge(mqttc, wire, envelope, payload, trace, **kwargs):
+            task_id = payload.get("task_id") if payload.get("type") == "agent_task_cancel" else None
+            previous = getattr(self.current_ack, "task_id", None)
+            previous_sample = getattr(self.current_ack, "sample", None)
+            self.current_ack.task_id = task_id
+            sample = {"duplicate": bool(kwargs.get("duplicate")), "stages": {}}
+            self.current_ack.sample = sample
+            if task_id in self.tasks:
+                with self.lock:
+                    timing = self.timings.setdefault(task_id, {"stages": {}, "reply_ids": []})
+                    calls = timing.setdefault("ack_calls", [])
+                    if len(calls) < 16:
+                        calls.append(sample)
+                    else:
+                        timing["ack_calls_dropped"] = timing.get("ack_calls_dropped", 0) + 1
+            self.stage(task_id, "ack_enter")
+            try:
+                return actual_ack(mqttc, wire, envelope, payload, trace, **kwargs)
+            finally:
+                self.stage(task_id, "ack_return")
+                self.current_ack.task_id = previous
+                self.current_ack.sample = previous_sample
+
+        def publish(mqttc, wire, payload, *args, **kwargs):
+            task_id = getattr(self.current_ack, "task_id", None) if payload.get("type") == "delivery_ack" else None
+            self.stage(task_id, "signal_ack_enter")
+            try:
+                return actual_publish(mqttc, wire, payload, *args, **kwargs)
+            finally:
+                self.stage(task_id, "signal_ack_return")
+
+        bridge._ack_stored_application, bridge._publish_phone_payload = acknowledge, publish
 
     def stage(self, task_id, name):
         if task_id in self.tasks:
             with self.lock:
+                now = self.endpoint.measurements.clock()
                 self.timings.setdefault(task_id, {"stages": {}, "reply_ids": []})["stages"].setdefault(
-                    name, self.endpoint.measurements.clock())
+                    name, now)
+                sample = getattr(self.current_ack, "sample", None)
+                if sample is not None and getattr(self.current_ack, "task_id", None) == task_id:
+                    sample["stages"].setdefault(name, now)
 
     def observe_envelope(self, envelope):
         payload = envelope.get("payload", {})
+        if payload.get("type") == "delivery_ack":
+            self.stage(getattr(self.current_ack, "task_id", None), "signal_ack_encrypt_enter")
         task_id = payload.get("task_id")
         if payload.get("type") == "agent_task_event" and task_id in self.tasks:
             self.stage(task_id, "reply_encrypt_enter")
@@ -86,6 +129,8 @@ class ControlEndpoint:
             manager = self.endpoint.bridge.agent_task_manager
             task = manager.get(task_id)
             stored = manager._store.get(task_id)
+            with self.lock:
+                timing = copy.deepcopy(self.timings.get(task_id))
             return {"status": task.status, "stored_status": stored["status"],
-                    "cancel_requested": task.cancel_requested}
+                    "cancel_requested": task.cancel_requested, "timing": timing}
         raise ValueError("Unsupported owned control command")

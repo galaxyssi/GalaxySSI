@@ -2,6 +2,7 @@
 from contextlib import closing
 from dataclasses import asdict, replace
 import hashlib
+import faulthandler
 import json
 import logging
 import os
@@ -116,6 +117,7 @@ class Endpoint:
                 raise ValueError("Control fixture requires attachment dispatch and native measurements")
             from native_control_endpoint import ControlEndpoint
             self.controls = ControlEndpoint(self)
+            self.controls.install_ack_timing(bridge)
             actual_task_event = bridge._publish_or_queue_task_event
 
             def task_event(mqttc, wire, task, trace):
@@ -420,6 +422,7 @@ def main():
         print(json.dumps({"boot": True, "bundle": endpoint.bundle, "pid": os.getpid()}), flush=True)
         for line in sys.stdin:
             request = json.loads(line)
+            faulthandler.dump_traceback_later(25, file=sys.stderr)
             try:
                 command = request["command"]
                 if command == "configure":
@@ -470,9 +473,15 @@ def main():
             except Exception as error:
                 logging.exception("Owned worker command failed")
                 print(json.dumps({"id": request["id"], "error": type(error).__name__}), flush=True)
+            finally:
+                faulthandler.cancel_dump_traceback_later()
     finally:
         if endpoint:
-            endpoint.close()
+            faulthandler.dump_traceback_later(25, file=sys.stderr)
+            try:
+                endpoint.close()
+            finally:
+                faulthandler.cancel_dump_traceback_later()
 
 
 if __name__ == "__main__":

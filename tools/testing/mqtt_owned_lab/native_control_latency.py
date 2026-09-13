@@ -37,6 +37,7 @@ def run(lab, loop, python, report_dir, single_path=None):
     workers, configs, cohorts, all_controls = [], {}, {"idle": [], "attachment_active": []}, []
     report = {"status": "running", "network": "owned_loopback_tls", "samples_per_cohort": 30,
         "single_available_path": single_path, "cohorts": cohorts, "overlap": {},
+        "raw_samples": {}, "receiver_control_timings": {}, "control_tasks": {},
         "scope": "real native Signal, durable cancel dispatch/task ledger and Desktop attachment ingress; no model or Android",
         "attachment_sender_traffic": "Desktop MESSAGE classification of phone-shaped input_attachment_chunk, not Android CHUNK",
         "provisional_loaded_cancel_p95_budget_ms": 8000, "release_gate": "not_evaluated"}
@@ -71,7 +72,10 @@ def run(lab, loop, python, report_dir, single_path=None):
         sample = wait(left, "measurements", lambda value: value and
             {"receipt_committed", "cancel_event_received"} <= value["stages"].keys() and
             all(packet["accepted"] is not None for packet in value["packets"].values()), message_id=mid)
+        report["raw_samples"][mid] = sample
+        report["control_tasks"][mid] = record["task_id"]
         state = right.call("control", operation="inspect", task_id=record["task_id"])
+        report["receiver_control_timings"][record["task_id"]] = state["timing"]
         require(state["status"] == state["stored_status"] == "cancelled" and state["cancel_requested"],
                 "Task cancellation was not persisted")
         if chunks:

@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import threading
 import unittest
 from unittest.mock import Mock
 
@@ -74,6 +75,76 @@ class ControlEndpointTests(unittest.TestCase):
         self.assertIn("started", self.endpoint.measurements.snapshot("reply")["stages"])
         result["reply_ids"].clear()
         self.assertEqual(["reply"], self.control.command({"operation": "diagnostics"})[record["task_id"]]["reply_ids"])
+
+    def test_ack_observation_preserves_result_and_restores_context(self):
+        record = self.control.create()
+        bridge = self.endpoint.bridge
+
+        def ack(mqttc, wire, envelope, payload, trace, **kwargs):
+            self.assertTrue(kwargs["duplicate"])
+            self.control.observe_envelope({"payload": {"type": "delivery_ack"}})
+            return bridge._publish_phone_payload(mqttc, wire, {"type": "delivery_ack"})
+
+        bridge._ack_stored_application = ack
+        self.control.install_ack_timing(bridge)
+        self.assertTrue(bridge._ack_stored_application(None, {}, {}, {**record, "type": "agent_task_cancel"}, [], duplicate=True))
+        stages = self.control.command({"operation": "diagnostics"})[record["task_id"]]["stages"]
+        self.assertTrue({"ack_enter", "ack_return", "signal_ack_enter", "signal_ack_return", "signal_ack_encrypt_enter"} <= stages.keys())
+        self.assertIsNone(self.control.current_ack.task_id)
+
+    def test_ack_exception_is_not_swallowed_or_leaked_to_next_request(self):
+        record = self.control.create()
+        self.endpoint.bridge._ack_stored_application = Mock(side_effect=RuntimeError("owned failure"))
+        self.control.install_ack_timing(self.endpoint.bridge)
+        with self.assertRaisesRegex(RuntimeError, "owned failure"):
+            self.endpoint.bridge._ack_stored_application(None, {}, {}, {**record, "type": "agent_task_cancel"}, [])
+        self.assertIsNone(self.control.current_ack.task_id)
+        self.control.observe_envelope({"payload": {"type": "delivery_ack"}})
+        stages = self.control.command({"operation": "diagnostics"})[record["task_id"]]["stages"]
+        self.assertNotIn("signal_ack_encrypt_enter", stages)
+
+    def test_overlapping_ack_calls_keep_their_own_start_and_end(self):
+        record = self.control.create()
+        entered, release = threading.Event(), threading.Event()
+
+        def ack(*args, **kwargs):
+            if not kwargs.get("duplicate"):
+                entered.set()
+                if not release.wait(3):
+                    raise TimeoutError("Owned release was not signaled")
+            return "unchanged"
+
+        bridge = self.endpoint.bridge
+        bridge._ack_stored_application = ack
+        self.control.install_ack_timing(bridge)
+        args = (None, {}, {}, {**record, "type": "agent_task_cancel"}, [])
+        worker = threading.Thread(target=lambda: bridge._ack_stored_application(*args))
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            self.assertEqual("unchanged", bridge._ack_stored_application(*args, duplicate=True))
+        finally:
+            release.set()
+            worker.join(2)
+        self.assertFalse(worker.is_alive())
+        calls = self.control.command({"operation": "diagnostics"})[record["task_id"]]["ack_calls"]
+        self.assertEqual([False, True], [item["duplicate"] for item in calls])
+        primary, duplicate = (item["stages"] for item in calls)
+        self.assertLess(primary["ack_enter"], duplicate["ack_enter"])
+        self.assertLess(duplicate["ack_return"], primary["ack_return"])
+
+    def test_ack_observations_are_bounded_without_blocking_real_ack(self):
+        record = self.control.create()
+        bridge = self.endpoint.bridge
+        actual = bridge._ack_stored_application = Mock(return_value=True)
+        self.control.install_ack_timing(bridge)
+        for _ in range(20):
+            self.assertTrue(bridge._ack_stored_application(None, {}, {},
+                {**record, "type": "agent_task_cancel"}, [], duplicate=True))
+        timing = self.control.command({"operation": "diagnostics"})[record["task_id"]]
+        self.assertEqual(16, len(timing["ack_calls"]))
+        self.assertEqual(4, timing["ack_calls_dropped"])
+        self.assertEqual(20, actual.call_count)
 
 
 if __name__ == "__main__":

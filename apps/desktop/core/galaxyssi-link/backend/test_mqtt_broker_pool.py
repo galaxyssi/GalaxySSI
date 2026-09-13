@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mqtt_broker_catalog import BROKERS
+from mqtt_broker_catalog import BROKERS, CATALOG
 from mqtt_broker_pool import BrokerPool, publish_packet_bytes
 
 
@@ -154,6 +154,146 @@ class BrokerPoolTests(unittest.TestCase):
         self.assertTrue(self.receipts[0].broker_acked)
         self.client("hivemq").ack(1)
         self.assertEqual(1, len(self.receipts))
+
+    def test_publish_does_not_hold_path_lock_while_paho_callback_owns_outgoing_mutex(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        client = self.client("hivemq")
+        self.assertIsNotNone(self.pool.publish("hivemq", 1, "outbox", b"first", attempt_id="first"))
+        outgoing_mutex = threading.Lock()
+        callback_ready, publishing = threading.Event(), threading.Event()
+        actual_publish = client.publish
+
+        def paho_style_publish(*args, **kwargs):
+            publishing.set()
+            if not outgoing_mutex.acquire(timeout=.75):
+                raise TimeoutError("Paho outgoing mutex waits for a callback blocked by path.lock")
+            try:
+                return actual_publish(*args, **kwargs)
+            finally:
+                outgoing_mutex.release()
+
+        def callback():
+            with outgoing_mutex:
+                callback_ready.set()
+                if publishing.wait(2):
+                    client.ack(1)
+
+        client.publish = paho_style_publish
+        worker = threading.Thread(target=callback)
+        worker.start()
+        self.assertTrue(callback_ready.wait(2))
+        try:
+            result = self.pool.publish("hivemq", 1, "outbox", b"second", attempt_id="second")
+        finally:
+            worker.join(2)
+        self.assertFalse(worker.is_alive())
+        self.assertIsNotNone(result, "A broker callback must be able to finish while publish enters Paho")
+        self.assertEqual("first", self.receipts[0].attempt_id)
+
+    def test_disconnect_during_publish_cannot_register_an_old_generation(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        client = self.client("hivemq")
+
+        def lost_during_publish(*args, **kwargs):
+            self.pool._lost(self.pool._paths["hivemq"], client, 1, "owned-disconnect")
+            return SimpleNamespace(rc=0, mid=7)
+
+        client.publish = lost_during_publish
+        self.assertIsNone(self.pool.publish("hivemq", 1, "outbox", b"value", attempt_id="lost"))
+        self.assertEqual(0, self.pool.snapshot()["paths"]["hivemq"]["pending_publishes"])
+        client.ack(7)
+        self.assertEqual([], self.receipts)
+
+    def test_concurrent_publish_reserves_budget_before_calling_client(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        client = self.client("hivemq")
+        limit = CATALOG["limits"]["global_inflight_packets"]
+        entered, results = [], []
+        release, ready = threading.Event(), threading.Condition()
+        actual_publish = client.publish
+
+        def stalled(*args, **kwargs):
+            with ready:
+                entered.append(True)
+                ready.notify_all()
+            if not release.wait(3):
+                raise TimeoutError("Owned release was not signaled")
+            return actual_publish(*args, **kwargs)
+
+        client.publish = stalled
+        threads = [threading.Thread(target=lambda index=index: results.append(
+            self.pool.publish("hivemq", 1, "outbox", b"value", attempt_id=str(index)))) for index in range(limit)]
+        for thread in threads:
+            thread.start()
+        try:
+            with ready:
+                self.assertTrue(ready.wait_for(lambda: len(entered) == limit, timeout=2))
+            self.assertIsNone(self.pool.publish("hivemq", 1, "outbox", b"excess", attempt_id="excess"))
+        finally:
+            release.set()
+            for thread in threads:
+                thread.join(2)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertNotIn(None, results)
+        self.assertEqual(limit, len(set(results)))
+        self.assertEqual(limit, self.pool.snapshot()["paths"]["hivemq"]["pending_publishes"])
+
+    def test_concurrent_early_pubacks_survive_other_publish_returning_first(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        client = self.client("hivemq")
+        acked, release = threading.Event(), threading.Event()
+        results = []
+
+        def early_publish(topic, payload, qos, retain):
+            mid = 41 if payload == b"slow" else 42
+            client.ack(mid)
+            if mid == 41:
+                acked.set()
+                if not release.wait(3):
+                    raise TimeoutError("Owned release was not signaled")
+            return SimpleNamespace(rc=0, mid=mid)
+
+        client.publish = early_publish
+        worker = threading.Thread(target=lambda: results.append(self.pool.publish(
+            "hivemq", 1, "outbox", b"slow", attempt_id="slow")))
+        worker.start()
+        try:
+            self.assertTrue(acked.wait(2))
+            fast = self.pool.publish("hivemq", 1, "outbox", b"fast", attempt_id="fast")
+            self.assertIsNotNone(fast)
+            self.assertEqual(["fast"], [item.attempt_id for item in self.receipts])
+        finally:
+            release.set()
+            worker.join(2)
+        self.assertFalse(worker.is_alive())
+        self.assertNotIn(None, results)
+        self.assertEqual({"slow", "fast"}, {item.attempt_id for item in self.receipts})
+        self.assertEqual(2, len(self.receipts))
+        self.assertEqual({}, self.pool._paths["hivemq"].early_pubacks)
+        self.assertEqual(set(), self.pool._paths["hivemq"].publishing)
+
+    def test_publish_failure_releases_reservation_and_unmatched_early_ack(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        client = self.client("hivemq")
+        actual = client.publish
+
+        def fail(*args, **kwargs):
+            client.ack(43)
+            raise OSError("Owned publish failure")
+
+        client.publish = fail
+        self.assertIsNone(self.pool.publish("hivemq", 1, "outbox", b"value", attempt_id="failed"))
+        path = self.pool._paths["hivemq"]
+        self.assertEqual(set(), path.publishing)
+        self.assertEqual({}, path.early_pubacks)
+        self.assertEqual([], self.receipts)
+        client.publish = actual
+        self.assertIsNotNone(self.pool.publish("hivemq", 1, "outbox", b"retry", attempt_id="retry"))
 
     def test_suback_before_subscribe_returns_is_processed(self):
         self.start()

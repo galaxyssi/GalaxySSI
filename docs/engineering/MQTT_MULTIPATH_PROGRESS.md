@@ -10,6 +10,31 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Desktop's broker pool now releases its state lock before calling Paho publish,
+while retaining bounded in-progress reservations and validating the connection
+generation again after publication. Deterministic pre-fix tests reproduced a
+Paho/PUBACK lock inversion and stale packet registration across disconnect;
+both pass after the fix. Concurrent early ACKs, failed publication cleanup and
+the unchanged capacity bound are also covered. The focused regression selection
+passes 167 cases; 36 native-tool tests pass in their documented environments.
+
+Two post-fix native load runs each passed 61 durable cancellations and a complete
+32 MiB artifact with one available result and no shutdown/cleanup errors.
+Loaded cancel-result p95 was 9556.26ms / 12504.30ms, both **failing** the
+unchanged 8000ms budget. Paired original ACK calls in the repeat took 313.07ms
+p95, with no multi-second ACK-return-to-dispatch gap. Receive queue/decrypt/store
+and return-delivery stages remain to be measured before the next optimization.
+The earlier ACK-profile run that hung during attachment completion remains
+recorded; no stack was captured there, so its exact cause is not claimed proven.
+The lab now records paired per-call ACK stages, retains completed samples on a
+later failure, and captures stacks on long RPCs/shutdown. See the
+[control/load evidence](../testing/MQTT_CONTROL_ATTACHMENT_20260913.md).
+No phone or production Desktop was operated; full acceptance remains incomplete.
+The final post-fix owned native recovery run passed 20 business messages and
+three path cycles, with empty endpoint logs and a normal exit.
+
+## Previous Control Checkpoint
+
 An owned native control/load harness now checks real authenticated task
 cancellation and durable task status while a 32 MiB file is being received.
 Two runs each passed 61 cancellations (30 idle, 30 loaded, one excluded warm-up),
@@ -456,7 +481,37 @@ See [Android pool activation](../testing/MQTT_POOL_ACTIVATION_ANDROID_20260913.m
   in 13m 9s; S26U passed 29 selected tests. Combined distinct executed tests across
   the documented host/device suites are 273; this is not 273 end-to-end MQTT tests.
 
-## Remaining Integration
+## Current Acceptance Backlog
+
+This is the current status grouping, not a percentage-complete estimate. All
+numbered specification requirements still apply; these six groups collect
+remaining work rather than replacing those requirements with six narrow tests.
+
+| Group | Current evidence | Still required |
+| --- | --- | --- |
+| Performance | Owned healthy/failed-path cohorts and two post-lock-fix control/load runs exist; the latest 8s loaded-control p95 gate fails twice | Explain receive/return delay, optimize without weakening safety, repeat single/hedged/striped cold/warm and faulted-path comparisons |
+| Pairing and devices | Both endpoint pools and authenticated routing are integrated; earlier device/host checkpoints exist | Fresh coordinated S26U/Desktop pairing, all discovery paths, App/App and multiple-phone route isolation, controlled small public-provider compatibility checks |
+| End-to-end artifacts | Native Desktop ingress verifies PNG/video/5/21/32 MiB, hashes, recovery and one artifact | Real Android/P2 striping, both directions, preview/open/save, missing-only alternate-path recovery and full revocation/quota cleanup |
+| Windows and background tasks | Shared stores, supervisor ownership and partial no-Activity result projection are implemented/tested | Ten real windows/model tasks, closing all Activities, complete continuation/learning/handoff projection and interrupted commit recovery |
+| Failure and safety matrix | Owned native process deaths, path losses, receipt loss, duplicates and negative host tests cover subsets | Full cross-platform network/Doze/reboot/reordering/concurrent-artifact matrix, correct status and no duplicated effects or task reassignment |
+| Diagnostics and resources | Per-path transport observations and bounded ownership exist | Product diagnostic/status acceptance, single/three-connection PSS/CPU/threads/network/power comparison on Wi-Fi/mobile/weak links; repeated screen-off long runs |
+
+Release closure is additional: finish gates, package the final Desktop, resolve
+its Windows executable resource metadata, install the coordinated final APK on
+the explicitly authorized device, and finalize the evidence/PR. PR #3045 is
+already OPEN/DRAFT. Public versions are Android/Desktop 1.2.0; the current
+Android source/build uses versionCode 1005. Source/test changes after packaging
+are not deployed merely because the version string matches.
+
+Current device scope is S26U only. On this checkpoint ADB shows SM-T575 instead;
+it is not operated. Historical S20U scope below is archived evidence, not current
+permission or a statement that the newest builds were installed there.
+
+## Historical Integration Checklist
+
+The following checklist predates several checkpoints above. Version, deployment,
+PR and remaining-work statements are historical and are superseded by the
+current acceptance backlog; retain them only to understand earlier evidence.
 
 The 2026-09-13 Desktop stored-message dispatch checkpoint passed 262 backend
 tests, including 34 focused ownership/real-bridge cases and live JVM recovery.

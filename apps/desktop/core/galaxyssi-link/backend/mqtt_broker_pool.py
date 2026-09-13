@@ -63,7 +63,7 @@ class _Path:
     last_error: str = ""
     failure_notified: bool = False
     subscribing: bool = False
-    publishing: bool = False
+    publishing: set[int] = field(default_factory=set)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
@@ -246,6 +246,7 @@ class BrokerPool:
             path.subscription_started.clear()
             path.early_subacks.clear()
             path.early_pubacks.clear()
+            path.publishing.clear()
             pending = list(path.publications.items())
             path.publications.clear()
         for mid, (logical_id, attempt_id) in pending:
@@ -350,21 +351,30 @@ class BrokerPool:
         with path.lock:
             client = path.client
             if (not self._current(path, client, generation) or not path.connected
-                    or len(path.publications) >= CATALOG["limits"]["global_inflight_packets"]):
+                    or len(path.publications) + len(path.publishing)
+                    >= CATALOG["limits"]["global_inflight_packets"]):
                 return None
-            path.publishing = True
-            try:
-                info = client.publish(topic, payload, qos=1, retain=False)
-                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            path.publishing.add(logical_id)
+        # Paho invokes PUBACK callbacks while holding its outgoing-message lock.
+        # Reserve capacity here, but never enter Paho while holding our state lock.
+        try:
+            info = client.publish(topic, payload, qos=1, retain=False)
+            with path.lock:
+                if (info.rc != mqtt.MQTT_ERR_SUCCESS
+                        or not self._current(path, client, generation) or not path.connected
+                        or logical_id not in path.publishing):
                     return None
                 path.publications[int(info.mid)] = (logical_id, attempt_id)
                 early = path.early_pubacks.pop(int(info.mid), None)
                 if early is not None:
                     path.publications.pop(int(info.mid), None)
-            except Exception:
-                return None
-            finally:
-                path.publishing = False
+        except Exception:
+            return None
+        finally:
+            with path.lock:
+                path.publishing.discard(logical_id)
+                if not path.publishing:
+                    path.early_pubacks.clear()
         if early is not None:
             self._emit(self._on_publish, PublishReceipt(logical_id, PhysicalKey(broker, generation, int(info.mid)),
                                                        attempt_id, early))
