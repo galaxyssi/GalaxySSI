@@ -64,6 +64,7 @@ class Endpoint:
             signal.stop_signal_sidecar()
             raise ValueError("Refusing non-isolated attachment workspace")
         self.attachments = None
+        self.controls = None
         self.client = self.worker = None
         self.drop_incoming = False
         self.drop_broker = None
@@ -110,6 +111,21 @@ class Endpoint:
         self.remote = paired[0]["signal_name"]
         self.secret = paired[0]["link_secret"]
         self.bridge = bridge
+        if self.config.get("controls"):
+            if not self.config.get("measure") or not self.config.get("attachments"):
+                raise ValueError("Control fixture requires attachment dispatch and native measurements")
+            from native_control_endpoint import ControlEndpoint
+            self.controls = ControlEndpoint(self)
+            actual_task_event = bridge._publish_or_queue_task_event
+
+            def task_event(mqttc, wire, task, trace):
+                self.controls.stage(task.get("task_id"), "task_event_enter")
+                try:
+                    return actual_task_event(mqttc, wire, task, trace)
+                finally:
+                    self.controls.stage(task.get("task_id"), "task_event_return")
+
+            bridge._publish_or_queue_task_event = task_event
         if self.config.get("attachments"):
             from native_attachment_endpoint import AttachmentEndpoint
             self.attachments = AttachmentEndpoint(self)
@@ -119,6 +135,15 @@ class Endpoint:
                 if payload.get("type") == "input_attachment_receipt":
                     self.attachments.capture_receipt(payload)
                     return
+                if self.controls and payload.get("type") == "agent_task_event":
+                    self.controls.capture(payload)
+                    return
+                if self.controls and payload.get("type") == "agent_task_cancel":
+                    self.controls.stage(payload.get("task_id"), "dispatch_enter")
+                    try:
+                        return actual_dispatch(mqttc, paired_client, wire, envelope, payload, trace)
+                    finally:
+                        self.controls.stage(payload.get("task_id"), "dispatch_return")
                 return actual_dispatch(mqttc, paired_client, wire, envelope, payload, trace)
 
             bridge._dispatch_application_payload = dispatch
@@ -140,6 +165,8 @@ class Endpoint:
         actual_encrypt = bridge.encrypt_signal_payload
 
         def observed_encrypt(envelope, *args, **kwargs):
+            if self.controls:
+                self.controls.observe_envelope(envelope)
             wire = actual_encrypt(envelope, *args, **kwargs)
             self.wires.setdefault(envelope["message_id"], wire)
             return wire
@@ -413,6 +440,10 @@ def main():
                     if endpoint.attachments is None:
                         raise ValueError("Attachment fixture not enabled")
                     result = endpoint.attachments.command(request)
+                elif command == "control":
+                    if endpoint.controls is None:
+                        raise ValueError("Control fixture not enabled")
+                    result = endpoint.controls.command(request)
                 elif command == "restore_subscriptions":
                     result = endpoint.client.subscribe({topic: 1 for topic in endpoint.receive_topics})
                 elif command == "send_peer":

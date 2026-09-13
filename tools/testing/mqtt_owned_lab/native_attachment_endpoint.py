@@ -125,6 +125,8 @@ class AttachmentEndpoint:
                                data_b64=base64.b64encode(data).decode())
             else:
                 raise ValueError("Unsupported owned attachment operation")
+        if getattr(self.endpoint, "measurements", None):
+            self.endpoint.measurements.begin(payload["message_id"])
         ok = self.endpoint.bridge._publish_phone_payload(self.endpoint.client,
                 {"_client_route_id": self.endpoint.route}, payload)
         return {"queued": bool(ok), "message_id": payload["message_id"]}

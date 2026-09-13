@@ -10,6 +10,22 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+An owned native control/load harness now checks real authenticated task
+cancellation and durable task status while a 32 MiB file is being received.
+Two runs each passed 61 cancellations (30 idle, 30 loaded, one excluded warm-up),
+all 30 measured overlap checks, and exact file/stream hashes with one available
+artifact. Loaded cancellation-result p95 was 8096.08ms then 6760.19ms against a
+predeclared 8000ms budget: one failure and one pass, **not stable acceptance**.
+No production code changed between those runs. Receiver-local stage measurements
+narrow the next investigation toward pre-dispatch receive/ACK handling; they do
+not prove a broker or lock is at fault. The tooling's 29 unit tests and Desktop's
+37 checks passed. See [control/load evidence](../testing/MQTT_CONTROL_ATTACHMENT_20260913.md).
+This remains a no-model Desktop receiver with phone-shaped payload fixtures,
+not Android/P2 striping, real provider interruption, UI or release acceptance.
+S26U remains absent; no other phone or running Desktop instance was operated.
+
+## Previous Query Checkpoint
+
 The receive-backlog query now uses a partial large-body index instead of scanning
 all completed small-message history per admission. The 10,000-row deterministic
 test falls from 130,000 SQLite VM instructions to fewer than 100, with no temporary
