@@ -216,6 +216,20 @@ and [Desktop hedge verification](../testing/MQTT_HEDGED_DISPATCH_DESKTOP_2026091
 Fair local Signal locks avoid thread
 starvation but do not guarantee ordering across independent brokers.
 
+### Adaptive Small-Message Hedge
+
+Ordinary small messages and final results use a primary path and delayed copies.
+The delay uses the current peer's verified receipt p90 multiplied by 1.5, within
+the shared catalog's bounds. Twenty recent samples are required. Before the
+primary has twenty samples, observations from eligible healthy common paths of
+the same peer can meet that threshold; other peers, expired observations and
+paths outside the candidate set cannot contribute. A mature primary's own
+window takes precedence over the aggregate. Network changes discard old speed
+assumptions. Below the sample threshold the conservative catalog default remains.
+Small stop/cancel controls race immediately and are not delayed by this estimate.
+See [native latency evidence](../testing/MQTT_NATIVE_LATENCY_20260913.md) for the
+owned-network measurements and the remaining performance acceptance boundaries.
+
 ## Durable Wire Fragment Ingress
 
 Both actual receive paths now persist authenticated `signal-chunk` fragments in

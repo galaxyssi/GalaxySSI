@@ -250,7 +250,12 @@ class MultipathPolicy:
             first = candidates[0]
             result = [Dispatch(first, self.paths[first].generation, 0.0)]
             if (small and traffic in {Traffic.MESSAGE, Traffic.FINAL} and len(candidates) > 1):
-                samples = sorted(self._samples(peer, first, now))
+                samples = self._samples(peer, first, now)
+                if len(samples) < CATALOG["timing"]["hedge_min_samples"]:
+                    # Shared receiver/storage latency is observable before any
+                    # individual path has a full window of verified receipts.
+                    samples = [sample for broker in candidates for sample in self._samples(peer, broker, now)]
+                samples = sorted(samples)
                 delay = (samples[math.ceil(len(samples) * 0.9) - 1] * 1.5
                          if len(samples) >= CATALOG["timing"]["hedge_min_samples"] else self.limits.unmeasured_hedge)
                 delay = max(self.limits.hedge_min, min(delay, self.limits.hedge_max))

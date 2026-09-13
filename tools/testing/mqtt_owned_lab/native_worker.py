@@ -70,6 +70,7 @@ class Endpoint:
         self.wires = {}
         self.pause_before_publish = ""
         self.paused_publications = 0
+        self.measurements = None
         self.error_capture = ErrorCapture(self.root / "errors.jsonl")
         logging.getLogger("galaxyssi.mqtt").addHandler(self.error_capture)
 
@@ -104,7 +105,7 @@ class Endpoint:
         factory = client_factory(self.config["endpoints"], self.config["ca"])
         client = MqttPoolClient(classify_publication=lambda *args: client.peer_routes.classify(*args),
             pool_factory=lambda **callbacks: BrokerPool(**callbacks, client_factory=factory))
-        client.peer_routes = PeerRoutes(client)
+        client.peer_routes = PeerRoutes(client, on_ready=self.record_ready)
         self.client = bridge.client = client
         bridge._refresh_pool_peers(client)
         topics = bridge._topics_for_client(paired[0])
@@ -137,9 +138,49 @@ class Endpoint:
             return actual_publish(*args, **kwargs)
 
         bridge._publish_mqtt_wire_payload = publish_after_subscription_fault
+        if self.config.get("measure"):
+            self.install_measurements()
         self.worker = threading.Thread(target=client.loop_forever, name="owned-native-pool", daemon=True)
         self.worker.start()
         return {"started": True, "identity": self.bundle["identityKeySha256"]}
+
+    def install_measurements(self):
+        from native_measurements import Measurements
+        from mqtt_broker_pool import publish_packet_bytes
+        from mqtt_delivery_envelope import parse_stored_receipt
+        metrics = self.measurements = Measurements()
+        actual_queue = self.bridge.queue_outbound
+        actual_ack = self.bridge.acknowledge_verified_outbound
+        dispatch = self.client.delivery
+        actual_publish = dispatch._publish
+
+        def queued(route, mid, *args, **kwargs):
+            result = actual_queue(route, mid, *args, **kwargs)
+            if route == self.route:
+                metrics.stage(mid, "queued")
+            return result
+
+        def acknowledged(route, payload, *args, **kwargs):
+            result = actual_ack(route, payload, *args, **kwargs)
+            if result and route == self.route:
+                metrics.stage(parse_stored_receipt(payload)[0], "receipt_committed")
+            return result
+
+        def physical(broker, generation, topic, encoded, *, attempt_id):
+            with dispatch._lock:
+                sent = dispatch._sent[attempt_id]
+                mid = sent.frame.message.message_id
+            metrics.physical_start(mid, attempt_id, broker, publish_packet_bytes(topic, len(encoded)))
+            receipt = None
+            try:
+                receipt = actual_publish(broker, generation, topic, encoded, attempt_id=attempt_id)
+                return receipt
+            finally:
+                metrics.physical_end(mid, attempt_id, receipt is not None)
+
+        self.bridge.queue_outbound = queued
+        self.bridge.acknowledge_verified_outbound = acknowledged
+        dispatch._publish = physical
 
     def receive(self, client, userdata, message):
         with self.observation_lock:
@@ -172,8 +213,13 @@ class Endpoint:
 
     def tick(self):
         self.client.peer_routes.maintenance()
+        self.record_ready(self.route)
         self.bridge.flush_pending_inbound_messages(self.client)
         self.bridge.flush_outbound_messages(self.client)
+
+    def record_ready(self, scope):
+        if self.measurements and scope == self.route and self.client.peer_routes.ready(scope):
+            self.measurements.first_ready()
 
     def snapshot(self):
         import link_delivery as delivery
@@ -225,6 +271,8 @@ class Endpoint:
 
     def send(self, value):
         mid = value["message_id"]
+        if self.measurements:
+            self.measurements.begin(mid)
         if value.get("pause_before_publish"):
             self.pause_before_publish = mid
         payload = {"type": "peer_message", "message_id": mid, "source_message_id": mid,
@@ -286,6 +334,10 @@ def main():
                     result = endpoint.start_transport()
                 elif command == "snapshot":
                     result = endpoint.snapshot()
+                elif command == "measurements":
+                    if endpoint.measurements is None:
+                        raise ValueError("Measurements not enabled for this isolated endpoint")
+                    result = endpoint.measurements.snapshot(request.get("message_id"))
                 elif command == "send":
                     result = endpoint.send(request)
                 elif command == "restore_subscriptions":

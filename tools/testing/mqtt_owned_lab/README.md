@@ -143,3 +143,26 @@ Failure diagnostics retain each inbox entry's payload type, pending broker token
 IDs and both endpoints' last snapshots. Receipts must not be mistaken for missing
 chat rows simply by comparing inbox and history counts. Per-message completion
 markers are printed during long runs; the final JSON report remains the verdict.
+
+## Native Latency Comparison
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/native_latency.py --endpoint-python C:/Users/agent/MQTTDiagnostics/20260913-desktop-runtime/Scripts/python.exe --report-dir build/mqtt-native-latency --samples 30 --seed 20260914
+```
+
+Use the same JAVA_HOME and isolated runtimes as the native smoke. This compares
+small native peer messages over one available owned path and automatic multi-path
+scheduling. `--samples` is per strategy, a multiple of three in 30-180. Each run
+adds six excluded warm-ups and validates every real business row. It retains
+failed/censored observations instead of silently dropping slow failures.
+Exit code 2 means business checks passed but the provisional warm p95 ratio
+exceeded 1.10; the complete report is still saved. Exit code 0 is only this
+limited comparison passing, never full product or release acceptance.
+
+Opt-in instrumentation captures queue, physical submission and authenticated
+durable receipt timestamps in the endpoint. Controller polling and final chat
+store checks do not define those intervals. Counts are submitted business MQTT
+frames, not all network bytes. Native/JVM startup, one available path within the
+same pool, app display, model latency and actual image/file/video transfers are
+distinct measurements; do not conflate them. See the
+[method, baseline and limitations](../../../docs/testing/MQTT_NATIVE_LATENCY_20260913.md).

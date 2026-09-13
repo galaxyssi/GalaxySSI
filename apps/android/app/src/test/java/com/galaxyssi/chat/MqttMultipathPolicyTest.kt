@@ -180,6 +180,52 @@ class MqttMultipathPolicyTest {
         assertNotEquals(first, plan(policy, MqttMultipathPolicy.Traffic.CHUNK, attempted = setOf(first)).first().brokerId)
     }
 
+    @Test fun coldPathHedgeUsesTwentyPeerSamplesAcrossHealthyPaths() {
+        val policy = ready()
+        repeat(20) { index ->
+            val key = "spread-$index"
+            val path = brokers.sorted()[index % 3]
+            assertTrue(policy.reserve(key, attempt(path = path, message = key)))
+            policy.brokerAck(key, path, 1)
+            policy.acceptVerifiedReceipt("peer", key, hash, key, 800)
+            assertEquals(if (index < 19) 500L else 1200L, plan(policy)[1].delayMs)
+        }
+        assertTrue(plan(policy, MqttMultipathPolicy.Traffic.CONTROL).all { it.delayMs == 0L })
+        policy.disconnected("emqx", 1)
+        assertEquals(500L, plan(policy)[1].delayMs)
+    }
+
+    @Test fun peerAggregateDoesNotUseAnotherPeerOrNetwork() {
+        val policy = ready()
+        policy.acceptVerifiedResume("other", route(), 0)
+        repeat(20) { index ->
+            val key = "other-$index"
+            val path = brokers.sorted()[index % 3]
+            assertTrue(policy.reserve(key, attempt(path = path, peer = "other", message = key)))
+            policy.brokerAck(key, path, 1)
+            policy.acceptVerifiedReceipt("other", key, hash, key, 800)
+        }
+        assertEquals(500L, plan(policy)[1].delayMs)
+        assertEquals(1200L, plan(policy, peer = "other")[1].delayMs)
+        policy.setNetwork("new-network")
+        assertEquals(500L, plan(policy, peer = "other")[1].delayMs)
+    }
+
+    @Test fun maturePrimarySamplesTakePrecedenceOverSlowerPeerAggregate() {
+        val policy = ready()
+        listOf("mosquitto" to 200L, "hivemq" to 800L).forEach { (path, elapsed) ->
+            repeat(20) { index ->
+                val key = "mature-$path-$index"
+                assertTrue(policy.reserve(key, attempt(path = path, message = key)))
+                policy.brokerAck(key, path, 1)
+                policy.acceptVerifiedReceipt("peer", key, hash, key, elapsed)
+            }
+        }
+        val result = plan(policy)
+        assertEquals("mosquitto", result[0].brokerId)
+        assertEquals(300L, result[1].delayMs)
+    }
+
     @Test fun capacityIsGlobalAndReservesControlSlots() {
         val policy = ready()
         repeat(10) { assertTrue(policy.reserve("$it", attempt(peer = "$it", traffic = MqttMultipathPolicy.Traffic.CHUNK))) }

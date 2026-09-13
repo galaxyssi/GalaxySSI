@@ -184,6 +184,42 @@ class MultipathPolicyTests(unittest.TestCase):
         self.policy.set_network("cellular")
         self.assertFalse(self.policy._samples("peer", "hivemq", 1))
 
+    def test_cold_path_hedge_uses_twenty_peer_samples_across_healthy_paths(self):
+        for index in range(20):
+            key = f"spread-{index}"
+            path = sorted(BROKER_IDS)[index % 3]
+            self.assertTrue(self.reserve(key, path=path, message=key))
+            self.policy.broker_ack(key, path, 1)
+            self.policy.accept_verified_receipt("peer", key, HASH, key, now=0.8)
+            self.assertAlmostEqual(0.5 if index < 19 else 1.2, self.plan()[1].delay)
+        self.assertTrue(all(item.delay == 0 for item in self.plan(Traffic.CONTROL)))
+        self.policy.disconnected("emqx", 1)
+        self.assertEqual(0.5, self.plan()[1].delay)
+
+    def test_peer_aggregate_does_not_use_another_peer_or_network(self):
+        self.resume(peer="other")
+        for index in range(20):
+            key = f"other-{index}"
+            path = sorted(BROKER_IDS)[index % 3]
+            self.assertTrue(self.reserve(key, peer="other", path=path, message=key))
+            self.policy.broker_ack(key, path, 1)
+            self.policy.accept_verified_receipt("other", key, HASH, key, now=0.8)
+        self.assertEqual(0.5, self.plan()[1].delay)
+        self.assertAlmostEqual(1.2, self.plan(peer="other")[1].delay)
+        self.policy.set_network("new-network")
+        self.assertEqual(0.5, self.plan(peer="other")[1].delay)
+
+    def test_mature_primary_samples_take_precedence_over_slower_peer_aggregate(self):
+        for path, elapsed in (("mosquitto", 0.2), ("hivemq", 0.8)):
+            for index in range(20):
+                key = f"mature-{path}-{index}"
+                self.assertTrue(self.reserve(key, path=path, message=key))
+                self.policy.broker_ack(key, path, 1)
+                self.policy.accept_verified_receipt("peer", key, HASH, key, now=elapsed)
+        plan = self.plan()
+        self.assertEqual("mosquitto", plan[0].broker_id)
+        self.assertAlmostEqual(0.3, plan[1].delay)
+
     def test_chunk_retry_prefers_an_unused_healthy_path(self):
         first = self.plan(Traffic.CHUNK)[0].broker_id
         second = self.plan(Traffic.CHUNK, attempted=frozenset({first}))[0].broker_id

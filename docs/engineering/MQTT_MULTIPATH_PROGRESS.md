@@ -10,6 +10,27 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Native owned-network measurement now captures real durable-queue, physical-send
+and authenticated receipt-commit timestamps instead of controller polling. Two
+30-per-strategy baselines exposed redundant cold hedges. Android/Desktop now
+share recent samples across eligible paths of the same peer until the primary
+has its own full window, while still requiring twenty samples and preserving
+immediate stop/cancel racing. Tests passed: 93 focused Python, 195 host Kotlin,
+10 measurement/CLI, plus 79 ordinary Android JVM cases and a full-runtime build
+in 9m 1s. The owned native fault run passed 19 business messages.
+
+Two post-change performance runs each passed all 66 business checks. One passed
+the provisional p95 ratio gate (0.669), but the other **failed** (1.577), with
+13 redundant frames confined to its first sample-poor multi-path block. Stable
+non-regression is not established; the 500ms under-twenty-sample default and
+failed-fastest-path/cold-start matrix remain to investigate. Do not select only
+the passing run. The CLI now returns 2 for a failed provisional gate. See
+[native latency checkpoint](../testing/MQTT_NATIVE_LATENCY_20260913.md).
+The full APK remains 1.2.0 (1005), newly built but not installed. Draft PR #3045
+remains the delivery vehicle. S26U is absent; no other phone or production
+Desktop instance was operated in this checkpoint. All larger-scope gates below
+remain, including artifacts, pairing, ten real windows, Doze and power.
+
 An owned-network timeout led to a deterministic Desktop publisher defect:
 authenticated readiness can expire after outbox selection, and the deferred
 result was incorrectly registered as a nonexistent broker token zero. The
