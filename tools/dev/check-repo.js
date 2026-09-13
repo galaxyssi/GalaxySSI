@@ -557,6 +557,10 @@ function checkProtocolSpec() {
     path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSIMqttWireChunking.kt"),
     "utf8"
   );
+  const androidChunkManifest = fs.readFileSync(
+    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "MqttChunkManifest.kt"),
+    "utf8"
+  );
   const desktopChunking = fs.readFileSync(
     path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "mqtt_wire_chunking.py"),
     "utf8"
@@ -575,9 +579,12 @@ function checkProtocolSpec() {
     [androidDesktopRemoteTools, 'mapOf("transport" to "galaxyssi-link-v2")'],
     [iosDesktopRemoteTools, 'transportId: String = "galaxyssi-link-v2"'],
     [androidChunking, "const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
-    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 380 * 1024"],
-    [androidChunking, "const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
-    [androidChunking, "const val MAX_CHUNK_COUNT = 96"],
+    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = MqttChunkManifest.DATA_BYTES"],
+    [androidChunking, "const val MAX_REASSEMBLED_BYTES = MqttChunkManifest.MAX_BYTES"],
+    [androidChunking, "const val MAX_CHUNK_COUNT = MqttChunkManifest.MAX_COUNT"],
+    [androidChunkManifest, "const val DATA_BYTES = 380 * 1024"],
+    [androidChunkManifest, "const val MAX_BYTES = 2 * 1024 * 1024"],
+    [androidChunkManifest, "const val MAX_COUNT = 96"],
     [androidChunking, "const val MAX_PACKET_BYTES = DEFAULT_DIRECT_LIMIT_BYTES"],
     [desktopChunking, "DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
     [desktopChunking, "CHUNK_DATA_BYTES = 380 * 1024"],
