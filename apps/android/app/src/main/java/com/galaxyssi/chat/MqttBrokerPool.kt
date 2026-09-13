@@ -40,8 +40,10 @@ internal class MqttBrokerPool(
         fun onPacket(ingress: Ingress, topic: String, payload: ByteArray) = Unit
         fun onPublish(receipt: PublishReceipt) = Unit
     }
+    enum class PathState { DISCONNECTED, CONNECTING, SUBSCRIBING, RECEIVE_READY, RECOVERING, NETWORK_UNAVAILABLE }
     data class PathSnapshot(val generation: Long, val connected: Boolean, val activeSubscriptions: Int,
-                            val pendingSubscriptions: Int, val pendingPublishes: Int, val lastError: String)
+                            val pendingSubscriptions: Int, val pendingPublishes: Int, val lastError: String,
+                            val state: PathState, val reconnectAttempts: Long)
     private data class PendingPublish(val logicalId: Long, val attemptId: String, val startedAt: Long, var packetId: Int = 0)
     private class Path(val brokerId: String) {
         val lock = Any()
@@ -297,10 +299,23 @@ internal class MqttBrokerPool(
         return logicalId
     }
 
-    fun snapshot(): Map<String, PathSnapshot> = paths.mapValues { (_, path) -> synchronized(path.lock) {
-        PathSnapshot(path.generation, path.connected, path.activeTopics.size, path.pendingTopics.size,
-            path.publications.size, path.lastError)
-    } }
+    fun snapshot(): Map<String, PathSnapshot> {
+        val expected = synchronized(desiredLock) { desired.keys.toSet() }
+        return paths.mapValues { (_, path) -> synchronized(path.lock) {
+            // Local subscription readiness is not proof of authenticated peer delivery.
+            val state = when {
+                closed.get() -> PathState.DISCONNECTED
+                !networkPresent.get() -> PathState.NETWORK_UNAVAILABLE
+                path.connecting -> PathState.CONNECTING
+                path.connected && expected.isNotEmpty() && path.activeTopics.containsAll(expected) -> PathState.RECEIVE_READY
+                path.connected -> PathState.SUBSCRIBING
+                path.retryScheduled -> PathState.RECOVERING
+                else -> PathState.DISCONNECTED
+            }
+            PathSnapshot(path.generation, path.connected, path.activeTopics.size, path.pendingTopics.size,
+                path.publications.size, path.lastError, state, (path.generation - 1).coerceAtLeast(0))
+        } }
+    }
 
     fun networkAvailable() {
         if (closed.get() || networkPresent.getAndSet(true)) return

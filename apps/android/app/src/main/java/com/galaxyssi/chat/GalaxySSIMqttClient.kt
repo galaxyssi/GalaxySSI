@@ -205,6 +205,7 @@ object GalaxySSIMqttClient {
     fun isSecureReady(): Boolean = secureReady
 
     internal fun transportDiagnostics(): MqttMultipathPolicy.Diagnostics? = client?.diagnostics()
+    internal fun transportPathDiagnostics(): Map<String, MqttBrokerPool.PathSnapshot> = client?.snapshot().orEmpty()
 
     fun refreshOpaqueSubscriptions(context: Context) {
         bindApplicationContext(context)

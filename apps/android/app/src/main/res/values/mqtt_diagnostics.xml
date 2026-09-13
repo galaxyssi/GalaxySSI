@@ -6,4 +6,11 @@
     <string name="mqtt_diagnostics_milliseconds">%1$d ms</string>
     <string name="mqtt_diagnostics_delivery_detail">Attempt to peer confirmation: median %1$d ms; p95 %2$s</string>
     <string name="mqtt_diagnostics_sample_count">%1$d samples</string>
+    <string name="mqtt_diagnostics_connecting">Establishing encrypted connection</string>
+    <string name="mqtt_diagnostics_subscribing">Connected; waiting for receive subscriptions</string>
+    <string name="mqtt_diagnostics_receive_ready">Local receive subscriptions ready</string>
+    <string name="mqtt_diagnostics_recovering">Waiting for automatic connection recovery</string>
+    <string name="mqtt_diagnostics_network_unavailable">Network unavailable; waiting for recovery</string>
+    <string name="mqtt_diagnostics_disconnected">Disconnected</string>
+    <string name="mqtt_diagnostics_path_activity">%1$d reconnect attempts this run; %2$d sends awaiting broker acknowledgement</string>
 </resources>

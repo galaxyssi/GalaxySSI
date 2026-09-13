@@ -133,6 +133,33 @@ class BrokerPoolTests(unittest.TestCase):
         self.start()
         self.wait_for(lambda: len(self.subacks) >= 2, timeout=0.5)
         self.assertFalse(self.pool.snapshot()["paths"]["emqx"]["connected"])
+        self.assertEqual("connecting", self.pool.snapshot()["paths"]["emqx"]["state"])
+
+    def test_diagnostics_do_not_confuse_connection_and_subscription_readiness(self):
+        self.assertTrue(all(path["state"] == "disconnected" for path in self.pool.snapshot()["paths"].values()))
+        self.auto_suback = False
+        self.start()
+        self.wait_for(lambda: all(path["pending_subscriptions"] == 1 for path in self.pool.snapshot()["paths"].values()))
+        self.assertTrue(all(path["state"] == "subscribing" for path in self.pool.snapshot()["paths"].values()))
+        for broker in BROKERS:
+            client = self.client(broker)
+            client.on_subscribe(client, None, client.subscriptions[-1][0], [1], None)
+        self.assertTrue(all(path["state"] == "receive_ready" for path in self.pool.snapshot()["paths"].values()))
+        self.pool.subscribe({"second-inbox": 1})
+        self.assertTrue(all(path["state"] == "subscribing" for path in self.pool.snapshot()["paths"].values()))
+        self.pool.close()
+        self.assertTrue(all(path["state"] == "disconnected" for path in self.pool.snapshot()["paths"].values()))
+
+    def test_diagnostics_count_reconnect_attempts_independently_by_path(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        self.client("emqx").lose()
+        self.assertEqual("recovering", self.pool.snapshot()["paths"]["emqx"]["state"])
+        self.wait_for(lambda: self.pool.snapshot()["paths"]["emqx"]["state"] == "receive_ready")
+        paths = self.pool.snapshot()["paths"]
+        self.assertEqual(1, paths["emqx"]["reconnect_attempts"])
+        self.assertEqual(0, paths["hivemq"]["reconnect_attempts"])
+        self.assertEqual(0, paths["emqx"]["pending_publishes"])
 
     def test_equal_packet_ids_from_different_brokers_map_to_different_logical_ids(self):
         self.start()

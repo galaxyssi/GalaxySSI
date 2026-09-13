@@ -136,6 +136,49 @@ class MqttBrokerPoolTest {
         autoSuback = false
         readyWithoutSuback()
         assertTrue(pool.snapshot().values.all { it.connected && it.activeSubscriptions == 0 })
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.SUBSCRIBING })
+    }
+
+    @Test fun diagnosticsDistinguishInitialConnectionFromReceiveReadiness() {
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.DISCONNECTED })
+        delayed = MqttBrokerCatalog.brokers.keys
+        start()
+        waitFor { clients.values.all { it.first().options != null } }
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.CONNECTING })
+        clients.keys.forEach { client(it).completeConnect() }
+        assertTrue(pool.snapshot().values.all {
+            it.state == MqttBrokerPool.PathState.RECEIVE_READY && it.reconnectAttempts == 0L
+        })
+    }
+
+    @Test fun diagnosticsRequireAllDesiredTopicsNotOnlyOneSuccessfulSubscription() {
+        ready()
+        autoSuback = false
+        pool.subscribe(mapOf("second-inbox" to 1))
+        assertTrue(pool.snapshot().values.all {
+            it.activeSubscriptions == 1 && it.pendingSubscriptions == 1 &&
+                it.state == MqttBrokerPool.PathState.SUBSCRIBING
+        })
+        clients.values.forEach { it.first().subscribeListeners.last().let { ack -> ack.first.onSuccess(ack.second) } }
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.RECEIVE_READY })
+    }
+
+    @Test fun diagnosticsDistinguishNetworkLossAndClosedPoolFromRecovery() {
+        ready()
+        pool.networkUnavailable()
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.NETWORK_UNAVAILABLE })
+        pool.close()
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.DISCONNECTED })
+    }
+
+    @Test fun diagnosticsCountConnectionAttemptsWithoutCallingThemMessageRetries() {
+        ready()
+        client("emqx").lose()
+        assertEquals(MqttBrokerPool.PathState.RECOVERING, pool.snapshot().getValue("emqx").state)
+        waitFor { pool.snapshot().getValue("emqx").state == MqttBrokerPool.PathState.RECEIVE_READY }
+        assertEquals(1L, pool.snapshot().getValue("emqx").reconnectAttempts)
+        assertEquals(0L, pool.snapshot().getValue("hivemq").reconnectAttempts)
+        assertEquals(0, pool.snapshot().getValue("emqx").pendingPublishes)
     }
     private fun readyWithoutSuback() { start(); waitFor { clients.values.all { it.first().subscribeListeners.isNotEmpty() } } }
 

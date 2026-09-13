@@ -10,6 +10,19 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Android now displays local path lifecycle, per-path reconnect attempts and
+broker-pending sends in its existing protocol diagnostics. Desktop exposes the
+equivalent lifecycle/counters in the existing diagnostics response. Complete
+desired subscriptions are required for local receive-ready status; it never
+means peer delivery. Android's 214 host tests and full Kotlin/resource compile
+pass; Desktop's 68 focused tests and 44 checks/structure pass. Native Signal
+recovery passes 20 business messages / three path cycles with empty endpoint
+logs. See [path diagnostic evidence](../testing/MQTT_PATH_STATE_DIAGNOSTICS_20260913.md).
+No device installation, rendered Android verification or production restart was
+performed. The full acceptance backlog remains open; this is not completion.
+
+## Previous Packaging Checkpoint
+
 Desktop packaging now requires its declared executable-resource tool before any
 sidecar build or packaged-process stop, and verifies Windows resource readback
 instead of warning and reporting success with Electron metadata. Seven focused

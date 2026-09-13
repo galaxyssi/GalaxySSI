@@ -53,6 +53,7 @@ class _Path:
     generation: int = 0
     client: object | None = None
     connected: bool = False
+    connecting: bool = False
     active_topics: set[str] = field(default_factory=set)
     pending_topics: set[str] = field(default_factory=set)
     subscriptions: dict[int, tuple[str, ...]] = field(default_factory=dict)
@@ -128,6 +129,7 @@ class BrokerPool:
                 generation = path.generation
                 path.last_error = ""
                 path.failure_notified = False
+                path.connecting = True
             client = None
             connected_at = 0.0
             try:
@@ -173,6 +175,7 @@ class BrokerPool:
                 if not self._current(path, client, generation):
                     return
                 path.connected = True
+                path.connecting = False
                 path.last_error = ""
                 path.failure_notified = False
             self._emit(self._on_state, Ingress(path.broker_id, generation, time.monotonic()), "connected", "")
@@ -236,6 +239,7 @@ class BrokerPool:
                 return
             was_connected = path.connected
             path.connected = False
+            path.connecting = False
             if not path.last_error.startswith("connack_") or reason.startswith("connack_"):
                 path.last_error = reason
             notify = not path.failure_notified
@@ -381,13 +385,25 @@ class BrokerPool:
         return logical_id
 
     def snapshot(self) -> dict:
+        with self._lock:
+            expected = set(self._desired)
         result = {}
         for broker, path in self._paths.items():
             with path.lock:
+                # Receive readiness is local only, not an authenticated peer receipt.
+                if self._stop.is_set():
+                    state = "disconnected"
+                elif path.connecting:
+                    state = "connecting"
+                elif path.connected:
+                    state = "receive_ready" if expected and expected <= path.active_topics else "subscribing"
+                else:
+                    state = "recovering" if path.generation else "disconnected"
                 result[broker] = {"generation": path.generation, "connected": path.connected,
                                   "active_subscriptions": len(path.active_topics),
                                   "pending_subscriptions": len(path.pending_topics),
-                                  "pending_publishes": len(path.publications), "last_error": path.last_error}
+                                  "pending_publishes": len(path.publications), "last_error": path.last_error,
+                                  "state": state, "reconnect_attempts": max(0, path.generation - 1)}
         return {"selection": "automatic", "paths": result}
 
     def close(self, timeout: float = 4.0) -> bool:
