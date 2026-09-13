@@ -10,6 +10,25 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Real native input-attachment testing exposed retained completed Signal bodies
+filling the per-peer 16 MiB quota. Desktop now atomically replaces successfully
+dispatched, native-released large bodies with bounded non-executable proofs,
+retaining message/content/cipher identities and duplicate ACK safety. The
+post-fix owned PNG, H.264/AAC, 5 MiB and 21 MiB run passed; the 21 MiB case
+includes receiver process death, one path loss and replay of a completed chunk.
+The final receive quota accounting was 181631 bytes, not physical SQLite size.
+Focused tests passed 69 cases; the final expanded selection passed 336. An
+independent repeat also passed all previous cases and a 32 MiB file, leaving
+367384 quota-accounted bytes after 234 completed chunk records. See
+[native attachment/compaction evidence](../testing/MQTT_RECEIVE_COMPACTION_20260913.md),
+including failed runs and the test workspace isolation correction. This is a
+Desktop receiver test with a phone-payload fixture, not Android/UI or a P2
+performance completion claim. No production deployment occurred.
+The subsequent native regression passed 20 business messages and three path
+cycles with empty endpoint logs, including delayed receipts and deferred sends.
+
+## Previous Receipt Checkpoint
+
 The shared unsampled hedge now waits 2s while the independent unknown-path
 ranking prior remains 500ms. Two owned 30-per-strategy healthy runs passed the
 provisional p95 ratio gate (0.977 and 0.859), with no redundant business frames.

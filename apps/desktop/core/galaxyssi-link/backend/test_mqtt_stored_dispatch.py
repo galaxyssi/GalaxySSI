@@ -113,6 +113,35 @@ class MqttStoredDispatchTest(unittest.TestCase):
         self.decrypt.assert_called_once()
         self.assertTrue(self.publish.call_args.args[2]["duplicate"])
 
+    def test_compacted_chunk_replay_and_stale_recovery_do_not_read_or_execute_body(self):
+        import signal_receive_handoff as handoff
+        self.envelope["payload"] = {"type": "input_attachment_chunk", "data_b64": "x" * 350000}
+        original_receive = self.receive
+        def receive(*args, **kwargs):
+            envelope = original_receive(*args, **kwargs)
+            for release in handoff.pending_releases():
+                handoff.mark_released(release["linkScope"], release["remoteName"],
+                                      release["remoteDeviceId"], release["receiveDigest"])
+            return envelope
+        self.decrypt.side_effect = receive
+        self.send()
+        with patch.object(dispatch, "_body", side_effect=AssertionError("Retired body read")):
+            self.send()
+            bridge.on_message(object(), None, bridge._StoredInboxMessage("pair", self.mid, 1, "stale"))
+        self.handle.assert_called_once()
+        self.decrypt.assert_called_once()
+        self.log.error.assert_not_called()
+        self.assertEqual(("dispatched", 1), self.state())
+        self.assertTrue(self.publish.call_args.args[2]["duplicate"])
+
+    def test_compacted_proof_does_not_allow_modified_wire_header(self):
+        self.test_compacted_chunk_replay_and_stale_recovery_do_not_read_or_execute_body()
+        self.publish.reset_mock()
+        self.send(version=999)
+        self.publish.assert_not_called()
+        self.handle.assert_called_once()
+        self.log.error.assert_called_once()
+
     def test_business_payload_enrichment_does_not_mutate_stored_envelope(self):
         original = copy.deepcopy(self.envelope)
         self.send()

@@ -101,16 +101,21 @@ class Claim:
     recovered: bool = False
 
 
-def load_envelope(route_id: str, message_id: str) -> dict:
+def load_envelope(route_id: str, message_id: str, *, skip_completed=False) -> dict | None:
+    from signal_receive_compaction import completed_in_transaction
     with delivery._lock:
         db = delivery._connect()
         try:
+            db.execute("BEGIN")
+            if skip_completed and completed_in_transaction(db, delivery._route(route_id), message_id):
+                return None
             return json.loads(_body(db, delivery._route(route_id), message_id))
         finally:
             db.close()
 
 
 def begin(guard: DispatchGuard, envelope: dict, *, now: float | None = None, admission_token="") -> Claim:
+    from signal_receive_compaction import completed_in_transaction
     if not guard.acquired:
         return Claim("busy")
     route, message_id = delivery._route(guard.route), guard.message_id
@@ -121,6 +126,13 @@ def begin(guard: DispatchGuard, envelope: dict, *, now: float | None = None, adm
         db = delivery._connect()
         try:
             db.execute("BEGIN IMMEDIATE")
+            completed = completed_in_transaction(db, route, message_id)
+            if completed:
+                from signal_receive_handoff import _canonical
+                if hashlib.sha256(_canonical(envelope).encode("utf-8")).hexdigest() != completed["content_hash"]:
+                    raise delivery.InboundContentConflict("Dispatch conflicts with completed receive")
+                db.commit()
+                return Claim("dispatched")
             stored = json.loads(_body(db, route, message_id))
             if json.dumps(stored, sort_keys=True, separators=(",", ":"), allow_nan=False) != json.dumps(
                     envelope, sort_keys=True, separators=(",", ":"), allow_nan=False):
@@ -153,6 +165,7 @@ def begin(guard: DispatchGuard, envelope: dict, *, now: float | None = None, adm
 
 
 def finish(guard: DispatchGuard, claim: Claim, *, error: Exception | None = None, replayable: bool = False):
+    from signal_receive_compaction import compact_in_transaction
     if not guard.acquired or claim.state != "run" or not claim.token:
         raise ValueError("An owned dispatch claim is required")
     route, message_id = delivery._route(guard.route), guard.message_id
@@ -170,6 +183,8 @@ def finish(guard: DispatchGuard, claim: Claim, *, error: Exception | None = None
             db.execute("""UPDATE inbound_messages SET dispatch_state=?,dispatch_updated_at=?,dispatch_retry_at=?,dispatch_error=?
                           WHERE client_route_id=? AND message_id=? AND dispatch_token=?""",
                        (state, time.time(), retry_at, type(error).__name__ if error else "", route, message_id, claim.token))
+            if state == "dispatched":
+                compact_in_transaction(db, route, message_id)
             db.commit()
             return True
         finally:

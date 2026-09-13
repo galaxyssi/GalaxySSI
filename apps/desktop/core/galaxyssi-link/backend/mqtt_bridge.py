@@ -6903,8 +6903,16 @@ def _process_message(mqttc, userdata, msg):
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             decrypt_started_at = int(time.time() * 1000)
             decrypt_started_ns = timing_now_ns()
+            from signal_receive_compaction import completed_envelope, CompletedReceiveReplay
+            from mqtt_completed_receive import acknowledge_completed
             try:
                 if replay_message_id:
+                    completed = completed_envelope(client_route_id, replay_message_id)
+                    if completed is not None:
+                        acknowledge_completed(sys.modules[__name__], mqttc, paired_client, wire_payload, completed,
+                            delivery_frame=delivery_frame, chunk_transfer=chunk_transfer)
+                        _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
+                        return
                     from signal_receive_dispatch import load_envelope
                     application_envelope = load_envelope(client_route_id, replay_message_id)
                     link_transport_diagnostics().record(
@@ -6916,6 +6924,11 @@ def _process_message(mqttc, userdata, msg):
                         wire_payload, remote_name=paired_client["signal_name"],
                     )
                 signal_decrypt_finished_ns = timing_now_ns()
+            except CompletedReceiveReplay as completed:
+                acknowledge_completed(sys.modules[__name__], mqttc, paired_client, wire_payload, completed.envelope,
+                    delivery_frame=delivery_frame, chunk_transfer=chunk_transfer)
+                _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
+                return
             except Exception as exc:
                 link_transport_diagnostics().record(
                     classify_decryption_error(exc), route_id=client_route_id,
@@ -6986,11 +6999,11 @@ def _publish_chunk_state(mqttc, paired, query, ingress, *, repeat_receipt=False,
         log.warning("Chunk state response deferred (%s)", type(exc).__name__)
 
 
-def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None):
+def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None, wire_hash=""):
     message_id = str(envelope["message_id"])
     route = str(wire_payload["_client_route_id"])
     from mqtt_delivery_envelope import stored_receipt
-    wire_hash = stored_wire_receipt(route, message_id)
+    wire_hash = wire_hash or stored_wire_receipt(route, message_id)
     if chunk_transfer is not None and wire_hash:
         try:
             inbound_chunk_assembler.release_after_store(*chunk_transfer, wire_hash, message_id)
@@ -7093,7 +7106,9 @@ def _process_stored_message(mqttc, message: _StoredInboxMessage):
         dispatch.reject_stored(message.client_route_id, message.message_id, "pair_unavailable")
         return
     try:
-        envelope = dispatch.load_envelope(message.client_route_id, message.message_id)
+        envelope = dispatch.load_envelope(message.client_route_id, message.message_id, skip_completed=True)
+        if envelope is None:
+            return
         validate_envelope(envelope)
         if envelope["source_id"] != paired["signal_name"] or envelope["target_id"] != desktop_id():
             raise ValueError("Recovered message endpoint mismatch")

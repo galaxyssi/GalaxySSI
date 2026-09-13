@@ -40,7 +40,8 @@ class Endpoint:
         self.root.mkdir(parents=True, exist_ok=True)
         os.environ.update(GALAXYSSI_DATA_DIR=str(self.root), GALAXYSSI_STATE_DIR=str(self.root),
                           GALAXYSSI_DATABASE_PATH=str(self.root / "app.db"),
-                          GALAXYSSI_CONFIG_PATH=str(self.root / "agents.json"))
+                          GALAXYSSI_CONFIG_PATH=str(self.root / "agents.json"),
+                          GALAXYSSI_WORKSPACE_ROOT=str(self.root / "workspace"))
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps/desktop/core/galaxyssi-link/backend"))
         import galaxyssi_client as signal
         # Reserve an isolated API port before any production module can start a sidecar.
@@ -58,6 +59,11 @@ class Endpoint:
             signal.stop_signal_sidecar()
             raise
         self.config = config
+        from task_workspace import workspace_root
+        if workspace_root() != (self.root / "workspace").resolve():
+            signal.stop_signal_sidecar()
+            raise ValueError("Refusing non-isolated attachment workspace")
+        self.attachments = None
         self.client = self.worker = None
         self.drop_incoming = False
         self.drop_broker = None
@@ -104,6 +110,18 @@ class Endpoint:
         self.remote = paired[0]["signal_name"]
         self.secret = paired[0]["link_secret"]
         self.bridge = bridge
+        if self.config.get("attachments"):
+            from native_attachment_endpoint import AttachmentEndpoint
+            self.attachments = AttachmentEndpoint(self)
+            actual_dispatch = bridge._dispatch_application_payload
+
+            def dispatch(mqttc, paired_client, wire, envelope, payload, trace):
+                if payload.get("type") == "input_attachment_receipt":
+                    self.attachments.capture_receipt(payload)
+                    return
+                return actual_dispatch(mqttc, paired_client, wire, envelope, payload, trace)
+
+            bridge._dispatch_application_payload = dispatch
         factory = client_factory(self.config["endpoints"], self.config["ca"])
         client = MqttPoolClient(classify_publication=lambda *args: client.peer_routes.classify(*args),
             pool_factory=lambda **callbacks: BrokerPool(**callbacks, client_factory=factory))
@@ -277,8 +295,12 @@ class Endpoint:
             outbox = [{"id": row[0], "state": row[1], "attempts": row[2],
                        "wire_hash": hashlib.sha256(delivery._reveal(row[3], "wire-payload").encode()).hexdigest()}
                       for row in db.execute("SELECT message_id,status,attempts,wire_payload FROM outbound_messages")]
+            receive_storage = {"body_count": db.execute("SELECT count(*) FROM inbound_signal_bodies").fetchone()[0],
+                "completed_count": db.execute("SELECT count(*) FROM inbound_signal_completed").fetchone()[0],
+                "accounted_bytes": db.execute("SELECT coalesce(sum(byte_count),0) FROM inbound_signal_usage WHERE scope='total'").fetchone()[0]}
         for row in inbox:
-            envelope = load_envelope(self.route, row["id"])
+            from signal_receive_compaction import completed_envelope
+            envelope = completed_envelope(self.route, row["id"]) or load_envelope(self.route, row["id"])
             row["type"] = str(envelope.get("payload", {}).get("type") or "")
         with self.observation_lock:
             observations = {"received_paths": dict(self.paths), "dropped": self.dropped,
@@ -305,6 +327,7 @@ class Endpoint:
         return {"pid": os.getpid(), "ready": self.client.peer_routes.ready(self.route),
                 "paths": self.client.path_snapshot()["paths"], **observations,
                 "ingress": self.bridge.mqtt_ingress_status(), "inbox": inbox, "outbox": outbox,
+                "receive_storage": receive_storage,
                 "delivery": self.client.delivery.diagnostics(),
                 "paused_publications": self.paused_publications,
                 "errors": list(self.error_capture.errors),
@@ -386,6 +409,10 @@ def main():
                         result["policy_limits"] = asdict(endpoint.client.policy.limits)
                 elif command == "send":
                     result = endpoint.send(request)
+                elif command == "attachment":
+                    if endpoint.attachments is None:
+                        raise ValueError("Attachment fixture not enabled")
+                    result = endpoint.attachments.command(request)
                 elif command == "restore_subscriptions":
                     result = endpoint.client.subscribe({topic: 1 for topic in endpoint.receive_topics})
                 elif command == "send_peer":

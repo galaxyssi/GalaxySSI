@@ -245,6 +245,28 @@ death or subsequent packet loss still use the original sender replay and stored
 inbox proof. Receipts do not request another receipt. See
 [receipt recovery verification](../testing/MQTT_RECEIPT_RETRY_20260913.md).
 
+### Completed Desktop Receive Bodies
+
+Desktop can retire a large decrypted handoff body after successful business
+dispatch, release of every native Signal journal copy, and persistence of an
+immutable ciphertext/wire-receipt binding. In one transaction it replaces the
+body with an encrypted, bounded completion proof and adjusts existing byte
+accounting. Message/content/cipher dedup identities and record quotas remain.
+Pending or uncertain work is never compacted to make room for newer messages.
+
+A completed proof contains only original envelope headers and duplicate-ACK
+metadata. It is not a shortened executable request. Exact replay validates the
+proof, pairing endpoints, expiry, attempt identity and unchanged wire binding,
+then repeats the existing receipt without another dispatch or ratchet advance.
+Already-queued internal recovery entries skip verified completed proofs. New
+cipher variants still require authentication and the original content digest.
+This storage transition does not change the wire protocol, attachment file AES
+policy, original image bytes or successful task ownership.
+
+The 64 KiB body threshold and 8 KiB proof bound do not replace per-peer/global
+receive budgets or the independent dedup retention policy. See the
+[native attachment evidence](../testing/MQTT_RECEIVE_COMPACTION_20260913.md).
+
 ## Durable Wire Fragment Ingress
 
 Both actual receive paths now persist authenticated `signal-chunk` fragments in

@@ -183,3 +183,29 @@ business dispatch. The healthy single-path cohort is a reference, not a
 single-path outage comparison. This mode uses a separate predeclared 8s p95
 fault budget instead of the healthy ratio, and retains failure/censored samples.
 See [cold hedge and primary-loss evidence](../../../docs/testing/MQTT_COLD_HEDGE_20260913.md).
+
+## Native Attachment Ingress
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/native_attachments.py --endpoint-python C:/Users/agent/MQTTDiagnostics/20260913-desktop-runtime/Scripts/python.exe --report-dir build/mqtt-native-attachments --large
+```
+
+Use the same JAVA_HOME as the native smoke. The endpoint environment also needs
+Pillow, FFmpeg and ffprobe. By default this transfers a real PNG and a generated
+H.264/AAC MP4. `--large` adds 5, 21 and 32 MiB binary files with SHA-256 checks.
+The 21 MiB case restarts the real receiver after its first window, loses one
+owned path and replays a completed chunk before continuing missing windows.
+The real Desktop contact store must expose exactly one available attachment
+whose streamed bytes match the original. Missing content must not be available.
+
+The source's phone payload builder and input-receipt consumer are fixtures; the
+Desktop native Signal and actual input/contact receivers are not mocked. The
+sender uses Desktop transport classification, not the Android chunk sender.
+No Android, UI open/save or artifact performance gate is implied. Failure
+snapshots and logs are saved before disposable state cleanup. See the
+[results and boundaries](../../../docs/testing/MQTT_RECEIVE_COMPACTION_20260913.md).
+
+Every native worker now explicitly isolates and verifies its task workspace as
+well as data/configuration/Signal state. Earlier workers lacked that workspace
+override; do not claim their contact-publication helpers could never create
+default task directories. No existing user task directory is removed by this fix.

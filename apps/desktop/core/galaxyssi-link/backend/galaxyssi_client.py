@@ -285,6 +285,9 @@ def decrypt_signal_envelope(envelope: dict[str, Any], remote_name: str = "androi
                 # The full body is already durable; retry release on the next replay.
                 logging.getLogger(__name__).warning("Signal receive handoff cleanup deferred")
     plaintext = response["plaintext"]
+    if response.get("completed"):
+        from signal_receive_compaction import CompletedReceiveReplay
+        raise CompletedReceiveReplay(json.loads(plaintext))
     return json.loads(plaintext)
 
 

@@ -21,6 +21,8 @@ MAX_CIPHER_BINDINGS = 8
 
 
 def ensure_schema(db):
+    from signal_receive_compaction import ensure_schema as ensure_completed_schema
+    ensure_completed_schema(db)
     db.execute("""CREATE TABLE IF NOT EXISTS inbound_signal_bodies (
         client_route_id TEXT NOT NULL, message_id TEXT NOT NULL,
         content_hash TEXT NOT NULL, body TEXT NOT NULL, byte_count INTEGER NOT NULL,
@@ -68,6 +70,7 @@ def _body(db, route, message_id):
 
 
 def cached_receive(client_route_id, remote_name, remote_device_id, receive_digest):
+    from signal_receive_compaction import completed_in_transaction
     route = delivery._route(client_route_id)
     cipher = _cipher_key(remote_name, remote_device_id, receive_digest)
     with delivery._lock:
@@ -77,16 +80,18 @@ def cached_receive(client_route_id, remote_name, remote_device_id, receive_diges
                               WHERE client_route_id=? AND cipher_key=?""", (route, cipher)).fetchone()
             if row is None:
                 return None
-            plaintext = _body(db, route, row[0])
+            completed = completed_in_transaction(db, route, row[0])
+            plaintext = _canonical(completed["envelope"]) if completed else _body(db, route, row[0])
             if json.loads(plaintext).get("source_id") != remote_name:
                 raise RuntimeError("Durable receive source binding mismatch")
             return {"plaintext": plaintext, "contentHash": row[1], "receiveDigest": receive_digest,
-                    "released": bool(row[2]), "replay": True}
+                    "released": bool(row[2]), "replay": True, "completed": completed is not None}
         finally:
             db.close()
 
 
 def persist_receive(client_route_id, remote_name, remote_device_id, receipt):
+    from signal_receive_compaction import completed_in_transaction, compact_backlog
     plaintext = receipt["plaintext"]
     raw_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
     if raw_hash != receipt["contentHash"]:
@@ -112,13 +117,15 @@ def persist_receive(client_route_id, remote_name, remote_device_id, receipt):
                                (route, message_id)).fetchone()
             if bound[0] != digest:
                 raise delivery.InboundContentConflict("Received message conflicts with existing content")
+            completed = completed_in_transaction(db, route, message_id)
             existing = db.execute("SELECT content_hash FROM inbound_signal_bodies WHERE client_route_id=? AND message_id=?",
                                   (route, message_id)).fetchone()
             if existing:
                 if existing[0] != digest:
                     raise delivery.InboundContentConflict("Received body cannot replace another message")
                 _body(db, route, message_id)
-            else:
+            elif completed is None:
+                compact_backlog(db, route)
                 protected = delivery._protect(canonical, _body_purpose(route, message_id))
                 size = len(protected.encode("utf-8")) + 512
                 _adjust(db, "total", size, 1, MAX_TOTAL_BYTES, MAX_TOTAL_RECORDS)
@@ -147,17 +154,25 @@ def persist_receive(client_route_id, remote_name, remote_device_id, receipt):
 
 
 def mark_released(client_route_id, remote_name, remote_device_id, receive_digest):
+    from signal_receive_compaction import compact_in_transaction
     with delivery._lock:
         db = delivery._connect()
         try:
-            db.execute("UPDATE inbound_signal_handoffs SET released=1 WHERE client_route_id=? AND cipher_key=?",
-                       (delivery._route(client_route_id), _cipher_key(remote_name, remote_device_id, receive_digest)))
+            db.execute("BEGIN IMMEDIATE")
+            route = delivery._route(client_route_id)
+            cipher = _cipher_key(remote_name, remote_device_id, receive_digest)
+            db.execute("UPDATE inbound_signal_handoffs SET released=1 WHERE client_route_id=? AND cipher_key=?", (route, cipher))
+            row = db.execute("SELECT message_id FROM inbound_signal_handoffs WHERE client_route_id=? AND cipher_key=?",
+                             (route, cipher)).fetchone()
+            if row:
+                compact_in_transaction(db, route, row[0])
             db.commit()
         finally:
             db.close()
 
 
 def pending_releases(limit=4):
+    from signal_receive_compaction import completed_in_transaction
     if not 1 <= limit <= 64:
         raise ValueError("Invalid receive handoff page limit")
     with delivery._lock:
@@ -170,7 +185,9 @@ def pending_releases(limit=4):
                 remote = delivery._reveal(remote, "receive-peer")
                 if _cipher_key(remote, device, digest) != cipher:
                     raise RuntimeError("Receive cleanup peer binding mismatch")
-                if json.loads(_body(db, route, message_id)).get("source_id") != remote:
+                completed = completed_in_transaction(db, route, message_id)
+                envelope = completed["envelope"] if completed else json.loads(_body(db, route, message_id))
+                if envelope.get("source_id") != remote:
                     raise RuntimeError("Receive cleanup source binding mismatch")
                 result.append({"linkScope": delivery._unroute(route), "remoteName": remote,
                                "remoteDeviceId": device, "receiveDigest": digest, "contentHash": content_hash})
@@ -199,4 +216,5 @@ def discard_route_in_transaction(db, route):
         _adjust(db, "total", -usage[0], -usage[1], MAX_TOTAL_BYTES, MAX_TOTAL_RECORDS)
     db.execute("DELETE FROM inbound_signal_usage WHERE scope=?", (route,))
     db.execute("DELETE FROM inbound_signal_bodies WHERE client_route_id=?", (route,))
+    db.execute("DELETE FROM inbound_signal_completed WHERE client_route_id=?", (route,))
     db.execute("DELETE FROM inbound_signal_handoffs WHERE client_route_id=?", (route,))
