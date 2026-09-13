@@ -10,6 +10,19 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+The receive-backlog query now uses a partial large-body index instead of scanning
+all completed small-message history per admission. The 10,000-row deterministic
+test falls from 130,000 SQLite VM instructions to fewer than 100, with no temporary
+sort. Final regressions passed 339 Python cases (including 72 focused), Desktop's
+37 checks, and native PNG/video ingress. Two real 30-per-strategy small-message
+runs before/after this index passed the existing 1.10 within-run p95 ratio budget
+(0.920/0.976), with 66 business checks each and no redundant submitted frames.
+These timings do not establish a causal cross-run speedup or phone/public-network
+performance. See [query and latency evidence](../testing/MQTT_RECEIVE_INDEX_20260913.md).
+No production deployment occurred; S26U/device and full release gates remain open.
+
+## Previous Compaction Checkpoint
+
 Real native input-attachment testing exposed retained completed Signal bodies
 filling the per-peer 16 MiB quota. Desktop now atomically replaces successfully
 dispatched, native-released large bodies with bounded non-executable proofs,

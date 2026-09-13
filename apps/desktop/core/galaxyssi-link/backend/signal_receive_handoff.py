@@ -27,6 +27,9 @@ def ensure_schema(db):
         client_route_id TEXT NOT NULL, message_id TEXT NOT NULL,
         content_hash TEXT NOT NULL, body TEXT NOT NULL, byte_count INTEGER NOT NULL,
         created_at REAL NOT NULL, PRIMARY KEY(client_route_id,message_id))""")
+    from signal_receive_compaction import MIN_BODY_BYTES
+    db.execute(f"""CREATE INDEX IF NOT EXISTS signal_large_body_candidates
+                   ON inbound_signal_bodies(client_route_id,created_at) WHERE byte_count>={MIN_BODY_BYTES}""")
     db.execute("""CREATE TABLE IF NOT EXISTS inbound_signal_handoffs (
         client_route_id TEXT NOT NULL, cipher_key TEXT NOT NULL, message_id TEXT NOT NULL,
         receive_digest TEXT NOT NULL, content_hash TEXT NOT NULL,

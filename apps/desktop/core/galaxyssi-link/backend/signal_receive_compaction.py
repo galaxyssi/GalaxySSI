@@ -85,9 +85,9 @@ def compact_in_transaction(db, route, mid):
 def compact_backlog(db, route, limit=16):
     # Only completed large bodies are candidates; unfinished recovery bodies and
     # the permanent ID/content/cipher bindings never become quota eviction victims.
-    rows = db.execute("""SELECT b.message_id FROM inbound_signal_bodies b
+    rows = db.execute(f"""SELECT b.message_id FROM inbound_signal_bodies b
                          JOIN inbound_messages m USING(client_route_id,message_id)
-                         WHERE b.client_route_id=? AND m.dispatch_state='dispatched' AND b.byte_count>=?
-                         ORDER BY b.created_at LIMIT ?""", (route, MIN_BODY_BYTES, limit)).fetchall()
+                         WHERE b.client_route_id=? AND m.dispatch_state='dispatched' AND b.byte_count>={MIN_BODY_BYTES}
+                         ORDER BY b.created_at LIMIT ?""", (route, limit)).fetchall()
     for (mid,) in rows:
         compact_in_transaction(db, route, mid)
