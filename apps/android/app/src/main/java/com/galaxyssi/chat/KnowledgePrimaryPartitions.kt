@@ -25,9 +25,10 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
 
     fun begin() { check(writerThread == null); writerThread = Thread.currentThread(); failed = false }
 
-    fun append(catalog: KnowledgeSqlite, key: String, encoded: String) = guarded { appendFrames(catalog, key, encoded) }
+    fun append(catalog: KnowledgeSqlite, key: String, encoded: String, header: String? = null) =
+        guarded { appendFrames(catalog, key, encoded, header) }
 
-    private fun appendFrames(catalog: KnowledgeSqlite, key: String, encoded: String) {
+    private fun appendFrames(catalog: KnowledgeSqlite, key: String, encoded: String, header: String?) {
         checkWriter()
         require(key.matches(Regex("[a-f0-9]{64}")) && encoded.isNotEmpty())
         val bucket = key.take(2).toInt(16) and 3
@@ -36,7 +37,8 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
         val entry = token()
         var offset = 0
         var ordinal = 0
-        var bytes = 0L
+        val headerHash = header?.let(KnowledgePrimaryMetadata::hash).orEmpty()
+        var bytes = header?.let { KnowledgePrimaryMetadata.write(db, entry, it) } ?: 0L
         while (offset < encoded.length) {
             check(!Thread.currentThread().isInterrupted)
             var end = minOf(offset + KnowledgePrimaryFrameCodec.CHARS, encoded.length)
@@ -50,7 +52,7 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
             ordinal = Math.addExact(ordinal, 1); offset = end
         }
         val reference = JSONObject().put("codec", 1).put("partition", partition).put("entry", entry)
-            .put("chunks", ordinal).put("chars", encoded.length).toString()
+            .put("chunks", ordinal).put("chars", encoded.length).put("header_hash", headerHash).toString()
         catalog.insertOrThrow("knowledge_primary_refs", null, ContentValues().apply {
             put("item_key", key); put("partition_key", partition)
             put("reference", cipher.encrypt(reference, referenceAad(key)))
@@ -59,7 +61,8 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
             arrayOf(bytes.toString(), partition)).use { it.moveToNext() }
     }
 
-    internal data class Reference(val partition: String, val entry: String, val chunks: Int, val chars: Int, val sealed: String = "")
+    internal data class Reference(val partition: String, val entry: String, val chunks: Int, val chars: Int,
+        val sealed: String = "", val headerHash: String = "")
 
     internal fun reference(catalog: KnowledgeSqlite, key: String): Reference? {
         val record = catalog.rawQuery("SELECT partition_key,substr(reference,1,2049) FROM knowledge_primary_refs WHERE item_key=?", arrayOf(key)).use {
@@ -79,7 +82,26 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
         val chunks = reference.getInt("chunks")
         val chars = reference.getInt("chars")
         require(chunks > 0 && chars > 0 && chunks.toLong() <= chars.toLong())
-        return Reference(partition, entry, chunks, chars, sealed)
+        val headerHash = reference.optString("header_hash")
+        require(headerHash.isEmpty() || headerHash.matches(Regex("[a-f0-9]{64}")))
+        return Reference(partition, entry, chunks, chars, sealed, headerHash)
+    }
+
+    internal fun resolveHeader(catalog: KnowledgeSqlite, key: String, stored: String): String {
+        val expected = KnowledgePrimaryMetadata.pointerHash(stored) ?: return stored
+        val reference = requireNotNull(reference(catalog, key)) { "Primary metadata reference is missing" }
+        check(reference.headerHash == expected) { "Primary metadata reference mismatch" }
+        return withReader(reference.partition) { KnowledgePrimaryMetadata.read(it, reference.entry, expected) }
+    }
+
+    internal fun copyHeader(source: Reference, target: Reference): Long {
+        check(source.headerHash == target.headerHash)
+        if (source.headerHash.isEmpty()) return 0L
+        val encrypted = withReader(source.partition) { KnowledgePrimaryMetadata.read(it, source.entry, source.headerHash) }
+        val db = writer(target.partition)
+        val bytes = KnowledgePrimaryMetadata.write(db, target.entry, encrypted)
+        check(KnowledgePrimaryMetadata.read(db, target.entry, target.headerHash) == encrypted)
+        return bytes
     }
 
     fun read(catalog: KnowledgeSqlite, key: String): String? {
@@ -111,7 +133,9 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
             })
             bytes = Math.addExact(bytes, encrypted.length.toLong())
         }
-        publishReference(catalog, key, old, Reference(destination, entry, old.chunks, old.chars))
+        val target = Reference(destination, entry, old.chunks, old.chars, headerHash = old.headerHash)
+        bytes = Math.addExact(bytes, copyHeader(old, target))
+        publishReference(catalog, key, old, target)
         catalog.rawQuery("UPDATE knowledge_primary_partitions SET bytes=bytes+?,records=records+1 WHERE partition_key=?",
             arrayOf(bytes.toString(), destination)).use { it.moveToNext() }
         true
@@ -119,8 +143,9 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
     }
 
     internal fun publishReference(catalog: KnowledgeSqlite, key: String, old: Reference, target: Reference) {
+        check(old.headerHash == target.headerHash) { "Primary relocation lost metadata identity" }
         val next = JSONObject().put("codec", 1).put("partition", target.partition).put("entry", target.entry)
-            .put("chunks", target.chunks).put("chars", target.chars).toString()
+            .put("chunks", target.chunks).put("chars", target.chars).put("header_hash", target.headerHash).toString()
         catalog.update("knowledge_primary_refs", ContentValues().apply {
             put("partition_key", target.partition); put("reference", cipher.encrypt(next, referenceAad(key)))
         }, "item_key=? AND partition_key=? AND reference=?", arrayOf(key, old.partition, old.sealed))
@@ -279,7 +304,8 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
             KnowledgePrimaryDurability.configureWriter(db)
             db.execSQL("CREATE TABLE frames(entry_key TEXT NOT NULL,ordinal INTEGER NOT NULL,ciphertext TEXT NOT NULL," +
                 "PRIMARY KEY(entry_key,ordinal)) WITHOUT ROWID")
-            db.execSQL("PRAGMA user_version=1")
+            KnowledgePrimaryMetadata.create(db)
+            db.execSQL("PRAGMA user_version=2")
         }
         sync(root)
     }
@@ -292,7 +318,15 @@ internal class KnowledgePrimaryPartitions(context: Context, root: File, private 
             db.execSQL("PRAGMA busy_timeout=5000")
             db.execSQL("PRAGMA cache_size=-2048"); db.execSQL("PRAGMA mmap_size=0")
             if (readOnly) db.execSQL("PRAGMA query_only=ON") else KnowledgePrimaryDurability.configureWriter(db)
-            db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst() && it.getInt(0) == 1) }
+            val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
+            check(version in 1..2) { "Unsupported primary partition schema" }
+            if (!readOnly && version == 1) {
+                db.beginTransaction()
+                try {
+                    KnowledgePrimaryMetadata.create(db)
+                    db.execSQL("PRAGMA user_version=2"); db.setTransactionSuccessful()
+                } finally { db.endTransaction() }
+            }
             return db
         } catch (failure: Throwable) { db.close(); throw failure }
     }

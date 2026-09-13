@@ -9,6 +9,10 @@ internal object KnowledgePrimaryLegacyFixture {
         inline: Boolean, hardwareEnvelope: Boolean = false) = owner.transaction { db ->
         val header = requireNotNull(owner.readHeader(db, key))
         val encoded = owner.readEncoded(db, key, header)
+        // Historical headers embedded the preview before it moved to a derived cache.
+        header.put("source_preview", KnowledgeSourceMetadata.from(
+            requireNotNull(AgentKnowledgeCodec.decodeItem(org.json.JSONObject(encoded)))
+        ).encode())
         val cipher = AgentRowStorageCipher(context, "knowledge-records:v1:$name")
         fun seal(value: String, part: String): String {
             val aad = "$name:$key:$part".toByteArray(Charsets.UTF_8)
@@ -67,8 +71,11 @@ internal object KnowledgePrimaryLegacyFixture {
                     val encoded = requireNotNull(primary.read(db, key))
                     val aad = "${path.name}:$key:header".toByteArray()
                     val header = db.rawQuery("SELECT header FROM knowledge_items WHERE item_key=?", arrayOf(key)).use {
-                        check(it.moveToFirst()); org.json.JSONObject(requireNotNull(cipher.decrypt(it.getString(0), aad)))
+                        check(it.moveToFirst()); org.json.JSONObject(requireNotNull(cipher.decrypt(primary.resolveHeader(db, key, it.getString(0)), aad)))
                     }
+                    header.put("source_preview", KnowledgeSourceMetadata.from(
+                        requireNotNull(AgentKnowledgeCodec.decodeItem(org.json.JSONObject(encoded)))
+                    ).encode())
                     db.delete("knowledge_chunks", "item_key=?", arrayOf(key))
                     var offset = 0
                     var ordinal = 0

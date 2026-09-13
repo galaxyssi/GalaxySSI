@@ -4,9 +4,12 @@
 
 New knowledge writes store the complete encoded record in physical encrypted SQLite
 partitions. This is the authoritative body store, not a vector-index shard or a
-second copy of a canonical JSON corpus. The existing SQLite catalog still owns
-identity, source membership, authenticated previews, full-text indexes and vector
-change ledgers. Metadata and index partitioning are not included in this phase.
+second copy of a canonical JSON corpus. Since Android 1.1.118, newly written
+authoritative record headers share the body's physical partition and commit;
+see [primary metadata](android-knowledge-primary-metadata.md). The existing
+SQLite catalog still owns identity, source membership, authenticated derived
+previews, full-text indexes and vector change ledgers. Sharding these catalog
+and index tables is not included in this phase.
 
 Four opaque-ID buckets select independently rotating files. A partition rotates
 after approximately 64 MiB or 65,536 appended records; these are file targets,

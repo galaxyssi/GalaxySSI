@@ -28,10 +28,12 @@ class KnowledgePrimaryCopyRecoveryDeviceTest {
             Process.killProcess(Process.myPid()); error("Expected process death")
         }
         KnowledgePrimaryCompactionFixture(name).use { f ->
+            val cipher = AgentRowStorageCipher(context, "knowledge-records:v1:$name")
+            val aad = "$name:${f.key(1)}:header".toByteArray()
             fun state() = KnowledgePrimaryCopy(f.parts).state(requireNotNull(KnowledgePrimaryCopy(f.parts).load(f.db)))
             fun advance() = f.transaction { KnowledgePrimaryCompaction.advance(f.db, f.parts) { } }
             when (phase) {
-                "prepare" -> { f.transaction { f.put(1, "old"); f.put(1, body) }; advance(); assertEquals(0, state().copied) }
+                "prepare" -> { f.transaction { f.put(1, "old"); f.put(1, body, cipher.encrypt("copy-metadata", aad)) }; advance(); assertEquals(0, state().copied) }
                 "before-frames", "before-catalog" -> f.transaction {
                     f.parts.resumeCopy(f.db) { }
                     if (phase == "before-catalog") f.parts.prepareCommit()
@@ -55,6 +57,9 @@ class KnowledgePrimaryCopyRecoveryDeviceTest {
                 }
                 else -> error("Unknown primary copy recovery phase")
             }
+            val ref = requireNotNull(f.parts.reference(f.db, f.key(1)))
+            val sealed = f.parts.resolveHeader(f.db, f.key(1), "khp1:${ref.headerHash}")
+            assertEquals("copy-metadata", cipher.decrypt(sealed, aad))
         }
     }
 }
