@@ -10,11 +10,22 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
-Installed App 1.1.114 (1000) and running Desktop 1.1.51 are now genuinely QR
-paired on S20U. A real Codex request/reply completed with the phone on its
-launcher. Both endpoints recorded authenticated peer receipts. Android final
-consumption nevertheless waited 21.9s for recovery after the verified reply
-arrived; this remains a performance defect, not a multi-broker delivery failure.
+Installed App 1.1.115 (1001) and running Desktop 1.1.51 retain the real S20U
+QR pairing. The App update passed 43 focused unit tests and a full-runtime build.
+It keeps weak final-response consumers available for paused windows and selects
+one live consumer per dispatch. Stream UI and plaintext clearing are unchanged.
+Device retesting is waiting for screen availability; all-hosts-destroyed headless
+consumption remains unfinished.
+
+The user's subsequent request changed installation to S26U (SM-S9480,
+`R5GL546G3LZ`). The same full App 1.1.115 (1001) installed successfully without
+data clearing or UI interaction. Do not continue the pending S20U screen test
+after this target change; no post-fix real model timing has yet been measured.
+
+The prior App 1.1.114 real Codex request/reply completed with the phone on its
+launcher. Both endpoints recorded authenticated peer receipts, but Android final
+consumption waited 21.9s for recovery after the verified reply arrived. This is
+the pre-fix baseline, not a multi-broker delivery failure or a post-fix result.
 See [S20U background evidence](../testing/MQTT_S20U_BACKGROUND_20260913.md).
 
 Source Desktop 1.1.52 additionally queues Agent push/mobile diagnostics while
