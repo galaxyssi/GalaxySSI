@@ -10,6 +10,19 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Latest development artifacts were built from code revision `a36b6b240`: Android
+1.2.0 (1005), 421,145,752 bytes, valid debug v2 signature, embedded-runtime/16KB/QNN
+checks passed; all 293 prior lib/assets entries remain byte-identical. A separate
+Desktop package bundles Python and the rebuilt Signal sidecar, with verified
+Windows version resources 1.2.0.0 / 1.2.0 and 291 matching backend source files.
+The final isolated packaged backend/UI smoke passes after configuring a separate
+Git source checkout and shorter test temp directory; failed attempts are retained.
+See [artifact evidence](../testing/MQTT_RELEASE_ARTIFACTS_20260913.md). No production
+Desktop replacement or phone installation occurred. The acceptance backlog and
+goal remain open; artifact generation is not device/performance acceptance.
+
+## Previous Path State Checkpoint
+
 Android now displays local path lifecycle, per-path reconnect attempts and
 broker-pending sends in its existing protocol diagnostics. Desktop exposes the
 equivalent lifecycle/counters in the existing diagnostics response. Complete
