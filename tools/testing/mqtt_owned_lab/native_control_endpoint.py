@@ -12,6 +12,38 @@ class ControlEndpoint:
         self.tasks = set()
         self.timings = {}
         self.current_ack = threading.local()
+        self.current_receive = threading.local()
+
+    def install_receive_timing(self, bridge):
+        actual = bridge._deliver_stored_application
+
+        def deliver(mqttc, paired, wire, envelope, payload, trace, **kwargs):
+            task_id, kind = payload.get("task_id"), payload.get("type")
+            owned = ((kind == "agent_task_cancel" and task_id in self.tasks)
+                     or (kind == "agent_task_event" and task_id in self.pending))
+            if not owned:
+                return actual(mqttc, paired, wire, envelope, payload, trace, **kwargs)
+            sample = {"message_id": envelope["message_id"], "kind": kind,
+                      "stages": dict(kwargs.get("timings", ()))}
+            with self.lock:
+                timing = self.timings.setdefault(task_id, {"stages": {}, "reply_ids": []})
+                calls = timing.setdefault("receive_calls", [])
+                timing["receive_calls_total"] = timing.get("receive_calls_total", 0) + 1
+                sample["call_id"] = timing["receive_calls_total"]
+                if len(calls) < 16:
+                    calls.append(sample)
+                else:
+                    timing["receive_calls_dropped"] = timing.get("receive_calls_dropped", 0) + 1
+            previous = getattr(self.current_receive, "context", None)
+            self.current_receive.context = (task_id, sample)
+            self.stage(task_id, "delivery_enter")
+            try:
+                return actual(mqttc, paired, wire, envelope, payload, trace, **kwargs)
+            finally:
+                self.stage(task_id, "delivery_return")
+                self.current_receive.context = previous
+
+        bridge._deliver_stored_application = deliver
 
     def install_ack_timing(self, bridge):
         actual_ack, actual_publish = bridge._ack_stored_application, bridge._publish_phone_payload
@@ -22,6 +54,9 @@ class ControlEndpoint:
             previous_sample = getattr(self.current_ack, "sample", None)
             self.current_ack.task_id = task_id
             sample = {"duplicate": bool(kwargs.get("duplicate")), "stages": {}}
+            receive = getattr(self.current_receive, "context", None)
+            if receive is not None and receive[0] == task_id:
+                sample["receive_call_id"] = receive[1]["call_id"]
             self.current_ack.sample = sample
             if task_id in self.tasks:
                 with self.lock:
@@ -50,7 +85,7 @@ class ControlEndpoint:
         bridge._ack_stored_application, bridge._publish_phone_payload = acknowledge, publish
 
     def stage(self, task_id, name):
-        if task_id in self.tasks:
+        if task_id in self.tasks or task_id in self.pending:
             with self.lock:
                 now = self.endpoint.measurements.clock()
                 self.timings.setdefault(task_id, {"stages": {}, "reply_ids": []})["stages"].setdefault(
@@ -58,6 +93,9 @@ class ControlEndpoint:
                 sample = getattr(self.current_ack, "sample", None)
                 if sample is not None and getattr(self.current_ack, "task_id", None) == task_id:
                     sample["stages"].setdefault(name, now)
+                receive = getattr(self.current_receive, "context", None)
+                if receive is not None and receive[0] == task_id:
+                    receive[1]["stages"].setdefault(name, now)
 
     def observe_envelope(self, envelope):
         payload = envelope.get("payload", {})
@@ -112,12 +150,13 @@ class ControlEndpoint:
                 raise ValueError("Excessive control event copies")
             item["events"].append(dict(payload))
             self.endpoint.measurements.stage(item["message_id"], "cancel_event_received")
+        self.stage(payload["task_id"], "cancel_event_capture")
 
     def command(self, value):
         operation = value["operation"]
         if operation == "diagnostics":
             with self.lock:
-                return copy.deepcopy(self.timings)
+                return copy.deepcopy(self.timings.get(value["task_id"]) if "task_id" in value else self.timings)
         if operation == "create":
             return self.create()
         if operation == "send":

@@ -139,6 +139,41 @@ class SignalReceiveDispatchTest(unittest.TestCase):
             self.assertEqual("deferred", dispatch.begin(guard, self.envelope, admission_token=first[0][3]).state)
             self.assertEqual("run", dispatch.begin(guard, self.envelope, admission_token=second[0][3]).state)
 
+    def test_recovery_queue_cannot_delay_live_first_delivery(self):
+        at = time.time()
+        queued = dispatch.pending(now=at)
+        with self.guard() as guard:
+            claim = dispatch.begin(guard, self.envelope, now=at + .01)
+            self.assertEqual("run", claim.state)
+            self.assertTrue(dispatch.finish(guard, claim))
+        with self.guard() as guard:
+            self.assertEqual("dispatched", dispatch.begin(guard, self.envelope,
+                admission_token=queued[0][3], now=at + .02).state)
+        self.assertEqual(("dispatched", 1, ""), self.state())
+
+    def test_live_duplicate_cannot_bypass_retry_queue_backoff(self):
+        with self.guard() as guard:
+            claim = dispatch.begin(guard, self.envelope)
+            dispatch.finish(guard, claim, error=OSError("owned retry"), replayable=True)
+        at = time.time() + 100
+        queued = dispatch.pending(now=at)
+        with self.guard() as guard:
+            self.assertEqual("deferred", dispatch.begin(guard, self.envelope, now=at + .01).state)
+            self.assertEqual("run", dispatch.begin(guard, self.envelope,
+                admission_token=queued[0][3], now=at + .01).state)
+
+    def test_live_duplicate_cannot_take_an_interrupted_unsafe_handler(self):
+        envelope = link_protocol.make_envelope({"type": "external_effect"}, source_id="phone", target_id="desktop")
+        self.store(envelope)
+        with self.guard(mid=envelope["message_id"]) as guard:
+            dispatch.begin(guard, envelope)
+        at = time.time() + 100
+        queued = next(row for row in dispatch.pending(now=at) if row[1] == envelope["message_id"])
+        with self.guard(mid=envelope["message_id"]) as guard:
+            self.assertEqual("deferred", dispatch.begin(guard, envelope, now=at + .01).state)
+            self.assertEqual("uncertain", dispatch.begin(guard, envelope,
+                admission_token=queued[3], now=at + .01).state)
+
     def test_pages_are_bounded_and_rotate_queued_work(self):
         for index in range(35):
             envelope = link_protocol.make_envelope({"type": "peer_message", "content": str(index)},

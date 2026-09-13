@@ -118,6 +118,7 @@ class Endpoint:
             from native_control_endpoint import ControlEndpoint
             self.controls = ControlEndpoint(self)
             self.controls.install_ack_timing(bridge)
+            self.controls.install_receive_timing(bridge)
             actual_task_event = bridge._publish_or_queue_task_event
 
             def task_event(mqttc, wire, task, trace):

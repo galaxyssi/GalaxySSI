@@ -10,6 +10,29 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Per-invocation receive instrumentation identified a queue-admission race:
+background recovery could reserve a newly stored message before its live handler
+claimed it, unnecessarily deferring that first authenticated delivery. A live
+never-executed `stored` message may now proceed under its existing OS guard;
+retry backoff and interrupted unsafe-effect handling remain unchanged. The
+deterministic live-first regression was red before the fix. Expanded backend
+tests pass 242 cases, native-tool tests 41, and Desktop checks 37 plus structure.
+
+The first post-fix native control/load run passed 61 cancellations, all 30 load
+overlap checks and a complete 32 MiB artifact with one available result. All
+30 requests and returns in each measured cohort ran live, with no recovery
+deferral or dropped observations. Loaded cancel-result p95 was 4905.64ms,
+passing the existing 8000ms provisional budget. A structure check overlapped
+the beginning of that run. An isolated repeat also passed all business and
+live-receive checks, with loaded cancel-result p95 6291.23ms. Post-change native
+recovery also passed 20 business messages / three path cycles, with normal exit
+and empty endpoint logs. See [live admission evidence](../testing/MQTT_LIVE_ADMISSION_20260913.md).
+The complete acceptance backlog below remains open. Per the user's latest
+instruction, PR #3045 is the stop boundary; no additional feature scope follows
+this PR. No phone or production Desktop was operated in this checkpoint.
+
+## Previous Lock Checkpoint
+
 Desktop's broker pool now releases its state lock before calling Paho publish,
 while retaining bounded in-progress reservations and validating the connection
 generation again after publication. Deterministic pre-fix tests reproduced a

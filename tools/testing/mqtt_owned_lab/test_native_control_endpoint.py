@@ -146,6 +146,76 @@ class ControlEndpointTests(unittest.TestCase):
         self.assertEqual(4, timing["ack_calls_dropped"])
         self.assertEqual(20, actual.call_count)
 
+    def test_receive_observation_keeps_exact_call_timing_and_ack_identity(self):
+        record = self.control.create()
+        bridge = self.endpoint.bridge
+        received = [("desktop_request_received", 10), ("desktop_handler_started", 20)]
+        bridge._ack_stored_application = Mock(return_value=True)
+        self.control.install_ack_timing(bridge)
+
+        def actual(mqttc, paired, wire, envelope, payload, trace, **kwargs):
+            self.assertEqual("token", kwargs["admission_token"])
+            self.assertIs(received, kwargs["timings"])
+            bridge._ack_stored_application(mqttc, wire, envelope, payload, trace)
+            self.control.stage(record["task_id"], "dispatch_enter")
+            return "unchanged"
+
+        bridge._deliver_stored_application = actual
+        self.control.install_receive_timing(bridge)
+        self.assertEqual("unchanged", bridge._deliver_stored_application(None, {}, {},
+            {"message_id": "request"}, {**record, "type": "agent_task_cancel"}, [],
+            timings=received, admission_token="token"))
+        timing = self.control.command({"operation": "diagnostics", "task_id": record["task_id"]})
+        call = timing["receive_calls"][0]
+        self.assertEqual("request", call["message_id"])
+        self.assertEqual(call["call_id"], timing["ack_calls"][0]["receive_call_id"])
+        self.assertEqual(10, call["stages"]["desktop_request_received"])
+        self.assertTrue({"delivery_enter", "ack_enter", "ack_return", "dispatch_enter", "delivery_return"}
+                        <= call["stages"].keys())
+        self.assertIsNone(self.control.current_receive.context)
+        received.clear()
+        call["stages"].clear()
+        self.assertTrue(self.control.command({"operation": "diagnostics", "task_id": record["task_id"]})
+                        ["receive_calls"][0]["stages"])
+
+    def test_return_delivery_measures_pending_task_without_receiver_task(self):
+        record = self.control.create()
+        self.control.send(record)
+        self.control.tasks.clear()
+        event = {**record, "type": "agent_task_event", "task_status": "cancelled"}
+        bridge = self.endpoint.bridge
+        bridge._deliver_stored_application = lambda *args, **kwargs: self.control.capture(args[4])
+        self.control.install_receive_timing(bridge)
+        bridge._deliver_stored_application(None, {}, {}, {"message_id": "reply"}, event, [],
+                                          timings=[("desktop_request_received", 10)])
+        calls = self.control.command({"operation": "diagnostics", "task_id": record["task_id"]})["receive_calls"]
+        self.assertEqual("agent_task_event", calls[0]["kind"])
+        self.assertIn("cancel_event_capture", calls[0]["stages"])
+        self.assertIsNone(self.control.current_receive.context)
+
+    def test_receive_observation_preserves_exception_and_bounds(self):
+        record = self.control.create()
+        bridge = self.endpoint.bridge
+        actual = bridge._deliver_stored_application = Mock(side_effect=RuntimeError("owned failure"))
+        self.control.install_receive_timing(bridge)
+        for _ in range(20):
+            with self.assertRaisesRegex(RuntimeError, "owned failure"):
+                bridge._deliver_stored_application(None, {}, {}, {"message_id": "request"},
+                                                  {**record, "type": "agent_task_cancel"}, [])
+            self.assertIsNone(self.control.current_receive.context)
+        timing = self.control.command({"operation": "diagnostics", "task_id": record["task_id"]})
+        self.assertEqual(16, len(timing["receive_calls"]))
+        self.assertEqual(4, timing["receive_calls_dropped"])
+        self.assertEqual(20, actual.call_count)
+
+    def test_unowned_receive_is_not_observed_or_changed(self):
+        actual = self.endpoint.bridge._deliver_stored_application = Mock(return_value="original")
+        self.control.install_receive_timing(self.endpoint.bridge)
+        args = (None, {}, {}, {"message_id": "unowned"}, {"type": "agent_task_cancel", "task_id": "unowned"}, [])
+        self.assertEqual("original", self.endpoint.bridge._deliver_stored_application(*args))
+        actual.assert_called_once_with(*args)
+        self.assertEqual({}, self.control.timings)
+
 
 if __name__ == "__main__":
     unittest.main()

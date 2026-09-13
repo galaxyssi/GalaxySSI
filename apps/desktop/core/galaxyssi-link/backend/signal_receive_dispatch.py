@@ -145,7 +145,10 @@ def begin(guard: DispatchGuard, envelope: dict, *, now: float | None = None, adm
             if state in {"dispatched", "uncertain", "rejected"}:
                 db.commit()
                 return Claim(state)
-            if retry_at > at and not admitted:
+            # Queue admission spaces recovery scans; it is not handler ownership.
+            # A live first delivery already holds the OS guard and may finish now.
+            live_first_delivery = state == "stored" and bool(admission) and not admission_token
+            if retry_at > at and not admitted and not live_first_delivery:
                 db.commit()
                 return Claim("deferred")
             if state == "running" and not retry_safe(envelope):

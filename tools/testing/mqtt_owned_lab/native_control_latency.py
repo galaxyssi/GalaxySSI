@@ -31,13 +31,28 @@ def overlapping_chunks(control, chunks):
             < sample["stages"].get("receipt_committed", float("inf"))]
 
 
+def receive_flow(records, tasks, marker):
+    result = {"samples": len(tasks), "live": 0, "recovered": 0, "missing_or_ambiguous": 0, "dropped": 0}
+    for task in tasks:
+        timing = records.get(task) or {}
+        result["dropped"] += timing.get("receive_calls_dropped", 0)
+        calls = [item for item in timing.get("receive_calls", []) if marker in item["stages"]]
+        if len(calls) != 1:
+            result["missing_or_ambiguous"] += 1
+        elif "desktop_request_received" in calls[0]["stages"]:
+            result["live"] += 1
+        else:
+            result["recovered"] += 1
+    return result
+
+
 def run(lab, loop, python, report_dir, single_path=None):
     report_dir.mkdir(parents=True, exist_ok=True)
     reject_bad_tls(lab)
     workers, configs, cohorts, all_controls = [], {}, {"idle": [], "attachment_active": []}, []
     report = {"status": "running", "network": "owned_loopback_tls", "samples_per_cohort": 30,
         "single_available_path": single_path, "cohorts": cohorts, "overlap": {},
-        "raw_samples": {}, "receiver_control_timings": {}, "control_tasks": {},
+        "raw_samples": {}, "receiver_control_timings": {}, "sender_return_timings": {}, "control_tasks": {},
         "scope": "real native Signal, durable cancel dispatch/task ledger and Desktop attachment ingress; no model or Android",
         "attachment_sender_traffic": "Desktop MESSAGE classification of phone-shaped input_attachment_chunk, not Android CHUNK",
         "provisional_loaded_cancel_p95_budget_ms": 8000, "release_gate": "not_evaluated"}
@@ -76,6 +91,8 @@ def run(lab, loop, python, report_dir, single_path=None):
         report["control_tasks"][mid] = record["task_id"]
         state = right.call("control", operation="inspect", task_id=record["task_id"])
         report["receiver_control_timings"][record["task_id"]] = state["timing"]
+        report["sender_return_timings"][record["task_id"]] = left.call("control", operation="diagnostics",
+                                                                    task_id=record["task_id"])
         require(state["status"] == state["stored_status"] == "cancelled" and state["cancel_requested"],
                 "Task cancellation was not persisted")
         if chunks:
@@ -160,9 +177,18 @@ def run(lab, loop, python, report_dir, single_path=None):
         measurements = left.call("measurements")["samples"]
         report["raw_samples"] = measurements
         report["receiver_control_timings"] = right.call("control", operation="diagnostics")
+        report["sender_return_timings"] = left.call("control", operation="diagnostics")
         report["receiver_reply_measurements"] = right.call("measurements")
         report["control_tasks"] = {mid: record["task_id"] for mid, record in all_controls}
         report["results"] = {key: control_summary([measurements[mid] for mid in mids]) for key, mids in cohorts.items()}
+        report["receive_flow"] = {}
+        for cohort, mids in cohorts.items():
+            tasks = [report["control_tasks"][mid] for mid in mids]
+            flows = report["receive_flow"][cohort] = {
+                "request": receive_flow(report["receiver_control_timings"], tasks, "dispatch_enter"),
+                "return": receive_flow(report["sender_return_timings"], tasks, "cancel_event_capture")}
+            require(all(item["live"] == len(tasks) and item["dropped"] == 0 for item in flows.values()),
+                    "Uninterrupted live delivery was deferred to recovery or its evidence is incomplete")
         p95 = report["results"]["attachment_active"]["request_to_cancel_event_ms"]["p95"]
         report["provisional_gate"] = {"passed": p95 <= report["provisional_loaded_cancel_p95_budget_ms"],
                                       "observed_loaded_cancel_p95_ms": p95}

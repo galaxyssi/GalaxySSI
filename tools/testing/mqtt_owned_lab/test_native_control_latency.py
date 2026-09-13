@@ -5,6 +5,14 @@ import native_control_latency as control
 
 
 class ControlEvidenceTests(unittest.TestCase):
+    def test_receive_flow_distinguishes_live_recovered_and_missing_evidence(self):
+        records = {"live": {"receive_calls": [{"stages": {"dispatch_enter": 3, "desktop_request_received": 1}}]},
+                   "recovered": {"receive_calls": [{"stages": {"dispatch_enter": 3}}]},
+                   "duplicate": {"receive_calls": [{"stages": {"dispatch_enter": 3}}, {"stages": {"dispatch_enter": 4}}],
+                                 "receive_calls_dropped": 1}}
+        self.assertEqual({"samples": 4, "live": 1, "recovered": 1, "missing_or_ambiguous": 2, "dropped": 1},
+                         control.receive_flow(records, ["live", "recovered", "duplicate", "missing"], "dispatch_enter"))
+
     def test_overlap_requires_queued_chunk_not_already_receipted(self):
         probe = {"stages": {"started": 100}}
         chunks = {"pending": {"stages": {"queued": 90}},
