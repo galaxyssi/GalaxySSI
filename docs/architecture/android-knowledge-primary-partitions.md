@@ -39,9 +39,10 @@ Existing WAL snapshots pin the external-body lease. Replacements preserve old
 immutable entries until snapshot readers finish. Fully unreferenced registered
 partitions are retired under an exclusive cross-process lease. A durable queue
 separates catalog retirement from unlink and makes interrupted deletion retryable.
-Mixed live/dead partition compaction and discovery of unregistered files left by
-an aborted first publication remain separate follow-up work. No live body is
-deleted to reclaim an unverified orphan.
+Mixed live/dead partition compaction is added by the
+[schema-15 maintenance phase](android-knowledge-primary-compaction.md).
+Discovery of unregistered files left by an aborted first publication remains
+separate follow-up work. No live body is deleted to reclaim an unverified orphan.
 
 ## Migration
 
