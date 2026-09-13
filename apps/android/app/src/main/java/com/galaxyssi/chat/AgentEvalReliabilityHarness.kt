@@ -109,7 +109,7 @@ object AgentEvalReliabilityHarness {
             AgentEvalCondition.PROCESS_DEATH -> "Agent run was interrupted by Android process death"
             else -> "Agent run was interrupted by ${condition.wireValue}"
         }
-        AgentRunRecorder(context).runningRuns().forEach { run ->
+        AgentRunRecorder.get(context).runningRuns().forEach { run ->
             runCatching { AgentEvalOpsService.observeRunInterrupted(context, run.runId, condition, reason) }
                 .onFailure { reportRecoveryFailure("recorded_run", it) }
         }

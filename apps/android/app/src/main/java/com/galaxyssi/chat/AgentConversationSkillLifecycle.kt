@@ -43,7 +43,7 @@ data class AgentTaskThreadContext(
     val updatedAtMillis: Long = System.currentTimeMillis()
 )
 
-class AgentRunRecorder(context: Context) {
+class AgentRunRecorder private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, PREFERENCES_NAME)
     private val runCache = linkedMapOf<String, AgentRecordedRun>()
@@ -261,10 +261,7 @@ class AgentRunRecorder(context: Context) {
         val currentRun = run(runId) ?: return null
         val updated = transform(currentRun)
         saveRun(updated)
-        val current = context(updated.conversationId)
-        if (current != null) {
-            saveContext(current.copy(activeRunId = updated.runId, revisionNumber = updated.revisionNumber))
-        }
+        // A late update to an older run must not move the conversation's current-run pointer.
         return updated
     }
 
@@ -481,6 +478,13 @@ class AgentRunRecorder(context: Context) {
     }.getOrDefault(fallback)
 
     companion object {
+        @Volatile private var shared: AgentRunRecorder? = null
+
+        /** All windows and background owners share one cache and one mutation monitor. */
+        fun get(context: Context): AgentRunRecorder = shared ?: synchronized(this) {
+            shared ?: AgentRunRecorder(context.applicationContext).also { shared = it }
+        }
+
         private const val PREFERENCES_NAME = "galaxyssi_agent_runs_v2"
         private const val KEY_RUN_IDS = "run_ids"
         private const val KEY_CONTEXT_IDS = "context_ids"

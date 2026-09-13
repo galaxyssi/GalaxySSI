@@ -397,7 +397,7 @@ object AgentEvalOpsService {
         reason: String
     ): AgentEvalSample? {
         val labManaged = AgentLabStore(context).campaignForRun(runId) != null
-        val recorder = AgentRunRecorder(context)
+        val recorder = AgentRunRecorder.get(context)
         val running = recorder.run(runId)?.takeIf { it.status == AgentRecordedRunStatus.RUNNING } ?: return null
         val store = AgentEvalOpsStore(context)
         val currentStart = store.start(runId)
@@ -440,7 +440,7 @@ object AgentEvalOpsService {
     ): Int {
         if (condition == AgentEvalCondition.NORMAL) return 0
         val store = AgentEvalOpsStore(context)
-        val recorder = AgentRunRecorder(context)
+        val recorder = AgentRunRecorder.get(context)
         val runningById = recorder.runningRuns().associateBy(AgentRecordedRun::runId)
         var recorded = 0
         store.activeStarts().forEach { start ->
@@ -470,7 +470,7 @@ object AgentEvalOpsService {
     ): Int {
         if (condition == AgentEvalCondition.NORMAL) return 0
         val store = AgentEvalOpsStore(context)
-        val recorder = AgentRunRecorder(context)
+        val recorder = AgentRunRecorder.get(context)
         val runningById = recorder.runningRuns().associateBy(AgentRecordedRun::runId)
         var recorded = 0
         store.activeStarts().filter { it.contract.condition == condition }.forEach { start ->

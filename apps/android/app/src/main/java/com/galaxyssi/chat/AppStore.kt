@@ -1419,6 +1419,7 @@ object AppStore {
         VoiceAssistantSettings.clear(context)
         GalaxySSILinkProtocol.clear(context)
         GalaxySSILinkDeliveryStore.clear(context)
+        AgentRunRecorder.get(context).clear()
         AgentEncryptedDatabase(context, "galaxyssi_agent_runs").clear()
         AgentSelfModelStore(context).clear()
         AgentEncryptedDatabase(context, EncryptedAgentWorkspaceStore.DATABASE_NAME).clear()

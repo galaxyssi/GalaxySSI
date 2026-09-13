@@ -1244,7 +1244,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         saveConversations(mutation.conversations)
         preparedContextCache.invalidate(listOf(sourceConversationId, target.id))
         SQLiteAgentTaskStore(appContext).rebindSession(sourceConversationId, target.id)
-        AgentRunRecorder(appContext).rebindConversation(sourceConversationId, target.id)
+        AgentRunRecorder.get(appContext).rebindConversation(sourceConversationId, target.id)
         EncryptedAgentMemoryStore(appContext).rebindConversationScope(sourceConversationId, target.id)
         if (draftConversation?.id == sourceConversationId) {
             draftConversation = null

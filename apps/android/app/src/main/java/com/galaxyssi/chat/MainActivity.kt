@@ -923,7 +923,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         intent?.removeExtra("galaxyssi_open_agent")
         intent?.removeExtra("galaxyssi_agent_conversation_id")
         requestedGlobalInsightConversationId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::switchConversation)
-        agentRunRecorder = AgentRunRecorder(this)
+        agentRunRecorder = AgentRunRecorder.get(this)
         agentRunEventStore = AgentRunEventStore(this)
         voiceAgentRunBridge = VoiceAgentRunBridge.get(this).also {
             it.addListener(voiceAgentRunListener)

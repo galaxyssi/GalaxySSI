@@ -10,6 +10,18 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+The next headless-consumer integration exposed a prerequisite in run recording:
+window/background instances had independent stale caches, and an older run's
+completion selected that old run as the current conversation head. The recorder
+now has a single application-Context owner shared by all callers, and historical
+updates do not select a run. Seven new encrypted-recorder device cases plus the
+prior 28 cases passed on S26U (35 total); the new seven passed independently again.
+This is shared run ownership, not completed headless connector consumption. See
+[run recorder ownership](../testing/MQTT_RUN_RECORDER_OWNERSHIP_20260913.md).
+The normal full-runtime build subsequently passed in 4m 39s with 154 JVM tests
+across 19 suites. Its 1.2.0 (1005) APK is built but not installed. Both isolated
+test packages were removed; S26U production is still 1002 and Desktop is unchanged.
+
 The production background recovery worker now commits its result to the original
 transcript before workspace completion, with a scoped pending checkpoint and a
 projection-only replay path that does not instantiate the Agent runtime. Its
