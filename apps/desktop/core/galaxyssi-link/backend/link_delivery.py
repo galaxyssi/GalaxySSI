@@ -557,7 +557,8 @@ def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
             db.close()
 
 
-def acknowledge_verified_outbound(client_route_id: str, payload: dict, receipt_binding: str) -> bool:
+def acknowledge_verified_outbound(client_route_id: str, payload: dict, receipt_binding: str, *, before_retire=None) -> bool:
+    """Commit an idempotent local projection before removing verified retry state."""
     from mqtt_delivery_envelope import HASH, parse_stored_receipt
     try:
         message_id, digest = parse_stored_receipt(payload)
@@ -576,6 +577,8 @@ def acknowledge_verified_outbound(client_route_id: str, payload: dict, receipt_b
             proof = json.loads(_reveal(row[0], "receipt-proof"))
             if proof != {"message_id": message_id, "binding": receipt_binding, "content_hash": digest}:
                 return False
+            if before_retire is not None:
+                before_retire(message_id)
             db.execute("DELETE FROM outbound_messages WHERE client_route_id=? AND message_id=?",
                        (_route(client_route_id), message_id))
             db.commit()

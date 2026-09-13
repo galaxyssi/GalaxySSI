@@ -167,7 +167,7 @@ class Endpoint:
         rows = store.list_messages(limit=2000)
         with closing(store._connect()) as db:
             remote_ids = {row[0]: unseal_identifier(store.database_path, row[1], purpose=_REMOTE_PURPOSE)
-                          for row in db.execute("SELECT message_id,remote_message_id FROM peer_messages")}
+                          for row in db.execute("SELECT message_id,remote_message_id FROM peer_messages WHERE direction='inbound'")}
         with closing(delivery._connect()) as db:
             inbox = [{"id": row[0], "state": row[1], "attempts": row[2], "error": row[3]}
                      for row in db.execute("SELECT message_id,dispatch_state,dispatch_attempts,dispatch_error FROM inbound_messages")]
@@ -192,7 +192,8 @@ class Endpoint:
                 "paths": self.client.path_snapshot()["paths"], **observations,
                 "ingress": self.bridge.mqtt_ingress_status(), "inbox": inbox, "outbox": outbox,
                 "errors": list(self.error_capture.errors),
-                "messages": [{"id": remote_ids[row["message_id"]], "direction": row["direction"],
+                "messages": [{"id": row["message_id"] if row["direction"] == "outbound" else remote_ids[row["message_id"]],
+                              "direction": row["direction"], "delivery_status": row["delivery_status"],
                               "route_ok": row["client_route_id"] == self.route,
                               "hash": hashlib.sha256(row["content"].encode()).hexdigest()} for row in rows]}
 
@@ -253,6 +254,8 @@ def main():
                     result = endpoint.snapshot()
                 elif command == "send":
                     result = endpoint.send(request)
+                elif command == "send_peer":
+                    result = endpoint.bridge.publish_peer_message(endpoint.route, request["content"])
                 elif command == "replay":
                     result = endpoint.replay(request)
                 elif command == "drop":

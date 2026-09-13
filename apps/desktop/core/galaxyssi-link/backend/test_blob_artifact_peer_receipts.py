@@ -51,6 +51,7 @@ class BlobArtifactPeerReceiptTests(unittest.TestCase):
 
     def test_card_publication_alone_never_means_recipient_has_file(self):
         result, bodies = self.activate()
+        self.store.mark_outbound_stored(self.route, result["message_id"])
         self.assertTrue(self.runtime.observe_stored(bodies[0]))
         self.assertEqual("queued", self.status(result))
 

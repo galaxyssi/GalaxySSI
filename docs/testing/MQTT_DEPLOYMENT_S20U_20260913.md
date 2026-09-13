@@ -4,6 +4,33 @@ Date: 2026-09-13. Branch: `feat/automatic-multi-broker-20260912`.
 Merged main through `6e303ed06` in merge commit `ff313c1e2`.
 This is installation/startup evidence, not full P0-P3 acceptance.
 
+## Latest Update: App 1.1.114 / Desktop 1.1.51
+
+The sections below this update retain the earlier deployment evidence.
+The current installed/running versions supersede 1.1.113 / 1.1.50.
+
+- S20U only: full `:app:assembleDebug` succeeded in 5m 33s, with embedded
+  runtime verification enabled. `adb -s R5CN319CESA install -r` succeeded;
+  package manager reports 1.1.114 (1000), and MainActivity is visible.
+- APK: 418717826 bytes, SHA-256
+  `38776042C69A04F0BB26263438632094B0E74D80F5708FF9F04DA5D9D4CC8F4E`.
+  Build log: `build/mqtt-app-1.1.114.log`; screenshot:
+  `build/mqtt-s20u-1.1.114.png`. No user data was cleared.
+- Desktop 1.1.51 was packaged with the release Python venv and Signal JVM.
+  Source and packaged `mqtt_bridge.py`, `mqtt_peer_routes.py` and renderer
+  hashes match. Log: `build/mqtt-desktop-package-1.1.51.log`.
+- Both deployments include the delayed resume-ACK fix from the native-business
+  checkpoint. Desktop additionally includes the offline send/status changes
+  documented in [the send-entry checkpoint](MQTT_OFFLINE_SEND_20260913.md).
+- Desktop UI visibly reports v1.1.51. It again required maximizing/restoring
+  to repaint after launch; this host rendering issue is not fixed by MQTT work.
+  The package tool could not find rcedit, so Windows executable resources retain
+  Electron metadata even though the application package/UI version is updated.
+- Real `/health` reports all three TLS paths connected and subscribed, with
+  zero paired peers. The current QR is visible and executor grants unchanged.
+  No claim of real Android/Desktop business delivery is made before user scan.
+- No SM-T575 or S26U operations, public load tests, or new PR in this update.
+
 ## Full Android Package
 
 - Target: S20U SM-G9880, Android 13, serial `R5CN319CESA` only.

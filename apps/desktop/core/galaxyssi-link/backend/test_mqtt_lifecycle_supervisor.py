@@ -165,7 +165,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
             mqtt_bridge._mqtt_supervisor_tick(now=7000.0)
         recover.assert_not_called()
 
-    def test_offline_peer_send_returns_cause_without_publishing(self):
+    def test_offline_send_still_rejects_unpaired_target_before_touching_history(self):
         mqtt_bridge.client = _DisconnectedMqtt()
         cases = [
             ("connect_rc=Server unavailable", "busy or unavailable"),
@@ -173,7 +173,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
             ("disconnect_rc=Unspecified error", "disconnected"),
         ]
         with (
-            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "test-phone"}),
+            patch.object(mqtt_bridge, "get_client", return_value=None),
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch("peer_chat_store.peer_chat_store") as store,
         ):
@@ -182,8 +182,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
                     mqtt_bridge.mqtt_last_error = cause
                     result = mqtt_bridge.publish_peer_message("test-phone", "test message")
                     self.assertFalse(result["ok"])
-                    self.assertEqual("mqtt_not_connected", result["code"])
-                    self.assertIn(expected, result["message"])
+                    self.assertEqual("client_route_unavailable", result["code"])
             publish.assert_not_called()
             store.assert_not_called()
 

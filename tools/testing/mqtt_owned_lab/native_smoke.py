@@ -90,7 +90,7 @@ class Worker:
         self.process.wait(timeout=10)
 
 
-def run(lab, loop, python, report_dir, delay_resume=False):
+def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=False):
     reject_bad_tls(lab)
     workers = []
     observations = []
@@ -138,11 +138,16 @@ def run(lab, loop, python, report_dir, delay_resume=False):
         return wait_state(sender, lambda state: not any(row["id"] == mid for row in state["outbox"]),
                           "Durable sender queue not acknowledged")
 
-    def send(sender, receiver, label, *, padding=0):
-        mid, content = str(uuid.uuid4()), "owned-native-" + label
-        expected[receiver.label][mid] = content
-        started = time.perf_counter()
+    def enqueue(sender, content, padding=0):
+        mid = str(uuid.uuid4())
         require(sender.call("send", message_id=mid, content=content, padding_bytes=padding)["queued"], "Send not queued")
+        return mid
+
+    def send(sender, receiver, label, *, padding=0):
+        content = "owned-native-" + label
+        started = time.perf_counter()
+        mid = enqueue(sender, content, padding)
+        expected[receiver.label][mid] = content
         state = delivered(receiver, mid)
         received_once(state, mid, content)
         accepted(sender, mid)
@@ -198,9 +203,9 @@ def run(lab, loop, python, report_dir, delay_resume=False):
         # All MQTT packets still traverse TLS/PUBACK; discard callback ingress on
         # the sender so no application or attempt receipt can retire its outbox.
         left.call("drop", enabled=True)
-        mid, content = str(uuid.uuid4()), "owned-native-ack-loss"
+        content = "owned-native-ack-loss"
+        mid = enqueue(left, content)
         expected["right"][mid] = content
-        left.call("send", message_id=mid, content=content)
         received_once(delivered(right, mid), mid, content)
         state = wait_state(left, lambda value: value["dropped"] > 0, "ACK loss fault was not exercised")
         require(any(row["id"] == mid for row in state["outbox"]), "Broker ACK incorrectly retired business outbox")
@@ -225,9 +230,9 @@ def run(lab, loop, python, report_dir, delay_resume=False):
         broker("mosquitto", False)
         for item in (left, right):
             wait_state(item, lambda value: not any(path["connected"] for path in value["paths"].values()), "All-path outage not observed")
-        queued_id, content = str(uuid.uuid4()), "owned-native-all-offline"
+        content = "owned-native-all-offline"
+        queued_id = enqueue(left, content)
         expected["right"][queued_id] = content
-        left.call("send", message_id=queued_id, content=content)
         require(any(row["id"] == queued_id for row in left.call("snapshot")["outbox"]), "Offline outbox was not persisted")
         require(not any(row["id"] == queued_id for row in right.call("snapshot")["messages"]), "Offline message unexpectedly delivered")
         broker("emqx", True)
@@ -247,8 +252,38 @@ def run(lab, loop, python, report_dir, delay_resume=False):
             require(len(state["messages"]) == len(expected[item.label]), "Unexpected business row")
             for mid, content in expected[item.label].items():
                 received_once(state, mid, content)
+        if offline_peer_entry:
+            # This API targets Android, not another Desktop. Validate its durable
+            # acceptance here without weakening the Desktop receiver's target check.
+            for label in paths:
+                broker(label, False)
+            wait_state(left, lambda value: not any(path["connected"] for path in value["paths"].values()),
+                       "Send entry outage not observed")
+            content = "owned-native-offline-desktop-to-phone"
+            result = left.call("send_peer", content=content)
+            require(result["ok"] and result["queued"] and result["message"]["delivery_status"] == "queued",
+                    f"Offline send entry falsely failed or delivered: {result}")
+            mid = result["message_id"]
+            before = left.call("snapshot")
+            require(any(row["id"] == mid for row in before["outbox"]), "Send entry did not persist ciphertext")
+            identity = left.boot["bundle"]["identityKeySha256"]
+            left.stop(crash=True)
+            left = create("left")
+            require(left.boot["bundle"]["identityKeySha256"] == identity, "Send entry restart changed identity")
+            left.call("resume")
+            after = left.call("snapshot")
+            require(any(row["id"] == mid for row in after["outbox"]), "Send entry outbox lost on process death")
+            rows = [row for row in after["messages"] if row["id"] == mid]
+            require(len(rows) == 1 and rows[0]["delivery_status"] == "queued" and rows[0]["route_ok"]
+                    and rows[0]["direction"] == "outbound"
+                    and rows[0]["hash"] == hashlib.sha256(content.encode()).hexdigest(),
+                    "Send entry card lost, duplicated or falsely delivered after process death")
+            require(not after["errors"], f"Offline send entry ingress errors: {after['errors']}")
+            observations.append({"case": "desktop-send-entry-offline-process-death",
+                                 "accepted_and_persisted": True, "phone_delivery_tested": False})
         return {"status": "passed", "native_signal": True, "real_contact_store": True,
-                "business_messages": sum(map(len, expected.values())), "observations": observations}
+                "business_messages": sum(map(len, expected.values())),
+                "desktop_offline_send_entry_tested": offline_peer_entry, "observations": observations}
     finally:
         failures = []
         for item in reversed(workers):
@@ -269,10 +304,11 @@ async def main():
     parser.add_argument("--endpoint-python", type=Path, required=True, help="Python with Desktop backend requirements")
     parser.add_argument("--report-dir", type=Path, required=True)
     parser.add_argument("--delay-resume", action="store_true", help="Hold real resume ACKs across a path change")
+    parser.add_argument("--offline-peer-entry", action="store_true", help="Verify Desktop-to-phone offline enqueue and process recovery")
     args = parser.parse_args()
     async with OwnedBrokers() as lab:
         report = await asyncio.to_thread(run, lab, asyncio.get_running_loop(), args.endpoint_python, args.report_dir,
-                                        args.delay_resume)
+                                        args.delay_resume, args.offline_peer_entry)
     (args.report_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
 

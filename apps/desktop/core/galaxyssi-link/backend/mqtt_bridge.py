@@ -6807,8 +6807,8 @@ def _process_message(mqttc, userdata, msg):
                 generation=getattr(msg, "broker_generation", 0), authenticated_identity=(
                     client_route_id, str(paired_client.get("local_identity_fingerprint") or ""),
                     str(paired_client.get("identity_fingerprint") or ""), str(paired_client.get("link_secret") or "")),
-                commit=lambda frame: acknowledge_verified_outbound(client_route_id,
-                    stored_receipt(frame.message.message_id, frame.message.content_hash), _receipt_binding_for_client(paired_client)))
+                commit=lambda frame: _acknowledge_registered_outbound(paired_client,
+                    stored_receipt(frame.message.message_id, frame.message.content_hash)))
             if handled:
                 if accepted:
                     message_id = str(wire_payload["message_id"])
@@ -7066,7 +7066,7 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)
-                if acknowledge_verified_outbound(route, payload, _receipt_binding_for_client(paired_client)):
+                if _acknowledge_registered_outbound(paired_client, payload):
                     if isinstance(mqttc, MqttPoolClient):
                         mqttc.delivery.accept_verified_message(route, acknowledged_id, str(payload["content_hash"]))
                     task_progress_window.release(route, acknowledged_id)
@@ -8179,6 +8179,13 @@ def _receipt_binding_for_client(paired_client):
                            paired_client["identity_fingerprint"], paired_client["link_secret"])
 
 
+def _acknowledge_registered_outbound(paired_client, payload):
+    from peer_chat_store import peer_chat_store
+    route = paired_client["client_route_id"]
+    return acknowledge_verified_outbound(route, payload, _receipt_binding_for_client(paired_client),
+        before_retire=lambda message_id: peer_chat_store().mark_outbound_stored(route, message_id))
+
+
 def _publish_to_registered_client(
     mqttc,
     paired_client: dict,
@@ -8823,14 +8830,6 @@ def publish_peer_message(
     paired_client = get_client(route_id)
     if paired_client is None:
         return api_error("client_route_unavailable", "The paired phone is unavailable")
-    if client is None or not client.is_connected():
-        with mqtt_lifecycle_lock:
-            connection_error = mqtt_last_error.lower()
-        if "server busy" in connection_error or "server unavailable" in connection_error:
-            message = "Message server is busy or unavailable. Wait for reconnection and send again."
-        else:
-            message = "Message server is disconnected. Wait for reconnection and send again."
-        return api_error("mqtt_not_connected", message)
     clean_content = str(content or "")[:24_000]
     selected_paths = [Path(value).expanduser().resolve() for value in (attachment_paths or [])[:12]]
     metadata_items = [item if isinstance(item, dict) else {} for item in (attachment_metadata or [])[:12]]
@@ -8960,11 +8959,19 @@ def publish_peer_message(
         "desktop_name": desktop_name(),
         "peer_chat": True,
     }
-    chunks_ok = _publish_task_artifacts(client, wire_payload, artifacts, common=common)
     try:
+        _publish_task_artifacts(client, wire_payload, artifacts, common=common)
         sent = _publish_phone_payload(client, wire_payload, payload)
     except Exception as exc:
-        updated = store.update_delivery_status(message_id, "failed")
+        persisted = outbound_status(route_id, message_id) in {"queued", "sending", "published"}
+        current = store.get_message(message_id) or stored
+        if current.get("delivery_status") in {"delivered", "read"}:
+            return api_ok("peer_message_sent", message=current, message_id=message_id, queued=False)
+        if persisted:
+            updated = store.update_delivery_status(message_id, "queued", only_if=("sending", "queued")) or current
+            log.warning("Peer send bookkeeping deferred after durable enqueue (%s)", type(exc).__name__)
+            return api_ok("peer_message_queued", message=updated, message_id=message_id, queued=True)
+        updated = store.update_delivery_status(message_id, "failed", only_if=("sending", "queued"))
         log.warning(
             "Direct peer message publish failed client=%s message=%s error=%s",
             route_id[-8:],
@@ -8976,10 +8983,14 @@ def publish_peer_message(
             "The direct message could not be sent",
             peer_message=updated or stored,
         )
-    updated = store.update_delivery_status(message_id, "sent" if sent and chunks_ok else "queued")
+    # A successful publish call may only mean durable enqueue. A verified peer
+    # receipt owns the delivered state and must win a fast-receipt race.
+    updated = store.update_delivery_status(message_id, "queued" if sent else "failed", only_if=("sending", "queued"))
     if sent:
-        return api_ok("peer_message_sent", message=updated or stored, message_id=message_id)
-    return api_error("peer_message_publish_failed", "The direct message could not be queued")
+        queued = (updated or stored).get("delivery_status") not in {"delivered", "read"}
+        return api_ok("peer_message_queued" if queued else "peer_message_sent", message=updated or stored,
+                      message_id=message_id, queued=queued)
+    return api_error("peer_message_publish_failed", "The direct message could not be queued", peer_message=updated or stored)
 
 
 def _local_peer_attachment_descriptors(

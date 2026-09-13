@@ -4,7 +4,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import link_delivery as delivery
 from mqtt_delivery_envelope import content_hash, receipt_binding, stored_receipt
@@ -84,6 +84,35 @@ class MqttDurableReceiptsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             delivery.bind_ciphertext("pair", "c" * 64, "message", receipt_hash="d" * 64)
         self.assertEqual(wire_hash, delivery.stored_wire_receipt("pair", "message"))
+
+    def test_projection_runs_only_after_exact_proof_and_before_retry_state_is_retired(self):
+        project = Mock(side_effect=lambda _mid: self.assertIsNotNone(delivery.outbound_status("pair", "message")))
+        self.assertFalse(delivery.acknowledge_verified_outbound("pair", {**self.receipt, "content_hash": "d" * 64},
+                                                               self.binding, before_retire=project))
+        project.assert_not_called()
+        self.assertTrue(delivery.acknowledge_verified_outbound("pair", self.receipt, self.binding, before_retire=project))
+        project.assert_called_once_with("message")
+        self.assertFalse(delivery.acknowledge_verified_outbound("pair", self.receipt, self.binding, before_retire=project))
+        project.assert_called_once()
+
+    def test_failed_projection_keeps_ciphertext_for_cross_path_retry(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            delivery.acknowledge_verified_outbound("pair", self.receipt, self.binding,
+                before_retire=Mock(side_effect=sqlite3.OperationalError("projection unavailable")))
+        self.assertEqual("queued", delivery.outbound_status("pair", "message"))
+        self.assertTrue(delivery.acknowledge_verified_outbound("pair", self.receipt, self.binding))
+
+    def test_retire_failure_after_projection_can_repeat_the_idempotent_projection(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute("CREATE TRIGGER reject_retire BEFORE DELETE ON outbound_messages BEGIN SELECT RAISE(ABORT, 'test fault'); END")
+        project = Mock()
+        with self.assertRaises(sqlite3.IntegrityError):
+            delivery.acknowledge_verified_outbound("pair", self.receipt, self.binding, before_retire=project)
+        self.assertEqual("queued", delivery.outbound_status("pair", "message"))
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute("DROP TRIGGER reject_retire")
+        self.assertTrue(delivery.acknowledge_verified_outbound("pair", self.receipt, self.binding, before_retire=project))
+        self.assertEqual(2, project.call_count)
 
 
 if __name__ == "__main__":

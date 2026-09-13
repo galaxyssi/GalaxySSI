@@ -45,7 +45,7 @@ class PeerChatStore:
         connection = sqlite3.connect(self.database_path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
+        connection.execute("PRAGMA synchronous=FULL")
         return connection
 
     def _initialize(self) -> None:
@@ -192,6 +192,27 @@ class PeerChatStore:
         with self._lock, closing(self._connect()) as connection:
             return connection.execute("SELECT 1 FROM peer_message_tombstones WHERE message_id=?",
                                       (str(message_id),)).fetchone() is not None
+
+    def mark_outbound_stored(self, client_route_id: str, message_id: str) -> dict | None:
+        """Only call after validating a durable peer receipt against its outbox proof."""
+        with self._lock, closing(self._connect()) as connection:
+            row = connection.execute("SELECT * FROM peer_messages WHERE message_id=?", (message_id,)).fetchone()
+            if row is None:
+                return None
+            if row["client_route_id"] != self._seal_route(client_route_id) or row["direction"] != "outbound":
+                raise ValueError("Peer receipt projection scope mismatch")
+            # A stored message/card is not proof that its files reached the peer.
+            # Artifact delivery keeps its stronger, all-files-receipted projection.
+            if self._decrypt_attachments(row["attachments_json"]):
+                return self._public(row)
+            changed = connection.execute("""UPDATE peer_messages SET delivery_status='delivered'
+                WHERE message_id=? AND delivery_status IN ('sending','queued','sent','failed')""", (message_id,))
+            row = connection.execute("SELECT * FROM peer_messages WHERE message_id=?", (message_id,)).fetchone()
+            connection.commit()
+        result = self._public(row)
+        if changed.rowcount:
+            self._notify(result)
+        return result
 
     def get_message(self, message_id: str) -> dict | None:
         with self._lock, closing(self._connect()) as connection:

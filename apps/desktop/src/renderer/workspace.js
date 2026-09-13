@@ -1491,7 +1491,7 @@ async function connectTaskStream() {
         mergeTaskUpdate(payload.task);
       } else if (payload.type === "desktop_peer_message" && payload.message?.message_id) {
         const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);
-        if (index >= 0) state.peerMessages[index] = { ...state.peerMessages[index], ...payload.message };
+        if (index >= 0) state.peerMessages[index] = mergePeerDelivery(state.peerMessages[index], payload.message);
         else state.peerMessages.push(payload.message);
         const directoryRefresh = refreshPeerDirectoryForRoute(payload.message.client_route_id);
         renderHistory();
@@ -1625,6 +1625,19 @@ function requirePeerSendSuccess(result) {
   return result;
 }
 
+function mergePeerDelivery(previous, incoming) {
+  if (!previous || previous.message_id !== incoming.message_id ||
+      previous.client_route_id !== incoming.client_route_id) return incoming;
+  const merged = { ...previous, ...incoming };
+  if (previous.direction === "outbound" && incoming.direction === "outbound") {
+    if (previous.delivery_status === "read" ||
+        (previous.delivery_status === "delivered" && incoming.delivery_status !== "read")) {
+      merged.delivery_status = previous.delivery_status;
+    }
+  }
+  return merged;
+}
+
 async function sendTask() {
   const prompt = elements.prompt.value.trim();
   if (!prompt && !state.attachments.length) return;
@@ -1647,7 +1660,7 @@ async function sendTask() {
       requirePeerSendSuccess(result);
       if (result.message) {
         const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
-        if (index >= 0) state.peerMessages[index] = result.message;
+        if (index >= 0) state.peerMessages[index] = mergePeerDelivery(state.peerMessages[index], result.message);
         else state.peerMessages.push(result.message);
       }
       renderHistory();
@@ -4812,7 +4825,7 @@ async function beginPeerVoiceHold(pointerId = null, startY = null) {
         requirePeerSendSuccess(result);
         if (result.message) {
           const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
-          if (index >= 0) state.peerMessages[index] = result.message;
+          if (index >= 0) state.peerMessages[index] = mergePeerDelivery(state.peerMessages[index], result.message);
           else state.peerMessages.push(result.message);
         }
         renderHistory();
