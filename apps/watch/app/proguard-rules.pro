@@ -1,0 +1,3 @@
+-keep class org.signal.** { *; }
+-keep class org.eclipse.paho.** { *; }
+-dontwarn org.slf4j.**
