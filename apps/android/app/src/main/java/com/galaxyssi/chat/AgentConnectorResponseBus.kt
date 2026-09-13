@@ -91,6 +91,8 @@ object AgentConnectorStreamBus {
 object AgentConnectorResponseBus {
     private val consumers = AgentConnectorResponseRouter()
 
+    internal fun dispatchPending(response: AgentConnectorResponse): Boolean = consumers.dispatch(response)
+
     fun addListener(listener: AgentConnectorResponseListener) {
         consumers.add(listener)
     }
@@ -116,6 +118,8 @@ object AgentConnectorResponseBus {
         val durable = if (AgentConnectorResponseStore.appendWithReceipt(context, normalized, receipt)) normalized
             else AgentConnectorResponseStore.find(context, normalized)
         if (durable != null) {
+            runCatching { AgentConnectorBackgroundRecovery.enqueue(context, durable) }
+                .onFailure { android.util.Log.w("GalaxySSIRecovery", "Connector wake-up enqueue failed", it) }
             consumers.dispatch(durable)
         }
         return false

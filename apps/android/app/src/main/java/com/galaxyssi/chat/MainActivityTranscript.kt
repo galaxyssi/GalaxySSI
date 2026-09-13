@@ -444,11 +444,17 @@ internal fun MainActivity.recordStructuredAgentHandoff(
 }
 
 internal fun MainActivity.finishStructuredAgentHandoff(turnId: String, response: AgentConnectorResponse) {
-    if (!isAgentHandoffStoreInitialized()) return
-    val runId = agentRunIdsByTurn[turnId] ?: return
-    val run = agentRunRecorder.run(runId) ?: return
+    (this as Context).finishStructuredAgentHandoff(turnId, response, agentRunIdsByTurn[turnId].orEmpty())
+}
+
+internal fun Context.finishStructuredAgentHandoff(
+    turnId: String, response: AgentConnectorResponse, fallbackRunId: String = ""
+) {
+    val runId = EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
+        .ifBlank { fallbackRunId }
+    val run = AgentRunRecorder.get(this).run(runId) ?: return
     val state = if (response.success) AgentHandoffState.RETURNED else AgentHandoffState.FAILED
-    val record = agentHandoffStore.finish(
+    val record = EncryptedAgentHandoffStore(this).finish(
         runId = runId,
         sourceMessageId = response.sourceMessageId,
         state = state,

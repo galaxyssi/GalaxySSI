@@ -364,47 +364,10 @@ class AgentLongTaskRecoveryWorker(
         )
     }
 
-    private fun foregroundInfo(workspaceId: String): ForegroundInfo {
-        val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                applicationContext.getString(R.string.app_name),
-                NotificationManager.IMPORTANCE_LOW
-            )
-        )
-        val openIntent = PendingIntent.getActivity(
-            applicationContext,
-            workspaceId.hashCode(),
-            Intent(applicationContext, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = Notification.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_tab_chat_filled)
-            .setContentTitle(applicationContext.getString(R.string.app_name))
-            .setContentText(applicationContext.getString(R.string.agent_task_liveness_assessment))
-            .setContentIntent(openIntent)
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .build()
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(
-                foregroundNotificationId(workspaceId),
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            ForegroundInfo(foregroundNotificationId(workspaceId), notification)
-        }
-    }
-
-    private fun foregroundNotificationId(workspaceId: String): Int =
-        FOREGROUND_NOTIFICATION_ID xor workspaceId.hashCode()
+    private fun foregroundInfo(workspaceId: String): ForegroundInfo =
+        AgentRecoveryNotification.foregroundInfo(applicationContext, workspaceId)
 
     private companion object {
         const val LOG_TAG = "GalaxySSILongTask"
-        const val CHANNEL_ID = "galaxyssi_agent_long_tasks"
-        const val FOREGROUND_NOTIFICATION_ID = 0x53410A
     }
 }

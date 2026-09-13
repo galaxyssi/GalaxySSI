@@ -410,42 +410,8 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
 }
 
 internal fun MainActivity.finalizeAgentExecutionLoop(
-    runtime: MobileNativeAgent,
-    turnId: String,
-    state: AgentUiState
-): AgentUiState {
-    if (runtime.executionLoopSnapshot()?.phase == AgentExecutionLoopPhase.COMPLETED) {
-        return state
-    }
-    if (state.phase != AgentPhase.COMPLETED) {
-        recordAgentRunFromState(turnId, state)
-        return state
-    }
-    val loopPhase = runtime.executionLoopSnapshot()?.phase
-    if (loopPhase !in setOf(
-            AgentExecutionLoopPhase.FINALIZE,
-            AgentExecutionLoopPhase.LEARN
-        ) &&
-        !runtime.beginExecutionFinalization()
-    ) {
-        return runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
-    }
-    if (runtime.executionLoopSnapshot()?.phase != AgentExecutionLoopPhase.LEARN &&
-        !runtime.beginExecutionLearning()
-    ) {
-        return runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
-    }
-    return runCatching {
-        recordAgentRunFromState(turnId, state)
-        runtime.completeExecutionLoop()
-        runtime.snapshot()
-    }.getOrElse { failure ->
-        runtime.failExecutionLoop(
-            failure.message.orEmpty().ifBlank { "Task finalization failed" }
-        )
-        runtime.snapshot()
-    }
-}
+    runtime: MobileNativeAgent, turnId: String, state: AgentUiState
+): AgentUiState = finalizeAgentExecution(runtime, turnId, state, ::recordAgentRunFromState)
 
 internal fun MainActivity.executeConcurrentAgentGoal(
     goal: String,
@@ -1108,10 +1074,10 @@ internal fun MainActivity.recordSkillAgentRun(turnId: String, result: AgentSkill
     )?.let(::observeCompletedAgentRun)
 }
 
-internal fun MainActivity.persistAgentWorkspaceSnapshot(
+internal fun Context.persistAgentWorkspaceSnapshot(
     turnId: String,
     state: AgentUiState,
-    runtime: MobileNativeAgent = mobileNativeAgent,
+    runtime: MobileNativeAgent?,
     interruptedRecoveryReason: String = "",
     required: Boolean = false
 ) {
@@ -1186,7 +1152,7 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
             .put("metadata", JSONObject(result?.metadata.orEmpty()))
             .put(
                 "execution_loop",
-                runtime.executionLoopSnapshot()
+                (runtime?.executionLoopSnapshot() ?: state.executionLoop)
                     ?.let(AgentExecutionLoopJsonCodec::encode)
                     ?.let(::JSONObject)
             )
@@ -1234,7 +1200,7 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
                 .put("remote_run_id", result?.metadata?.get("remote_task_id").orEmpty())
                 .put(
                     "execution_loop",
-                    runtime.executionLoopSnapshot()
+                    (runtime?.executionLoopSnapshot() ?: state.executionLoop)
                         ?.let(AgentExecutionLoopJsonCodec::encode)
                         ?.let(::JSONObject)
                 )
@@ -1248,187 +1214,18 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
 
 internal fun MainActivity.recordAgentRunFromState(turnId: String, state: AgentUiState) {
     if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
-    val persistedRunId = runCatching {
-        EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
-    }.getOrDefault("")
-    val runId = agentRunIdsByTurn.remove(turnId).orEmpty().ifBlank { persistedRunId }
-    val run = agentRunRecorder.run(runId)
-        ?.takeIf { it.status == AgentRecordedRunStatus.RUNNING }
-        ?: return
-    val result = state.lastActionResult
-    val nativeActions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
-        .distinctBy { it.id }
-        .filter { it.kind == AgentActionKind.CALL_NATIVE_TOOL }
-    val calls = nativeActions.map { action ->
-        val isLast = result?.actionId == action.id
-        val succeeded = action.status == AgentActionStatus.COMPLETED || (isLast && result?.success == true)
-        AgentToolCallRecord(
-            id = if (isLast) result?.metadata?.get("invocation_id").orEmpty().ifBlank { action.id } else action.id,
-            toolName = action.parameters["tool_id"].orEmpty(),
-            status = if (succeeded) AgentToolCallStatus.SUCCEEDED else AgentToolCallStatus.FAILED,
-            argumentsJson = action.parameters["input_json"].orEmpty().ifBlank { "{}" },
-            resultJson = if (isLast) result?.metadata?.get("native_tool_output").orEmpty().ifBlank {
-                JSONObject().put("message", action.result).toString()
-            } else JSONObject().put("message", action.result).toString(),
-            errorMessage = if (succeeded) "" else action.result,
-            startedAtMillis = if (isLast) result?.metadata?.get("started_at_millis")?.toLongOrNull() ?: 0L else 0L,
-            completedAtMillis = if (isLast) result?.metadata?.get("completed_at_millis")?.toLongOrNull() ?: 0L else 0L
-        )
-    }
-    val routeTarget = state.plan?.route?.targetId.orEmpty()
-        .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() }
-    val handoffAlreadyRecorded = agentRunEventStore.events(run.runId)
-        .any { it.type == AgentRunControlEventType.HANDOFF }
-    if (routeTarget.isNotBlank() && routeTarget != "galaxyssi-mobile" && !handoffAlreadyRecorded) {
-        appendRunControlEvent(
-            run = run,
-            messageId = turnId,
-            taskId = turnId,
-            agentId = routeTarget,
-            type = AgentRunControlEventType.HANDOFF,
-            payload = mapOf(
-                "from_agent_id" to "galaxyssi-mobile",
-                "to_agent_id" to routeTarget,
-                "reason" to state.plan?.routeRationale.orEmpty(),
-                "return_to_agent_id" to "galaxyssi-mobile"
-            )
-        )
-    }
-    val planJson = JSONArray().apply {
-        state.plan?.actions.orEmpty().forEach { item ->
-            put(JSONObject().put("id", item.id).put("kind", item.kind.name).put("target", item.target))
-        }
-    }.toString()
-    agentRunRecorder.complete(
-        runId = runId,
-        planJson = planJson,
-        toolCalls = calls,
-        sourcesJson = "[]",
-        finalOutputJson = JSONObject().put("text", result?.message.orEmpty()).toString(),
-        renderSpecJson = "{}",
-        artifacts = runtimeArtifactsFromResult(result?.metadata?.get("native_tool_output").orEmpty()),
-        success = state.phase == AgentPhase.COMPLETED,
-        finalStatus = when (state.phase) {
-            AgentPhase.COMPLETED -> AgentRecordedRunStatus.COMPLETED
-            AgentPhase.CANCELLED -> AgentRecordedRunStatus.CANCELLED
-            else -> AgentRecordedRunStatus.FAILED
-        },
-        executionResourceId = routeTarget.ifBlank { "galaxyssi-mobile" }
-    )?.let(::observeCompletedAgentRun)
+    AgentExecutionRunRecorder(this, mobileNativeAgent, agentRunIdsByTurn.remove(turnId).orEmpty())
+        .recordAgentRunFromState(turnId, state)
 }
 
 internal fun MainActivity.observeCompletedAgentRun(run: AgentRecordedRun) {
-    val existing = agentRunEventStore.events(run.runId).lastOrNull()
-    ensureRecordedRunTimeline(
-        run = run,
-        messageId = existing?.messageId.orEmpty().ifBlank { run.runId },
-        taskId = existing?.taskId.orEmpty().ifBlank { run.taskThreadId },
-        agentId = existing?.agentId.orEmpty().ifBlank { "galaxyssi-mobile" }
-    )
-    appendRunControlEvent(
-        run = run,
-        messageId = existing?.messageId.orEmpty().ifBlank { run.runId },
-        taskId = existing?.taskId.orEmpty().ifBlank { run.taskThreadId },
-        agentId = existing?.agentId.orEmpty().ifBlank { "galaxyssi-mobile" },
-        type = when (run.status) {
-            AgentRecordedRunStatus.COMPLETED -> AgentRunControlEventType.RUN_COMPLETED
-            AgentRecordedRunStatus.CANCELLED -> AgentRunControlEventType.RUN_CANCELLED
-            AgentRecordedRunStatus.RUNNING, AgentRecordedRunStatus.FAILED -> AgentRunControlEventType.RUN_FAILED
-        },
-        payload = mapOf(
-            "timeline_contract" to AgentRunTimelineContract.VERSION,
-            "timeline_kind" to if (run.status == AgentRecordedRunStatus.COMPLETED) "result" else "failure",
-            "run_status" to run.status.name.lowercase(Locale.ROOT),
-            "tool_call_count" to run.toolCalls.size,
-            "artifact_count" to run.artifacts.size,
-            "execution_resource_id" to run.executionResourceId
-        )
-    )
-    val privateMode = agentTranscriptStore.context(run.conversationId).privateMode
-    agentLearningEngine.observeCompletedRun(
-        run = run,
-        recentRuns = agentRunRecorder.recentRuns(),
-        privateMode = privateMode,
-        memoryCaptureEnabled = mobileNativeAgent.safetySettings().memoryCapture
-    )
+    AgentExecutionRunRecorder(this, mobileNativeAgent).observeCompletedAgentRun(run)
 }
 
 internal fun MainActivity.ensureRecordedRunTimeline(
-    run: AgentRecordedRun,
-    messageId: String,
-    taskId: String,
-    agentId: String
+    run: AgentRecordedRun, messageId: String, taskId: String, agentId: String
 ) {
-    var events = agentRunEventStore.events(run.runId)
-    if (!AgentRunTimelineContract.coverage(events).hasPlan) {
-        val planStepCount = runCatching { JSONArray(run.agentPlanJson).length() }.getOrDefault(0)
-        appendRunControlEvent(
-            run = run,
-            messageId = messageId,
-            taskId = taskId,
-            agentId = agentId,
-            type = AgentRunControlEventType.PLANNING,
-            payload = mapOf(
-                "timeline_contract" to AgentRunTimelineContract.VERSION,
-                "timeline_kind" to "plan",
-                "plan_step_count" to planStepCount,
-                "synthetic_from_recorded_run" to true
-            ),
-            stepId = "plan",
-            timestampMillis = run.createdAtMillis
-        )
-        events = agentRunEventStore.events(run.runId)
-    }
-    run.toolCalls.forEach { call ->
-        val hasStart = events.any {
-            it.toolCallId == call.id && it.type == AgentRunControlEventType.TOOL_STARTED
-        }
-        if (!hasStart) {
-            appendRunControlEvent(
-                run = run,
-                messageId = messageId,
-                taskId = taskId,
-                agentId = agentId,
-                type = AgentRunControlEventType.TOOL_STARTED,
-                payload = mapOf(
-                    "timeline_contract" to AgentRunTimelineContract.VERSION,
-                    "timeline_kind" to "tool",
-                    "tool_id" to call.toolName,
-                    "status" to "running",
-                    "synthetic_from_recorded_run" to true
-                ),
-                stepId = call.id,
-                toolCallId = call.id,
-                timestampMillis = call.startedAtMillis.takeIf { it > 0L } ?: run.createdAtMillis
-            )
-            events = agentRunEventStore.events(run.runId)
-        }
-        val hasCompletion = events.any {
-            it.toolCallId == call.id && it.type == AgentRunControlEventType.TOOL_COMPLETED
-        }
-        if (!hasCompletion) {
-            appendRunControlEvent(
-                run = run,
-                messageId = messageId,
-                taskId = taskId,
-                agentId = agentId,
-                type = AgentRunControlEventType.TOOL_COMPLETED,
-                payload = mapOf(
-                    "timeline_contract" to AgentRunTimelineContract.VERSION,
-                    "timeline_kind" to "tool",
-                    "tool_id" to call.toolName,
-                    "status" to call.status.name.lowercase(Locale.ROOT),
-                    "synthetic_from_recorded_run" to true
-                ),
-                stepId = call.id,
-                toolCallId = call.id,
-                timestampMillis = call.completedAtMillis.takeIf { it > 0L }
-                    ?: run.completedAtMillis.takeIf { it > 0L }
-                    ?: System.currentTimeMillis()
-            )
-            events = agentRunEventStore.events(run.runId)
-        }
-    }
+    AgentExecutionRunRecorder(this, mobileNativeAgent).ensureRecordedRunTimeline(run, messageId, taskId, agentId)
 }
 
 internal fun MainActivity.recordNativeToolLifecycleEvent(event: AgentNativeToolLifecycleEvent) {
@@ -1688,7 +1485,7 @@ internal fun MainActivity.recordNativeToolTranscript(event: AgentNativeToolLifec
     }
 }
 
-internal fun MainActivity.runtimeArtifactsFromResult(resultJson: String): List<AgentArtifactReference> = runCatching {
+internal fun runtimeArtifactsFromResult(resultJson: String): List<AgentArtifactReference> = runCatching {
     if (resultJson.isBlank()) return@runCatching emptyList()
     val root = JSONObject(resultJson)
     val receiptId = root.optJSONObject("execution_receipt")?.optString("request_id").orEmpty()
@@ -1719,7 +1516,7 @@ internal fun MainActivity.runtimeArtifactsFromResult(resultJson: String): List<A
     }
 }.getOrDefault(emptyList())
 
-internal fun MainActivity.appendRunControlEvent(
+internal fun Context.appendRunControlEvent(
     run: AgentRecordedRun,
     messageId: String,
     taskId: String,
@@ -1731,7 +1528,7 @@ internal fun MainActivity.appendRunControlEvent(
     timestampMillis: Long = System.currentTimeMillis()
 ) {
     val profile = AppStore.profile(this)
-    agentRunEventStore.appendNext(
+    AgentRunEventStore(this).appendNext(
         AgentRunControlEvent(
             conversationId = run.conversationId,
             messageId = messageId,

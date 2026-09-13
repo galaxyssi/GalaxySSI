@@ -10,6 +10,17 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+The ordinary connector inbox now has a process-owned WorkManager fallback after
+page consumers, using the original task runtime, supervisor lease and shared
+finalization/projection. Startup scans restore its durable wake-ups. Seven device
+cases are added, but the designated S26U is disconnected and no substitute phone
+was operated. This is not yet a passed headless lifecycle gate. See
+[background connector checkpoint](../testing/MQTT_BACKGROUND_CONNECTOR_20260913.md)
+for verification and remaining partial-commit/timeline boundaries.
+Final normal full-runtime build passed in 5m 1s with 102 JVM cases across nine
+suites. APK 1.2.0 (1005) is built, not installed; Desktop is unchanged. These
+results do not establish the new device/lifecycle acceptance gate.
+
 The next headless-consumer integration exposed a prerequisite in run recording:
 window/background instances had independent stale caches, and an older run's
 completion selected that old run as the current conversation head. The recorder
