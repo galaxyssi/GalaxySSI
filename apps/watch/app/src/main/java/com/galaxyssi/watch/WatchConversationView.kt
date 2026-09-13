@@ -172,7 +172,8 @@ class WatchConversationView(
             }
         }
         transcriptScroll.post {
-            if (resetScroll || nearBottom) { transcriptScroll.fullScroll(View.FOCUS_DOWN); newReply.visibility = GONE }
+            if (turns.isEmpty()) { transcriptScroll.scrollTo(0, 0); newReply.visibility = GONE }
+            else if (resetScroll || nearBottom) { transcriptScroll.fullScroll(View.FOCUS_DOWN); newReply.visibility = GONE }
             else { transcriptScroll.scrollTo(0, oldOffset); newReply.visibility = VISIBLE }
         }
     }
