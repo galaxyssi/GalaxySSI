@@ -80,6 +80,13 @@ transport. It requires network access to that relay.
 `shared-link` compiles an explicit allowlist of source files from `apps/android`
 into generated build output. There is no fork of their crypto implementation.
 Its route-revocation adapter removes only matching watch outbox records.
+The phone storage engine's optional personal-memory segment interfaces have a
+watch adapter that explicitly rejects access. Watch records and Signal sessions
+continue to use the actual shared encrypted inline storage implementation; the
+phone memory runtime and its maintenance dependencies are not included.
+The first watch build's encrypted Signal preference records migrate transactionally
+before crypto initialization, preserving the existing identity and sessions. Existing
+current-format records are never overwritten by legacy state.
 
 The dependency graph contains no phone `:app` or `:llama-runtime`, Linux runtime,
 terminal, Git/JGit, local model catalog, Whisper assets, QNN/GenieX, OCR/camera, PDF

@@ -33,6 +33,7 @@ class WatchStore(context: Context) {
         tasks.writeString(task.id, task.json().toString())
         val old = tasks().filter { it.state.terminal }.drop(100)
         tasks.removeAll(old.map { it.id })
+        old.forEach { prefs.remove("read:${it.id}") }
     }
     @Synchronized fun task(id: String): WatchTask? = tasks.readString(id, "")
         .takeIf { it.isNotBlank() }?.let { WatchTask.fromJson(JSONObject(it)) }
