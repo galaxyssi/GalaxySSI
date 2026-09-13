@@ -8,6 +8,23 @@ The goal remains the complete Android + Desktop specification, including real
 pairing, task delivery, attachments, recovery, diagnostics, performance evidence,
 version updates, and a PR. This record is not a reduced P0 scope or completion claim.
 
+## Latest Checkpoint
+
+Installed App 1.1.114 (1000) and running Desktop 1.1.51 are now genuinely QR
+paired on S20U. A real Codex request/reply completed with the phone on its
+launcher. Both endpoints recorded authenticated peer receipts. Android final
+consumption nevertheless waited 21.9s for recovery after the verified reply
+arrived; this remains a performance defect, not a multi-broker delivery failure.
+See [S20U background evidence](../testing/MQTT_S20U_BACKGROUND_20260913.md).
+
+Source Desktop 1.1.52 additionally queues Agent push/mobile diagnostics while
+offline and reports acceptance truthfully. Tests and native process-recovery
+evidence are in [notification acceptance](../testing/MQTT_NOTIFICATION_QUEUE_20260913.md).
+These latest notification changes are not deployed. Earlier checkpoint sections
+below are historical; their pre-install/pre-scan statements do not override this
+update. The entire remaining artifact, lifecycle, performance, diagnostics,
+power and PR scope is still required.
+
 ## Implemented Foundations
 
 - Shared generated broker catalog, no default or manual selection configuration.
@@ -32,8 +49,8 @@ tokens. Android `GalaxySSIMqttClient.connect` now owns `MqttPoolTransport` and
 `MqttPeerRoutes` as well. Shipping applications are unchanged. Do not launch this worktree
 against the existing installed Android application as a completed upgrade.
 
-Deployment update, 2026-09-13: the matching full-runtime Android 1.1.113 (999)
-has now been installed on the designated S20U and packaged Desktop 1.1.50 is
+Deployment update, 2026-09-13: the matching full-runtime Android 1.1.114 (1000)
+has now been installed on the designated S20U and packaged Desktop 1.1.51 is
 running. The three Desktop paths completed TLS, connection and subscriptions;
 the pairing QR is displayed. This supersedes the historical no-install status
 below, not the outstanding native pairing and business acceptance gates. See

@@ -4,6 +4,12 @@ Date: 2026-09-13. Branch: `feat/automatic-multi-broker-20260912`.
 Merged main through `6e303ed06` in merge commit `ff313c1e2`.
 This is installation/startup evidence, not full P0-P3 acceptance.
 
+Subsequent S20U QR pairing and one real background Codex request/reply passed
+without another installation or Desktop restart. See
+[the native phone checkpoint](MQTT_S20U_BACKGROUND_20260913.md), including the
+remaining Android final-consumption delay. The pre-scan observations below
+describe the earlier deployment moment, not the current pairing state.
+
 ## Latest Update: App 1.1.114 / Desktop 1.1.51
 
 The sections below this update retain the earlier deployment evidence.

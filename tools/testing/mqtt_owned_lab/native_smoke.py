@@ -264,8 +264,15 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
             require(result["ok"] and result["queued"] and result["message"]["delivery_status"] == "queued",
                     f"Offline send entry falsely failed or delivered: {result}")
             mid = result["message_id"]
+            notifications = []
+            for kind in ("agent", "diagnostic"):
+                queued = left.call("notify", kind=kind, content="owned-offline-" + kind)
+                require(queued["ok"] and queued["queued"] and not queued["delivered"], "Notification acceptance incorrect")
+                notifications.append(queued["deliveries"][0]["message_id"])
             before = left.call("snapshot")
             require(any(row["id"] == mid for row in before["outbox"]), "Send entry did not persist ciphertext")
+            hashes = {row["id"]: row["wire_hash"] for row in before["outbox"]}
+            require(all(message in hashes for message in notifications), "Notification ciphertext was not persisted")
             identity = left.boot["bundle"]["identityKeySha256"]
             left.stop(crash=True)
             left = create("left")
@@ -273,6 +280,7 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
             left.call("resume")
             after = left.call("snapshot")
             require(any(row["id"] == mid for row in after["outbox"]), "Send entry outbox lost on process death")
+            require(hashes == {row["id"]: row["wire_hash"] for row in after["outbox"]}, "Offline ciphertext changed or was lost")
             rows = [row for row in after["messages"] if row["id"] == mid]
             require(len(rows) == 1 and rows[0]["delivery_status"] == "queued" and rows[0]["route_ok"]
                     and rows[0]["direction"] == "outbound"
@@ -281,6 +289,9 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
             require(not after["errors"], f"Offline send entry ingress errors: {after['errors']}")
             observations.append({"case": "desktop-send-entry-offline-process-death",
                                  "accepted_and_persisted": True, "phone_delivery_tested": False})
+            observations.append({"case": "agent-and-diagnostic-offline-process-death",
+                                 "persisted_messages": len(notifications), "ciphertext_preserved": True,
+                                 "phone_delivery_tested": False})
         return {"status": "passed", "native_signal": True, "real_contact_store": True,
                 "business_messages": sum(map(len, expected.values())),
                 "desktop_offline_send_entry_tested": offline_peer_entry, "observations": observations}

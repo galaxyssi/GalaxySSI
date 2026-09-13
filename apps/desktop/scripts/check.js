@@ -792,8 +792,8 @@ for (const requiredBackendCode of [
   "api_error(\"phone_not_paired\"",
   "api_error(\"mqtt_not_initialized\"",
   "api_error(\"mqtt_not_connected\"",
-  "api_ok(\"mobile_test_published\"",
-  "api_ok(\"agent_push_published\""
+  "api_ok(\"mobile_test_queued\"",
+  "api_ok(\"agent_push_queued\""
 ]) {
   if (![backendMain, backendMqtt].some((content) => content.includes(requiredBackendCode))) {
     throw new Error(`Backend API code/params response missing: ${requiredBackendCode}`);

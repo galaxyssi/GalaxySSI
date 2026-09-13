@@ -335,7 +335,7 @@ async function smoke() {
     }
 
     if (process.env.GALAXYSSI_SMOKE_MOBILE === "1") {
-      log("running optional encrypted mobile delivery self-test");
+      log("running optional encrypted mobile queue-acceptance self-test");
       const mobile = await fetchJson("/api/agents/self-test", {
         method: "POST",
         body: JSON.stringify({ include_agent_calls: false, include_mobile_delivery: true })
@@ -343,6 +343,7 @@ async function smoke() {
       if (mobile.summary.mobile_delivery_failed.length) {
         fail(`Mobile delivery failed for ${mobile.summary.mobile_delivery_failed.join(",")}`);
       }
+      log(`Queued for phone confirmation: ${mobile.summary.mobile_delivery_queued.join(",") || "none"}; this is not a delivery receipt`);
     } else {
       log("skipping mobile delivery; set GALAXYSSI_SMOKE_MOBILE=1 to enable it");
     }

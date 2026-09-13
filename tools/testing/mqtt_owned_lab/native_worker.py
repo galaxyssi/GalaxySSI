@@ -171,8 +171,9 @@ class Endpoint:
         with closing(delivery._connect()) as db:
             inbox = [{"id": row[0], "state": row[1], "attempts": row[2], "error": row[3]}
                      for row in db.execute("SELECT message_id,dispatch_state,dispatch_attempts,dispatch_error FROM inbound_messages")]
-            outbox = [{"id": row[0], "state": row[1], "attempts": row[2]}
-                      for row in db.execute("SELECT message_id,status,attempts FROM outbound_messages")]
+            outbox = [{"id": row[0], "state": row[1], "attempts": row[2],
+                       "wire_hash": hashlib.sha256(delivery._reveal(row[3], "wire-payload").encode()).hexdigest()}
+                      for row in db.execute("SELECT message_id,status,attempts,wire_payload FROM outbound_messages")]
         with self.observation_lock:
             observations = {"received_paths": dict(self.paths), "dropped": self.dropped,
                             "wire_observed": {digest: dict(counts) for digest, counts in self.wire_observed.items()}}
@@ -227,6 +228,12 @@ class Endpoint:
 
     def close(self):
         if self.client:
+            self.bridge.outbound_retry_stop_event.set()
+            retry = self.bridge.outbound_retry_thread
+            if retry:
+                retry.join(10)
+                if retry.is_alive():
+                    raise RuntimeError("Retry worker did not stop")
             self.client.disconnect()
             self.worker.join(12)
             if self.worker.is_alive() or not self.client.wait_closed(1):
@@ -256,6 +263,9 @@ def main():
                     result = endpoint.send(request)
                 elif command == "send_peer":
                     result = endpoint.bridge.publish_peer_message(endpoint.route, request["content"])
+                elif command == "notify":
+                    send = endpoint.bridge.publish_mobile_test_message if request["kind"] == "diagnostic" else endpoint.bridge.publish_agent_push_message
+                    result = send("system", request["content"], client_route_id=endpoint.route)
                 elif command == "replay":
                     result = endpoint.replay(request)
                 elif command == "drop":

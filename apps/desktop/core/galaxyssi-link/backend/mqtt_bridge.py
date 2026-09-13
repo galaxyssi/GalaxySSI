@@ -298,6 +298,7 @@ CAPABILITY_MANIFEST_VERSION = 2
 durable_outbound_lock = threading.RLock()
 outbound_retry_stop_event = threading.Event()
 outbound_retry_thread: threading.Thread | None = None
+outbound_retry_start_lock = threading.Lock()
 
 TOOL_SESSION_START_TYPE = "tool_session_start"
 TOOL_CALL_REQUEST_TYPE = "tool_call_request"
@@ -8192,12 +8193,18 @@ def _publish_to_registered_client(
     payload: dict,
     channel: str = "down",
     durable: bool = True,
+    *,
+    queue_only: bool = False,
 ):
+    if queue_only and not durable:
+        raise ValueError("Queue-only publication requires durable delivery")
     if _local_only_transport_payload(payload):
         log.warning(
             "Blocked local-only payload from registered-client transport type=%s",
             payload.get("type"),
         )
+        if queue_only:
+            raise ValueError("Local-only payload cannot enter the mobile queue")
         return _DeferredPublishInfo()
     with phone_publish_lock:
         application_envelope = make_envelope(
@@ -8212,7 +8219,12 @@ def _publish_to_registered_client(
         link_secret = str(paired_client.get("link_secret") or "")
         message_id = application_envelope["message_id"]
         client_route_id = paired_client["client_route_id"]
-        if durable and outbound_status(client_route_id, message_id):
+        existing = outbound_status(client_route_id, message_id) if durable else None
+        if existing:
+            if queue_only:
+                if existing not in {"queued", "sending", "published"}:
+                    raise ValueError("Existing outbound delivery is not retryable")
+                return _DeferredPublishInfo()
             published = flush_outbound_messages(
                 mqttc,
                 preferred_client_route_id=client_route_id,
@@ -8240,7 +8252,13 @@ def _publish_to_registered_client(
             transport_traffic=_outbound_transport_traffic(payload),
         )
         if not payload.get("peer_chat"):
-            transport_timing.queued(client_route_id, message_id, transport_task_id(payload))
+            try:
+                transport_timing.queued(client_route_id, message_id, transport_task_id(payload))
+            except Exception as exc:
+                log.warning("Committed outbound timing deferred (%s)", type(exc).__name__)
+        if queue_only:
+            # API acceptance is the durable commit, not a socket/PUBACK result.
+            return _DeferredPublishInfo()
         published = flush_outbound_messages(
             mqttc,
             preferred_client_route_id=client_route_id,
@@ -8525,21 +8543,22 @@ def _outbound_retry_loop() -> None:
 
 def _ensure_outbound_retry_thread() -> None:
     global outbound_retry_thread
-    existing = outbound_retry_thread
-    if existing is not None and existing.is_alive():
-        if not outbound_retry_stop_event.is_set():
-            return
-        if existing is not threading.current_thread():
-            existing.join(timeout=OUTBOUND_RETRY_POLL_SECONDS + 0.5)
-        if existing.is_alive():
-            return
-    outbound_retry_stop_event.clear()
-    outbound_retry_thread = threading.Thread(
-        target=_outbound_retry_loop,
-        daemon=True,
-        name="galaxyssi-outbound-retry",
-    )
-    outbound_retry_thread.start()
+    with outbound_retry_start_lock:
+        existing = outbound_retry_thread
+        if existing is not None and existing.is_alive():
+            if not outbound_retry_stop_event.is_set():
+                return
+            if existing is not threading.current_thread():
+                existing.join(timeout=OUTBOUND_RETRY_POLL_SECONDS + 0.5)
+            if existing.is_alive():
+                return
+        outbound_retry_stop_event.clear()
+        outbound_retry_thread = threading.Thread(
+            target=_outbound_retry_loop,
+            daemon=True,
+            name="galaxyssi-outbound-retry",
+        )
+        outbound_retry_thread.start()
 
 
 def _target_clients(client_route_id: str = "", broadcast: bool = False) -> list[dict]:
@@ -8790,10 +8809,11 @@ def publish_mobile_test_message(contact_id: str, content: str, client_route_id: 
             contact_id=contact_id,
             params={"contact_id": contact_id, "route": "/galaxyssi/verify"},
         )
-    if client is None:
-        return api_error("mqtt_not_initialized", contact_id=contact_id, params={"contact_id": contact_id})
-    if not client.is_connected():
-        return api_error("mqtt_not_connected", contact_id=contact_id, params={"contact_id": contact_id})
+    contact_id, content = str(contact_id or "").strip(), str(content or "").strip()
+    if not contact_id:
+        return api_error("contact_id_required")
+    if not content:
+        return api_error("content_required", contact_id=contact_id)
     payload = {
         "type": "text",
         "content": content,
@@ -8809,10 +8829,38 @@ def publish_mobile_test_message(contact_id: str, content: str, client_route_id: 
     targets = _target_clients(client_route_id, broadcast=broadcast)
     if not targets and len(list_clients()) > 1 and not client_route_id and not broadcast:
         return api_error("client_route_required", "Multiple clients are paired; select a client or explicitly broadcast")
-    results = [_publish_to_registered_client(client, target, payload) for target in targets]
-    if results and all(info.rc == mqtt.MQTT_ERR_SUCCESS for info in results):
-        return api_ok("mobile_test_published", client_count=len(results), contact_id=contact_id, params={"contact_id": contact_id, "client_count": len(results)})
-    return api_error("publish_failed", "No target client or publish failed", contact_id=contact_id)
+    queued = _queue_mobile_notifications(targets, payload)
+    if queued["failed_count"] == 0 and queued["accepted_count"]:
+        return api_ok("mobile_test_queued", contact_id=contact_id, **queued)
+    return api_error("publish_failed", "One or more messages could not be queued", contact_id=contact_id, **queued)
+
+
+def _queue_mobile_notifications(targets: list[dict], payload: dict) -> dict:
+    deliveries = []
+    for target in targets:
+        message_id = str(uuid.uuid4())
+        route = target["client_route_id"]
+        state = "failed"
+        try:
+            _publish_to_registered_client(client, target, {**payload, "message_id": message_id}, queue_only=True)
+            state = "queued"
+        except Exception as exc:
+            log.warning("Mobile notification queue failed client=%s (%s)", route[-8:], type(exc).__name__)
+        deliveries.append({"client_route_id": route, "message_id": message_id, "state": state})
+    accepted = sum(item["state"] == "queued" for item in deliveries)
+    if accepted:
+        # A transient worker-start failure cannot invalidate the committed queue.
+        # Normal bridge startup/supervision also starts this same recovery owner.
+        try:
+            _ensure_outbound_retry_thread()
+        except Exception as exc:
+            log.warning("Mobile notification retry worker deferred (%s)", type(exc).__name__)
+    failed = len(deliveries) - accepted
+    return {"accepted_count": accepted, "failed_count": failed,
+            "client_count": len(deliveries), "queued": bool(accepted), "delivered": False,
+            "delivery_state": "partially_queued" if accepted and failed else "queued" if accepted else "failed",
+            "deliveries": deliveries, "params": {"contact_id": payload["contact_id"],
+                "source": payload.get("source", "diagnostic"), "client_count": len(deliveries)}}
 
 
 def publish_peer_message(
@@ -9033,10 +9081,6 @@ def publish_agent_push_message(
             contact_id=cleaned_contact_id,
             params={"contact_id": cleaned_contact_id, "route": "/galaxyssi/verify"},
         )
-    if client is None:
-        return api_error("mqtt_not_initialized", contact_id=cleaned_contact_id, params={"contact_id": cleaned_contact_id})
-    if not client.is_connected():
-        return api_error("mqtt_not_connected", contact_id=cleaned_contact_id, params={"contact_id": cleaned_contact_id})
     payload = {
         "type": "text",
         "content": cleaned_content,
@@ -9067,11 +9111,11 @@ def publish_agent_push_message(
     targets = _target_clients(client_route_id, broadcast=broadcast)
     if not targets and len(list_clients()) > 1 and not client_route_id and not broadcast:
         return api_error("client_route_required", "Multiple clients are paired; select a client or explicitly broadcast")
-    results = [_publish_to_registered_client(client, target, payload) for target in targets]
-    params = {"contact_id": cleaned_contact_id, "source": payload["source"], "client_count": len(results)}
-    if results and all(info.rc == mqtt.MQTT_ERR_SUCCESS for info in results):
-        return api_ok("agent_push_published", contact_id=cleaned_contact_id, source=payload["source"], params=params)
-    return api_error("publish_failed", "No target client or publish failed", contact_id=cleaned_contact_id, source=payload["source"], params=params)
+    queued = _queue_mobile_notifications(targets, payload)
+    if queued["failed_count"] == 0 and queued["accepted_count"]:
+        return api_ok("agent_push_queued", contact_id=cleaned_contact_id, source=payload["source"], **queued)
+    return api_error("publish_failed", "One or more messages could not be queued",
+                     contact_id=cleaned_contact_id, source=payload["source"], **queued)
 
 
 def _build_republished_task_result(task: dict, route_id: str) -> dict:

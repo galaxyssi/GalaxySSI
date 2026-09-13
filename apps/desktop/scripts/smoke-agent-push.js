@@ -69,12 +69,16 @@ async function main() {
   log("testing /api/agent/push authorization and encrypted MQTT payload");
   run(python, ["-c", String.raw`
 import json
+import base64
 import os
 import tempfile
 from fastapi import HTTPException
 
 smoke_data_dir = tempfile.TemporaryDirectory(prefix="galaxyssi-agent-push-smoke-")
 os.environ["GALAXYSSI_DATA_DIR"] = smoke_data_dir.name
+os.environ["GALAXYSSI_STATE_DIR"] = smoke_data_dir.name
+os.environ["GALAXYSSI_DATABASE_PATH"] = os.path.join(smoke_data_dir.name, "app.db")
+os.environ["GALAXYSSI_CONFIG_PATH"] = os.path.join(smoke_data_dir.name, "agents.json")
 
 import mqtt_bridge
 from main import AgentPushReq, api_agent_push
@@ -96,7 +100,9 @@ class FakeClient:
         return FakeInfo()
 
 mqtt_bridge.client = FakeClient()
-mqtt_bridge.encrypt_signal_payload = lambda payload, remote_name="android": {"scheme": "signal", "debug_payload": payload}
+mqtt_bridge.encrypt_signal_payload = lambda payload, remote_name="android": {
+    "scheme": "signal", "from": payload["source_id"], "to": remote_name,
+    "body": base64.b64encode(json.dumps(payload).encode()).decode(), "debug_payload": payload}
 mqtt_bridge.desktop_id = lambda: "desktop_agent_push_smoke"
 remote_fingerprint = "a" * 64
 local_fingerprint = "b" * 64
@@ -124,8 +130,10 @@ data = api_agent_push(
     x_galaxyssi_token=agent_push_token(),
 )
 assert data["ok"] is True and data["contact_id"] == "codex", data
-assert data["code"] == "agent_push_published" and data["params"]["contact_id"] == "codex", data
+assert data["code"] == "agent_push_queued" and data["params"]["contact_id"] == "codex", data
+assert data["queued"] is True and data["delivered"] is False, data
 assert data["params"]["client_count"] == 1, data
+mqtt_bridge.flush_outbound_messages(mqtt_bridge.client)
 assert published, "no MQTT publish captured"
 expected_topic = LinkTopics(link_secret, local_fingerprint, remote_fingerprint).send
 assert published[-1]["topic"] == expected_topic, published[-1]

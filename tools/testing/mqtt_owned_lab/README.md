@@ -113,3 +113,13 @@ It does not fabricate an ACK, change production timing or disable validation.
 Error observations survive test endpoint restarts, so a later clean process
 cannot hide an earlier failure. See the
 [native checkpoint](../../../docs/testing/MQTT_NATIVE_BUSINESS_20260913.md).
+
+Add `--offline-peer-entry` to exercise the actual Desktop direct-contact,
+Agent push and mobile diagnostic APIs with all brokers stopped. All three
+entries must durably accept the message, without claiming phone delivery.
+The endpoint process is then killed and restarted using its existing data;
+message IDs, queued peer card and immutable native ciphertext must survive.
+The notification APIs start the normal shared retry owner, which the endpoint
+explicitly stops and joins during cleanup. This final scenario does not feed
+Desktop-to-phone envelopes to another Desktop or claim an Android receipt.
+See [notification queue checkpoint](../../../docs/testing/MQTT_NOTIFICATION_QUEUE_20260913.md).
