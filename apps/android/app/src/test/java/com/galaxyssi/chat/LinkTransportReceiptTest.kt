@@ -18,13 +18,14 @@ class LinkTransportReceiptTest {
     }
 
     @Test fun receiptEncodingRoundTripsAndSeparatesMessagesAndPeers() {
-        val first = LinkTransportReceipt("peer", false, "a".repeat(64), "message")
+        val first = LinkTransportReceipt("peer", false, "a".repeat(64), "message", "c".repeat(64))
         assertEquals(first, LinkTransportReceipt.from(first.json()))
         assertEquals(first.key, LinkTransportReceipt.from(first.json()).key)
         assertNotEquals(first.key, first.copy(peer = "other").key)
         assertNotEquals(first.key, first.copy(message = "other").key)
         assertNotEquals(first.key, first.copy(phone = true).key)
         assertNotEquals(first.key, first.copy(binding = "b".repeat(64)).key)
+        assertNotEquals(first.key, first.copy(wireHash = "d".repeat(64)).key)
     }
 
     @Test fun ambiguousConcatenationCannotAliasBindings() {
@@ -33,8 +34,9 @@ class LinkTransportReceiptTest {
     }
 
     @Test fun invalidReceiptIdentityCannotEnterTheJournal() {
-        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("", false, "a".repeat(64), "message") }
-        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("peer", false, "wrong", "message") }
-        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("peer", false, "a".repeat(64), "") }
+        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("", false, "a".repeat(64), "message", "c".repeat(64)) }
+        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("peer", false, "wrong", "message", "c".repeat(64)) }
+        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("peer", false, "a".repeat(64), "", "c".repeat(64)) }
+        assertThrows(IllegalArgumentException::class.java) { LinkTransportReceipt("peer", false, "a".repeat(64), "message", "") }
     }
 }

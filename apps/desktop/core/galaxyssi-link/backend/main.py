@@ -438,8 +438,11 @@ def api_agent_memory_telemetry(request: Request):
 def api_link_transport_diagnostics(request: Request):
     require_loopback(request)
     from link_transport_diagnostics import link_transport_diagnostics
+    from mqtt_bridge import mqtt_bridge_status
 
-    return link_transport_diagnostics().snapshot()
+    snapshot = link_transport_diagnostics().snapshot()
+    snapshot["mqtt"] = mqtt_bridge_status()
+    return snapshot
 
 
 @app.get("/api/provider-profiles")

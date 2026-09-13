@@ -11,7 +11,7 @@ import java.util.UUID
 class LinkTransportReceiptDeviceTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private fun receipt(message: String = "message", phone: Boolean = false) =
-        LinkTransportReceipt("private-peer", phone, "a".repeat(64), message)
+        LinkTransportReceipt("private-peer", phone, "a".repeat(64), message, "c".repeat(64))
 
     private fun withJournal(test: (LinkTransportReceiptJournal) -> Unit) {
         val name = "receipt-test-${UUID.randomUUID()}.db"

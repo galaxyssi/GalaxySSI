@@ -101,6 +101,23 @@ internal object AgentTerminalDeliveryStore {
 }
 
 internal object AgentLateConnectorResponsePolicy {
+    fun isCommittedReply(
+        response: AgentConnectorResponse,
+        conversationId: String,
+        turnId: String?,
+        taskId: String,
+        conversationEntries: List<AgentTranscriptEntry>
+    ): Boolean {
+        if (turnId.isNullOrBlank() || response.content.isBlank()) return false
+        val key = AgentFinalResponseIdentity.dedupeKey(turnId, response.sourceMessageId, taskId)
+        return conversationEntries.any { entry ->
+            entry.role == AgentTranscriptRole.ASSISTANT &&
+                entry.conversationId == conversationId && entry.turnId == turnId &&
+                entry.taskId == taskId && entry.dedupeKey == key && entry.text == response.content.trim() &&
+                !isApprovalEntry(entry)
+        }
+    }
+
     fun exactTurnId(
         explicitTurnId: String,
         taskTurnId: String,

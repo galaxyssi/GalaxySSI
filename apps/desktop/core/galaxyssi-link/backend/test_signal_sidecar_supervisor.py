@@ -122,3 +122,14 @@ class SignalSupervisorTest(unittest.TestCase):
         with patch.object(galaxyssi_client, "_request", return_value={}) as request:
             self.assertFalse(galaxyssi_client._is_healthy())
         request.assert_called_once_with("GET", "/health", timeout=.5)
+
+    def test_handoff_cleanup_failure_does_not_mark_crypto_offline(self):
+        calls = []
+        def maintain():
+            calls.append(True)
+            raise OSError("temporary receive cleanup failure")
+        runtime = self.runtime(lambda: True, maintain=maintain)
+        runtime.start()
+        self.wait_for(lambda: len(calls) > 1)
+        self.assertTrue(runtime.snapshot()["ready"])
+        self.assertEqual(0, runtime.snapshot()["recovery_attempts"])

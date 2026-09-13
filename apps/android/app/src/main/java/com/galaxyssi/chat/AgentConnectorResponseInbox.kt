@@ -137,6 +137,12 @@ internal class AgentConnectorResponseInbox(
     }
 
     @Synchronized
+    fun findPending(identity: String): AgentConnectorResponse? {
+        migrate()
+        return decodeBody(helper.readableDatabase, identity)?.takeIf(::isCurrentExecution)
+    }
+
+    @Synchronized
     fun containsTurn(conversationId: String, turnId: String): Boolean {
         if (conversationId.isBlank() || turnId.isBlank()) return false
         migrate()

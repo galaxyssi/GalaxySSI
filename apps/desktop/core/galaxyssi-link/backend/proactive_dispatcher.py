@@ -1102,21 +1102,29 @@ class DesktopProactiveDispatcher:
         try:
             from mqtt_bridge import publish_agent_push_message
 
-            delivered = publish_agent_push_message(
+            result = publish_agent_push_message(
                 task.action.delivery.get("contact_id") or "system",
                 str(output.get("reply") or ""),
                 "proactive",
                 task.action.delivery.get("client_route_id") or "",
                 False,
             )
+            accepted = isinstance(result, dict) and result.get("queued") is True
             output["delivery"] = {
-                "mode": mode,
-                "delivered": bool(delivered),
+                "mode": mode, "accepted": accepted, "queued": accepted,
+                "delivered": False,
+                "state": result.get("delivery_state", "failed") if isinstance(result, dict) else "failed",
+                "deliveries": result.get("deliveries", []) if isinstance(result, dict) else [],
             }
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                output["delivery"]["error"] = str(result.get("code") or "publish_failed") if isinstance(result, dict) else "publish_failed"
         except Exception as exc:
             output["delivery"] = {
                 "mode": mode,
+                "accepted": False,
+                "queued": False,
                 "delivered": False,
+                "state": "failed",
                 "error": str(exc)[:300],
             }
         return output

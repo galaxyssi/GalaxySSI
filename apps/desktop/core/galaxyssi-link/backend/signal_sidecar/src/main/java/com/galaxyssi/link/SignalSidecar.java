@@ -44,6 +44,7 @@ public final class SignalSidecar {
     private static final int KYBER_PRE_KEY_ID = 1;
 
     private final PersistentSignalProtocolStore store;
+    private final SignalReceiveJournal receiveJournal;
     private final SignalSessionTransactions sessions = new SignalSessionTransactions();
     private final PreKeyRecord preKey;
     private final SignedPreKeyRecord signedPreKey;
@@ -52,6 +53,7 @@ public final class SignalSidecar {
     private SignalSidecar() throws Exception {
         Path storePath = storePath();
         this.store = new PersistentSignalProtocolStore(storePath, storageKey());
+        this.receiveJournal = new SignalReceiveJournal(store);
         IdentityKeyPair identity = store.getIdentityKeyPair();
 
         if (!store.containsPreKey(PRE_KEY_ID)) {
@@ -80,6 +82,7 @@ public final class SignalSidecar {
         server.createContext("/health", app::health);
         server.createContext("/bundle", app::bundle);
         server.createContext("/decrypt", app::decrypt);
+        server.createContext("/receive-stored", app::receiveStored);
         server.createContext("/encrypt", app::encrypt);
         server.createContext("/replace-peer", app::replacePeer);
         server.createContext("/remove-peer", app::removePeer);
@@ -93,7 +96,7 @@ public final class SignalSidecar {
     private static Path storePath() throws IOException {
         String configured = System.getenv().getOrDefault("GALAXYSSI_LINK_STORE_PATH", "").trim();
         Path storePath = configured.isEmpty()
-                ? Path.of(System.getProperty("user.home"), ".galaxyssi", "signal_protocol_store.json")
+                ? Path.of(System.getProperty("user.home"), ".galaxyssi", "signal_state_v3.db")
                 : Path.of(configured);
         Files.createDirectories(storePath.getParent());
         return storePath;
@@ -123,6 +126,7 @@ public final class SignalSidecar {
                 .put("removePeer", true)
                 .put("identitySigning", true)
                 .put("sessionTransactions", true)
+                .put("atomicReceive", true)
                 .put("encryptedStorage", true));
     }
 
@@ -140,18 +144,28 @@ public final class SignalSidecar {
             SignalProtocolAddress address = address(req);
             byte[] body = b64d(req.getString("body"));
             String type = req.optString("type", "prekey");
-            byte[] plaintext = sessions.withPeer(address.getName(), () -> {
-                SessionCipher cipher = new SessionCipher(store, address);
-                return "prekey".equals(type) || req.optInt("messageType", -1) == CiphertextMessage.PREKEY_TYPE
-                        ? cipher.decrypt(new PreKeySignalMessage(body))
-                        : cipher.decrypt(new SignalMessage(body));
-            });
+            var receipt = sessions.withPeer(address.getName(), () -> receiveJournal.decrypt(
+                    req.getString("linkScope"), address,
+                    "prekey".equals(type) || req.optInt("messageType", -1) == CiphertextMessage.PREKEY_TYPE,
+                    body, desktopIdentityId(store.getIdentityKeyPair())));
             writeJson(exchange, new JSONObject()
                     .put("ok", true)
-                    .put("plaintext", new String(plaintext, StandardCharsets.UTF_8)));
+                    .put("plaintext", receipt.plaintext())
+                    .put("receiveDigest", receipt.digest())
+                    .put("contentHash", receipt.contentHash())
+                    .put("replay", receipt.replay()));
         } catch (Exception exc) {
             writeError(exchange, exc);
         }
+    }
+
+    private void receiveStored(HttpExchange exchange) throws IOException {
+        try {
+            JSONObject req = readJson(exchange);
+            boolean released = receiveJournal.release(req.getString("linkScope"), address(req),
+                    req.getString("receiveDigest"), req.getString("contentHash"));
+            writeJson(exchange, new JSONObject().put("ok", true).put("released", released));
+        } catch (Exception exc) { writeError(exchange, exc); }
     }
 
     private void encrypt(HttpExchange exchange) throws IOException {
@@ -160,7 +174,7 @@ public final class SignalSidecar {
             SignalProtocolAddress address = address(req);
             byte[] plaintext = req.getString("plaintext").getBytes(StandardCharsets.UTF_8);
             CiphertextMessage message = sessions.withPeer(address.getName(),
-                    () -> new SessionCipher(store, address).encrypt(plaintext));
+                    () -> store.transaction(() -> new SessionCipher(store, address).encrypt(plaintext)));
             writeJson(exchange, new JSONObject()
                     .put("ok", true)
                     .put("type", message.getType() == CiphertextMessage.PREKEY_TYPE ? "prekey" : "signal")
@@ -191,13 +205,13 @@ public final class SignalSidecar {
                     new KEMPublicKey(b64d(bundleJson.getString("kyberPreKey"))),
                     b64d(bundleJson.getString("kyberPreKeySignature"))
             );
-            sessions.withPeer(remoteName, () -> {
+            sessions.withPeer(remoteName, () -> store.transaction(() -> {
                 store.deleteAllSessions(remoteName);
                 store.deleteSenderKeys(remoteName);
                 store.deleteIdentity(remoteName, deviceId);
                 new SessionBuilder(store, new SignalProtocolAddress(remoteName, deviceId)).process(bundle);
                 return null;
-            });
+            }));
             writeJson(exchange, new JSONObject().put("ok", true).put("remoteName", remoteName).put("remoteDeviceId", deviceId));
         } catch (Exception exc) {
             writeError(exchange, exc);
@@ -209,12 +223,13 @@ public final class SignalSidecar {
             JSONObject req = readJson(exchange);
             String remoteName = req.getString("remoteName");
             int deviceId = req.optInt("remoteDeviceId", 1);
-            sessions.withPeer(remoteName, () -> {
+            sessions.withPeer(remoteName, () -> store.transaction(() -> {
+                receiveJournal.forgetPeer(remoteName);
                 store.deleteAllSessions(remoteName);
                 store.deleteSenderKeys(remoteName);
                 store.deleteIdentity(remoteName, deviceId);
                 return null;
-            });
+            }));
             writeJson(exchange, new JSONObject().put("ok", true).put("remoteName", remoteName));
         } catch (Exception exc) {
             writeError(exchange, exc);

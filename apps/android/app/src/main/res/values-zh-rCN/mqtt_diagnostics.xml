@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mqtt_diagnostics_delivery_title">近期实际送达</string>
+    <string name="mqtt_diagnostics_no_delivery_samples">暂无近期经过对端确认的送达样本</string>
+    <string name="mqtt_diagnostics_insufficient_samples">需至少 30 个样本</string>
+    <string name="mqtt_diagnostics_milliseconds">%1$d 毫秒</string>
+    <string name="mqtt_diagnostics_delivery_detail">发送尝试至对端确认：中位数 %1$d 毫秒；p95 %2$s</string>
+    <string name="mqtt_diagnostics_sample_count">%1$d 个样本</string>
+    <string name="mqtt_diagnostics_connecting">正在建立加密连接</string>
+    <string name="mqtt_diagnostics_subscribing">连接已建立，等待接收订阅</string>
+    <string name="mqtt_diagnostics_receive_ready">本机接收订阅已就绪</string>
+    <string name="mqtt_diagnostics_recovering">等待自动恢复连接</string>
+    <string name="mqtt_diagnostics_network_unavailable">网络不可用，等待网络恢复</string>
+    <string name="mqtt_diagnostics_disconnected">未连接</string>
+    <string name="mqtt_diagnostics_path_activity">本次运行重连 %1$d 次；%2$d 个发送等待服务器确认</string>
+</resources>

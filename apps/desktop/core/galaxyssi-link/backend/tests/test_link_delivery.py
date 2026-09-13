@@ -9,6 +9,49 @@ import link_delivery
 
 
 class LinkDeliveryTest(unittest.TestCase):
+    def test_unsent_deferral_preserves_ciphertext_and_retry_budget(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            link_delivery, "DB_PATH", Path(temporary) / "delivery.db"
+        ):
+            link_delivery.queue_outbound("client", "deferred", "topic", "immutable-wire")
+            for _ in range(2 * link_delivery.OUTBOUND_MAX_ATTEMPTS):
+                link_delivery.mark_outbound_sending("client", "deferred")
+                link_delivery.mark_outbound_deferred("client", "deferred")
+                link_delivery.mark_outbound_deferred("client", "deferred")
+            pending = link_delivery.pending_outbound()
+            self.assertEqual(1, len(pending))
+            self.assertEqual(0, pending[0]["attempts"])
+            self.assertEqual("immutable-wire", pending[0]["wire_payload"])
+            self.assertEqual("queued", link_delivery.outbound_status("client", "deferred"))
+            self.assertEqual([], link_delivery.fail_exhausted_outbound())
+
+    def test_deferral_does_not_reset_published_or_acknowledged_messages(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            link_delivery, "DB_PATH", Path(temporary) / "delivery.db"
+        ):
+            link_delivery.queue_outbound("client", "published", "topic", "wire")
+            link_delivery.mark_outbound_sending("client", "published")
+            link_delivery.mark_outbound_published("client", "published")
+            link_delivery.mark_outbound_deferred("client", "published")
+            self.assertEqual("published", link_delivery.outbound_status("client", "published"))
+            self.assertEqual(1, link_delivery.pending_outbound(now=10**12)[0]["attempts"])
+            link_delivery.acknowledge_outbound("client", "published")
+            link_delivery.mark_outbound_deferred("client", "published")
+            self.assertIsNone(link_delivery.outbound_status("client", "published"))
+
+    def test_deferral_is_scoped_to_one_pair_even_when_message_ids_match(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            link_delivery, "DB_PATH", Path(temporary) / "delivery.db"
+        ):
+            for route in ("first", "second"):
+                link_delivery.queue_outbound(route, "same-id", "topic", "wire-" + route)
+                link_delivery.mark_outbound_sending(route, "same-id")
+            link_delivery.mark_outbound_deferred("first", "same-id")
+            self.assertEqual("queued", link_delivery.outbound_status("first", "same-id"))
+            self.assertEqual("sending", link_delivery.outbound_status("second", "same-id"))
+            pending = link_delivery.pending_outbound()
+            self.assertEqual([("first", 0)], [(item["client_route_id"], item["attempts"]) for item in pending])
+
     def test_broker_accepted_messages_wait_for_application_ack_before_retry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "delivery.db"

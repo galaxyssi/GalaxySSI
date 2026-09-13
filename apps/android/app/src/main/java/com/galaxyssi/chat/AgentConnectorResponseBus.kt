@@ -48,7 +48,8 @@ data class AgentConnectorStreamUpdate(
 )
 
 fun interface AgentConnectorResponseListener {
-    fun onConnectorResponse(response: AgentConnectorResponse)
+    fun onConnectorResponse(response: AgentConnectorResponse): Boolean
+    fun priority(response: AgentConnectorResponse): Int = 0
 }
 
 fun interface AgentConnectorStreamListener {
@@ -88,14 +89,16 @@ object AgentConnectorStreamBus {
 }
 
 object AgentConnectorResponseBus {
-    private val listeners = CopyOnWriteArraySet<AgentConnectorResponseListener>()
+    private val consumers = AgentConnectorResponseRouter()
+
+    internal fun dispatchPending(response: AgentConnectorResponse): Boolean = consumers.dispatch(response)
 
     fun addListener(listener: AgentConnectorResponseListener) {
-        listeners += listener
+        consumers.add(listener)
     }
 
     fun removeListener(listener: AgentConnectorResponseListener) {
-        listeners -= listener
+        consumers.remove(listener)
     }
 
     fun publish(context: Context, response: AgentConnectorResponse): Boolean = publishWithReceipt(context, response, null)
@@ -115,7 +118,9 @@ object AgentConnectorResponseBus {
         val durable = if (AgentConnectorResponseStore.appendWithReceipt(context, normalized, receipt)) normalized
             else AgentConnectorResponseStore.find(context, normalized)
         if (durable != null) {
-            listeners.forEach { listener -> listener.onConnectorResponse(durable) }
+            runCatching { AgentConnectorBackgroundRecovery.enqueue(context, durable) }
+                .onFailure { android.util.Log.w("GalaxySSIRecovery", "Connector wake-up enqueue failed", it) }
+            consumers.dispatch(durable)
         }
         return false
     }

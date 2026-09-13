@@ -85,6 +85,31 @@ class PeerChatStoreTests(unittest.TestCase):
         self.assertEqual(first["message_id"], second["message_id"])
         self.assertEqual(1, len(self.store.list_messages("phone-a")))
 
+    def test_verified_outbound_receipt_is_durable_scoped_and_idempotent(self):
+        value = self.store.append(client_route_id="phone-a", direction="outbound", content="hello", delivery_status="queued")
+        message_id = value["message_id"]
+        events = []
+        self.store.subscribe(events.append)
+        with self.assertRaises(ValueError):
+            self.store.mark_outbound_stored("phone-b", message_id)
+        self.assertEqual("queued", self.store.get_message(message_id)["delivery_status"])
+        self.store.mark_outbound_stored("phone-a", message_id)
+        self.store.mark_outbound_stored("phone-a", message_id)
+        self.assertEqual(1, len(events))
+        self.assertEqual("delivered", PeerChatStore(self.store.database_path).get_message(message_id)["delivery_status"])
+        self.store.update_delivery_status(message_id, "read")
+        self.assertEqual("read", self.store.mark_outbound_stored("phone-a", message_id)["delivery_status"])
+        with closing(self.store._connect()) as db:
+            self.assertEqual(2, db.execute("PRAGMA synchronous").fetchone()[0])
+
+    def test_receipt_cannot_convert_inbound_row_or_resurrect_deleted_history(self):
+        value = self.store.append(client_route_id="phone-a", direction="inbound", content="hello")
+        with self.assertRaises(ValueError):
+            self.store.mark_outbound_stored("phone-a", value["message_id"])
+        self.store.delete_route("phone-a")
+        self.assertIsNone(self.store.mark_outbound_stored("phone-a", value["message_id"]))
+        self.assertEqual([], self.store.list_messages("phone-a"))
+
     def test_tampered_attachment_is_rejected_by_sha256(self) -> None:
         source = Path(self.temporary.name) / "voice.opus"
         source.write_bytes(b"OggS" + b"voice" * 2_000)

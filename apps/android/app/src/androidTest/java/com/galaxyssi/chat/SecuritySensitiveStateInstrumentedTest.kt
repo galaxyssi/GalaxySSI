@@ -96,7 +96,12 @@ class SecuritySensitiveStateInstrumentedTest {
         val fingerprint = "e".repeat(64)
         GalaxySSICrypto.debugSetVerifiedPcFingerprint(context, fingerprint)
 
-        val signalValues = rawPreferenceValues(SIGNAL_PREFERENCES)
+        val signalValues = AndroidPersistentSignalStore.database(context).indexedTransaction { db ->
+            db.rawQuery("SELECT encrypted_value FROM encrypted_values WHERE storage_key LIKE 'signal:record:%' OR storage_key=?",
+                arrayOf("identity_key_pair")).use { cursor ->
+                buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+            }
+        }
         val trustValues = rawPreferenceValues(TRUST_PREFERENCES)
         assertTrue(signalValues.isNotEmpty())
         assertTrue(signalValues.all(AgentStorageCipher::isEncrypted))
@@ -193,7 +198,6 @@ class SecuritySensitiveStateInstrumentedTest {
 
     private companion object {
         const val LINK_PREFERENCES = "opaque_link_v2"
-        const val SIGNAL_PREFERENCES = "galaxyssi_signal_store"
         const val TRUST_PREFERENCES = "galaxyssi_signal_trust"
         const val PHONE_PAIRING_PREFERENCES = "opaque_phone_pairing_v2"
     }

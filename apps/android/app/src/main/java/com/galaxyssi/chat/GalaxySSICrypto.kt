@@ -506,9 +506,12 @@ object GalaxySSICrypto {
     }
 
     @Synchronized
-    internal fun decryptEnvelopeDetailed(envelope: JSONObject): EnvelopeDecryptionResult {
+    internal fun decryptEnvelopeDetailed(
+        envelope: JSONObject,
+        acceptPlaintext: ((JSONObject) -> Unit)? = null
+    ): EnvelopeDecryptionResult {
         if (envelope.optString("scheme") != "signal") return EnvelopeDecryptionResult.Rejected
-        return try {
+        return try { store.transaction {
             val body = b64d(envelope.getString("body"))
             val type = envelope.optString("signal_type", envelope.optString("type", "signal"))
             val from = envelope.optString("from", REMOTE_NAME)
@@ -522,14 +525,24 @@ object GalaxySSICrypto {
             } else {
                 SessionCipher(store, address).decrypt(SignalMessage(body))
             }
-            EnvelopeDecryptionResult.Success(JSONObject(String(plaintext, Charsets.UTF_8))).also {
+            val decoded = JSONObject(String(plaintext, Charsets.UTF_8))
+            try { acceptPlaintext?.invoke(decoded) }
+            catch (error: Exception) { throw InboundCommitRejected(error) }
+            EnvelopeDecryptionResult.Success(decoded).also {
                 Log.i(TAG, "Decrypted incoming Signal envelope")
             }
+        }
         } catch (exc: Exception) {
+            if (exc is InboundCommitRejected) {
+                Log.w(TAG, "Signal receive transaction rolled back: ${exc.cause?.javaClass?.simpleName}")
+                return EnvelopeDecryptionResult.Rejected
+            }
             Log.e(TAG, "Failed to decrypt incoming Signal envelope", exc)
             EnvelopeDecryptionResult.Failure(exc)
         }
     }
+
+    private class InboundCommitRejected(cause: Exception) : RuntimeException(cause)
 
     @Synchronized
     fun decryptEnvelope(envelope: JSONObject): JSONObject? =

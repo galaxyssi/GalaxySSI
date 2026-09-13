@@ -165,7 +165,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
             mqtt_bridge._mqtt_supervisor_tick(now=7000.0)
         recover.assert_not_called()
 
-    def test_offline_peer_send_returns_cause_without_publishing(self):
+    def test_offline_send_still_rejects_unpaired_target_before_touching_history(self):
         mqtt_bridge.client = _DisconnectedMqtt()
         cases = [
             ("connect_rc=Server unavailable", "busy or unavailable"),
@@ -173,7 +173,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
             ("disconnect_rc=Unspecified error", "disconnected"),
         ]
         with (
-            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "test-phone"}),
+            patch.object(mqtt_bridge, "get_client", return_value=None),
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch("peer_chat_store.peer_chat_store") as store,
         ):
@@ -182,8 +182,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
                     mqtt_bridge.mqtt_last_error = cause
                     result = mqtt_bridge.publish_peer_message("test-phone", "test message")
                     self.assertFalse(result["ok"])
-                    self.assertEqual("mqtt_not_connected", result["code"])
-                    self.assertIn(expected, result["message"])
+                    self.assertEqual("client_route_unavailable", result["code"])
             publish.assert_not_called()
             store.assert_not_called()
 
@@ -193,7 +192,7 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
 
         with patch.object(
             mqtt_bridge,
-            "ensure_transport_epoch",
+            "_new_mqtt_client",
             side_effect=RuntimeError("setup failed"),
         ):
             mqtt_bridge.start()
@@ -217,6 +216,25 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
         self.assertTrue(status["supervised"])
         self.assertFalse(status["connected"])
         self.assertEqual(5.0, status["disconnected_seconds"])
+        self.assertIsNone(status["scheduling"])
+
+    def test_health_exposes_observed_scheduling_without_claiming_peer_ready(self):
+        from mqtt_pool_client import MqttPoolClient
+        from types import SimpleNamespace
+        from tests.mqtt_pool_fixture import ManualPool
+        pool = MqttPoolClient(classify_publication=lambda *_: None, pool_factory=ManualPool)
+        self.addCleanup(pool.disconnect)
+        pool.peer_routes = SimpleNamespace(status=lambda: {"configured": 0, "ready": 0})
+        pool.subscribe({"owned-inbox": 1})
+        pool._pool.connect("emqx")
+        with patch.object(mqtt_bridge, "client", pool):
+            status = mqtt_bridge.mqtt_bridge_status()
+        self.assertFalse(status["ready"])
+        self.assertEqual("automatic", status["scheduling"]["selection"])
+        observed = status["scheduling"]["verified_delivery"]
+        self.assertEqual("attempt_to_verified_peer_receipt", observed["scope"])
+        self.assertEqual(0, observed["paths"]["emqx"]["samples"])
+        self.assertIsNone(observed["paths"]["emqx"]["p95_ms"])
 
 
 if __name__ == "__main__":

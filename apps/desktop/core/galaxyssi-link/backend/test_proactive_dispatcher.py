@@ -39,6 +39,31 @@ def run_for(cause=None):
 
 
 class DesktopProactiveDispatcherTests(unittest.TestCase):
+    def test_mobile_delivery_distinguishes_error_queue_and_partial_acceptance(self):
+        task = task_for(ProactiveAction.parse({"kind": "agent", "target_id": "codex", "prompt": "test",
+            "delivery": {"mode": "mobile", "client_route_id": "phone"}}))
+        for response, expected in (
+            ({"ok": False, "code": "publish_failed"}, "failed"),
+            ({"ok": True, "queued": True, "delivered": False, "delivery_state": "queued"}, "queued"),
+            ({"ok": False, "queued": True, "delivery_state": "partially_queued", "code": "publish_failed",
+              "deliveries": [{"client_route_id": "phone", "message_id": "mid", "state": "queued"}]}, "partially_queued"),
+            (None, "failed"),
+        ):
+            with self.subTest(state=expected), patch("mqtt_bridge.publish_agent_push_message", return_value=response):
+                output = DesktopProactiveDispatcher()._deliver(task, {"reply": "result"})
+            self.assertFalse(output["delivery"]["delivered"])
+            self.assertEqual(expected, output["delivery"]["state"])
+            self.assertEqual(expected != "failed", output["delivery"]["accepted"])
+
+    def test_mobile_delivery_exception_never_claims_success(self):
+        task = task_for(ProactiveAction.parse({"kind": "agent", "target_id": "codex", "prompt": "test",
+            "delivery": {"mode": "mobile", "client_route_id": "phone"}}))
+        with patch("mqtt_bridge.publish_agent_push_message", side_effect=OSError("storage")):
+            result = DesktopProactiveDispatcher()._deliver(task, {"reply": "result"})["delivery"]
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["delivered"])
+        self.assertEqual("failed", result["state"])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.environment = patch.dict(

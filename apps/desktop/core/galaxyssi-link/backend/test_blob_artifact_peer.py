@@ -95,6 +95,38 @@ class BlobArtifactPeerTests(unittest.TestCase):
         mqtt_bridge._publish_phone_payload.assert_called_once()
         self.assertEqual({}, self.runtime.sender.journal.snapshot())
 
+    def test_offline_text_and_blob_entry_use_durable_queues(self):
+        for transport in (None, Mock(is_connected=Mock(return_value=False))):
+            with self.subTest(initialized=transport is not None), patch.object(mqtt_bridge, "client", transport):
+                text = mqtt_bridge.publish_peer_message(self.route, "offline text")
+                self.assertTrue(text["ok"], text)
+                self.assertTrue(text["queued"])
+                self.assertEqual("queued", self.store.get_message(text["message_id"])["delivery_status"])
+                attachment = self.send()
+                self.assertTrue(attachment["ok"], attachment)
+                self.assertEqual("queued", self.store.get_message(attachment["message_id"])["delivery_status"])
+        self.assertEqual(4, len(self.store.list_messages(self.route)))
+
+    def test_fast_plain_text_receipt_is_not_downgraded_after_publish(self):
+        def publish(_client, _wire, payload):
+            self.store.mark_outbound_stored(self.route, payload["message_id"])
+            return True
+        mqtt_bridge._publish_phone_payload.side_effect = publish
+        result = mqtt_bridge.publish_peer_message(self.route, "hello")
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["queued"])
+        self.assertEqual("delivered", result["message"]["delivery_status"])
+
+    def test_publish_exception_cannot_downgrade_an_already_delivered_card(self):
+        def publish(_client, _wire, payload):
+            self.store.mark_outbound_stored(self.route, payload["message_id"])
+            raise OSError("local bookkeeping failed")
+        mqtt_bridge._publish_phone_payload.side_effect = publish
+        result = mqtt_bridge.publish_peer_message(self.route, "hello")
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["queued"])
+        self.assertEqual("delivered", result["message"]["delivery_status"])
+
     def test_local_database_failure_leaves_durable_intent_then_recovers(self):
         with patch.object(self.store, "append", side_effect=sqlite3.OperationalError("busy")):
             result = self.send()

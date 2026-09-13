@@ -786,6 +786,7 @@ function renderSelfTest(data) {
     `Ready: ${data.summary.ready.join(", ") || "none"}`,
     `Needs setup: ${data.summary.needs_setup.join(", ") || "none"}`,
     `Mobile delivery OK: ${data.summary.mobile_delivery_ok.join(", ") || "none"}`,
+    `Mobile delivery queued (awaiting phone confirmation): ${data.summary.mobile_delivery_queued.join(", ") || "none"}`,
     `Mobile delivery failed: ${data.summary.mobile_delivery_failed.join(", ") || "none"}`,
     ""
   ];
@@ -977,4 +978,3 @@ setInterval(() => {
 setInterval(() => {
   if (!document.hidden) refreshBackend();
 }, 3000);
-

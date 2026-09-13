@@ -152,6 +152,8 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
                 return
             }
             if (AppForegroundTracker.isForeground()) {
+                // The foreground consumer has not committed its asynchronous handling yet.
+                handled = false
                 if (AgentRuntimeNotificationPolicy.suppressMessageNotification(envelope)) return
                 val preview = ChatHistoryStore.inspectIncoming(this, payload) ?: return
                 if (preview.notify && !AppForegroundTracker.isConversationVisible(preview.contactId)) {
@@ -206,6 +208,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
             }
         } catch (error: Throwable) {
             handled = false
+            GalaxySSIMqttClient.retryIncomingDelivery(payload)
             Log.e("GalaxySSILink", "Deferred inbound message after background handling failure", error)
         } finally {
             if (handled) GalaxySSIMqttClient.completeIncomingDelivery(this, payload)
@@ -217,6 +220,10 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)
+            }
+
+            override fun onLost(network: Network) {
+                GalaxySSIMqttClient.waitForNetwork(this@MessageService)
             }
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {

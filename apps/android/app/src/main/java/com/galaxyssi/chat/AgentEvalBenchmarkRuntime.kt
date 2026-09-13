@@ -64,7 +64,7 @@ class AgentBenchmarkCoordinator(
     private val benchmarkStore = AgentBenchmarkStore(appContext)
     private val labStore = AgentLabStore(appContext)
     private val labRuntime = AgentEvolutionLabRuntimeRegistry.get(appContext)
-    private val runRecorder = AgentRunRecorder(appContext)
+    private val runRecorder = AgentRunRecorder.get(appContext)
     private val runEventStore = AgentRunEventStore(appContext)
     private val androidWorldStore = AgentAndroidWorldStore(appContext)
 

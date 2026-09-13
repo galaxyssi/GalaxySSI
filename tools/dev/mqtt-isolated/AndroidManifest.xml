@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-sdk tools:overrideLibrary="ai.onnxruntime.qnnpluginep,com.geniex.sdk" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:name="android.app.Application"
+        android:allowBackup="false" android:label="GalaxySSI MQTT Verification"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider tools:node="removeAll" />
+        <receiver tools:node="removeAll" />
+        <service tools:node="removeAll" />
+        <activity tools:node="removeAll" />
+        <activity-alias tools:node="removeAll" />
+    </application>
+</manifest>

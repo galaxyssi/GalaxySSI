@@ -9,11 +9,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import link_protocol
+import link_delivery
 import mqtt_bridge
 import pairing_state
 import phone_tool_broker
 import desktop_control
 from peer_chat_store import PeerChatStore
+from tests.receive_test_support import store_received_envelope
 
 
 class FakeInfo:
@@ -38,7 +40,7 @@ class FakeMessage:
         inner = (
             '{"scheme":"signal","from":"'
             + paired_client["signal_name"]
-            + '","body":"'
+            + '","to":"desktop_test","body":"'
             + uuid.uuid4().hex
             + '"}'
         )
@@ -71,13 +73,14 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.publish_phone_payload_patch = patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True)
         self.publish_phone_payload = self.publish_phone_payload_patch.start()
         self.patches = [
+            patch.object(link_delivery, "DB_PATH", Path(self.temp.name) / "delivery.db"),
             patch.object(mqtt_bridge, "desktop_id", return_value=self.desktop_id),
-            patch.object(mqtt_bridge, "claim_message", return_value=True),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Test Desktop"),
             patch.object(mqtt_bridge, "complete_message"),
             patch.object(
                 mqtt_bridge,
                 "decrypt_signal_envelope",
-                side_effect=lambda *_args, **_kwargs: self.decrypted,
+                side_effect=lambda wire, **_kwargs: store_received_envelope(wire["_client_route_id"], self.decrypted),
             ),
             patch.object(
                 mqtt_bridge,
@@ -217,11 +220,13 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self._deliver(self.second, transport_result)
         self.assertEqual(1, mqtt_bridge.phone_tool_sessions["session-1"].broker.pending_count)
 
-        self._deliver(self.first, transport_result, conversation_id="conversation-2")
+        # Changing the envelope's conversation is a different transport message,
+        # not an immutable retry of the subsequently valid response.
+        self._deliver(self.first, {**transport_result, "message_id": str(uuid.uuid4())}, conversation_id="conversation-2")
         self.assertEqual(1, mqtt_bridge.phone_tool_sessions["session-1"].broker.pending_count)
 
         self._deliver(self.first, transport_result)
-        accepted = mqtt_bridge.wait_for_phone_tool_result("session-1", "call-1")
+        accepted = mqtt_bridge.wait_for_phone_tool_result("session-1", "call-1", timeout_ms=200)
         self.assertEqual("succeeded", accepted["payload"]["status"])
         self.assertEqual({"text": "done"}, accepted["payload"]["result"])
 

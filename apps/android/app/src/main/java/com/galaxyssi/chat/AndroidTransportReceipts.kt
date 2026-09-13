@@ -38,9 +38,9 @@ internal object AndroidTransportReceipts {
             }
             var wire = work.wire
             if (wire.isBlank()) {
-                val payload = JSONObject().put("type", "delivery_ack")
-                    .put("transport_message_id", work.receipt.message).put("source_message_id", work.receipt.message)
-                    .put("delivery_status", "accepted").put("sender", "system").put("time", System.currentTimeMillis())
+                val payload = MqttDeliveryEnvelope.storedReceipt(work.receipt.message, work.receipt.wireHash)
+                    .put("source_message_id", work.receipt.message)
+                    .put("sender", "system").put("time", System.currentTimeMillis())
                 if (work.receipt.phone) payload.put("peer_chat", true)
                 val envelope = GalaxySSILinkProtocol.makeEnvelope(payload, GalaxySSICrypto.localGalaxySSIId(), work.receipt.peer)
                 wire = (if (work.receipt.phone) GalaxySSICrypto.encryptPayloadForContact(work.receipt.peer, envelope)
@@ -59,8 +59,10 @@ internal object AndroidTransportReceipts {
     fun enqueue(context: Context, peer: String, phone: Boolean, message: String) {
         if (message.isBlank()) return
         val routes = currentRoutes(context, peer, phone) ?: return
+        val stored = GalaxySSILinkDeliveryStore.inbox(context).storedReceipt(
+            GalaxySSILinkDeliveryStore.peerScope(routes), message) ?: return
         val active = runtime(context)
-        active.journal.enqueue(LinkTransportReceipt(peer, phone, binding(peer, phone, routes), message))
+        active.journal.enqueue(LinkTransportReceipt(peer, phone, binding(peer, phone, routes), message, stored.wireHash))
         active.coordinator.request(GalaxySSIMqttClient.isRequestReplyReady())
     }
 

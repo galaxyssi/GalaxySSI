@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 import unittest
@@ -8,8 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import link_protocol
+import link_delivery
 import mqtt_bridge
 from link_transport_diagnostics import LinkTransportDiagnostics
+from tests.receive_test_support import store_received_envelope, complete_received_envelope
 
 
 class FakeMessage:
@@ -57,6 +60,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             "body": "ciphertext",
         }
         self.base_patches = [
+            patch.object(link_delivery, "DB_PATH", Path(self.temp.name) / "delivery.db"),
             patch.object(mqtt_bridge, "desktop_id", return_value=self.desktop_id),
             patch.object(mqtt_bridge, "get_client", return_value=self.client),
             patch.object(
@@ -79,10 +83,17 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             item.stop()
         self.temp.cleanup()
 
+    def stored(self, payload=None):
+        envelope = link_protocol.make_envelope(
+            payload or {"type": "text", "source_message_id": "210"},
+            source_id=self.signal_name, target_id=self.desktop_id)
+        complete_received_envelope(self.client_route_id, envelope)
+        return envelope["message_id"]
+
     def test_encrypted_replay_is_visible_before_signal_decrypt(self) -> None:
+        message_id = self.stored()
         with (
-            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="known-message"),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={}),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
         ):
             mqtt_bridge.on_message(
@@ -116,10 +127,9 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         self.assertEqual(1, snapshot["summary"]["old_counter"])
 
     def test_replayed_receipt_does_not_create_ack_of_ack(self) -> None:
+        message_id = self.stored({"type": "delivery_ack"})
         with (
-            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="known-receipt"),
-            patch.object(mqtt_bridge, "previous_acknowledgement",
-                         return_value={"status": "completed", "receipt_required": False}),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
@@ -131,10 +141,9 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         start_task.assert_not_called()
 
     def test_replayed_request_resends_ack_without_executing_again(self) -> None:
+        message_id = self.stored()
         with (
-            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="stable-request"),
-            patch.object(mqtt_bridge, "previous_acknowledgement",
-                         return_value={"status": "accepted", "client_source_message_id": "210"}),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
             patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
@@ -143,15 +152,14 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
                 mqtt_bridge.on_message(object(), None,
                     FakeMessage(self.topics.receive, self.wire, self.link_secret))
         self.assertEqual(12, publish.call_count)
-        self.assertEqual("stable-request", publish.call_args.args[2]["transport_message_id"])
+        self.assertEqual(message_id, publish.call_args.args[2]["transport_message_id"])
         self.assertEqual("210", publish.call_args.args[2]["client_source_message_id"])
         decrypt.assert_not_called()
         start_task.assert_not_called()
 
-    def test_pre_upgrade_receipt_replay_cannot_restart_ack_exchange(self) -> None:
+    def test_missing_durable_receipt_body_cannot_restart_ack_exchange(self) -> None:
         with (
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value="old-receipt"),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={"status": "completed"}),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
         ):
@@ -173,6 +181,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             target_id=self.desktop_id,
             conversation_id="conversation-1",
         )
+        complete_received_envelope(self.client_route_id, application_envelope)
         with (
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
             patch.object(
@@ -181,8 +190,6 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
                 return_value=application_envelope,
             ),
             patch.object(mqtt_bridge, "bind_ciphertext"),
-            patch.object(mqtt_bridge, "claim_message", return_value=False),
-            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={}),
             patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
         ):
             mqtt_bridge.on_message(
@@ -195,6 +202,82 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         snapshot = self.diagnostics.snapshot()
         self.assertEqual(1, snapshot["counts"]["duplicate_message"])
         self.assertEqual(1, snapshot["summary"]["duplicate"])
+
+    def test_content_conflict_is_rejected_before_blob_persistence_or_ack(self) -> None:
+        envelope = link_protocol.make_envelope(
+            {"type": "text", "content": "original", "contact_id": "system"}, source_id=self.signal_name,
+            target_id=self.desktop_id, conversation_id="c1")
+        store_received_envelope(self.client_route_id, envelope)
+        with (
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch("blob_input_bridge.persist_before_ack") as persist,
+            patch.object(mqtt_bridge, "bind_ciphertext", wraps=link_delivery.bind_ciphertext) as bind_cipher,
+            patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
+            patch.object(mqtt_bridge, "_start_remote_agent_task") as task,
+        ):
+            decrypt.return_value = copy.deepcopy(envelope)
+            mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+            changed = copy.deepcopy(envelope)
+            changed["payload"]["content"] = "different content"
+            decrypt.return_value = changed
+            wire = dict(self.wire, body="different-ciphertext")
+            mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, wire, self.link_secret))
+        self.assertEqual(1, persist.call_count)
+        self.assertEqual(1, bind_cipher.call_count)
+        self.assertEqual(1, publish.call_count)
+        task.assert_not_called()
+        self.assertEqual(1, self.diagnostics.snapshot()["counts"]["message_content_conflict"])
+
+    def test_identity_mismatch_cannot_create_a_content_binding(self) -> None:
+        envelope = link_protocol.make_envelope(
+            {"type": "text", "content": "untrusted"}, source_id="other-peer",
+            target_id=self.desktop_id, conversation_id="c1")
+        with (
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope", return_value=envelope),
+            patch.object(mqtt_bridge, "bind_message_content") as bind,
+            patch("blob_input_bridge.persist_before_ack") as persist,
+        ):
+            mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        bind.assert_not_called()
+        persist.assert_not_called()
+
+    def test_multiple_relationship_routes_for_one_signal_peer_share_ingress_lane(self) -> None:
+        with (
+            patch.object(mqtt_bridge, "_handle_transport_probe_message", return_value=False),
+            patch.object(mqtt_bridge, "_resolve_inbound_topic") as resolve,
+            patch.object(mqtt_bridge, "_queue_inbound_message", return_value=True) as queue,
+        ):
+            for route in ("route-a", "route-b", "route-c"):
+                resolve.return_value = ("client", dict(self.client, client_route_id=route))
+                mqtt_bridge.on_mqtt_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        self.assertEqual(3, queue.call_count)
+        self.assertEqual({"signal:" + self.signal_name}, {call.args[1] for call in queue.call_args_list})
+
+    def test_wrong_recipient_cannot_create_a_content_binding(self) -> None:
+        envelope = link_protocol.make_envelope(
+            {"type": "text", "content": "wrong target"}, source_id=self.signal_name,
+            target_id="another-desktop", conversation_id="c1")
+        with (
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope", return_value=envelope),
+            patch.object(mqtt_bridge, "bind_message_content") as bind,
+            patch("blob_input_bridge.persist_before_ack") as persist,
+        ):
+            mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        bind.assert_not_called()
+        persist.assert_not_called()
+
+    def test_missing_configured_signal_identity_is_not_queued(self) -> None:
+        with (
+            patch.object(mqtt_bridge, "_handle_transport_probe_message", return_value=False),
+            patch.object(mqtt_bridge, "_resolve_inbound_topic", return_value=("client", {"client_route_id": "a"})),
+            patch.object(mqtt_bridge, "_queue_inbound_message") as queue,
+        ):
+            self.assertFalse(mqtt_bridge.on_mqtt_message(object(), None,
+                FakeMessage(self.topics.receive, self.wire, self.link_secret)))
+        queue.assert_not_called()
 
 
 if __name__ == "__main__":

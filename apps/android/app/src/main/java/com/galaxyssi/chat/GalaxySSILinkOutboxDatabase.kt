@@ -87,6 +87,22 @@ internal class GalaxySSILinkOutboxDatabase(
     }
 
     @Synchronized
+    fun deleteForVerifiedReceipt(messageId: String, binding: String, wireHash: String): JSONObject? {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val item = read(messageId) ?: return null
+            if (item.optString("receipt_binding") != binding || item.optString("receipt_hash") != wireHash ||
+                !binding.matches(Regex("[a-f0-9]{64}")) || !wireHash.matches(Regex("[a-f0-9]{64}"))) return null
+            check(db.delete(TABLE_OUTBOX, "message_id = ?", arrayOf(messageId)) == 1)
+            db.setTransactionSuccessful()
+            return item
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun deleteByClientSourceMessageIds(
         sourceMessageIds: Collection<Long>,
         beforeDelete: (JSONObject) -> Unit = {}
@@ -195,7 +211,7 @@ internal class GalaxySSILinkOutboxDatabase(
         val candidateLimit = if (limit == Int.MAX_VALUE) null else (limit * ROUTE_FAIRNESS_LOOKAHEAD)
             .coerceAtLeast(limit)
             .toString()
-        return queryItems(selection, arguments, "created_at ASC, rowid ASC", candidateLimit)
+        return queryItems(selection, arguments, "next_attempt_at ASC, created_at ASC, rowid ASC", candidateLimit)
     }
 
     @Synchronized
@@ -299,7 +315,7 @@ internal class GalaxySSILinkOutboxDatabase(
         val items = JSONArray()
         readableDatabase.query(
             TABLE_OUTBOX,
-            arrayOf("message_id", "encrypted_item"),
+            arrayOf("message_id", "encrypted_item", "status", "next_attempt_at"),
             selection,
             selectionArgs,
             null,
@@ -308,7 +324,11 @@ internal class GalaxySSILinkOutboxDatabase(
             limit
         ).use { cursor ->
             while (cursor.moveToNext()) {
-                decode(cursor.getString(0), cursor.getString(1))?.let(items::put)
+                decode(cursor.getString(0), cursor.getString(1))?.apply {
+                    // Bulk wake-ups update the indexed schedule without re-encrypting every payload.
+                    put("status", cursor.getString(2))
+                    put("next_attempt_at", cursor.getLong(3))
+                }?.let(items::put)
             }
         }
         return items

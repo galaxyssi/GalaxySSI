@@ -3,20 +3,28 @@
 from contextlib import ExitStack
 from dataclasses import asdict
 import json
+import copy
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import agent_latency
 import link_protocol
+import link_delivery
 import mqtt_bridge
 from test_agent_latency import MemorySink
+from tests.receive_test_support import store_received_envelope, complete_received_envelope
 
 
 class MqttIngressTimingTest(unittest.TestCase):
     def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.object(link_delivery, "DB_PATH", Path(directory.name) / "inbound.db"))
         self.ns = 100_000_000
         self.sink = MemorySink()
         self.tracer = agent_latency.AgentLatencyTracer(self.sink, monotonic_ns=lambda: self.ns)
@@ -32,11 +40,11 @@ class MqttIngressTimingTest(unittest.TestCase):
         self.open = self.mock('open_wire_packet', side_effect=lambda *_: self.advance(7, self.wire))
         self.mock('_signal_ciphertext_digest', side_effect=lambda _: self.advance(3, 'digest'))
         self.lookup = self.mock('message_for_ciphertext', side_effect=lambda *_: self.advance(11, ''))
-        self.decrypt = self.mock('decrypt_signal_envelope', side_effect=lambda *a, **k: self.advance(13, self.envelope))
+        self.decrypt = self.mock('decrypt_signal_envelope', side_effect=lambda *a, **k: self.advance(
+            13, store_received_envelope("route", copy.deepcopy(self.envelope))))
         self.mock('desktop_id', return_value='desktop')
         self.mock('desktop_name', return_value='Test Desktop')
         self.mock('bind_ciphertext', side_effect=lambda *_: self.advance(17, None))
-        self.claim = self.mock('claim_message', return_value=True)
         for name in ('touch_client', 'complete_message'):
             self.mock(name)
         self.publish = self.mock('_publish_phone_payload', return_value=True)
@@ -101,16 +109,15 @@ class MqttIngressTimingTest(unittest.TestCase):
         self.assertEqual([], self.sink.points)
 
     def test_encrypted_replay_does_not_redecrypt_or_count_as_new_task(self):
+        complete_received_envelope("route", self.envelope)
         self.lookup.side_effect = None
-        self.lookup.return_value = 'seen-message'
-        self.mock('previous_acknowledgement', return_value={'status': 'completed', 'receipt_required': False})
+        self.lookup.return_value = self.envelope["message_id"]
         self.run_packet()
         self.assertEqual([], self.sink.points)
         self.decrypt.assert_not_called()
 
     def test_post_decrypt_duplicate_has_no_new_task_sample(self):
-        self.claim.return_value = False
-        self.mock('previous_acknowledgement', return_value={'status': 'accepted'})
+        complete_received_envelope("route", self.envelope)
         self.run_packet()
         self.assertEqual([], self.sink.points)
         self.publish.assert_called_once()
@@ -120,7 +127,7 @@ class MqttIngressTimingTest(unittest.TestCase):
             self.run_packet()
         self.log.error.assert_not_called()
         self.publish.assert_called_once()
-        self.claim.assert_called_once()
+        self.assertEqual(self.envelope, store_received_envelope("route", self.envelope))
 
     def test_fragment_timing_belongs_only_to_completing_packet(self):
         assembled = self.wire.decode()

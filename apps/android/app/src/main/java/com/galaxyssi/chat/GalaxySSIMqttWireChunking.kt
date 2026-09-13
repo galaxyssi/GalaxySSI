@@ -7,12 +7,12 @@ import java.util.Base64
 import java.util.LinkedHashMap
 
 internal object GalaxySSIMqttWireChunking {
-    const val SCHEME = "signal-chunk"
+    const val SCHEME = MqttChunkManifest.SCHEME
     const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5
     // Base64 and chunk metadata must still fit the 512 KiB outer privacy bucket.
-    const val DEFAULT_CHUNK_DATA_BYTES = 380 * 1024
-    const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024
-    const val MAX_CHUNK_COUNT = 96
+    const val DEFAULT_CHUNK_DATA_BYTES = MqttChunkManifest.DATA_BYTES
+    const val MAX_REASSEMBLED_BYTES = MqttChunkManifest.MAX_BYTES
+    const val MAX_CHUNK_COUNT = MqttChunkManifest.MAX_COUNT
     const val MAX_PACKET_BYTES = DEFAULT_DIRECT_LIMIT_BYTES
 
     fun isChunk(wire: JSONObject): Boolean = wire.optString("scheme") == SCHEME

@@ -492,25 +492,42 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         scheduleAgentConnectorStreamRefresh()
     }
-    internal val agentConnectorResponseListener = AgentConnectorResponseListener { response ->
-        agentConnectorStreamAttempts.close(response.sourceMessageId)
-        pendingAgentConnectorStreamUpdates.remove(response.sourceMessageId)
-        val recoveryKey = "runtime-restore:${AgentConnectorResponseCodec.identity(response)}"
-        if (!agentConnectorResponsesInFlight.add(recoveryKey)) return@AgentConnectorResponseListener
-        agentRuntimeRecoveryExecutor.execute {
-            try {
-                if (!AgentConnectorResponseStore.isCurrentExecution(this, response)) return@execute
-                runtimeForConnectorResponse(
-                    sourceMessageId = response.sourceMessageId,
-                    contactId = response.contactId,
-                    conversationId = response.conversationId,
-                    turnId = response.turnId,
-                    taskId = response.taskId,
-                    restorePersisted = true
-                )
-                if (isFinishing || isDestroyed) return@execute
-                consumeAgentConnectorResponse(response)
-            } finally { agentConnectorResponsesInFlight.remove(recoveryKey) }
+    internal val agentConnectorResponseListener = object : AgentConnectorResponseListener {
+        override fun priority(response: AgentConnectorResponse): Int = when {
+            isFinishing || isDestroyed || agentRuntimeRecoveryExecutor.isShutdown -> -1
+            activeAgentTasks.containsKey(response.sourceMessageId) ||
+                pendingDirectConnectorRuns.containsKey(response.sourceMessageId) -> 2
+            !runtimePlaintextCleared -> 1
+            else -> 0
+        }
+
+        override fun onConnectorResponse(response: AgentConnectorResponse): Boolean {
+            if (priority(response) < 0) return false
+            agentConnectorStreamAttempts.close(response.sourceMessageId)
+            pendingAgentConnectorStreamUpdates.remove(response.sourceMessageId)
+            val recoveryKey = "runtime-restore:${AgentConnectorResponseCodec.identity(response)}"
+            if (!agentConnectorResponsesInFlight.add(recoveryKey)) return true
+            return runCatching {
+                agentRuntimeRecoveryExecutor.execute {
+                    try {
+                        if (!AgentConnectorResponseStore.isCurrentExecution(this@MainActivity, response)) return@execute
+                        runtimeForConnectorResponse(
+                            sourceMessageId = response.sourceMessageId,
+                            contactId = response.contactId,
+                            conversationId = response.conversationId,
+                            turnId = response.turnId,
+                            taskId = response.taskId,
+                            restorePersisted = true
+                        )
+                        if (isFinishing || isDestroyed) return@execute
+                        consumeAgentConnectorResponse(response)
+                    } finally { agentConnectorResponsesInFlight.remove(recoveryKey) }
+                }
+                true
+            }.getOrElse {
+                agentConnectorResponsesInFlight.remove(recoveryKey)
+                false
+            }
         }
     }
     internal val agentConnectorStreamListener = AgentConnectorStreamListener { update ->
@@ -906,7 +923,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         intent?.removeExtra("galaxyssi_open_agent")
         intent?.removeExtra("galaxyssi_agent_conversation_id")
         requestedGlobalInsightConversationId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::switchConversation)
-        agentRunRecorder = AgentRunRecorder(this)
+        agentRunRecorder = AgentRunRecorder.get(this)
         agentRunEventStore = AgentRunEventStore(this)
         voiceAgentRunBridge = VoiceAgentRunBridge.get(this).also {
             it.addListener(voiceAgentRunListener)
@@ -1154,6 +1171,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         if (::conversationWindow.isInitialized) conversationWindow.destroy()
         agentVoiceConversation?.end()
         initialAgentHydrationReady.countDown()
@@ -1345,7 +1363,6 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             }
         }
         DesktopRemoteControl.pauseScreenshotStreams()
-        AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         AgentConnectorStreamBus.removeListener(agentConnectorStreamListener)
         handler.removeCallbacks(agentConnectorStreamRefreshRunnable)
         pendingAgentConnectorStreamUpdates.clear()
@@ -1574,8 +1591,15 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             ?.takeIf { envelope -> envelope.optString("type") == "agent_task_event" }
         if (taskEnvelope != null) {
             runCatching {
-                agentTaskEventExecutor.execute { handleAgentTaskEvent(taskEnvelope) }
+                agentTaskEventExecutor.execute {
+                    runCatching {
+                        if (handleAgentTaskEvent(taskEnvelope)) {
+                            GalaxySSIMqttClient.completeIncomingDelivery(this, payload)
+                        } else GalaxySSIMqttClient.retryIncomingDelivery(payload)
+                    }.onFailure { GalaxySSIMqttClient.retryIncomingDelivery(payload) }
+                }
             }.onFailure { error ->
+                GalaxySSIMqttClient.retryIncomingDelivery(payload)
                 if (!isFinishing && !isDestroyed) {
                     Log.w("GalaxySSIAgent", "Agent task event could not be scheduled", error)
                 }
@@ -1831,6 +1855,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                 Log.e("GalaxySSILink", "Deferred inbound message after UI handling failure", error)
             } finally {
                 if (handled) GalaxySSIMqttClient.completeIncomingDelivery(this, payload)
+                else GalaxySSIMqttClient.retryIncomingDelivery(payload)
             }
         }
     }

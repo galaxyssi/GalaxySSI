@@ -70,6 +70,9 @@ object AgentConnectorResponseStore {
     internal fun find(context: Context, response: AgentConnectorResponse): AgentConnectorResponse? =
         if (superseded(context, response)) null else store(context).find(response)
 
+    internal fun findPending(context: Context, identity: String): AgentConnectorResponse? =
+        store(context).findPending(identity)?.takeUnless { superseded(context, it) }
+
     fun removeHandled(context: Context, response: AgentConnectorResponse, terminal: Boolean) {
         if (terminal && response.conversationId.isNotBlank() && response.turnId.isNotBlank()) {
             store(context).acknowledgeThrough(response)

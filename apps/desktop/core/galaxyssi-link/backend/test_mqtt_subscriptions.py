@@ -216,22 +216,32 @@ class MqttSubscriptionTests(unittest.TestCase):
         self.assertNotIn("galaxyssi", first.lower())
 
     def test_mqtt_client_uses_clean_broker_session(self) -> None:
+        from mqtt_broker_pool import BrokerPool
         mqtt_client = Mock()
         callback_versions = Mock()
         callback_versions.VERSION2 = object()
         with (
-            patch.object(mqtt_bridge, "_persistent_mqtt_client_id", return_value="a" * 22),
             patch.object(mqtt_bridge.mqtt, "CallbackAPIVersion", callback_versions),
             patch.object(mqtt_bridge.mqtt, "Client", return_value=mqtt_client) as constructor,
         ):
-            created = mqtt_bridge._new_mqtt_client()
+            created = BrokerPool._new_client("emqx", 1)
 
         self.assertIs(mqtt_client, created)
-        constructor.assert_called_once_with(
-            callback_api_version=callback_versions.VERSION2,
-            client_id="a" * 22,
-            clean_session=True,
-        )
+        arguments = constructor.call_args.kwargs
+        self.assertTrue(arguments["clean_session"])
+        self.assertFalse(arguments["reconnect_on_failure"])
+        self.assertRegex(arguments["client_id"], mqtt_bridge.MQTT_CLIENT_ID_PATTERN)
+        mqtt_client.tls_set.assert_called_once_with()
+        mqtt_client.tls_insecure_set.assert_called_once_with(False)
+
+    def test_runtime_factory_owns_three_path_pool_and_pair_routes(self) -> None:
+        from mqtt_pool_client import MqttPoolClient
+        from mqtt_peer_routes import PeerRoutes
+        created = mqtt_bridge._new_mqtt_client()
+        self.assertIsInstance(created, MqttPoolClient)
+        self.assertIsInstance(created.peer_routes, PeerRoutes)
+        self.assertFalse(created.is_connected())
+        created.disconnect()
 
 
 if __name__ == "__main__":

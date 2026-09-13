@@ -10,6 +10,8 @@ import urllib.error
 import urllib.request
 import socket
 import threading
+import hashlib
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +31,7 @@ DEFAULT_DATA_DIR = (
 SIGNAL_STORE_PATH = Path(
     os.environ.get(
         "GALAXYSSI_SIGNAL_STORE_PATH",
-        str(Path(os.environ.get("GALAXYSSI_DATA_DIR", DEFAULT_DATA_DIR)) / "signal_protocol_store.json"),
+        str(Path(os.environ.get("GALAXYSSI_DATA_DIR", DEFAULT_DATA_DIR)) / "signal_state_v3.db"),
     )
 )
 
@@ -248,17 +250,56 @@ def get_signal_verification_payload() -> dict[str, Any]:
 
 
 def decrypt_signal_envelope(envelope: dict[str, Any], remote_name: str = "android", remote_device_id: int = 1) -> dict[str, Any]:
+    from signal_receive_handoff import cached_receive, persist_receive, mark_released
+
     start_signal_sidecar()
+    scope = envelope["_client_route_id"]
+    signal_type = envelope.get("signal_type") or envelope.get("type") or "prekey"
+    message_type = envelope.get("message_type", envelope.get("messageType", -1))
+    prekey = signal_type == "prekey" or message_type == 3
+    digest = hashlib.sha256(bytes([1 if prekey else 2]) + base64.b64decode(envelope["body"], validate=True)).hexdigest()
     with _peer_lock(remote_name, remote_device_id):
-        response = _request("POST", "/decrypt", {
-            "remoteName": remote_name,
-            "remoteDeviceId": remote_device_id,
-            "type": envelope.get("signal_type") or envelope.get("type") or "prekey",
-            "messageType": envelope.get("message_type", envelope.get("messageType", -1)),
-            "body": envelope["body"],
-        })
+        response = cached_receive(scope, remote_name, remote_device_id, digest)
+        if response is None:
+            response = _request("POST", "/decrypt", {
+                "remoteName": remote_name,
+                "remoteDeviceId": remote_device_id,
+                "type": signal_type,
+                "messageType": message_type,
+                "body": envelope["body"],
+                "linkScope": scope,
+            })
+            if response["receiveDigest"] != digest:
+                raise RuntimeError("Sidecar receive digest mismatch")
+            persist_receive(scope, remote_name, remote_device_id, response)
+        if not response.get("released"):
+            try:
+                released = _request("POST", "/receive-stored", {
+                    "remoteName": remote_name, "remoteDeviceId": remote_device_id,
+                    "linkScope": scope, "receiveDigest": digest, "contentHash": response["contentHash"],
+                })
+                if released.get("ok") is not True:
+                    raise RuntimeError("Signal receive cleanup was not acknowledged")
+                mark_released(scope, remote_name, remote_device_id, digest)
+            except Exception:
+                # The full body is already durable; retry release on the next replay.
+                logging.getLogger(__name__).warning("Signal receive handoff cleanup deferred")
     plaintext = response["plaintext"]
+    if response.get("completed"):
+        from signal_receive_compaction import CompletedReceiveReplay
+        raise CompletedReceiveReplay(json.loads(plaintext))
     return json.loads(plaintext)
+
+
+def drain_signal_receive_handoffs() -> None:
+    """Bounded cleanup on the supervisor, never on an Activity or broker callback."""
+    from signal_receive_handoff import pending_releases, mark_released
+
+    for item in pending_releases(limit=4):
+        response = _request("POST", "/receive-stored", item, timeout=0.5)
+        if response.get("ok") is not True:
+            raise RuntimeError("Signal receive cleanup was not acknowledged")
+        mark_released(item["linkScope"], item["remoteName"], item["remoteDeviceId"], item["receiveDigest"])
 
 
 def encrypt_signal_payload(payload: dict[str, Any], remote_name: str = "android", remote_device_id: int = 1) -> dict[str, Any]:
@@ -310,6 +351,7 @@ def _is_healthy() -> bool:
             and status.get("removePeer") is True
             and status.get("identitySigning") is True
             and status.get("encryptedStorage") is True
+            and status.get("atomicReceive") is True
         )
     except Exception:
         return False

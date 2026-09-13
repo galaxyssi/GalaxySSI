@@ -384,6 +384,8 @@ class AgentTaskSupervisor(
 
     fun recoverableTasks(): List<AgentWorkspace> = workspaceStore.recoverable()
 
+    internal fun findWorkspace(workspaceId: String): AgentWorkspace? = workspaceStore.find(workspaceId)
+
     fun reopenInterruptedWorkspace(
         workspaceId: String,
         reason: String = "Interrupted execution is ready to resume"

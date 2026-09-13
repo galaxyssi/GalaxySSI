@@ -47,6 +47,7 @@ class AgentInitialPlanningRecoveryPolicyTest {
         val original = session()
         assertNull(AgentLongTaskRecoveryPolicy.decide(workspace,
             original.copy(executionLoopSnapshot = original.executionLoopSnapshot!!.copy(phase = AgentExecutionLoopPhase.FAILED))))
-        assertNull(AgentLongTaskRecoveryPolicy.decide(workspace, original.copy(phase = AgentPhase.FAILED)))
+        assertEquals(AgentLongTaskRecoveryMode.TRANSCRIPT_PROJECTION,
+            AgentLongTaskRecoveryPolicy.decide(workspace, original.copy(phase = AgentPhase.FAILED))?.mode)
     }
 }

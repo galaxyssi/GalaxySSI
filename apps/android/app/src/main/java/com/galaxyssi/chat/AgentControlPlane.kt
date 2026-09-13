@@ -185,7 +185,7 @@ class EncryptedAgentHandoffStore(context: Context) {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
     @Synchronized
-    fun beginActive(request: AgentHandoffRequest, sourceMessageId: Long = 0L): AgentHandoffMutation {
+    fun beginActive(request: AgentHandoffRequest, sourceMessageId: Long = 0L): AgentHandoffMutation = synchronized(STORE_LOCK) {
         require(request.handoffId.isNotBlank()) { "Handoff id must not be blank" }
         require(request.runId.isNotBlank() && request.taskId.isNotBlank()) {
             "Handoff run and task ids must not be blank"
@@ -195,7 +195,7 @@ class EncryptedAgentHandoffStore(context: Context) {
         }
         val records = list().toMutableList()
         records.firstOrNull { it.request.handoffId == request.handoffId }?.let { existing ->
-            return AgentHandoffMutation(existing, created = false)
+            return@synchronized AgentHandoffMutation(existing, created = false)
         }
         val now = System.currentTimeMillis()
         val record = AgentHandoffRecord(
@@ -205,7 +205,7 @@ class EncryptedAgentHandoffStore(context: Context) {
             updatedAtMillis = now
         )
         save((records + record).takeLast(MAX_RECORDS))
-        return AgentHandoffMutation(record, created = true)
+        AgentHandoffMutation(record, created = true)
     }
 
     @Synchronized
@@ -214,7 +214,7 @@ class EncryptedAgentHandoffStore(context: Context) {
         sourceMessageId: Long,
         state: AgentHandoffState,
         resultSummary: String = ""
-    ): AgentHandoffRecord? {
+    ): AgentHandoffRecord? = synchronized(STORE_LOCK) {
         require(state in TERMINAL_STATES) { "A handoff can only finish in a terminal state" }
         val records = list().toMutableList()
         val index = records.indexOfLast { record ->
@@ -222,7 +222,7 @@ class EncryptedAgentHandoffStore(context: Context) {
                 record.state !in TERMINAL_STATES &&
                 (sourceMessageId <= 0L || record.sourceMessageId == sourceMessageId)
         }
-        if (index < 0) return null
+        if (index < 0) return@synchronized null
         val existing = records[index]
         val updated = existing.copy(
             state = AgentHandoffLifecycle.transition(existing.state, state),
@@ -231,7 +231,7 @@ class EncryptedAgentHandoffStore(context: Context) {
         )
         records[index] = updated
         save(records)
-        return updated
+        updated
     }
 
     @Synchronized
@@ -244,7 +244,7 @@ class EncryptedAgentHandoffStore(context: Context) {
     fun active(): List<AgentHandoffRecord> = list().filter { it.state !in TERMINAL_STATES }
 
     @Synchronized
-    fun clear() = database.clear()
+    fun clear() = synchronized(STORE_LOCK) { database.clear() }
 
     private fun save(records: List<AgentHandoffRecord>) {
         database.writeString(KEY_RECORDS, JSONArray().apply {
@@ -263,6 +263,7 @@ class EncryptedAgentHandoffStore(context: Context) {
 
     companion object {
         private const val DATABASE = "galaxyssi_agent_handoffs_v1"
+        private val STORE_LOCK = Any()
         private const val KEY_RECORDS = "records"
         private const val MAX_RECORDS = 1_000
         private const val MAX_RESULT_CHARACTERS = 2_000

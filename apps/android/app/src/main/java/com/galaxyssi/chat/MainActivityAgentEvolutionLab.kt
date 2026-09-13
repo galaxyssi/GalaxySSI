@@ -400,7 +400,7 @@ internal object AgentLabDashboardPolicy {
 private fun MainActivity.showAgentLabCampaignDialog(campaignId: String) {
     val labStore = AgentLabStore(this)
     val campaign = labStore.get(campaignId) ?: return
-    val results = labStore.blindResults(campaignId, AgentEvalOpsStore(this), AgentRunRecorder(this))
+    val results = labStore.blindResults(campaignId, AgentEvalOpsStore(this), AgentRunRecorder.get(this))
     if (results.isEmpty()) {
         AlertDialog.Builder(this)
             .setTitle(campaign.task.take(120))
@@ -442,7 +442,7 @@ private fun MainActivity.showAgentLabCampaignDialog(campaignId: String) {
 private fun MainActivity.saveAgentLabWinnerAsSkill(campaignId: String) {
     val store = AgentLabStore(this)
     val campaign = store.get(campaignId) ?: return
-    val recorder = AgentRunRecorder(this)
+    val recorder = AgentRunRecorder.get(this)
     val runs = store.winnerRunIds(campaignId).mapNotNull(recorder::run)
     runCatching {
         checkNotNull(agentLearningEngine.proposeCandidate(

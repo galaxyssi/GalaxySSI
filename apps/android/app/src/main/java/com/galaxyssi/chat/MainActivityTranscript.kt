@@ -444,11 +444,17 @@ internal fun MainActivity.recordStructuredAgentHandoff(
 }
 
 internal fun MainActivity.finishStructuredAgentHandoff(turnId: String, response: AgentConnectorResponse) {
-    if (!isAgentHandoffStoreInitialized()) return
-    val runId = agentRunIdsByTurn[turnId] ?: return
-    val run = agentRunRecorder.run(runId) ?: return
+    (this as Context).finishStructuredAgentHandoff(turnId, response, agentRunIdsByTurn[turnId].orEmpty())
+}
+
+internal fun Context.finishStructuredAgentHandoff(
+    turnId: String, response: AgentConnectorResponse, fallbackRunId: String = ""
+) {
+    val runId = EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
+        .ifBlank { fallbackRunId }
+    val run = AgentRunRecorder.get(this).run(runId) ?: return
     val state = if (response.success) AgentHandoffState.RETURNED else AgentHandoffState.FAILED
-    val record = agentHandoffStore.finish(
+    val record = EncryptedAgentHandoffStore(this).finish(
         runId = runId,
         sourceMessageId = response.sourceMessageId,
         state = state,
@@ -525,6 +531,16 @@ internal fun MainActivity.renderAgentOutput(
 }
 
 internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationId: String, turnId: String) {
+    persistAgentTranscript(state, conversationId, turnId, agentTranscriptStore)
+}
+
+/** The same durable projection is usable by a task owner without constructing an Activity. */
+internal fun Context.persistAgentTranscript(
+    state: AgentUiState,
+    conversationId: String,
+    turnId: String,
+    agentTranscriptStore: AgentTranscriptStore
+) {
     val transcriptTurnId = AgentFinalResponseIdentity.resolveTurnId(
         explicitTurnId = turnId,
         taskId = state.sessionId,
@@ -664,7 +680,7 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
     }
 }
 
-internal fun MainActivity.agentApprovalTitle(action: AgentAction): String {
+internal fun Context.agentApprovalTitle(action: AgentAction): String {
     val timerSeconds = action.parameters["timer_seconds"]?.toIntOrNull()
     return when {
         timerSeconds != null && timerSeconds % 60 == 0 -> getString(
@@ -676,7 +692,7 @@ internal fun MainActivity.agentApprovalTitle(action: AgentAction): String {
     }
 }
 
-internal fun MainActivity.agentRiskLabel(risk: AgentRisk): String = getString(
+internal fun Context.agentRiskLabel(risk: AgentRisk): String = getString(
     when (risk) {
         AgentRisk.LOW -> R.string.agent_risk_low
         AgentRisk.MEDIUM -> R.string.agent_risk_medium
@@ -685,7 +701,7 @@ internal fun MainActivity.agentRiskLabel(risk: AgentRisk): String = getString(
     }
 )
 
-internal fun MainActivity.isTransientAgentResult(value: String): Boolean {
+internal fun Context.isTransientAgentResult(value: String): Boolean {
     val normalized = value.trim().lowercase(Locale.US)
     return normalized.startsWith("waiting for ") ||
         normalized.startsWith("sent the request") ||

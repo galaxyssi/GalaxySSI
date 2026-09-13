@@ -571,18 +571,24 @@ object AppStore {
         }?.let { JSONObject(it.toString()) }
     }
 
-    fun phoneReceiveTopics(context: Context): Set<String> {
+    fun phoneReceiveTopics(context: Context): Set<String> =
+        phoneReceiveBindings(context).flatMapTo(linkedSetOf()) { it.second }
+
+    internal fun phoneReceiveBindings(context: Context): List<Pair<String, Set<String>>> =
+        phoneTransportBindings(context).map { it.first to it.second.receiveWindow }
+
+    internal fun phoneTransportBindings(context: Context): List<Pair<String, GalaxySSILinkProtocol.Routes>> {
         normalizeVerifiedPhoneRelationshipRoutes(context)
-        val topics = linkedSetOf<String>()
-        val contacts = contacts(context)
-        for (index in 0 until contacts.length()) {
-            contacts.optJSONObject(index)?.let(::phoneRoutes)?.receiveWindow?.let(topics::addAll)
+        return buildList {
+            listOf(contacts(context), friendRequests(context)).forEach { records ->
+                for (index in 0 until records.length()) {
+                    val record = records.optJSONObject(index) ?: continue
+                    val identity = galaxyssiIdOf(record)
+                    val routes = phoneRoutes(record) ?: continue
+                    if (identity.isNotBlank()) add(identity to routes)
+                }
+            }
         }
-        val requests = friendRequests(context)
-        for (index in 0 until requests.length()) {
-            requests.optJSONObject(index)?.let(::phoneRoutes)?.receiveWindow?.let(topics::addAll)
-        }
-        return topics
     }
 
     fun phoneLinkSecretForOutgoingTopic(context: Context, topic: String): String? {
@@ -1413,6 +1419,7 @@ object AppStore {
         VoiceAssistantSettings.clear(context)
         GalaxySSILinkProtocol.clear(context)
         GalaxySSILinkDeliveryStore.clear(context)
+        AgentRunRecorder.get(context).clear()
         AgentEncryptedDatabase(context, "galaxyssi_agent_runs").clear()
         AgentSelfModelStore(context).clear()
         AgentEncryptedDatabase(context, EncryptedAgentWorkspaceStore.DATABASE_NAME).clear()

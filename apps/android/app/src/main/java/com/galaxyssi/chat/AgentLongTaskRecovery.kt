@@ -24,8 +24,10 @@ import java.io.Closeable
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 
 internal enum class AgentLongTaskRecoveryMode {
+    TRANSCRIPT_PROJECTION,
     INITIAL_PLANNING,
     REPLANNING,
     INTERRUPTED_EXECUTION,
@@ -54,6 +56,11 @@ internal object AgentLongTaskRecoveryPolicy {
         session: AgentSessionSnapshot?,
         activeWorkspaceIds: Set<String> = emptySet()
     ): AgentLongTaskRecoveryDecision? {
+        if (workspace.workspaceId !in activeWorkspaceIds && session != null &&
+            AgentRecoveryTranscript.needsProjection(workspace, session)) {
+            return AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.TRANSCRIPT_PROJECTION,
+                "Commit the saved result to its original conversation without executing tools")
+        }
         if (workspace.workspaceId in activeWorkspaceIds || workspace.status.isTerminal ||
             workspace.cancellationRequested || session == null ||
             session.phase in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) ||
@@ -160,7 +167,7 @@ class AgentLongTaskRecoveryWorker(
             .trim()
         if (workspaceId.isBlank()) return Result.failure()
         val supervisor = AgentTaskRuntime.supervisor(applicationContext)
-        val workspace = supervisor.recoverableTasks().firstOrNull { it.workspaceId == workspaceId }
+        val workspace = supervisor.findWorkspace(workspaceId)
             ?: return Result.success()
         val sessionStore = SharedPreferencesAgentSessionStore(
             applicationContext,
@@ -183,6 +190,7 @@ class AgentLongTaskRecoveryWorker(
         runCatching { setForeground(foregroundInfo(workspaceId)) }
             .onFailure { Log.w(LOG_TAG, "Could not promote recovery worker to foreground", it) }
         val claim = AgentLongTaskRecoveryClaims.tryAcquire(workspaceId) ?: return Result.retry()
+        var projectionRetry = false
         return try {
             val handle = runCatching {
                 supervisor.resume(
@@ -191,26 +199,42 @@ class AgentLongTaskRecoveryWorker(
                 priority = AgentTaskPriority.BACKGROUND,
                 hook = AgentTaskResumeHook { taskContext, _ ->
                     taskContext.progress("recovery.observe", decision.reason)
-                    val runtime = MobileNativeAgent(
-                        applicationContext,
-                        sessionStore = sessionStore
-                    )
-                    runtime.bindExecutionLoopEventSink(
-                        AgentExecutionLoopEventSink { event ->
-                            taskContext.persistExecutionLoop(event)
+                    val context = AppLanguage.wrap(applicationContext)
+                    val state = if (decision.mode == AgentLongTaskRecoveryMode.TRANSCRIPT_PROJECTION) {
+                        val saved = checkNotNull(sessionStore.load())
+                        check(AgentRecoveryTranscript.needsProjection(workspace, saved)) {
+                            "Recovery session changed before projection"
                         }
-                    )
-                    var state = when (decision.mode) {
-                        AgentLongTaskRecoveryMode.INITIAL_PLANNING -> runtime.resumeCurrentTask()
-                        AgentLongTaskRecoveryMode.REPLANNING -> runtime.resumeCurrentTask()
-                        AgentLongTaskRecoveryMode.INTERRUPTED_EXECUTION -> runtime.resumeCurrentTask()
-                        AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT ->
+                        AgentRecoveryTranscript.state(saved)
+                    } else {
+                        val runtime = MobileNativeAgent(context, sessionStore = sessionStore)
+                        runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
+                            taskContext.persistExecutionLoop(event)
+                        })
+                        // The runtime owns dispatch and permission waits; recovery never grants consent.
+                        val recovered = if (decision.mode == AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT) {
                             runtime.assessLivenessWithModel(decision.reason)
+                        } else runtime.resumeCurrentTask()
+                        runtime.persistSession()
+                        recovered
                     }
-                    while (state.pendingAction != null && state.phase != AgentPhase.WAITING_RESPONSE) {
-                        state = runtime.approveNextAction(highRiskConfirmed = true)
+                    try {
+                        taskContext.checkpoint(AgentRecoveryTranscript.CHECKPOINT_ID, stateJson =
+                            AgentRecoveryTranscript.pendingCheckpoint(taskContext.workspace(),
+                                checkNotNull(sessionStore.load())))
+                        AgentRecoveryTranscript.commit(
+                            project = { AgentRecoveryTranscript.project(context, taskContext.workspace(), state,
+                                AgentTranscriptStore(context)) },
+                            persistWorkspace = { persistRecoveredState(taskContext, state) },
+                            acknowledge = { taskContext.checkpoint(AgentRecoveryTranscript.CHECKPOINT_ID,
+                                stateJson = "{\"pending\":false}") }
+                        )
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        projectionRetry = true
+                        Log.w(LOG_TAG, "Result commit deferred workspace=${workspaceId.take(8)}", error)
+                        taskContext.pause("Result commit pending; saved actions will not be replayed")
                     }
-                    persistRecoveredState(taskContext, state, runtime)
                     when (state.phase) {
                         AgentPhase.WAITING_CONFIRMATION ->
                             taskContext.waitForConfirmation(state.pendingAction?.description.orEmpty())
@@ -253,7 +277,7 @@ class AgentLongTaskRecoveryWorker(
                 return Result.retry()
             }
             handle.join()
-            Result.success()
+            if (projectionRetry) Result.retry() else Result.success()
         } finally {
             claim.close()
         }
@@ -261,8 +285,7 @@ class AgentLongTaskRecoveryWorker(
 
     private fun persistRecoveredState(
         taskContext: AgentTaskContext,
-        state: AgentUiState,
-        runtime: MobileNativeAgent
+        state: AgentUiState
     ) {
         val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
             .distinctBy(AgentAction::id)
@@ -284,7 +307,7 @@ class AgentLongTaskRecoveryWorker(
             .put("metadata", JSONObject(result?.metadata.orEmpty()))
             .put(
                 "execution_loop",
-                runtime.executionLoopSnapshot()
+                state.executionLoop
                     ?.let(AgentExecutionLoopJsonCodec::encode)
                     ?.let(::JSONObject)
             )
@@ -303,7 +326,7 @@ class AgentLongTaskRecoveryWorker(
             )
         )
         taskContext.checkpoint(
-            checkpointId = "recovery-${runtime.executionLoopSnapshot()?.revision ?: 0L}",
+            checkpointId = "recovery-${state.executionLoop?.revision ?: 0L}",
             planSnapshot = planJson,
             stateJson = stateJson
         )
@@ -341,47 +364,10 @@ class AgentLongTaskRecoveryWorker(
         )
     }
 
-    private fun foregroundInfo(workspaceId: String): ForegroundInfo {
-        val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                applicationContext.getString(R.string.app_name),
-                NotificationManager.IMPORTANCE_LOW
-            )
-        )
-        val openIntent = PendingIntent.getActivity(
-            applicationContext,
-            workspaceId.hashCode(),
-            Intent(applicationContext, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = Notification.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_tab_chat_filled)
-            .setContentTitle(applicationContext.getString(R.string.app_name))
-            .setContentText(applicationContext.getString(R.string.agent_task_liveness_assessment))
-            .setContentIntent(openIntent)
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .build()
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(
-                foregroundNotificationId(workspaceId),
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            ForegroundInfo(foregroundNotificationId(workspaceId), notification)
-        }
-    }
-
-    private fun foregroundNotificationId(workspaceId: String): Int =
-        FOREGROUND_NOTIFICATION_ID xor workspaceId.hashCode()
+    private fun foregroundInfo(workspaceId: String): ForegroundInfo =
+        AgentRecoveryNotification.foregroundInfo(applicationContext, workspaceId)
 
     private companion object {
         const val LOG_TAG = "GalaxySSILongTask"
-        const val CHANNEL_ID = "galaxyssi_agent_long_tasks"
-        const val FOREGROUND_NOTIFICATION_ID = 0x53410A
     }
 }

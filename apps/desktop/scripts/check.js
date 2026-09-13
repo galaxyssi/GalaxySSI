@@ -180,6 +180,7 @@ const sidecarDir = path.join(backendDir, "signal_sidecar");
 const sidecarSourceDir = path.join(sidecarDir, "src", "main", "java");
 const sidecarMainSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "galaxyssi", "link", "SignalSidecar.java"), "utf8");
 const sidecarStoreSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "galaxyssi", "link", "PersistentSignalProtocolStore.java"), "utf8");
+const sidecarDatabaseSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "galaxyssi", "link", "SignalStateDatabase.java"), "utf8");
 const sidecarBuildGradle = fs.readFileSync(path.join(sidecarDir, "build.gradle.kts"), "utf8");
 const sidecarSettingsGradle = fs.readFileSync(path.join(sidecarDir, "settings.gradle.kts"), "utf8");
 const backendSecureState = fs.readFileSync(path.join(backendDir, "secure_state.py"), "utf8");
@@ -197,12 +198,14 @@ const androidChatHistoryProbeScript = fs.readFileSync(path.join(__dirname, "andr
 const androidDebugSecureStateProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "DebugSecureStateProbe.kt"), "utf8");
 const androidSecureStateProbeScript = fs.readFileSync(path.join(__dirname, "android-secure-state-probe.js"), "utf8");
 const androidSignalStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AndroidPersistentSignalStore.kt"), "utf8");
+const androidEncryptedStorage = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentEncryptedStorage.kt"), "utf8");
 const androidForegroundTracker = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AppForegroundTracker.kt"), "utf8");
 const androidAppStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AppStore.kt"), "utf8");
 const androidCrypto = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSICrypto.kt"), "utf8");
 const androidMqtt = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSIMqttClient.kt"), "utf8");
 const androidLinkProtocol = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSILinkProtocol.kt"), "utf8");
 const androidLinkDelivery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSILinkDeliveryStore.kt"), "utf8");
+const androidLinkInbox = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSILinkInbox.kt"), "utf8");
 const androidVoiceSettings = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "VoiceAssistantSettings.kt"), "utf8");
 const androidLocalWhisper = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "LocalWhisperAsr.kt"), "utf8");
 const androidWhisperModels = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "WhisperModelManager.kt"), "utf8");
@@ -469,9 +472,14 @@ for (const required of ["inbound_messages", "outbound_messages", "claim_message"
   }
 }
 
-for (const required of ["enqueue", "claimIncoming", "acknowledge", "pending"]) {
+for (const required of ["enqueue", "stageLocalIncoming", "beginIncomingDispatch", "completeIncoming", "acknowledgeVerified", "pending"]) {
   if (!androidLinkDelivery.includes(required)) {
     throw new Error(`Android reliable delivery store missing ${required}`);
+  }
+}
+for (const required of ["database.indexedTransaction", "UNIQUE(scope_digest,message_id)", "ContentConflict", "fun accept(", "fun complete("]) {
+  if (!androidLinkInbox.includes(required)) {
+    throw new Error(`Android durable inbox missing ${required}`);
   }
 }
 
@@ -498,7 +506,8 @@ if (
   || !backendLinkDelivery.includes("seal_identifier")
   || !backendSignalClient.includes("GALAXYSSI_LINK_STORAGE_KEY")
   || !sidecarMainSource.includes('"encryptedStorage", true')
-  || !sidecarStoreSource.includes('Cipher.getInstance("AES/GCM/NoPadding")')
+  || !sidecarStoreSource.includes("SignalStateDatabase")
+  || !sidecarDatabaseSource.includes('Cipher.getInstance("AES/GCM/NoPadding")')
 ) {
   throw new Error("Desktop pairing identities, routes, and authorization state must be encrypted at rest");
 }
@@ -510,14 +519,17 @@ if (
 ) {
   throw new Error("Scoped tool permission decisions must remain encrypted and bound to exact action fingerprints");
 }
-for (const [name, source] of [
-  ["Signal store", androidSignalStore],
+if (!androidEncryptedStorage.includes("AndroidKeyStore") || !androidEncryptedStorage.includes("AES/GCM/NoPadding")) {
+  throw new Error("Android encrypted persistence must retain Keystore-backed authenticated encryption");
+}
+for (const [name, source, storageType = "AgentEncryptedPreferences"] of [
+  ["Signal store", androidSignalStore, "AgentEncryptedDatabase"],
   ["Link routes", androidLinkProtocol],
   ["Link delivery", androidLinkDelivery],
   ["contacts and provider credentials", androidAppStore],
   ["identity trust", androidCrypto]
 ]) {
-  if (!source.includes("AgentEncryptedPreferences")) {
+  if (!source.includes(storageType)) {
     throw new Error(`Android ${name} must use Android Keystore-backed encrypted persistence`);
   }
 }
@@ -780,8 +792,8 @@ for (const requiredBackendCode of [
   "api_error(\"phone_not_paired\"",
   "api_error(\"mqtt_not_initialized\"",
   "api_error(\"mqtt_not_connected\"",
-  "api_ok(\"mobile_test_published\"",
-  "api_ok(\"agent_push_published\""
+  "api_ok(\"mobile_test_queued\"",
+  "api_ok(\"agent_push_queued\""
 ]) {
   if (![backendMain, backendMqtt].some((content) => content.includes(requiredBackendCode))) {
     throw new Error(`Backend API code/params response missing: ${requiredBackendCode}`);

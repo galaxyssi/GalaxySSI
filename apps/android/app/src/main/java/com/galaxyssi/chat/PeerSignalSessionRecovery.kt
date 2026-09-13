@@ -46,8 +46,9 @@ internal object PeerSignalSessionRecoveryCoordinator {
     fun decryptOrRequestRefresh(
         context: Context,
         contactId: String,
-        wire: JSONObject
-    ): JSONObject? = when (val result = GalaxySSICrypto.decryptEnvelopeDetailed(wire)) {
+        wire: JSONObject,
+        acceptPlaintext: ((JSONObject) -> Unit)? = null
+    ): JSONObject? = when (val result = GalaxySSICrypto.decryptEnvelopeDetailed(wire, acceptPlaintext)) {
         is GalaxySSICrypto.EnvelopeDecryptionResult.Success -> {
             PeerSignalSessionRecoveryGate.sessionHealthy(contactId)
             result.payload

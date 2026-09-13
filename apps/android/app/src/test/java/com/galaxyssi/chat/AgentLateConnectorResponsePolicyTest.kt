@@ -94,4 +94,32 @@ class AgentLateConnectorResponsePolicyTest {
         turnId = turnId,
         taskId = turnId
     )
+
+    @Test fun `same saved reply can finish an interrupted projection`() {
+        assertTrue(committed(savedReply))
+        assertTrue(committed(savedReply.copy(timestampMillis = 99)))
+    }
+
+    @Test fun `matching text from another response is not a replay`() {
+        assertFalse(committed(savedReply.copy(dedupeKey = "other")))
+        assertFalse(committed(savedReply.copy(taskId = "other")))
+        assertFalse(committed(savedReply.copy(text = "different response")))
+        assertFalse(committed(savedReply.copy(role = AgentTranscriptRole.PROCESS)))
+    }
+
+    @Test fun `projection replay cannot cross conversation or turn`() {
+        assertFalse(committed(savedReply.copy(conversationId = "other")))
+        assertFalse(committed(savedReply.copy(turnId = "other")))
+        assertFalse(AgentLateConnectorResponsePolicy.isCommittedReply(
+            reply, "conversation-1", null, "task", listOf(savedReply)))
+    }
+
+    private val reply = AgentConnectorResponse(7, "contact", "saved reply", "conversation-1", "turn-1", "task")
+    private val savedReply get() = entry(AgentTranscriptRole.ASSISTANT, "turn-1").copy(
+        text = reply.content,
+        taskId = "task",
+        dedupeKey = AgentFinalResponseIdentity.dedupeKey("turn-1", 7, "task")
+    )
+    private fun committed(entry: AgentTranscriptEntry) = AgentLateConnectorResponsePolicy.isCommittedReply(
+        reply, "conversation-1", "turn-1", "task", listOf(entry))
 }

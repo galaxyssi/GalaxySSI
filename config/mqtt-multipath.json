@@ -1,0 +1,39 @@
+{
+  "transport_version": 1,
+  "selection": "automatic",
+  "brokers": {
+    "emqx": { "host": "broker.emqx.io", "tls_port": 8883 },
+    "hivemq": { "host": "broker.hivemq.com", "tls_port": 8883 },
+    "mosquitto": { "host": "test.mosquitto.org", "tls_port": 8886 }
+  },
+  "limits": {
+    "encoded_packet_bytes": 1048576,
+    "small_packet_bytes": 65536,
+    "global_inflight_packets": 12,
+    "reserved_control_packets": 2,
+    "global_inflight_bytes": 8388608,
+    "per_peer_inflight_bytes": 2097152,
+    "max_peer_routes": 10000,
+    "max_tracked_attempts": 4096,
+    "max_chunk_feedback": 1024,
+    "per_peer_chunk_feedback": 64,
+    "max_pending_receipts": 1024,
+    "per_peer_pending_receipts": 64,
+    "unmeasured_chunk_bytes_per_second": 262144
+  },
+  "timing": {
+    "keepalive_seconds": 30,
+    "metric_ttl_seconds": 300,
+    "resume_ttl_seconds": 300,
+    "attempt_observation_seconds": 30,
+    "hedge_min_samples": 20,
+    "hedge_min_ms": 100,
+    "hedge_max_ms": 2000,
+    "unmeasured_hedge_ms": 2000,
+    "unmeasured_path_rtt_ms": 500,
+    "chunk_feedback_window_ms": 200,
+    "receipt_retry_ms": 500,
+    "receipt_retry_ttl_seconds": 30,
+    "chunk_throughput_min_samples": 3
+  }
+}

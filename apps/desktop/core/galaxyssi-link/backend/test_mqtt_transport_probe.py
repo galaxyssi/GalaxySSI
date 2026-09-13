@@ -156,6 +156,7 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         client_route = "b" * 22
         paired_client = {
             "client_route_id": client_route,
+            "signal_name": "phone-signal-id",
             "link_secret": "A" * 43,
             "local_identity_fingerprint": "a" * 64,
             "identity_fingerprint": "b" * 64,

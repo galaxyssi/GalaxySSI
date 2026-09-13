@@ -1165,7 +1165,7 @@ internal fun MainActivity.remoteAgentApprovalTitle(request: AgentRemoteApprovalR
         }
     )
 
-internal fun MainActivity.agentPermissionChoices(
+internal fun Context.agentPermissionChoices(
     tier: AgentConfirmationTier
 ): List<AgentPermissionChoice> = if (tier == AgentConfirmationTier.CONFIRM_ALWAYS) {
     listOf(
@@ -1181,7 +1181,7 @@ internal fun MainActivity.agentPermissionChoices(
     )
 }
 
-internal fun MainActivity.agentPermissionChoiceLabel(choice: AgentPermissionChoice): String = getString(
+internal fun Context.agentPermissionChoiceLabel(choice: AgentPermissionChoice): String = getString(
     when (choice) {
         AgentPermissionChoice.ALLOW_ONCE -> R.string.agent_permission_allow_once
         AgentPermissionChoice.ALLOW_SESSION -> R.string.agent_permission_allow_session

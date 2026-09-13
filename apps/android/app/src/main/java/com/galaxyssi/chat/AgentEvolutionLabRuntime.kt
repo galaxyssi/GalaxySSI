@@ -35,7 +35,7 @@ data class AgentLabRuntimeSnapshot(
 class AgentEvolutionLabRuntime(
     context: Context,
     private val store: AgentLabStore = AgentLabStore(context),
-    private val recorder: AgentRunRecorder = AgentRunRecorder(context),
+    private val recorder: AgentRunRecorder = AgentRunRecorder.get(context),
     private val runEvents: AgentRunEventStore = AgentRunEventStore(context),
     private val maximumParallelTrials: Int = DEFAULT_PARALLEL_TRIALS
 ) : Closeable {

@@ -1,0 +1,211 @@
+# Owned MQTT Lab
+
+This test-only harness runs three independent loopback TLS brokers using pinned
+[aMQTT 0.12.0](https://pypi.org/project/amqtt/0.12.0/). The public
+[broker configuration reference](https://amqtt.readthedocs.io/en/v0.11.2/references/broker_config/)
+is background documentation; this harness was checked against the installed
+0.12.0 API. It uses an existing MQTT implementation, not a partial mock server.
+
+Create a Python 3.11 virtual environment **outside the source tree**, install
+`requirements.txt` there, and run `smoke.py` using that interpreter from the
+repository root. No production Desktop or App needs to be stopped.
+
+Example for this development machine:
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/smoke.py
+```
+
+## Safety
+
+- Listeners bind only `127.0.0.1` with OS-assigned ports, never a LAN interface.
+  There is no host argument or path to send these tests to public brokers.
+- An ephemeral one-day CA signs a localhost/IP server certificate. Clients
+  explicitly trust that CA and still require chain and hostname verification.
+  No CA is installed in Windows or Android, and no TLS validation is disabled.
+- Anonymous MQTT authentication is test-only and loopback-only. Production
+  paired identity, topic and payload state is never read. Test secrets, TLS
+  files and the isolated route database use a disposable temporary directory.
+- The Desktop client factory maps the three known catalog endpoints to these
+  listeners. It does not edit the catalog, production configuration or DNS.
+- Cleanup disconnects all test client workers and shuts down the brokers.
+  The harness is a bounded run, not a background service.
+- IDs `emqx`, `hivemq`, `mosquitto` are labels. These local aMQTT listeners do
+  **not** emulate provider-specific packet limits, quotas or availability.
+
+## Smoke Coverage
+
+The test runs the real Desktop `BrokerPool`, `MqttPoolClient`, `PeerRoutes`,
+Paho TCP/TLS callbacks, pair AEAD and SQLite route persistence. Two directed
+mailboxes complete authenticated resume over three paths. Synthetic messages
+exercise each path in both directions; explicit per-path checks use scheduler
+attempt metadata, while the outage checks let the policy choose a path.
+
+It rejects unknown-CA and wrong-hostname certificates, stops one broker, checks
+automatic communication on the two remaining paths, restarts the broker, and
+checks resubscription/authenticated recovery and bidirectional delivery again.
+There is no forwarding between the three broker instances.
+
+This is **not** native Signal ratchet acceptance, durable business-message
+receipt testing, real model execution, UI/attachment acceptance, a performance
+benchmark, an App/App test, or a power test. Reported ten-message receive times
+are high-resolution local smoke observations, not internet p50/p95 evidence.
+
+The first smoke attempt incorrectly restricted authorization to one path without
+letting the scheduler select that path. The fixture now marks the other paths as
+already attempted for those explicit path checks; production policy was not
+relaxed. The first successful run used a low-resolution Windows monotonic clock
+for sample timing; subsequent runs use `perf_counter` for the report only.
+
+## Native Business Smoke
+
+`native_smoke.py` adds two separate endpoint processes with independent real JVM
+Signal identities, encrypted SQLite state and production Desktop peer-message
+handling. It uses the same loopback-only physical client adapter as `smoke.py`.
+The controlling interpreter needs the lab requirements; the endpoint interpreter
+needs the complete Desktop backend requirements and a built worktree sidecar.
+Configure `JAVA_HOME` before running, for example:
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/native_smoke.py --endpoint-python C:/Users/agent/MQTTDiagnostics/20260913-desktop-runtime/Scripts/python.exe --report-dir build/mqtt-owned-native
+```
+
+Both endpoints use production `encrypt_signal_payload`, `on_mqtt_message`, the
+bounded ingress workers, Signal receive handoff, dispatch guards, durable outbox
+and `PeerChatStore`. The real peer-message handler is not mocked. No provider,
+model, proactive worker, real user pairing registry or installed App is used.
+Trusted bundle exchange is supplied by the isolated control process; the QR
+pairing ceremony is not part of this test.
+
+Cases cover native pre-key/ratchet exchange, three copies observed over three
+actual TLS paths with one business dispatch, a fragmented native envelope, one
+broker down, loss of all sender ingress (including application receipts), both
+endpoint process trees killed and restored using the same databases, all three
+brokers down, durable queue recovery through one restored broker, and restoration
+of the full path set. Windows-only abrupt-process testing kills only child PIDs
+owned by the harness. All test workers, JVMs and brokers are stopped afterward.
+
+Loss is injected at the sender's physical receive callback after MQTT/TLS, not
+by forging a PUBACK or a durable application receipt. Fragmentation uses ignored
+synthetic padding within the unchanged application envelope limit; it is **not**
+an image/file/video artifact test. Snapshot checks read actual stored message
+hashes, immutable IDs and dispatch-attempt counts, and wait for the bounded
+ingress queue to drain before asserting duplicate handling.
+
+The two endpoint processes assemble the normal bridge's pool/ingress/publisher
+components while running only route maintenance and durable queue replay. The
+complete production startup/recovery supervisor, UI click-to-send, real model
+tasks, Android/JNI and phone lifecycle still require separate acceptance.
+In particular, lower-level offline queue success cannot prove that the Desktop
+UI send entry point allows offline enqueueing.
+
+Times in the report include controller RPC and SQLite snapshot polling; do not
+use them as transport RTT, unbiased latency distributions or performance gates.
+Any captured native ingress error fails the suite, even if all user-visible
+messages eventually arrive. Test logs are retained in the report directory;
+ephemeral credentials and private Signal databases are deleted with the lab.
+
+Add `--delay-resume` to hold actual incoming MQTT callbacks while one broker is
+stopped and restarted. The bounded buffer releases the old authenticated resume
+ACKs only after a newer local epoch exists. The test verifies that the queue
+drains without ingress errors and fresh authentication still permits delivery.
+It does not fabricate an ACK, change production timing or disable validation.
+Error observations survive test endpoint restarts, so a later clean process
+cannot hide an earlier failure. See the
+[native checkpoint](../../../docs/testing/MQTT_NATIVE_BUSINESS_20260913.md).
+
+Add `--offline-peer-entry` to exercise the actual Desktop direct-contact,
+Agent push and mobile diagnostic APIs with all brokers stopped. All three
+entries must durably accept the message, without claiming phone delivery.
+The endpoint process is then killed and restarted using its existing data;
+message IDs, queued peer card and immutable native ciphertext must survive.
+The notification APIs start the normal shared retry owner, which the endpoint
+explicitly stops and joins during cleanup. This final scenario does not feed
+Desktop-to-phone envelopes to another Desktop or claim an Android receipt.
+See [notification queue checkpoint](../../../docs/testing/MQTT_NOTIFICATION_QUEUE_20260913.md).
+
+Add `--path-cycles 30` for repeated owned-listener loss/recovery. The failed
+listener rotates across the three catalog IDs; each cycle sends in both
+directions while that listener is down and again after its restoration. This
+adds 90 business messages to the basic nine-message suite. The option is bounded
+to 0-100 cycles and never uses public brokers. These controller-polled timings
+are not a performance comparison or an unbiased latency percentile.
+
+Add `--defer-after-selection` to withdraw the endpoint's real MQTT subscriptions
+after the outbox selects a message but before wire preparation. The message must
+remain queued without a nonexistent broker token or a consumed send attempt.
+Restoring subscriptions must resume the original ciphertext/identity into one
+real business row. TLS, native Signal and receipt validation remain unchanged.
+This adds one business message. See
+[deferred selection checkpoint](../../../docs/testing/MQTT_DEFERRED_SELECTION_20260913.md).
+
+Failure diagnostics retain each inbox entry's payload type, pending broker token
+IDs and both endpoints' last snapshots. Receipts must not be mistaken for missing
+chat rows simply by comparing inbox and history counts. Per-message completion
+markers are printed during long runs; the final JSON report remains the verdict.
+
+Add `--defer-receipt` to hold only the receiver's real encrypted resume ACKs
+while one restored owned path delivers a native business message. The receiver
+must persist that message and retain a pending receipt without marking its own
+route ready. Releasing the unchanged ACKs must retire the sender before its 30s
+durable retry, without enabling another hedge path or dispatching twice. Failed
+runs retain `failure.json` and attempt fresh snapshots of both live endpoints;
+an RPC failure is not followed by another potentially mismatched RPC. This is
+not an Android test or a claim that all historical ACK losses share this cause.
+
+## Native Latency Comparison
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/native_latency.py --endpoint-python C:/Users/agent/MQTTDiagnostics/20260913-desktop-runtime/Scripts/python.exe --report-dir build/mqtt-native-latency --samples 30 --seed 20260914
+```
+
+Use the same JAVA_HOME and isolated runtimes as the native smoke. This compares
+small native peer messages over one available owned path and automatic multi-path
+scheduling. `--samples` is per strategy, a multiple of three in 30-180. Each run
+adds six excluded warm-ups and validates every real business row. It retains
+failed/censored observations instead of silently dropping slow failures.
+Exit code 2 means business checks passed but the provisional warm p95 ratio
+exceeded 1.10; the complete report is still saved. Exit code 0 is only this
+limited comparison passing, never full product or release acceptance.
+
+Opt-in instrumentation captures queue, physical submission and authenticated
+durable receipt timestamps in the endpoint. Controller polling and final chat
+store checks do not define those intervals. Counts are submitted business MQTT
+frames, not all network bytes. Native/JVM startup, one available path within the
+same pool, app display, model latency and actual image/file/video transfers are
+distinct measurements; do not conflate them. See the
+[method, baseline and limitations](../../../docs/testing/MQTT_NATIVE_LATENCY_20260913.md).
+
+Add `--fault-primary` for selected-primary receive loss: the real broker still
+acknowledges while the isolated receiver drops that path. Each of thirty
+multi-path messages must show primary PUBACK, real alternate delivery and one
+business dispatch. The healthy single-path cohort is a reference, not a
+single-path outage comparison. This mode uses a separate predeclared 8s p95
+fault budget instead of the healthy ratio, and retains failure/censored samples.
+See [cold hedge and primary-loss evidence](../../../docs/testing/MQTT_COLD_HEDGE_20260913.md).
+
+## Native Attachment Ingress
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/native_attachments.py --endpoint-python C:/Users/agent/MQTTDiagnostics/20260913-desktop-runtime/Scripts/python.exe --report-dir build/mqtt-native-attachments --large
+```
+
+Use the same JAVA_HOME as the native smoke. The endpoint environment also needs
+Pillow, FFmpeg and ffprobe. By default this transfers a real PNG and a generated
+H.264/AAC MP4. `--large` adds 5, 21 and 32 MiB binary files with SHA-256 checks.
+The 21 MiB case restarts the real receiver after its first window, loses one
+owned path and replays a completed chunk before continuing missing windows.
+The real Desktop contact store must expose exactly one available attachment
+whose streamed bytes match the original. Missing content must not be available.
+
+The source's phone payload builder and input-receipt consumer are fixtures; the
+Desktop native Signal and actual input/contact receivers are not mocked. The
+sender uses Desktop transport classification, not the Android chunk sender.
+No Android, UI open/save or artifact performance gate is implied. Failure
+snapshots and logs are saved before disposable state cleanup. See the
+[results and boundaries](../../../docs/testing/MQTT_RECEIVE_COMPACTION_20260913.md).
+
+Every native worker now explicitly isolates and verifies its task workspace as
+well as data/configuration/Signal state. Earlier workers lacked that workspace
+override; do not claim their contact-publication helpers could never create
+default task directories. No existing user task directory is removed by this fix.

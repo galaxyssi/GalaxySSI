@@ -101,7 +101,7 @@ class SmT575AgentLlmReplyDeviceTest {
         val store = AgentTranscriptStore(instrumentation.targetContext)
         val response = waitForAssistantReply(store, turnId, marker, SMOKE_TIMEOUT_MILLIS)
         val entries = store.entriesForTurn(turnId)
-        val run = AgentRunRecorder(instrumentation.targetContext).activeRun(conversation.id)
+        val run = AgentRunRecorder.get(instrumentation.targetContext).activeRun(conversation.id)
         val report = JSONObject()
             .put("device_model", Build.MODEL)
             .put("device_name", Build.DEVICE)
@@ -325,7 +325,7 @@ class SmT575AgentLlmReplyDeviceTest {
                         !entry.dedupeKey.startsWith("approval:") &&
                         !entry.dedupeKey.startsWith("remote-approval:")
                 } ?: continue
-                val run = AgentRunRecorder(context).activeRun(execution.conversationId)
+                val run = AgentRunRecorder.get(context).activeRun(execution.conversationId)
                 if (run?.status == AgentRecordedRunStatus.RUNNING) continue
                 results[turnId] = evaluateResult(execution, target, entries, assistant, run)
                 iterator.remove()
@@ -335,7 +335,7 @@ class SmT575AgentLlmReplyDeviceTest {
         pending.forEach { (turnId, execution) ->
             val entries = store.entriesForTurn(turnId)
             val assistant = entries.lastOrNull { it.role == AgentTranscriptRole.ASSISTANT }
-            val run = AgentRunRecorder(context).activeRun(execution.conversationId)
+            val run = AgentRunRecorder.get(context).activeRun(execution.conversationId)
             results[turnId] = if (assistant == null) {
                 RealLlmCaseResult(
                     testCase = execution.testCase,

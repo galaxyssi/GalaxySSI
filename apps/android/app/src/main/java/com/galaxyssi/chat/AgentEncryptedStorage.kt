@@ -482,6 +482,11 @@ class AgentEncryptedDatabase(
     ) : SQLiteOpenHelper(context, "$databaseName.db", null, if (databaseName == AgentMemoryStorage.DATABASE) 2 else 1) {
         val operations = ReentrantLock()
         val segmented = databaseName == AgentMemoryStorage.DATABASE
+        private val durableLinkState = databaseName == AndroidPersistentSignalStore.DATABASE || databaseName.startsWith("test_link_atomic_")
+        init { if (durableLinkState) setWriteAheadLoggingEnabled(true) }
+        override fun onConfigure(db: SQLiteDatabase) {
+            if (durableLinkState) db.execSQL("PRAGMA synchronous=FULL")
+        }
         val segmentAccess by lazy {
             MemorySegmentAccess(java.io.File(context.getDatabasePath("$databaseName.db").absolutePath + ".segments.lock"))
         }

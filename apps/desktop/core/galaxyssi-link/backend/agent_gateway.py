@@ -3646,12 +3646,13 @@ def connector_self_test(include_agent_calls: bool = False, include_mobile_delive
 
                 content = f"GALAXYSSI_SELF_TEST_{spec.id}_{os.getpid()}"
                 delivery = publish_mobile_test_message(spec.id, content)
-                ok = bool(delivery.get("ok"))
+                queued = isinstance(delivery, dict) and delivery.get("ok") is True and delivery.get("queued") is True
                 item["mobile_delivery"] = {
-                    "status": "ok" if ok else "error",
-                    "ok": ok,
+                    "status": "queued" if queued else "error",
+                    "ok": None if queued else False,
+                    "accepted": queued,
                     "detail": delivery,
-                    "code": "mobile_delivery_ok" if ok else "mobile_delivery_failed",
+                    "code": "mobile_delivery_queued" if queued else "mobile_delivery_failed",
                     "params": _agent_params(spec, delivery=delivery),
                 }
             except Exception as exc:
@@ -3674,6 +3675,7 @@ def connector_self_test(include_agent_calls: bool = False, include_mobile_delive
             "ready": [item["id"] for item in results if item["status"] == "ready"],
             "needs_setup": [item["id"] for item in results if item["status"] != "ready"],
             "mobile_delivery_ok": [item["id"] for item in results if item["mobile_delivery"]["ok"] is True],
+            "mobile_delivery_queued": [item["id"] for item in results if item["mobile_delivery"]["status"] == "queued"],
             "mobile_delivery_failed": [item["id"] for item in results if item["mobile_delivery"]["ok"] is False],
         },
         "results": results,
@@ -3687,6 +3689,8 @@ def _self_test_overall(item: dict) -> str:
         return "delivery_failed"
     if item["agent_call"]["ok"] is False:
         return "agent_failed"
+    if item["mobile_delivery"]["status"] == "queued":
+        return "waiting_delivery"
     return "ok"
 
 
