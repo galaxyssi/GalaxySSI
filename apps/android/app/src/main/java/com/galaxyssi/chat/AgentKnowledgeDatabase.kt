@@ -59,7 +59,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..16) { "Unsupported knowledge schema $version" }
+                require(version in 0..17) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -120,6 +120,8 @@ internal class AgentKnowledgeDatabase private constructor(
                     KnowledgePrimaryCopySchema.create(db)
                     db.execSQL("PRAGMA user_version=16")
                 }
+                // Older readers cannot resolve primary metadata pointers. Existing inline headers stay readable.
+                if (version < 17) db.execSQL("PRAGMA user_version=17")
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             return db.also { connection = it }
@@ -300,20 +302,20 @@ internal class AgentKnowledgeDatabase private constructor(
         val titleKey = key("title", "${snapshot.kind}:${snapshot.title.lowercase(java.util.Locale.US)}")
         val sourceKey = if (snapshot.source.isBlank()) "" else key("source", snapshot.source)
         val header = JSONObject().put("chunks", 0).put("sha256", AgentNativeJsonCodec.sha256(encoded))
-            .put("title_key", titleKey).put("source_key", sourceKey).put("updated", snapshot.updatedAtMillis)
-            .put("source_preview", metadata.encode()).toString()
+            .put("title_key", titleKey).put("source_key", sourceKey).put("updated", snapshot.updatedAtMillis).toString()
         val encryptedHeader = recordCipher.encrypt(header, aad(id, "header"))
+        val headerPointer = KnowledgePrimaryMetadata.pointer(encryptedHeader)
         db.delete("knowledge_items", "item_key=?", arrayOf(id))
         db.insertOrThrow("knowledge_items", null, ContentValues().apply {
             put("item_key", id)
             put("title_key", titleKey)
             put("source_key", sourceKey)
             put("updated", snapshot.updatedAtMillis)
-            put("header", encryptedHeader)
+            put("header", headerPointer)
         })
-        primary.append(db, id, encoded)
+        primary.append(db, id, encoded, encryptedHeader)
         indexItem(db, id, snapshot)
-        KnowledgeSourcePreviews.putValidated(db, KnowledgeSourceHeader(id, titleKey, sourceKey, snapshot.updatedAtMillis, encryptedHeader),
+        KnowledgeSourcePreviews.putValidated(db, KnowledgeSourceHeader(id, titleKey, sourceKey, snapshot.updatedAtMillis, headerPointer),
             metadata, sourcePreviewCipher())
     }
 
@@ -325,7 +327,7 @@ internal class AgentKnowledgeDatabase private constructor(
     internal fun readHeader(db: KnowledgeSqlite, id: String): JSONObject? =
         db.rawQuery("SELECT header,title_key,source_key,updated FROM knowledge_items WHERE item_key=?", arrayOf(id)).use {
             if (!it.moveToFirst()) return@use null
-            JSONObject(requireNotNull(recordCipher.decrypt(it.getString(0), aad(id, "header")))).apply {
+            JSONObject(requireNotNull(recordCipher.decrypt(primary.resolveHeader(db, id, it.getString(0)), aad(id, "header")))).apply {
                 check(getString("title_key") == it.getString(1) && getString("source_key") == it.getString(2) &&
                     getLong("updated") == it.getLong(3)) { "Knowledge index metadata mismatch" }
             }

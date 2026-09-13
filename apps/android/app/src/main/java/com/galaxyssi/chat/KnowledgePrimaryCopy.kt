@@ -43,7 +43,7 @@ internal class KnowledgePrimaryCopy(private val primary: KnowledgePrimaryPartiti
             KnowledgePrimaryCompaction.retire(db, job.destination)
             return 0
         }
-        val target = KnowledgePrimaryPartitions.Reference(job.destination, state.entry, old.chunks, old.chars)
+        val target = KnowledgePrimaryPartitions.Reference(job.destination, state.entry, old.chunks, old.chars, headerHash = old.headerHash)
         val next = if (state.copied < old.chunks) {
             primary.trimCopy(target, state.copied)
             var bytes = state.copiedBytes
@@ -64,6 +64,10 @@ internal class KnowledgePrimaryCopy(private val primary: KnowledgePrimaryPartiti
         } else state
         if (next.verified == old.chunks) {
             check(next.copiedHash == next.verifiedHash) { "Primary copy verification digest mismatch" }
+            val metadataBytes = primary.copyHeader(old, target)
+            db.update("knowledge_primary_partitions", ContentValues().apply { put("bytes", Math.addExact(next.copiedBytes, metadataBytes)) },
+                "partition_key=?", arrayOf(job.destination))
+            changedOne(db)
             primary.publishReference(db, job.key, old, target)
             remove(db, job)
             return 1

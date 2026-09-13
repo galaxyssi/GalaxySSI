@@ -1,0 +1,10 @@
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: expected:<0> but was:<137>
+	at com.galaxyssi.chat.KnowledgeSourceMigrationDeviceTest.automaticVersionSevenMigrationPreservesCiphertextAndDoesNotLoadModels(KnowledgeSourceMigrationDeviceTest.kt:32)
+java.lang.AssertionError: expected:<0> but was:<137>
+	at com.galaxyssi.chat.KnowledgeSourceMigrationDeviceTest.automaticVersionSevenMigrationPreservesCiphertextAndDoesNotLoadModels(KnowledgeSourceMigrationDeviceTest.kt:32)
+INSTRUMENTATION_STATUS: test=fullyCompletedPagesYieldPendingUntilDiscoveryActuallyFinishes
+INSTRUMENTATION_STATUS: test=fullyCompletedPagesYieldPendingUntilDiscoveryActuallyFinishes
+java.lang.AssertionError: expected:<0> but was:<137>
+	at com.galaxyssi.chat.KnowledgeSourceMigrationDeviceTest.automaticVersionSevenMigrationPreservesCiphertextAndDoesNotLoadModels(KnowledgeSourceMigrationDeviceTest.kt:32)
+FAILURES!!!
+Tests run: 95,  Failures: 1

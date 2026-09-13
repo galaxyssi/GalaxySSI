@@ -22,11 +22,13 @@ class KnowledgePrimaryRebootDeviceTest {
         val body = "\u91cd\u542f\u6062\u590d".repeat(KnowledgePrimaryFrameCodec.CHARS * 5) + "\u5b8c"
         val start = System.nanoTime()
         KnowledgePrimaryCompactionFixture(name).use { f ->
+            val cipher = AgentRowStorageCipher(context, "knowledge-records:v1:$name")
+            val aad = "$name:${f.key(1)}:header".toByteArray()
             val copy = KnowledgePrimaryCopy(f.parts)
             fun state() = copy.state(requireNotNull(copy.load(f.db)))
             when (phase) {
                 "prepare" -> {
-                    f.transaction { f.put(1, "\u65e7\u7248"); f.put(1, body) }
+                    f.transaction { f.put(1, "\u65e7\u7248"); f.put(1, body, cipher.encrypt("reboot-metadata", aad)) }
                     f.transaction { KnowledgePrimaryCompaction.advance(f.db, f.parts) { } }
                     f.transaction { f.parts.resumeCopy(f.db) { } }
                     assertEquals(16, state().copied); assertEquals(0, state().verified)
@@ -43,6 +45,8 @@ class KnowledgePrimaryRebootDeviceTest {
                 }
                 else -> error("Unknown primary reboot phase")
             }
+            val ref = requireNotNull(f.parts.reference(f.db, f.key(1)))
+            assertEquals("reboot-metadata", cipher.decrypt(f.parts.resolveHeader(f.db, f.key(1), "khp1:${ref.headerHash}"), aad))
         }
     }
 }

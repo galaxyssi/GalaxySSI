@@ -30,10 +30,10 @@ internal class KnowledgePrimaryCompactionFixture(
         }
     }
     fun key(i: Int) = "00" + i.toString(16).padStart(62, '0')
-    fun put(i: Int, value: String = "\u8bb0\u5fc6-$i") {
+    fun put(i: Int, value: String = "\u8bb0\u5fc6-$i", header: String? = null) {
         db.delete("knowledge_items", "item_key=?", arrayOf(key(i)))
         db.insertOrThrow("knowledge_items", null, ContentValues().apply { put("item_key", key(i)) })
-        parts.append(db, key(i), value)
+        parts.append(db, key(i), value, header)
     }
     fun transaction(commit: Boolean = true, block: () -> Unit) {
         db.beginTransaction(); parts.begin()

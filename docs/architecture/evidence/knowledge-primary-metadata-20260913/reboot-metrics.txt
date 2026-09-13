@@ -1,0 +1,1 @@
+         1789264610.354  5236  5864 I System.out: KNOWLEDGE_PRIMARY_REBOOT restored_ns=179958000 copied_before=16 verified_before=0 completed=true

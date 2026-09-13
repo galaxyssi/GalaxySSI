@@ -1,0 +1,220 @@
+{
+  "version": "1.1.118",
+  "versionCode": 1004,
+  "device": "SM-T575",
+  "serial": "R52R90282TY",
+  "catalogSchema": 17,
+  "physicalSchema": 2,
+  "appApkSha256": "35d291b2e7e51b382a3893092d9f309cca724c33819f2f908b1db8102870d45c",
+  "testApkSha256": "632dee9c173ddda3887cf2f72804f796b8ca79377fa133c01033b1cf722129ab",
+  "jvm": {
+    "passed": 3836,
+    "skipped": 5,
+    "suites": 548,
+    "total": 3841,
+    "failures": 0,
+    "errors": 0
+  },
+  "androidNativeAlignment": {
+    "passed": 74,
+    "architecture": "AArch64"
+  },
+  "repositoryGuard": "passed",
+  "suites": [
+    {
+      "suite": "focused",
+      "passed": 15,
+      "seconds": 5.766,
+      "rawSha256": "3c80d71252a5c7db32c912e41001a24a9e23f7e26634faa70d09109e88a9ba80"
+    },
+    {
+      "suite": "legacy-v7-retest",
+      "passed": 3,
+      "seconds": 11.125,
+      "rawSha256": "85ea680603e34c71ccb8b800dfcbc288e34dc1b846109e4481cd43158d3c87fb"
+    },
+    {
+      "suite": "legacy",
+      "passed": 95,
+      "seconds": 808.499,
+      "rawSha256": "709e3a1b34c5f6b00a22ef352bfbc08d53043b0ea10a08836d7321b4f3495269"
+    },
+    {
+      "suite": "readers",
+      "passed": 55,
+      "seconds": 58.648,
+      "rawSha256": "ff68afd9b72152c5d064839c232ffcf45923f9bb4fe7b07a66654ae86830ce52"
+    },
+    {
+      "suite": "durability",
+      "passed": 7,
+      "seconds": 2.359,
+      "rawSha256": "e81331740e4210bc0627498faff5e91451751e27ccb476019e5b8709fc27f538"
+    },
+    {
+      "suite": "source-backup-search",
+      "passed": 97,
+      "seconds": 389.232,
+      "rawSha256": "7e5416599862771eed8b0d48425d33405f7e61c529253cfa0e264cff75cc9485"
+    },
+    {
+      "suite": "retained-rewrite",
+      "passed": 1,
+      "seconds": 775.952,
+      "rawSha256": "9dbe56bcfc95aaece69e9b41b1db5a99ae2b2d31ae475a2532a96f79b93813de"
+    },
+    {
+      "suite": "retained-compaction",
+      "passed": 1,
+      "seconds": 309.073,
+      "rawSha256": "d04a890c7ecc561f658f498847dd5dabdef2ca96434638a30b4cccd542002ae1"
+    },
+    {
+      "suite": "durable-api-1",
+      "passed": 1,
+      "seconds": 25.15,
+      "rawSha256": "8d7c53eea6de9937cb40a0259d9e7df372c68c2fd07b8757c45b932dfd6044b6"
+    },
+    {
+      "suite": "durable-api-2",
+      "passed": 1,
+      "seconds": 25.171,
+      "rawSha256": "32948669b48e7105851ceaf6480dd23a653ff92b01d503f4501838b8e3f9273a"
+    }
+  ],
+  "copyRecovery": [
+    {
+      "step": "0-prepare",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "c8a077af0a02eaa5f9756b625964d0913d00f78cb7432b14874616f16015fa08"
+    },
+    {
+      "step": "1-before-frames",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    },
+    {
+      "step": "10-before-publish",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    },
+    {
+      "step": "11-verify-not-published",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "bce1efab5625674030db4440393f78e01e53b82901ef6439fca3625b7fad35c6"
+    },
+    {
+      "step": "12-after-publish",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    },
+    {
+      "step": "13-verify-published",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "ab24063fb84ebf96a66931abfca06480c9eb556eee8afc040889bdeb90fc6b8c"
+    },
+    {
+      "step": "2-verify-before",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "64f5b57451407c296f7ff66db68173cbed4ca87a37ae568049cf696ed811f324"
+    },
+    {
+      "step": "3-before-catalog",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    },
+    {
+      "step": "4-verify-before",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "a5cd9f42f984f48ff6662722037f7d25fc4b0fceca5c10446800e2cb919e63e9"
+    },
+    {
+      "step": "5-after-copy",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    },
+    {
+      "step": "6-prepare-verify",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "6fadc64f157bdf5e54d82a96c94d0a66b8212aec8e37d97cae1aed2d2c641ab6"
+    },
+    {
+      "step": "7-before-verify-checkpoint",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    },
+    {
+      "step": "8-verify-copy",
+      "passed": true,
+      "expectedProcessDeath": false,
+      "rawSha256": "1d0a6a8c547c23720fdf482b54386dd7c1918c8643f95aa06f1e5decbc86eccb"
+    },
+    {
+      "step": "9-after-verify-checkpoint",
+      "passed": false,
+      "expectedProcessDeath": true,
+      "rawSha256": "3fef9623972ed4273d520c808db6845582b75c4a8e1876e231b62a618c97b66a"
+    }
+  ],
+  "initialFailure": "The historical v7 fixture omitted the embedded source_preview after new headers stopped duplicating it. Restored the actual legacy shape in test fixtures; kept the no-body-read assertion unchanged. All 95 legacy cases passed on rerun.",
+  "retained": {
+    "registeredPartitions": 4,
+    "primaryReferences": 10001,
+    "beforeBytes": 20295680,
+    "compactionPages": 1253,
+    "replaceMs": 671597,
+    "integrity": "ok",
+    "partitionedHeaders": 10001,
+    "digest": "b906be008ac35f420a683cc0bdc895e1070b9b121caf13dbb68f9ee414b5b5a0",
+    "variant": "primary-metadata-v1",
+    "orphanReferences": 0,
+    "compactionMs": 90570,
+    "afterBytes": 12300288,
+    "records": 10001,
+    "compactionMoved": 10001,
+    "reopenVerifyMs": 104040
+  },
+  "reboot": {
+    "testLocalRestoreMs": 179.958,
+    "excludesOsBootFromRestoreMetric": true,
+    "realOsReboot": true,
+    "hostBootWaitSeconds": 43.6441554,
+    "copiedFramesRecovered": 16
+  },
+  "latency": {
+    "readOutliersMs": [
+      260.037077,
+      238.653384
+    ],
+    "operations": 600,
+    "durableUpsertP95Ms": [
+      115.931384,
+      113.567077
+    ],
+    "publicReadP95Ms": [
+      25.170192,
+      20.798115
+    ],
+    "within200ms": 598,
+    "scope": "10,001 short synthetic complete records; observers and models disabled; writes include partition and catalog commits. Not UI, semantic retrieval or 100-million-record latency."
+  },
+  "remaining": [
+    "Keyed catalog, source directory, derived previews, FTS and vector-control sharding",
+    "Identity-preserving background migration of untouched legacy headers",
+    "100-million-record acceptance",
+    "Universal sub-200ms latency; two measured reads exceeded the target",
+    "Complete semantic retrieval latency remains outside this phase"
+  ]
+}
