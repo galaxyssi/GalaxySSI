@@ -327,6 +327,12 @@ ID-only accepted-state skip; it does not activate the three-path transport.
    An owned loopback TLS lab also exercises the real Desktop pool, authenticated
    resume, bidirectional transport and one-broker stop/restart; it is not native
    Signal, full UI/attachment, public-provider performance or phone power proof.
+   A subsequent [native business checkpoint](../testing/MQTT_NATIVE_BUSINESS_20260913.md)
+   now exercises real JVM Signal, actual contact dispatch, three-path duplicates,
+   lost receipts, both endpoint process deaths and all-path outage recovery on
+   the owned lab. It also fixes delayed old resume ACK handling symmetrically.
+   This is not the QR ceremony, Android-native cross-platform delivery or full
+   UI acceptance; the Desktop UI offline-send gate remains to be integrated.
    The later coordinated deployment installed the full production-package App
    on S20U and checked its main UI. Test-owned packages were removed after the
    earlier instrumentation; the pre-existing test package remains.

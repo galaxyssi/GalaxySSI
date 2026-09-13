@@ -17,7 +17,7 @@ from mqtt_delivery_dispatch import Delivery
 from mqtt_delivery_envelope import (Attempt, Frame, Message, MAX_SAFE_INTEGER, content_hash,
                                     parse_verified_receipt, RECEIPT_TYPE)
 from mqtt_pool_client import Publication
-from mqtt_route_state import (FINGERPRINT, TTL_MS, RouteAdvertisement, ResumeResult, issue_local_resume,
+from mqtt_route_state import (FINGERPRINT, RESUME_ID, TTL_MS, RouteAdvertisement, ResumeResult, issue_local_resume,
                               forget_route, parse_verified_resume, record_verified_resume)
 
 log = logging.getLogger(__name__)
@@ -219,12 +219,18 @@ class PeerRoutes:
             advertisement = parse_verified_resume(raw, sender=binding.receiver, receiver=binding.sender, now_ms=now_ms)
             if payload["type"] == "link_resume_ack":
                 local = peer.local
+                epoch = payload.get("acknowledged_route_epoch")
+                resume_id, digest = payload.get("acknowledged_resume_id"), payload.get("acknowledged_digest")
+                if (type(epoch) is not int or not isinstance(resume_id, str) or not RESUME_ID.fullmatch(resume_id)
+                        or not isinstance(digest, str) or not FINGERPRINT.fullmatch(digest)):
+                    raise ValueError("Malformed resume acknowledgement")
+                # A surviving path can deliver an old ACK after another path
+                # rotates the local epoch. Discard it before any route mutation.
+                if local is not None and 0 < epoch < local.epoch:
+                    return True
                 if (local is None or local.expires_at_ms <= now_ms
-                        or payload.get("acknowledged_resume_id") != local.resume_id
-                        or type(payload.get("acknowledged_route_epoch")) is not int
-                        or payload["acknowledged_route_epoch"] != local.epoch
-                        or payload.get("acknowledged_digest") != local.digest()):
-                    raise ValueError("Unsolicited or stale resume acknowledgement")
+                        or resume_id != local.resume_id or epoch != local.epoch or digest != local.digest()):
+                    raise ValueError("Unsolicited or mismatched resume acknowledgement")
             result = record_verified_resume(scope, advertisement, now_ms=now_ms)
             if result in {ResumeResult.STALE, ResumeResult.CONFLICT}:
                 return True

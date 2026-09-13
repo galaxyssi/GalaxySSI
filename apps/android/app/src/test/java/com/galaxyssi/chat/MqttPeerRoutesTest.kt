@@ -211,6 +211,47 @@ class MqttPeerRoutesTest {
         assertTrue(store.recorded.isEmpty())
     }
 
+    private fun delayedAck(): JSONObject {
+        start()
+        val response = ack()
+        receive(response)
+        rig.client("emqx").lose()
+        rig.await { rig.transport.readyPathGenerations(binding.receiveTopics)["emqx"] == 2L }
+        routes.maintenance()
+        return response
+    }
+
+    @Test fun delayedOldAckCannotPersistNewAdvertisementOrConfirmNewEpoch() {
+        val response = delayedAck()
+        val previous = store.recorded[binding.scope]
+        response.put("advertisement", remote(epoch = 100).toWire())
+        val before = sentCount()
+        assertTrue(receive(response))
+        assertEquals(previous, store.recorded[binding.scope])
+        assertFalse(routes.ready(binding.scope))
+        assertEquals(listOf(binding.scope), notifications)
+        assertEquals(before, sentCount())
+        receive(ack(advertisement = remote(epoch = 2)))
+        assertTrue(routes.ready(binding.scope))
+        assertEquals(2L, store.recorded.getValue(binding.scope).epoch)
+        assertTrue(receive(response))
+        assertEquals(2L, store.recorded.getValue(binding.scope).epoch)
+    }
+
+    @Test fun malformedOrCurrentMismatchedAckIsNotClassifiedAsLate() {
+        val response = delayedAck()
+        val current = store.issued.getValue(binding.scope).epoch
+        val previous = store.recorded[binding.scope]
+        for ((field, value) in listOf("acknowledged_route_epoch" to true, "acknowledged_route_epoch" to "1",
+                "acknowledged_route_epoch" to 0, "acknowledged_route_epoch" to current,
+                "acknowledged_route_epoch" to current + 1, "acknowledged_resume_id" to "invalid",
+                "acknowledged_digest" to JSONObject.NULL)) {
+            assertThrows(IllegalArgumentException::class.java) { receive(JSONObject(response.toString()).put(field, value)) }
+            assertEquals(previous, store.recorded[binding.scope])
+        }
+        assertFalse(routes.ready(binding.scope))
+    }
+
     @Test fun ackDoesNotProduceAckOfAckAndDuplicateDoesNotExtendExpiry() {
         start()
         val response = ack()
@@ -269,7 +310,10 @@ class MqttPeerRoutesTest {
         assertFalse(routes.ready(binding.scope))
         routes.maintenance()
         assertTrue(store.issued.getValue(binding.scope).epoch > oldEpoch)
-        assertThrows(IllegalArgumentException::class.java) { receive(oldAck) }
+        val recorded = store.recorded[binding.scope]
+        assertTrue(receive(oldAck))
+        assertEquals(recorded, store.recorded[binding.scope])
+        assertFalse(routes.ready(binding.scope))
         receive(ack())
         assertTrue(routes.ready(binding.scope))
     }

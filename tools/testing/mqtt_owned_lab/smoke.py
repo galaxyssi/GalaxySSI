@@ -1,6 +1,6 @@
 """Real TCP/TLS + production Desktop pool/resume smoke, not a native Signal/App test."""
 import asyncio
-from dataclasses import replace
+from dataclasses import asdict, replace
 import json
 import logging
 import os
@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import paho.mqtt.client as mqtt
 from owned_brokers import OwnedBrokers
+from local_client import client_factory
 
 
 def require(condition, message):
@@ -47,7 +48,7 @@ def reject_bad_tls(lab):
 def run_transport(lab, loop):
     from link_protocol import new_link_secret, open_wire_packet, seal_wire_packet
     from mqtt_broker_catalog import BROKER_IDS
-    from mqtt_broker_pool import BROKERS, BrokerPool
+    from mqtt_broker_pool import BrokerPool
     from mqtt_peer_routes import PeerBinding, PeerRoutes
     from mqtt_pool_client import MqttPoolClient
 
@@ -55,26 +56,11 @@ def run_transport(lab, loop):
     errors = queue.Queue(maxsize=32)
     endpoints = []
 
-    class LocalClient(mqtt.Client):
-        def __init__(self, broker):
-            super().__init__(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                             client_id=secrets.token_hex(12), clean_session=True,
-                             reconnect_on_failure=False, protocol=mqtt.MQTTv311)
-            self.broker = broker
-            self.tls_set_context(lab.client_tls())
-            self.connect_timeout = 3
-            self.max_inflight_messages_set(12)
-            self.max_queued_messages_set(12)
-
-        def connect(self, host, port=1883, keepalive=60, *args, **kwargs):
-            expected = BROKERS[self.broker]
-            require((host, port) == (expected["host"], expected["tls_port"]), "Unexpected production endpoint")
-            endpoint = lab.endpoints[self.broker]
-            return super().connect(endpoint.host, endpoint.port, keepalive, *args, **kwargs)
+    physical_factory = client_factory({key: asdict(value) for key, value in lab.endpoints.items()}, lab.directory / "ca.pem")
 
     def endpoint(binding):
         client = MqttPoolClient(classify_publication=lambda *args: routes.classify(*args),
-            pool_factory=lambda **callbacks: BrokerPool(**callbacks, client_factory=lambda broker, _gen: LocalClient(broker)))
+            pool_factory=lambda **callbacks: BrokerPool(**callbacks, client_factory=physical_factory))
         routes = PeerRoutes(client)
         routes.replace([binding])
         client.subscribe({topic: 1 for topic in binding.receive_topics})

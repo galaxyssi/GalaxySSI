@@ -200,6 +200,51 @@ class PeerRouteExchangeTest(unittest.TestCase):
                                                         authenticated_identity=self.left_binding.identity))
         self.assertEqual(0, self.left.routes._peers["left"].remote_epoch)
 
+    def delayed_ack(self):
+        self.connect()
+        self.exchange()
+        packet = next(packet for packet in self.right.pool.sent if packet[0] == "hivemq" and
+                      json.loads(open_wire_packet(packet[3], self.left_binding.secret))["type"] == "link_resume_ack")
+        payload = json.loads(open_wire_packet(packet[3], self.left_binding.secret))
+        self.left.pool.lose("emqx")
+        self.right.pool.lose("emqx")
+        self.left.routes.maintenance()
+        return payload
+
+    def test_delayed_old_ack_does_not_persist_advertisement_or_confirm_new_epoch(self):
+        payload = self.delayed_ack()
+        peer = self.left.routes._peers["left"]
+        old_remote = peer.remote_epoch
+        before_sent = len(self.left.pool.sent)
+        # Even a newer remote advertisement cannot be accepted via an old ACK.
+        payload["advertisement"]["route_epoch"] += 100
+        with patch("mqtt_peer_routes.record_verified_resume") as record:
+            self.assertTrue(self.left.routes.handle_verified("left", payload, broker_id="hivemq", generation=1,
+                                                            authenticated_identity=self.left_binding.identity))
+        record.assert_not_called()
+        self.assertEqual(old_remote, peer.remote_epoch)
+        self.assertEqual(0, peer.local_confirmed_epoch)
+        self.assertFalse(self.left.routes.ready("left"))
+        self.assertEqual(before_sent, len(self.left.pool.sent))
+        self.left.ready.assert_called_once_with("left")
+        self.exchange()
+        self.assertTrue(self.left.routes.ready("left"))
+
+    def test_malformed_or_current_mismatched_ack_is_not_treated_as_late(self):
+        payload = self.delayed_ack()
+        peer = self.left.routes._peers["left"]
+        for field, value in (("acknowledged_route_epoch", True), ("acknowledged_route_epoch", "1"),
+                             ("acknowledged_route_epoch", 0), ("acknowledged_route_epoch", peer.local.epoch),
+                             ("acknowledged_route_epoch", peer.local.epoch + 1),
+                             ("acknowledged_resume_id", "invalid"), ("acknowledged_digest", None)):
+            with self.subTest(field=field, value=value), patch("mqtt_peer_routes.record_verified_resume") as record:
+                changed = dict(payload, **{field: value})
+                with self.assertRaises(ValueError):
+                    self.left.routes.handle_verified("left", changed, broker_id="hivemq", generation=1,
+                                                     authenticated_identity=self.left_binding.identity)
+                record.assert_not_called()
+        self.assertFalse(self.left.routes.ready("left"))
+
     def test_missing_local_suback_cannot_accept_resume(self):
         self.left.pool.auto_suback = False
         self.connect(["hivemq"])

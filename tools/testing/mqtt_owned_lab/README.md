@@ -56,3 +56,60 @@ letting the scheduler select that path. The fixture now marks the other paths as
 already attempted for those explicit path checks; production policy was not
 relaxed. The first successful run used a low-resolution Windows monotonic clock
 for sample timing; subsequent runs use `perf_counter` for the report only.
+
+## Native Business Smoke
+
+`native_smoke.py` adds two separate endpoint processes with independent real JVM
+Signal identities, encrypted SQLite state and production Desktop peer-message
+handling. It uses the same loopback-only physical client adapter as `smoke.py`.
+The controlling interpreter needs the lab requirements; the endpoint interpreter
+needs the complete Desktop backend requirements and a built worktree sidecar.
+Configure `JAVA_HOME` before running, for example:
+
+```powershell
+& C:/Users/agent/MQTTDiagnostics/20260913-owned-lab/runtime/Scripts/python.exe tools/testing/mqtt_owned_lab/native_smoke.py --endpoint-python C:/Users/agent/MQTTDiagnostics/20260913-desktop-runtime/Scripts/python.exe --report-dir build/mqtt-owned-native
+```
+
+Both endpoints use production `encrypt_signal_payload`, `on_mqtt_message`, the
+bounded ingress workers, Signal receive handoff, dispatch guards, durable outbox
+and `PeerChatStore`. The real peer-message handler is not mocked. No provider,
+model, proactive worker, real user pairing registry or installed App is used.
+Trusted bundle exchange is supplied by the isolated control process; the QR
+pairing ceremony is not part of this test.
+
+Cases cover native pre-key/ratchet exchange, three copies observed over three
+actual TLS paths with one business dispatch, a fragmented native envelope, one
+broker down, loss of all sender ingress (including application receipts), both
+endpoint process trees killed and restored using the same databases, all three
+brokers down, durable queue recovery through one restored broker, and restoration
+of the full path set. Windows-only abrupt-process testing kills only child PIDs
+owned by the harness. All test workers, JVMs and brokers are stopped afterward.
+
+Loss is injected at the sender's physical receive callback after MQTT/TLS, not
+by forging a PUBACK or a durable application receipt. Fragmentation uses ignored
+synthetic padding within the unchanged application envelope limit; it is **not**
+an image/file/video artifact test. Snapshot checks read actual stored message
+hashes, immutable IDs and dispatch-attempt counts, and wait for the bounded
+ingress queue to drain before asserting duplicate handling.
+
+The two endpoint processes assemble the normal bridge's pool/ingress/publisher
+components while running only route maintenance and durable queue replay. The
+complete production startup/recovery supervisor, UI click-to-send, real model
+tasks, Android/JNI and phone lifecycle still require separate acceptance.
+In particular, lower-level offline queue success cannot prove that the Desktop
+UI send entry point allows offline enqueueing.
+
+Times in the report include controller RPC and SQLite snapshot polling; do not
+use them as transport RTT, unbiased latency distributions or performance gates.
+Any captured native ingress error fails the suite, even if all user-visible
+messages eventually arrive. Test logs are retained in the report directory;
+ephemeral credentials and private Signal databases are deleted with the lab.
+
+Add `--delay-resume` to hold actual incoming MQTT callbacks while one broker is
+stopped and restarted. The bounded buffer releases the old authenticated resume
+ACKs only after a newer local epoch exists. The test verifies that the queue
+drains without ingress errors and fresh authentication still permits delivery.
+It does not fabricate an ACK, change production timing or disable validation.
+Error observations survive test endpoint restarts, so a later clean process
+cannot hide an earlier failure. See the
+[native checkpoint](../../../docs/testing/MQTT_NATIVE_BUSINESS_20260913.md).

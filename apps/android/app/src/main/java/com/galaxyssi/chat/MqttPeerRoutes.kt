@@ -177,9 +177,16 @@ internal class MqttPeerRoutes(
             if (type == "link_resume_ack") {
                 val ours = peer.local ?: error("Unrequested resume acknowledgement")
                 val epoch = payload.opt("acknowledged_route_epoch")
-                require(ours.expiresAtMs > at && payload.optString("acknowledged_resume_id") == ours.resumeId &&
-                    (epoch is Int || epoch is Long) && (epoch as Number).toLong() == ours.epoch &&
-                    payload.optString("acknowledged_digest") == ours.digest()) { "Stale resume acknowledgement" }
+                val resumeId = payload.opt("acknowledged_resume_id")
+                val digest = payload.opt("acknowledged_digest")
+                require((epoch is Int || epoch is Long) && resumeId is String && resumeId.matches(Regex("[a-f0-9]{32}")) &&
+                    digest is String && digest.matches(Regex("[a-f0-9]{64}"))) { "Malformed resume acknowledgement" }
+                val acknowledgedEpoch = (epoch as Number).toLong()
+                // Another path may have rotated the epoch while this ACK was in
+                // flight. Ignore it without persisting or confirming any route.
+                if (acknowledgedEpoch > 0 && acknowledgedEpoch < ours.epoch) return true
+                require(ours.expiresAtMs > at && resumeId == ours.resumeId && acknowledgedEpoch == ours.epoch &&
+                    digest == ours.digest()) { "Unsolicited or mismatched resume acknowledgement" }
             }
             if (!store.record(scope, advertisement, at)) return true
             if (advertisement.epoch > peer.remoteEpoch) {
