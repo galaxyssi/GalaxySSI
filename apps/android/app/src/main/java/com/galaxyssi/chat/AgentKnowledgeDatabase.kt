@@ -59,7 +59,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..15) { "Unsupported knowledge schema $version" }
+                require(version in 0..16) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -115,6 +115,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 if (version < 15) {
                     KnowledgePrimaryCompactionSchema.create(db)
                     db.execSQL("PRAGMA user_version=15")
+                }
+                if (version < 16) {
+                    KnowledgePrimaryCopySchema.create(db)
+                    db.execSQL("PRAGMA user_version=16")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }

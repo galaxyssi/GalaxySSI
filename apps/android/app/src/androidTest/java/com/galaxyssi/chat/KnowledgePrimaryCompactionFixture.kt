@@ -23,7 +23,10 @@ internal class KnowledgePrimaryCompactionFixture(
         if (!exists) {
             db.execSQL("CREATE TABLE knowledge_items(item_key TEXT PRIMARY KEY)")
             KnowledgePrimarySchema.create(db)
-            if (schema) KnowledgePrimaryCompactionSchema.create(db)
+            if (schema) {
+                KnowledgePrimaryCompactionSchema.create(db)
+                KnowledgePrimaryCopySchema.create(db)
+            }
         }
     }
     fun key(i: Int) = "00" + i.toString(16).padStart(62, '0')

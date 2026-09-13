@@ -57,23 +57,27 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
             arrayOf(bytes.toString(), partition)).use { it.moveToNext() }
     }
 
-    private data class Reference(val partition: String, val entry: String, val chunks: Int, val chars: Int)
+    internal data class Reference(val partition: String, val entry: String, val chunks: Int, val chars: Int, val sealed: String = "")
 
-    private fun reference(catalog: KnowledgeSqlite, key: String): Reference? {
+    internal fun reference(catalog: KnowledgeSqlite, key: String): Reference? {
         val record = catalog.rawQuery("SELECT partition_key,substr(reference,1,2049) FROM knowledge_primary_refs WHERE item_key=?", arrayOf(key)).use {
             if (!it.moveToFirst()) return null
             it.getString(0) to it.getString(1)
         }
-        require(record.second.length <= 2048) { "Primary reference is oversized" }
-        val reference = JSONObject(requireNotNull(cipher.decrypt(record.second, referenceAad(key))))
-        check(reference.getInt("codec") == 1 && reference.getString("partition") == record.first)
+        return decodeReference(key, record.first, record.second)
+    }
+
+    internal fun decodeReference(key: String, expectedPartition: String, sealed: String): Reference {
+        require(sealed.length <= 2048) { "Primary reference is oversized" }
+        val reference = JSONObject(requireNotNull(cipher.decrypt(sealed, referenceAad(key))))
+        check(reference.getInt("codec") == 1 && reference.getString("partition") == expectedPartition)
         val partition = reference.getString("partition")
         val entry = reference.getString("entry")
-        require(validToken(entry))
+        require(validToken(entry) && validToken(partition))
         val chunks = reference.getInt("chunks")
         val chars = reference.getInt("chars")
         require(chunks > 0 && chars > 0 && chunks.toLong() <= chars.toLong())
-        return Reference(partition, entry, chunks, chars)
+        return Reference(partition, entry, chunks, chars, sealed)
     }
 
     fun read(catalog: KnowledgeSqlite, key: String): String? {
@@ -84,30 +88,109 @@ internal class KnowledgePrimaryPartitions(context: Context, private val root: Fi
     }
 
     /** Relocation authenticates one frame at a time, without materializing a complete body. */
-    fun relocate(catalog: KnowledgeSqlite, key: String, source: String, checkActive: () -> Unit) = guarded {
+    fun relocate(catalog: KnowledgeSqlite, key: String, source: String, checkActive: () -> Unit): Boolean {
+        checkActive()
+        return guarded {
         val old = requireNotNull(reference(catalog, key))
         check(old.partition == source)
+        if (old.chunks > KnowledgePrimaryCopy.FRAME_PAGE) {
+            KnowledgePrimaryCopy(this).begin(catalog, key, old)
+            return@guarded false
+        }
         val destination = partition(catalog, key.take(2).toInt(16) and 3)
         check(destination != source) { "Compaction source must be sealed" }
         val db = writer(destination)
         val entry = token()
         var bytes = 0L
         frames(key, old) { compressed, _, ordinal ->
-            checkActive()
             val encrypted = cipher.encrypt(compressed, aad(key, destination, entry, ordinal))
             db.insertOrThrow("frames", null, ContentValues().apply {
                 put("entry_key", entry); put("ordinal", ordinal); put("ciphertext", encrypted)
             })
             bytes = Math.addExact(bytes, encrypted.length.toLong())
         }
-        checkActive()
-        val next = JSONObject().put("codec", 1).put("partition", destination).put("entry", entry)
-            .put("chunks", old.chunks).put("chars", old.chars).toString()
-        catalog.update("knowledge_primary_refs", ContentValues().apply {
-            put("partition_key", destination); put("reference", cipher.encrypt(next, referenceAad(key)))
-        }, "item_key=? AND partition_key=?", arrayOf(key, source))
+        publishReference(catalog, key, old, Reference(destination, entry, old.chunks, old.chars))
         catalog.rawQuery("UPDATE knowledge_primary_partitions SET bytes=bytes+?,records=records+1 WHERE partition_key=?",
             arrayOf(bytes.toString(), destination)).use { it.moveToNext() }
+        true
+        }
+    }
+
+    internal fun publishReference(catalog: KnowledgeSqlite, key: String, old: Reference, target: Reference) {
+        val next = JSONObject().put("codec", 1).put("partition", target.partition).put("entry", target.entry)
+            .put("chunks", target.chunks).put("chars", target.chars).toString()
+        catalog.update("knowledge_primary_refs", ContentValues().apply {
+            put("partition_key", target.partition); put("reference", cipher.encrypt(next, referenceAad(key)))
+        }, "item_key=? AND partition_key=? AND reference=?", arrayOf(key, old.partition, old.sealed))
+        KnowledgePrimaryCopy.changedOne(catalog)
+    }
+
+    internal fun resumeCopy(catalog: KnowledgeSqlite, checkActive: () -> Unit): Int {
+        checkActive()
+        return guarded { KnowledgePrimaryCopy(this).advance(catalog, checkActive) }
+    }
+
+    internal fun createCopyDestination(catalog: KnowledgeSqlite, key: String): String {
+        checkWriter()
+        val id = token()
+        create(id)
+        catalog.insertOrThrow("knowledge_primary_partitions", null, ContentValues().apply {
+            put("partition_key", id); put("bucket", key.take(2).toInt(16) and 3)
+            put("bytes", 0L); put("records", 1L); put("sealed", 1)
+        })
+        return id
+    }
+
+    internal fun trimCopy(target: Reference, start: Int) {
+        writer(target.partition).delete("frames", "entry_key=? AND ordinal>=?", arrayOf(target.entry, start.toString()))
+    }
+
+    internal fun writeCopyFrame(key: String, target: Reference, ordinal: Int, compressed: String): Long {
+        val encrypted = cipher.encrypt(compressed, aad(key, target.partition, target.entry, ordinal))
+        writer(target.partition).insertOrThrow("frames", null, ContentValues().apply {
+            put("entry_key", target.entry); put("ordinal", ordinal); put("ciphertext", encrypted)
+        })
+        return encrypted.length.toLong()
+    }
+
+    internal fun sealCopy(job: KnowledgePrimaryCopy.Job, value: String) = cipher.encrypt(value, copyAad(job))
+    internal fun openCopy(job: KnowledgePrimaryCopy.Job) = requireNotNull(cipher.decrypt(job.checkpoint, copyAad(job)))
+    private fun copyAad(job: KnowledgePrimaryCopy.Job) =
+        "$namespace:primary-copy:v1:${job.key}:${job.source}:${job.destination}:${job.original}".toByteArray(Charsets.UTF_8)
+
+    internal data class FramePage(val frames: Int, val chars: Long)
+
+    internal fun framePage(key: String, reference: Reference, start: Int, budget: Int,
+        checkActive: () -> Unit, consume: (String, Int) -> Unit): FramePage {
+        require(start in 0 until reference.chunks && budget in 1..KnowledgePrimaryCopy.FRAME_PAGE)
+        val pending = if (activeOnCurrentThread()) writers[reference.partition] else null
+        if (pending == null) readerSlots.acquire()
+        val db = try { pending ?: openExisting(reference.partition, readOnly = true) }
+        catch (failure: Throwable) { if (pending == null) readerSlots.release(); throw failure }
+        try {
+            var count = 0
+            var length = 0L
+            db.rawQuery("SELECT ordinal,substr(ciphertext,1,262145) FROM frames WHERE entry_key=? AND ordinal>=? " +
+                "ORDER BY ordinal LIMIT ${budget + 1}", arrayOf(reference.entry, start.toString())).use { cursor ->
+                while (count < budget && start + count < reference.chunks) {
+                    check(!Thread.currentThread().isInterrupted)
+                    try { checkActive() } catch (yield: MemoryMaintenanceYield) {
+                        if (count == 0) throw yield else return FramePage(count, length)
+                    }
+                    check(cursor.moveToNext() && cursor.getInt(0) == start + count) { "Primary frames are missing or not contiguous" }
+                    val sealed = cursor.getString(1)
+                    require(sealed.length <= 262144) { "Primary ciphertext frame is oversized" }
+                    val compressed = requireNotNull(cipher.decrypt(sealed, aad(key, reference.partition, reference.entry, start + count)))
+                    val plain = KnowledgePrimaryFrameCodec.decompress(compressed)
+                    require(plain.length in 1..KnowledgePrimaryFrameCodec.CHARS)
+                    length = Math.addExact(length, plain.length.toLong())
+                    consume(compressed, start + count)
+                    count++
+                }
+                if (start + count == reference.chunks) check(!cursor.moveToNext()) { "Primary frames contain an unexpected tail" }
+            }
+            return FramePage(count, length)
+        } finally { if (pending == null) try { db.close() } finally { readerSlots.release() } }
     }
 
     private fun frames(key: String, reference: Reference, consume: (String, String, Int) -> Unit) {

@@ -41,6 +41,7 @@ internal object KnowledgePrimaryLegacyFixture {
         for (trigger in listOf("knowledge_primary_dirty_insert", "knowledge_primary_dirty_delete", "knowledge_primary_dirty_move")) {
             db.execSQL("DROP TRIGGER IF EXISTS $trigger")
         }
+        db.execSQL("DROP TABLE IF EXISTS knowledge_primary_copy")
         db.execSQL("DROP TABLE IF EXISTS knowledge_primary_dirty")
         db.execSQL("DROP TABLE IF EXISTS knowledge_primary_compaction")
         db.execSQL("DROP TABLE knowledge_primary_refs")
