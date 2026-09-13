@@ -12,8 +12,8 @@ and their Linux/model features are not modified.
 
 ## Included
 
-- Round-screen home, recent conversations, task detail, device pairing, assistant
-  selection, and settings; English and Chinese resources.
+- Round-screen conversation home, searchable recent conversations with unread
+  counts, connected assistants, device pairing, and settings; English and Chinese resources.
 - System speech input with transcript review, keyboard fallback, reply speech,
   and optional completion vibration/notifications.
 - Direct HTTPS chat-completions connections with user-supplied endpoint, model,
@@ -139,6 +139,19 @@ cannot guarantee that the provider stops processing or charging.
 ## Branding and result notifications
 
 Launcher and splash assets are synchronized directly from Android at build time.
+The conversation home reuses Android's brand and composer icons, with user messages
+on the right and assistant replies on the left. Task progress stays in that same
+transcript; there is no separate assistant chat or task-detail page. The fixed
+composer preserves unsent text and cursor position when a reply arrives. Reading
+older messages preserves the scroll position and offers a new-reply shortcut.
+
+Tap the brand or the empty composer's layers icon for the menu; tap the upper-right
+conversation title for recent conversations. Long-press that title to configure
+the model. Type into the composer and tap the send icon, or long-press the input
+to launch system speech recognition and review its transcript before sending.
+Long-press a reply to read it aloud. The contacts directory lists actual connected
+assistants; phone contact synchronization and person-to-person chat are not included.
+
 Result notifications and vibration are suppressed only while the matching
 conversation screen is resumed. Conversation identity includes endpoint/profile,
 assistant, and conversation ID, so other conversations still notify. Opening a

@@ -104,4 +104,15 @@
     <string name="api_stop_confirm">Stop waiting for this API reply?</string>
     <string name="api_provider">Provider / model</string>
     <string name="awaiting_api">Waiting for the model. This request times out within 100 seconds.</string>
+    <string name="home_menu">More actions</string>
+    <string name="agent_brand">Superintelligent agent</string>
+    <string name="composer_hint">Type or hold to speak…</string>
+    <string name="home_empty_conversation">Send a message to start a conversation.</string>
+    <string name="home_setup">Connect a model or computer to get started.</string>
+    <string name="contacts">Contacts</string>
+    <string name="contacts_scope">Connected assistants appear here. Phone contact sync is not connected yet.</string>
+    <string name="return_to_agent">Continue on the home screen</string>
+    <string name="search">Search</string>
+    <string name="new_reply">New reply ↓</string>
+    <string name="waiting_elapsed">%1$s · %2$d s</string>
 </resources>

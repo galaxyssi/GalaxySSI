@@ -104,4 +104,15 @@
     <string name="api_stop_confirm">停止等待这条 API 回复？</string>
     <string name="api_provider">选择服务商 / 模型</string>
     <string name="awaiting_api">等待模型回复，本次请求最长等待 100 秒。</string>
+    <string name="home_menu">更多操作</string>
+    <string name="agent_brand">超级智能体</string>
+    <string name="composer_hint">输入消息或按住说话…</string>
+    <string name="home_empty_conversation">发送消息，开始新对话。</string>
+    <string name="home_setup">连接模型或电脑，即可开始对话。</string>
+    <string name="contacts">联系人</string>
+    <string name="contacts_scope">这里显示已连接的助手，暂未接入手机联系人同步。</string>
+    <string name="return_to_agent">返回首页继续对话</string>
+    <string name="search">搜索</string>
+    <string name="new_reply">查看新回复 ↓</string>
+    <string name="waiting_elapsed">%1$s · 已等待 %2$d 秒</string>
 </resources>

@@ -32,6 +32,7 @@ class WatchNotificationTest {
             .copy(state = TaskState.COMPLETED, reply = "Visible reply")
         val other = task.copy(id = java.util.UUID.randomUUID().toString(), conversationId = "other-conversation")
         val manager = context.getSystemService(NotificationManager::class.java)
+        val oldActive = repo.store.activeTask
         repo.store.save(task)
         val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .putExtra("task_id", task.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
@@ -52,14 +53,14 @@ class WatchNotificationTest {
                 awaitCondition { manager.activeNotifications.any { it.id == other.id.hashCode() } }
             }
             instrumentation.runOnMainSync {
-                views(activity.window.decorView).filterIsInstance<Button>()
-                    .first { it.text.toString() == activity.getString(R.string.back) }.performClick()
+                views(activity.window.decorView).first { it.contentDescription?.toString() == activity.getString(R.string.home_menu) }.performClick()
                 assertFalse(repo.conversationVisibility.isViewing(task))
             }
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
             manager.cancel(task.id.hashCode()); manager.cancel(other.id.hashCode())
             AgentEncryptedDatabase(context, "watch_tasks").remove(task.id)
+            repo.store.activeTask = oldActive
         }
     }
 }

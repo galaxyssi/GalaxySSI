@@ -22,6 +22,7 @@ class WatchActivityTest {
             instrumentation.runOnMainSync {
                 fun click(text: String) = descendants(activity.window.decorView).filterIsInstance<Button>()
                     .first { it.text.toString() == text }.performClick()
+                descendants(activity.window.decorView).first { it.contentDescription?.toString() == activity.getString(R.string.home_menu) }.performClick()
                 click(activity.getString(R.string.settings))
                 click(activity.getString(R.string.api_title))
                 if (descendants(activity.window.decorView).filterIsInstance<Button>().none { it.text.toString() == "Google Gemini" }) {
@@ -40,7 +41,7 @@ class WatchActivityTest {
     private fun descendants(view: View): List<View> = listOf(view) +
         if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
 
-    @Test fun launchesAndNavigatesOnThePhysicalWatch() {
+    @Test fun launchesAndNavigatesBackToConversationComposer() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
@@ -48,15 +49,15 @@ class WatchActivityTest {
         try {
             instrumentation.runOnMainSync {
                 val controls = descendants(activity.window.decorView)
-                val sessions = controls.filterIsInstance<Button>().first { it.text.toString() == activity.getString(R.string.recent) }
-                assertTrue(sessions.minimumHeight >= (48 * activity.resources.displayMetrics.density).toInt())
+                val sessions = controls.first { it.contentDescription?.toString() == activity.getString(R.string.recent) }
+                assertTrue(sessions.height >= (48 * activity.resources.displayMetrics.density).toInt())
                 sessions.performClick()
                 assertTrue(descendants(activity.window.decorView).filterIsInstance<TextView>()
                     .any { it.text.toString() == activity.getString(R.string.new_conversation) })
                 descendants(activity.window.decorView).filterIsInstance<Button>()
                     .first { it.text.toString() == activity.getString(R.string.back) }.performClick()
-                assertTrue(descendants(activity.window.decorView).filterIsInstance<Button>()
-                    .any { it.text.toString() in setOf(activity.getString(R.string.say_something), activity.getString(R.string.connect_service)) })
+                assertTrue(descendants(activity.window.decorView).filterIsInstance<android.widget.EditText>()
+                    .any { it.hint?.toString() == activity.getString(R.string.composer_hint) })
             }
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }

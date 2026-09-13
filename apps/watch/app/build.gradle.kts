@@ -79,6 +79,7 @@ val phoneBrandOutput = layout.buildDirectory.dir("generated/phoneBrand")
 val syncPhoneBrand by tasks.registering(Sync::class) {
     from("../../android/app/src/main/res") {
         include("drawable/galaxyssi_mark_large.png", "drawable/ic_galaxyssi_logo.xml",
+            "drawable/ic_input_menu_layers.xml", "drawable/ic_composer_send_plane.xml",
             "mipmap-anydpi-v26/ic_launcher.xml", "mipmap-anydpi-v26/ic_launcher_round.xml")
     }
     into(phoneBrandOutput)
