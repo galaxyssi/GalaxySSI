@@ -43,6 +43,7 @@ class Limits:
     hedge_min: float = CATALOG["timing"]["hedge_min_ms"] / 1000
     hedge_max: float = CATALOG["timing"]["hedge_max_ms"] / 1000
     unmeasured_hedge: float = CATALOG["timing"]["unmeasured_hedge_ms"] / 1000
+    unmeasured_path_rtt: float = CATALOG["timing"]["unmeasured_path_rtt_ms"] / 1000
 
     def __post_init__(self):
         if not (0 < self.small_packet_bytes <= self.packet_bytes <= self.inflight_bytes):
@@ -53,6 +54,8 @@ class Limits:
             raise ValueError("invalid peer/attempt limits")
         if not (0 < self.hedge_min <= self.unmeasured_hedge <= self.hedge_max):
             raise ValueError("invalid hedge timing")
+        if not math.isfinite(self.unmeasured_path_rtt) or self.unmeasured_path_rtt <= 0:
+            raise ValueError("invalid unmeasured path RTT")
         if min(self.route_ttl, self.metric_ttl, self.max_peer_routes) <= 0:
             raise ValueError("invalid expiry or route limit")
 
@@ -211,7 +214,7 @@ class MultipathPolicy:
 
     def _rank(self, peer: str, broker: str, message_id: str, now: float, traffic=None, wire_bytes=0) -> tuple[float, bytes]:
         samples = self._samples(peer, broker, now)
-        latency = sum(samples) / len(samples) if samples else self.limits.unmeasured_hedge
+        latency = sum(samples) / len(samples) if samples else self.limits.unmeasured_path_rtt
         load = sum(value.wire_bytes for value in self._attempts.values()
                    if value.path == broker and value.slot_held)
         score = latency * (1 + load / self.limits.peer_inflight_bytes)

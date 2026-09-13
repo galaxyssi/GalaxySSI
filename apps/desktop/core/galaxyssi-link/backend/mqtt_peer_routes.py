@@ -17,6 +17,7 @@ from mqtt_delivery_dispatch import Delivery
 from mqtt_delivery_envelope import (Attempt, Frame, Message, MAX_SAFE_INTEGER, content_hash,
                                     parse_verified_receipt, RECEIPT_TYPE)
 from mqtt_pool_client import Publication
+from mqtt_receipt_retry import ReceiptRetry
 from mqtt_route_state import (FINGERPRINT, RESUME_ID, TTL_MS, RouteAdvertisement, ResumeResult, issue_local_resume,
                               forget_route, parse_verified_resume, record_verified_resume)
 
@@ -55,6 +56,7 @@ class PeerRoutes:
     def __init__(self, client, *, on_ready=None, clock=time.monotonic, wall_clock=time.time):
         from mqtt_chunk_feedback import ChunkFeedback
         self._chunk_feedback = ChunkFeedback()
+        self._receipt_retry = ReceiptRetry()
         self.client = client
         self._on_ready = on_ready or (lambda *_: None)
         self._clock, self._wall = clock, wall_clock
@@ -91,6 +93,7 @@ class PeerRoutes:
                         previous.active = False
                         self.client.policy.forget_peer(binding.scope)
                         self._chunk_feedback.forget(binding.scope)
+                        self._receipt_retry.forget(binding.scope)
                     previous = None
                 if previous is None:
                     previous = _Peer(binding)
@@ -108,6 +111,7 @@ class PeerRoutes:
                     self._peers[scope].active = False
                     self.client.policy.forget_peer(scope)
                     self._chunk_feedback.forget(scope)
+                    self._receipt_retry.forget(scope)
             self._peers, self._outbound = retained, outbound
             existing_order = [scope for scope in self._rotation if scope in retained]
             existing = set(existing_order)
@@ -137,6 +141,11 @@ class PeerRoutes:
     def maintenance(self, limit=16):
         if not 1 <= limit <= 64:
             raise ValueError("Bounded resume admission required")
+        for send in self._receipt_retry.drain(self._clock(), limit):
+            try:
+                send()
+            except Exception as exc:
+                log.warning("Stored receipt retry deferred (%s)", type(exc).__name__)
         for send in self._chunk_feedback.drain(self._clock(), limit):
             try:
                 send()
@@ -352,6 +361,20 @@ class PeerRoutes:
     def publish_stored_receipt(self, scope, frame, message_id, wire_hash, *, authenticated_identity):
         with self._lock:
             peer = self._peers.get(scope)
+        if peer is None:
+            return None
+        with peer.lock:
+            binding = peer.binding
+            if (not peer.active or binding.identity != authenticated_identity
+                    or (frame.message.sender, frame.message.receiver) != (binding.receiver, binding.sender)):
+                return None
+            frame.receipt_after_store(stored_message_id=message_id, stored_content_hash=wire_hash)
+        self._receipt_retry.offer(scope, message_id, frame.attempt.attempt_id,
+            lambda: self._send_stored_receipt(scope, frame, message_id, wire_hash, authenticated_identity), self._clock())
+
+    def _send_stored_receipt(self, scope, frame, message_id, wire_hash, authenticated_identity):
+        with self._lock:
+            peer = self._peers.get(scope)
         if peer is None or not self.ready(scope):
             return None
         with peer.lock:
@@ -364,10 +387,20 @@ class PeerRoutes:
             receipt = frame.receipt_after_store(stored_message_id=message_id, stored_content_hash=wire_hash)
             encoded = seal_wire_packet(json.dumps(receipt, separators=(",", ":")), binding.secret)
             digest = hashlib.sha256(encoded.encode() if isinstance(encoded, str) else encoded).hexdigest()
+
+            def authorize(broker, generation):
+                with peer.lock:
+                    local = peer.local
+                    if (not peer.active or peer.binding != binding or local is None
+                            or local.expires_at_ms <= self._wall() * 1000 or peer.local_confirmed_epoch != local.epoch
+                            or peer.local_generations.get(broker) != generation
+                            or self.client.ready_path_generations(binding.receive_topics).get(broker) != generation):
+                        raise ValueError("Stored receipt route changed before publication")
+
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=frame.attempt.broker_id,
-                                     authorized_paths=tuple(peer.local_generations.items()))
-        return self.client.publish(binding.send_topic, encoded, publication=descriptor)
+                                     authorized_paths=tuple(peer.local_generations.items()), on_path=authorize)
+        return self.client.publish(binding.send_topic, encoded, publication=descriptor).rc == 0
 
     def status(self):
         with self._lock:

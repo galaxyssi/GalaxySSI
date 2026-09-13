@@ -55,7 +55,7 @@ class MultipathPolicyTests(unittest.TestCase):
 
     def test_normal_messages_hedge_without_waiting_for_all_paths(self):
         plan = self.plan()
-        self.assertEqual([0, 0.5, 1.0], [item.delay for item in plan])
+        self.assertEqual([0, 2.0, 4.0], [item.delay for item in plan])
 
     def test_large_packets_progress_and_chunks_do_not_triple_copy(self):
         for traffic, size in [(Traffic.MESSAGE, 65_537), (Traffic.FINAL, 65_537),
@@ -164,7 +164,7 @@ class MultipathPolicyTests(unittest.TestCase):
         self.policy.accept_verified_receipt("peer", "m", HASH, "fast", now=0.02)
         plan = self.plan()
         self.assertEqual("mosquitto", plan[0].broker_id)
-        self.assertEqual(0.5, plan[1].delay)
+        self.assertEqual(2.0, plan[1].delay)
         self.assertTrue(self.resume(epoch=2, expiry=300))
         self.assertFalse(self.policy._samples("peer", "mosquitto", 301))
 
@@ -174,7 +174,7 @@ class MultipathPolicyTests(unittest.TestCase):
             self.assertTrue(self.reserve(key, path="mosquitto", message=key))
             self.policy.broker_ack(key, "mosquitto", 1)
             self.policy.accept_verified_receipt("peer", key, HASH, key, now=0.02)
-            self.assertEqual(0.5 if index < 19 else 0.1, self.plan()[1].delay)
+            self.assertEqual(2.0 if index < 19 else 0.1, self.plan()[1].delay)
 
     def test_network_change_discards_previous_network_speed_assumptions(self):
         self.policy.set_network("wifi")
@@ -191,10 +191,10 @@ class MultipathPolicyTests(unittest.TestCase):
             self.assertTrue(self.reserve(key, path=path, message=key))
             self.policy.broker_ack(key, path, 1)
             self.policy.accept_verified_receipt("peer", key, HASH, key, now=0.8)
-            self.assertAlmostEqual(0.5 if index < 19 else 1.2, self.plan()[1].delay)
+            self.assertAlmostEqual(2.0 if index < 19 else 1.2, self.plan()[1].delay)
         self.assertTrue(all(item.delay == 0 for item in self.plan(Traffic.CONTROL)))
         self.policy.disconnected("emqx", 1)
-        self.assertEqual(0.5, self.plan()[1].delay)
+        self.assertEqual(2.0, self.plan()[1].delay)
 
     def test_peer_aggregate_does_not_use_another_peer_or_network(self):
         self.resume(peer="other")
@@ -204,10 +204,19 @@ class MultipathPolicyTests(unittest.TestCase):
             self.assertTrue(self.reserve(key, peer="other", path=path, message=key))
             self.policy.broker_ack(key, path, 1)
             self.policy.accept_verified_receipt("other", key, HASH, key, now=0.8)
-        self.assertEqual(0.5, self.plan()[1].delay)
+        self.assertEqual(2.0, self.plan()[1].delay)
         self.assertAlmostEqual(1.2, self.plan(peer="other")[1].delay)
         self.policy.set_network("new-network")
-        self.assertEqual(0.5, self.plan(peer="other")[1].delay)
+        self.assertEqual(2.0, self.plan(peer="other")[1].delay)
+
+    def test_cold_hedge_budget_does_not_redefine_unknown_path_ranking(self):
+        self.reserve("slow", path="hivemq")
+        self.policy.accept_verified_receipt("peer", "m", HASH, "slow", now=0.8)
+        self.assertNotEqual("hivemq", self.plan()[0].broker_id)
+        self.assertEqual(2.0, self.plan()[1].delay)
+        for value in (0, -1, float("inf"), float("nan")):
+            with self.assertRaises(ValueError):
+                Limits(unmeasured_path_rtt=value)
 
     def test_mature_primary_samples_take_precedence_over_slower_peer_aggregate(self):
         for path, elapsed in (("mosquitto", 0.2), ("hivemq", 0.8)):

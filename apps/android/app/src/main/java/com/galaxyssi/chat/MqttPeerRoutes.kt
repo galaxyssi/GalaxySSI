@@ -44,6 +44,7 @@ internal class MqttPeerRoutes(
     private val rotation = ArrayDeque<String>()
     private val urgent = linkedSetOf<String>()
     private val chunkFeedback = MqttChunkFeedback()
+    private val receiptRetry = MqttReceiptRetry()
 
     fun replace(bindings: List<Binding>) {
         require(bindings.size <= MqttBrokerCatalog.MAX_PEER_ROUTES && bindings.map { it.scope }.toSet().size == bindings.size)
@@ -90,6 +91,7 @@ internal class MqttPeerRoutes(
         peer.active = false
         transport.policy.forgetPeer(peer.binding.scope)
         chunkFeedback.forget(peer.binding.scope)
+        receiptRetry.forget(peer.binding.scope)
     }
 
     fun request(scope: String) = synchronized(lock) {
@@ -112,6 +114,7 @@ internal class MqttPeerRoutes(
 
     fun maintenance(limit: Int = 16) {
         require(limit in 1..64)
+        receiptRetry.drain(now(), limit).forEach { send -> runCatching(send).onFailure(onFailure) }
         chunkFeedback.drain(now(), limit).forEach { send -> runCatching(send).onFailure(onFailure) }
         val selected = synchronized(lock) {
             val scopes = urgent.take(limit).toMutableList()
@@ -293,7 +296,21 @@ internal class MqttPeerRoutes(
     fun publishStoredReceipt(scope: String, frame: MqttDeliveryEnvelope.Frame, messageId: String, wireHash: String,
                              identity: List<String>) {
         val peer = synchronized(lock) { peers[scope] } ?: return
-        if (!ready(scope)) return
+        peer.lock.withLock {
+            val binding = peer.binding
+            if (!peer.active || !binding.enabled || binding.identity != identity ||
+                frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return
+            frame.receiptAfterStore(messageId, wireHash)
+        }
+        val authenticatedIdentity = identity.toList()
+        receiptRetry.offer(scope, messageId, frame.attempt.attemptId,
+            { sendStoredReceipt(scope, frame, messageId, wireHash, authenticatedIdentity) }, now())
+    }
+
+    private fun sendStoredReceipt(scope: String, frame: MqttDeliveryEnvelope.Frame, messageId: String, wireHash: String,
+                                   identity: List<String>): Boolean {
+        val peer = synchronized(lock) { peers[scope] } ?: return true
+        if (!ready(scope)) return false
         val binding: Binding
         val payload: ByteArray
         val publication: MqttPoolTransport.Publication
@@ -302,14 +319,26 @@ internal class MqttPeerRoutes(
             val local = peer.local
             if (!peer.active || !binding.enabled || binding.identity != identity || local == null ||
                 local.expiresAtMs <= wall() || peer.confirmedEpoch != local.epoch ||
-                frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return
+                frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return false
             val receipt = frame.receiptAfterStore(messageId, wireHash)
             payload = seal(receipt.toString(), binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(payload.toString(Charsets.UTF_8))
             publication = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
-                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = peer.generations.toMap())
+                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = peer.generations.toMap(),
+                onPath = { broker, generation ->
+                    peer.lock.withLock {
+                        val current = peer.local
+                        check(peer.active && peer.binding == binding && binding.enabled && current != null &&
+                            current.expiresAtMs > wall() && peer.confirmedEpoch == current.epoch &&
+                            peer.generations[broker] == generation &&
+                            transport.readyPathGenerations(binding.receiveTopics)[broker] == generation) {
+                            "Stored receipt route changed before publication"
+                        }
+                    }
+                })
         }
         transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(payload).apply { qos = 1 }, publication = publication)
+        return true
     }
 
     fun chunkBinding(topic: String): Binding? {

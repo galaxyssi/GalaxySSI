@@ -127,7 +127,7 @@ internal class MqttMultipathPolicy(
 
     private fun score(peer: String, broker: String, now: Long, traffic: Traffic, wireBytes: Int): Double {
         val values = samples(peer, broker, now)
-        val latency = if (values.isEmpty()) MqttBrokerCatalog.UNMEASURED_HEDGE_MS.toDouble() else values.average()
+        val latency = if (values.isEmpty()) MqttBrokerCatalog.UNMEASURED_PATH_RTT_MS.toDouble() else values.average()
         val load = attempts.values.filter { it.brokerId == broker && it.slotHeld }.sumOf { it.wireBytes.toLong() }
         if (traffic == Traffic.CHUNK)
             return latency + (wireBytes + maxOf(load, chunks.pendingBytes(broker))) * 1000.0 / chunks.rate(peer, broker)

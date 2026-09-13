@@ -91,7 +91,7 @@ class Worker:
 
 
 def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=False, path_cycles=0,
-        defer_after_selection=False):
+        defer_after_selection=False, defer_receipt=False):
     if not 0 <= path_cycles <= 100:
         raise ValueError("Path cycles must be between 0 and 100")
     reject_bad_tls(lab)
@@ -195,6 +195,37 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
             observations.append({"case": "late-resume-ack-after-path-rotation", "old_epoch_ignored": True})
         first, first_content = send(left, right, "native-prekey")
         send(right, left, "native-ratchet-reply")
+        if defer_receipt:
+            right.call("hold", enabled=True, resume_only=True)
+            for label in paths:
+                broker(label, False)
+            for item in (left, right):
+                wait_state(item, lambda value: not any(path["connected"] for path in value["paths"].values()),
+                           "Receipt test outage not observed")
+            broker("emqx", True)
+            ready(left, {"emqx"})
+            wait_state(right, lambda value: not value["ready"] and value["held_resume_acks"],
+                       "Receiver resume ACK was not held")
+            content = "owned-native-receipt-during-local-resume"
+            started = time.monotonic()
+            mid = enqueue(left, content)
+            expected["right"][mid] = content
+            received_once(delivered(right, mid), mid, content)
+            wait_state(right, lambda value: value["pending_stored_receipts"] > 0 and not value["ready"],
+                       "Stored receipt was not retained during resume")
+            pending = [row for row in left.call("snapshot")["outbox"] if row["id"] == mid]
+            require(len(pending) == 1 and pending[0]["attempts"] == 1, "Missing ACK retired or replayed the sender")
+            require(right.call("hold", enabled=False)["released"] > 0, "No receiver resume ACKs released")
+            ready(right, {"emqx"})
+            accepted(left, mid)
+            require(time.monotonic() - started < 25, "Receipt recovery waited for the 30s durable sender retry")
+            received_once(right.call("snapshot"), mid, content)
+            observations.append({"case": "stored-receipt-during-local-resume", "receipt_deferred": True,
+                                 "outbox_recovered": True, "dispatch_attempts": 1})
+            for label in ("hivemq", "mosquitto"):
+                broker(label, True)
+            ready(left, paths)
+            ready(right, paths)
         if defer_after_selection:
             mid, content = str(uuid.uuid4()), "owned-native-subscription-loss-after-selection"
             require(left.call("send", message_id=mid, content=content, pause_before_publish=True)["queued"],
@@ -337,6 +368,19 @@ def run(lab, loop, python, report_dir, delay_resume=False, offline_peer_entry=Fa
                 "business_messages": sum(map(len, expected.values())),
                 "path_cycles": path_cycles,
                 "desktop_offline_send_entry_tested": offline_peer_entry, "observations": observations}
+    except Exception as error:
+        snapshot_errors = {}
+        for label in ("left", "right"):
+            current = next((item for item in reversed(workers) if item.label == label and item.process.poll() is None), None)
+            if current is not None and "RPC" not in str(error):
+                try:
+                    last_snapshots[label] = current.call("snapshot")
+                except Exception as observation_error:
+                    snapshot_errors[label] = str(observation_error)
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "failure.json").write_text(json.dumps({"status": "failed", "error": str(error),
+            "observations": observations, "snapshot_errors": snapshot_errors}, indent=2), encoding="utf-8")
+        raise
     finally:
         failures = []
         for item in reversed(workers):
@@ -361,10 +405,11 @@ async def main():
     parser.add_argument("--offline-peer-entry", action="store_true", help="Verify Desktop-to-phone offline enqueue and process recovery")
     parser.add_argument("--path-cycles", type=int, default=0, help="Repeat owned broker loss/recovery, rotating all three paths (0-100)")
     parser.add_argument("--defer-after-selection", action="store_true", help="Withdraw real subscriptions after outbox selection, then recover")
+    parser.add_argument("--defer-receipt", action="store_true", help="Hold receiver resume ACKs while real business storage completes")
     args = parser.parse_args()
     async with OwnedBrokers() as lab:
         report = await asyncio.to_thread(run, lab, asyncio.get_running_loop(), args.endpoint_python, args.report_dir,
-                                        args.delay_resume, args.offline_peer_entry, args.path_cycles, args.defer_after_selection)
+                                        args.delay_resume, args.offline_peer_entry, args.path_cycles, args.defer_after_selection, args.defer_receipt)
     (args.report_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
 

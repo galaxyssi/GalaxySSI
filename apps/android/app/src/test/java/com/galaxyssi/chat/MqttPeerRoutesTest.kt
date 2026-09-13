@@ -91,7 +91,7 @@ class MqttPeerRoutesTest {
         var committed = 0
         assertEquals(true to true, routes.acceptDeliveryReceipt(binding.scope, receipt, rig.ingress(alternate), binding.identity) { committed++ })
         assertEquals(true to false, routes.acceptDeliveryReceipt(binding.scope, receipt, rig.ingress(alternate), binding.identity) { committed++ })
-        rig.clock.addAndGet(2_000)
+        rig.clock.addAndGet(MqttBrokerCatalog.UNMEASURED_HEDGE_MS * 2 + 100)
         rig.transport.delivery.tick()
         assertEquals(1, committed)
         assertEquals(1, deliveryFrames().size)
@@ -107,7 +107,7 @@ class MqttPeerRoutesTest {
             routes.acceptDeliveryReceipt(binding.scope, frame.receiptAfterStore("message", frame.message.contentHash),
                 rig.ingress(frame.attempt.brokerId), binding.identity) { error("storage unavailable") }
         }
-        rig.clock.addAndGet(1_000)
+        rig.clock.addAndGet(MqttBrokerCatalog.UNMEASURED_HEDGE_MS * 2 + 100)
         rig.transport.delivery.tick()
         assertEquals(3, deliveryFrames().size)
     }
@@ -183,6 +183,57 @@ class MqttPeerRoutesTest {
         receive(ack())
         assertTrue(routes.ready(binding.scope))
         assertNotNull(routes.classify("outbox", byteArrayOf(1)))
+    }
+
+    @Test fun storedReceiptSurvivesResumeGapWithoutEnablingBusinessEarly() {
+        start()
+        val message = MqttDeliveryEnvelope.Message("inbound", MqttDeliveryEnvelope.contentHash(wire()),
+            binding.receiver, binding.sender, "message")
+        val frame = MqttDeliveryEnvelope.Frame(message, MqttDeliveryEnvelope.Attempt("d".repeat(32), "hivemq", 1))
+        val before = sentCount()
+        routes.publishStoredReceipt(binding.scope, frame, message.messageId, message.contentHash, binding.identity)
+        assertFalse(routes.ready(binding.scope))
+        assertNull(routes.prepareDelivery("outbox", wire(), "outgoing", MqttMultipathPolicy.Traffic.MESSAGE))
+        assertEquals(before, sentCount())
+        receive(ack())
+        rig.clock.addAndGet(MqttBrokerCatalog.RECEIPT_RETRY_MS)
+        routes.maintenance()
+        assertEquals(before + 1, sentCount())
+        val receipt = JSONObject(String(rig.client("hivemq").sent.last().message.payload, Charsets.UTF_8))
+        assertEquals(frame, MqttDeliveryEnvelope.parseVerifiedReceipt(receipt, binding.receiver, binding.sender))
+        rig.clock.addAndGet(MqttBrokerCatalog.RECEIPT_RETRY_MS)
+        routes.maintenance()
+        assertEquals(before + 1, sentCount())
+    }
+
+    @Test fun badProofDuringResumeCannotCreateDeferredReceipt() {
+        start()
+        val message = MqttDeliveryEnvelope.Message("inbound", MqttDeliveryEnvelope.contentHash(wire()),
+            binding.receiver, binding.sender, "message")
+        val frame = MqttDeliveryEnvelope.Frame(message, MqttDeliveryEnvelope.Attempt("d".repeat(32), "hivemq", 1))
+        val before = sentCount()
+        assertThrows(IllegalArgumentException::class.java) {
+            routes.publishStoredReceipt(binding.scope, frame, message.messageId, "0".repeat(64), binding.identity)
+        }
+        routes.publishStoredReceipt(binding.scope, frame, message.messageId, message.contentHash,
+            binding.identity.dropLast(1) + "wrong")
+        receive(ack())
+        rig.clock.addAndGet(MqttBrokerCatalog.RECEIPT_RETRY_MS)
+        routes.maintenance()
+        assertEquals(before, sentCount())
+    }
+
+    @Test fun pairRevocationDropsDeferredStoredReceipt() {
+        start()
+        val message = MqttDeliveryEnvelope.Message("inbound", MqttDeliveryEnvelope.contentHash(wire()),
+            binding.receiver, binding.sender, "message")
+        val frame = MqttDeliveryEnvelope.Frame(message, MqttDeliveryEnvelope.Attempt("d".repeat(32), "hivemq", 1))
+        routes.publishStoredReceipt(binding.scope, frame, message.messageId, message.contentHash, binding.identity)
+        val before = sentCount()
+        routes.replace(emptyList())
+        rig.clock.addAndGet(MqttBrokerCatalog.RECEIPT_RETRY_MS)
+        routes.maintenance()
+        assertEquals(before, sentCount())
     }
 
     @Test fun businessUsesOnlyRemoteAuthenticatedReceiveSet() {

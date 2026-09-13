@@ -5,9 +5,11 @@ import native_latency
 
 
 class NativeLatencyExitTests(unittest.IsolatedAsyncioTestCase):
-    async def verdict(self, passed):
+    async def verdict(self, passed, fault=False):
         report = {"status": "measured_with_business_checks_passed",
                   "provisional_small_message_gate": {"passed": passed}}
+        if fault:
+            report.update(provisional_small_message_gate=None, provisional_fault_gate={"passed": passed})
         with patch("sys.argv", ["native_latency.py", "--endpoint-python", "unused-python",
                                 "--report-dir", "unused-report"]), \
                 patch.object(native_latency, "OwnedBrokers") as factory, \
@@ -24,6 +26,12 @@ class NativeLatencyExitTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_limited_gate_success_returns_zero(self):
         self.assertEqual(0, await self.verdict(True))
+
+    async def test_fault_gate_failure_cannot_exit_successfully(self):
+        self.assertEqual(2, await self.verdict(False, fault=True))
+
+    async def test_fault_gate_success_does_not_require_a_warm_comparison(self):
+        self.assertEqual(0, await self.verdict(True, fault=True))
 
     def test_invalid_sample_budget_fails_before_broker_or_file_access(self):
         for count in (0, 29, 31, 181):

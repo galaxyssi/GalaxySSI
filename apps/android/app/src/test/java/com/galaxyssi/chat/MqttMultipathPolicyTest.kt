@@ -47,7 +47,7 @@ class MqttMultipathPolicyTest {
 
     @Test fun textHedgesButCriticalControlRacesImmediately() {
         val policy = ready()
-        assertEquals(listOf(0L, 500L, 1000L), plan(policy).map { it.delayMs })
+        assertEquals(listOf(0L, 2000L, 4000L), plan(policy).map { it.delayMs })
         assertEquals(listOf(0L, 0L, 0L), plan(policy, MqttMultipathPolicy.Traffic.CONTROL).map { it.delayMs })
     }
 
@@ -158,9 +158,9 @@ class MqttMultipathPolicyTest {
         policy.reserve("fast", attempt(path = "mosquitto"))
         policy.acceptVerifiedReceipt("peer", "m", hash, "fast", 20)
         assertEquals("mosquitto", plan(policy).first().brokerId)
-        assertEquals(500L, plan(policy)[1].delayMs)
+        assertEquals(2000L, plan(policy)[1].delayMs)
         policy.setNetwork("cellular")
-        assertEquals(500L, plan(policy)[1].delayMs)
+        assertEquals(2000L, plan(policy)[1].delayMs)
     }
 
     @Test fun percentileHedgeNeedsTwentyDistinctStoredReceipts() {
@@ -170,7 +170,7 @@ class MqttMultipathPolicyTest {
             assertTrue(policy.reserve(key, attempt(path = "mosquitto", message = key)))
             policy.brokerAck(key, "mosquitto", 1)
             policy.acceptVerifiedReceipt("peer", key, hash, key, 20)
-            assertEquals(if (index < 19) 500L else 100L, plan(policy)[1].delayMs)
+            assertEquals(if (index < 19) 2000L else 100L, plan(policy)[1].delayMs)
         }
     }
 
@@ -188,11 +188,11 @@ class MqttMultipathPolicyTest {
             assertTrue(policy.reserve(key, attempt(path = path, message = key)))
             policy.brokerAck(key, path, 1)
             policy.acceptVerifiedReceipt("peer", key, hash, key, 800)
-            assertEquals(if (index < 19) 500L else 1200L, plan(policy)[1].delayMs)
+            assertEquals(if (index < 19) 2000L else 1200L, plan(policy)[1].delayMs)
         }
         assertTrue(plan(policy, MqttMultipathPolicy.Traffic.CONTROL).all { it.delayMs == 0L })
         policy.disconnected("emqx", 1)
-        assertEquals(500L, plan(policy)[1].delayMs)
+        assertEquals(2000L, plan(policy)[1].delayMs)
     }
 
     @Test fun peerAggregateDoesNotUseAnotherPeerOrNetwork() {
@@ -205,10 +205,18 @@ class MqttMultipathPolicyTest {
             policy.brokerAck(key, path, 1)
             policy.acceptVerifiedReceipt("other", key, hash, key, 800)
         }
-        assertEquals(500L, plan(policy)[1].delayMs)
+        assertEquals(2000L, plan(policy)[1].delayMs)
         assertEquals(1200L, plan(policy, peer = "other")[1].delayMs)
         policy.setNetwork("new-network")
-        assertEquals(500L, plan(policy, peer = "other")[1].delayMs)
+        assertEquals(2000L, plan(policy, peer = "other")[1].delayMs)
+    }
+
+    @Test fun coldHedgeBudgetDoesNotRedefineUnknownPathRanking() {
+        val policy = ready()
+        policy.reserve("slow", attempt(path = "hivemq"))
+        policy.acceptVerifiedReceipt("peer", "m", hash, "slow", 800)
+        assertNotEquals("hivemq", plan(policy)[0].brokerId)
+        assertEquals(2000L, plan(policy)[1].delayMs)
     }
 
     @Test fun maturePrimarySamplesTakePrecedenceOverSlowerPeerAggregate() {

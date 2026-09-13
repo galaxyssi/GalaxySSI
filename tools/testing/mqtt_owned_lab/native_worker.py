@@ -1,6 +1,6 @@
 """Isolated JSON-line test endpoint; production crypto, ingress, dispatch and stores."""
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 import json
 import logging
@@ -60,7 +60,9 @@ class Endpoint:
         self.config = config
         self.client = self.worker = None
         self.drop_incoming = False
+        self.drop_broker = None
         self.hold_incoming = False
+        self.hold_resume_only = False
         self.held = []
         self.held_bytes = 0
         self.dropped = 0
@@ -153,6 +155,7 @@ class Endpoint:
         actual_ack = self.bridge.acknowledge_verified_outbound
         dispatch = self.client.delivery
         actual_publish = dispatch._publish
+        actual_published = dispatch.published
 
         def queued(route, mid, *args, **kwargs):
             result = actual_queue(route, mid, *args, **kwargs)
@@ -178,9 +181,22 @@ class Endpoint:
             finally:
                 metrics.physical_end(mid, attempt_id, receipt is not None)
 
+        def published(receipt):
+            with dispatch._lock:
+                sent = dispatch._sent.get(receipt.attempt_id)
+                valid = (sent is not None and receipt.broker_acked and
+                    (sent.frame.attempt.broker_id, sent.frame.attempt.generation) ==
+                    (receipt.physical.broker_id, receipt.physical.generation))
+                mid = sent.frame.message.message_id if valid else None
+            result = actual_published(receipt)
+            if result and mid:
+                metrics.broker_ack(mid, receipt.attempt_id)
+            return result
+
         self.bridge.queue_outbound = queued
         self.bridge.acknowledge_verified_outbound = acknowledged
         dispatch._publish = physical
+        dispatch.published = published
 
     def receive(self, client, userdata, message):
         with self.observation_lock:
@@ -190,10 +206,10 @@ class Endpoint:
                 self.wire_observed.pop(next(iter(self.wire_observed)))
             counts = self.wire_observed.setdefault(digest, {})
             counts[message.broker_id] = counts.get(message.broker_id, 0) + 1
-            if self.drop_incoming:
+            if self.drop_incoming or message.broker_id == self.drop_broker:
                 self.dropped += 1
                 return
-            if self.hold_incoming:
+            if self.hold_incoming and (not self.hold_resume_only or self._is_resume_ack(message)):
                 if len(self.held) >= 128 or self.held_bytes + len(message.payload) > 4 * 1024 * 1024:
                     raise RuntimeError("Owned delayed ingress exceeded its bounded buffer")
                 self.held.append(message)
@@ -201,9 +217,33 @@ class Endpoint:
                 return
         self.bridge.on_mqtt_message(client, userdata, message)
 
-    def hold(self, enabled):
+    def _is_resume_ack(self, message):
+        from link_protocol import open_wire_packet
+        try:
+            payload = json.loads(open_wire_packet(message.payload, self.secret))
+            return isinstance(payload, dict) and payload.get("type") == "link_resume_ack"
+        except (ValueError, TypeError):
+            return False
+
+    def set_drop_broker(self, broker):
+        if broker is not None and broker not in self.config["endpoints"]:
+            raise ValueError("Unknown owned broker")
+        with self.observation_lock:
+            self.drop_broker = broker
+            return {"broker": broker, "dropped": self.dropped}
+
+    def plan_message(self, message_id):
+        from mqtt_multipath_policy import Traffic
+        plans = self.client.policy.plan(self.route, message_id, Traffic.MESSAGE,
+            32_768, set(self.receive_topics), now=time.monotonic())
+        if not plans:
+            raise ValueError("No authenticated path for fault preview")
+        return {"broker": plans[0].broker_id, "delay": plans[0].delay}
+
+    def hold(self, enabled, resume_only=False):
         with self.observation_lock:
             self.hold_incoming = enabled
+            self.hold_resume_only = enabled and resume_only
             released = [] if enabled else self.held
             if not enabled:
                 self.held, self.held_bytes = [], 0
@@ -258,6 +298,10 @@ class Endpoint:
         with peer.lock:
             observations["local_epoch"] = peer.local.epoch if peer.local else 0
             observations["local_brokers"] = sorted(peer.local.receive_brokers) if peer.local else []
+            observations["confirmed_epoch"] = peer.local_confirmed_epoch
+        retry = self.client.peer_routes._receipt_retry
+        with retry.lock:
+            observations["pending_stored_receipts"] = len(retry.pending)
         return {"pid": os.getpid(), "ready": self.client.peer_routes.ready(self.route),
                 "paths": self.client.path_snapshot()["paths"], **observations,
                 "ingress": self.bridge.mqtt_ingress_status(), "inbox": inbox, "outbox": outbox,
@@ -338,6 +382,8 @@ def main():
                     if endpoint.measurements is None:
                         raise ValueError("Measurements not enabled for this isolated endpoint")
                     result = endpoint.measurements.snapshot(request.get("message_id"))
+                    if request.get("message_id") is None:
+                        result["policy_limits"] = asdict(endpoint.client.policy.limits)
                 elif command == "send":
                     result = endpoint.send(request)
                 elif command == "restore_subscriptions":
@@ -352,8 +398,12 @@ def main():
                 elif command == "drop":
                     endpoint.drop_incoming = bool(request["enabled"])
                     result = {"drop": endpoint.drop_incoming}
+                elif command == "drop_broker":
+                    result = endpoint.set_drop_broker(request.get("broker"))
+                elif command == "plan_message":
+                    result = endpoint.plan_message(request["message_id"])
                 elif command == "hold":
-                    result = endpoint.hold(bool(request["enabled"]))
+                    result = endpoint.hold(bool(request["enabled"]), bool(request.get("resume_only")))
                 elif command == "shutdown":
                     break
                 else:

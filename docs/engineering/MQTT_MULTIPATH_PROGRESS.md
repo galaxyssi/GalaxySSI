@@ -10,6 +10,31 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+The shared unsampled hedge now waits 2s while the independent unknown-path
+ranking prior remains 500ms. Two owned 30-per-strategy healthy runs passed the
+provisional p95 ratio gate (0.977 and 0.859), with no redundant business frames.
+A separate selected-primary-loss run passed thirty injected samples with a
+3.010s p95 under the predeclared 8s budget. These do not prove Internet/Android
+performance or that the selected primary was the physically fastest. Earlier
+failed cohorts remain visible in the [cold-hedge report](../testing/MQTT_COLD_HEDGE_20260913.md).
+
+The subsequent native recovery smoke failed: stored business data did not retire
+the sender outbox after a single path returned. A deterministic bridge case
+reproduced a missing stored-receipt retry during the receiver's local resume.
+Android and Desktop now retain bounded short-lived receipt proofs, retry through
+the existing maintenance owner, and revalidate authorization before publication.
+Final regressions passed 282 Python (including the 104-case focused selection)
+and 206 host Kotlin cases. Owned native runs
+passed 40 and 20 business messages; the latter deliberately holds real resume
+ACKs and verifies recovery before the sender's 30s replay. See
+[receipt recovery](../testing/MQTT_RECEIPT_RETRY_20260913.md). The normal full-runtime
+Android build and instrumentation Kotlin compilation passed in 8m 59s, with 91
+focused JVM cases. APK 1.2.0 (1005) is built and archived. No phone installation
+or production Desktop replacement occurred.
+All full-scope acceptance gates remain active; PR #3045 is still a draft.
+
+## Prior Checkpoints
+
 Native owned-network measurement now captures real durable-queue, physical-send
 and authenticated receipt-commit timestamps instead of controller polling. Two
 30-per-strategy baselines exposed redundant cold hedges. Android/Desktop now

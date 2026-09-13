@@ -31,6 +31,8 @@ def outputs(root: Path = ROOT) -> dict[Path, str]:
             or not 1 <= timing["hedge_min_samples"] <= 32
             or not 1 <= timing["chunk_throughput_min_samples"] <= 32
             or not 1 <= limits["per_peer_chunk_feedback"] <= limits["max_chunk_feedback"] <= limits["max_tracked_attempts"]
+            or not 1 <= limits["per_peer_pending_receipts"] <= limits["max_pending_receipts"] <= limits["max_tracked_attempts"]
+            or not timing["receipt_retry_ms"] < timing["receipt_retry_ttl_seconds"] * 1000
             or not timing["chunk_feedback_window_ms"] < timing["attempt_observation_seconds"] * 1000
             or timing["attempt_observation_seconds"] * 1000 <= timing["hedge_max_ms"] * 2):
         raise ValueError("invalid catalog capacity or hedge bounds")
@@ -68,10 +70,15 @@ internal object MqttBrokerCatalog {{
     const val HEDGE_MIN_MS = {spec["timing"]["hedge_min_ms"]}L
     const val HEDGE_MAX_MS = {spec["timing"]["hedge_max_ms"]}L
     const val UNMEASURED_HEDGE_MS = {spec["timing"]["unmeasured_hedge_ms"]}L
+    const val UNMEASURED_PATH_RTT_MS = {spec["timing"]["unmeasured_path_rtt_ms"]}L
     const val CHUNK_FEEDBACK_WINDOW_MS = {timing["chunk_feedback_window_ms"]}L
     const val CHUNK_MIN_SAMPLES = {timing["chunk_throughput_min_samples"]}
     const val MAX_CHUNK_FEEDBACK = {limits["max_chunk_feedback"]}
     const val PEER_CHUNK_FEEDBACK = {limits["per_peer_chunk_feedback"]}
+    const val MAX_PENDING_RECEIPTS = {limits["max_pending_receipts"]}
+    const val PEER_PENDING_RECEIPTS = {limits["per_peer_pending_receipts"]}
+    const val RECEIPT_RETRY_MS = {timing["receipt_retry_ms"]}L
+    const val RECEIPT_RETRY_TTL_MS = {timing["receipt_retry_ttl_seconds"] * 1000}L
     const val UNMEASURED_CHUNK_BYTES_PER_SECOND = {limits["unmeasured_chunk_bytes_per_second"]}
 }}
 '''

@@ -8,6 +8,7 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
 class MqttDeliveryDispatchTest {
+    private val hedge = MqttBrokerCatalog.UNMEASURED_HEDGE_MS
     private fun ready() = MqttPoolTestRig().apply {
         start()
         transport.policy.acceptVerifiedResume("peer", MqttMultipathPolicy.PeerRoute(1, MqttBrokerCatalog.brokers.keys,
@@ -32,11 +33,11 @@ class MqttDeliveryDispatchTest {
         val token = send(rig)
         assertTrue(token.isComplete)
         assertEquals(1, packets(rig).size)
-        tick(rig, 499)
+        tick(rig, hedge - 1)
         assertEquals(1, packets(rig).size)
         tick(rig, 1)
         rig.await { packets(rig).size == 2 }
-        tick(rig, 500)
+        tick(rig, hedge)
         rig.await { packets(rig).size == 3 }
         assertEquals(3, packets(rig).map { frame(it).attempt.attemptId }.toSet().size)
         assertEquals(1, rig.completed.count { it.first == token.messageId })
@@ -47,7 +48,7 @@ class MqttDeliveryDispatchTest {
         send(rig)
         val commits = AtomicInteger()
         assertTrue(rig.transport.delivery.acceptVerifiedReceipt("peer", frame(packets(rig).single())) { commits.incrementAndGet() })
-        tick(rig, 2000)
+        tick(rig, hedge * 2 + 100)
         assertEquals(1, packets(rig).size)
         assertEquals(1, commits.get())
         assertEquals(0, rig.transport.delivery.diagnostics().messages)
@@ -78,7 +79,7 @@ class MqttDeliveryDispatchTest {
             original.copy(message = original.message.copy(receiver = "d".repeat(64))))
         variants.forEach { assertFalse(rig.transport.delivery.acceptVerifiedReceipt("peer", it) { fail("Invalid receipt committed") }) }
         assertFalse(rig.transport.delivery.acceptVerifiedReceipt("other", original) { fail("Wrong peer committed") })
-        tick(rig, 1100)
+        tick(rig, hedge * 2 + 100)
         rig.await { packets(rig).size == 3 }
     }
 
@@ -87,7 +88,7 @@ class MqttDeliveryDispatchTest {
         assertThrows(IOException::class.java) {
             rig.transport.delivery.acceptVerifiedReceipt("peer", frame(packets(rig).single())) { throw IOException("disk") }
         }
-        tick(rig, 500)
+        tick(rig, hedge)
         rig.await { packets(rig).size == 2 }
     }
 
@@ -103,16 +104,16 @@ class MqttDeliveryDispatchTest {
     @Test fun storedMessageAckCancelsWithoutMakingUpAnRtt() = ready().use { rig ->
         send(rig)
         rig.transport.delivery.acceptVerifiedMessage("peer", "message", "a".repeat(64))
-        tick(rig, 2000)
+        tick(rig, hedge * 2 + 100)
         assertEquals(1, packets(rig).size)
-        assertEquals(500L, rig.transport.policy.plan("peer", "next", MqttMultipathPolicy.Traffic.MESSAGE,
+        assertEquals(hedge, rig.transport.policy.plan("peer", "next", MqttMultipathPolicy.Traffic.MESSAGE,
             1024, setOf("inbox"), rig.clock.get())[1].delayMs)
     }
 
     @Test fun wrongStoredHashDoesNotCancel() = ready().use { rig ->
         send(rig)
         rig.transport.delivery.acceptVerifiedMessage("peer", "message", "d".repeat(64))
-        tick(rig, 1100)
+        tick(rig, hedge * 2 + 100)
         rig.await { packets(rig).size == 3 }
     }
 
@@ -120,28 +121,28 @@ class MqttDeliveryDispatchTest {
         var authorized = true
         send(rig, descriptor(authorized = { _, _ -> authorized }))
         authorized = false
-        tick(rig, 1100)
+        tick(rig, hedge * 2 + 100)
         assertEquals(1, packets(rig).size)
     }
 
     @Test fun forgottenPeerCannotReceiveDelayedCopies() = ready().use { rig ->
         send(rig)
         rig.transport.policy.forgetPeer("peer")
-        tick(rig, 1100)
+        tick(rig, hedge * 2 + 100)
         assertEquals(1, packets(rig).size)
     }
 
     @Test fun revokedSubscriptionsCannotSendDelayedCopies() = ready().use { rig ->
         send(rig)
         rig.transport.policy.unsubscribe(setOf("inbox"))
-        tick(rig, 1100)
+        tick(rig, hedge * 2 + 100)
         assertEquals(1, packets(rig).size)
     }
 
     @Test fun progressAndLargePacketsRemainSinglePath() = ready().use { rig ->
         send(rig, descriptor("progress", "progress"))
         send(rig, descriptor("large", size = MqttBrokerCatalog.SMALL_PACKET_BYTES + 1))
-        tick(rig, 2000)
+        tick(rig, hedge * 2 + 100)
         assertEquals(2, packets(rig).size)
     }
 
@@ -161,7 +162,7 @@ class MqttDeliveryDispatchTest {
         assertThrows(MqttException::class.java) { send(rig, descriptor("overflow")) }
         send(rig, descriptor("stop", "control"))
         assertEquals(12, rig.transport.policy.diagnostics().inflightPackets)
-        tick(rig, 1100)
+        tick(rig, hedge * 2 + 100)
         assertEquals(12, packets(rig).size)
         packets(rig).forEach { it.listener.onSuccess(it.token) }
         tick(rig, 300)

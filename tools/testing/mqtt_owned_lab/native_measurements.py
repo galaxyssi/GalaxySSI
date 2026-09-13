@@ -57,6 +57,12 @@ class Measurements:
             return {"startup_to_authenticated_ready_ms": None if self.ready is None else
                     (self.ready - self.started) / 1_000_000, "samples": copy.deepcopy(self.samples)}
 
+    def broker_ack(self, message_id, attempt_id):
+        with self.lock:
+            sample = self.samples.get(message_id)
+            if sample is not None and attempt_id in sample["packets"]:
+                sample["packets"][attempt_id].setdefault("broker_acked_ns", self.clock())
+
 
 def summarize(samples):
     """Nearest-rank percentiles; callers retain failed/censored sample details."""

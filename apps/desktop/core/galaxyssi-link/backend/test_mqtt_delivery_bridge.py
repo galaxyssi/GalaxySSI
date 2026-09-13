@@ -13,7 +13,7 @@ import link_delivery
 import mqtt_bridge as bridge
 import test_mqtt_stored_dispatch as stored_fixture
 from link_protocol import open_wire_packet, seal_wire_packet, new_link_secret, make_envelope
-from mqtt_broker_catalog import BROKER_IDS
+from mqtt_broker_catalog import BROKER_IDS, CATALOG
 from mqtt_broker_pool import Ingress
 from mqtt_delivery_envelope import (Frame, content_hash, parse_verified_frame, receipt_binding, stored_receipt)
 from mqtt_multipath_policy import Traffic
@@ -105,7 +105,7 @@ class DeliveryBridgeTest(TestCase):
         self.assertEqual(1, len(self.desktop._pool.sent))
         self.assertEqual((True, True), self.receipt_phone(self.desktop._pool.sent[0]))
         self.assertIsNone(link_delivery.outbound_status("phone-pair", self.base.mid))
-        self.offset += 2
+        self.offset += CATALOG["timing"]["unmeasured_hedge_ms"] / 1000 * 2 + 0.1
         self.phone._tick()
         self.assertEqual(1, len(self.phone._pool.sent))
 
@@ -129,6 +129,45 @@ class DeliveryBridgeTest(TestCase):
         self.assertEqual(1, sum(accepted for handled, accepted in results))
         self.assertIsNone(link_delivery.outbound_status("phone-pair", self.base.mid))
 
+    def test_stored_receipt_waits_for_local_resume_then_retires_sender_without_replay(self):
+        self.send_phone()
+        peer = self.desktop.peer_routes._peers["pair"]
+        epoch = peer.local_confirmed_epoch
+        peer.local_confirmed_epoch = 0
+        self.deliver_desktop(self.phone._pool.sent[0])
+        self.base.handle.assert_called_once()
+        self.assertEqual(content_hash(self.base.wire), link_delivery.stored_wire_receipt("pair", self.base.mid))
+        self.assertEqual([], self.desktop._pool.sent)
+        peer.local_confirmed_epoch = epoch
+        self.offset += 1
+        self.desktop.peer_routes.maintenance()
+        self.assertEqual(1, len(self.desktop._pool.sent))
+        self.assertEqual((True, True), self.receipt_phone(self.desktop._pool.sent[0]))
+        self.assertIsNone(link_delivery.outbound_status("phone-pair", self.base.mid))
+        self.base.handle.assert_called_once()
+
+    def test_deferred_stored_receipt_cannot_outlive_revoked_pair(self):
+        self.send_phone()
+        self.desktop.peer_routes._peers["pair"].local_confirmed_epoch = 0
+        self.deliver_desktop(self.phone._pool.sent[0])
+        self.assertEqual(1, len(self.desktop.peer_routes._receipt_retry.pending))
+        self.desktop.peer_routes.replace([])
+        self.offset += 1
+        self.desktop.peer_routes.maintenance()
+        self.assertEqual({}, self.desktop.peer_routes._receipt_retry.pending)
+        self.assertEqual([], self.desktop._pool.sent)
+
+    def test_transient_publish_capacity_does_not_drop_stored_receipt(self):
+        self.send_phone()
+        with patch.object(self.desktop, "publish", return_value=Mock(rc=15)):
+            self.deliver_desktop(self.phone._pool.sent[0])
+        self.base.handle.assert_called_once()
+        self.assertEqual([], self.desktop._pool.sent)
+        self.offset += 1
+        self.desktop.peer_routes.maintenance()
+        self.assertEqual((True, True), self.receipt_phone(self.desktop._pool.sent[0]))
+        self.assertIsNone(link_delivery.outbound_status("phone-pair", self.base.mid))
+
     def test_wire_corruption_is_rejected_before_signal_decrypt_or_storage(self):
         self.send_phone()
         broker, generation, topic, encoded, mid = self.phone._pool.sent[0]
@@ -144,7 +183,7 @@ class DeliveryBridgeTest(TestCase):
     def test_lost_peer_receipt_retries_on_other_broker_without_new_task(self):
         self.send_phone()
         self.deliver_desktop(self.phone._pool.sent[0])
-        self.offset += 0.6
+        self.offset += CATALOG["timing"]["unmeasured_hedge_ms"] / 1000 + 0.1
         self.phone._tick()
         self.assertEqual(2, len(self.phone._pool.sent))
         self.deliver_desktop(self.phone._pool.sent[1])
@@ -182,7 +221,7 @@ class DeliveryBridgeTest(TestCase):
     def test_delayed_copy_rechecks_pair_key_and_does_not_use_closed_over_old_secret(self):
         self.send_phone()
         self.phone.peer_routes.replace([replace(self.phone_binding, secret=new_link_secret())])
-        self.offset += 1
+        self.offset += CATALOG["timing"]["unmeasured_hedge_ms"] / 1000 * 2 + 0.1
         self.phone._tick()
         self.assertEqual(1, len(self.phone._pool.sent))
 
@@ -219,7 +258,7 @@ class DeliveryBridgeTest(TestCase):
         self.assertIsNone(link_delivery.outbound_status("pair", "outgoing"))
         self.base.decrypt.assert_not_called()
         self.base.handle.assert_not_called()
-        self.offset += 2
+        self.offset += CATALOG["timing"]["unmeasured_hedge_ms"] / 1000 * 2 + 0.1
         self.desktop._tick()
         self.assertEqual(1, len(self.desktop._pool.sent))
         self.assertEqual(1, len(self.desktop.policy._rtt[("pair", broker)]))
@@ -231,7 +270,7 @@ class DeliveryBridgeTest(TestCase):
         self.desktop._packet(Ingress("hivemq", 1, time.monotonic()), "to-desktop", packet.payload)
         self.base.log.error.assert_not_called()
         self.assertIsNone(link_delivery.outbound_status("pair", "outgoing"))
-        self.offset += 2
+        self.offset += CATALOG["timing"]["unmeasured_hedge_ms"] / 1000 * 2 + 0.1
         self.desktop._tick()
         self.assertEqual(1, len(self.desktop._pool.sent))
         self.assertEqual({}, self.desktop.policy._rtt)
@@ -242,7 +281,7 @@ class DeliveryBridgeTest(TestCase):
         self.base.envelope = make_envelope(stored_receipt("outgoing", "e" * 64), source_id="phone", target_id="desktop")
         self.desktop._packet(Ingress("hivemq", 1, time.monotonic()), "to-desktop", self.base.packet().payload)
         self.assertIsNotNone(link_delivery.outbound_status("pair", "outgoing"))
-        self.offset += 1.1
+        self.offset += CATALOG["timing"]["unmeasured_hedge_ms"] / 1000 * 2 + 0.1
         self.desktop._tick()
         self.assertEqual(3, len(self.desktop._pool.sent))
         self.assertEqual({}, self.desktop.policy._rtt)

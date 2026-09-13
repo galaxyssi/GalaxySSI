@@ -144,6 +144,15 @@ IDs and both endpoints' last snapshots. Receipts must not be mistaken for missin
 chat rows simply by comparing inbox and history counts. Per-message completion
 markers are printed during long runs; the final JSON report remains the verdict.
 
+Add `--defer-receipt` to hold only the receiver's real encrypted resume ACKs
+while one restored owned path delivers a native business message. The receiver
+must persist that message and retain a pending receipt without marking its own
+route ready. Releasing the unchanged ACKs must retire the sender before its 30s
+durable retry, without enabling another hedge path or dispatching twice. Failed
+runs retain `failure.json` and attempt fresh snapshots of both live endpoints;
+an RPC failure is not followed by another potentially mismatched RPC. This is
+not an Android test or a claim that all historical ACK losses share this cause.
+
 ## Native Latency Comparison
 
 ```powershell
@@ -166,3 +175,11 @@ frames, not all network bytes. Native/JVM startup, one available path within the
 same pool, app display, model latency and actual image/file/video transfers are
 distinct measurements; do not conflate them. See the
 [method, baseline and limitations](../../../docs/testing/MQTT_NATIVE_LATENCY_20260913.md).
+
+Add `--fault-primary` for selected-primary receive loss: the real broker still
+acknowledges while the isolated receiver drops that path. Each of thirty
+multi-path messages must show primary PUBACK, real alternate delivery and one
+business dispatch. The healthy single-path cohort is a reference, not a
+single-path outage comparison. This mode uses a separate predeclared 8s p95
+fault budget instead of the healthy ratio, and retains failure/censored samples.
+See [cold hedge and primary-loss evidence](../../../docs/testing/MQTT_COLD_HEDGE_20260913.md).

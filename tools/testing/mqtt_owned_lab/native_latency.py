@@ -17,7 +17,7 @@ from owned_brokers import OwnedBrokers
 from smoke import require, reject_bad_tls
 
 
-def run(lab, loop, python, report_dir, samples, seed):
+def run(lab, loop, python, report_dir, samples, seed, fault_primary=False):
     if not 30 <= samples <= 180 or samples % 3:
         raise ValueError("Samples per strategy must be a multiple of three between 30 and 180")
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -26,6 +26,8 @@ def run(lab, loop, python, report_dir, samples, seed):
     report = {"status": "running", "network": "owned_loopback_tls", "seed": seed,
               "samples_per_strategy": samples, "blocks": completed,
               "provisional_warm_p95_ratio_budget": 1.10,
+              "fault_primary": fault_primary, "fault_observations": {},
+              "provisional_fault_p95_budget_ms": 8000,
               "scope": "small native peer messages; not attachments, phone, UI or model latency"}
     expected = {}
 
@@ -59,9 +61,12 @@ def run(lab, loop, python, report_dir, samples, seed):
             if operation is not None:
                 asyncio.run_coroutine_threadsafe(operation, loop).result(timeout=15)
 
-    def send(worker):
+    def send(worker, *, blackhole=False):
         mid = str(uuid.uuid4())
         content = "owned-native-latency-" + mid
+        if blackhole:
+            primary = worker.call("plan_message", message_id=mid)["broker"]
+            before = right.call("drop_broker", broker=primary)["dropped"]
         require(worker.call("send", message_id=mid, content=content)["queued"], "Message was not queued")
         expected[mid] = hashlib.sha256(content.encode()).hexdigest()
         deadline = time.monotonic() + 25
@@ -69,6 +74,16 @@ def run(lab, loop, python, report_dir, samples, seed):
             sample = worker.call("measurements", message_id=mid)
             if (sample and "receipt_committed" in sample["stages"]
                     and all(packet["accepted"] is not None for packet in sample["packets"].values())):
+                if blackhole:
+                    dropped = right.call("drop_broker", broker=None)["dropped"] - before
+                    packets = sorted((p for p in sample["packets"].values() if p["accepted"]), key=lambda p: p["at_ns"])
+                    require(packets[0]["broker"] == primary, "Primary changed after the fault preview")
+                    require(dropped > 0 and len(packets) > 1 and any(p["broker"] != primary for p in packets),
+                            "No actual primary loss and alternate physical send")
+                    require(packets[0].get("broker_acked_ns", float("inf")) < sample["stages"]["receipt_committed"],
+                            "Primary PUBACK did not precede the real durable receipt")
+                    report["fault_observations"][mid] = {"primary": primary, "dropped_packets": dropped,
+                        "primary_broker_acked": True, "alternate_submission": True}
                 return mid
             time.sleep(.025)
         report["failed_message_id"] = mid
@@ -106,6 +121,7 @@ def run(lab, loop, python, report_dir, samples, seed):
         for worker in workers:
             paths_ready(worker, paths)
         report["startup"] = {worker.label: worker.call("measurements")["startup_to_authenticated_ready_ms"] for worker in workers}
+        report["policy_limits"] = {worker.label: worker.call("measurements")["policy_limits"] for worker in workers}
         blocks = [("single_available", {path}) for path in sorted(paths)] + [("automatic_multi", paths)] * 3
         random.Random(seed).shuffle(blocks)
         grouped = {"single_available": [], "automatic_multi": []}
@@ -119,7 +135,7 @@ def run(lab, loop, python, report_dir, samples, seed):
                      "transition_and_warmup_ms": (time.perf_counter() - started) * 1000, "message_ids": []}
             completed.append(block)
             for _ in range(samples // 3):
-                mid = send(left)
+                mid = send(left, blackhole=fault_primary and strategy == "automatic_multi")
                 block["message_ids"].append(mid)
                 grouped[strategy].append(mid)
             # Business reads occur outside measured requests and must still pass.
@@ -130,8 +146,14 @@ def run(lab, loop, python, report_dir, samples, seed):
         report["results"] = {strategy: summarize([measurements[mid] for mid in ids]) for strategy, ids in grouped.items()}
         ratio = (report["results"]["automatic_multi"]["request_to_rx_stored_ms"]["p95"] /
                  report["results"]["single_available"]["request_to_rx_stored_ms"]["p95"])
-        report["provisional_small_message_gate"] = {"observed_p95_ratio": ratio,
-            "passed": ratio <= report["provisional_warm_p95_ratio_budget"]}
+        if fault_primary:
+            require(len(report["fault_observations"]) == samples, "Incomplete primary-loss cohort")
+            report["provisional_fault_gate"] = {"observed_p95_ms": report["results"]["automatic_multi"]["request_to_rx_stored_ms"]["p95"],
+                "passed": report["results"]["automatic_multi"]["request_to_rx_stored_ms"]["p95"] <= report["provisional_fault_p95_budget_ms"]}
+            report["provisional_small_message_gate"] = None
+        else:
+            report["provisional_small_message_gate"] = {"observed_p95_ratio": ratio,
+                "passed": ratio <= report["provisional_warm_p95_ratio_budget"]}
         report["validated_business_messages"] = len(expected)
         report["status"] = "measured_with_business_checks_passed"
         report["release_performance_gate"] = "not_evaluated"
@@ -171,12 +193,14 @@ async def main():
     parser.add_argument("--report-dir", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--seed", type=int, default=20260913)
+    parser.add_argument("--fault-primary", action="store_true")
     args = parser.parse_args()
     async with OwnedBrokers() as lab:
         report = await asyncio.to_thread(run, lab, asyncio.get_running_loop(), args.endpoint_python,
-                                        args.report_dir, args.samples, args.seed)
+                                        args.report_dir, args.samples, args.seed, args.fault_primary)
     print(json.dumps({key: value for key, value in report.items() if key not in {"raw_samples", "blocks"}}, indent=2))
-    return 0 if report["provisional_small_message_gate"]["passed"] else 2
+    gate = report.get("provisional_fault_gate") or report["provisional_small_message_gate"]
+    return 0 if gate["passed"] else 2
 
 
 if __name__ == "__main__":

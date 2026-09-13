@@ -36,6 +36,21 @@ class MeasurementTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarize([self.metrics.snapshot("missing")])
 
+    def test_broker_ack_is_not_a_durable_receipt_and_records_first_observation(self):
+        self.metrics.begin("one")
+        self.metrics.physical_start("one", "attempt", "emqx", 1024)
+        self.metrics.physical_end("one", "attempt", True)
+        self.now = 1_000_000
+        self.metrics.broker_ack("one", "attempt")
+        self.now = 2_000_000
+        self.metrics.broker_ack("one", "attempt")
+        self.metrics.broker_ack("unknown", "attempt")
+        sample = self.metrics.snapshot("one")
+        self.assertEqual(1_000_000, sample["packets"]["attempt"]["broker_acked_ns"])
+        self.assertNotIn("receipt_committed", sample["stages"])
+        with self.assertRaises(ValueError):
+            summarize([sample])
+
     def test_duplicate_ids_and_capacity_are_rejected(self):
         metrics = Measurements(limit=1)
         metrics.begin("one")

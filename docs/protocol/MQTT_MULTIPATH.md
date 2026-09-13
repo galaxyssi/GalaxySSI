@@ -227,8 +227,23 @@ paths outside the candidate set cannot contribute. A mature primary's own
 window takes precedence over the aggregate. Network changes discard old speed
 assumptions. Below the sample threshold the conservative catalog default remains.
 Small stop/cancel controls race immediately and are not delayed by this estimate.
+The unsampled backup interval is 2000ms; the separate unknown-path ranking
+estimate remains 500ms. Increasing the backup interval must not silently alter
+ranking. Detected physical failure expedites backups without that wait. See
+[cold-hedge verification](../testing/MQTT_COLD_HEDGE_20260913.md).
 See [native latency evidence](../testing/MQTT_NATIVE_LATENCY_20260913.md) for the
 owned-network measurements and the remaining performance acceptance boundaries.
+
+### Deferred Stored Receipts
+
+Stored small-message attempt receipts that cannot yet use a confirmed route
+are retained by the existing maintenance owner: at most 1,024 proofs globally,
+64 per peer, a 500ms minimum retry interval and a fixed 30s lifetime. Pair/key,
+message/hash and current confirmed path generation are revalidated on each send.
+This local acceleration is not a second durable delivery ledger; expiry, process
+death or subsequent packet loss still use the original sender replay and stored
+inbox proof. Receipts do not request another receipt. See
+[receipt recovery verification](../testing/MQTT_RECEIPT_RETRY_20260913.md).
 
 ## Durable Wire Fragment Ingress
 
