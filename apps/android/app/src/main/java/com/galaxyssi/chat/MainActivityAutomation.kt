@@ -1402,6 +1402,7 @@ internal fun MainActivity.showSignalLinkProtocolPage() {
         getString(if (secureSessionReady) R.string.protocol_badge_online else R.string.status_disconnected)
     ))
     val diagnostics = GalaxySSILinkTransportDiagnostics.snapshot(this)
+    addMqttDeliveryDiagnostics()
     addSectionTitle(getString(R.string.protocol_transport_diagnostics))
     featureContent.addView(featureRow(
         getString(R.string.protocol_replay_events),

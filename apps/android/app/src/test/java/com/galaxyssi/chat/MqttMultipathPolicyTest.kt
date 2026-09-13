@@ -45,6 +45,62 @@ class MqttMultipathPolicyTest {
         assertEquals(brokers, (0 until 100).map { plan(policy, message = it.toString()).first().brokerId }.toSet())
     }
 
+    @Test fun deliveryDiagnosticsRequireVerifiedAttributableReceipt() {
+        val policy = ready()
+        policy.reserve("attempt", attempt())
+        policy.brokerAck("attempt", "emqx", 1)
+        assertEquals(0, policy.diagnostics(1000).verifiedDelivery.getValue("emqx").samples)
+        policy.acceptVerifiedReceipt("other", "m", hash, "attempt", 1000)
+        policy.acceptVerifiedReceipt("peer", "m", "b".repeat(64), "attempt", 1000)
+        assertEquals(0, policy.diagnostics(1000).verifiedDelivery.getValue("emqx").samples)
+        policy.acceptVerifiedReceipt("peer", "m", hash, "attempt", 1000)
+        policy.acceptVerifiedReceipt("peer", "m", hash, "attempt", 1000)
+        val expected = MqttMultipathPolicy.DeliveryStats(1, 1000, null, 1000)
+        assertEquals(expected, policy.diagnostics(1000).verifiedDelivery.getValue("emqx"))
+        policy.reserve("unattributed", attempt(message = "other"))
+        policy.acceptVerifiedMessage("peer", "other", hash)
+        assertEquals(expected, policy.diagnostics(1000).verifiedDelivery.getValue("emqx"))
+    }
+
+    @Test fun deliveryDiagnosticsAreBoundedExpireAndHideSmallSampleP95() {
+        val policy = ready()
+        repeat(40) { index ->
+            val id = index.toString()
+            policy.reserve(id, attempt(message = id))
+            policy.brokerAck(id, "emqx", 1)
+            policy.acceptVerifiedReceipt("peer", id, hash, id, (index + 1) * 1000L)
+            if (index == 28) assertNull(policy.diagnostics(29000).verifiedDelivery.getValue("emqx").p95Ms)
+            if (index == 29) assertEquals(29000L, policy.diagnostics(30000).verifiedDelivery.getValue("emqx").p95Ms)
+        }
+        assertEquals(MqttMultipathPolicy.DeliveryStats(32, 24000, 39000, 40000),
+            policy.diagnostics(40000).verifiedDelivery.getValue("emqx"))
+        assertEquals(MqttMultipathPolicy.DeliveryStats(0, null, null, null),
+            policy.diagnostics(341000).verifiedDelivery.getValue("emqx"))
+    }
+
+    @Test fun deliveryDiagnosticsForgetPeerAndResetNetwork() {
+        val policy = ready()
+        listOf("private-a", "private-b").forEach { peer ->
+            policy.reserve(peer, attempt(peer = peer, message = peer))
+            policy.brokerAck(peer, "emqx", 1)
+            policy.acceptVerifiedReceipt(peer, peer, hash, peer, 1000)
+        }
+        val snapshot = policy.diagnostics(1000)
+        assertFalse(snapshot.toString().contains("private-"))
+        policy.forgetPeer("private-a")
+        assertEquals(1, policy.diagnostics(1000).verifiedDelivery.getValue("emqx").samples)
+        assertEquals(2, snapshot.verifiedDelivery.getValue("emqx").samples)
+        policy.setNetwork("changed")
+        assertEquals(0, policy.diagnostics(1000).verifiedDelivery.getValue("emqx").samples)
+    }
+
+    @Test fun negativeDeliveryTimeDoesNotCreateSample() {
+        val policy = ready()
+        policy.reserve("attempt", attempt())
+        policy.acceptVerifiedReceipt("peer", "m", hash, "attempt", -1)
+        assertEquals(0, policy.diagnostics(1000).verifiedDelivery.getValue("emqx").samples)
+    }
+
     @Test fun textHedgesButCriticalControlRacesImmediately() {
         val policy = ready()
         assertEquals(listOf(0L, 2000L, 4000L), plan(policy).map { it.delayMs })

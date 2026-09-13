@@ -2456,6 +2456,7 @@ def mqtt_bridge_status() -> dict[str, Any]:
     status["ingress"] = mqtt_ingress_status()
     status["receive_ready"] = bool(status["connected"] and subscriptions["ready"])
     status["paths"] = active_client.path_snapshot()["paths"] if isinstance(active_client, MqttPoolClient) else {}
+    status["scheduling"] = active_client.policy.diagnostics() if isinstance(active_client, MqttPoolClient) else None
     peers = active_client.peer_routes.status() if isinstance(active_client, MqttPoolClient) else {"configured": 0, "ready": 0}
     status["peers"] = peers
     status["ready"] = bool(status["connected"] and peers["ready"])

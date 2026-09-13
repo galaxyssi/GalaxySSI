@@ -204,6 +204,8 @@ object GalaxySSIMqttClient {
 
     fun isSecureReady(): Boolean = secureReady
 
+    internal fun transportDiagnostics(): MqttMultipathPolicy.Diagnostics? = client?.diagnostics()
+
     fun refreshOpaqueSubscriptions(context: Context) {
         bindApplicationContext(context)
         if (client?.isConnected == true) subscribe() else connect(context)

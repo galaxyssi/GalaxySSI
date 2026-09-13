@@ -359,6 +359,7 @@ class Endpoint:
                 "ingress": self.bridge.mqtt_ingress_status(), "inbox": inbox, "outbox": outbox,
                 "receive_storage": receive_storage,
                 "delivery": self.client.delivery.diagnostics(),
+                "scheduling": self.client.policy.diagnostics(),
                 "paused_publications": self.paused_publications,
                 "errors": list(self.error_capture.errors),
                 "messages": [{"id": row["message_id"] if row["direction"] == "outbound" else remote_ids[row["message_id"]],

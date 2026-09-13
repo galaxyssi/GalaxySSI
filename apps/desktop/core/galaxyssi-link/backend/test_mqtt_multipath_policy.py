@@ -30,6 +30,57 @@ class MultipathPolicyTests(unittest.TestCase):
                 traffic=Traffic.MESSAGE, content_hash=HASH, started=0.0):
         return self.policy.reserve(key, Attempt(peer, message, content_hash, path, 1, size, traffic, started))
 
+    def test_delivery_diagnostics_require_verified_attributable_receipt(self):
+        self.reserve("attempt")
+        self.policy.broker_ack("attempt", "emqx", 1)
+        self.assertEqual(0, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]["samples"])
+        self.policy.accept_verified_receipt("other", "m", HASH, "attempt", now=1)
+        self.policy.accept_verified_receipt("peer", "m", "b" * 64, "attempt", now=1)
+        self.assertEqual(0, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]["samples"])
+        self.policy.accept_verified_receipt("peer", "m", HASH, "attempt", now=1)
+        self.policy.accept_verified_receipt("peer", "m", HASH, "attempt", now=1)
+        value = self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]
+        self.assertEqual({"samples": 1, "p50_ms": 1000.0, "p95_ms": None, "latest_ms": 1000.0}, value)
+        self.reserve("unattributed", message="other")
+        self.policy.accept_verified_message("peer", "other", HASH)
+        self.assertEqual(value, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"])
+
+    def test_delivery_diagnostics_are_bounded_expire_and_hide_small_sample_p95(self):
+        for index in range(40):
+            self.reserve(str(index), message=str(index))
+            self.policy.broker_ack(str(index), "emqx", 1)
+            self.policy.accept_verified_receipt("peer", str(index), HASH, str(index), now=index + 1)
+            if index == 28:
+                self.assertIsNone(self.policy.diagnostics(now=29)["verified_delivery"]["paths"]["emqx"]["p95_ms"])
+            if index == 29:
+                self.assertEqual(29000.0, self.policy.diagnostics(now=30)["verified_delivery"]["paths"]["emqx"]["p95_ms"])
+        value = self.policy.diagnostics(now=40)["verified_delivery"]["paths"]["emqx"]
+        self.assertEqual({"samples": 32, "p50_ms": 24000.0, "p95_ms": 39000.0, "latest_ms": 40000.0}, value)
+        self.assertEqual(32, len(self.policy._delivery_samples["emqx"]))
+        empty = self.policy.diagnostics(now=341)["verified_delivery"]["paths"]["emqx"]
+        self.assertEqual({"samples": 0, "p50_ms": None, "p95_ms": None, "latest_ms": None}, empty)
+
+    def test_delivery_diagnostics_forget_peer_and_reset_network(self):
+        for peer in ("private-a", "private-b"):
+            self.reserve(peer, peer=peer, message=peer)
+            self.policy.broker_ack(peer, "emqx", 1)
+            self.policy.accept_verified_receipt(peer, peer, HASH, peer, now=1)
+        snapshot = self.policy.diagnostics(now=1)
+        self.assertNotIn("private-", str(snapshot))
+        self.policy.forget_peer("private-a")
+        self.assertEqual(1, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]["samples"])
+        snapshot["verified_delivery"]["paths"]["emqx"]["samples"] = 999
+        self.assertEqual(1, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]["samples"])
+        self.policy.set_network("changed")
+        self.assertEqual(0, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]["samples"])
+
+    def test_invalid_delivery_times_do_not_create_a_sample(self):
+        for index, at in enumerate((-1, float("nan"), float("inf"))):
+            self.reserve(str(index), message=str(index))
+            self.policy.broker_ack(str(index), "emqx", 1)
+            self.policy.accept_verified_receipt("peer", str(index), HASH, str(index), now=at)
+        self.assertEqual(0, self.policy.diagnostics(now=1)["verified_delivery"]["paths"]["emqx"]["samples"])
+
     def test_all_three_connection_orders_use_first_subscribed_common_path(self):
         for order in itertools.permutations(BROKER_IDS):
             with self.subTest(order=order):

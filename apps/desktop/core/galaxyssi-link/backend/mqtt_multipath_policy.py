@@ -1,7 +1,8 @@
 """Broker-independent scheduling; authentication and durable acceptance stay in Link.
 
-All times are monotonic seconds supplied by the caller. A broker receipt only
-releases a physical send slot. Only a verified peer receipt ends a message race.
+Scheduling times are monotonic seconds supplied by the caller; diagnostics default
+to the process monotonic clock. A broker receipt only releases a physical send
+slot. Only a verified peer receipt ends a message race.
 """
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import hashlib
 import math
 import secrets
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -113,6 +115,7 @@ class MultipathPolicy:
         self._routes: dict[str, PeerRoute] = {}
         self._attempts: dict[str, Attempt] = {}
         self._rtt: dict[tuple[str, str], deque[tuple[float, float]]] = {}
+        self._delivery_samples = {broker: deque(maxlen=32) for broker in BROKER_IDS}
         self._lock = threading.RLock()
         self._tie_seed = tie_seed if tie_seed is not None else secrets.token_bytes(16)
         self._network = ""
@@ -123,6 +126,8 @@ class MultipathPolicy:
             if network != self._network:
                 self._network = network
                 self._rtt.clear()
+                for values in self._delivery_samples.values():
+                    values.clear()
                 self.chunks.reset()
 
     def connected(self, broker: str, generation: int, *, packet_bytes: int | None = None) -> bool:
@@ -196,6 +201,8 @@ class MultipathPolicy:
             self.chunks.forget(peer)
             self._routes.pop(peer, None)
             self._rtt = {key: values for key, values in self._rtt.items() if key[0] != peer}
+            for broker, values in self._delivery_samples.items():
+                self._delivery_samples[broker] = deque((sample for sample in values if sample[0] != peer), maxlen=32)
             for key in [key for key, value in self._attempts.items() if value.peer == peer]:
                 del self._attempts[key]
 
@@ -320,6 +327,7 @@ class MultipathPolicy:
             elapsed = now - accepted.started_at
             if math.isfinite(elapsed) and elapsed >= 0:
                 self._rtt.setdefault((peer, accepted.path), deque(maxlen=32)).append((now, elapsed))
+                self._delivery_samples[accepted.path].append((peer, now, elapsed))
             completed = tuple(key for key, value in self._attempts.items()
                               if (value.peer, value.message_id, value.content_hash)
                               == (peer, message_id, content_hash))
@@ -372,8 +380,20 @@ class MultipathPolicy:
                 del self._attempts[key]
             return expired
 
-    def diagnostics(self) -> dict:
+    def diagnostics(self, *, now: float | None = None) -> dict:
+        at = time.monotonic() if now is None else now
         with self._lock:
+            delivery = {}
+            for broker, values in self._delivery_samples.items():
+                fresh = [sample for sample in values if 0 <= at - sample[1] <= self.limits.metric_ttl]
+                elapsed = sorted(sample[2] * 1000 for sample in fresh)
+                count = len(elapsed)
+                delivery[broker] = {
+                    "samples": count,
+                    "p50_ms": round(elapsed[math.ceil(count * .50) - 1], 3) if count else None,
+                    "p95_ms": round(elapsed[math.ceil(count * .95) - 1], 3) if count >= 30 else None,
+                    "latest_ms": round(fresh[-1][2] * 1000, 3) if count else None,
+                }
             return {
                 "selection": "automatic",
                 "paths": {key: {"connected": path.connected, "generation": path.generation,
@@ -381,4 +401,7 @@ class MultipathPolicy:
                 "inflight_packets": sum(value.slot_held for value in self._attempts.values()),
                 "inflight_bytes": sum(value.wire_bytes for value in self._attempts.values() if value.slot_held),
                 "pending_attempts": len(self._attempts),
+                "verified_delivery": {"scope": "attempt_to_verified_peer_receipt", "window_per_path": 32,
+                                      "ttl_seconds": self.limits.metric_ttl, "p95_min_samples": 30,
+                                      "percentile_method": "nearest_rank", "paths": delivery},
             }

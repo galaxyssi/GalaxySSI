@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mqtt_diagnostics_delivery_title">近期实际送达</string>
+    <string name="mqtt_diagnostics_no_delivery_samples">暂无近期经过对端确认的送达样本</string>
+    <string name="mqtt_diagnostics_insufficient_samples">需至少 30 个样本</string>
+    <string name="mqtt_diagnostics_milliseconds">%1$d 毫秒</string>
+    <string name="mqtt_diagnostics_delivery_detail">发送尝试至对端确认：中位数 %1$d 毫秒；p95 %2$s</string>
+    <string name="mqtt_diagnostics_sample_count">%1$d 个样本</string>
+</resources>

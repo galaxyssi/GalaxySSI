@@ -10,6 +10,24 @@ version updates, and a PR. This record is not a reduced P0 scope or completion c
 
 ## Latest Checkpoint
 
+Both endpoint policies now provide bounded recent verified-delivery observations,
+with 32 samples per path, TTL filtering, peer removal and network-reset cleanup.
+PUBACKs, wrong/duplicate receipts and unattributed completion do not become RTT
+samples. Missing values stay null, and p95 requires 30 samples. Android's existing
+protocol diagnostic rows and Desktop's loopback diagnostic response expose this
+data without changing chat UI or routing. The full Android resource/Kotlin build
+and final-source incremental confirmation pass; 210 Android host cases and 124
+combined Desktop cases pass, as do Desktop's 37 checks and structure check. The
+native diagnostic run passed 20 business messages / three path cycles with empty
+endpoint logs; real receipt samples appear on observed paths while unobserved
+paths and small-sample p95 stay null.
+See [delivery diagnostics](../testing/MQTT_DELIVERY_DIAGNOSTICS_20260913.md).
+This is not full diagnostic/status, device or performance acceptance. S26U remains
+absent; SM-T575 and the production Desktop are not operated. No APK was packaged
+or installed in this diagnostic checkpoint. PR #3045 remains the stop boundary.
+
+## Previous Admission Checkpoint
+
 Per-invocation receive instrumentation identified a queue-admission race:
 background recovery could reserve a newly stored message before its live handler
 claimed it, unnecessarily deferring that first authenticated delivery. A live
@@ -512,12 +530,12 @@ remaining work rather than replacing those requirements with six narrow tests.
 
 | Group | Current evidence | Still required |
 | --- | --- | --- |
-| Performance | Owned healthy/failed-path cohorts and two post-lock-fix control/load runs exist; the latest 8s loaded-control p95 gate fails twice | Explain receive/return delay, optimize without weakening safety, repeat single/hedged/striped cold/warm and faulted-path comparisons |
+| Performance | Prior lock-fix failures are retained; receive admission was then fixed, with two native control/load passes at 4.906s / 6.291s p95 under the unchanged 8s budget | Repeat single/hedged/striped cold/warm and faulted-path comparisons; verify Android and real model/control latency |
 | Pairing and devices | Both endpoint pools and authenticated routing are integrated; earlier device/host checkpoints exist | Fresh coordinated S26U/Desktop pairing, all discovery paths, App/App and multiple-phone route isolation, controlled small public-provider compatibility checks |
 | End-to-end artifacts | Native Desktop ingress verifies PNG/video/5/21/32 MiB, hashes, recovery and one artifact | Real Android/P2 striping, both directions, preview/open/save, missing-only alternate-path recovery and full revocation/quota cleanup |
 | Windows and background tasks | Shared stores, supervisor ownership and partial no-Activity result projection are implemented/tested | Ten real windows/model tasks, closing all Activities, complete continuation/learning/handoff projection and interrupted commit recovery |
 | Failure and safety matrix | Owned native process deaths, path losses, receipt loss, duplicates and negative host tests cover subsets | Full cross-platform network/Doze/reboot/reordering/concurrent-artifact matrix, correct status and no duplicated effects or task reassignment |
-| Diagnostics and resources | Per-path transport observations and bounded ownership exist | Product diagnostic/status acceptance, single/three-connection PSS/CPU/threads/network/power comparison on Wi-Fi/mobile/weak links; repeated screen-off long runs |
+| Diagnostics and resources | Per-path transport observations and bounded ownership exist; verified-delivery windows are now exposed in Android protocol diagnostics and the Desktop diagnostic response | Product diagnostic/status acceptance, retry/byte/throughput presentation, single/three-connection PSS/CPU/threads/network/power comparison on Wi-Fi/mobile/weak links; repeated screen-off long runs |
 
 Release closure is additional: finish gates, package the final Desktop, resolve
 its Windows executable resource metadata, install the coordinated final APK on

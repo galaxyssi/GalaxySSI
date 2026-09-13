@@ -33,8 +33,11 @@ internal class MqttMultipathPolicy(
         var peerAccepted: Boolean = false
     )
     data class PathSnapshot(val connected: Boolean, val generation: Long, val subscriptionCount: Int)
+    data class DeliveryStats(val samples: Int, val p50Ms: Long?, val p95Ms: Long?, val latestMs: Long?)
     data class Diagnostics(val paths: Map<String, PathSnapshot>, val inflightPackets: Int,
-                           val inflightBytes: Long, val pendingAttempts: Int)
+                           val inflightBytes: Long, val pendingAttempts: Int,
+                           val verifiedDelivery: Map<String, DeliveryStats>)
+    private data class DeliverySample(val peer: String, val at: Long, val elapsed: Long)
     private data class Path(var generation: Long = 0, var connected: Boolean = false,
                             var packetBytes: Int = MqttBrokerCatalog.PACKET_BYTES,
                             val topics: MutableSet<String> = mutableSetOf())
@@ -42,6 +45,7 @@ internal class MqttMultipathPolicy(
     private val routes = mutableMapOf<String, PeerRoute>()
     private val attempts = mutableMapOf<String, Attempt>()
     private val rtt = mutableMapOf<Pair<String, String>, ArrayDeque<Pair<Long, Long>>>()
+    private val deliverySamples = MqttBrokerCatalog.brokers.keys.associateWith { ArrayDeque<DeliverySample>() }
     private var network = ""
     private val chunks = MqttChunkThroughput()
 
@@ -49,6 +53,7 @@ internal class MqttMultipathPolicy(
         if (value != network) {
             network = value
             rtt.clear()
+            deliverySamples.values.forEach { it.clear() }
             chunks.reset()
         }
     }
@@ -110,6 +115,7 @@ internal class MqttMultipathPolicy(
         chunks.forget(peer)
         routes.remove(peer)
         rtt.keys.removeAll { it.first == peer }
+        deliverySamples.values.forEach { values -> values.removeAll { it.peer == peer } }
         attempts.entries.removeAll { it.value.peer == peer }
     }
 
@@ -231,6 +237,9 @@ internal class MqttMultipathPolicy(
             val values = rtt.getOrPut(peer to accepted.brokerId) { ArrayDeque() }
             if (values.size >= 32) values.removeFirst()
             values.addLast(now to elapsed)
+            val recent = deliverySamples.getValue(accepted.brokerId)
+            if (recent.size >= 32) recent.removeFirst()
+            recent.addLast(DeliverySample(peer, now, elapsed))
         }
         val completed = attempts.filterValues {
             it.peer == peer && it.messageId == messageId && it.contentHash == contentHash
@@ -273,10 +282,17 @@ internal class MqttMultipathPolicy(
         return expired
     }
 
-    @Synchronized fun diagnostics(): Diagnostics = Diagnostics(
+    @Synchronized fun diagnostics(now: Long = System.nanoTime() / 1_000_000): Diagnostics = Diagnostics(
         paths.mapValues { (_, value) -> PathSnapshot(value.connected, value.generation, value.topics.size) },
         attempts.values.count { it.slotHeld },
         attempts.values.filter { it.slotHeld }.sumOf { it.wireBytes.toLong() },
-        attempts.size
+        attempts.size,
+        deliverySamples.mapValues { (_, values) ->
+            val fresh = values.filter { now - it.at in 0..MqttBrokerCatalog.METRIC_TTL_MS }
+            val sorted = fresh.map { it.elapsed }.sorted()
+            DeliveryStats(sorted.size, sorted.getOrNull(ceil(sorted.size * .50).toInt() - 1),
+                if (sorted.size >= 30) sorted[ceil(sorted.size * .95).toInt() - 1] else null,
+                fresh.lastOrNull()?.elapsed)
+        }
     )
 }

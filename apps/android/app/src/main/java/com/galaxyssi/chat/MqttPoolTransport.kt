@@ -128,6 +128,7 @@ internal class MqttPoolTransport(
     }
 
     fun snapshot() = pool.snapshot()
+    fun diagnostics() = policy.diagnostics(now())
 
     fun subscribe(topics: Array<String>, qos: IntArray, context: Any?, callback: IMqttActionListener) {
         require(topics.size == qos.size && topics.isNotEmpty())

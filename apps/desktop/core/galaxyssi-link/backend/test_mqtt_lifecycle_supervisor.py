@@ -216,6 +216,25 @@ class MqttLifecycleSupervisorTests(unittest.TestCase):
         self.assertTrue(status["supervised"])
         self.assertFalse(status["connected"])
         self.assertEqual(5.0, status["disconnected_seconds"])
+        self.assertIsNone(status["scheduling"])
+
+    def test_health_exposes_observed_scheduling_without_claiming_peer_ready(self):
+        from mqtt_pool_client import MqttPoolClient
+        from types import SimpleNamespace
+        from tests.mqtt_pool_fixture import ManualPool
+        pool = MqttPoolClient(classify_publication=lambda *_: None, pool_factory=ManualPool)
+        self.addCleanup(pool.disconnect)
+        pool.peer_routes = SimpleNamespace(status=lambda: {"configured": 0, "ready": 0})
+        pool.subscribe({"owned-inbox": 1})
+        pool._pool.connect("emqx")
+        with patch.object(mqtt_bridge, "client", pool):
+            status = mqtt_bridge.mqtt_bridge_status()
+        self.assertFalse(status["ready"])
+        self.assertEqual("automatic", status["scheduling"]["selection"])
+        observed = status["scheduling"]["verified_delivery"]
+        self.assertEqual("attempt_to_verified_peer_receipt", observed["scope"])
+        self.assertEqual(0, observed["paths"]["emqx"]["samples"])
+        self.assertIsNone(observed["paths"]["emqx"]["p95_ms"])
 
 
 if __name__ == "__main__":

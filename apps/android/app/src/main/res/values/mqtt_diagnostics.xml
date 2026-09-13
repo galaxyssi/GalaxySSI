@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mqtt_diagnostics_delivery_title">Recent verified delivery</string>
+    <string name="mqtt_diagnostics_no_delivery_samples">No recent peer-confirmed delivery samples</string>
+    <string name="mqtt_diagnostics_insufficient_samples">At least 30 samples required</string>
+    <string name="mqtt_diagnostics_milliseconds">%1$d ms</string>
+    <string name="mqtt_diagnostics_delivery_detail">Attempt to peer confirmation: median %1$d ms; p95 %2$s</string>
+    <string name="mqtt_diagnostics_sample_count">%1$d samples</string>
+</resources>
