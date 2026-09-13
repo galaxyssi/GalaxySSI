@@ -44,6 +44,8 @@ class MainActivity : Activity() {
     private var editor: EditText? = null
     private var busy = false
     private var resumed = false
+    private var conversationView: WatchConversationView? = null
+    private var sessionQuery = ""
     private var speechReady = false
     private var speech: TextToSpeech? = null
     private var lastSpokenTask = ""
@@ -52,9 +54,10 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val saveDraft = Runnable { repo.store.draft = draft }
     private val updated: () -> Unit = {
-        if (page !in setOf("compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
+        if (page == "home") refreshConversation()
+        else if (page !in setOf("session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
         val task = repo.store.task(selectedTask)
-        if (page == "task" && repo.store.autoSpeech && task?.state == TaskState.COMPLETED &&
+        if (page == "home" && repo.store.autoSpeech && task?.state == TaskState.COMPLETED &&
             task.reply.isNotBlank() && task.id != lastSpokenTask) {
             lastSpokenTask = task.id; speak(task.reply)
         }
@@ -67,7 +70,8 @@ class MainActivity : Activity() {
         }
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         page = savedInstanceState?.getString("page") ?: "home"
-        selectedTask = savedInstanceState?.getString("task") ?: ""
+        if (page in setOf("task", "compose")) page = "home"
+        selectedTask = savedInstanceState?.getString("task") ?: repo.store.activeTask
         followUpId = savedInstanceState?.getString("followup") ?: ""
         detailDesktop = savedInstanceState?.getString("desktop") ?: ""
         draft = savedInstanceState?.getString("draft") ?: repo.store.draft
@@ -86,7 +90,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readLaunchIntent(intent); render() }
     private fun readLaunchIntent(intent: Intent) {
-        intent.getStringExtra("task_id")?.takeIf { repo.store.task(it) != null }?.let { selectedTask = it; page = "task" }
+        intent.getStringExtra("task_id")?.takeIf { repo.store.task(it) != null }?.let { selectedTask = it; repo.store.activeTask = it; page = "home" }
         // adb provisioning writes a one-time offer to private app storage. It still
         // requires an on-watch identity review and confirmation before trust changes.
         val offer = File(filesDir, "pairing-offer.json")
@@ -112,9 +116,13 @@ class MainActivity : Activity() {
     }
     private fun updateConversationVisibility() {
         if (!resumed) return
-        val task = if (page == "task") repo.store.task(selectedTask) else null
+        val task = if (page == "home") repo.store.task(selectedTask) else null
         repo.conversationVisibility.show(this, task)
-        if (task != null) WatchNotifications.dismissConversation(this, repo.store.tasks(), task)
+        if (task != null) {
+            val turns = repo.store.tasks().filter { it.conversationKey() == task.conversationKey() }
+            WatchNotifications.dismissConversation(this, turns, task)
+            repo.store.markRead(turns)
+        }
     }
     override fun onStop() {
         handler.removeCallbacks(saveDraft); repo.store.draft = draft
@@ -128,11 +136,11 @@ class MainActivity : Activity() {
         out.putStringArrayList("history", ArrayList(history)); super.onSaveInstanceState(out)
     }
 
-    private fun navigate(destination: String) { history.addLast(page); page = destination; render() }
+    private fun navigate(destination: String) { history.addLast(page); page = if (destination in setOf("task", "compose")) "home" else destination; render() }
     private fun back() {
         if (busy) return
         speech?.stop()
-        if (page == "home") { finish(); return }
+        if (page == "home" && history.isEmpty()) { finish(); return }
         if (page.startsWith("pair")) { pairingOffer = null; pairingText = "" }
         if (page.startsWith("api-")) { apiOffer = null; apiKey = "" }
         page = if (history.isEmpty()) "home" else history.removeLast()
@@ -144,12 +152,14 @@ class MainActivity : Activity() {
 
     private fun render(preserveScroll: Boolean = false) {
         updateConversationVisibility()
-        val offset = if (preserveScroll && ::scroll.isInitialized) scroll.scrollY else 0
-        editor = null
         if (page == "api-edit") window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
+        if (page == "home") { showConversation(); return }
+        conversationView = null
+        val offset = if (preserveScroll && ::scroll.isInitialized) scroll.scrollY else 0
+        editor = null
         val frame = SwipeDismissFrameLayout(this)
         frame.setBackgroundColor(Color.BLACK)
         frame.addCallback(object : SwipeDismissFrameLayout.Callback() {
@@ -185,13 +195,16 @@ class MainActivity : Activity() {
         frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
         label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date()), 12, Color.LTGRAY)
         when (page) {
-            "home" -> home()
+            "home" -> homeMenu()
             "devices" -> devices()
             "device" -> device()
             "agents" -> agents()
             "sessions" -> sessions()
-            "compose" -> compose()
-            "task" -> task()
+            "contacts" -> contacts()
+            "home-menu" -> homeMenu()
+            "session-search" -> { title(R.string.search); input(sessionQuery, R.string.search, 100) { sessionQuery = it }; button(R.string.search) { page = "sessions"; render() } }
+            "compose" -> homeMenu()
+            "task" -> homeMenu()
             "stop" -> confirmStop()
             "pair" -> pairInput()
             "pair-review" -> pairReview()
@@ -215,7 +228,7 @@ class MainActivity : Activity() {
             "api-edit" -> apiSettings()
             "api-review" -> apiReview()
             "api-remove" -> apiRemove()
-            else -> { page = "home"; home() }
+            else -> homeMenu()
         }
         if (repo.errorResource != 0 && page !in setOf("compose", "pair", "pair-review")) label(getString(repo.errorResource), 12)
         if (page != "home") button(R.string.back) { back() }
@@ -252,20 +265,77 @@ class MainActivity : Activity() {
         else -> R.string.disconnected
     }
 
-    private fun home() {
-        title(R.string.app_name)
-        val link = repo.links().firstOrNull { it.desktopId == repo.store.selectedDesktop }
-        val api = repo.store.apiProfile?.takeIf { repo.store.apiPreferred }
-        label(if (api != null) getString(R.string.api_ready, api.model) else link?.desktopName ?: getString(R.string.home_not_paired), 12)
-        if (link != null && api == null) label(getString(if (repo.online(link.desktopId)) R.string.online else connectionLabel()), 12, green)
-        if (link?.paired == true || api != null) {
-            button(R.string.say_something, true) { followUpId = ""; startVoice() }
-        } else {
-            button(R.string.connect_service, true) { navigate("devices") }
-        }
-        button(R.string.recent) { navigate("sessions") }
+    private fun newConversation() {
+        selectedTask = ""; repo.store.activeTask = ""; followUpId = ""; draft = ""; repo.store.draft = ""
+        page = "home"; history.clear(); render()
+    }
+    private fun homeMenu() {
+        title(R.string.home_menu)
+        button(R.string.new_conversation) { newConversation() }
+        button(R.string.recent) { sessionQuery = ""; navigate("sessions") }
+        button(R.string.contacts) { navigate("contacts") }
+        button(R.string.api_provider) { openApiSettings() }
         button(R.string.devices) { navigate("devices") }
+        button(R.string.stop_speech) { speech?.stop(); back() }
         button(R.string.settings) { navigate("settings") }
+    }
+    private fun showConversation() {
+        val frame = SwipeDismissFrameLayout(this)
+        frame.setBackgroundColor(Color.BLACK)
+        if (resources.configuration.isScreenRound) {
+            frame.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) { outline.setOval(0, 0, view.width, view.height) }
+            }
+            frame.clipToOutline = true
+        }
+        frame.addCallback(object : SwipeDismissFrameLayout.Callback() {
+            override fun onDismissed(layout: SwipeDismissFrameLayout) { back() }
+        })
+        conversationView = WatchConversationView(this, draft,
+            onDraft = { draft = it; handler.removeCallbacks(saveDraft); handler.postDelayed(saveDraft, 350) },
+            onSend = { sendFromHome() }, onVoice = { followUpId = selectedTask; startVoice() },
+            onMenu = { navigate("home-menu") }, onSessions = { sessionQuery = ""; navigate("sessions") },
+            onModel = { openApiSettings() },
+            onStop = { selectedTask = it.id; navigate("stop") }, onRead = { speak(it) },
+            onConnect = { navigate("devices") })
+        frame.addView(conversationView, FrameLayout.LayoutParams(-1, -1))
+        setContentView(frame)
+        frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
+        editor = conversationView?.input
+        refreshConversation(true)
+    }
+    private fun refreshConversation(reset: Boolean = false) {
+        val previous = repo.store.task(selectedTask)
+        val turns = repo.store.tasks().filter { previous != null && it.conversationKey() == previous.conversationKey() }.sortedBy { it.sourceId }
+        val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
+        val api = repo.store.apiProfile
+        val desktop = previous?.desktopId ?: repo.store.selectedDesktop
+        val agent = previous?.agentId ?: repo.store.selectedAgent
+        val ready = if (usingApi) api != null && (previous == null || previous.routeId == api.id)
+            else repo.links().any { it.desktopId == desktop && it.paired } && agent.isNotBlank()
+        val name = if (usingApi) api?.model.orEmpty() else agent
+        conversationView?.update(turns, name.ifBlank { getString(R.string.connect_service) }, ready, reset)
+        conversationView?.sending(busy)
+        updateConversationVisibility()
+    }
+    private fun sendFromHome() {
+        if (busy || draft.isBlank()) return
+        val previous = repo.store.task(selectedTask)
+        if (previous == null && !repo.store.apiPreferred && (repo.store.selectedDesktop.isBlank() || repo.store.selectedAgent.isBlank())) {
+            navigate("devices"); return
+        }
+        busy = true; conversationView?.sending(true)
+        editor?.clearFocus()
+        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(editor?.windowToken, 0)
+        repo.send(draft, previous) { sent ->
+            busy = false
+            if (isDestroyed || isFinishing) return@send
+            if (sent == null) { toast(if (repo.errorResource != 0) repo.errorResource else R.string.send_failed); refreshConversation(); return@send }
+            selectedTask = sent.id; repo.store.activeTask = sent.id; followUpId = ""
+            draft = ""; repo.store.draft = ""; page = "home"
+            if (conversationView == null) render() else { conversationView?.setDraft(""); refreshConversation(true) }
+            runCatching { startForegroundService(Intent(this, WatchConnectionService::class.java)) }
+        }
     }
     private fun devices() {
         title(R.string.devices)
@@ -294,58 +364,61 @@ class MainActivity : Activity() {
         if (agents.isEmpty()) label(getString(R.string.no_agents))
         agents.forEach { agent ->
             button(if (agent.available) agent.name else getString(R.string.agent_unavailable, agent.name), agent.available) {
-                repo.store.selectedAgent = agent.id; followUpId = ""; navigate("compose")
+                repo.store.selectedAgent = agent.id; repo.store.apiPreferred = false; newConversation()
             }
         }
         button(R.string.refresh) { repo.refresh() }
     }
+    private fun directoryRow(name: String, subtitle: String, count: Int = 0, action: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(62)
+            setPadding(dp(2), dp(7), dp(2), dp(7)); setOnClickListener { action() }
+            addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(28), dp(28)))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, dp(2), 0)
+                addView(TextView(this@MainActivity).apply { text = name; textSize = 14f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(TextView(this@MainActivity).apply { text = subtitle; textSize = 11f; setTextColor(Color.LTGRAY); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (count > 0) addView(TextView(this@MainActivity).apply { text = count.toString(); setTextColor(green); textSize = 12f })
+        }
+        content.addView(row, LinearLayout.LayoutParams(-1, -2))
+        content.addView(View(this).apply { setBackgroundColor(Color.rgb(52, 56, 65)) }, LinearLayout.LayoutParams(-1, dp(1)))
+    }
     private fun sessions() {
         title(R.string.recent)
-        val tasks = repo.store.tasks()
-        if (tasks.isEmpty()) label(getString(R.string.empty_sessions))
-        tasks.groupBy { it.conversationId }.values.take(30).forEach { turns ->
-            val task = turns.first()
-            button("${task.prompt.take(26)}\n${getString(task.state.label())}") { selectedTask = task.id; navigate("task") }
+        val actions = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        for ((label, action) in listOf<Pair<Int, () -> Unit>>(
+            R.string.search to { navigate("session-search") }, R.string.contacts to { navigate("contacts") }, R.string.new_conversation to { newConversation() })) {
+            actions.addView(Button(this).apply { text = getString(label); textSize = 10f; isAllCaps = false; minHeight = dp(48); setPadding(0, 0, 0, 0); setOnClickListener { action() } }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        button(R.string.new_conversation) { followUpId = ""; navigate("compose") }
+        content.addView(actions, LinearLayout.LayoutParams(-1, -2))
+        val groups = repo.store.tasks().groupBy { it.conversationKey() }.values.filter { turns ->
+            sessionQuery.isBlank() || turns.any { it.prompt.contains(sessionQuery, true) || it.reply.contains(sessionQuery, true) }
+        }
+        if (groups.isEmpty()) label(getString(R.string.empty_sessions))
+        groups.take(30).forEach { turns ->
+            val current = turns.first()
+            directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::unread)) {
+                selectedTask = current.id; repo.store.activeTask = current.id; followUpId = ""; navigate("home")
+            }
+        }
     }
-    private fun compose() {
-        title(R.string.review_message)
-        val previous = repo.store.task(followUpId)
-        val desktop = previous?.desktopId ?: repo.store.selectedDesktop
-        val agent = previous?.agentId ?: repo.store.selectedAgent
-        val link = repo.links().firstOrNull { it.desktopId == desktop }
-        val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
-        val api = repo.store.apiProfile
-        label(getString(R.string.recipient, if (usingApi) api?.let { "${java.net.URI(it.endpoint).host} · ${it.model}" }.orEmpty()
-            else listOfNotNull(link?.desktopName, agent.takeIf { it.isNotBlank() }).joinToString(" · ")))
-        if (usingApi && (api == null || (previous != null && previous.routeId != api.id))) {
-            label(getString(R.string.api_invalid)); button(R.string.api_title) { openApiSettings() }; return
-        }
-        if (!usingApi && (link?.paired != true || agent.isBlank())) {
-            button(R.string.devices, true) { navigate("devices") }; return
-        }
-        input(draft, R.string.message_hint, 4000) { draft = it; handler.removeCallbacks(saveDraft); handler.postDelayed(saveDraft, 350) }
-        button(if (busy) R.string.sending else R.string.send, true) {
-            if (!busy && draft.isNotBlank()) {
-                busy = true; editor?.clearFocus()
-                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(editor?.windowToken, 0)
-                repo.send(draft, previous) { task ->
-                    busy = false
-                    if (isDestroyed || isFinishing) return@send
-                    if (task == null) toast(R.string.send_failed) else {
-                        draft = ""; repo.store.draft = ""; selectedTask = task.id; followUpId = ""
-                        runCatching { startForegroundService(Intent(this, WatchConnectionService::class.java)) }
-                        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
-                        }
-                        page = "task"
-                    }
-                    render()
+    private fun contacts() {
+        title(R.string.contacts)
+        directoryRow(getString(R.string.app_name), getString(R.string.return_to_agent)) { page = "home"; render() }
+        repo.links().forEach { link ->
+            val assistants = repo.store.agents(link.desktopId)
+            if (assistants.isEmpty()) directoryRow(link.desktopName, getString(R.string.no_agents)) { detailDesktop = link.desktopId; navigate("device") }
+            assistants.forEach { assistant ->
+                directoryRow(assistant.name, link.desktopName) {
+                    repo.store.apiPreferred = false; repo.store.selectedDesktop = link.desktopId; repo.store.selectedAgent = assistant.id
+                    newConversation()
                 }
             }
-        }.isEnabled = !busy
-        button(R.string.record_again) { startVoice() }
+        }
+        label(getString(R.string.contacts_scope), 12)
+        button(R.string.add_device) { navigate("pair") }
+        button(R.string.api_title) { openApiSettings() }
     }
     private fun input(value: String, hint: Int, limit: Int, changed: (String) -> Unit) {
         editor = EditText(this).apply {
@@ -359,26 +432,6 @@ class MainActivity : Activity() {
             })
         }
         content.addView(editor, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
-    }
-    private fun task() {
-        val task = repo.store.task(selectedTask) ?: return
-        label(getString(task.state.label()), 18, green, true)
-        label(task.prompt, 14, Color.WHITE)
-        if (task.progress.isNotBlank()) label(task.progress)
-        if (task.reply.isNotBlank()) {
-            label(task.reply, 15, Color.WHITE)
-            button(R.string.read_aloud) { speak(task.reply) }
-            button(R.string.stop_speech) { speech?.stop() }
-        } else if (!task.state.terminal) label(getString(if (task.desktopId == "api") R.string.awaiting_api else R.string.awaiting_result))
-        if (task.state == TaskState.WAITING_APPROVAL) label(getString(R.string.approval_help))
-        if (task.state in setOf(TaskState.QUEUED, TaskState.SENT)) button(R.string.retry) { repo.retry(task) }
-        if (!task.state.terminal && task.state != TaskState.STOP_REQUESTED) button(R.string.stop_task) { navigate("stop") }
-        button(R.string.follow_up, true) { followUpId = task.id; startVoice() }
-        button(R.string.text_input) { followUpId = task.id; navigate("compose") }
-        repo.store.tasks().filter { it.conversationKey() == task.conversationKey() && it.id != task.id }.take(10).forEach { older ->
-            button(older.prompt.take(30)) { selectedTask = older.id; render() }
-            if (older.reply.isNotBlank()) label(older.reply, 15, Color.WHITE)
-        }
     }
     private fun confirmStop() {
         title(R.string.stop_task); label(getString(if (repo.store.task(selectedTask)?.desktopId == "api") R.string.api_stop_confirm else R.string.stop_confirm))
@@ -439,7 +492,7 @@ class MainActivity : Activity() {
         if (!usingApi && ((previous?.desktopId ?: repo.store.selectedDesktop).isBlank() || (previous?.agentId ?: repo.store.selectedAgent).isBlank())) {
             navigate("devices"); return
         }
-        if (page != "compose") navigate("compose")
+        if (page != "home") { page = "home"; render() }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.speech_prompt))
@@ -452,7 +505,7 @@ class MainActivity : Activity() {
         if (requestCode == 31 && resultCode == RESULT_OK) {
             val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
             if (result.isBlank()) toast(R.string.speech_empty) else { draft = result.take(4000); repo.store.draft = draft }
-            page = "compose"; render()
+            page = "home"; render()
         }
     }
     private fun speak(text: String) {
@@ -492,7 +545,7 @@ class MainActivity : Activity() {
             }.onFailure { toast(R.string.api_invalid) }
         }
         if (repo.store.apiProfile != null) {
-            button(R.string.api_use) { repo.store.apiPreferred = true; followUpId = ""; page = "home"; render() }
+            button(R.string.api_use) { repo.store.apiPreferred = true; newConversation() }
             button(R.string.api_remove) { navigate("api-remove") }
         }
     }
@@ -505,7 +558,7 @@ class MainActivity : Activity() {
             val id = old?.takeIf { it.endpoint == offer.endpoint && it.model == offer.model }?.id ?: java.util.UUID.randomUUID().toString()
             repo.store.apiProfile = ApiProfile(offer.endpoint, offer.model, offer.key, id, offer.style)
             repo.store.apiPreferred = true; apiOffer = null; apiKey = ""; followUpId = ""
-            page = "home"; history.clear(); render()
+            newConversation()
         }
         button(R.string.cancel) { back() }
     }

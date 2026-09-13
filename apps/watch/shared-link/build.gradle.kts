@@ -13,7 +13,8 @@ val syncPhoneSources by tasks.registering(Sync::class) {
             "com/galaxyssi/chat/GalaxySSICrypto.kt",
             "com/galaxyssi/chat/PhoneRelationshipIdentityBinding.kt",
             "com/galaxyssi/chat/GalaxySSILinkProtocol.kt",
-            "com/galaxyssi/chat/GalaxySSIMqttWireChunking.kt"
+            "com/galaxyssi/chat/GalaxySSIMqttWireChunking.kt",
+            "com/galaxyssi/chat/MqttChunkManifest.kt"
         )
     }
     into(layout.buildDirectory.dir("generated/phone-sources"))

@@ -1,5 +1,7 @@
 <resources>
     <color name="galaxyssi_green">#14C66A</color>
+    <color name="text_primary">#F2F4F7</color>
+    <color name="composer_send_icon">#65D9CB</color>
     <style name="WatchTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>

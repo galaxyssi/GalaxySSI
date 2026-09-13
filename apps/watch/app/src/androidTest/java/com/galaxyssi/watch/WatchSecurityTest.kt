@@ -42,6 +42,21 @@ class WatchSecurityTest {
         encrypted.clear()
     }
 
+    @Test(expected = UnsupportedOperationException::class)
+    fun phonePersonalMemoryCannotBeOpenedByWatchStorage() {
+        com.galaxyssi.chat.AgentEncryptedDatabase(context, "galaxyssi_agent_memory_v2").writeString("test", "value")
+    }
+
+    @Test fun unreadStatePersistsAndNewReplyBecomesUnread() {
+        val store = WatchStore(context)
+        val task = WatchTask.create("test", "route", "agent", "Prompt")
+            .copy(state = TaskState.COMPLETED, reply = "First reply")
+        assertTrue(store.unread(task))
+        store.markRead(listOf(task))
+        assertFalse(WatchStore(context).unread(task))
+        assertTrue(store.unread(task.copy(reply = "Updated reply")))
+    }
+
     @Test fun phoneSignalIdentityLoadsOnWatchAndPersists() {
         val first = AndroidPersistentSignalStore(context)
         val second = AndroidPersistentSignalStore(context)
@@ -49,6 +64,22 @@ class WatchSecurityTest {
         val bundle = first.currentBundleJson("test-watch", 1)
         assertTrue(bundle.getString("identityKey").isNotBlank())
         assertTrue(bundle.getString("kyberPreKey").isNotBlank())
+    }
+
+    @Test fun legacySignalUpgradePreservesRecordsAndNeverOverwritesCurrentIdentity() {
+        val isolated = TestContext(InstrumentationRegistry.getInstrumentation().targetContext, UUID.randomUUID().toString())
+        val original = AndroidPersistentSignalStore(isolated).exportJson()
+        val legacy = AgentEncryptedPreferences(isolated, "galaxyssi_signal_store")
+        original.keys().forEach { legacy.writeString(it, original.getString(it)) }
+        AndroidPersistentSignalStore.clear(isolated)
+        com.galaxyssi.chat.WatchSignalUpgrade.prepare(isolated)
+        val restored = AndroidPersistentSignalStore(isolated).exportJson()
+        original.keys().forEach { assertEquals(original.getString(it), restored.getString(it)) }
+        legacy.writeString("identity_key_pair", "invalid legacy value")
+        com.galaxyssi.chat.WatchSignalUpgrade.prepare(isolated)
+        assertEquals(original.getString("identity_key_pair"), AndroidPersistentSignalStore(isolated).exportJson().getString("identity_key_pair"))
+        legacy.clear()
+        AndroidPersistentSignalStore.clear(isolated)
     }
 
     @Test fun revocationRemovesOnlyTheMatchingOutboxRoute() {

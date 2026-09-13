@@ -18,6 +18,14 @@ class WatchStore(context: Context) {
         set(value) = prefs.writeString("api_preferred", value.toString())
     val outbox = AgentEncryptedDatabase(context, "watch_outbox")
     val inbox = AgentEncryptedDatabase(context, "watch_inbox")
+    var activeTask: String
+        get() = prefs.readString("active_task", "")
+        set(value) = prefs.writeString("active_task", value)
+    private fun readVersion(task: WatchTask) = "${task.state}:${task.reply.hashCode()}:${task.reply.length}"
+    fun unread(task: WatchTask) = task.reply.isNotBlank() && prefs.readString("read:${task.id}", "") != readVersion(task)
+    fun markRead(turns: List<WatchTask>) {
+        turns.filter(::unread).forEach { prefs.writeString("read:${it.id}", readVersion(it)) }
+    }
     @Synchronized fun tasks(): List<WatchTask> = tasks.entries().mapNotNull { (_, value) ->
         runCatching { WatchTask.fromJson(JSONObject(value)) }.getOrNull()
     }.sortedByDescending { it.sourceId }
@@ -25,6 +33,7 @@ class WatchStore(context: Context) {
         tasks.writeString(task.id, task.json().toString())
         val old = tasks().filter { it.state.terminal }.drop(100)
         tasks.removeAll(old.map { it.id })
+        old.forEach { prefs.remove("read:${it.id}") }
     }
     @Synchronized fun task(id: String): WatchTask? = tasks.readString(id, "")
         .takeIf { it.isNotBlank() }?.let { WatchTask.fromJson(JSONObject(it)) }

@@ -50,6 +50,7 @@ class WatchRepository(private val context: Context) {
     init {
         worker.execute {
             runCatching {
+                com.galaxyssi.chat.WatchSignalUpgrade.prepare(context)
                 Crypto.initialize(context)
                 // HTTP operations are never automatically replayed after process
                 // death, since a provider may have accepted and billed the request.
