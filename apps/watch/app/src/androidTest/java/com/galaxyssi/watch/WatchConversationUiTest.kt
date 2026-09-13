@@ -47,6 +47,11 @@ class WatchConversationUiTest {
             instrumentation.runOnMainSync { ui.update(listOf(task), "DeepSeek Flash", true, true) }
             instrumentation.waitForIdleSync()
             capture("conversation-running.png", ui)
+            instrumentation.runOnMainSync { ui.update(emptyList(), "", false, true) }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                assertEquals(0, views(ui).filterIsInstance<android.widget.ScrollView>().single().scrollY)
+            }
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
 
