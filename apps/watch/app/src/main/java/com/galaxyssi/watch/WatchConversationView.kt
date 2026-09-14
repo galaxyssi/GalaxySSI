@@ -77,7 +77,7 @@ class WatchConversationView(
         orientation = VERTICAL; setBackgroundColor(Color.BLACK)
         isFocusableInTouchMode = true
         val headerInset = (resources.configuration.screenWidthDp * 0.125f).toInt().coerceAtLeast(24)
-        val transcriptInset = (resources.configuration.screenWidthDp * 0.065f).toInt().coerceAtLeast(12)
+        val transcriptInset = (resources.configuration.screenWidthDp * 0.055f).toInt().coerceAtLeast(10)
         val composerInset = (resources.configuration.screenWidthDp * 0.15f).toInt().coerceAtLeast(28)
         setPadding(0, dp(10), 0, dp(18))
         addView(text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), 10f).apply {
@@ -94,8 +94,8 @@ class WatchConversationView(
                 addView(text(context.getString(R.string.app_name), 10.5f).apply { setTypeface(typeface, Typeface.BOLD) })
                 addView(text(context.getString(R.string.agent_brand), 8f).apply {
                     setTextColor(secondary)
-                    // Match the visible left edge of the Latin title glyphs.
-                    setPadding(dp(1), 0, 0, 0)
+                    // Center the shorter subtitle under the full GalaxySSI wordmark.
+                    gravity = Gravity.CENTER_HORIZONTAL
                 })
             })
         }
@@ -108,7 +108,7 @@ class WatchConversationView(
             model.maxLines = 1; model.ellipsize = android.text.TextUtils.TruncateAt.END
             addView(heading); addView(model)
         }, LayoutParams(0, dp(40), 1f))
-        addView(header)
+        addView(header, LayoutParams(-1, -2).apply { topMargin = dp(1) })
         addView(FrameLayout(context).apply {
             addView(transcriptScroll, FrameLayout.LayoutParams(-1, -1))
             addView(newReply, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
@@ -188,7 +188,7 @@ class WatchConversationView(
         val message = text(value, 14f).apply {
             setPadding(0, dp(4), 0, dp(4))
             if (outgoing) setTextColor(Color.rgb(151, 224, 207))
-            maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.87f).toInt()
+            maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.89f).toInt()
         }
         if (!outgoing) {
             message.text = com.galaxyssi.chat.AgentRichInlineMarkdownRenderer.render(value.replace("![", "["))
