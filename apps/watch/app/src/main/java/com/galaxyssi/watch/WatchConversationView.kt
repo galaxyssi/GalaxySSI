@@ -3,7 +3,6 @@ package com.galaxyssi.watch
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
@@ -26,9 +25,6 @@ class WatchConversationView(
 ) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val secondary = Color.rgb(165, 171, 182)
-    private fun shape(color: Int, radius: Int = 14) = GradientDrawable().apply {
-        setColor(color); cornerRadius = dp(radius).toFloat()
-    }
     private fun text(value: String, size: Float = 14f) = TextView(context).apply {
         this.text = value; textSize = size; setTextColor(Color.WHITE); includeFontPadding = false
     }
@@ -51,15 +47,15 @@ class WatchConversationView(
     }
     val input = EditText(context).apply {
         setText(draft); setHint(R.string.composer_hint); setTextColor(Color.WHITE); setHintTextColor(secondary)
-        textSize = 13f; minHeight = dp(48); maxLines = if (draft.isBlank()) 1 else 2
+        textSize = 12.5f; minHeight = dp(36); includeFontPadding = false; maxLines = if (draft.isBlank()) 1 else 2
         ellipsize = android.text.TextUtils.TruncateAt.END
-        background = null; setPadding(dp(10), dp(8), 0, dp(8))
+        background = null; setPadding(0, dp(4), 0, dp(4))
         filters = arrayOf(InputFilter.LengthFilter(4000))
         inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         setOnLongClickListener { onVoice(); true }
     }
     private val action = ImageButton(context).apply {
-        background = null; setPadding(dp(12), dp(12), dp(12), dp(12))
+        background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
         setOnClickListener { if (input.text.isNotBlank()) onSend() else onMenu() }
     }
     private var busy = false
@@ -80,24 +76,30 @@ class WatchConversationView(
     init {
         orientation = VERTICAL; setBackgroundColor(Color.BLACK)
         isFocusableInTouchMode = true
-        val inset = (resources.configuration.screenWidthDp * 0.14f).toInt().coerceAtLeast(20)
-        setPadding(dp(inset), dp(18), dp(inset), dp(23))
+        val headerInset = (resources.configuration.screenWidthDp * 0.125f).toInt().coerceAtLeast(24)
+        val transcriptInset = (resources.configuration.screenWidthDp * 0.065f).toInt().coerceAtLeast(12)
+        val composerInset = (resources.configuration.screenWidthDp * 0.15f).toInt().coerceAtLeast(28)
+        setPadding(0, dp(10), 0, dp(18))
         addView(text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), 10f).apply {
             gravity = Gravity.CENTER; setTextColor(secondary)
-        }, LayoutParams(-1, dp(15)))
-        val header = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
+        }, LayoutParams(-1, dp(12)))
+        val header = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(headerInset), 0, dp(headerInset), 0) }
         val brand = LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48)
+            gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(40)
             contentDescription = context.getString(R.string.home_menu)
             setOnClickListener { onMenu() }
             addView(ImageView(context).apply { setImageResource(R.mipmap.ic_launcher) }, LayoutParams(dp(22), dp(22)))
             addView(LinearLayout(context).apply {
                 orientation = VERTICAL; setPadding(dp(4), 0, 0, 0)
                 addView(text(context.getString(R.string.app_name), 10.5f).apply { setTypeface(typeface, Typeface.BOLD) })
-                addView(text(context.getString(R.string.agent_brand), 8f).apply { setTextColor(secondary) })
+                addView(text(context.getString(R.string.agent_brand), 8f).apply {
+                    setTextColor(secondary)
+                    // Match the visible left edge of the Latin title glyphs.
+                    setPadding(dp(1), 0, 0, 0)
+                })
             })
         }
-        header.addView(brand, LayoutParams(0, dp(48), 1.15f))
+        header.addView(brand, LayoutParams(0, dp(40), 1.15f))
         header.addView(LinearLayout(context).apply {
             orientation = VERTICAL; gravity = Gravity.CENTER_VERTICAL or Gravity.END
             contentDescription = context.getString(R.string.recent)
@@ -105,17 +107,16 @@ class WatchConversationView(
             heading.maxLines = 1; heading.ellipsize = android.text.TextUtils.TruncateAt.END
             model.maxLines = 1; model.ellipsize = android.text.TextUtils.TruncateAt.END
             addView(heading); addView(model)
-        }, LayoutParams(0, dp(48), 1f))
+        }, LayoutParams(0, dp(40), 1f))
         addView(header)
         addView(FrameLayout(context).apply {
             addView(transcriptScroll, FrameLayout.LayoutParams(-1, -1))
-            newReply.background = shape(Color.rgb(32, 35, 41))
             addView(newReply, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
-        }, LayoutParams(-1, 0, 1f))
+        }, LayoutParams(-1, 0, 1f).apply { leftMargin = dp(transcriptInset); rightMargin = dp(transcriptInset) })
         addView(LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL; background = shape(Color.rgb(32, 35, 41))
-            addView(input, LayoutParams(0, -2, 1f)); addView(action, LayoutParams(dp(48), dp(48)))
-        }, LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            gravity = Gravity.CENTER_VERTICAL
+            addView(input, LayoutParams(0, -2, 1f)); addView(action, LayoutParams(dp(40), dp(36)))
+        }, LayoutParams(-1, -2).apply { topMargin = dp(2); leftMargin = dp(composerInset); rightMargin = dp(composerInset) })
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { onDraft(s?.toString().orEmpty()); refreshAction() }
@@ -185,9 +186,9 @@ class WatchConversationView(
     private fun bubble(value: String, outgoing: Boolean): TextView {
         val row = LinearLayout(context).apply { gravity = if (outgoing) Gravity.END else Gravity.START }
         val message = text(value, 14f).apply {
-            setPadding(dp(9), dp(7), dp(9), dp(7))
-            background = shape(if (outgoing) Color.rgb(37, 74, 66) else Color.rgb(37, 41, 48))
-            maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.62f).toInt()
+            setPadding(0, dp(4), 0, dp(4))
+            if (outgoing) setTextColor(Color.rgb(151, 224, 207))
+            maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.87f).toInt()
         }
         if (!outgoing) {
             message.text = com.galaxyssi.chat.AgentRichInlineMarkdownRenderer.render(value.replace("![", "["))
