@@ -10,8 +10,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.2.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -47,6 +47,7 @@ dependencies {
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.wear:wear:1.3.0")
+    implementation("org.jsoup:jsoup:1.23.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
@@ -86,3 +87,12 @@ val syncPhoneBrand by tasks.registering(Sync::class) {
 }
 android.sourceSets.getByName("main").res.srcDir(phoneBrandOutput)
 tasks.named("preBuild").configure { dependsOn(syncPhoneBrand) }
+
+// Reuse the phone result-card parser without its full agent runtime.
+val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
+val syncPhoneWebParser by tasks.registering(Sync::class) {
+    from("../../android/app/src/main/java") { include("com/galaxyssi/chat/AgentPublicWebSearchParser.kt") }
+    into(webParserOutput)
+}
+android.sourceSets.getByName("main").java.srcDir(webParserOutput)
+tasks.named("preBuild").configure { dependsOn(syncPhoneWebParser) }

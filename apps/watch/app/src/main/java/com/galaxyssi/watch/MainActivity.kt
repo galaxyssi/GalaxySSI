@@ -470,6 +470,8 @@ class MainActivity : Activity() {
     }
     private fun settings() {
         title(R.string.settings)
+        toggle(R.string.web_search, repo.store.webSearch) { repo.store.webSearch = it }
+        label(getString(R.string.web_search_description), 12)
         toggle(R.string.vibrate, repo.store.vibration) { repo.store.vibration = it }
         toggle(R.string.auto_speech, repo.store.autoSpeech) { repo.store.autoSpeech = it }
         button(R.string.notifications) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42) }
@@ -493,11 +495,7 @@ class MainActivity : Activity() {
             navigate("devices"); return
         }
         if (page != "home") { page = "home"; render() }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.speech_prompt))
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-        runCatching { startActivityForResult(intent, 31) }.onFailure { toast(R.string.speech_unavailable) }
+        if (!WatchSpeechInput.launch(this) { startActivityForResult(it, 31) }) toast(R.string.speech_unavailable)
     }
     @Deprecated("Activity result callback for platform speech UI")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

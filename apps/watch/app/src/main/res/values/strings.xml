@@ -115,4 +115,10 @@
     <string name="search">Search</string>
     <string name="new_reply">New reply ↓</string>
     <string name="waiting_elapsed">%1$s · %2$d s</string>
+    <string name="web_search">Web search · API chat</string>
+    <string name="web_search_description">Search each new question with public search engines. Only the current question (up to 500 characters) is sent. Turn off for private or ordinary chat. Computer agents use their own tools.</string>
+    <string name="web_searching">Searching the web…</string>
+    <string name="web_answering">Found %1$d sources. Generating answer…</string>
+    <string name="web_search_failed">Web search failed or returned no usable excerpts. Try again, or turn off Web search in Settings to chat without web information.</string>
+    <string name="web_sources">Web sources · retrieved %1$s</string>
 </resources>

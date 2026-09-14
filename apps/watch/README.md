@@ -156,6 +156,10 @@ Tap the brand or the empty composer's layers icon for the menu; tap the upper-ri
 conversation title for recent conversations. Long-press that title to configure
 the model. Type into the composer and tap the send icon, or long-press the input
 to launch system speech recognition and review its transcript before sending.
+Samsung watches prefer Samsung Keyboard's public speech-input activity. If it is
+unavailable or cannot be launched, the system speech activity is used. This does
+not invoke the Bixby assistant. Recognition language follows the watch locale;
+language availability and network requirements depend on the installed input service.
 Long-press a reply to read it aloud. The contacts directory lists actual connected
 assistants; phone contact synchronization and person-to-person chat are not included.
 
@@ -164,3 +168,33 @@ conversation screen is resumed. Conversation identity includes endpoint/profile,
 assistant, and conversation ID, so other conversations still notify. Opening a
 conversation clears its existing result notifications. Background monitoring keeps
 the system-required foreground-service indicator.
+
+## Web information in API chat
+
+Version 0.2.2 adds **Web search** in Settings (enabled by default). Each API
+question searches public Bing, Baidu, then DuckDuckGo endpoints until usable
+result excerpts are available. The app reuses Android's result-card parser via
+an explicit generated-source allowlist and the same Jsoup dependency.
+Only the current question, capped at 500 characters, goes to the search engine;
+API keys and conversation history are never sent there. Disable this setting
+for private or ordinary chat. Desktop agents continue using their own tools.
+
+Up to four excerpts and their retrieval time reach the selected OpenAI-compatible,
+Anthropic, or Gemini adapter. DeepSeek thinking remains disabled. Answers append
+actual source URLs and retrieval time. These are search excerpts, not full-page
+verification, guaranteed live market feeds, or a weather API. Models are instructed
+to disclose insufficient evidence and treat web content as untrusted data.
+Search errors fail visibly instead of silently returning an ungrounded answer.
+Each engine has a 12-second deadline and a 512 KB response cap. Stop cancels the
+active HTTP call and prevents the next stage from starting.
+
+Opt-in real-device search verification (no API credentials or model usage):
+
+```powershell
+adb -s <watch-serial> shell am instrument -w -e web_diagnostic true -e class com.galaxyssi.watch.WatchWebDiagnosticTest com.galaxyssi.watch.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+For a live end-to-end model check, run the `configuredModelAnswersWithSearchEvidence`
+method with `-e web_api_diagnostic true`. It uses the configured encrypted profile
+for one short public question (normal provider usage applies), requires a cited
+answer, and does not save a conversation or log the key or response body.
