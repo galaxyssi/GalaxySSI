@@ -116,9 +116,26 @@
     <string name="new_reply">New reply ↓</string>
     <string name="waiting_elapsed">%1$s · %2$d s</string>
     <string name="web_search">Web search · API chat</string>
-    <string name="web_search_description">Search each new question with public search engines. Only the current question (up to 500 characters) is sent. Turn off for private or ordinary chat. Computer agents use their own tools.</string>
+    <string name="web_search_description">Choose web search or a weather lookup for each question. Only necessary search terms or the requested city are sent to public services. Turn off for private or ordinary chat. Computer agents use their own tools.</string>
     <string name="web_searching">Searching the web…</string>
     <string name="web_answering">Found %1$d sources. Generating answer…</string>
     <string name="web_search_failed">Web search failed or returned no usable excerpts. Try again, or turn off Web search in Settings to chat without web information.</string>
     <string name="web_sources">Web sources · retrieved %1$s</string>
+    <string name="web_planning">Choosing lookup…</string>
+    <string name="weather_searching">Checking location and today’s weather…</string>
+    <string name="weather_location_needed">Please specify the city and province/state (and country if needed). The weather location could not be uniquely verified.</string>
+    <string name="weather_failed">Weather lookup failed or returned data for the wrong local date. Please try again.</string>
+    <string name="web_plan_failed">Could not select a valid lookup. Please rephrase and try again.</string>
+    <string name="web_synthesizing">Reviewing sources…</string>
+    <string name="web_images_searching">Searching images…</string>
+    <string name="web_reading">Reading source pages…</string>
+    <string name="web_budget_exhausted">The web lookup reached its limit. Please narrow the question and try again.</string>
+    <string name="cloud_web_fallback_sources">These sources were retrieved, but a reliable synthesis is not complete:</string>
+    <string name="cloud_web_fallback_empty">No reliable web evidence is available yet. Try again later or narrow the query.</string>
+    <string name="web_sources_title">Web tools and sources</string>
+    <string name="web_tools_summary">Search, weather, images, page reading, crawl, extract, cache, similar pages, research, comparison and page watches.</string>
+    <string name="web_source_count">All %1$d Android search sources are included. Availability depends on the source and network.</string>
+    <string name="web_key_needed">Key required</string>
+    <string name="web_credential_title">Source credential</string>
+    <string name="web_credential_help">Saved encrypted on this watch. Enter a new value to replace it; leave blank to remove it.</string>
 </resources>

@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-class WatchApplication : Application() {
+class WatchApplication : com.galaxyssi.chat.GalaxySSIApplication() {
     val repository by lazy { WatchRepository(this) }
 }
 
@@ -236,21 +236,17 @@ class WatchRepository(private val context: Context) {
                 val useWeb = store.webSearch
                 val history = store.tasks()
                 val call = WatchApiOperation()
-                store.save(if (useWeb) task.copy(progress = context.getString(R.string.web_searching)) else task); store.draft = ""; apiCalls[task.id] = call
+                store.save(if (useWeb) task.copy(progress = context.getString(R.string.web_planning)) else task); store.draft = ""; apiCalls[task.id] = call
                 main.post { done(task) }; changed()
                 apiWorker.execute {
                     val outcome = runCatching {
-                        val evidence = if (useWeb) WatchWebSearch().search(prompt, call) else null
-                        call.checkActive()
-                        if (evidence != null) worker.execute {
-                            store.task(task.id)?.takeIf { !it.state.terminal }?.let {
-                                store.save(it.copy(progress = context.getString(R.string.web_answering, evidence.hits.size)))
-                                changed()
+                        if (useWeb) WatchWebLookup(context, api).answer(profile, task, history, call) { progress ->
+                            worker.execute {
+                                store.task(task.id)?.takeIf { !it.state.terminal }?.let {
+                                    store.save(it.copy(progress = progress)); changed()
+                                }
                             }
-                        }
-                        val reply = api.execute(call.attach(api.request(profile, task, history, evidence?.json())))
-                        if (evidence == null) reply else reply + "\n\n" +
-                            context.getString(R.string.web_sources, evidence.retrievedAt) + "\n" + evidence.sources()
+                        } else api.execute(call.attach(api.request(profile, task, history)))
                     }
                     worker.execute {
                         apiCalls.remove(task.id)

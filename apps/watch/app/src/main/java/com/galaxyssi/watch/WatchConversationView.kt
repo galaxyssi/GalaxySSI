@@ -159,7 +159,12 @@ class WatchConversationView(
         }
         for (turn in turns) {
             bubble(turn.prompt, true)
-            if (turn.reply.isNotBlank()) bubble(turn.reply, false).setOnLongClickListener { onRead(turn.reply); true }
+            if (turn.reply.isNotBlank()) {
+                bubble(turn.reply, false).setOnLongClickListener { onRead(turn.reply); true }
+                WatchReplyImages.views(context, turn.reply).forEach {
+                    transcript.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
+                }
+            }
             else if (turn.progress.isNotBlank()) bubble(turn.progress, false)
             else if (turn.state.terminal) bubble(context.getString(turn.state.label()), false)
             if (turn.state == TaskState.WAITING_APPROVAL) bubble(context.getString(R.string.approval_help), false)
@@ -183,6 +188,10 @@ class WatchConversationView(
             setPadding(dp(9), dp(7), dp(9), dp(7))
             background = shape(if (outgoing) Color.rgb(37, 74, 66) else Color.rgb(37, 41, 48))
             maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.62f).toInt()
+        }
+        if (!outgoing) {
+            message.text = com.galaxyssi.chat.AgentRichInlineMarkdownRenderer.render(value.replace("![", "["))
+            message.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         }
         row.addView(message, LayoutParams(-2, -2))
         transcript.addView(row, LayoutParams(-1, -2).apply { bottomMargin = dp(6) })

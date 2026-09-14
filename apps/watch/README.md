@@ -169,32 +169,47 @@ assistant, and conversation ID, so other conversations still notify. Opening a
 conversation clears its existing result notifications. Background monitoring keeps
 the system-required foreground-service indicator.
 
-## Web information in API chat
+## Android Web Intelligence on the watch
 
-Version 0.2.2 adds **Web search** in Settings (enabled by default). Each API
-question searches public Bing, Baidu, then DuckDuckGo endpoints until usable
-result excerpts are available. The app reuses Android's result-card parser via
-an explicit generated-source allowlist and the same Jsoup dependency.
-Only the current question, capped at 500 characters, goes to the search engine;
-API keys and conversation history are never sent there. Disable this setting
-for private or ordinary chat. Desktop agents continue using their own tools.
+Version 0.2.3 replaces the watch-only search-excerpt pipeline with Android's
+complete cloud web tool schemas, engine catalog, fetchers, parsers, encrypted
+cache and source health, evidence verification, and isolated dynamic renderer.
+The Gradle source allowlist imports the actual phone implementation. Network
+primitives are extracted at checked declaration boundaries from mixed phone
+files so OCR, media transcoding, Linux and the whole native-agent runtime are
+not bundled. Source boundary changes fail the build instead of silently drifting.
 
-Up to four excerpts and their retrieval time reach the selected OpenAI-compatible,
-Anthropic, or Gemini adapter. DeepSeek thinking remains disabled. Answers append
-actual source URLs and retrieval time. These are search excerpts, not full-page
-verification, guaranteed live market feeds, or a weather API. Models are instructed
-to disclose insufficient evidence and treat web content as untrusted data.
-Search errors fail visibly instead of silently returning an ungrounded answer.
-Each engine has a 12-second deadline and a 512 KB response cap. Stop cancels the
-active HTTP call and prevents the next stage from starting.
+The model chooses among web search, image search, weather, fetch, crawl, extract,
+cache, similar-page search, research, agent investigation, diff and page watches.
+All Android data sources are available through the same engine catalog; sources
+requiring credentials or unavailable services retain Android's requirements.
+The watch has a bounded JSON decision loop across OpenAI-compatible, Anthropic,
+and Gemini protocols, with at most six tool calls and five model rounds per
+turn. Stop cancels both the model and shared web transport. DeepSeek thinking
+remains disabled. Page watches are checked on demand; no background notification
+scheduler is added by this change.
 
-Opt-in real-device search verification (no API credentials or model usage):
+Weather uses the phone's Open-Meteo lookup: it resolves and verifies city,
+country and first-level region, checks the local forecast date, and distinguishes
+weather-model estimates from station observations. Unknown/ambiguous locations
+require clarification. Other tools retain Android's public-address checks,
+pinned DNS, response limits, source citations and untrusted-evidence boundaries.
+Replies render the phone's inline Markdown and bounded public image previews.
+Dynamic pages depend on a working system WebView and may fail explicitly on
+Wear OS devices without a usable provider.
+
+**Web search** in Settings remains enabled by default. Only necessary tool
+arguments go to public sources; model credentials are never sent there. Disable
+it for private or ordinary chat. Desktop agents continue using their own tools.
+
+Build verification includes watch unit tests and lint. Explicit live diagnostics:
 
 ```powershell
-adb -s <watch-serial> shell am instrument -w -e web_diagnostic true -e class com.galaxyssi.watch.WatchWebDiagnosticTest com.galaxyssi.watch.test/androidx.test.runner.AndroidJUnitRunner
+adb -s <watch-serial> shell am instrument -w -e web_diagnostic true -e class com.galaxyssi.watch.WatchWebDiagnosticTest#sharedAndroidWeatherFetchAndImages com.galaxyssi.watch.test/androidx.test.runner.AndroidJUnitRunner
+adb -s <watch-serial> shell am instrument -w -e web_api_diagnostic true -e class com.galaxyssi.watch.WatchWebDiagnosticTest#weatherConversationForScreenshot com.galaxyssi.watch.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-For a live end-to-end model check, run the `configuredModelAnswersWithSearchEvidence`
-method with `-e web_api_diagnostic true`. It uses the configured encrypted profile
-for one short public question (normal provider usage applies), requires a cited
-answer, and does not save a conversation or log the key or response body.
+The first makes public weather/page/image requests. The second sends the public
+Zhuhai weather question through the actual repository and configured model,
+keeps the resulting conversation visible for screenshot inspection, and incurs
+normal provider usage. Neither logs model keys or private conversation contents.
