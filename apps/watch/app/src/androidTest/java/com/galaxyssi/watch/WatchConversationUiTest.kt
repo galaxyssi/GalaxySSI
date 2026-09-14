@@ -33,10 +33,14 @@ class WatchConversationUiTest {
                 assertEquals(3, ui.input.selectionStart)
                 val text = views(ui).filterIsInstance<TextView>()
                 val sent = text.first { it.text.toString() == "Hello" && it.parent is LinearLayout &&
-                    ((it.parent as LinearLayout).gravity and Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK) == Gravity.END && it.background != null }
+                    ((it.parent as LinearLayout).gravity and Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK) == Gravity.END }
                 val received = text.first { it.text.toString() == "Reply arrived" }
                 assertEquals(Gravity.END, (sent.parent as LinearLayout).gravity and Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK)
                 assertEquals(Gravity.START, (received.parent as LinearLayout).gravity and Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK)
+                assertNull(sent.background)
+                assertNull(received.background)
+                assertNull(ui.input.background)
+                assertNull((ui.input.parent as View).background)
                 assertEquals(0, sends)
                 assertTrue(views(ui).any { it.contentDescription?.toString() == activity.getString(R.string.send) })
                 ui.setDraft("")
