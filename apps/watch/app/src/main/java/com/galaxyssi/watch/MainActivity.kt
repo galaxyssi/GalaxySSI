@@ -470,6 +470,8 @@ class MainActivity : Activity() {
     }
     private fun settings() {
         title(R.string.settings)
+        toggle(R.string.web_search, repo.store.webSearch) { repo.store.webSearch = it }
+        label(getString(R.string.web_search_description), 12)
         toggle(R.string.vibrate, repo.store.vibration) { repo.store.vibration = it }
         toggle(R.string.auto_speech, repo.store.autoSpeech) { repo.store.autoSpeech = it }
         button(R.string.notifications) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42) }

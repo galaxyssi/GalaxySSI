@@ -115,4 +115,10 @@
     <string name="search">搜索</string>
     <string name="new_reply">查看新回复 ↓</string>
     <string name="waiting_elapsed">%1$s · 已等待 %2$d 秒</string>
+    <string name="web_search">联网查询 · API 聊天</string>
+    <string name="web_search_description">每次提问先搜索网页，仅将本次问题（最多500字）发送给搜索引擎。隐私或普通聊天可关闭；电脑 Agent 使用其自身工具。</string>
+    <string name="web_searching">正在联网查询…</string>
+    <string name="web_answering">找到 %1$d 条来源，正在生成回答…</string>
+    <string name="web_search_failed">联网检索失败或没有可用摘要。请重试，或在设置中关闭“联网查询”后进行普通聊天。</string>
+    <string name="web_sources">网页来源 · 查询时间 %1$s</string>
 </resources>

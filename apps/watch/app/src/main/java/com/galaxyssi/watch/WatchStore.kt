@@ -46,6 +46,9 @@ class WatchStore(context: Context) {
     var selectedAgent: String
         get() = prefs.readString("agent", "")
         set(value) = prefs.writeString("agent", value)
+    var webSearch: Boolean
+        get() = prefs.readString("web_search", "true").toBoolean()
+        set(value) = prefs.writeString("web_search", value.toString())
     var vibration: Boolean
         get() = prefs.readString("vibration", "true").toBoolean()
         set(value) = prefs.writeString("vibration", value.toString())

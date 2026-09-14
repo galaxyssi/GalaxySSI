@@ -30,7 +30,7 @@ class WatchRepository(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val apiWorker = Executors.newFixedThreadPool(2)
     private val api = WatchApi()
-    private val apiCalls = java.util.concurrent.ConcurrentHashMap<String, okhttp3.Call>()
+    private val apiCalls = java.util.concurrent.ConcurrentHashMap<String, WatchApiOperation>()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     private val chunks = WatchWireChunks()
     private var mqtt: MqttAsyncClient? = null
@@ -233,11 +233,25 @@ class WatchRepository(private val context: Context) {
                 require(apiCalls.size < 2)
                 val task = WatchTask.create("api", profile.id, profile.model, prompt,
                     previous?.conversationId ?: UUID.randomUUID().toString()).copy(state = TaskState.RUNNING)
-                val call = api.request(profile, task, store.tasks())
-                store.save(task); store.draft = ""; apiCalls[task.id] = call
+                val useWeb = store.webSearch
+                val history = store.tasks()
+                val call = WatchApiOperation()
+                store.save(if (useWeb) task.copy(progress = context.getString(R.string.web_searching)) else task); store.draft = ""; apiCalls[task.id] = call
                 main.post { done(task) }; changed()
                 apiWorker.execute {
-                    val outcome = runCatching { api.execute(call) }
+                    val outcome = runCatching {
+                        val evidence = if (useWeb) WatchWebSearch().search(prompt, call) else null
+                        call.checkActive()
+                        if (evidence != null) worker.execute {
+                            store.task(task.id)?.takeIf { !it.state.terminal }?.let {
+                                store.save(it.copy(progress = context.getString(R.string.web_answering, evidence.hits.size)))
+                                changed()
+                            }
+                        }
+                        val reply = api.execute(call.attach(api.request(profile, task, history, evidence?.json())))
+                        if (evidence == null) reply else reply + "\n\n" +
+                            context.getString(R.string.web_sources, evidence.retrievedAt) + "\n" + evidence.sources()
+                    }
                     worker.execute {
                         apiCalls.remove(task.id)
                         val latest = store.task(task.id) ?: return@execute
