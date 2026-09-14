@@ -9,6 +9,12 @@ import org.json.JSONObject
 class WatchStore(context: Context) {
     private val prefs = AgentEncryptedPreferences(context, "watch_settings")
     private val tasks = AgentEncryptedDatabase(context, "watch_tasks")
+    init {
+        if (prefs.readString("paragraph_speech_defaults_v1", "") != "true") {
+            prefs.writeString("auto_speech", "true")
+            prefs.writeString("paragraph_speech_defaults_v1", "true")
+        }
+    }
     var apiProfile: ApiProfile?
         get() = prefs.readString("api_profile", "").takeIf { it.isNotBlank() }
             ?.let { runCatching { ApiProfile.fromJson(JSONObject(it)) }.getOrNull() }
@@ -53,7 +59,7 @@ class WatchStore(context: Context) {
         get() = prefs.readString("vibration", "true").toBoolean()
         set(value) = prefs.writeString("vibration", value.toString())
     var autoSpeech: Boolean
-        get() = prefs.readString("auto_speech", "false").toBoolean()
+        get() = prefs.readString("auto_speech", "true").toBoolean()
         set(value) = prefs.writeString("auto_speech", value.toString())
     fun saveAgents(desktop: String, value: JSONArray) = prefs.writeString("agents:$desktop", value.toString())
     fun agents(desktop: String): List<WatchAgent> {

@@ -8,6 +8,7 @@ import android.text.InputFilter
 import android.text.TextWatcher
 import android.view.*
 import android.widget.*
+import com.galaxyssi.chat.ui.ParagraphSelectingTextView
 
 /** Fixed Android-style brand/composer around an independently scrolling transcript. */
 class WatchConversationView(
@@ -21,7 +22,8 @@ class WatchConversationView(
     private val onModel: () -> Unit,
     private val onStop: (WatchTask) -> Unit,
     private val onRead: (String) -> Unit,
-    private val onConnect: () -> Unit
+    private val onConnect: () -> Unit,
+    private val onStopReading: () -> Boolean = { false }
 ) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val secondary = Color.rgb(165, 171, 182)
@@ -31,7 +33,28 @@ class WatchConversationView(
     private val heading = text("", 11f)
     private val model = text("", 9f).apply { setTextColor(secondary) }
     private val transcript = LinearLayout(context).apply { orientation = VERTICAL }
-    private val transcriptScroll = ScrollView(context).apply {
+    private val transcriptScroll = object : ScrollView(context) {
+        private var swallow = false
+        private val stopDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent) = true
+            override fun onDoubleTap(event: MotionEvent): Boolean {
+                swallow = onStopReading()
+                return swallow
+            }
+        })
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) swallow = false
+            stopDetector.onTouchEvent(event)
+            if (swallow) {
+                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                super.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) swallow = false
+                return true
+            }
+            return super.dispatchTouchEvent(event)
+        }
+    }.apply {
         isFillViewport = true; isVerticalScrollBarEnabled = true
         addView(transcript, LayoutParams(-1, -2))
         setOnGenericMotionListener { _, event ->
@@ -161,7 +184,7 @@ class WatchConversationView(
         for (turn in turns) {
             bubble(turn.prompt, true)
             if (turn.reply.isNotBlank()) {
-                bubble(turn.reply, false).setOnLongClickListener { onRead(turn.reply); true }
+                bubble(turn.reply, false, readable = true)
                 WatchReplyImages.views(context, turn.reply).forEach {
                     transcript.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
                 }
@@ -183,9 +206,12 @@ class WatchConversationView(
             else { transcriptScroll.scrollTo(0, oldOffset); newReply.visibility = VISIBLE }
         }
     }
-    private fun bubble(value: String, outgoing: Boolean): TextView {
+    private fun bubble(value: String, outgoing: Boolean, readable: Boolean = false): TextView {
         val row = LinearLayout(context).apply { gravity = if (outgoing) Gravity.END else Gravity.START }
-        val message = text(value, 14f).apply {
+        val message = (if (readable) ParagraphSelectingTextView(context).apply {
+            setOnParagraphDoubleTapListener { selection -> onRead(selection.sourceText.substring(selection.startOffset)) }
+        } else TextView(context)).apply {
+            text = value; textSize = 14f; setTextColor(Color.WHITE); includeFontPadding = false
             setPadding(0, dp(4), 0, dp(4))
             if (outgoing) setTextColor(Color.rgb(151, 224, 207))
             maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.89f).toInt()

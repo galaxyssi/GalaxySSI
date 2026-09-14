@@ -51,14 +51,14 @@
     <string name="message_rejected">A message could not be verified. Refresh or pair again if replies stop.</string>
     <string name="read_aloud">Read aloud</string>
     <string name="stop_speech">Stop reading</string>
-    <string name="speech_output_unavailable">Speech output is not ready or this language is unsupported.</string>
+    <string name="speech_output_unavailable">Unable to play Xiaoxiao. Check the network and try double-tapping a paragraph.</string>
     <string name="follow_up">Voice follow-up</string>
     <string name="stop_task">Stop task</string>
     <string name="stop_confirm">Ask the computer to stop this task?</string>
     <string name="awaiting_result">Waiting for the computer’s reply.</string>
     <string name="approval_help">This task needs approval. Review it on the computer.</string>
     <string name="vibrate">Vibrate on completion</string>
-    <string name="auto_speech">Read replies while open</string>
+    <string name="auto_speech">Auto-play replies (Xiaoxiao)</string>
     <string name="notifications">Enable task notifications</string>
     <string name="about">Watch 0.1 · Android 13+</string>
     <string name="monitor_channel">Task connection</string>
