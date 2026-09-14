@@ -10,8 +10,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.2.7"
+        versionCode = 10
+        versionName = "0.2.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -103,8 +103,8 @@ val webFiles = listOf(
     "AgentRichContent.kt", "AgentRichFormatRegistry.kt", "AgentMarkdownImages.kt",
     "MicrosoftEdgeTts.kt", "MicrosoftEdgeTtsProtocol.kt", "MicrosoftTtsVoiceCatalog.kt",
     "voice/metrics/VoiceLatencyTracer.kt", "voice/audio/VoiceCommunicationAudioSession.kt",
-    "voice/modelstream/SentenceCommitter.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
-    "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
+    "voice/modelstream/SentenceCommitter.kt", "ui/AgentComposerUiPolicy.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
+    "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
 val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt")

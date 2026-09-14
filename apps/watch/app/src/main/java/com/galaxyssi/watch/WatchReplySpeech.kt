@@ -10,7 +10,7 @@ import com.galaxyssi.chat.MicrosoftEdgeTts
 import com.galaxyssi.chat.MicrosoftTtsVoiceCatalog
 
 /** Foreground paragraph queue using the exact Android Xiaoxiao synthesizer and cancellation. */
-internal class WatchReplySpeech(context: Context, private val onError: () -> Unit) {
+internal class WatchReplySpeech(context: Context, private val onActivityChanged: () -> Unit = {}, private val onError: () -> Unit) {
     private data class Chunk(val key: String, val text: String)
     private val main = Handler(Looper.getMainLooper())
     private val engine = MicrosoftEdgeTts(context.applicationContext)
@@ -38,6 +38,7 @@ internal class WatchReplySpeech(context: Context, private val onError: () -> Uni
         if (update.reset || !allowed) cancelPlayback()
         awaitingMore = update.awaitingMore
         enqueue(update.chunks.flatMap { WatchSpeechPolicy.chunks(WatchRichReply.render(it).toString()) })
+        onActivityChanged()
     }
     fun read(text: String) {
         if (closed) return
@@ -54,7 +55,7 @@ internal class WatchReplySpeech(context: Context, private val onError: () -> Uni
     }
     private fun playNext() {
         if (closed || playing) return
-        if (queue.isEmpty()) { releaseFocus(); return }
+        if (queue.isEmpty()) { releaseFocus(); onActivityChanged(); return }
         if (!focused) {
             focused = audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
             if (!focused) { stop(); onError(); return }
@@ -62,6 +63,7 @@ internal class WatchReplySpeech(context: Context, private val onError: () -> Uni
         val chunk = queue.removeFirst()
         val owner = generation
         playing = true
+        onActivityChanged()
         engine.speak(chunk.text, MicrosoftTtsVoiceCatalog.XIAOXIAO, prefetchKey = chunk.key) { success, _ ->
             main.post {
                 if (owner != generation || closed) return@post
@@ -73,7 +75,7 @@ internal class WatchReplySpeech(context: Context, private val onError: () -> Uni
     }
     private fun cancelPlayback() {
         generation++; queue.clear(); playing = false; awaitingMore = false
-        engine.stop(); releaseFocus()
+        engine.stop(); releaseFocus(); onActivityChanged()
     }
     private fun releaseFocus() { if (focused) audio.abandonAudioFocusRequest(focus); focused = false }
 }

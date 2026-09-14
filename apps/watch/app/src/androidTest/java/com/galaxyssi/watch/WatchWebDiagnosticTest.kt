@@ -11,6 +11,59 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class WatchWebDiagnosticTest {
+    @Test fun realSendStaysInConversationAndReleasesScreenAfterSpeechGrace() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("send_screen_diagnostic") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext.applicationContext as WatchApplication
+        val repo = context.repository
+        require(repo.store.apiProfile != null && repo.store.apiPreferred)
+        val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        instrumentation.waitForIdleSync()
+        fun descendants(view: android.view.View): List<android.view.View> = listOf(view) +
+            if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+        val oldIds = repo.store.tasks().map { it.id }.toSet()
+        var completed: WatchTask? = null
+        instrumentation.runOnMainSync {
+            val ui = descendants(activity.window.decorView).filterIsInstance<WatchConversationView>().single()
+            ui.input.setText("Reply with just OK.")
+            descendants(ui).filterIsInstance<android.widget.ImageButton>().first {
+                it.contentDescription == context.getString(R.string.send)
+            }.performClick()
+            assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0)
+        }
+        val deadline = android.os.SystemClock.elapsedRealtime() + 190_000
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            completed = repo.store.tasks().firstOrNull { it.id !in oldIds && it.prompt == "Reply with just OK." }
+            if (completed?.state?.terminal == true) break
+            Thread.sleep(250)
+        }
+        assertEquals(TaskState.COMPLETED, completed?.state)
+        val page = MainActivity::class.java.getDeclaredField("page").apply { isAccessible = true }
+        val speech = MainActivity::class.java.getDeclaredField("speech").apply { isAccessible = true }
+        val speechDeadline = android.os.SystemClock.elapsedRealtime() + 100_000
+        var active = true
+        while (active && android.os.SystemClock.elapsedRealtime() < speechDeadline) {
+            instrumentation.runOnMainSync {
+                assertEquals("home", page.get(activity))
+                active = (speech.get(activity) as WatchReplySpeech).active
+                assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0)
+            }
+            if (active) Thread.sleep(250)
+        }
+        assertFalse("Speech should finish or report its network error", active)
+        Thread.sleep(25_000)
+        instrumentation.runOnMainSync {
+            assertEquals("home", page.get(activity))
+            assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0)
+        }
+        Thread.sleep(6_000)
+        instrumentation.runOnMainSync {
+            assertEquals(0, activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        println("WATCH_SEND_SCREEN completed=true stayed_home=true grace_30_seconds=true")
+    }
+
     @Test fun inspectNewsProtocol() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("news_protocol_diagnostic") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext

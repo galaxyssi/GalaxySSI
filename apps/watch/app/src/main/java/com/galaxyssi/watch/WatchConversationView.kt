@@ -8,6 +8,7 @@ import android.text.InputFilter
 import android.text.TextWatcher
 import android.view.*
 import android.widget.*
+import com.galaxyssi.chat.ui.AgentComposerUiPolicy
 import com.galaxyssi.chat.ui.ParagraphSelectingTextView
 
 /** Fixed Android-style brand/composer around an independently scrolling transcript. */
@@ -77,9 +78,22 @@ class WatchConversationView(
         inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         setOnLongClickListener { onVoice(); true }
     }
-    private val action = ImageButton(context).apply {
+    // Android keeps send and more as separate controls, even when they share a layout slot.
+    private val sendAction = ImageButton(context).apply {
         background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
-        setOnClickListener { if (input.text.isNotBlank()) onSend() else onMenu() }
+        setImageResource(R.drawable.ic_composer_send_plane)
+        contentDescription = context.getString(R.string.send)
+        setOnClickListener { if (!busy && input.text.isNotBlank()) onSend() }
+    }
+    private val menuAction = ImageButton(context).apply {
+        background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
+        setImageResource(R.drawable.ic_input_menu_layers)
+        contentDescription = context.getString(R.string.home_menu)
+        setOnClickListener { if (!busy) onMenu() }
+    }
+    private val actionSlot = FrameLayout(context).apply {
+        addView(menuAction, FrameLayout.LayoutParams(-1, -1))
+        addView(sendAction, FrameLayout.LayoutParams(-1, -1))
     }
     private var busy = false
     private var lastTurns = emptyList<WatchTask>()
@@ -138,7 +152,7 @@ class WatchConversationView(
         }, LayoutParams(-1, 0, 1f).apply { leftMargin = dp(transcriptInset); rightMargin = dp(transcriptInset) })
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(input, LayoutParams(0, -2, 1f)); addView(action, LayoutParams(dp(40), dp(36)))
+            addView(input, LayoutParams(0, -2, 1f)); addView(actionSlot, LayoutParams(dp(40), dp(36)))
         }, LayoutParams(-1, -2).apply { topMargin = dp(2); leftMargin = dp(composerInset); rightMargin = dp(composerInset) })
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -151,9 +165,11 @@ class WatchConversationView(
 
     private fun refreshAction() {
         input.maxLines = if (input.text.isBlank()) 1 else 2
-        action.setImageResource(if (input.text.isNotBlank()) R.drawable.ic_composer_send_plane else R.drawable.ic_input_menu_layers)
-        action.contentDescription = context.getString(if (input.text.isNotBlank()) R.string.send else R.string.home_menu)
-        action.isEnabled = !busy
+        val state = AgentComposerUiPolicy.resolve(input.text.isNotBlank(), textModeActive = true, actionTrayRequested = false)
+        sendAction.visibility = if (state.showSendButton) VISIBLE else GONE
+        menuAction.visibility = if (state.showMoreButton) VISIBLE else GONE
+        sendAction.isEnabled = !busy
+        menuAction.isEnabled = !busy
     }
     fun sending(value: Boolean) { busy = value; input.isEnabled = !value; refreshAction() }
     fun setDraft(value: String) { if (input.text.toString() != value) input.setText(value) }

@@ -53,6 +53,16 @@ class WatchApiTest {
             } else assertFalse(body.has("thinking"))
         }
     }
+    @Test fun deepSeekWebRepliesHaveRoomForCompleteSourceLinks() {
+        val profile = ApiProfile("https://api.deepseek.com/chat/completions", "test", "test-key")
+        val task = WatchTask.create("api", profile.id, profile.model, "News")
+        val request = WatchApi().request(profile, task, emptyList(), toolMessages = org.json.JSONArray()).request()
+        val buffer = okio.Buffer()
+        request.body!!.writeTo(buffer)
+        val body = JSONObject(buffer.readUtf8())
+        assertEquals(4096, body.getInt("max_tokens"))
+        assertEquals("disabled", body.getJSONObject("thinking").getString("type"))
+    }
     @Test fun allAndroidPresetsValidateAndNativeProtocolsRoundTrip() = withServer { server, api ->
         assertEquals(19, WATCH_MODEL_PRESETS.size)
         WATCH_MODEL_PRESETS.forEach { ApiProfile(it.endpoint, it.model, "test", style = it.style) }
