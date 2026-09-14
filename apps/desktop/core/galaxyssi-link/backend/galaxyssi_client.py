@@ -41,6 +41,21 @@ _peer_locks: dict[tuple[str, int], threading.RLock] = {}
 _peer_locks_guard = threading.Lock()
 
 
+class SignalSidecarError(RuntimeError):
+    """Keep private error text separate from the allowlisted diagnostic code."""
+    def __init__(self, status: int, body: str):
+        super().__init__(f"Signal sidecar HTTP {status}: {body}")
+        try:
+            value = json.loads(body)
+            kind = value.get("error") if isinstance(value, dict) else None
+        except (ValueError, TypeError):
+            kind = None
+        allowed = {"DuplicateMessageException", "InvalidMessageException", "NoSessionException",
+            "InvalidKeyIdException", "InvalidKeyException", "UntrustedIdentityException",
+            "IllegalStateException", "IllegalArgumentException", "JSONException"}
+        self.diagnostic_code = kind if kind in allowed else "SignalSidecarError"
+
+
 def _peer_lock(remote_name: str, remote_device_id: int) -> threading.RLock:
     key = (remote_name, int(remote_device_id))
     with _peer_locks_guard:
@@ -382,4 +397,4 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None, *, t
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Signal sidecar HTTP {exc.code}: {body}") from exc
+        raise SignalSidecarError(exc.code, body) from exc

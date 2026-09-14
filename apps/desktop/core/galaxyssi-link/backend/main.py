@@ -665,9 +665,10 @@ def api_peer_messages(
 ):
     require_desktop_api_token(request)
     from peer_chat_store import peer_chat_store
+    from peer_delivery_status import reconcile
 
     return {
-        "messages": peer_chat_store().list_messages(client_route_id, limit),
+        "messages": reconcile(peer_chat_store(), peer_chat_store().list_messages(client_route_id, limit)),
     }
 
 

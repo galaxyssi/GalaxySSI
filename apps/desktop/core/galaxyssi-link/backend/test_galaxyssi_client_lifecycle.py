@@ -1,4 +1,5 @@
 import threading
+import json
 import os
 import tempfile
 import unittest
@@ -7,6 +8,18 @@ from unittest.mock import Mock, patch
 from unittest.mock import mock_open
 
 import galaxyssi_client
+
+
+class SignalSidecarErrorTests(unittest.TestCase):
+    def test_diagnostic_code_does_not_contain_private_error_text(self):
+        error = galaxyssi_client.SignalSidecarError(500, json.dumps({
+            "error": "InvalidMessageException", "message": "private message body"}))
+        self.assertIsInstance(error, RuntimeError)
+        self.assertEqual("InvalidMessageException", error.diagnostic_code)
+
+    def test_unknown_remote_error_codes_are_not_logged(self):
+        for body in ('not-json', '[]', '{"error":"secret-user-value"}'):
+            self.assertEqual("SignalSidecarError", galaxyssi_client.SignalSidecarError(500, body).diagnostic_code)
 
 
 class SignalSidecarLifecycleTests(unittest.TestCase):

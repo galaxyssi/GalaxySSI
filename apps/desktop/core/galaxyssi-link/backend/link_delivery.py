@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -521,6 +522,7 @@ def fail_exhausted_outbound(
     *,
     now: float | None = None,
     active_messages: set[tuple[str, str]] | None = None,
+    before_quarantine=None,
 ) -> list[dict]:
     """Quarantine exhausted ciphertexts without affecting other routes."""
     normalized_max = max(1, int(max_attempts))
@@ -540,6 +542,16 @@ def fail_exhausted_outbound(
                     if (_unroute(row[0]), str(row[1])) not in active
                     and _outbound_retry_due(str(row[3]), int(row[2]), float(row[4]), observed_at)]
             if rows:
+                if before_quarantine is not None:
+                    projected = []
+                    for row in rows:
+                        try:
+                            before_quarantine(_unroute(row[0]), str(row[1]))
+                        except Exception as error:
+                            logging.getLogger(__name__).warning("Outbound failure projection deferred (%s)", type(error).__name__)
+                        else:
+                            projected.append(row)
+                    rows = projected
                 db.executemany(
                     """UPDATE outbound_messages SET status='failed', updated_at=?
                        WHERE client_route_id=? AND message_id=?""",
@@ -556,6 +568,33 @@ def fail_exhausted_outbound(
         }
         for row in rows
     ]
+
+
+def outbound_statuses(keys: list[tuple[str, str]]) -> dict[tuple[str, str], str]:
+    """Bounded UI reconciliation; absent rows are never delivery evidence."""
+    if len(keys) > 2_000:
+        raise ValueError("Outbound status query exceeds page limit")
+    grouped: dict[str, set[str]] = {}
+    for route, message in keys:
+        grouped.setdefault(route, set()).add(message)
+    result = {}
+    with _lock:
+        db = _connect()
+        try:
+            for route, messages in grouped.items():
+                sealed = _route(route)
+                values = list(messages)
+                for offset in range(0, len(values), 400):
+                    batch = values[offset:offset + 400]
+                    marks = ",".join("?" for _ in batch)
+                    for message, status in db.execute(
+                        f"SELECT message_id,status FROM outbound_messages WHERE client_route_id=? AND message_id IN ({marks})",
+                        (sealed, *batch),
+                    ):
+                        result[(route, message)] = status
+        finally:
+            db.close()
+    return result
 
 
 def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:

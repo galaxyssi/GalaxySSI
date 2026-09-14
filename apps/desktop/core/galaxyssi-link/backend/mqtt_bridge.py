@@ -24,6 +24,7 @@ import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
 from mqtt_inbound_pool import InboundRoutePool
+from mqtt_receipt_replay_gate import ReceiptReplayGate
 from task_progress_window import TaskProgressWindow
 from attachment_request_broker import (
     REQUEST_TYPE as INPUT_ATTACHMENT_REQUEST_TYPE,
@@ -298,6 +299,8 @@ OUTBOUND_RETRY_POLL_SECONDS = 1.0
 CAPABILITY_MANIFEST_VERSION = 2
 durable_outbound_lock = threading.RLock()
 outbound_retry_stop_event = threading.Event()
+outbound_retry_wake_event = threading.Event()
+signal_receipt_replay_gate = ReceiptReplayGate()
 outbound_retry_thread: threading.Thread | None = None
 outbound_retry_start_lock = threading.Lock()
 
@@ -3101,6 +3104,7 @@ def _publish_phone_payload(
         info = _publish_to_registered_client(
             mqttc, paired_client, reply_payload, channel,
             durable=reliable,
+            queue_only=reliable and isinstance(mqttc, MqttPoolClient),
         )
         reply_payload["_client_route_id"] = wire_payload.get("_client_route_id", "")
         deferred = bool(getattr(info, "deferred", False))
@@ -6817,7 +6821,7 @@ def _process_message(mqttc, userdata, msg):
                     message_id = str(wire_payload["message_id"])
                     task_progress_window.release(client_route_id, message_id)
                     transport_timing.received(client_route_id, message_id)
-                    flush_outbound_messages(mqttc)
+                    outbound_retry_wake_event.set()
                 return
         delivery_frame = None
         chunk_transfer = None
@@ -6933,7 +6937,7 @@ def _process_message(mqttc, userdata, msg):
             except Exception as exc:
                 link_transport_diagnostics().record(
                     classify_decryption_error(exc), route_id=client_route_id,
-                    message_id=ciphertext_digest, detail_code=exc.__class__.__name__,
+                    message_id=ciphertext_digest, detail_code=getattr(exc, "diagnostic_code", exc.__class__.__name__),
                 )
                 raise
             validate_envelope(application_envelope)
@@ -6979,7 +6983,7 @@ def _process_message(mqttc, userdata, msg):
                                     chunk_transfer=chunk_transfer)
         _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
     except Exception as e:
-        log.error("MQTT message handling error (%s)", type(e).__name__)
+        log.error("MQTT message handling error (%s)", getattr(e, "diagnostic_code", type(e).__name__))
 
 
 def _chunk_peer_identity(paired):
@@ -7032,7 +7036,9 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
         "client_source_message_id": receipt["client_source_message_id"],
     })
     try:
-        _publish_phone_payload(mqttc, wire_payload, receipt)
+        # Keep confirmation after the sender's attempt window expires or restarts.
+        signal_receipt_replay_gate.publish((route, message_id, wire_hash),
+            lambda: _publish_phone_payload(mqttc, wire_payload, receipt), duplicate=duplicate)
     except Exception as exc:
         # Receipt delivery cannot prevent a durably received task from starting.
         log.warning("Stored-message receipt deferred (%s)", type(exc).__name__)
@@ -7087,7 +7093,10 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                         mqttc.delivery.accept_verified_message(route, acknowledged_id, str(payload["content_hash"]))
                     task_progress_window.release(route, acknowledged_id)
                     transport_timing.received(route, acknowledged_id)
-                    flush_outbound_messages(mqttc)
+                    if isinstance(mqttc, MqttPoolClient):
+                        outbound_retry_wake_event.set()
+                    else:
+                        flush_outbound_messages(mqttc)
                 complete_message(route, message_id, "RX_STORED", {"status": "RX_STORED", "receipt_required": False})
             else:
                 _dispatch_application_payload(mqttc, paired_client, wire_payload, envelope, payload, trace)
@@ -8241,6 +8250,7 @@ def _publish_to_registered_client(
             if queue_only:
                 if existing not in {"queued", "sending", "published"}:
                     raise ValueError("Existing outbound delivery is not retryable")
+                outbound_retry_wake_event.set()
                 return _DeferredPublishInfo()
             published = flush_outbound_messages(
                 mqttc,
@@ -8275,6 +8285,7 @@ def _publish_to_registered_client(
                 log.warning("Committed outbound timing deferred (%s)", type(exc).__name__)
         if queue_only:
             # API acceptance is the durable commit, not a socket/PUBACK result.
+            outbound_retry_wake_event.set()
             return _DeferredPublishInfo()
         published = flush_outbound_messages(
             mqttc,
@@ -8357,7 +8368,9 @@ def flush_outbound_messages(
         with pending_outbound_acks_lock:
             broker_owned_messages = set(pending_outbound_acks.values()) | set(outbound_publish_reservations)
             broker_priorities = dict(pending_outbound_priorities) | dict(outbound_publish_reservations)
-        for exhausted in fail_exhausted_outbound(active_messages=broker_owned_messages):
+        from peer_chat_store import peer_chat_store
+        for exhausted in fail_exhausted_outbound(active_messages=broker_owned_messages,
+                before_quarantine=lambda route, message: peer_chat_store().mark_outbound_failed(route, message)):
             log.error(
                 "MQTT durable delivery exhausted client=%s message=%s attempts=%s",
                 str(exhausted["client_route_id"])[-8:],
@@ -8536,7 +8549,11 @@ def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, s
 def _outbound_retry_loop() -> None:
     global outbound_retry_thread
     try:
-        while not outbound_retry_stop_event.wait(OUTBOUND_RETRY_POLL_SECONDS):
+        while not outbound_retry_stop_event.is_set():
+            outbound_retry_wake_event.wait(OUTBOUND_RETRY_POLL_SECONDS)
+            outbound_retry_wake_event.clear()
+            if outbound_retry_stop_event.is_set():
+                break
             mqttc = client
             if mqttc is None:
                 continue
@@ -9599,6 +9616,7 @@ def stop():
     codex_warm_stop_event.set()
     presence_stop_event.set()
     outbound_retry_stop_event.set()
+    outbound_retry_wake_event.set()
     transport_probe_stop_event.set()
     transport_probe_state.disconnected()
     _clear_transport_reconnect()
