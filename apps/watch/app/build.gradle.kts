@@ -10,8 +10,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.2.5"
+        versionCode = 8
+        versionName = "0.2.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -100,6 +100,7 @@ val webFiles = listOf(
     "AgentPublicWebSearchParser.kt", "AgentPublicImageSearchParser.kt", "AgentPublicArticleParser.kt",
     "AgentDynamicWebArticleFetcher.kt", "AgentIsolatedWebViewRenderer.kt", "AgentIsolatedWebRenderService.kt",
     "AgentInlineMarkdown.kt", "AgentRichInlineMarkdownRenderer.kt",
+    "AgentRichContent.kt", "AgentRichFormatRegistry.kt", "AgentMarkdownImages.kt",
     "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
 val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",

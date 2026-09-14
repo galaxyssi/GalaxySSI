@@ -10,6 +10,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WatchApiTest {
+    @Test fun nativeWebToolCallsRoundTripWithCorrelatedResults() = withServer { server, api ->
+        val profile = ApiProfile(server.url("/chat/completions").toString(), "test", "test-key")
+        val task = WatchTask.create("api", profile.id, profile.model, "Technology news")
+        val tools = com.galaxyssi.chat.CloudWebGrounding.openAiTools()
+        val native = JSONObject("""{"id":"call_news","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"technology news\"}"}}""")
+        server.enqueue(MockResponse().setBody(JSONObject().put("choices", org.json.JSONArray().put(JSONObject()
+            .put("message", JSONObject().put("content", JSONObject.NULL).put("tool_calls", org.json.JSONArray().put(native))))).toString()))
+        val decision = WatchWebLookup.parseDecision(api.execute(api.request(profile, task, emptyList(),
+            webTools = tools, toolMessages = org.json.JSONArray())))
+        val call = decision.getJSONArray("tool_calls").getJSONObject(0)
+        assertEquals("call_news", call.getString("id"))
+        assertEquals("technology news", call.getJSONObject("arguments").getString("query"))
+        assertEquals(12, JSONObject(server.takeRequest().body.readUtf8()).getJSONArray("tools").length())
+        val exchange = org.json.JSONArray()
+            .put(JSONObject().put("role", "assistant").put("tool_calls", org.json.JSONArray().put(native)))
+            .put(JSONObject().put("role", "tool").put("tool_call_id", call.getString("id")).put("content", "Retrieved evidence"))
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":"# News\n\n- Launch [Source](https://example.com/news)"}}]}"""))
+        val reply = api.execute(api.request(profile, task, emptyList(), webTools = tools, toolMessages = exchange))
+        assertTrue(JSONObject(reply).getString("answer").startsWith("# News"))
+        val messages = JSONObject(server.takeRequest().body.readUtf8()).getJSONArray("messages")
+        assertEquals("tool", messages.getJSONObject(messages.length() - 1).getString("role"))
+        assertEquals("call_news", messages.getJSONObject(messages.length() - 1).getString("tool_call_id"))
+    }
+    @Test fun unexpectedNativeToolsCannotLeakWhenWebIsDisabled() = withServer { server, api ->
+        val profile = ApiProfile(server.url("/chat/completions").toString(), "test", "test-key")
+        val task = WatchTask.create("api", profile.id, profile.model, "Hello")
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"tool_calls":[{"id":"unexpected"}]}}]}"""))
+        assertThrows(ApiFailure::class.java) { api.execute(api.request(profile, task, emptyList())) }
+    }
     @Test fun deepSeekUsesBoundedNonThinkingRepliesWithoutChangingOtherProviders() {
         for (host in listOf("api.deepseek.com", "api.openai.com")) {
             val profile = ApiProfile("https://$host/chat/completions", "test", "test-key")
