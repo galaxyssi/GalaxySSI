@@ -24,6 +24,8 @@ internal object WatchReplyImages {
     }
     fun views(context: Context, markdown: String): List<ImageView> {
         val images = linkedMapOf<String, String>()
+        WatchRichReply.blocks(markdown).filter { it.type == com.galaxyssi.chat.AgentRichBlockType.IMAGE }
+            .filter { it.uri.startsWith("https://") }.take(3).forEach { images[it.uri] = it.title }
         Parser.builder().build().parse(markdown).accept(object : AbstractVisitor() {
             override fun visit(image: Image) {
                 if (!image.destination.startsWith("https://") || images.size >= 3) return

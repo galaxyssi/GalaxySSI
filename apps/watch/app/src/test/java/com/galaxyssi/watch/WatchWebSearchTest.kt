@@ -8,6 +8,39 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 class WatchWebSearchTest {
+    @Test fun repeatedLookupsRefreshInsteadOfReplayingPreviousFailures() {
+        val task = WatchTask.create("api", "profile", "model", "Today's technology news")
+        val previous = task.copy(id = "previous", state = TaskState.COMPLETED, reply = "No articles found")
+        val context = previous.copy(id = "context", prompt = "My interests", reply = "Space and chips")
+        val leaked = previous.copy(id = "leaked", prompt = "Search again", reply = "Trying again. {\"tool_calls\":[]}")
+        assertEquals(listOf(context), WatchWebLookup.freshLookupHistory(task, listOf(previous, context, leaked)))
+    }
+    @Test fun nestedToolDecisionsAreExecutedInsteadOfDisplayed() {
+        val tool = """{"tool_calls":[{"name":"web_search","arguments":{"query":"technology news","read_pages":true}}]}"""
+        for (answer in listOf(tool, JSONObject(tool), "```json\n$tool\n```")) {
+            val parsed = WatchWebLookup.parseDecision(JSONObject().put("answer", answer).toString())
+            assertFalse(parsed.has("answer"))
+            assertEquals("web_search", parsed.getJSONArray("tool_calls").getJSONObject(0).getString("name"))
+        }
+        assertEquals("web_search", WatchWebLookup.parseDecision("The previous search returned no results. Trying again.\n\n$tool")
+            .getJSONArray("tool_calls").getJSONObject(0).getString("name"))
+        assertThrows(ApiFailure::class.java) { WatchWebLookup.parseDecision("Trying again. $tool\n$tool") }
+        val jsonCode = "```json\n{\"temperature\":29}\n```"
+        assertEquals(jsonCode, WatchWebLookup.parseDecision(JSONObject().put("answer", jsonCode).toString()).getString("answer"))
+        assertThrows(ApiFailure::class.java) { WatchWebLookup.parseDecision("""{"answer":{"evidence_pack":[]}}""") }
+        assertThrows(ApiFailure::class.java) { WatchWebLookup.parseDecision("""[{"tool":"web_search"}]""") }
+    }
+    @Test fun androidRichBlocksPreserveNewsAndNarrowTables() {
+        val raw = "# News\n\n- First\n- Second\n\n| Name | Date |\n| --- | --- |\n| Launch | Today |\n\n```kotlin\nval count = 1\n```"
+        val blocks = WatchRichReply.blocks(raw)
+        assertTrue(blocks.any { it.type == AgentRichBlockType.HEADING && it.text == "News" })
+        assertTrue(blocks.any { it.type == AgentRichBlockType.CODE && it.text.contains("val count") })
+        assertEquals("\u2022 First\n\u2022 Second", WatchRichReply.text(blocks.first { it.type == AgentRichBlockType.LIST }))
+        assertEquals("\u2611 Done\n\u2610 Pending\n1. Next", WatchRichReply.text(WatchRichReply.blocks("- [x] Done\n- [ ] Pending\n1. Next").single()))
+        assertEquals("Name: Launch\nDate: Today", WatchRichReply.text(blocks.first { it.type == AgentRichBlockType.TABLE }))
+        val rich = """{"version":1,"blocks":[{"type":"heading","text":"News"},{"type":"link","title":"Source","uri":"https://example.com"}]}"""
+        assertEquals(2, WatchRichReply.blocks(WatchWebLookup.parseDecision(JSONObject().put("answer", JSONObject(rich)).toString()).getString("answer")).size)
+    }
     @Test fun allAndroidToolsAndSourceFamiliesAreIncluded() {
         val tools = CloudWebGrounding.openAiTools()
         val names = (0 until tools.length()).map { tools.getJSONObject(it).getJSONObject("function").getString("name") }.toSet()
@@ -39,6 +72,7 @@ class WatchWebSearchTest {
         assertEquals("Hello", WatchWebLookup.parseDecision("{\"answer\":\"Hello\"}").getString("answer"))
         assertThrows(ApiFailure::class.java) { WatchWebLookup.parseDecision("{\"answer\":\"Hello\",\"tool_calls\":[{\"name\":\"web_search\"}]}") }
         assertEquals("Plain answer", WatchWebLookup.parseDecision("Plain answer").getString("answer"))
+        assertEquals("[Source](https://example.com)", WatchWebLookup.parseDecision("[Source](https://example.com)").getString("answer"))
     }
     private val location get() = JSONObject().put("location", "Zhuhai").put("region", "Guangdong").put("country_code", "CN")
     private val geo = """{"results":[{"name":"Zhuhai","admin1":"Guangdong","country_code":"CN","latitude":22.27,"longitude":113.58}]}"""

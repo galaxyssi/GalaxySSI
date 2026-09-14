@@ -11,6 +11,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WatchConversationUiTest {
+    @Test fun richRepliesRenderHeadingsLinksAndCodeWithoutProtocolMarkup() {
+        val rendered = WatchRichReply.render("# News\n\n- **Launch** [Source](https://example.com)\n\n```kotlin\nval count = 1\n```") as android.text.Spanned
+        assertFalse(rendered.toString().contains("# News"))
+        assertFalse(rendered.toString().contains("```"))
+        assertTrue(rendered.toString().contains("Launch"))
+        assertTrue(rendered.toString().contains("\u2022 Launch"))
+        assertFalse(rendered.toString().contains("bullet"))
+        assertTrue(rendered.getSpans(0, rendered.length, android.text.style.StyleSpan::class.java).isNotEmpty())
+        assertEquals("https://example.com", rendered.getSpans(0, rendered.length, android.text.style.URLSpan::class.java).single().url)
+        assertTrue(rendered.getSpans(0, rendered.length, android.text.style.TypefaceSpan::class.java).isNotEmpty())
+    }
     private fun views(v: View): List<View> = listOf(v) +
         if (v is ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
 

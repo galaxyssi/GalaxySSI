@@ -191,7 +191,7 @@ class WatchConversationView(
             maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.89f).toInt()
         }
         if (!outgoing) {
-            message.text = com.galaxyssi.chat.AgentRichInlineMarkdownRenderer.render(value.replace("![", "["))
+            message.text = WatchRichReply.render(value)
             message.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         }
         row.addView(message, LayoutParams(-2, -2))

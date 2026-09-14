@@ -16,6 +16,11 @@ and their Linux/model features are not modified.
   counts, connected assistants, device pairing, and settings; English and Chinese resources.
 - System speech input with transcript review, keyboard fallback, reply speech,
   and optional completion vibration/notifications.
+- Android rich-content parsing for reply headings, lists, quotes, tables, code,
+  JSON, links and images. Tables stack their labeled cells to fit the round screen;
+  other rich formats use readable text/link fallbacks rather than executing embedded content.
+- OpenAI-compatible web conversations use Android's function schemas and standard
+  assistant/tool messages with correlated call IDs; textual protocol responses remain supported.
 - Direct HTTPS chat-completions connections with user-supplied endpoint, model,
   and encrypted API Key, independent of Desktop pairing.
 - Existing GalaxySSI Link v2 privacy packets, Signal sessions, identity pinning,
