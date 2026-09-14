@@ -16,6 +16,7 @@
         android:usesCleartextTraffic="false" android:enableOnBackInvokedCallback="true">
         <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
         <service android:name=".WatchConnectionService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name="com.galaxyssi.chat.AgentIsolatedWebRenderService" android:exported="false" android:process=":web_renderer" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

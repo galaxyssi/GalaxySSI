@@ -31,6 +31,8 @@ class MainActivity : Activity() {
     private val history = ArrayDeque<String>()
     private var selectedTask = ""
     private var detailDesktop = ""
+    private var webCredentialKey = ""
+    private var webCredentialValue = ""
     private var followUpId = ""
     private var draft = ""
     private var pairingText = ""
@@ -78,6 +80,7 @@ class MainActivity : Activity() {
         history.addAll(savedInstanceState?.getStringArrayList("history") ?: emptyList())
         // Pairing offers are intentionally not saved into instance state or logs.
         if (page.startsWith("pair")) page = "devices"
+        if (page == "web-credential") webCredentialValue = ""
         if (page.startsWith("api-")) page = "settings"
         speech = TextToSpeech(this) { status ->
             speechReady = status == TextToSpeech.SUCCESS
@@ -142,6 +145,7 @@ class MainActivity : Activity() {
         speech?.stop()
         if (page == "home" && history.isEmpty()) { finish(); return }
         if (page.startsWith("pair")) { pairingOffer = null; pairingText = "" }
+        if (page == "web-credential") webCredentialValue = ""
         if (page.startsWith("api-")) { apiOffer = null; apiKey = "" }
         page = if (history.isEmpty()) "home" else history.removeLast()
         render()
@@ -152,7 +156,7 @@ class MainActivity : Activity() {
 
     private fun render(preserveScroll: Boolean = false) {
         updateConversationVisibility()
-        if (page == "api-edit") window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (page == "api-edit" || page == "web-credential") window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
@@ -210,6 +214,8 @@ class MainActivity : Activity() {
             "pair-review" -> pairReview()
             "forget" -> confirmForget()
             "settings" -> settings()
+            "web-sources" -> webSources()
+            "web-credential" -> webCredential()
             "api-providers" -> {
                 title(R.string.api_provider)
                 WATCH_MODEL_PRESETS.map { it.provider }.distinct().forEach { provider ->
@@ -472,6 +478,7 @@ class MainActivity : Activity() {
         title(R.string.settings)
         toggle(R.string.web_search, repo.store.webSearch) { repo.store.webSearch = it }
         label(getString(R.string.web_search_description), 12)
+        button(R.string.web_sources_title) { navigate("web-sources") }
         toggle(R.string.vibrate, repo.store.vibration) { repo.store.vibration = it }
         toggle(R.string.auto_speech, repo.store.autoSpeech) { repo.store.autoSpeech = it }
         button(R.string.notifications) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42) }
@@ -479,6 +486,33 @@ class MainActivity : Activity() {
         button(R.string.api_title) { openApiSettings() }
         label(getString(R.string.about), 12)
         label(getString(R.string.monitor_body), 12)
+    }
+    private fun webSources() {
+        title(R.string.web_sources_title)
+        val sources = com.galaxyssi.chat.AgentWebIntelligenceEngineCatalog.entries
+        val credentials = com.galaxyssi.chat.AgentEncryptedWebIntelligenceCredentials(this)
+        label(getString(R.string.web_tools_summary), 12)
+        label(getString(R.string.web_source_count, sources.size), 12)
+        listOf("brave_api_key" to "Brave API Key", "github_token" to "GitHub Token").forEach { (key, name) ->
+            button(name) { webCredentialKey = key; webCredentialValue = ""; navigate("web-credential") }
+        }
+        sources.sortedBy { it.title }.forEach { source ->
+            label(source.title + if (source.requiresKey.isNotBlank() && !credentials.configured(source.requiresKey))
+                " · " + getString(R.string.web_key_needed) else "", 12)
+        }
+    }
+    // Optional provider token entry, matching the standalone API-key setup (not account sign-in).
+    @android.annotation.SuppressLint("WearPasswordInput")
+    private fun webCredential() {
+        title(R.string.web_credential_title)
+        label(if (webCredentialKey == "brave_api_key") "Brave API Key" else "GitHub Token", 12)
+        label(getString(R.string.web_credential_help), 12)
+        input(webCredentialValue, R.string.api_key, 4096) { webCredentialValue = it }
+        editor?.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        button(R.string.confirm) {
+            com.galaxyssi.chat.AgentEncryptedWebIntelligenceCredentials(this).setCredential(webCredentialKey, webCredentialValue)
+            webCredentialValue = ""; back()
+        }
     }
     private fun toggle(resource: Int, checked: Boolean, changed: (Boolean) -> Unit) {
         content.addView(Switch(this).apply {

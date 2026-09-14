@@ -116,9 +116,26 @@
     <string name="new_reply">查看新回复 ↓</string>
     <string name="waiting_elapsed">%1$s · 已等待 %2$d 秒</string>
     <string name="web_search">联网查询 · API 聊天</string>
-    <string name="web_search_description">每次提问先搜索网页，仅将本次问题（最多500字）发送给搜索引擎。隐私或普通聊天可关闭；电脑 Agent 使用其自身工具。</string>
+    <string name="web_search_description">每次提问选择网页或天气查询，仅向公共服务发送必要的搜索词或所查城市。隐私或普通聊天可关闭；电脑 Agent 使用其自身工具。</string>
     <string name="web_searching">正在联网查询…</string>
     <string name="web_answering">找到 %1$d 条来源，正在生成回答…</string>
     <string name="web_search_failed">联网检索失败或没有可用摘要。请重试，或在设置中关闭“联网查询”后进行普通聊天。</string>
     <string name="web_sources">网页来源 · 查询时间 %1$s</string>
+    <string name="web_planning">正在选择查询方式…</string>
+    <string name="weather_searching">正在核对城市并查询今日天气…</string>
+    <string name="weather_location_needed">请补充城市和省份，必要时提供国家。目前无法唯一确认天气查询地点。</string>
+    <string name="weather_failed">天气查询失败或返回的当地日期不正确，请稍后重试。</string>
+    <string name="web_plan_failed">未能确定查询方式，请换一种说法重试。</string>
+    <string name="web_synthesizing">正在整理查询结果…</string>
+    <string name="web_images_searching">正在搜索图片…</string>
+    <string name="web_reading">正在读取来源网页…</string>
+    <string name="web_budget_exhausted">本次联网查询达到上限，请缩小问题范围后重试。</string>
+    <string name="cloud_web_fallback_sources">已获取以下来源，但尚未完成可靠汇总：</string>
+    <string name="cloud_web_fallback_empty">暂时没有取得可可靠汇总的联网证据。你可以稍后重试，或缩小查询范围。</string>
+    <string name="web_sources_title">联网工具与来源</string>
+    <string name="web_tools_summary">搜索、天气、图片、网页读取、抓取、提取、缓存、相似网页、研究、对比与页面监测。</string>
+    <string name="web_source_count">已包含 Android 全部 %1$d 个搜索来源，实际可用性取决于来源和网络。</string>
+    <string name="web_key_needed">需配置密钥</string>
+    <string name="web_credential_title">来源凭据</string>
+    <string name="web_credential_help">加密保存在手表上。输入新值可替换，留空保存可删除。</string>
 </resources>

@@ -10,8 +10,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = 5
+        versionName = "0.2.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -48,6 +48,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.wear:wear:1.3.0")
     implementation("org.jsoup:jsoup:1.23.1")
+    implementation("org.commonmark:commonmark:0.24.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
@@ -88,11 +90,67 @@ val syncPhoneBrand by tasks.registering(Sync::class) {
 android.sourceSets.getByName("main").res.srcDir(phoneBrandOutput)
 tasks.named("preBuild").configure { dependsOn(syncPhoneBrand) }
 
-// Reuse the phone result-card parser without its full agent runtime.
+// Compile Android's complete Web Intelligence engine from an explicit source allowlist.
+val phoneWebRoot = file("../../android/app/src/main/java/com/galaxyssi/chat")
+val webFiles = listOf(
+    "AgentWebIntelligence.kt", "AgentWebIntelligenceService.kt", "AgentWebIntelligenceTransport.kt",
+    "AgentWebEvidenceReader.kt", "AgentWebEvidencePack.kt", "AgentWebEvidenceVerification.kt",
+    "AgentWebResearchPlan.kt", "AgentWebRendererHealth.kt", "AgentWebMaintenanceQueue.kt",
+    "AgentWebLimits.kt", "AgentWebFetchSingleFlight.kt", "AgentWebExecutionBudget.kt",
+    "AgentPublicWebSearchParser.kt", "AgentPublicImageSearchParser.kt", "AgentPublicArticleParser.kt",
+    "AgentDynamicWebArticleFetcher.kt", "AgentIsolatedWebViewRenderer.kt", "AgentIsolatedWebRenderService.kt",
+    "AgentInlineMarkdown.kt", "AgentRichInlineMarkdownRenderer.kt",
+    "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
+)
+val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
+    "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt")
 val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
-val syncPhoneWebParser by tasks.registering(Sync::class) {
-    from("../../android/app/src/main/java") { include("com/galaxyssi/chat/AgentPublicWebSearchParser.kt") }
-    into(webParserOutput)
+val syncPhoneWebParser by tasks.registering {
+    inputs.files((webFiles + webSlices).map { phoneWebRoot.resolve(it) })
+    outputs.dir(webParserOutput)
+    doLast {
+        val output = webParserOutput.get().dir("com/galaxyssi/chat").asFile
+        output.mkdirs()
+        fun write(name: String, text: String) { output.resolve(name).writeText(text) }
+        fun slice(source: String, from: String, until: String): String {
+            val start = source.indexOf(from)
+            val end = source.indexOf(until, start + 1)
+            check(start >= 0 && end > start) { "Android web source boundary changed: $from" }
+            return source.substring(start, end)
+        }
+        webFiles.forEach { write(it, phoneWebRoot.resolve(it).readText().let { source ->
+            if (it == "CloudWebGrounding.kt") source.replace("package com.galaxyssi.chat", "package com.galaxyssi.chat\nimport com.galaxyssi.watch.R") else source
+        }) }
+        write("GalaxySSIApplication.kt", phoneWebRoot.resolve("GalaxySSIApplication.kt").readText()
+            .replace("class GalaxySSIApplication", "open class GalaxySSIApplication"))
+        val media = phoneWebRoot.resolve("AgentWebMediaNativeTools.kt").readText()
+        val imports = media.lineSequence().filter { it.startsWith("import java.") ||
+            it.startsWith("import okhttp3.") || it.startsWith("import org.json.") }.joinToString("\n")
+        // The network transport is independent of the later OCR/media/transcoding tools.
+        write("WatchSharedWebTransport.kt", "package com.galaxyssi.chat\n$imports\n" +
+            slice(media, "enum class AgentWebMethod", "data class AgentContentWriteResult"))
+        val registry = phoneWebRoot.resolve("AgentNativeToolRegistry.kt").readText()
+        val registryImports = registry.lineSequence().filter { it.startsWith("import ") }.joinToString("\n")
+        write("WatchSharedWebPrimitives.kt", "package com.galaxyssi.chat\n$registryImports\n" +
+            "typealias AgentNativeJsonObject = Map<String, Any?>\n" +
+            slice(registry, "enum class AgentNativeToolAvailabilityStatus", "data class AgentNativePermissionRequirement") +
+            slice(registry, "fun interface AgentNativeClock", "class AgentNativeToolInvocation internal constructor") +
+            "object AgentNativeJsonCodec" + registry.substringAfter("object AgentNativeJsonCodec"))
+        val nativeTools = phoneWebRoot.resolve("AgentWebIntelligenceNativeTools.kt").readText()
+        write("WatchSharedWebToolIds.kt", "package com.galaxyssi.chat\n" +
+            slice(nativeTools, "object AgentWebIntelligenceNativeTools", "    private const val VERSION") + "}\n")
+        val boundary = phoneWebRoot.resolve("AgentUntrustedEvidenceBoundary.kt").readText()
+        // secureMessages only adapts the phone planner's message type; all evidence checks are shared.
+        write("AgentUntrustedEvidenceBoundary.kt", boundary.substringBefore("    fun secureMessages") +
+            "    fun metadata" + boundary.substringAfter("    fun metadata"))
+    }
 }
 android.sourceSets.getByName("main").java.srcDir(webParserOutput)
 tasks.named("preBuild").configure { dependsOn(syncPhoneWebParser) }
+
+val phoneWebAssets by tasks.registering(Sync::class) {
+    from("../../android/app/src/main/assets") { include("web-intelligence/**") }
+    into(layout.buildDirectory.dir("generated/phoneWebAssets"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/phoneWebAssets"))
+tasks.named("preBuild").configure { dependsOn(phoneWebAssets) }
