@@ -156,6 +156,10 @@ Tap the brand or the empty composer's layers icon for the menu; tap the upper-ri
 conversation title for recent conversations. Long-press that title to configure
 the model. Type into the composer and tap the send icon, or long-press the input
 to launch system speech recognition and review its transcript before sending.
+Samsung watches prefer Samsung Keyboard's public speech-input activity. If it is
+unavailable or cannot be launched, the system speech activity is used. This does
+not invoke the Bixby assistant. Recognition language follows the watch locale;
+language availability and network requirements depend on the installed input service.
 Long-press a reply to read it aloud. The contacts directory lists actual connected
 assistants; phone contact synchronization and person-to-person chat are not included.
 

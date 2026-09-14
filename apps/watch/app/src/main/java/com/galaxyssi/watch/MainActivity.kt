@@ -493,11 +493,7 @@ class MainActivity : Activity() {
             navigate("devices"); return
         }
         if (page != "home") { page = "home"; render() }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.speech_prompt))
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-        runCatching { startActivityForResult(intent, 31) }.onFailure { toast(R.string.speech_unavailable) }
+        if (!WatchSpeechInput.launch(this) { startActivityForResult(it, 31) }) toast(R.string.speech_unavailable)
     }
     @Deprecated("Activity result callback for platform speech UI")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
