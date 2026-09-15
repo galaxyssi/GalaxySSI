@@ -52,9 +52,12 @@ class WatchSecurityTest {
         val task = WatchTask.create("test", "route", "agent", "Prompt")
             .copy(state = TaskState.COMPLETED, reply = "First reply")
         assertTrue(store.unread(task))
+        assertTrue(store.cachedUnread(task))
         store.markRead(listOf(task))
         assertFalse(WatchStore(context).unread(task))
+        assertFalse(store.cachedUnread(task))
         assertTrue(store.unread(task.copy(reply = "Updated reply")))
+        assertTrue(store.cachedUnread(task.copy(reply = "Updated reply")))
     }
 
     @Test fun phoneSignalIdentityLoadsOnWatchAndPersists() {

@@ -51,6 +51,11 @@ class MainActivity : Activity() {
     private var conversationFrame: SwipeDismissFrameLayout? = null
     private var renderedConversation: WatchConversationKey? = null
     private var lastReadProjection = emptyList<Pair<String, String>>()
+    private data class SessionsKey(val tasks: List<WatchTask>, val query: String, val readRevision: Long, val error: Int)
+    private var sessionsKey: SessionsKey? = null
+    private var sessionsFrame: SwipeDismissFrameLayout? = null
+    private var sessionsScroll: ScrollView? = null
+    private var sessionsContent: LinearLayout? = null
     private var sessionQuery = ""
     private var speech: WatchReplySpeech? = null
     private var screenAwake: WatchScreenAwake? = null
@@ -107,7 +112,10 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onStart() { super.onStart(); repo.listen(updated); repo.foreground(true) }
+    override fun onStart() {
+        super.onStart(); repo.listen(updated); repo.foreground(true)
+        if (repo.store.backgroundEnabled) runCatching { startForegroundService(Intent(this, WatchConnectionService::class.java)) }
+    }
     override fun onResume() {
         super.onResume(); resumed = true; updateConversationVisibility(); updated()
     }
@@ -166,6 +174,17 @@ class MainActivity : Activity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
         if (page == "home") { showConversation(); return }
+        val listKey = if (page == "sessions") SessionsKey(repo.store.cachedTasks(), sessionQuery, repo.store.cachedReadRevision, repo.errorResource) else null
+        if (listKey != null && listKey == sessionsKey && sessionsFrame != null) {
+            val frame = requireNotNull(sessionsFrame)
+            scroll = requireNotNull(sessionsScroll)
+            content = requireNotNull(sessionsContent)
+            editor = null
+            (content.getChildAt(0) as? TextView)?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date())
+            if (frame.parent == null) setContentView(frame)
+            frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
+            return
+        }
         val offset = if (preserveScroll && ::scroll.isInitialized) scroll.scrollY else 0
         editor = null
         val frame = SwipeDismissFrameLayout(this)
@@ -244,6 +263,9 @@ class MainActivity : Activity() {
         if (page != "home") button(R.string.back) { back() }
         if (preserveScroll) scroll.post { scroll.scrollTo(0, offset) }
         if (editor == null) scroll.requestFocus()
+        if (listKey != null) {
+            sessionsKey = listKey; sessionsFrame = frame; sessionsScroll = scroll; sessionsContent = content
+        }
     }
 
     private fun label(text: String, size: Int = 14, color: Int = Color.LTGRAY, heading: Boolean = false): TextView {
@@ -405,8 +427,8 @@ class MainActivity : Activity() {
             addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(28), dp(28)))
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, dp(2), 0)
-                addView(TextView(this@MainActivity).apply { text = name; textSize = 14f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
-                addView(TextView(this@MainActivity).apply { text = subtitle; textSize = 11f; setTextColor(Color.LTGRAY); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(TextView(this@MainActivity).apply { text = name.take(80).replace('\n', ' ').replace('\r', ' '); textSize = 14f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(TextView(this@MainActivity).apply { text = subtitle.take(120).replace('\n', ' ').replace('\r', ' '); textSize = 11f; setTextColor(Color.LTGRAY); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             if (count > 0) addView(TextView(this@MainActivity).apply { text = count.toString(); setTextColor(green); textSize = 12f })
         }
@@ -427,7 +449,7 @@ class MainActivity : Activity() {
         if (groups.isEmpty()) label(getString(R.string.empty_sessions))
         groups.take(30).forEach { turns ->
             val current = turns.first()
-            directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::unread)) {
+            directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::cachedUnread)) {
                 selectedTask = current.id; repo.saveActiveTask(current.id); followUpId = ""; navigate("home")
             }
         }
@@ -499,6 +521,11 @@ class MainActivity : Activity() {
     }
     private fun settings() {
         title(R.string.settings)
+        toggle(R.string.background_enabled, repo.store.backgroundEnabled) {
+            repo.store.backgroundEnabled = it
+            if (it) startForegroundService(Intent(this, WatchConnectionService::class.java))
+            else stopService(Intent(this, WatchConnectionService::class.java))
+        }
         toggle(R.string.web_search, repo.store.webSearch) { repo.store.webSearch = it }
         label(getString(R.string.web_search_description), 12)
         button(R.string.web_sources_title) { navigate("web-sources") }

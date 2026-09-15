@@ -57,28 +57,46 @@ object WatchNotifications {
     }
 }
 
-/** User-visible, bounded background connection; no always-listening microphone. */
+/** User-controlled persistent assistant connection; microphone remains user-initiated. */
 class WatchConnectionService : Service() {
-    private val handler = Handler(Looper.getMainLooper())
     private val repo get() = (application as WatchApplication).repository
-    private val updated: () -> Unit = { if (!repo.activeTasks()) stopSelf() }
+    private val finishWhenIdle: () -> Unit = { if (!repo.activeTasks()) stopSelf() }
     override fun onCreate() {
         super.onCreate()
-        startForeground(WatchNotifications.MONITOR_ID, WatchNotifications.monitoring(this))
-        repo.listen(updated)
+        val type = if (Build.VERSION.SDK_INT >= 34) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        startForeground(WatchNotifications.MONITOR_ID, WatchNotifications.monitoring(this), type)
         repo.monitor(true)
-        handler.postDelayed({ stopSelf() }, 15 * 60_000L)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "stop") stopSelf()
-        return START_NOT_STICKY
+        if (intent?.action == "stop") {
+            repo.store.backgroundEnabled = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!repo.store.backgroundEnabled) {
+            if (repo.activeTasks()) repo.listen(finishWhenIdle) else stopSelf()
+            return START_NOT_STICKY
+        }
+        repo.unlisten(finishWhenIdle)
+        return START_STICKY
     }
     override fun onTimeout(startId: Int, fgsType: Int) { stopSelf() }
     override fun onDestroy() {
-        handler.removeCallbacksAndMessages(null)
-        repo.unlisten(updated); repo.monitor(false)
+        repo.unlisten(finishWhenIdle)
+        repo.monitor(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
     override fun onBind(intent: Intent?) = null
+}
+
+/** Restore the user-enabled assistant after boot or an application update. */
+class WatchBootReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action !in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) return
+        if (WatchStore(context).backgroundEnabled) {
+            runCatching { context.startForegroundService(Intent(context, WatchConnectionService::class.java)) }
+                .onFailure { android.util.Log.w("WatchBackground", "System deferred background service startup") }
+        }
+    }
 }
