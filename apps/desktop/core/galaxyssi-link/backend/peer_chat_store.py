@@ -214,6 +214,23 @@ class PeerChatStore:
             self._notify(result)
         return result
 
+    def mark_outbound_failed(self, client_route_id: str, message_id: str) -> dict | None:
+        """Project exhausted delivery, without overwriting a late stored/read receipt."""
+        with self._lock, closing(self._connect()) as connection:
+            row = connection.execute("SELECT * FROM peer_messages WHERE message_id=?", (message_id,)).fetchone()
+            if row is None:
+                return None
+            if row["client_route_id"] != self._seal_route(client_route_id) or row["direction"] != "outbound":
+                raise ValueError("Peer failure projection scope mismatch")
+            changed = connection.execute("""UPDATE peer_messages SET delivery_status='failed'
+                WHERE message_id=? AND delivery_status IN ('sending','queued','sent')""", (message_id,))
+            row = connection.execute("SELECT * FROM peer_messages WHERE message_id=?", (message_id,)).fetchone()
+            connection.commit()
+        result = self._public(row)
+        if changed.rowcount:
+            self._notify(result)
+        return result
+
     def get_message(self, message_id: str) -> dict | None:
         with self._lock, closing(self._connect()) as connection:
             row = connection.execute(

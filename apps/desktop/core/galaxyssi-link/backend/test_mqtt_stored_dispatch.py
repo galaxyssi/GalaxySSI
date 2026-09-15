@@ -15,6 +15,7 @@ import link_delivery as delivery
 import link_protocol
 import mqtt_bridge as bridge
 import signal_receive_dispatch as dispatch
+from mqtt_receipt_replay_gate import ReceiptReplayGate
 from tests.receive_test_support import store_received_envelope
 
 
@@ -41,6 +42,8 @@ class MqttStoredDispatchTest(unittest.TestCase):
         self.mock("_resolve_inbound_topic", return_value=("client", self.paired))
         self.mock("touch_client")
         self.publish = self.mock("_publish_phone_payload", return_value=True)
+        self.receipt_clock = [100.0]
+        self.mock("signal_receipt_replay_gate", new=ReceiptReplayGate(clock=lambda: self.receipt_clock[0]))
         self.handle = self.mock("_dispatch_application_payload")
         self.decrypt = self.mock("decrypt_signal_envelope", side_effect=self.receive)
         self.log = self.mock("log")
@@ -87,6 +90,7 @@ class MqttStoredDispatchTest(unittest.TestCase):
             list(workers.map(lambda _: self.send(), range(3)))
         self.log.error.assert_not_called()
         self.handle.assert_called_once()
+        self.publish.assert_called_once()
         self.assertEqual(("dispatched", 1), self.state())
 
     def test_busy_handler_does_not_emit_unverified_duplicate_receipt(self):
@@ -108,6 +112,7 @@ class MqttStoredDispatchTest(unittest.TestCase):
 
     def test_completed_cipher_replay_acknowledges_without_new_task(self):
         self.send()
+        self.receipt_clock[0] += 31
         self.send()
         self.handle.assert_called_once()
         self.decrypt.assert_called_once()
@@ -125,6 +130,7 @@ class MqttStoredDispatchTest(unittest.TestCase):
             return envelope
         self.decrypt.side_effect = receive
         self.send()
+        self.receipt_clock[0] += 31
         with patch.object(dispatch, "_body", side_effect=AssertionError("Retired body read")):
             self.send()
             bridge.on_message(object(), None, bridge._StoredInboxMessage("pair", self.mid, 1, "stale"))
@@ -279,7 +285,8 @@ class MqttStoredDispatchTest(unittest.TestCase):
         self.mock("client", new=SimpleNamespace(is_connected=lambda: False))
         inbound = self.mock("flush_pending_inbound_messages")
         outbound = self.mock("flush_outbound_messages")
-        with patch.object(bridge.outbound_retry_stop_event, "wait", side_effect=[False, True]):
+        with patch.object(bridge.outbound_retry_stop_event, "is_set", side_effect=[False, False, True]), \
+                patch.object(bridge.outbound_retry_wake_event, "wait", return_value=False):
             bridge._outbound_retry_loop()
         inbound.assert_called_once()
         outbound.assert_not_called()
