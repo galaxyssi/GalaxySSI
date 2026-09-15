@@ -26,26 +26,38 @@ class WatchStore(context: Context) {
     val inbox = AgentEncryptedDatabase(context, "watch_inbox")
     var activeTask: String
         get() = prefs.readString("active_task", "")
-        set(value) = prefs.writeString("active_task", value)
+        set(value) { if (activeTask != value) prefs.writeString("active_task", value) }
     private fun readVersion(task: WatchTask) = "${task.state}:${task.reply.hashCode()}:${task.reply.length}"
     fun unread(task: WatchTask) = task.reply.isNotBlank() && prefs.readString("read:${task.id}", "") != readVersion(task)
     fun markRead(turns: List<WatchTask>) {
         turns.filter(::unread).forEach { prefs.writeString("read:${it.id}", readVersion(it)) }
     }
-    @Synchronized fun tasks(): List<WatchTask> = tasks.entries().mapNotNull { (_, value) ->
-        runCatching { WatchTask.fromJson(JSONObject(value)) }.getOrNull()
-    }.sortedByDescending { it.sourceId }
-    @Synchronized fun save(task: WatchTask) {
-        tasks.writeString(task.id, task.json().toString())
-        val old = tasks().filter { it.state.terminal }.drop(100)
-        tasks.removeAll(old.map { it.id })
-        old.forEach { prefs.remove("read:${it.id}") }
+    @Volatile private var taskSnapshot: List<WatchTask>? = null
+    /** Non-blocking UI snapshot; populated by repository startup before transport work. */
+    fun cachedTasks(): List<WatchTask> = taskSnapshot.orEmpty()
+    fun cachedTask(id: String): WatchTask? = taskSnapshot?.firstOrNull { it.id == id }
+    fun tasks(): List<WatchTask> = taskSnapshot ?: synchronized(this) {
+        taskSnapshot ?: tasks.entries().mapNotNull { (_, value) ->
+            runCatching { WatchTask.fromJson(JSONObject(value)) }.getOrNull()
+        }.sortedByDescending { it.sourceId }.also { taskSnapshot = it }
     }
-    @Synchronized fun task(id: String): WatchTask? = tasks.readString(id, "")
-        .takeIf { it.isNotBlank() }?.let { WatchTask.fromJson(JSONObject(it)) }
+    @Synchronized fun save(task: WatchTask) {
+        val current = tasks()
+        tasks.writeString(task.id, task.json().toString())
+        val updated = (current.filterNot { it.id == task.id } + task).sortedByDescending { it.sourceId }
+        val old = updated.filter { it.state.terminal }.drop(100).map { it.id }.toSet()
+        tasks.removeAll(old)
+        old.forEach { prefs.remove("read:$it") }
+        taskSnapshot = updated.filterNot { it.id in old }
+    }
+    fun task(id: String): WatchTask? {
+        if (id.isBlank()) return null
+        taskSnapshot?.let { return it.firstOrNull { task -> task.id == id } }
+        return tasks.readString(id, "").takeIf { it.isNotBlank() }?.let { WatchTask.fromJson(JSONObject(it)) }
+    }
     var draft: String
         get() = prefs.readString("draft", "")
-        set(value) = prefs.writeString("draft", value)
+        set(value) { if (draft != value) prefs.writeString("draft", value) }
     var selectedDesktop: String
         get() = prefs.readString("desktop", "")
         set(value) = prefs.writeString("desktop", value)

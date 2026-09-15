@@ -28,7 +28,9 @@ class WatchRepository(private val context: Context) {
     val conversationVisibility = WatchConversationVisibility()
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private val main = Handler(Looper.getMainLooper())
+    private val apiState = Executors.newSingleThreadExecutor()
     private val apiWorker = Executors.newFixedThreadPool(2)
+    private val uiStorage = Executors.newSingleThreadExecutor()
     private val api = WatchApi()
     private val apiCalls = java.util.concurrent.ConcurrentHashMap<String, WatchApiOperation>()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
@@ -48,15 +50,22 @@ class WatchRepository(private val context: Context) {
     private val seen = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     init {
-        worker.execute {
+        apiState.execute {
             runCatching {
-                com.galaxyssi.chat.WatchSignalUpgrade.prepare(context)
-                Crypto.initialize(context)
                 // HTTP operations are never automatically replayed after process
                 // death, since a provider may have accepted and billed the request.
                 store.tasks().filter { it.desktopId == "api" && !it.state.terminal }.forEach {
                     store.save(it.copy(state = TaskState.FAILED, progress = context.getString(R.string.api_interrupted)))
                 }
+                changed()
+            }.onFailure { errorResource = R.string.storage_error; changed() }
+        }
+        worker.execute {
+            runCatching {
+                store.tasks()
+                changed()
+                com.galaxyssi.chat.WatchSignalUpgrade.prepare(context)
+                Crypto.initialize(context)
                 store.inbox.entries().forEach { (key, raw) ->
                     val entry = JSONObject(raw)
                     if (!entry.optBoolean("applied")) entry.optJSONObject("payload")?.let {
@@ -70,6 +79,16 @@ class WatchRepository(private val context: Context) {
             runCatching { tick() }.onFailure { connection = ConnectionState.ERROR; changed() }
         }, 1, 10, TimeUnit.SECONDS)
     }
+
+    fun saveDraft(value: String) { uiStorage.execute { store.draft = value } }
+    fun saveActiveTask(id: String) { uiStorage.execute { store.activeTask = id } }
+    fun markConversationRead(turns: List<WatchTask>, current: WatchTask) {
+        uiStorage.execute {
+            WatchNotifications.dismissConversation(context, turns, current)
+            store.markRead(turns)
+        }
+    }
+    internal fun awaitUiStorage() { uiStorage.submit {}.get(10, TimeUnit.SECONDS) }
 
     fun listen(listener: () -> Unit) { listeners.add(listener) }
     fun unlisten(listener: () -> Unit) { listeners.remove(listener) }
@@ -226,7 +245,7 @@ class WatchRepository(private val context: Context) {
     } }
 
     private fun sendApi(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
-        worker.execute {
+        apiState.execute {
             val started = runCatching {
                 val profile = store.apiProfile ?: error("Missing API settings")
                 require(previous == null || previous.routeId == profile.id)
@@ -236,19 +255,19 @@ class WatchRepository(private val context: Context) {
                 val useWeb = store.webSearch
                 val history = store.tasks()
                 val call = WatchApiOperation()
-                store.save(if (useWeb) task.copy(progress = context.getString(R.string.web_planning)) else task); store.draft = ""; apiCalls[task.id] = call
+                store.save(if (useWeb) task.copy(progress = context.getString(R.string.web_planning)) else task); saveDraft(""); apiCalls[task.id] = call
                 main.post { done(task) }; changed()
                 apiWorker.execute {
                     val outcome = runCatching {
                         if (useWeb) WatchWebLookup(context, api).answer(profile, task, history, call) { progress ->
-                            worker.execute {
+                            apiState.execute {
                                 store.task(task.id)?.takeIf { !it.state.terminal }?.let {
                                     store.save(it.copy(progress = progress)); changed()
                                 }
                             }
                         } else api.execute(call.attach(api.request(profile, task, history)))
                     }
-                    worker.execute {
+                    apiState.execute {
                         apiCalls.remove(task.id)
                         val latest = store.task(task.id) ?: return@execute
                         if (!latest.state.terminal) {
@@ -306,7 +325,7 @@ class WatchRepository(private val context: Context) {
         runCatching { tick() }; changed()
     } }
 
-    fun cancel(task: WatchTask) { worker.execute {
+    fun cancel(task: WatchTask) { (if (task.desktopId == "api") apiState else worker).execute {
         runCatching {
             val current = store.task(task.id) ?: return@runCatching
             if (current.state.terminal || current.state == TaskState.STOP_REQUESTED) return@runCatching
