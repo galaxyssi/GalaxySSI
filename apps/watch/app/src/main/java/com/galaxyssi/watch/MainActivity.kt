@@ -194,7 +194,7 @@ class MainActivity : Activity() {
         frame.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
         frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
-        label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date()), 12, Color.LTGRAY)
+        if (page != "home-menu") label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date()), 12, Color.LTGRAY)
         when (page) {
             "home" -> homeMenu()
             "devices" -> devices()
@@ -273,13 +273,11 @@ class MainActivity : Activity() {
         page = "home"; history.clear(); render()
     }
     private fun homeMenu() {
-        title(R.string.home_menu)
         button(R.string.new_conversation) { newConversation() }
         button(R.string.recent) { sessionQuery = ""; navigate("sessions") }
         button(R.string.contacts) { navigate("contacts") }
         button(R.string.api_provider) { openApiSettings() }
         button(R.string.devices) { navigate("devices") }
-        button(R.string.stop_speech) { speech?.stop(); back() }
         button(R.string.settings) { navigate("settings") }
     }
     private fun showConversation() {
