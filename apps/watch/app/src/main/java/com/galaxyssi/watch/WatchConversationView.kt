@@ -31,6 +31,7 @@ class WatchConversationView(
     private fun text(value: String, size: Float = 14f) = TextView(context).apply {
         this.text = value; textSize = size; setTextColor(Color.WHITE); includeFontPadding = false
     }
+    private val clockLabel = text("", 10f).apply { gravity = Gravity.CENTER; setTextColor(secondary) }
     private val heading = text("", 11f)
     private val model = text("", 9f).apply { setTextColor(secondary) }
     private val transcript = LinearLayout(context).apply { orientation = VERTICAL }
@@ -98,9 +99,13 @@ class WatchConversationView(
     private var busy = false
     private var lastTurns = emptyList<WatchTask>()
     private var lastReady: Boolean? = null
+    private data class RenderedTurn(val task: WatchTask, val container: LinearLayout, val status: TextView?)
+    private val renderedTurns = mutableMapOf<String, RenderedTurn>()
     private val waitingLabels = mutableListOf<Pair<WatchTask, TextView>>()
     private val ticker = object : Runnable {
         override fun run() {
+            val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+            if (clockLabel.text.toString() != time) clockLabel.text = time
             waitingLabels.forEach { (task, label) ->
                 label.text = statusText(task)
             }
@@ -117,9 +122,7 @@ class WatchConversationView(
         val transcriptInset = (resources.configuration.screenWidthDp * 0.055f).toInt().coerceAtLeast(10)
         val composerInset = (resources.configuration.screenWidthDp * 0.15f).toInt().coerceAtLeast(28)
         setPadding(0, dp(10), 0, dp(18))
-        addView(text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), 10f).apply {
-            gravity = Gravity.CENTER; setTextColor(secondary)
-        }, LayoutParams(-1, dp(12)))
+        addView(clockLabel, LayoutParams(-1, dp(12)))
         val header = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(headerInset), 0, dp(headerInset), 0) }
         val brand = LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(40)
@@ -180,13 +183,18 @@ class WatchConversationView(
     }
 
     fun update(turns: List<WatchTask>, modelName: String, ready: Boolean, resetScroll: Boolean = false) {
-        heading.text = turns.firstOrNull()?.prompt?.take(18) ?: context.getString(R.string.new_conversation)
-        model.text = modelName
+        val title = turns.firstOrNull()?.prompt?.take(18) ?: context.getString(R.string.new_conversation)
+        if (heading.text.toString() != title) heading.text = title
+        if (model.text.toString() != modelName) model.text = modelName
         if (turns == lastTurns && ready == lastReady && !resetScroll) return
         val oldOffset = transcriptScroll.scrollY
         val nearBottom = oldOffset + transcriptScroll.height >= transcript.height - dp(30)
         lastTurns = turns.toList(); lastReady = ready
-        transcript.removeAllViews()
+        if (turns.isEmpty() || renderedTurns.isEmpty()) transcript.removeAllViews()
+        val ids = turns.map { it.id }.toSet()
+        renderedTurns.keys.filter { it !in ids }.forEach { id ->
+            renderedTurns.remove(id)?.let { transcript.removeView(it.container) }
+        }
         waitingLabels.clear()
         if (turns.isEmpty()) {
             transcript.addView(text(context.getString(if (ready) R.string.home_empty_conversation else R.string.home_setup), 14f).apply {
@@ -197,24 +205,33 @@ class WatchConversationView(
                 setOnClickListener { onConnect() }
             })
         }
-        for (turn in turns) {
-            bubble(turn.prompt, true)
-            if (turn.reply.isNotBlank()) {
-                bubble(turn.reply, false, readable = true)
-                WatchReplyImages.views(context, turn.reply).forEach {
-                    transcript.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
-                }
-            }
-            else if (turn.progress.isNotBlank()) bubble(turn.progress, false)
-            else if (turn.state.terminal) bubble(context.getString(turn.state.label()), false)
-            if (turn.state == TaskState.WAITING_APPROVAL) bubble(context.getString(R.string.approval_help), false)
-            if (!turn.state.terminal) {
-                val status = bubble(statusText(turn), false).apply {
+        turns.forEachIndexed { index, turn ->
+            var row = renderedTurns[turn.id]
+            if (row?.task != turn) {
+                row?.let { transcript.removeView(it.container) }
+                val container = LinearLayout(context).apply { orientation = VERTICAL }
+                bubble(container, turn.prompt, true)
+                if (turn.reply.isNotBlank()) {
+                    bubble(container, turn.reply, false, readable = true)
+                    WatchReplyImages.views(context, turn.reply).forEach {
+                        container.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
+                    }
+                } else if (turn.progress.isNotBlank()) bubble(container, turn.progress, false)
+                else if (turn.state.terminal) bubble(container, context.getString(turn.state.label()), false)
+                if (turn.state == TaskState.WAITING_APPROVAL) bubble(container, context.getString(R.string.approval_help), false)
+                val status = if (!turn.state.terminal) bubble(container, statusText(turn), false).apply {
                     minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL; textSize = 12f; setTextColor(secondary)
                     if (turn.state != TaskState.STOP_REQUESTED) setOnClickListener { onStop(turn) }
-                }
-                waitingLabels.add(turn to status)
+                } else null
+                row = RenderedTurn(turn, container, status)
+                renderedTurns[turn.id] = row
             }
+            val rendered = requireNotNull(row)
+            if (transcript.indexOfChild(rendered.container) != index) {
+                transcript.removeView(rendered.container)
+                transcript.addView(rendered.container, index, LayoutParams(-1, -2))
+            }
+            rendered.status?.let { waitingLabels.add(turn to it) }
         }
         transcriptScroll.post {
             if (turns.isEmpty()) { transcriptScroll.scrollTo(0, 0); newReply.visibility = GONE }
@@ -222,7 +239,7 @@ class WatchConversationView(
             else { transcriptScroll.scrollTo(0, oldOffset); newReply.visibility = VISIBLE }
         }
     }
-    private fun bubble(value: String, outgoing: Boolean, readable: Boolean = false): TextView {
+    private fun bubble(parent: LinearLayout, value: String, outgoing: Boolean, readable: Boolean = false): TextView {
         val row = LinearLayout(context).apply { gravity = if (outgoing) Gravity.END else Gravity.START }
         val message = (if (readable) ParagraphSelectingTextView(context).apply {
             setOnParagraphDoubleTapListener { selection -> onRead(selection.sourceText.substring(selection.startOffset)) }
@@ -237,7 +254,7 @@ class WatchConversationView(
             message.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         }
         row.addView(message, LayoutParams(-2, -2))
-        transcript.addView(row, LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+        parent.addView(row, LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
         return message
     }
 }

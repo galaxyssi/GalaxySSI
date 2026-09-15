@@ -44,15 +44,20 @@ class MainActivity : Activity() {
     private var apiOffer: ApiProfile? = null
     private var editor: EditText? = null
     private var busy = false
+    private var conversationReady = false
+    private var conversationUsesApi = false
     private var resumed = false
     private var conversationView: WatchConversationView? = null
+    private var conversationFrame: SwipeDismissFrameLayout? = null
+    private var renderedConversation: WatchConversationKey? = null
+    private var lastReadProjection = emptyList<Pair<String, String>>()
     private var sessionQuery = ""
     private var speech: WatchReplySpeech? = null
     private var screenAwake: WatchScreenAwake? = null
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
     private val handler = Handler(Looper.getMainLooper())
-    private val saveDraft = Runnable { repo.store.draft = draft }
+    private val saveDraft = Runnable { repo.saveDraft(draft) }
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
         else if (page !in setOf("session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
@@ -85,7 +90,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readLaunchIntent(intent); render() }
     private fun readLaunchIntent(intent: Intent) {
-        intent.getStringExtra("task_id")?.takeIf { repo.store.task(it) != null }?.let { selectedTask = it; repo.store.activeTask = it; page = "home" }
+        intent.getStringExtra("task_id")?.takeIf { it.isNotBlank() }?.let { selectedTask = it; repo.saveActiveTask(it); page = "home" }
         // adb provisioning writes a one-time offer to private app storage. It still
         // requires an on-watch identity review and confirmation before trust changes.
         val offer = File(filesDir, "pairing-offer.json")
@@ -110,21 +115,24 @@ class MainActivity : Activity() {
         resumed = false; screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); super.onPause()
     }
     private fun updateScreenAwake() {
-        val task = repo.store.task(selectedTask)
+        val task = repo.store.cachedTask(selectedTask)
         screenAwake?.update(resumed && page == "home", busy || task?.state?.terminal == false || speech?.active == true)
     }
     private fun updateConversationVisibility() {
         if (!resumed) return
-        val task = if (page == "home") repo.store.task(selectedTask) else null
+        val task = if (page == "home") repo.store.cachedTask(selectedTask) else null
         repo.conversationVisibility.show(this, task)
         if (task != null) {
-            val turns = repo.store.tasks().filter { it.conversationKey() == task.conversationKey() }
-            WatchNotifications.dismissConversation(this, turns, task)
-            repo.store.markRead(turns)
+            val turns = repo.store.cachedTasks().filter { it.conversationKey() == task.conversationKey() }
+            val projection = turns.map { it.id to "${it.state}:${it.reply.hashCode()}:${it.reply.length}" }
+            if (projection != lastReadProjection) {
+                lastReadProjection = projection
+                repo.markConversationRead(turns, task)
+            }
         }
     }
     override fun onStop() {
-        handler.removeCallbacks(saveDraft); repo.store.draft = draft
+        handler.removeCallbacks(saveDraft); repo.saveDraft(draft)
         repo.unlisten(updated); repo.foreground(false); speech?.stop()
         super.onStop()
     }
@@ -158,7 +166,6 @@ class MainActivity : Activity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
         if (page == "home") { showConversation(); return }
-        conversationView = null
         val offset = if (preserveScroll && ::scroll.isInitialized) scroll.scrollY else 0
         editor = null
         val frame = SwipeDismissFrameLayout(this)
@@ -269,7 +276,7 @@ class MainActivity : Activity() {
     }
 
     private fun newConversation() {
-        selectedTask = ""; repo.store.activeTask = ""; followUpId = ""; draft = ""; repo.store.draft = ""
+        selectedTask = ""; repo.saveActiveTask(""); followUpId = ""; draft = ""; repo.saveDraft("")
         page = "home"; history.clear(); render()
     }
     private fun homeMenu() {
@@ -281,6 +288,14 @@ class MainActivity : Activity() {
         button(R.string.settings) { navigate("settings") }
     }
     private fun showConversation() {
+        conversationFrame?.let { existing ->
+            if (existing.parent == null) setContentView(existing)
+            existing.post { existing.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
+            conversationView?.setDraft(draft)
+            editor = conversationView?.input
+            refreshConversation()
+            return
+        }
         val frame = SwipeDismissFrameLayout(this)
         frame.setBackgroundColor(Color.BLACK)
         if (resources.configuration.isScreenRound) {
@@ -300,30 +315,35 @@ class MainActivity : Activity() {
             onStop = { selectedTask = it.id; navigate("stop") }, onRead = { speak(it) },
             onConnect = { navigate("devices") }, onStopReading = { speech?.stopIfActive() == true })
         frame.addView(conversationView, FrameLayout.LayoutParams(-1, -1))
+        conversationFrame = frame
         setContentView(frame)
         frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
         editor = conversationView?.input
         refreshConversation(true)
     }
     private fun refreshConversation(reset: Boolean = false) {
-        val previous = repo.store.task(selectedTask)
-        val turns = repo.store.tasks().filter { previous != null && it.conversationKey() == previous.conversationKey() }.sortedBy { it.sourceId }
+        val previous = repo.store.cachedTask(selectedTask)
+        val turns = repo.store.cachedTasks().filter { previous != null && it.conversationKey() == previous.conversationKey() }.sortedBy { it.sourceId }
         val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
         val api = repo.store.apiProfile
         val desktop = previous?.desktopId ?: repo.store.selectedDesktop
         val agent = previous?.agentId ?: repo.store.selectedAgent
         val ready = if (usingApi) api != null && (previous == null || previous.routeId == api.id)
             else repo.links().any { it.desktopId == desktop && it.paired } && agent.isNotBlank()
+        conversationReady = ready
+        conversationUsesApi = usingApi
         val name = if (usingApi) api?.model.orEmpty() else agent
-        conversationView?.update(turns, name.ifBlank { getString(R.string.connect_service) }, ready, reset)
+        val key = previous?.conversationKey()
+        conversationView?.update(turns, name.ifBlank { getString(R.string.connect_service) }, ready, reset || key != renderedConversation)
+        renderedConversation = key
         conversationView?.sending(busy)
         speech?.observe(turns.lastOrNull(), resumed && page == "home" && repo.store.autoSpeech)
         updateScreenAwake()
         updateConversationVisibility()
     }
-    private fun sendFromHome() {
-        if (busy || draft.isBlank()) return
-        val previous = repo.store.task(selectedTask)
+    private fun sendFromHome(prompt: String = draft) {
+        if (busy || prompt.isBlank()) return
+        val previous = repo.store.cachedTask(selectedTask)
         if (previous == null && !repo.store.apiPreferred && (repo.store.selectedDesktop.isBlank() || repo.store.selectedAgent.isBlank())) {
             navigate("devices"); return
         }
@@ -332,13 +352,17 @@ class MainActivity : Activity() {
         composer?.clearFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(composer?.windowToken, 0)
         conversationView?.requestFocus()
-        repo.send(draft, previous) { sent ->
+        repo.send(prompt, previous) { sent ->
             busy = false
             if (isDestroyed || isFinishing) return@send
-            if (sent == null) { toast(if (repo.errorResource != 0) repo.errorResource else R.string.send_failed); refreshConversation(); return@send }
-            selectedTask = sent.id; repo.store.activeTask = sent.id; followUpId = ""
-            draft = ""; repo.store.draft = ""; page = "home"; history.clear()
-            if (conversationView == null) render() else { conversationView?.setDraft(""); refreshConversation(true) }
+            if (sent == null) {
+                draft = prompt; repo.saveDraft(prompt); conversationView?.setDraft(prompt)
+                toast(if (repo.errorResource != 0) repo.errorResource else R.string.send_failed); refreshConversation(); return@send
+            }
+            selectedTask = sent.id; repo.saveActiveTask(sent.id); followUpId = ""
+            draft = ""; repo.saveDraft(""); page = "home"; history.clear()
+            showConversation()
+            refreshConversation(true)
             runCatching { startForegroundService(Intent(this, WatchConnectionService::class.java)) }
         }
     }
@@ -397,14 +421,14 @@ class MainActivity : Activity() {
             actions.addView(Button(this).apply { text = getString(label); textSize = 10f; isAllCaps = false; minHeight = dp(48); setPadding(0, 0, 0, 0); setOnClickListener { action() } }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         content.addView(actions, LinearLayout.LayoutParams(-1, -2))
-        val groups = repo.store.tasks().groupBy { it.conversationKey() }.values.filter { turns ->
+        val groups = repo.store.cachedTasks().groupBy { it.conversationKey() }.values.filter { turns ->
             sessionQuery.isBlank() || turns.any { it.prompt.contains(sessionQuery, true) || it.reply.contains(sessionQuery, true) }
         }
         if (groups.isEmpty()) label(getString(R.string.empty_sessions))
         groups.take(30).forEach { turns ->
             val current = turns.first()
             directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::unread)) {
-                selectedTask = current.id; repo.store.activeTask = current.id; followUpId = ""; navigate("home")
+                selectedTask = current.id; repo.saveActiveTask(current.id); followUpId = ""; navigate("home")
             }
         }
     }
@@ -439,8 +463,8 @@ class MainActivity : Activity() {
         content.addView(editor, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
     }
     private fun confirmStop() {
-        title(R.string.stop_task); label(getString(if (repo.store.task(selectedTask)?.desktopId == "api") R.string.api_stop_confirm else R.string.stop_confirm))
-        button(R.string.confirm) { repo.store.task(selectedTask)?.let(repo::cancel); back() }
+        title(R.string.stop_task); label(getString(if (repo.store.cachedTask(selectedTask)?.desktopId == "api") R.string.api_stop_confirm else R.string.stop_confirm))
+        button(R.string.confirm) { repo.store.cachedTask(selectedTask)?.let(repo::cancel); back() }
         button(R.string.cancel, true) { back() }
     }
     private fun pairInput() {
@@ -521,11 +545,9 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, -2))
     }
     private fun startVoice() {
-        val previous = repo.store.task(selectedTask)
-        val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
-        if (usingApi && repo.store.apiProfile == null) { openApiSettings(); return }
-        if (!usingApi && ((previous?.desktopId ?: repo.store.selectedDesktop).isBlank() || (previous?.agentId ?: repo.store.selectedAgent).isBlank())) {
-            navigate("devices"); return
+        if (!conversationReady) {
+            if (conversationUsesApi) openApiSettings() else navigate("devices")
+            return
         }
         if (page != "home") { page = "home"; render() }
         if (!WatchSpeechInput.launch(this) { startActivityForResult(it, 31) }) toast(R.string.speech_unavailable)
@@ -536,8 +558,11 @@ class MainActivity : Activity() {
         if (requestCode == 31) {
             if (resultCode != RESULT_OK) { page = "home"; render(); return }
             val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
-            if (result.isBlank()) toast(R.string.speech_empty) else { draft = result.take(4000); repo.store.draft = draft }
-            page = "home"; render()
+            page = "home"
+            if (result.isBlank()) { toast(R.string.speech_empty); render(); return }
+            // Send recognized text directly; only restore it to the composer on failure.
+            render()
+            sendFromHome(result.take(4000))
         }
     }
     private fun speak(text: String) {

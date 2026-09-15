@@ -16,7 +16,8 @@ object WatchSpeechInput {
             .putExtra(RecognizerIntent.EXTRA_PROMPT, context.getString(R.string.speech_prompt))
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
         val samsung = Intent(standard).setPackage(SAMSUNG_PACKAGE)
-        if (samsung.resolveActivity(context.packageManager) != null && tryStart(samsung, start)) return true
+        // Launch the explicit Samsung activity directly: no redundant PackageManager round trip.
+        if (tryStart(samsung, start)) return true
         return tryStart(standard, start)
     }
 
