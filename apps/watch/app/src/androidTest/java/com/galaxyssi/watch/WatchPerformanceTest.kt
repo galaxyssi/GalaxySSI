@@ -8,6 +8,32 @@ import org.junit.Test
 import org.junit.Assume.assumeTrue
 
 class WatchPerformanceTest {
+    @Test fun unchangedSessionsReuseTheirView() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val repo = (instrumentation.targetContext.applicationContext as WatchApplication).repository
+        repo.store.tasks()
+        val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        instrumentation.waitForIdleSync()
+        repo.awaitUiStorage()
+        val navigate = MainActivity::class.java.getDeclaredMethod("navigate", String::class.java).apply { isAccessible = true }
+        val back = MainActivity::class.java.getDeclaredMethod("back").apply { isAccessible = true }
+        val frame = MainActivity::class.java.getDeclaredField("sessionsFrame").apply { isAccessible = true }
+        try {
+            instrumentation.runOnMainSync {
+                navigate.invoke(activity, "sessions")
+                val first = frame.get(activity)
+                org.junit.Assert.assertNotNull(first)
+                back.invoke(activity)
+                navigate.invoke(activity, "sessions")
+                org.junit.Assert.assertSame(first, frame.get(activity))
+                MainActivity::class.java.getDeclaredField("sessionQuery").apply { isAccessible = true }.set(activity, "no-match-fixture")
+                MainActivity::class.java.getDeclaredMethod("render", Boolean::class.javaPrimitiveType).apply { isAccessible = true }.invoke(activity, false)
+                org.junit.Assert.assertNotSame(first, frame.get(activity))
+            }
+        } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
     @Test fun speechAutomaticallySendsWithoutWaitingForTransport() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("speech_send_diagnostic") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -62,7 +88,28 @@ class WatchPerformanceTest {
         try {
             repeat(3) { iteration ->
                 for (page in listOf("home-menu", "sessions")) {
-                    instrumentation.runOnMainSync { navigate.invoke(activity, page) }
+                    if (InstrumentationRegistry.getArguments().getString("expire_preferences") == "true") {
+                        val cache = Class.forName("com.galaxyssi.chat.AgentEncryptedPreferenceCache")
+                        cache.getDeclaredMethod("clearAll").apply { isAccessible = true }
+                            .invoke(cache.getDeclaredField("INSTANCE").apply { isAccessible = true }.get(null))
+                    }
+                    val drawn = java.util.concurrent.CountDownLatch(1)
+                    instrumentation.runOnMainSync {
+                        val start = SystemClock.elapsedRealtime()
+                        navigate.invoke(activity, page)
+                        println("WATCH_PERF route=$page iteration=$iteration enter_handler_ms=${SystemClock.elapsedRealtime() - start}")
+                        val root = activity.window.decorView
+                        root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+                            override fun onPreDraw(): Boolean {
+                                root.viewTreeObserver.removeOnPreDrawListener(this)
+                                println("WATCH_PERF route=$page iteration=$iteration enter_predraw_ms=${SystemClock.elapsedRealtime() - start}")
+                                drawn.countDown()
+                                return true
+                            }
+                        })
+                        root.invalidate()
+                    }
+                    org.junit.Assert.assertTrue(drawn.await(10, java.util.concurrent.TimeUnit.SECONDS))
                     instrumentation.waitForIdleSync()
                     instrumentation.runOnMainSync {
                         val start = SystemClock.elapsedRealtime()

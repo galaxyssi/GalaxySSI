@@ -85,7 +85,9 @@ class WatchRepository(private val context: Context) {
     fun markConversationRead(turns: List<WatchTask>, current: WatchTask) {
         uiStorage.execute {
             WatchNotifications.dismissConversation(context, turns, current)
+            val previous = store.cachedReadRevision
             store.markRead(turns)
+            if (previous != store.cachedReadRevision) changed()
         }
     }
     internal fun awaitUiStorage() { uiStorage.submit {}.get(10, TimeUnit.SECONDS) }

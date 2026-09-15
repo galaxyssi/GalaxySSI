@@ -63,9 +63,9 @@
     <string name="about">Watch 0.1 · Android 13+</string>
     <string name="monitor_channel">Task connection</string>
     <string name="result_channel">Task results</string>
-    <string name="monitor_title">Waiting for task results</string>
-    <string name="monitor_body">Encrypted connection active for up to 15 minutes.</string>
-    <string name="monitor_stop">Stop monitoring</string>
+    <string name="monitor_title">GalaxySSI is running</string>
+    <string name="monitor_body">Background assistant connection is active.</string>
+    <string name="monitor_stop">Stop background assistant</string>
     <string name="monitor_expired">Background monitoring ended. Open GalaxySSI to reconnect; computer tasks may still be running.</string>
     <string name="task_result">Task updated</string>
     <string name="notification_denied">Notifications are off. Results remain available when you open the app.</string>
@@ -138,4 +138,5 @@
     <string name="web_key_needed">Key required</string>
     <string name="web_credential_title">Source credential</string>
     <string name="web_credential_help">Saved encrypted on this watch. Enter a new value to replace it; leave blank to remove it.</string>
+    <string name="background_enabled">Keep running in background</string>
 </resources>

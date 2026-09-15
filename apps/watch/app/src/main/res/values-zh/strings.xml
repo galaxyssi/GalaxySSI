@@ -63,9 +63,9 @@
     <string name="about">手表版 0.1 · Android 13+</string>
     <string name="monitor_channel">任务连接</string>
     <string name="result_channel">任务结果</string>
-    <string name="monitor_title">正在等待任务结果</string>
-    <string name="monitor_body">加密连接最多保持 15 分钟。</string>
-    <string name="monitor_stop">停止等待</string>
+    <string name="monitor_title">GalaxySSI 正在后台运行</string>
+    <string name="monitor_body">助手连接持续运行，可随时停止。</string>
+    <string name="monitor_stop">停止后台运行</string>
     <string name="monitor_expired">后台等待已结束。打开 GalaxySSI 可重新连接，电脑任务可能仍在运行。</string>
     <string name="task_result">任务有新结果</string>
     <string name="notification_denied">通知未开启，重新打开应用后仍可查看结果。</string>
@@ -138,4 +138,5 @@
     <string name="web_key_needed">需配置密钥</string>
     <string name="web_credential_title">来源凭据</string>
     <string name="web_credential_help">加密保存在手表上。输入新值可替换，留空保存可删除。</string>
+    <string name="background_enabled">后台持续运行</string>
 </resources>

@@ -27,10 +27,26 @@ class WatchStore(context: Context) {
     var activeTask: String
         get() = prefs.readString("active_task", "")
         set(value) { if (activeTask != value) prefs.writeString("active_task", value) }
+    private val cachedReadVersions = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val readRevision = java.util.concurrent.atomic.AtomicLong()
+    val cachedReadRevision: Long get() = readRevision.get()
+    fun cachedUnread(task: WatchTask) = task.reply.isNotBlank() && cachedReadVersions[task.id] != readVersion(task)
+    private fun warmReadVersions(turns: List<WatchTask>) {
+        turns.forEach { task ->
+            if (!cachedReadVersions.containsKey(task.id)) {
+                val version = prefs.readString("read:${task.id}", "")
+                if (cachedReadVersions.putIfAbsent(task.id, version) == null) readRevision.incrementAndGet()
+            }
+        }
+    }
     private fun readVersion(task: WatchTask) = "${task.state}:${task.reply.hashCode()}:${task.reply.length}"
     fun unread(task: WatchTask) = task.reply.isNotBlank() && prefs.readString("read:${task.id}", "") != readVersion(task)
     fun markRead(turns: List<WatchTask>) {
-        turns.filter(::unread).forEach { prefs.writeString("read:${it.id}", readVersion(it)) }
+        turns.filter(::unread).forEach {
+            val version = readVersion(it)
+            prefs.writeString("read:${it.id}", version)
+            if (cachedReadVersions.put(it.id, version) != version) readRevision.incrementAndGet()
+        }
     }
     @Volatile private var taskSnapshot: List<WatchTask>? = null
     /** Non-blocking UI snapshot; populated by repository startup before transport work. */
@@ -39,7 +55,7 @@ class WatchStore(context: Context) {
     fun tasks(): List<WatchTask> = taskSnapshot ?: synchronized(this) {
         taskSnapshot ?: tasks.entries().mapNotNull { (_, value) ->
             runCatching { WatchTask.fromJson(JSONObject(value)) }.getOrNull()
-        }.sortedByDescending { it.sourceId }.also { taskSnapshot = it }
+        }.sortedByDescending { it.sourceId }.also { warmReadVersions(it); taskSnapshot = it }
     }
     @Synchronized fun save(task: WatchTask) {
         val current = tasks()
@@ -47,7 +63,7 @@ class WatchStore(context: Context) {
         val updated = (current.filterNot { it.id == task.id } + task).sortedByDescending { it.sourceId }
         val old = updated.filter { it.state.terminal }.drop(100).map { it.id }.toSet()
         tasks.removeAll(old)
-        old.forEach { prefs.remove("read:$it") }
+        old.forEach { prefs.remove("read:$it"); cachedReadVersions.remove(it) }
         taskSnapshot = updated.filterNot { it.id in old }
     }
     fun task(id: String): WatchTask? {
@@ -64,6 +80,9 @@ class WatchStore(context: Context) {
     var selectedAgent: String
         get() = prefs.readString("agent", "")
         set(value) = prefs.writeString("agent", value)
+    var backgroundEnabled: Boolean
+        get() = prefs.readString("background_enabled", "true").toBoolean()
+        set(value) = prefs.writeString("background_enabled", value.toString())
     var webSearch: Boolean
         get() = prefs.readString("web_search", "true").toBoolean()
         set(value) = prefs.writeString("web_search", value.toString())
