@@ -70,6 +70,30 @@ class WatchConversationUiTest {
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
 
+    @Test fun sendingTextCannotTurnTheSendClickIntoAMenuClick() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            var sent = 0
+            var menus = 0
+            lateinit var ui: WatchConversationView
+            ui = WatchConversationView(instrumentation.targetContext, "Recognized or typed text", {}, {
+                sent++
+                ui.setDraft("")
+            }, {}, { menus++ }, {}, {}, {}, {}, {})
+            val buttons = views(ui).filterIsInstance<android.widget.ImageButton>()
+            val send = buttons.first { it.contentDescription == ui.context.getString(R.string.send) }
+            send.performClick()
+            send.performClick()
+            assertEquals(1, sent)
+            assertEquals(0, menus)
+            assertEquals(View.GONE, send.visibility)
+            val menu = buttons.first { it !== send }
+            assertEquals(View.VISIBLE, menu.visibility)
+            menu.performClick()
+            assertEquals(1, menus)
+        }
+    }
+
     private fun capture(name: String, view: View) {
         if (InstrumentationRegistry.getArguments().getString("capture_ui") != "true") return
         val instrumentation = InstrumentationRegistry.getInstrumentation()

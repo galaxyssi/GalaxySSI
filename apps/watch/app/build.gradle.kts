@@ -10,8 +10,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.2.6"
+        versionCode = 10
+        versionName = "0.2.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -101,7 +101,10 @@ val webFiles = listOf(
     "AgentDynamicWebArticleFetcher.kt", "AgentIsolatedWebViewRenderer.kt", "AgentIsolatedWebRenderService.kt",
     "AgentInlineMarkdown.kt", "AgentRichInlineMarkdownRenderer.kt",
     "AgentRichContent.kt", "AgentRichFormatRegistry.kt", "AgentMarkdownImages.kt",
-    "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
+    "MicrosoftEdgeTts.kt", "MicrosoftEdgeTtsProtocol.kt", "MicrosoftTtsVoiceCatalog.kt",
+    "voice/metrics/VoiceLatencyTracer.kt", "voice/audio/VoiceCommunicationAudioSession.kt",
+    "voice/modelstream/SentenceCommitter.kt", "ui/AgentComposerUiPolicy.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
+    "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
 val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt")
@@ -112,7 +115,7 @@ val syncPhoneWebParser by tasks.registering {
     doLast {
         val output = webParserOutput.get().dir("com/galaxyssi/chat").asFile
         output.mkdirs()
-        fun write(name: String, text: String) { output.resolve(name).writeText(text) }
+        fun write(name: String, text: String) { output.resolve(name).apply { parentFile.mkdirs(); writeText(text) } }
         fun slice(source: String, from: String, until: String): String {
             val start = source.indexOf(from)
             val end = source.indexOf(until, start + 1)

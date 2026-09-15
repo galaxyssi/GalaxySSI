@@ -8,6 +8,8 @@ import android.text.InputFilter
 import android.text.TextWatcher
 import android.view.*
 import android.widget.*
+import com.galaxyssi.chat.ui.AgentComposerUiPolicy
+import com.galaxyssi.chat.ui.ParagraphSelectingTextView
 
 /** Fixed Android-style brand/composer around an independently scrolling transcript. */
 class WatchConversationView(
@@ -21,7 +23,8 @@ class WatchConversationView(
     private val onModel: () -> Unit,
     private val onStop: (WatchTask) -> Unit,
     private val onRead: (String) -> Unit,
-    private val onConnect: () -> Unit
+    private val onConnect: () -> Unit,
+    private val onStopReading: () -> Boolean = { false }
 ) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val secondary = Color.rgb(165, 171, 182)
@@ -31,7 +34,28 @@ class WatchConversationView(
     private val heading = text("", 11f)
     private val model = text("", 9f).apply { setTextColor(secondary) }
     private val transcript = LinearLayout(context).apply { orientation = VERTICAL }
-    private val transcriptScroll = ScrollView(context).apply {
+    private val transcriptScroll = object : ScrollView(context) {
+        private var swallow = false
+        private val stopDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent) = true
+            override fun onDoubleTap(event: MotionEvent): Boolean {
+                swallow = onStopReading()
+                return swallow
+            }
+        })
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) swallow = false
+            stopDetector.onTouchEvent(event)
+            if (swallow) {
+                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                super.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) swallow = false
+                return true
+            }
+            return super.dispatchTouchEvent(event)
+        }
+    }.apply {
         isFillViewport = true; isVerticalScrollBarEnabled = true
         addView(transcript, LayoutParams(-1, -2))
         setOnGenericMotionListener { _, event ->
@@ -54,9 +78,22 @@ class WatchConversationView(
         inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         setOnLongClickListener { onVoice(); true }
     }
-    private val action = ImageButton(context).apply {
+    // Android keeps send and more as separate controls, even when they share a layout slot.
+    private val sendAction = ImageButton(context).apply {
         background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
-        setOnClickListener { if (input.text.isNotBlank()) onSend() else onMenu() }
+        setImageResource(R.drawable.ic_composer_send_plane)
+        contentDescription = context.getString(R.string.send)
+        setOnClickListener { if (!busy && input.text.isNotBlank()) onSend() }
+    }
+    private val menuAction = ImageButton(context).apply {
+        background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
+        setImageResource(R.drawable.ic_input_menu_layers)
+        contentDescription = context.getString(R.string.home_menu)
+        setOnClickListener { if (!busy) onMenu() }
+    }
+    private val actionSlot = FrameLayout(context).apply {
+        addView(menuAction, FrameLayout.LayoutParams(-1, -1))
+        addView(sendAction, FrameLayout.LayoutParams(-1, -1))
     }
     private var busy = false
     private var lastTurns = emptyList<WatchTask>()
@@ -115,7 +152,7 @@ class WatchConversationView(
         }, LayoutParams(-1, 0, 1f).apply { leftMargin = dp(transcriptInset); rightMargin = dp(transcriptInset) })
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(input, LayoutParams(0, -2, 1f)); addView(action, LayoutParams(dp(40), dp(36)))
+            addView(input, LayoutParams(0, -2, 1f)); addView(actionSlot, LayoutParams(dp(40), dp(36)))
         }, LayoutParams(-1, -2).apply { topMargin = dp(2); leftMargin = dp(composerInset); rightMargin = dp(composerInset) })
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -128,9 +165,11 @@ class WatchConversationView(
 
     private fun refreshAction() {
         input.maxLines = if (input.text.isBlank()) 1 else 2
-        action.setImageResource(if (input.text.isNotBlank()) R.drawable.ic_composer_send_plane else R.drawable.ic_input_menu_layers)
-        action.contentDescription = context.getString(if (input.text.isNotBlank()) R.string.send else R.string.home_menu)
-        action.isEnabled = !busy
+        val state = AgentComposerUiPolicy.resolve(input.text.isNotBlank(), textModeActive = true, actionTrayRequested = false)
+        sendAction.visibility = if (state.showSendButton) VISIBLE else GONE
+        menuAction.visibility = if (state.showMoreButton) VISIBLE else GONE
+        sendAction.isEnabled = !busy
+        menuAction.isEnabled = !busy
     }
     fun sending(value: Boolean) { busy = value; input.isEnabled = !value; refreshAction() }
     fun setDraft(value: String) { if (input.text.toString() != value) input.setText(value) }
@@ -161,7 +200,7 @@ class WatchConversationView(
         for (turn in turns) {
             bubble(turn.prompt, true)
             if (turn.reply.isNotBlank()) {
-                bubble(turn.reply, false).setOnLongClickListener { onRead(turn.reply); true }
+                bubble(turn.reply, false, readable = true)
                 WatchReplyImages.views(context, turn.reply).forEach {
                     transcript.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
                 }
@@ -183,9 +222,12 @@ class WatchConversationView(
             else { transcriptScroll.scrollTo(0, oldOffset); newReply.visibility = VISIBLE }
         }
     }
-    private fun bubble(value: String, outgoing: Boolean): TextView {
+    private fun bubble(value: String, outgoing: Boolean, readable: Boolean = false): TextView {
         val row = LinearLayout(context).apply { gravity = if (outgoing) Gravity.END else Gravity.START }
-        val message = text(value, 14f).apply {
+        val message = (if (readable) ParagraphSelectingTextView(context).apply {
+            setOnParagraphDoubleTapListener { selection -> onRead(selection.sourceText.substring(selection.startOffset)) }
+        } else TextView(context)).apply {
+            text = value; textSize = 14f; setTextColor(Color.WHITE); includeFontPadding = false
             setPadding(0, dp(4), 0, dp(4))
             if (outgoing) setTextColor(Color.rgb(151, 224, 207))
             maxWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density * 0.89f).toInt()

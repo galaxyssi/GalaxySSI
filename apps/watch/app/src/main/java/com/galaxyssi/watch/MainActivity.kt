@@ -12,7 +12,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
-import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
@@ -48,9 +47,8 @@ class MainActivity : Activity() {
     private var resumed = false
     private var conversationView: WatchConversationView? = null
     private var sessionQuery = ""
-    private var speechReady = false
-    private var speech: TextToSpeech? = null
-    private var lastSpokenTask = ""
+    private var speech: WatchReplySpeech? = null
+    private var screenAwake: WatchScreenAwake? = null
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
     private val handler = Handler(Looper.getMainLooper())
@@ -58,11 +56,7 @@ class MainActivity : Activity() {
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
         else if (page !in setOf("session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
-        val task = repo.store.task(selectedTask)
-        if (page == "home" && repo.store.autoSpeech && task?.state == TaskState.COMPLETED &&
-            task.reply.isNotBlank() && task.id != lastSpokenTask) {
-            lastSpokenTask = task.id; speak(task.reply)
-        }
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,10 +76,8 @@ class MainActivity : Activity() {
         if (page.startsWith("pair")) page = "devices"
         if (page == "web-credential") webCredentialValue = ""
         if (page.startsWith("api-")) page = "settings"
-        speech = TextToSpeech(this) { status ->
-            speechReady = status == TextToSpeech.SUCCESS
-            if (speechReady) speech?.language = Locale.getDefault()
-        }
+        screenAwake = WatchScreenAwake(window)
+        speech = WatchReplySpeech(this, onActivityChanged = { updateScreenAwake() }) { toast(R.string.speech_output_unavailable) }
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { back() }
         readLaunchIntent(intent)
         render()
@@ -115,7 +107,11 @@ class MainActivity : Activity() {
         super.onResume(); resumed = true; updateConversationVisibility(); updated()
     }
     override fun onPause() {
-        resumed = false; repo.conversationVisibility.hide(this); super.onPause()
+        resumed = false; screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); super.onPause()
+    }
+    private fun updateScreenAwake() {
+        val task = repo.store.task(selectedTask)
+        screenAwake?.update(resumed && page == "home", busy || task?.state?.terminal == false || speech?.active == true)
     }
     private fun updateConversationVisibility() {
         if (!resumed) return
@@ -139,7 +135,7 @@ class MainActivity : Activity() {
         out.putStringArrayList("history", ArrayList(history)); super.onSaveInstanceState(out)
     }
 
-    private fun navigate(destination: String) { history.addLast(page); page = if (destination in setOf("task", "compose")) "home" else destination; render() }
+    private fun navigate(destination: String) { speech?.stop(); history.addLast(page); page = if (destination in setOf("task", "compose")) "home" else destination; render() }
     private fun back() {
         if (busy) return
         speech?.stop()
@@ -155,6 +151,7 @@ class MainActivity : Activity() {
     private val green = Color.rgb(20, 198, 106)
 
     private fun render(preserveScroll: Boolean = false) {
+        updateScreenAwake()
         updateConversationVisibility()
         if (page == "api-edit" || page == "web-credential") window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
@@ -303,7 +300,7 @@ class MainActivity : Activity() {
             onMenu = { navigate("home-menu") }, onSessions = { sessionQuery = ""; navigate("sessions") },
             onModel = { openApiSettings() },
             onStop = { selectedTask = it.id; navigate("stop") }, onRead = { speak(it) },
-            onConnect = { navigate("devices") })
+            onConnect = { navigate("devices") }, onStopReading = { speech?.stopIfActive() == true })
         frame.addView(conversationView, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
         frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
@@ -322,6 +319,8 @@ class MainActivity : Activity() {
         val name = if (usingApi) api?.model.orEmpty() else agent
         conversationView?.update(turns, name.ifBlank { getString(R.string.connect_service) }, ready, reset)
         conversationView?.sending(busy)
+        speech?.observe(turns.lastOrNull(), resumed && page == "home" && repo.store.autoSpeech)
+        updateScreenAwake()
         updateConversationVisibility()
     }
     private fun sendFromHome() {
@@ -330,15 +329,17 @@ class MainActivity : Activity() {
         if (previous == null && !repo.store.apiPreferred && (repo.store.selectedDesktop.isBlank() || repo.store.selectedAgent.isBlank())) {
             navigate("devices"); return
         }
-        busy = true; conversationView?.sending(true)
-        editor?.clearFocus()
-        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(editor?.windowToken, 0)
+        busy = true; conversationView?.sending(true); updateScreenAwake()
+        val composer = conversationView?.input
+        composer?.clearFocus()
+        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(composer?.windowToken, 0)
+        conversationView?.requestFocus()
         repo.send(draft, previous) { sent ->
             busy = false
             if (isDestroyed || isFinishing) return@send
             if (sent == null) { toast(if (repo.errorResource != 0) repo.errorResource else R.string.send_failed); refreshConversation(); return@send }
             selectedTask = sent.id; repo.store.activeTask = sent.id; followUpId = ""
-            draft = ""; repo.store.draft = ""; page = "home"
+            draft = ""; repo.store.draft = ""; page = "home"; history.clear()
             if (conversationView == null) render() else { conversationView?.setDraft(""); refreshConversation(true) }
             runCatching { startForegroundService(Intent(this, WatchConnectionService::class.java)) }
         }
@@ -522,7 +523,7 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, -2))
     }
     private fun startVoice() {
-        val previous = repo.store.task(followUpId)
+        val previous = repo.store.task(selectedTask)
         val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
         if (usingApi && repo.store.apiProfile == null) { openApiSettings(); return }
         if (!usingApi && ((previous?.desktopId ?: repo.store.selectedDesktop).isBlank() || (previous?.agentId ?: repo.store.selectedAgent).isBlank())) {
@@ -534,15 +535,15 @@ class MainActivity : Activity() {
     @Deprecated("Activity result callback for platform speech UI")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 31 && resultCode == RESULT_OK) {
+        if (requestCode == 31) {
+            if (resultCode != RESULT_OK) { page = "home"; render(); return }
             val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
             if (result.isBlank()) toast(R.string.speech_empty) else { draft = result.take(4000); repo.store.draft = draft }
             page = "home"; render()
         }
     }
     private fun speak(text: String) {
-        if (!speechReady || (speech?.isLanguageAvailable(Locale.getDefault()) ?: -1) < 0) { toast(R.string.speech_output_unavailable); return }
-        speech?.speak(text.take(TextToSpeech.getMaxSpeechInputLength()), TextToSpeech.QUEUE_FLUSH, null, "watch-reply")
+        speech?.read(text)
     }
     private fun openApiSettings() {
         val saved = repo.store.apiProfile

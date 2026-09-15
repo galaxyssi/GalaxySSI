@@ -51,14 +51,14 @@
     <string name="message_rejected">一条消息未能通过验证。如果收不到回复，请刷新或重新配对。</string>
     <string name="read_aloud">朗读回复</string>
     <string name="stop_speech">停止朗读</string>
-    <string name="speech_output_unavailable">语音播报尚未就绪，或不支持当前语言。</string>
+    <string name="speech_output_unavailable">晓晓语音播放失败，请检查网络后双击段落重试。</string>
     <string name="follow_up">语音追问</string>
     <string name="stop_task">停止任务</string>
     <string name="stop_confirm">请求电脑停止这个任务？</string>
     <string name="awaiting_result">等待电脑回复。</string>
     <string name="approval_help">此任务需要批准，请在电脑端查看。</string>
     <string name="vibrate">完成时振动</string>
-    <string name="auto_speech">打开应用时朗读回复</string>
+    <string name="auto_speech">自动播放回复（晓晓）</string>
     <string name="notifications">开启任务通知</string>
     <string name="about">手表版 0.1 · Android 13+</string>
     <string name="monitor_channel">任务连接</string>

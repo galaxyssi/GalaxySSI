@@ -512,6 +512,20 @@ object CloudWebGrounding {
         else -> value
     }
 
+    /** Navigation candidates are not fetched evidence and must stay outside the citation pack. */
+    private fun discoveredLinks(output: AgentNativeJsonObject): List<String> =
+        (output["documents"] as? List<*>).orEmpty().flatMap { document ->
+            ((document as? Map<*, *>)?.get("links") as? List<*>).orEmpty().filterIsInstance<String>()
+        }.filter { url ->
+            url.length <= 512 && runCatching {
+                val parsed = java.net.URI(url)
+                parsed.scheme == "https" && parsed.host != null && parsed.path.trim('/').isNotEmpty()
+            }.getOrDefault(false)
+        }.distinct().sortedByDescending { url ->
+            // Prefer dated article paths over category/navigation pages, without inventing URLs.
+            Regex("/20[0-9]{2}/[0-9]{1,2}/[0-9]{1,2}/").containsMatchIn(url)
+        }.take(24)
+
     internal fun boundedModelJson(output: AgentNativeJsonObject): String {
         val evidencePack = output["evidence_pack"] as? Map<*, *>
         if (evidencePack != null) {
@@ -519,7 +533,8 @@ object CloudWebGrounding {
                 "protocol" to output["protocol"],
                 "operation" to output["operation"],
                 "status" to output["status"],
-                "evidence_pack" to evidencePack
+                "evidence_pack" to evidencePack,
+                "discovered_links" to discoveredLinks(output)
             )
             val encoded = AgentNativeJsonCodec.stringify(modelOutput)
             if (encoded.length <= MAX_TOOL_RESULT_CHARS) return encoded
@@ -608,7 +623,8 @@ object CloudWebGrounding {
             "protocol" to output["protocol"],
             "operation" to output["operation"],
             "status" to output["status"],
-            "evidence_pack" to compactPack
+            "evidence_pack" to compactPack,
+            "discovered_links" to if (minimal) emptyList<String>() else discoveredLinks(output)
         )
     }
 
