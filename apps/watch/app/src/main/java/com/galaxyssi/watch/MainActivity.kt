@@ -579,6 +579,15 @@ class MainActivity : Activity() {
         toggle(R.string.voice_on_open, repo.store.voiceOnOpen) { repo.store.voiceOnOpen = it }
         label(getString(R.string.voice_on_open_help), 12)
         button(R.string.voice_entry_try) { voiceEntryPending = true; page = "home"; render() }
+        toggle(R.string.samsung_confirm_toggle, repo.store.samsungAutoConfirm) {
+            repo.store.samsungAutoConfirm = it
+            if (!it) WatchSamsungConfirmService.cancelSession()
+        }
+        label(getString(R.string.samsung_confirm_description), 12)
+        button(if (WatchSamsungConfirmService.enabled(this)) R.string.samsung_confirm_enabled else R.string.samsung_confirm_settings) {
+            runCatching { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                .onFailure { toast(R.string.samsung_confirm_settings) }
+        }
         toggle(R.string.auto_speech, repo.store.autoSpeech) { repo.store.autoSpeech = it }
         toggle(R.string.foreground_wake, wakePreference) { enable ->
             if (enable && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -638,7 +647,7 @@ class MainActivity : Activity() {
         if (page != "home") { page = "home"; render() }
         val launch = {
             if (resumed && page == "home" && !isDestroyed) {
-                if (runCatching { startActivityForResult(Intent(this, WatchVoiceCaptureActivity::class.java), 31) }.isFailure) {
+                if (!WatchSpeechInput.launch(this) { startActivityForResult(it, 31) }) {
                     voicePending = false
                     toast(R.string.speech_unavailable)
                     scheduleWakeResume()
@@ -651,6 +660,7 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 31) {
+            WatchSamsungConfirmService.cancelSession()
             voicePending = false
             scheduleWakeResume()
             if (resultCode != RESULT_OK) { page = "home"; render(); return }

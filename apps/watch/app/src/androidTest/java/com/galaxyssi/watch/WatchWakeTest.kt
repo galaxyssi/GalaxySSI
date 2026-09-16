@@ -69,7 +69,7 @@ class WatchWakeTest {
         repo.store.tasks()
         val activity = inst.startActivitySync(android.content.Intent(inst.targetContext, MainActivity::class.java)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
-        val monitor = inst.addMonitor(WatchVoiceCaptureActivity::class.java.name,
+        val monitor = inst.addMonitor(android.content.IntentFilter(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
             android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED, null), true)
         lateinit var wake: WatchForegroundWake
         fun awaitState(expected: WatchForegroundWake.State) {

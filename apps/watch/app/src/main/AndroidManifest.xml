@@ -29,7 +29,11 @@
             </intent-filter>
         </receiver>
         <service android:name="com.galaxyssi.chat.AgentIsolatedWebRenderService" android:exported="false" android:process=":web_renderer" />
-        <activity android:name=".WatchVoiceCaptureActivity" android:exported="false" />
+        <service android:name=".WatchSamsungConfirmService" android:exported="true"
+            android:label="@string/samsung_confirm_service" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/samsung_voice_confirmation" />
+        </service>
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -40,12 +44,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <activity-alias android:name=".VoiceEntry" android:targetActivity=".MainActivity"
+        <activity android:name=".VoiceEntry" android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay"
             android:label="@string/voice_entry_name" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
+        </activity>
     </application>
 </manifest>

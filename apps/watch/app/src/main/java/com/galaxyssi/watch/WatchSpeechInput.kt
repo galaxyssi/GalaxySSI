@@ -17,7 +17,9 @@ object WatchSpeechInput {
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
         val samsung = Intent(standard).setPackage(SAMSUNG_PACKAGE)
         // Launch the explicit Samsung activity directly: no redundant PackageManager round trip.
+        WatchSamsungConfirmService.startSession(context)
         if (tryStart(samsung, start)) return true
+        WatchSamsungConfirmService.cancelSession()
         return tryStart(standard, start)
     }
 
