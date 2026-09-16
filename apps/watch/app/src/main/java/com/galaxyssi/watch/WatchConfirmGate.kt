@@ -14,6 +14,6 @@ internal class WatchConfirmGate {
         if (!active(now)) { cancel(); return false }
         if (key.isNullOrBlank()) { reset(); return false }
         if (key != candidate) { candidate = key; stableSince = now; return false }
-        return now - stableSince >= 3000
+        return now - stableSince >= 1500
     }
 }

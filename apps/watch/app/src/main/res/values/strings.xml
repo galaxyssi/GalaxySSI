@@ -152,8 +152,8 @@
     <string name="voice_on_open_help">For system-assistant handoff: ask Bixby to open GalaxySSI. Every launcher open, including a tap, starts voice input once. Notification opens and returning from voice input do not. Alternatively open GalaxySSI Voice. Bixby controls screen-off wake-up and its wake phrase; this app does not listen in the background. Unlock the watch first if required.</string>
     <string name="voice_entry_try">Try voice entry</string>
     <string name="samsung_confirm_service">GalaxySSI voice auto-confirm</string>
-    <string name="samsung_confirm_toggle">Confirm Samsung speech after 3 seconds</string>
+    <string name="samsung_confirm_toggle">Confirm Samsung speech after 1.5 seconds</string>
     <string name="samsung_confirm_settings">Enable voice confirmation service</string>
     <string name="samsung_confirm_enabled">Voice confirmation service enabled</string>
-    <string name="samsung_confirm_description">Enable this accessibility service to confirm Samsung speech opened by GalaxySSI. When the microphone is off and recognized text stays unchanged for 3 seconds, it clicks Done once and sends the result to your chat. Back, screen-off, leaving the speech page, and detected button presses or scrolling cancel it. You can disable auto-confirm here. Text is inspected in memory, not stored or uploaded by this service.</string>
+    <string name="samsung_confirm_description">Enable this accessibility service to confirm Samsung speech opened by GalaxySSI. When the microphone is off and recognized text stays unchanged for 1.5 seconds, it clicks Done once and sends the result to your chat. Back, screen-off, leaving the speech page, and detected button presses or scrolling cancel it. You can disable auto-confirm here. Text is inspected in memory, not stored or uploaded by this service.</string>
 </resources>
