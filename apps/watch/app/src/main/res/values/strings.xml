@@ -140,4 +140,24 @@
     <string name="web_credential_help">Saved encrypted on this watch. Enter a new value to replace it; leave blank to remove it.</string>
     <string name="background_enabled">Keep running in background</string>
     <string name="follow_speech">Follow speech</string>
+    <string name="foreground_wake">Hello Hello wake-up</string>
+    <string name="foreground_wake_help">Offline, foreground only. Say Hello Hello, wait for a vibration, then ask your question using Samsung voice input. Pauses while typing, replying or speaking. Uses additional battery; screen-off and background wake-up are not supported.</string>
+    <string name="wake_listening">Hello Hello · ready</string>
+    <string name="wake_loading">Preparing wake-up</string>
+    <string name="wake_paused">Wake-up paused</string>
+    <string name="wake_failed">Wake-up unavailable</string>
+    <string name="wake_permission_needed">Microphone permission needed</string>
+    <string name="voice_entry_name">GalaxySSI Voice</string>
+    <string name="voice_on_open">Start voice input on app open</string>
+    <string name="voice_on_open_help">For system-assistant handoff: ask Bixby to open GalaxySSI. Every launcher open, including a tap, starts voice input once. Notification opens and returning from voice input do not. Alternatively open GalaxySSI Voice. Bixby controls screen-off wake-up and its wake phrase; this app does not listen in the background. Unlock the watch first if required.</string>
+    <string name="voice_entry_try">Try voice entry</string>
+    <string name="voice_listening">Speak now</string>
+    <string name="voice_processing">Recognizing…</string>
+    <string name="voice_send_countdown">Sending in %1$d s · touch to pause</string>
+    <string name="voice_send_paused">Auto-send paused · check and send</string>
+    <string name="voice_paused">Recording paused · tap Retry</string>
+    <string name="voice_retry">Retry</string>
+    <string name="voice_stop">Done</string>
+    <string name="voice_network_error">Recognition connection failed · retry or use Samsung input</string>
+    <string name="voice_samsung_fallback">Samsung input (manual confirmation)</string>
 </resources>
