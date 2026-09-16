@@ -10,8 +10,10 @@ import com.galaxyssi.chat.MicrosoftEdgeTts
 import com.galaxyssi.chat.MicrosoftTtsVoiceCatalog
 
 /** Foreground paragraph queue using the exact Android Xiaoxiao synthesizer and cancellation. */
-internal class WatchReplySpeech(context: Context, private val onActivityChanged: () -> Unit = {}, private val onError: () -> Unit) {
-    private data class Chunk(val key: String, val text: String)
+internal class WatchReplySpeech(context: Context, private val onActivityChanged: () -> Unit = {},
+    private val onSpeaking: (String, Int, Int) -> Unit = { _, _, _ -> },
+    private val onSpeechStopped: () -> Unit = {}, private val onError: () -> Unit) {
+    private data class Chunk(val key: String, val text: String, val taskId: String, val start: Int, val end: Int)
     private val main = Handler(Looper.getMainLooper())
     private val engine = MicrosoftEdgeTts(context.applicationContext)
     private val policy = WatchSpeechPolicy()
@@ -21,6 +23,7 @@ internal class WatchReplySpeech(context: Context, private val onActivityChanged:
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         .setOnAudioFocusChangeListener({ change -> if (change < 0) stop() }, main).build()
     private val queue = ArrayDeque<Chunk>()
+    private var committedDisplay = ""
     private var generation = 0L
     private var sequence = 0L
     private var playing = false
@@ -37,25 +40,31 @@ internal class WatchReplySpeech(context: Context, private val onActivityChanged:
         val update = policy.observe(task?.id.orEmpty(), text, task?.state?.terminal != false, allowed)
         if (update.reset || !allowed) cancelPlayback()
         awaitingMore = update.awaitingMore
-        enqueue(update.chunks.flatMap { WatchSpeechPolicy.chunks(WatchRichReply.render(it).toString()) })
+        if (update.reset) committedDisplay = ""
+        val boundary = if (task?.state?.terminal != false) text.length else text.lastIndexOf('\n') + 1
+        val display = WatchRichReply.render(text.substring(0, boundary)).toString()
+        if (update.chunks.isNotEmpty() && display.startsWith(committedDisplay)) {
+            enqueue(task?.id.orEmpty(), WatchSpeechPolicy.displayChunks(display, committedDisplay.length))
+        }
+        committedDisplay = display
         onActivityChanged()
     }
-    fun read(text: String) {
+    fun read(text: String, taskId: String = "", start: Int = 0) {
         if (closed) return
         stop()
-        enqueue(WatchSpeechPolicy.chunks(text))
+        enqueue(taskId, WatchSpeechPolicy.displayChunks(text, start))
     }
     fun stopIfActive(): Boolean = active.also { if (it) stop() }
     fun stop() { policy.stop(); cancelPlayback() }
     fun shutdown() { stop(); closed = true; engine.shutdown(); main.removeCallbacksAndMessages(null) }
 
-    private fun enqueue(chunks: List<String>) {
-        chunks.forEach { queue.addLast(Chunk("watch-speech-$generation-${sequence++}", it)) }
+    private fun enqueue(taskId: String, chunks: List<WatchSpeechPolicy.Companion.DisplayChunk>) {
+        chunks.forEach { queue.addLast(Chunk("watch-speech-$generation-${sequence++}", it.text, taskId, it.start, it.end)) }
         playNext()
     }
     private fun playNext() {
         if (closed || playing) return
-        if (queue.isEmpty()) { releaseFocus(); onActivityChanged(); return }
+        if (queue.isEmpty()) { releaseFocus(); if (!awaitingMore) onSpeechStopped(); onActivityChanged(); return }
         if (!focused) {
             focused = audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
             if (!focused) { stop(); onError(); return }
@@ -64,7 +73,10 @@ internal class WatchReplySpeech(context: Context, private val onActivityChanged:
         val owner = generation
         playing = true
         onActivityChanged()
-        engine.speak(chunk.text, MicrosoftTtsVoiceCatalog.XIAOXIAO, prefetchKey = chunk.key) { success, _ ->
+        engine.speak(chunk.text, MicrosoftTtsVoiceCatalog.XIAOXIAO, prefetchKey = chunk.key,
+            onPlaybackStarted = { main.post {
+                if (owner == generation && !closed) onSpeaking(chunk.taskId, chunk.start, chunk.end)
+            } }) { success, _ ->
             main.post {
                 if (owner != generation || closed) return@post
                 playing = false
@@ -75,7 +87,7 @@ internal class WatchReplySpeech(context: Context, private val onActivityChanged:
     }
     private fun cancelPlayback() {
         generation++; queue.clear(); playing = false; awaitingMore = false
-        engine.stop(); releaseFocus(); onActivityChanged()
+        engine.stop(); releaseFocus(); onSpeechStopped(); onActivityChanged()
     }
     private fun releaseFocus() { if (focused) audio.abandonAudioFocusRequest(focus); focused = false }
 }

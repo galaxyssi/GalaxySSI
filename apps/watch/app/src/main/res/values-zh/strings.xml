@@ -139,4 +139,5 @@
     <string name="web_credential_title">来源凭据</string>
     <string name="web_credential_help">加密保存在手表上。输入新值可替换，留空保存可删除。</string>
     <string name="background_enabled">后台持续运行</string>
+    <string name="follow_speech">跟随朗读</string>
 </resources>

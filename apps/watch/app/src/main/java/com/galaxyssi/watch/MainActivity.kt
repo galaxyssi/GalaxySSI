@@ -87,7 +87,9 @@ class MainActivity : Activity() {
         if (page == "web-credential") webCredentialValue = ""
         if (page.startsWith("api-")) page = "settings"
         screenAwake = WatchScreenAwake(window)
-        speech = WatchReplySpeech(this, onActivityChanged = { updateScreenAwake() }) { toast(R.string.speech_output_unavailable) }
+        speech = WatchReplySpeech(this, onActivityChanged = { updateScreenAwake() },
+            onSpeaking = { id, start, end -> if (resumed && page == "home") conversationView?.showSpeaking(id, start, end) },
+            onSpeechStopped = { conversationView?.stopSpeaking() }) { toast(R.string.speech_output_unavailable) }
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { back() }
         readLaunchIntent(intent)
         render()
@@ -335,7 +337,11 @@ class MainActivity : Activity() {
             onMenu = { navigate("home-menu") }, onSessions = { sessionQuery = ""; navigate("sessions") },
             onModel = { openApiSettings() },
             onStop = { selectedTask = it.id; navigate("stop") }, onRead = { speak(it) },
-            onConnect = { navigate("devices") }, onStopReading = { speech?.stopIfActive() == true })
+            onConnect = { navigate("devices") }, onStopReading = { speech?.stopIfActive() == true },
+            onReadFrom = { id, text, start ->
+                speech?.read(text, id, start)
+                conversationView?.resumeSpeechFollow()
+            })
         frame.addView(conversationView, FrameLayout.LayoutParams(-1, -1))
         conversationFrame = frame
         setContentView(frame)

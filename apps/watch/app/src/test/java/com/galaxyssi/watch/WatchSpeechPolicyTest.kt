@@ -4,6 +4,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WatchSpeechPolicyTest {
+    @Test fun displayedRangesStayAlignedAcrossRepeatedSentencesAndLongParagraphs() {
+        val text = "相同句子。相同句子。\n" + "这是很长的说明，".repeat(30) + "结束。"
+        val parts = WatchSpeechPolicy.displayChunks(text)
+        assertTrue(parts.size > 4)
+        assertEquals(0, parts.first().start)
+        assertEquals(5, parts[1].start)
+        parts.forEach {
+            assertTrue(it.end > it.start)
+            assertTrue(it.end - it.start <= 64)
+            assertEquals(WatchSpeechPolicy.chunks(text.substring(it.start, it.end)).joinToString(" "), it.text)
+        }
+        assertEquals(text.filterNot(Char::isWhitespace), parts.joinToString("") { text.substring(it.start, it.end) }.filterNot(Char::isWhitespace))
+        assertTrue(WatchSpeechPolicy.displayChunks(text, 6).all { it.start >= 6 })
+    }
+
+    @Test fun chunkBoundaryDoesNotSplitAnEmoji() {
+        val text = "字".repeat(63) + "😀" + "继续。"
+        val parts = WatchSpeechPolicy.displayChunks(text)
+        assertEquals(63, parts.first().end)
+        assertEquals(63, parts[1].start)
+    }
+
     @Test fun completedParagraphsPlayOnceAndFinalTailFlushes() {
         val policy = WatchSpeechPolicy()
         policy.observe("", "", true, true)
