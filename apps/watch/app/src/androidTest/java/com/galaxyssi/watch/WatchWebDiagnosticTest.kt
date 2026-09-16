@@ -11,6 +11,59 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class WatchWebDiagnosticTest {
+    @Test fun requestedForecastAndResearchUseLiveEvidence() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("grounding_diagnostic") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext.applicationContext as WatchApplication
+        val repo = context.repository
+        val profile = requireNotNull(repo.store.apiProfile)
+        require(repo.store.webSearch)
+        val scenario = args.getString("scenario", "weather")
+        val question = when (scenario) {
+            "followup" -> "好的"
+            "analysis" -> "请深入检索并分析：AI普及、远程办公和交通改善，可能缩小还是扩大城市中心与周边的房价差距？结合环境质量，区分研究证据、推理和不确定性。"
+            else -> "明天珠海的天气。"
+        }
+        val task = WatchTask.create("api", profile.id, profile.model, question).copy(state = TaskState.RUNNING)
+        val history = if (scenario == "followup") listOf(task.copy(id = "context-fixture", prompt = "明天珠海的天气。",
+            reply = "上一次没拿到明天的预报。要我继续查吗？", state = TaskState.COMPLETED)) else emptyList()
+        val tools = mutableListOf<String>()
+        val evidence = mutableListOf<JSONObject>()
+        val answer = WatchWebLookup(context, observeTool = { name, arguments, output ->
+            tools.add(name)
+            val items = JSONObject(output).optJSONObject("evidence_pack")?.optJSONArray("items") ?: org.json.JSONArray()
+            for (i in 0 until items.length()) evidence.add(items.getJSONObject(i))
+            println("WATCH_GROUNDING tool=$name arguments=$arguments items=${items.length()}")
+        }).answer(profile, task, history, WatchApiOperation())
+        assertTrue("Expected real retrieval for $scenario", tools.isNotEmpty())
+        if (scenario != "analysis") {
+            val date = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).plusDays(1).toString()
+            assertTrue("Expected requested forecast date", evidence.any { it.toString().contains(date) })
+            assertTrue("Expected actual weather values", answer.contains("°") || answer.contains("℃"))
+        } else {
+            val hosts = evidence.mapNotNull { runCatching { java.net.URI(it.optString("url")).host?.removePrefix("www.") }.getOrNull() }.toSet()
+            assertTrue("Analysis should use independent sources", hosts.size >= 2)
+            assertTrue("Expected source body retrieval", evidence.any { it.optString("evidence_level") == "retrieved_body" })
+            assertTrue("Expected an evidence-based explanation", answer.length >= 120)
+        }
+        val completed = task.copy(state = TaskState.COMPLETED, reply = answer)
+        repo.store.save(completed)
+        repo.store.activeTask = completed.id
+        println("WATCH_GROUNDING scenario=$scenario calls=${tools.size} answer=$answer")
+        instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("task_id", completed.id))
+        instrumentation.waitForIdleSync()
+    }
+
+    @Test fun inspectRecentConversation() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("history_diagnostic") == "true")
+        val repo = (InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as WatchApplication).repository
+        repo.store.tasks().take(12).reversed().forEach {
+            println("WATCH_HISTORY " + JSONObject().put("id", it.id).put("prompt", it.prompt).put("reply", it.reply).put("state", it.state).toString())
+        }
+    }
+
     @Test fun realSendStaysInConversationAndReleasesScreenAfterSpeechGrace() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("send_screen_diagnostic") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()

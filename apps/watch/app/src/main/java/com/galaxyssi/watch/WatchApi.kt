@@ -59,7 +59,7 @@ class WatchApi(private val client: OkHttpClient = OkHttpClient.Builder()
         val body = when (profile.style) {
             "anthropic" -> {
                 request.header("x-api-key", profile.key).header("anthropic-version", "2023-06-01")
-                JSONObject().put("model", profile.model).put("messages", messages).put("max_tokens", 2048)
+                JSONObject().put("model", profile.model).put("messages", messages).put("max_tokens", if (systemInstructions != null) 4096 else 2048)
                     .apply { if (grounding != null) put("system", grounding) }
             }
             "gemini" -> {
@@ -72,7 +72,7 @@ class WatchApi(private val client: OkHttpClient = OkHttpClient.Builder()
                     contents.put(JSONObject().put("role", if (message.getString("role") == "assistant") "model" else "user")
                         .put("parts", JSONArray().put(JSONObject().put("text", message.getString("content")))))
                 }
-                JSONObject().put("contents", contents).put("generationConfig", JSONObject().put("maxOutputTokens", 2048))
+                JSONObject().put("contents", contents).put("generationConfig", JSONObject().put("maxOutputTokens", if (systemInstructions != null) 8192 else 2048))
                     .apply { if (grounding != null) put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", grounding)))) }
             }
             else -> {
@@ -89,7 +89,7 @@ class WatchApi(private val client: OkHttpClient = OkHttpClient.Builder()
                         if (webTools != null) put("tools", webTools).put("tool_choice", "auto")
                         if (profile.endpoint.toHttpUrl().host == "api.deepseek.com") {
                             put("thinking", JSONObject().put("type", "disabled"))
-                            put("max_tokens", if (webTools != null || toolMessages != null) 4096 else 2048)
+                            put("max_tokens", if (webTools != null || toolMessages != null) 8192 else 2048)
                         }
                     }
             }

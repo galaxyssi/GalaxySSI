@@ -13,7 +13,7 @@ class WatchWebSearchTest {
         val previous = task.copy(id = "previous", state = TaskState.COMPLETED, reply = "No articles found")
         val context = previous.copy(id = "context", prompt = "My interests", reply = "Space and chips")
         val leaked = previous.copy(id = "leaked", prompt = "Search again", reply = "Trying again. {\"tool_calls\":[]}")
-        assertEquals(listOf(context), WatchWebLookup.freshLookupHistory(task, listOf(previous, context, leaked)))
+        assertEquals(listOf(previous, context), WatchWebLookup.freshLookupHistory(task, listOf(previous, context, leaked)))
     }
     @Test fun nestedToolDecisionsAreExecutedInsteadOfDisplayed() {
         val tool = """{"tool_calls":[{"name":"web_search","arguments":{"query":"technology news","read_pages":true}}]}"""
@@ -87,6 +87,45 @@ class WatchWebSearchTest {
         assertThrows(IllegalArgumentException::class.java) {
             CloudWeatherLookup.execute(location, { if ("geocoding" in it) geo else forecast("2026-09-13") }, now)
         }
+    }
+    @Test fun futureForecastSelectsRequestedDaysAndPreservesMissingValues() {
+        val now = java.time.Instant.parse("2026-09-14T23:30:00Z").toEpochMilli() // Sept 15 in Zhuhai.
+        val raw = JSONObject(forecast("2026-09-15"))
+        raw.put("daily", JSONObject().put("time", org.json.JSONArray(listOf("2026-09-15", "2026-09-16", "2026-09-17")))
+            .put("temperature_2m_max", org.json.JSONArray(listOf(31, 28, 27)))
+            .put("precipitation_probability_max", org.json.JSONArray().put(90).put(JSONObject.NULL).put(60)))
+        var requested = ""
+        fun run(args: JSONObject): String {
+            val result = CloudWeatherLookup.execute(args, { url -> if ("geocoding" in url) geo else { requested = url; raw.toString() } }, now)
+            val pack = JSONObject(result).getJSONObject("evidence_pack")
+            return pack.getJSONArray("items").getJSONObject(0).toString()
+        }
+        val tomorrow = run(location.put("day_offset", 1))
+        assertTrue(requested.contains("forecast_days=2"))
+        assertTrue(tomorrow.contains("2026-09-16"))
+        assertFalse(tomorrow.contains("29.5")) // Today's current conditions must not leak into tomorrow.
+        assertTrue(tomorrow.contains("null"))
+        assertTrue(tomorrow.contains("weather_model_forecast_not_observation"))
+        val range = run(location.put("date", "2026-09-16").put("days", 2))
+        assertTrue(range.contains("2026-09-17"))
+        assertThrows(IllegalArgumentException::class.java) { run(location.put("date", "2026-09-14")) }
+        assertThrows(IllegalArgumentException::class.java) { run(location.put("day_offset", 15).put("days", 2)) }
+        assertThrows(IllegalArgumentException::class.java) { run(location.put("day_offset", 1).put("date", "2026-09-16")) }
+        assertThrows(IllegalArgumentException::class.java) { run(location.put("day_offset", 4)) }
+    }
+    @Test fun watchPresentationCompactsProseRatherThanTruncatingSourceUrls() {
+        assertTrue(WatchWebLookup.needsCompactPresentation("证据和分析".repeat(200)))
+        assertFalse(WatchWebLookup.needsCompactPresentation("Short supported conclusion. [Source](https://example.com/" + "x".repeat(900) + ")"))
+        assertFalse(WatchWebLookup.needsCompactPresentation("Tomorrow: cloudy, 25-30 C. [Forecast](https://example.com/forecast)"))
+    }
+    @Test fun unresearchedAnswersAndFailedWeatherGetARecoveryPass() {
+        assertNotNull(WatchWebLookup.retrievalRepairPrompt(emptyList()))
+        val failed = listOf("web_weather" to "{\"status\":\"failed\"}")
+        assertNotNull(WatchWebLookup.retrievalRepairPrompt(failed))
+        assertNull(WatchWebLookup.retrievalRepairPrompt(listOf("web_weather" to "{\"status\":\"completed\"}")))
+        val accepted = WatchTask.create("api", "profile", "model", "好的")
+        val previous = accepted.copy(id = "previous", reply = "Shall I research the missing evidence?", state = TaskState.COMPLETED)
+        assertEquals(listOf(previous), WatchWebLookup.freshLookupHistory(accepted, listOf(previous)))
     }
     @Test fun ambiguousOrWrongRegionDoesNotFetchAnotherCityWeather() {
         var count = 0
