@@ -85,11 +85,14 @@ object CloudWebGrounding {
             "Never print tool-call markup."
 
     fun openAiTools(): JSONArray = JSONArray().apply {
-        put(functionTool("web_weather", "Get today's structured weather-model estimate and forecast. " +
+        put(functionTool("web_weather", "Get structured weather forecasts for a requested local day or date range within the next 16 days. " +
             "Prefer this for ordinary weather questions. Supply city and first-level region names in English " +
             "(not coordinates), and ISO country_code. The tool checks location and local forecast date. " +
-            "For other days, historical observations or warnings, use web_search.",
-            objectProperties("location" to stringProperty(), "region" to stringProperty(), "country_code" to stringProperty()),
+            "Use day_offset=1 for tomorrow, 2 for the day after tomorrow, or date=YYYY-MM-DD (not both). " +
+            "days defaults to 1; request only the user-selected range. The date is resolved in the destination timezone. " +
+            "For dates outside the supported horizon, historical observations or warnings, use web_search.",
+            objectProperties("location" to stringProperty(), "region" to stringProperty(), "country_code" to stringProperty(),
+                "day_offset" to integerProperty(0, 15), "days" to integerProperty(1, 16), "date" to stringProperty()),
             listOf("location", "region", "country_code")))
         put(functionTool(
             "web_image_search",
