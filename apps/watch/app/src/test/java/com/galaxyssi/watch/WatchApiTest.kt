@@ -60,7 +60,7 @@ class WatchApiTest {
         val buffer = okio.Buffer()
         request.body!!.writeTo(buffer)
         val body = JSONObject(buffer.readUtf8())
-        assertEquals(4096, body.getInt("max_tokens"))
+        assertEquals(8192, body.getInt("max_tokens"))
         assertEquals("disabled", body.getJSONObject("thinking").getString("type"))
     }
     @Test fun allAndroidPresetsValidateAndNativeProtocolsRoundTrip() = withServer { server, api ->
