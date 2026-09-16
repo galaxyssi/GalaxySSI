@@ -139,4 +139,5 @@
     <string name="web_credential_title">Source credential</string>
     <string name="web_credential_help">Saved encrypted on this watch. Enter a new value to replace it; leave blank to remove it.</string>
     <string name="background_enabled">Keep running in background</string>
+    <string name="follow_speech">Follow speech</string>
 </resources>

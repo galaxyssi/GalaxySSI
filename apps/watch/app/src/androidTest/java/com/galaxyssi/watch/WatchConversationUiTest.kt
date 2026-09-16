@@ -98,6 +98,109 @@ class WatchConversationUiTest {
         }
     }
 
+    @Test fun generationStaysStillAndSpeechFollowsUntilManualScroll() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        lateinit var ui: WatchConversationView
+        lateinit var scroll: android.widget.ScrollView
+        val task = WatchTask.create("api", "test", "Test", "请说明").copy(state = TaskState.RUNNING)
+        val reply = (1..16).joinToString("\n\n") { "第${it}段：这是用于验证语音和显示同步的说明，生成文字时画面应该保持不动。" }
+        try {
+            instrumentation.runOnMainSync {
+                ui = WatchConversationView(activity, "", {}, {}, {}, {}, {}, {}, {}, {}, {})
+                activity.setContentView(ui)
+                ui.update(listOf(task), "Test", true, true)
+                scroll = views(ui).filterIsInstance<android.widget.ScrollView>().single()
+            }
+            instrumentation.waitForIdleSync()
+            var initial = 0
+            instrumentation.runOnMainSync {
+                initial = scroll.scrollY
+                ui.update(listOf(task.copy(reply = reply)), "Test", true)
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                assertEquals("Generation must not scroll to bottom", initial, scroll.scrollY)
+                ui.showSpeaking(task.id, reply.indexOf("第8段"), reply.indexOf("第9段") - 2)
+            }
+            Thread.sleep(600)
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                assertTrue("Playback should reveal its sentence", scroll.scrollY > initial)
+                val event = android.view.MotionEvent.obtain(0, 1, android.view.MotionEvent.ACTION_SCROLL, 1,
+                    arrayOf(android.view.MotionEvent.PointerProperties().apply { id = 0 }),
+                    arrayOf(android.view.MotionEvent.PointerCoords().apply { setAxisValue(android.view.MotionEvent.AXIS_SCROLL, 1f) }),
+                    0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_ROTARY_ENCODER, 0)
+                scroll.dispatchGenericMotionEvent(event)
+                event.recycle()
+                initial = scroll.scrollY
+                ui.showSpeaking(task.id, 0, 12)
+            }
+            Thread.sleep(400)
+            instrumentation.runOnMainSync {
+                assertEquals("Manual reading suspends speech scrolling", initial, scroll.scrollY)
+                assertTrue(views(ui).filterIsInstance<TextView>().any { it.text == activity.getString(R.string.follow_speech) && it.visibility == View.VISIBLE })
+                ui.resumeSpeechFollow()
+            }
+            Thread.sleep(600)
+            instrumentation.runOnMainSync {
+                assertTrue("Resume returns to the spoken sentence", scroll.scrollY < initial)
+                initial = scroll.scrollY
+                ui.stopSpeaking()
+                ui.update(listOf(task.copy(reply = reply + "\n\n最终补充。", state = TaskState.COMPLETED)), "Test", true)
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync { assertEquals("Completion must not jump to the end", initial, scroll.scrollY) }
+            capture("conversation-speech-follow.png", ui)
+        } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
+    @Test fun actualXiaoxiaoPlaybackDrivesDisplayRanges() {
+        org.junit.Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("speech_follow_diagnostic") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val finished = java.util.concurrent.CountDownLatch(1)
+        val first = java.util.concurrent.CountDownLatch(1)
+        val starts = java.util.concurrent.CopyOnWriteArrayList<Int>()
+        var failed = false
+        lateinit var speech: WatchReplySpeech
+        lateinit var ui: WatchConversationView
+        val task = WatchTask.create("api", "test", "晓晓", "语音同步显示测试").copy(state = TaskState.RUNNING)
+        val reply = "第一句：回复生成时，画面保持不动。\n\n第二句：现在听到哪里，屏幕就跟随显示到哪里。\n\n第三句：手动滑动可暂停跟随，停止播放后保持当前位置。"
+        try {
+            instrumentation.runOnMainSync {
+                ui = WatchConversationView(activity, "", {}, {}, {}, {}, {}, {}, {}, {}, {})
+                activity.setContentView(ui)
+                ui.update(listOf(task), "晓晓", true, true)
+                speech = WatchReplySpeech(activity,
+                    onSpeaking = { id, start, end ->
+                        starts.add(start)
+                        ui.showSpeaking(id, start, end)
+                        println("WATCH_SPEECH_FOLLOW start=$start end=$end")
+                        first.countDown()
+                    }, onSpeechStopped = { if (starts.isNotEmpty()) finished.countDown(); ui.stopSpeaking() },
+                    onError = { failed = true; finished.countDown() })
+                speech.observe(task, true)
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                val completed = task.copy(reply = reply, state = TaskState.COMPLETED)
+                ui.update(listOf(completed), "晓晓", true)
+                speech.observe(completed, true)
+                assertTrue("Synthesis must not trigger a playback cursor", starts.isEmpty())
+            }
+            assertTrue("Xiaoxiao playback should start", first.await(40, java.util.concurrent.TimeUnit.SECONDS))
+            Thread.sleep(500)
+            capture("conversation-live-speech.png", ui)
+            assertTrue("Playback should complete", finished.await(60, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse("TTS failed", failed)
+            assertEquals(3, starts.size)
+            assertEquals(starts.sorted().distinct(), starts.toList())
+        } finally { instrumentation.runOnMainSync { speech.shutdown(); activity.finish() } }
+    }
+
     private fun capture(name: String, view: View) {
         if (InstrumentationRegistry.getArguments().getString("capture_ui") != "true") return
         val instrumentation = InstrumentationRegistry.getInstrumentation()

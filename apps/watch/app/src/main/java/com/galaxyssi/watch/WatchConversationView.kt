@@ -24,7 +24,8 @@ class WatchConversationView(
     private val onStop: (WatchTask) -> Unit,
     private val onRead: (String) -> Unit,
     private val onConnect: () -> Unit,
-    private val onStopReading: () -> Boolean = { false }
+    private val onStopReading: () -> Boolean = { false },
+    private val onReadFrom: ((String, String, Int) -> Unit)? = null
 ) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val secondary = Color.rgb(165, 171, 182)
@@ -37,6 +38,7 @@ class WatchConversationView(
     private val transcript = LinearLayout(context).apply { orientation = VERTICAL }
     private val transcriptScroll = object : ScrollView(context) {
         private var swallow = false
+        private var downY = 0f
         private val stopDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(event: MotionEvent) = true
             override fun onDoubleTap(event: MotionEvent): Boolean {
@@ -45,7 +47,9 @@ class WatchConversationView(
             }
         })
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) swallow = false
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) { swallow = false; downY = event.y; scrollAnimation?.cancel() }
+            if (event.actionMasked == MotionEvent.ACTION_MOVE &&
+                kotlin.math.abs(event.y - downY) > ViewConfiguration.get(context).scaledTouchSlop) pauseSpeechFollow()
             stopDetector.onTouchEvent(event)
             if (swallow) {
                 val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
@@ -56,19 +60,26 @@ class WatchConversationView(
             }
             return super.dispatchTouchEvent(event)
         }
+        override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+            if (event.action == MotionEvent.ACTION_SCROLL) {
+                pauseSpeechFollow()
+                val axis = if (event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) MotionEvent.AXIS_SCROLL else MotionEvent.AXIS_VSCROLL
+                scrollBy(0, (-event.getAxisValue(axis) * ViewConfiguration.get(context).scaledVerticalScrollFactor).toInt())
+                return true
+            }
+            return super.dispatchGenericMotionEvent(event)
+        }
     }.apply {
         isFillViewport = true; isVerticalScrollBarEnabled = true
         addView(transcript, LayoutParams(-1, -2))
-        setOnGenericMotionListener { _, event ->
-            if (event.action == MotionEvent.ACTION_SCROLL) {
-                scrollBy(0, (-event.getAxisValue(MotionEvent.AXIS_SCROLL) * ViewConfiguration.get(context).scaledVerticalScrollFactor).toInt()); true
-            } else false
-        }
     }
     private val newReply = text(context.getString(R.string.new_reply), 11f).apply {
         gravity = Gravity.CENTER; setTextColor(Color.rgb(101, 217, 203)); visibility = GONE
-        minHeight = dp(48)
-        setOnClickListener { transcriptScroll.fullScroll(View.FOCUS_DOWN); visibility = GONE }
+        minHeight = dp(24)
+        setOnClickListener {
+            if (speaking != null) resumeSpeechFollow()
+            else { scrollToReplyStart(); visibility = GONE }
+        }
     }
     val input = EditText(context).apply {
         setText(draft); setHint(R.string.composer_hint); setTextColor(Color.WHITE); setHintTextColor(secondary)
@@ -99,8 +110,16 @@ class WatchConversationView(
     private var busy = false
     private var lastTurns = emptyList<WatchTask>()
     private var lastReady: Boolean? = null
-    private data class RenderedTurn(val task: WatchTask, val container: LinearLayout, val status: TextView?)
+    private data class RenderedTurn(val task: WatchTask, val container: LinearLayout, val status: TextView?, val reply: TextView?)
     private val renderedTurns = mutableMapOf<String, RenderedTurn>()
+    private data class Speaking(val id: String, val start: Int, val end: Int)
+    private var speaking: Speaking? = null
+    private var followSpeech = true
+    private var manualScroll = false
+    private var scrollAnimation: android.animation.ValueAnimator? = null
+    private var renderRevision = 0
+    private var highlighted: TextView? = null
+    private val speechColor = android.text.style.ForegroundColorSpan(Color.rgb(151, 224, 207))
     private val waitingLabels = mutableListOf<Pair<WatchTask, TextView>>()
     private val ticker = object : Runnable {
         override fun run() {
@@ -113,7 +132,7 @@ class WatchConversationView(
         }
     }
     override fun onAttachedToWindow() { super.onAttachedToWindow(); post(ticker) }
-    override fun onDetachedFromWindow() { removeCallbacks(ticker); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { removeCallbacks(ticker); scrollAnimation?.cancel(); super.onDetachedFromWindow() }
 
     init {
         orientation = VERTICAL; setBackgroundColor(Color.BLACK)
@@ -151,7 +170,7 @@ class WatchConversationView(
         addView(header, LayoutParams(-1, -2).apply { topMargin = dp(1) })
         addView(FrameLayout(context).apply {
             addView(transcriptScroll, FrameLayout.LayoutParams(-1, -1))
-            addView(newReply, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
+            addView(newReply, FrameLayout.LayoutParams(-1, dp(24), Gravity.BOTTOM))
         }, LayoutParams(-1, 0, 1f).apply { leftMargin = dp(transcriptInset); rightMargin = dp(transcriptInset) })
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -188,7 +207,9 @@ class WatchConversationView(
         if (model.text.toString() != modelName) model.text = modelName
         if (turns == lastTurns && ready == lastReady && !resetScroll) return
         val oldOffset = transcriptScroll.scrollY
-        val nearBottom = oldOffset + transcriptScroll.height >= transcript.height - dp(30)
+        val changedTurn = turns.lastOrNull()?.id != lastTurns.lastOrNull()?.id
+        if (resetScroll || changedTurn) { stopSpeaking(); followSpeech = true; manualScroll = false }
+        val revision = ++renderRevision
         lastTurns = turns.toList(); lastReady = ready
         if (turns.isEmpty() || renderedTurns.isEmpty()) transcript.removeAllViews()
         val ids = turns.map { it.id }.toSet()
@@ -211,8 +232,9 @@ class WatchConversationView(
                 row?.let { transcript.removeView(it.container) }
                 val container = LinearLayout(context).apply { orientation = VERTICAL }
                 bubble(container, turn.prompt, true)
+                var replyView: TextView? = null
                 if (turn.reply.isNotBlank()) {
-                    bubble(container, turn.reply, false, readable = true)
+                    replyView = bubble(container, turn.reply, false, readable = true, taskId = turn.id)
                     WatchReplyImages.views(context, turn.reply).forEach {
                         container.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
                     }
@@ -223,7 +245,7 @@ class WatchConversationView(
                     minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL; textSize = 12f; setTextColor(secondary)
                     if (turn.state != TaskState.STOP_REQUESTED) setOnClickListener { onStop(turn) }
                 } else null
-                row = RenderedTurn(turn, container, status)
+                row = RenderedTurn(turn, container, status, replyView)
                 renderedTurns[turn.id] = row
             }
             val rendered = requireNotNull(row)
@@ -234,15 +256,95 @@ class WatchConversationView(
             rendered.status?.let { waitingLabels.add(turn to it) }
         }
         transcriptScroll.post {
+            if (revision != renderRevision) return@post
             if (turns.isEmpty()) { transcriptScroll.scrollTo(0, 0); newReply.visibility = GONE }
-            else if (resetScroll || nearBottom) { transcriptScroll.fullScroll(View.FOCUS_DOWN); newReply.visibility = GONE }
-            else { transcriptScroll.scrollTo(0, oldOffset); newReply.visibility = VISIBLE }
+            else if ((resetScroll || changedTurn) && !manualScroll && speaking == null) {
+                // One initial placement at the new turn; generation never chases the growing bottom.
+                transcriptScroll.scrollTo(0, renderedTurns[turns.last().id]?.container?.top ?: 0)
+                newReply.visibility = GONE
+            } else if (speaking != null) applySpeaking(scroll = false)
+            else if (!manualScroll) transcriptScroll.scrollTo(0, oldOffset)
         }
     }
-    private fun bubble(parent: LinearLayout, value: String, outgoing: Boolean, readable: Boolean = false): TextView {
+    private fun pauseSpeechFollow() {
+        scrollAnimation?.cancel()
+        manualScroll = true
+        followSpeech = false
+        if (speaking != null) {
+            newReply.setText(R.string.follow_speech)
+            newReply.visibility = VISIBLE
+        }
+    }
+    fun resumeSpeechFollow() {
+        manualScroll = false
+        followSpeech = true
+        newReply.visibility = GONE
+        applySpeaking(scroll = true, force = true)
+    }
+    fun showSpeaking(taskId: String, start: Int, end: Int) {
+        if (renderedTurns[taskId]?.reply == null) return
+        speaking = Speaking(taskId, start, end)
+        if (!followSpeech) { newReply.setText(R.string.follow_speech); newReply.visibility = VISIBLE }
+        applySpeaking(scroll = followSpeech)
+    }
+    fun stopSpeaking() {
+        scrollAnimation?.cancel()
+        speaking = null
+        (highlighted?.text as? android.text.Spannable)?.removeSpan(speechColor)
+        highlighted = null
+        newReply.visibility = GONE
+    }
+    private fun scrollToReplyStart() {
+        val row = lastTurns.lastOrNull()?.id?.let(renderedTurns::get) ?: return
+        val reply = row.reply ?: return
+        val rect = android.graphics.Rect(0, 0, reply.width, 1)
+        transcript.offsetDescendantRectToMyCoords(reply, rect)
+        animateScroll(rect.top)
+    }
+    private fun animateScroll(target: Int) {
+        scrollAnimation?.cancel()
+        val end = target.coerceIn(0, (transcript.height - transcriptScroll.height).coerceAtLeast(0))
+        scrollAnimation = android.animation.ValueAnimator.ofInt(transcriptScroll.scrollY, end).apply {
+            duration = 220
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener { transcriptScroll.scrollTo(0, it.animatedValue as Int) }
+            start()
+        }
+    }
+    private fun applySpeaking(scroll: Boolean, force: Boolean = false) {
+        val range = speaking ?: return
+        val message = renderedTurns[range.id]?.reply ?: return
+        (highlighted?.text as? android.text.Spannable)?.removeSpan(speechColor)
+        val value = message.text as? android.text.Spannable ?: return
+        val start = range.start.coerceIn(0, value.length)
+        val end = range.end.coerceIn(start, value.length)
+        if (end <= start) return
+        value.setSpan(speechColor, start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        highlighted = message
+        if (!scroll) return
+        message.post {
+            if (speaking != range || !followSpeech || !isAttachedToWindow) return@post
+            val layout = message.layout ?: return@post
+            val first = layout.getLineForOffset(start)
+            val last = layout.getLineForOffset(end - 1)
+            val rect = android.graphics.Rect(0, message.totalPaddingTop + layout.getLineTop(first),
+                message.width, message.totalPaddingTop + layout.getLineBottom(last))
+            transcript.offsetDescendantRectToMyCoords(message, rect)
+            val top = transcriptScroll.scrollY
+            val safeBottom = top + transcriptScroll.height - dp(12)
+            if (force || rect.top < top || rect.bottom > safeBottom) {
+                // Keep a little context above the sentence; no word-by-word movement or end snap.
+                animateScroll((rect.top - dp(8)).coerceAtLeast(0))
+            }
+        }
+    }
+    private fun bubble(parent: LinearLayout, value: String, outgoing: Boolean, readable: Boolean = false, taskId: String = ""): TextView {
         val row = LinearLayout(context).apply { gravity = if (outgoing) Gravity.END else Gravity.START }
         val message = (if (readable) ParagraphSelectingTextView(context).apply {
-            setOnParagraphDoubleTapListener { selection -> onRead(selection.sourceText.substring(selection.startOffset)) }
+            setOnParagraphDoubleTapListener { selection ->
+                onReadFrom?.invoke(taskId, selection.sourceText, selection.startOffset)
+                    ?: onRead(selection.sourceText.substring(selection.startOffset))
+            }
         } else TextView(context)).apply {
             text = value; textSize = 14f; setTextColor(Color.WHITE); includeFontPadding = false
             setPadding(0, dp(4), 0, dp(4))
