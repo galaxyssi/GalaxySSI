@@ -87,14 +87,32 @@ class WatchConversationView(
             else { scrollToReplyStart(); visibility = GONE }
         }
     }
-    val input = EditText(context).apply {
+    private var keyboardVisible = false
+    private var keyboardVisibleAtTouchDown = false
+    val input = object : EditText(context) {
+        override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
+            val connection = super.onCreateInputConnection(outAttrs)
+            // Samsung's full-screen editor copies this before IME insets arrive.
+            outAttrs.hintText = context.getString(R.string.message_hint)
+            return connection
+        }
+    }.apply {
         setText(draft); setHint(R.string.composer_hint); setTextColor(Color.WHITE); setHintTextColor(secondary)
         textSize = 12.5f; minHeight = dp(36); includeFontPadding = false; maxLines = if (draft.isBlank()) 1 else 2
         ellipsize = android.text.TextUtils.TruncateAt.END
         background = null; setPadding(0, dp(4), 0, dp(4))
         filters = arrayOf(InputFilter.LengthFilter(4000))
         inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        setOnLongClickListener { onVoice(); true }
+        setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                keyboardVisibleAtTouchDown = rootWindowInsets?.isVisible(WindowInsets.Type.ime()) ?: keyboardVisible
+            }
+            false
+        }
+        setOnLongClickListener {
+            if (keyboardVisibleAtTouchDown || keyboardVisible) false
+            else { onVoice(); true }
+        }
     }
     // Android keeps send and more as separate controls, even when they share a layout slot.
     private val sendAction = ImageButton(context).apply {
@@ -140,6 +158,11 @@ class WatchConversationView(
     override fun onDetachedFromWindow() { removeCallbacks(ticker); scrollAnimation?.cancel(); super.onDetachedFromWindow() }
 
     init {
+        setOnApplyWindowInsetsListener { _, insets ->
+            keyboardVisible = insets.isVisible(WindowInsets.Type.ime())
+            input.setHint(if (keyboardVisible) R.string.message_hint else R.string.composer_hint)
+            insets
+        }
         orientation = VERTICAL; setBackgroundColor(Color.BLACK)
         isFocusableInTouchMode = true
         val headerInset = (resources.configuration.screenWidthDp * 0.125f).toInt().coerceAtLeast(24)
@@ -179,7 +202,8 @@ class WatchConversationView(
         }, LayoutParams(-1, 0, 1f).apply { leftMargin = dp(transcriptInset); rightMargin = dp(transcriptInset) })
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(input, LayoutParams(0, -2, 1f)); addView(actionSlot, LayoutParams(dp(40), dp(36)))
+            addView(input, LayoutParams(0, -2, 1f))
+            addView(actionSlot, LayoutParams(dp(40), dp(36)))
         }, LayoutParams(-1, -2).apply { topMargin = dp(2); leftMargin = dp(composerInset); rightMargin = dp(composerInset) })
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -358,7 +382,44 @@ class WatchConversationView(
         }
         if (!outgoing) {
             message.text = WatchRichReply.render(value)
-            message.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+            if (readable) {
+                message.setTextIsSelectable(true)
+                var paragraphAnchor = 0
+                var expandOnRelease = false
+                message.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                        paragraphAnchor = message.getOffsetForPosition(event.x, event.y)
+                    }
+                    if (event.actionMasked == MotionEvent.ACTION_UP && expandOnRelease) {
+                        expandOnRelease = false
+                        val anchor = paragraphAnchor
+                        message.post {
+                            val selectable = message.text as? android.text.Spannable
+                            if (selectable != null && message.hasSelection()) {
+                                val range = com.galaxyssi.chat.ui.ParagraphSelectionPolicy.rangeAt(selectable, anchor)
+                                android.text.Selection.setSelection(selectable, range.start, range.endExclusive)
+                            }
+                        }
+                    }
+                    false
+                }
+                message.customSelectionActionModeCallback = object : ActionMode.Callback {
+                    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                        expandOnRelease = true
+                        pauseSpeechFollow(); onStopReading(); return true
+                    }
+                    override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
+                    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                        if (item.itemId == android.R.id.copy) {
+                            val start = minOf(message.selectionStart, message.selectionEnd)
+                            val end = maxOf(message.selectionStart, message.selectionEnd)
+                            if (start >= 0 && end > start) WatchClipboardHistory.remember(message.text.subSequence(start, end).toString())
+                        }
+                        return false
+                    }
+                    override fun onDestroyActionMode(mode: ActionMode) { expandOnRelease = false }
+                }
+            } else message.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         }
         row.addView(message, LayoutParams(-2, -2))
         parent.addView(row, LayoutParams(-1, -2).apply { bottomMargin = dp(6) })

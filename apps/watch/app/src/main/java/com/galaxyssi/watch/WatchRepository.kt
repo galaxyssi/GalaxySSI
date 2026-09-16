@@ -275,8 +275,16 @@ class WatchRepository(private val context: Context) {
                         if (!latest.state.terminal) {
                             val result = outcome.fold(
                                 onSuccess = { latest.copy(state = TaskState.COMPLETED, reply = it) },
-                                onFailure = { latest.copy(state = TaskState.FAILED,
-                                    progress = context.getString((it as? ApiFailure)?.reason ?: R.string.api_request_error)) })
+                                onFailure = {
+                                    android.util.Log.w("WatchApi", "turn_failed type=${it.javaClass.simpleName}")
+                                    val reason = (it as? ApiFailure)?.reason ?: when (it) {
+                                        is java.net.SocketTimeoutException -> R.string.api_timeout_error
+                                        is java.io.IOException -> R.string.api_network_error
+                                        else -> R.string.api_request_error
+                                    }
+                                    latest.copy(state = TaskState.FAILED,
+                                        progress = context.getString(reason) + latest.progress.takeIf { p -> p.isNotBlank() }?.let { p -> "\n$p" }.orEmpty())
+                                })
                             store.save(result)
                             main.post { WatchNotifications.completed(context, result) }
                             changed()

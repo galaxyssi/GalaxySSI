@@ -13,11 +13,19 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
     private val observeTool: (String, JSONObject, String) -> Unit = { _, _, _ -> }) {
     fun answer(profile: ApiProfile, task: WatchTask, history: List<WatchTask>, operation: WatchApiOperation,
         progress: (String) -> Unit = {}): String {
-        val timer = deadlines.schedule({ operation.cancel() }, 300, java.util.concurrent.TimeUnit.SECONDS)
-        try { return runLoop(profile, task, history, operation, progress) } finally { timer.cancel(false) }
+        var weatherFallback: String? = null
+        val timer = deadlines.schedule({ operation.expire() }, 300, java.util.concurrent.TimeUnit.SECONDS)
+        try {
+            return runLoop(profile, task, history, operation, progress) { output ->
+                weatherFallback = WatchWeatherEvidence.fallback(output, java.util.Locale.getDefault().language == "zh") ?: weatherFallback
+            }
+        } catch (failure: Exception) {
+            if (weatherFallback != null && operation.permitsEvidenceFallback()) return weatherFallback!!
+            throw failure
+        } finally { timer.cancel(false) }
     }
     private fun runLoop(profile: ApiProfile, task: WatchTask, history: List<WatchTask>, operation: WatchApiOperation,
-        progress: (String) -> Unit): String {
+        progress: (String) -> Unit, weatherEvidence: (String) -> Unit): String {
         val tools = CloudWebGrounding.openAiTools()
         val nativeTools = profile.style == "openai"
         val exchanges = JSONArray()
@@ -72,7 +80,15 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
                 webTools = if (nativeTools && !toolProgress.finalizationRequested && !citationRepaired) tools else null,
                 toolMessages = exchanges.takeIf { nativeTools })
             request.timeout().timeout(minOf(100_000L, (deadline - System.nanoTime()) / 1_000_000L).coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS)
-            val raw = api.execute(operation.attach(request))
+            val raw = try { api.execute(operation.attach(request)) } catch (failure: java.io.IOException) {
+                checkpoint()
+                if (failure is javax.net.ssl.SSLException || deadline - System.nanoTime() < 30_000_000_000L) throw failure
+                // Retry only this read-only model request, never the conversation or completed tools.
+                progress(context.getString(R.string.web_connection_retry))
+                api.execute(operation.attach(request.clone().apply {
+                    timeout().timeout(minOf(45_000L, (deadline - System.nanoTime()) / 1_000_000L), java.util.concurrent.TimeUnit.MILLISECONDS)
+                }))
+            }
             observeReply(raw)
             checkpoint()
             val decision = try { parseDecision(raw) } catch (failure: ApiFailure) {
@@ -151,6 +167,7 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
                 } else CloudWebGrounding.executeTool(context, name, arguments, operation.webToken, ::checkpoint)
                 if (cached == null && toolProgress.record(name, arguments, result)) madeProgress = true
                 observeTool(name, arguments, result)
+                if (name == "web_weather") weatherEvidence(result)
                 batch.add(result)
                 checkpoint()
                 results.put(JSONObject().put("tool", name).put("arguments", arguments).put("result", JSONObject(result)))
