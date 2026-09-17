@@ -220,7 +220,6 @@ class MainActivity : Activity() {
             scroll = requireNotNull(sessionsScroll)
             content = requireNotNull(sessionsContent)
             editor = null
-            (content.getChildAt(0) as? TextView)?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date())
             if (frame.parent == null) setContentView(frame)
             frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
             return
@@ -253,16 +252,14 @@ class MainActivity : Activity() {
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            val horizontal = if (page == "paste") {
-                (resources.configuration.screenWidthDp * 0.09f).toInt().coerceAtLeast(16)
-            } else (resources.configuration.screenWidthDp * 0.14f).toInt().coerceAtLeast(20)
-            setPadding(dp(horizontal), dp(26), dp(horizontal), dp(44))
+            // Match the home transcript width and the home's top/bottom insets.
+            val horizontal = (resources.configuration.screenWidthDp * 0.055f).toInt().coerceAtLeast(10)
+            setPadding(dp(horizontal), dp(10), dp(horizontal), dp(18))
         }
         scroll.addView(content, FrameLayout.LayoutParams(-1, -2))
         frame.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
         frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
-        if (page !in setOf("home-menu", "paste")) label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date()), 12, Color.LTGRAY)
         when (page) {
             "home" -> homeMenu()
             "devices" -> devices()
