@@ -60,7 +60,8 @@
     <string name="vibrate">Vibrate on completion</string>
     <string name="auto_speech">Auto-play replies (Xiaoxiao)</string>
     <string name="notifications">Enable task notifications</string>
-    <string name="about">Watch 0.1 · Android 13+</string>
+    <string name="about">About</string>
+    <string name="app_version">Version: %1$s</string>
     <string name="monitor_channel">Task connection</string>
     <string name="result_channel">Task results</string>
     <string name="monitor_title">GalaxySSI is running</string>

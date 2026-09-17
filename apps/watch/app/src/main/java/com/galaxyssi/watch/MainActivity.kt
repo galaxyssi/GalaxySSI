@@ -280,6 +280,12 @@ class MainActivity : Activity() {
             "pair-review" -> pairReview()
             "forget" -> confirmForget()
             "settings" -> settings()
+            "about" -> {
+                title(R.string.about)
+                label(getString(R.string.app_name), 18, Color.WHITE)
+                val info = packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+                label(getString(R.string.app_version, info.versionName ?: info.longVersionCode.toString()), 16)
+            }
             "web-sources" -> webSources()
             "web-credential" -> webCredential()
             "api-providers" -> {
@@ -352,6 +358,7 @@ class MainActivity : Activity() {
         button(R.string.api_provider) { openApiSettings() }
         button(R.string.devices) { navigate("devices") }
         button(R.string.settings) { navigate("settings") }
+        button(R.string.about) { navigate("about") }
     }
     private fun pasteMenu() {
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -633,7 +640,6 @@ class MainActivity : Activity() {
         button(R.string.notifications) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42) }
         button(R.string.devices) { navigate("devices") }
         button(R.string.api_title) { openApiSettings() }
-        label(getString(R.string.about), 12)
         label(getString(R.string.monitor_body), 12)
     }
     private fun webSources() {
