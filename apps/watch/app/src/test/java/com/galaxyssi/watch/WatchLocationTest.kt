@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WatchLocationTest {
+    @Test fun recenterPreservesZoomAndTargetsVisibleCenter() {
+        val viewport = WatchMapViewport(22.2, 113.5)
+        viewport.scaleBy(1.7, 20.0, 30.0)
+        viewport.pan(300.0, -500.0)
+        val zoom = viewport.zoom
+        viewport.centerOn(22.2, 113.5, 0.0, 45.0)
+        val point = WatchMapProjection.point(22.2, 113.5, 2)
+        assertEquals(zoom, viewport.zoom, 0.0)
+        assertEquals(0.0, (point.first / 4 - viewport.x) * viewport.scale, 1e-6)
+        assertEquals(45.0, (point.second / 4 - viewport.y) * viewport.scale, 1e-6)
+    }
+
     @Test fun mapPinchPreservesFocusAndPanTracksFinger() {
         val viewport = WatchMapViewport(22.2, 113.5)
         val focusBefore = viewport.x + 70 / viewport.scale

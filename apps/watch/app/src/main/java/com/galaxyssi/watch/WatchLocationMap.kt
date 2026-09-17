@@ -31,6 +31,12 @@ internal class WatchMapViewport(lat: Double, lon: Double) {
         private set
     val scale get() = 2.0.pow(zoom)
     fun pan(dx: Double, dy: Double) { x -= dx / scale; y -= dy / scale; constrain() }
+    fun centerOn(lat: Double, lon: Double, offsetX: Double = 0.0, offsetY: Double = 0.0) {
+        val point = WatchMapProjection.point(lat, lon, 2)
+        x = point.first / 4 - offsetX / scale
+        y = point.second / 4 - offsetY / scale
+        constrain()
+    }
     fun scaleBy(factor: Double, focusX: Double, focusY: Double) {
         if (!factor.isFinite() || factor <= 0) return
         val oldScale = scale
@@ -53,6 +59,70 @@ internal class WatchLocationMap(context: Context, private val fix: WatchLocation
     private var horizontalDrag = false
     private var usedMultiplePointers = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+    }
+    private val arrowPath = Path()
+    private val controlBounds = Rect()
+    private var pressedArrow = -1
+    private var repeatingArrow = false
+    private var panAnimation: android.animation.ValueAnimator? = null
+    private val repeatPan = object : Runnable {
+        override fun run() {
+            if (pressedArrow !in 0..3 || !isShown || !hasWindowFocus()) return
+            repeatingArrow = true
+            moveArrow(pressedArrow, 0.012)
+            postDelayed(this, 32)
+        }
+    }
+    private fun updateControlBounds() {
+        if (!getLocalVisibleRect(controlBounds) || !controlBounds.intersect(0, 0, width, mapHeight())) controlBounds.setEmpty()
+    }
+    private fun arrowX(direction: Int) = when (direction) {
+        1 -> controlBounds.right - 8 * density
+        3 -> controlBounds.left + 8 * density
+        4 -> controlBounds.right - 20 * density
+        else -> controlBounds.exactCenterX()
+    }
+    private fun arrowY(direction: Int) = when (direction) {
+        0 -> controlBounds.top + 8 * density
+        2 -> controlBounds.bottom - 8 * density
+        4 -> controlBounds.bottom - 20 * density
+        else -> controlBounds.exactCenterY()
+    }
+    private fun arrowAt(x: Float, y: Float): Int {
+        if (controlBounds.height() < 48 * density || !controlBounds.contains(x.toInt(), y.toInt())) return -1
+        return (0..4).filter { abs(x - arrowX(it)) <= 20 * density && abs(y - arrowY(it)) <= 20 * density }
+            .minByOrNull { (x - arrowX(it)).pow(2) + (y - arrowY(it)).pow(2) } ?: -1
+    }
+    private fun recenter() {
+        panAnimation?.cancel()
+        viewport.centerOn(fix.latitude, fix.longitude,
+            (controlBounds.exactCenterX() - width / 2f).toDouble(),
+            (controlBounds.exactCenterY() - mapHeight() / 2f).toDouble())
+        invalidate()
+    }
+    private fun moveArrow(direction: Int, fraction: Double) {
+        val dx = when (direction) { 1 -> -width * fraction; 3 -> width * fraction; else -> 0.0 }
+        val dy = when (direction) { 0 -> mapHeight() * fraction; 2 -> -mapHeight() * fraction; else -> 0.0 }
+        viewport.pan(dx, dy); invalidate()
+    }
+    private fun animateArrow(direction: Int) {
+        panAnimation?.cancel()
+        var previous = 0.0
+        panAnimation = android.animation.ValueAnimator.ofFloat(0f, 0.25f).apply {
+            duration = 200
+            addUpdateListener {
+                val fraction = (it.animatedValue as Float).toDouble()
+                moveArrow(direction, fraction - previous); previous = fraction
+            }
+            start()
+        }
+    }
+    private fun releaseArrow() {
+        removeCallbacks(repeatPan); pressedArrow = -1; repeatingArrow = false; invalidate()
+    }
+    override fun performClick(): Boolean { super.performClick(); return true }
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             viewport.scaleBy(detector.scaleFactor.toDouble(), (detector.focusX - width / 2f).toDouble(), (detector.focusY - mapHeight() / 2f).toDouble())
@@ -62,20 +132,27 @@ internal class WatchLocationMap(context: Context, private val fix: WatchLocation
     }).apply { isQuickScaleEnabled = false; isStylusScaleEnabled = false }
     private fun mapHeight() = (height - ((if (tileHost().contains("openstreetmap.fr/")) 24 else 14) * density).toInt()).coerceAtLeast(1)
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        updateControlBounds()
         val indices = (0 until event.pointerCount).filter { event.actionMasked != MotionEvent.ACTION_POINTER_UP || it != event.actionIndex }
         val focusX = indices.map { event.getX(it) }.average().toFloat()
         val focusY = indices.map { event.getY(it) }.average().toFloat()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                panAnimation?.cancel(); releaseArrow()
                 downX = focusX; downY = focusY
+                pressedArrow = arrowAt(focusX, focusY)
+                if (pressedArrow in 0..3) postDelayed(repeatPan, ViewConfiguration.getLongPressTimeout().toLong())
+                invalidate()
                 horizontalDrag = false; usedMultiplePointers = false
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                releaseArrow()
                 usedMultiplePointers = true
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
             MotionEvent.ACTION_MOVE -> {
+                if (abs(focusX - downX) > touchSlop || abs(focusY - downY) > touchSlop) releaseArrow()
                 if (event.pointerCount >= 2) {
                     viewport.pan((focusX - lastX).toDouble(), (focusY - lastY).toDouble())
                     invalidate()
@@ -91,7 +168,14 @@ internal class WatchLocationMap(context: Context, private val fix: WatchLocation
                     }
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
+            MotionEvent.ACTION_UP -> {
+                if (pressedArrow >= 0 && !repeatingArrow) {
+                    if (pressedArrow == 4) recenter() else animateArrow(pressedArrow)
+                    performClick()
+                }
+                releaseArrow(); parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            MotionEvent.ACTION_CANCEL -> { releaseArrow(); parent?.requestDisallowInterceptTouchEvent(false) }
         }
         scaleDetector.onTouchEvent(event)
         lastX = focusX; lastY = focusY
@@ -158,11 +242,38 @@ internal class WatchLocationMap(context: Context, private val fix: WatchLocation
         val markerY = (mapHeight / 2.0 + (point.second / 4 - viewport.y) * viewport.scale).toFloat()
         paint.color = Color.WHITE; canvas.drawCircle(markerX, markerY, 6 * density, paint)
         paint.color = Color.rgb(0, 154, 218); canvas.drawCircle(markerX, markerY, 4 * density, paint)
+        drawArrows(canvas)
         canvas.restore()
         paint.color = Color.BLACK; canvas.drawRect(0f, mapHeight.toFloat(), width.toFloat(), height.toFloat(), paint)
         paint.color = Color.LTGRAY; paint.textSize = 8 * density; paint.textAlign = Paint.Align.CENTER
         canvas.drawText("© OpenStreetMap contributors", width / 2f, height - (if (frenchTiles) 14 else 3) * density, paint)
         if (frenchTiles) canvas.drawText("Style: HOT · Tiles: OSM France", width / 2f, height - 3 * density, paint)
+    }
+    private fun drawArrows(canvas: Canvas) {
+        updateControlBounds()
+        if (controlBounds.height() < 48 * density) return
+        arrowPaint.strokeWidth = 1.8f * density
+        arrowPaint.setShadowLayer(density, 0f, 0f, Color.argb(170, 255, 255, 255))
+        for (direction in 0..3) {
+            arrowPaint.color = Color.argb(if (pressedArrow == direction) 255 else 210, 52, 62, 70)
+            canvas.save()
+            canvas.translate(arrowX(direction), arrowY(direction))
+            canvas.rotate(direction * 90f)
+            arrowPath.rewind()
+            arrowPath.moveTo(-5 * density, 2.5f * density)
+            arrowPath.lineTo(0f, -2.5f * density)
+            arrowPath.lineTo(5 * density, 2.5f * density)
+            canvas.drawPath(arrowPath, arrowPaint)
+            canvas.restore()
+        }
+        // A small target ring returns the saved location to the visible center without changing zoom.
+        arrowPaint.color = Color.argb(if (pressedArrow == 4) 255 else 210, 52, 62, 70)
+        canvas.drawCircle(arrowX(4), arrowY(4), 7 * density, arrowPaint)
+        canvas.drawCircle(arrowX(4), arrowY(4), 2 * density, arrowPaint)
+    }
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus) { releaseArrow(); panAnimation?.cancel() }
     }
     private fun tileHost() = context.getSharedPreferences("watch-location", Context.MODE_PRIVATE)
         .getString("tile_base", "https://tile.openstreetmap.org")!!.trimEnd('/')
@@ -207,6 +318,7 @@ internal class WatchLocationMap(context: Context, private val fix: WatchLocation
         invalidate()
     }
     override fun onDetachedFromWindow() {
+        releaseArrow(); panAnimation?.cancel()
         viewTreeObserver.removeOnScrollChangedListener(scrollListener)
         attachedViews.remove(this)
         generation++; pending.values.forEach { it.cancel() }; pending.clear(); super.onDetachedFromWindow()
