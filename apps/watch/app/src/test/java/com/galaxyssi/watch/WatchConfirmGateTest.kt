@@ -4,13 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WatchConfirmGateTest {
-    @Test fun requiresArmedSessionAndThreeStableSeconds() {
+    @Test fun requiresArmedSessionAndOnePointFiveStableSeconds() {
         val gate = WatchConfirmGate()
         assertFalse(gate.ready("result", 0))
         gate.arm(10)
         assertFalse(gate.ready("result", 100))
-        assertFalse(gate.ready("result", 3099))
-        assertTrue(gate.ready("result", 3100))
+        assertFalse(gate.ready("result", 1599))
+        assertTrue(gate.ready("result", 1600))
         gate.cancel()
         assertFalse(gate.ready("result", 10000))
     }

@@ -152,8 +152,8 @@
     <string name="voice_on_open_help">用于系统助手接力：让 Bixby 打开 GalaxySSI。开启后，点击图标打开也会进入一次语音输入；通知打开和语音返回不会重复启动。也可直接打开“GalaxySSI 语音”。息屏唤醒及唤醒词由 Bixby 控制，本应用不在后台监听；手表锁定时请先解锁。</string>
     <string name="voice_entry_try">试用语音入口</string>
     <string name="samsung_confirm_service">GalaxySSI 语音自动确认</string>
-    <string name="samsung_confirm_toggle">三星语音 3 秒后自动确认</string>
+    <string name="samsung_confirm_toggle">三星语音 1.5 秒后自动确认</string>
     <string name="samsung_confirm_settings">开启语音确认辅助服务</string>
     <string name="samsung_confirm_enabled">语音确认辅助服务已开启</string>
-    <string name="samsung_confirm_description">开启此辅助服务后，仅对 GalaxySSI 发起的三星语音输入生效。麦克风关闭且识别文字稳定 3 秒后，点击一次“完成”并发送到当前聊天。返回、息屏、离开语音页面，以及检测到的按钮点击或滚动会取消。可在此关闭自动确认。服务仅在内存中检查文字，不保存或上传识别页面内容。</string>
+    <string name="samsung_confirm_description">开启此辅助服务后，仅对 GalaxySSI 发起的三星语音输入生效。麦克风关闭且识别文字稳定 1.5 秒后，点击一次“完成”并发送到当前聊天。返回、息屏、离开语音页面，以及检测到的按钮点击或滚动会取消。可在此关闭自动确认。服务仅在内存中检查文字，不保存或上传识别页面内容。</string>
 </resources>
