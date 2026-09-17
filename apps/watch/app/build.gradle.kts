@@ -1,7 +1,51 @@
+import java.security.MessageDigest
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
 plugins {
     id("com.android.application")
     kotlin("android")
 }
+
+// Bundle a checksum-pinned offline model; no runtime model download or credentials are required.
+val wakeModelSha256 = "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498"
+val wakeModelAssets = layout.buildDirectory.dir("generated/wakeAssets")
+val prepareWakeModel by tasks.registering {
+    inputs.property("modelSha256", wakeModelSha256)
+    outputs.dir(wakeModelAssets)
+    doLast {
+        val archive = File(gradle.gradleUserHomeDir, "caches/galaxyssi-models/$wakeModelSha256.zip")
+        fun digest(file: File): String {
+            val hash = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { stream ->
+                val buffer = ByteArray(65536)
+                while (true) { val n = stream.read(buffer); if (n < 0) break; hash.update(buffer, 0, n) }
+            }
+            return hash.digest().joinToString("") { "%02x".format(it) }
+        }
+        if (!archive.isFile || digest(archive) != wakeModelSha256) {
+            archive.parentFile.mkdirs()
+            val partial = File(archive.parentFile, "$wakeModelSha256.partial")
+            val connection = URI("https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip").toURL().openConnection()
+            connection.connectTimeout = 30000
+            connection.readTimeout = 120000
+            connection.getInputStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
+            check(digest(partial) == wakeModelSha256) { "Offline wake model checksum mismatch" }
+            Files.move(partial.toPath(), archive.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        val target = wakeModelAssets.get().dir("model-en-us").asFile
+        copy {
+            from(zipTree(archive))
+            into(target)
+            eachFile { path = path.substringAfter('/') }
+            includeEmptyDirs = false
+        }
+        File(target, "uuid").writeText(wakeModelSha256 + "\n")
+    }
+}
+android.sourceSets["main"].assets.srcDir(wakeModelAssets)
+tasks.named("preBuild").configure { dependsOn(prepareWakeModel) }
 android {
     namespace = "com.galaxyssi.watch"
     compileSdk = 35
@@ -10,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.2.12"
+        versionCode = 18
+        versionName = "0.2.16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -42,6 +86,8 @@ android {
     }
 }
 dependencies {
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(project(":shared-link"))
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")

@@ -32,6 +32,12 @@ class WatchConversationView(
     private fun text(value: String, size: Float = 14f) = TextView(context).apply {
         this.text = value; textSize = size; setTextColor(Color.WHITE); includeFontPadding = false
     }
+    private var wakeStatus = ""
+    fun setWakeStatus(value: String) { wakeStatus = value; updateClock() }
+    private fun updateClock() {
+        val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        clockLabel.text = if (wakeStatus.isBlank()) time else "$time · $wakeStatus"
+    }
     private val clockLabel = text("", 10f).apply { gravity = Gravity.CENTER; setTextColor(secondary) }
     private val heading = text("", 11f)
     private val model = text("", 9f).apply { setTextColor(secondary) }
@@ -123,8 +129,7 @@ class WatchConversationView(
     private val waitingLabels = mutableListOf<Pair<WatchTask, TextView>>()
     private val ticker = object : Runnable {
         override fun run() {
-            val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-            if (clockLabel.text.toString() != time) clockLabel.text = time
+            updateClock()
             waitingLabels.forEach { (task, label) ->
                 label.text = statusText(task)
             }

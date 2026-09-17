@@ -19,6 +19,13 @@ class WatchStore(context: Context) {
         get() = prefs.readString("api_profile", "").takeIf { it.isNotBlank() }
             ?.let { runCatching { ApiProfile.fromJson(JSONObject(it)) }.getOrNull() }
         set(value) { if (value == null) prefs.remove("api_profile") else prefs.writeString("api_profile", value.json().toString()) }
+    var voiceOnOpen: Boolean
+        get() = prefs.readString("voice_on_open", "false").toBoolean()
+        set(value) = prefs.writeString("voice_on_open", value.toString())
+    val historyLoaded: Boolean get() = taskSnapshot != null
+    var foregroundWake: Boolean
+        get() = prefs.readString("foreground_wake", "false").toBoolean()
+        set(value) = prefs.writeString("foreground_wake", value.toString())
     var apiPreferred: Boolean
         get() = prefs.readString("api_preferred", "false").toBoolean()
         set(value) = prefs.writeString("api_preferred", value.toString())

@@ -58,6 +58,22 @@ class MainActivity : Activity() {
     private var sessionsContent: LinearLayout? = null
     private var sessionQuery = ""
     private var speech: WatchReplySpeech? = null
+    private var wake: WatchForegroundWake? = null
+    private var wakePreference = false
+    private var voicePending = false
+    private var voiceEntryPending = false
+    private var voiceEntryScheduled = false
+    private val openVoiceEntry = Runnable {
+        voiceEntryScheduled = false
+        if (voiceEntryCanStart()) {
+            voiceEntryPending = false // Consume before launch so cancel/resume cannot reopen the microphone.
+            followUpId = selectedTask
+            startVoice()
+        }
+    }
+    private var wasSpeaking = false
+    private var wakeCooldownUntil = 0L
+    private val refreshWakeLater = Runnable { refreshWake() }
     private var screenAwake: WatchScreenAwake? = null
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
@@ -86,17 +102,36 @@ class MainActivity : Activity() {
         if (page.startsWith("pair")) page = "devices"
         if (page == "web-credential") webCredentialValue = ""
         if (page.startsWith("api-")) page = "settings"
+        wakePreference = repo.store.foregroundWake
+        wake = WatchForegroundWake(this, onState = { updateWakeBadge() }, onWake = {
+            if (wakeAllowed()) {
+                wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
+                getSystemService(android.os.VibratorManager::class.java).defaultVibrator.vibrate(
+                    android.os.VibrationEffect.createOneShot(45, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                followUpId = selectedTask
+                startVoice()
+            }
+        })
         screenAwake = WatchScreenAwake(window)
         speech = WatchReplySpeech(this, onActivityChanged = { updateScreenAwake() },
             onSpeaking = { id, start, end -> if (resumed && page == "home") conversationView?.showSpeaking(id, start, end) },
             onSpeechStopped = { conversationView?.stopSpeaking() }) { toast(R.string.speech_output_unavailable) }
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { back() }
-        readLaunchIntent(intent)
+        voicePending = savedInstanceState?.getBoolean("voice_pending") ?: false
+        voiceEntryPending = savedInstanceState?.getBoolean("voice_entry_pending") ?: false
+        readLaunchIntent(intent, savedInstanceState == null)
         render()
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readLaunchIntent(intent); render() }
-    private fun readLaunchIntent(intent: Intent) {
+    private fun readLaunchIntent(intent: Intent, acceptVoice: Boolean = true) {
+        if (acceptVoice && WatchVoiceEntryPolicy.requestsVoice(intent.action,
+                intent.component?.className == "$packageName.VoiceEntry",
+                repo.store.voiceOnOpen, intent.hasExtra("task_id"))) {
+            voiceEntryPending = true
+            page = "home"
+            setTurnScreenOn(true)
+        }
         intent.getStringExtra("task_id")?.takeIf { it.isNotBlank() }?.let { selectedTask = it; repo.saveActiveTask(it); page = "home" }
         // adb provisioning writes a one-time offer to private app storage. It still
         // requires an on-watch identity review and confirmation before trust changes.
@@ -122,11 +157,12 @@ class MainActivity : Activity() {
         super.onResume(); resumed = true; updateConversationVisibility(); updated()
     }
     override fun onPause() {
-        resumed = false; screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); super.onPause()
+        resumed = false; handler.removeCallbacks(openVoiceEntry); voiceEntryScheduled = false; wake?.setEnabled(false); screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); super.onPause()
     }
     private fun updateScreenAwake() {
         val task = repo.store.cachedTask(selectedTask)
         screenAwake?.update(resumed && page == "home", busy || task?.state?.terminal == false || speech?.active == true)
+        refreshWake()
     }
     private fun updateConversationVisibility() {
         if (!resumed) return
@@ -146,8 +182,10 @@ class MainActivity : Activity() {
         repo.unlisten(updated); repo.foreground(false); speech?.stop()
         super.onStop()
     }
-    override fun onDestroy() { handler.removeCallbacksAndMessages(null); speech?.shutdown(); super.onDestroy() }
+    override fun onDestroy() { handler.removeCallbacksAndMessages(null); speech?.shutdown(); wake?.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(out: Bundle) {
+        out.putBoolean("voice_pending", voicePending)
+        out.putBoolean("voice_entry_pending", voiceEntryPending)
         out.putString("page", page); out.putString("task", selectedTask); out.putString("followup", followUpId)
         out.putString("desktop", detailDesktop); out.putString("draft", draft)
         out.putStringArrayList("history", ArrayList(history)); super.onSaveInstanceState(out)
@@ -332,7 +370,7 @@ class MainActivity : Activity() {
             override fun onDismissed(layout: SwipeDismissFrameLayout) { back() }
         })
         conversationView = WatchConversationView(this, draft,
-            onDraft = { draft = it; handler.removeCallbacks(saveDraft); handler.postDelayed(saveDraft, 350) },
+            onDraft = { draft = it; handler.removeCallbacks(saveDraft); handler.postDelayed(saveDraft, 350); refreshWake() },
             onSend = { sendFromHome() }, onVoice = { followUpId = selectedTask; startVoice() },
             onMenu = { navigate("home-menu") }, onSessions = { sessionQuery = ""; navigate("sessions") },
             onModel = { openApiSettings() },
@@ -342,6 +380,7 @@ class MainActivity : Activity() {
                 speech?.read(text, id, start)
                 conversationView?.resumeSpeechFollow()
             })
+        conversationView?.input?.setOnFocusChangeListener { _, _ -> refreshWake() }
         frame.addView(conversationView, FrameLayout.LayoutParams(-1, -1))
         conversationFrame = frame
         setContentView(frame)
@@ -368,6 +407,7 @@ class MainActivity : Activity() {
         speech?.observe(turns.lastOrNull(), resumed && page == "home" && repo.store.autoSpeech)
         updateScreenAwake()
         updateConversationVisibility()
+        scheduleVoiceEntry()
     }
     private fun sendFromHome(prompt: String = draft) {
         if (busy || prompt.isBlank()) return
@@ -536,7 +576,16 @@ class MainActivity : Activity() {
         label(getString(R.string.web_search_description), 12)
         button(R.string.web_sources_title) { navigate("web-sources") }
         toggle(R.string.vibrate, repo.store.vibration) { repo.store.vibration = it }
+        toggle(R.string.voice_on_open, repo.store.voiceOnOpen) { repo.store.voiceOnOpen = it }
+        label(getString(R.string.voice_on_open_help), 12)
+        button(R.string.voice_entry_try) { voiceEntryPending = true; page = "home"; render() }
         toggle(R.string.auto_speech, repo.store.autoSpeech) { repo.store.autoSpeech = it }
+        toggle(R.string.foreground_wake, wakePreference) { enable ->
+            if (enable && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 43)
+            } else setWakePreference(enable)
+        }
+        label(getString(R.string.foreground_wake_help), 12)
         button(R.string.notifications) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42) }
         button(R.string.devices) { navigate("devices") }
         button(R.string.api_title) { openApiSettings() }
@@ -578,17 +627,32 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, -2))
     }
     private fun startVoice() {
+        if (voicePending || busy) return
         if (!conversationReady) {
             if (conversationUsesApi) openApiSettings() else navigate("devices")
             return
         }
+        voicePending = true
+        wake?.setEnabled(false)
+        speech?.stop()
         if (page != "home") { page = "home"; render() }
-        if (!WatchSpeechInput.launch(this) { startActivityForResult(it, 31) }) toast(R.string.speech_unavailable)
+        val launch = {
+            if (resumed && page == "home" && !isDestroyed) {
+                if (runCatching { startActivityForResult(Intent(this, WatchVoiceCaptureActivity::class.java), 31) }.isFailure) {
+                    voicePending = false
+                    toast(R.string.speech_unavailable)
+                    scheduleWakeResume()
+                }
+            } else voicePending = false
+        }
+        wake?.stopThen(launch) ?: launch()
     }
     @Deprecated("Activity result callback for platform speech UI")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 31) {
+            voicePending = false
+            scheduleWakeResume()
             if (resultCode != RESULT_OK) { page = "home"; render(); return }
             val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
             page = "home"
@@ -660,7 +724,60 @@ class MainActivity : Activity() {
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 43) {
+            setWakePreference(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+            if (!wakePreference) toast(R.string.wake_permission_needed)
+            render()
+        }
         if (requestCode == 42 && grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) toast(R.string.notification_denied)
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) scheduleVoiceEntry()
+    }
+    private fun voiceEntryCanStart(): Boolean = voiceEntryPending && resumed && page == "home" &&
+        hasWindowFocus() && repo.store.historyLoaded && !voicePending && !busy &&
+        !getSystemService(android.app.KeyguardManager::class.java).isDeviceLocked
+
+    private fun scheduleVoiceEntry() {
+        if (!voiceEntryCanStart() || voiceEntryScheduled) return
+        voiceEntryScheduled = true
+        // Let the system assistant finish yielding its foreground window and microphone.
+        handler.postDelayed(openVoiceEntry, 650)
+    }
+    private fun setWakePreference(value: Boolean) {
+        wakePreference = value
+        repo.store.foregroundWake = value
+        wake?.retry()
+        refreshWake()
+    }
+    private fun wakeAllowed(): Boolean = wakePreference && resumed && page == "home" && conversationReady &&
+        !voicePending && !voiceEntryPending && !busy && speech?.active != true && draft.isBlank() && conversationView?.input?.hasFocus() != true &&
+        repo.store.cachedTask(selectedTask)?.state?.terminal != false &&
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+        android.os.SystemClock.elapsedRealtime() >= wakeCooldownUntil
+
+    private fun refreshWake() {
+        val speaking = speech?.active == true
+        if (wasSpeaking && !speaking) scheduleWakeResume()
+        wasSpeaking = speaking
+        wake?.setEnabled(wakeAllowed())
+        updateWakeBadge()
+    }
+    private fun scheduleWakeResume() {
+        wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
+        handler.removeCallbacks(refreshWakeLater)
+        handler.postDelayed(refreshWakeLater, 2600)
+    }
+    private fun updateWakeBadge() {
+        val status = if (!wakePreference) "" else getString(when {
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> R.string.wake_permission_needed
+            wake?.state == WatchForegroundWake.State.FAILED -> R.string.wake_failed
+            wake?.state == WatchForegroundWake.State.LOADING -> R.string.wake_loading
+            wake?.state == WatchForegroundWake.State.LISTENING -> R.string.wake_listening
+            else -> R.string.wake_paused
+        })
+        conversationView?.setWakeStatus(status)
     }
     private fun toast(resource: Int) = Toast.makeText(this, resource, Toast.LENGTH_LONG).show()
 }

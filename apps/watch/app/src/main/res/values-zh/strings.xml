@@ -140,4 +140,24 @@
     <string name="web_credential_help">加密保存在手表上。输入新值可替换，留空保存可删除。</string>
     <string name="background_enabled">后台持续运行</string>
     <string name="follow_speech">跟随朗读</string>
+    <string name="foreground_wake">Hello Hello 语音唤醒</string>
+    <string name="foreground_wake_help">仅在首页前台离线监听。说 Hello Hello，轻震后再用三星语音输入提问。输入、回复或朗读期间暂停监听。会增加耗电；息屏和后台不监听。</string>
+    <string name="wake_listening">Hello Hello · 待唤醒</string>
+    <string name="wake_loading">唤醒准备中</string>
+    <string name="wake_paused">唤醒已暂停</string>
+    <string name="wake_failed">唤醒不可用</string>
+    <string name="wake_permission_needed">需要麦克风权限</string>
+    <string name="voice_entry_name">GalaxySSI 语音</string>
+    <string name="voice_on_open">打开应用时进入语音输入</string>
+    <string name="voice_on_open_help">用于系统助手接力：让 Bixby 打开 GalaxySSI。开启后，点击图标打开也会进入一次语音输入；通知打开和语音返回不会重复启动。也可直接打开“GalaxySSI 语音”。息屏唤醒及唤醒词由 Bixby 控制，本应用不在后台监听；手表锁定时请先解锁。</string>
+    <string name="voice_entry_try">试用语音入口</string>
+    <string name="voice_listening">请说话</string>
+    <string name="voice_processing">正在识别…</string>
+    <string name="voice_send_countdown">%1$d 秒后发送 · 点击暂停</string>
+    <string name="voice_send_paused">已暂停自动发送 · 检查后发送</string>
+    <string name="voice_paused">录音已暂停 · 点击重说</string>
+    <string name="voice_retry">重说</string>
+    <string name="voice_stop">说完了</string>
+    <string name="voice_network_error">识别连接失败，可重试或使用三星输入</string>
+    <string name="voice_samsung_fallback">三星输入（需手动确认）</string>
 </resources>
