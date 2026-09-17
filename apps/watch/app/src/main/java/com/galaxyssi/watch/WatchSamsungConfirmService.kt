@@ -7,6 +7,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.graphics.PixelFormat
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -22,6 +27,7 @@ class WatchSamsungConfirmService : AccessibilityService() {
     private var connected = false
     private var status = "idle"
     private var lastEvent = 0
+    private var touchShield: View? = null
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { cancel("screen-off") }
     }
@@ -43,20 +49,44 @@ class WatchSamsungConfirmService : AccessibilityService() {
     private fun arm() {
         cancel("new-session"); gate.arm(SystemClock.elapsedRealtime()); status = "armed"; handler.post(poll)
     }
-    private fun cancel(reason: String = "cancelled") { gate.cancel(); enteredSamsung = false; handler.removeCallbacks(poll); status = reason }
+    private fun cancel(reason: String = "cancelled") {
+        gate.cancel(); enteredSamsung = false; handler.removeCallbacks(poll); status = reason
+        touchShield?.let { runCatching { getSystemService(WindowManager::class.java).removeView(it) } }
+        touchShield = null
+    }
+    private fun userCancelled() {
+        cancel("user-interaction")
+    }
+    private fun showTouchShield() {
+        if (touchShield != null) return
+        val layer = FrameLayout(this)
+        layer.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                userCancelled()
+            }
+            true // The first touch cancels; subsequent touches operate Samsung normally.
+        }
+        touchShield = layer
+        try {
+            getSystemService(WindowManager::class.java).addView(layer, WindowManager.LayoutParams(
+                -1, -1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT))
+        } catch (failure: Exception) { cancel("touch-shield-failed:${failure.javaClass.simpleName}") } // Fail closed.
+    }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!gate.active(SystemClock.elapsedRealtime())) return
         lastEvent = event?.eventType ?: 0
         when (event?.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED, AccessibilityEvent.TYPE_VIEW_LONG_CLICKED,
-            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> if (gate.hasCandidate) cancel("interaction:$lastEvent")
+            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> if (gate.hasCandidate) userCancelled()
             // Samsung scrolls the result view itself as recognition updates; restart stability
             // instead of treating these programmatic events as a user cancellation.
             AccessibilityEvent.TYPE_VIEW_SCROLLED, AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> gate.reset()
         }
     }
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) cancel("key")
+        if (event.action == KeyEvent.ACTION_DOWN && gate.active(SystemClock.elapsedRealtime())) userCancelled()
         return false
     }
     override fun onInterrupt() { cancel() }
@@ -84,6 +114,8 @@ class WatchSamsungConfirmService : AccessibilityService() {
             // Samsung's IME is also used by other apps. Require its speech activity shell.
             if (!hasNode(activeRoot, "remote_input_recycler_view")) { gate.reset(); status = "waiting-remote-shell"; return }
             enteredSamsung = true
+            showTouchShield()
+            if (!gate.active(now)) return
             val candidates = allWindows.filter { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
             for (window in candidates) {
                 val root = window.root ?: continue

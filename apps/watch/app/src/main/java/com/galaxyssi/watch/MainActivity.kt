@@ -253,14 +253,16 @@ class MainActivity : Activity() {
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            val horizontal = (resources.configuration.screenWidthDp * 0.14f).toInt().coerceAtLeast(20)
+            val horizontal = if (page == "paste") {
+                (resources.configuration.screenWidthDp * 0.09f).toInt().coerceAtLeast(16)
+            } else (resources.configuration.screenWidthDp * 0.14f).toInt().coerceAtLeast(20)
             setPadding(dp(horizontal), dp(26), dp(horizontal), dp(44))
         }
         scroll.addView(content, FrameLayout.LayoutParams(-1, -2))
         frame.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
         frame.post { frame.windowInsetsController?.hide(WindowInsets.Type.systemBars()) }
-        if (page != "home-menu") label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date()), 12, Color.LTGRAY)
+        if (page !in setOf("home-menu", "paste")) label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date()), 12, Color.LTGRAY)
         when (page) {
             "home" -> homeMenu()
             "devices" -> devices()
@@ -268,6 +270,7 @@ class MainActivity : Activity() {
             "agents" -> agents()
             "sessions" -> sessions()
             "contacts" -> contacts()
+            "paste" -> pasteMenu()
             "home-menu" -> homeMenu()
             "session-search" -> { title(R.string.search); input(sessionQuery, R.string.search, 100) { sessionQuery = it }; button(R.string.search) { page = "sessions"; render() } }
             "compose" -> homeMenu()
@@ -299,8 +302,8 @@ class MainActivity : Activity() {
             "api-remove" -> apiRemove()
             else -> homeMenu()
         }
-        if (repo.errorResource != 0 && page !in setOf("compose", "pair", "pair-review")) label(getString(repo.errorResource), 12)
-        if (page != "home") button(R.string.back) { back() }
+        if (repo.errorResource != 0 && page !in setOf("compose", "pair", "pair-review", "paste")) label(getString(repo.errorResource), 12)
+        if (page !in setOf("home", "paste")) button(R.string.back) { back() }
         if (preserveScroll) scroll.post { scroll.scrollTo(0, offset) }
         if (editor == null) scroll.requestFocus()
         if (listKey != null) {
@@ -345,10 +348,42 @@ class MainActivity : Activity() {
         button(R.string.new_conversation) { newConversation() }
         button(R.string.recent) { sessionQuery = ""; navigate("sessions") }
         button(R.string.contacts) { navigate("contacts") }
+        button(R.string.paste_message) { navigate("paste") }
         button(R.string.api_provider) { openApiSettings() }
         button(R.string.devices) { navigate("devices") }
         button(R.string.settings) { navigate("settings") }
     }
+    private fun pasteMenu() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clip = clipboard.primaryClip
+        val current = if (clip == null) emptyList() else (0 until clip.itemCount).mapNotNull {
+            clip.getItemAt(it).text?.toString()?.takeIf(String::isNotBlank)
+        }.distinct()
+        fun entry(value: String) {
+            button(value) {
+                if (busy) return@button
+                val input = conversationView?.input
+                val start = input?.selectionStart?.takeIf { it >= 0 } ?: draft.length
+                val end = input?.selectionEnd?.takeIf { it >= 0 } ?: start
+                val from = minOf(start, end).coerceIn(0, draft.length)
+                val to = maxOf(start, end).coerceIn(from, draft.length)
+                val insert = value.take((4000 - draft.length + to - from).coerceAtLeast(0))
+                draft = draft.replaceRange(from, to, insert)
+                handler.removeCallbacks(saveDraft); repo.saveDraft(draft)
+                page = "home"; history.clear(); render()
+                conversationView?.input?.setSelection(from + insert.length)
+            }.apply {
+                maxLines = 4; ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(9), dp(8), dp(9))
+            }
+        }
+        current.forEach(::entry)
+        val recent = WatchClipboardHistory.snapshot().filterNot { it in current }
+        recent.forEach(::entry)
+        if (current.isEmpty() && recent.isEmpty()) label(getString(R.string.clipboard_empty))
+    }
+
     private fun showConversation() {
         conversationFrame?.let { existing ->
             if (existing.parent == null) setContentView(existing)
@@ -636,7 +671,7 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, -2))
     }
     private fun startVoice() {
-        if (voicePending || busy) return
+        if (voicePending) return
         if (!conversationReady) {
             if (conversationUsesApi) openApiSettings() else navigate("devices")
             return
@@ -667,7 +702,11 @@ class MainActivity : Activity() {
             val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
             page = "home"
             if (result.isBlank()) { toast(R.string.speech_empty); render(); return }
-            // Send recognized text directly; only restore it to the composer on failure.
+            if (busy) {
+                draft = result.take(4000); repo.saveDraft(draft)
+                render(); conversationView?.setDraft(draft)
+                return
+            }
             render()
             sendFromHome(result.take(4000))
         }
@@ -746,14 +785,13 @@ class MainActivity : Activity() {
         if (hasFocus) scheduleVoiceEntry()
     }
     private fun voiceEntryCanStart(): Boolean = voiceEntryPending && resumed && page == "home" &&
-        hasWindowFocus() && repo.store.historyLoaded && !voicePending && !busy &&
+        hasWindowFocus() && !voicePending &&
         !getSystemService(android.app.KeyguardManager::class.java).isDeviceLocked
 
     private fun scheduleVoiceEntry() {
         if (!voiceEntryCanStart() || voiceEntryScheduled) return
         voiceEntryScheduled = true
-        // Let the system assistant finish yielding its foreground window and microphone.
-        handler.postDelayed(openVoiceEntry, 650)
+        handler.post(openVoiceEntry)
     }
     private fun setWakePreference(value: Boolean) {
         wakePreference = value

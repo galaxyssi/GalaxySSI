@@ -106,7 +106,12 @@
     <string name="awaiting_api">Waiting for the model. This request times out within 100 seconds.</string>
     <string name="home_menu">More actions</string>
     <string name="agent_brand">Superintelligent agent</string>
-    <string name="composer_hint">Type or hold to speak…</string>
+    <string name="composer_hint">Type or hold to speak</string>
+    <string name="paste_message">Paste</string>
+    <string name="clipboard_empty">No text in clipboard</string>
+    <string name="clipboard_current">Current clipboard</string>
+    <string name="clipboard_recent">Replies copied during this run</string>
+    <string name="clipboard_clear">Clear app copy history</string>
     <string name="home_empty_conversation">Send a message to start a conversation.</string>
     <string name="home_setup">Connect a model or computer to get started.</string>
     <string name="contacts">Contacts</string>
@@ -156,4 +161,9 @@
     <string name="samsung_confirm_settings">Enable voice confirmation service</string>
     <string name="samsung_confirm_enabled">Voice confirmation service enabled</string>
     <string name="samsung_confirm_description">Enable this accessibility service to confirm Samsung speech opened by GalaxySSI. When the microphone is off and recognized text stays unchanged for 1.5 seconds, it clicks Done once and sends the result to your chat. Back, screen-off, leaving the speech page, and detected button presses or scrolling cancel it. You can disable auto-confirm here. Text is inspected in memory, not stored or uploaded by this service.</string>
+    <string name="voice_touch_cancel">Touch anywhere to cancel auto-send</string>
+    <string name="voice_auto_send_cancelled">Auto-confirm cancelled. Tap Samsung Done to send.</string>
+    <string name="web_connection_retry">Connection interrupted · retrying this step once…</string>
+    <string name="api_timeout_error">This request timed out. Please retry.</string>
+    <string name="api_network_error">Network connection failed. Check the watch connection and retry.</string>
 </resources>
