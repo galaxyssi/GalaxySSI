@@ -19,6 +19,9 @@ class WatchStore(context: Context) {
         get() = prefs.readString("api_profile", "").takeIf { it.isNotBlank() }
             ?.let { runCatching { ApiProfile.fromJson(JSONObject(it)) }.getOrNull() }
         set(value) { if (value == null) prefs.remove("api_profile") else prefs.writeString("api_profile", value.json().toString()) }
+    var samsungAutoConfirm: Boolean
+        get() = prefs.readString("samsung_auto_confirm", "true").toBoolean()
+        set(value) = prefs.writeString("samsung_auto_confirm", value.toString())
     var voiceOnOpen: Boolean
         get() = prefs.readString("voice_on_open", "false").toBoolean()
         set(value) = prefs.writeString("voice_on_open", value.toString())

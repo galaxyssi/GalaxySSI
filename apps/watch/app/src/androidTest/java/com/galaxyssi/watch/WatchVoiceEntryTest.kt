@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.ComponentName
 import android.content.Intent
+import android.content.IntentFilter
+import android.speech.RecognizerIntent
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -29,7 +31,7 @@ class WatchVoiceEntryTest {
         val oldWake = repo.store.foregroundWake
         repo.store.voiceOnOpen = false
         repo.store.foregroundWake = false
-        val monitor = inst.addMonitor(WatchVoiceCaptureActivity::class.java.name,
+        val monitor = inst.addMonitor(IntentFilter(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
             Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)
         val alias = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(ComponentName(inst.targetContext, "com.galaxyssi.watch.VoiceEntry"))
@@ -42,11 +44,15 @@ class WatchVoiceEntryTest {
             assertEquals("Cancel/resume must not reopen speech input", expected, monitor.hits)
         }
         try {
-            activity = inst.startActivitySync(Intent(alias).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
-            awaitHits(1)
+            // startActivitySync tracks concrete activity names; launcher aliases can time out
+            // even when their target is visible. Deliver alias intents to the concrete target.
+            activity = inst.startActivitySync(Intent(inst.targetContext, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             fun deliver(intent: Intent) { inst.runOnMainSync {
                 MainActivity::class.java.getDeclaredMethod("onNewIntent", Intent::class.java).apply { isAccessible = true }.invoke(activity, intent)
             } }
+            deliver(alias)
+            awaitHits(1)
             deliver(alias)
             awaitHits(2)
             val ordinary = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClass(inst.targetContext, MainActivity::class.java)
