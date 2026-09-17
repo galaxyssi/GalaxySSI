@@ -60,7 +60,8 @@
     <string name="vibrate">完成时振动</string>
     <string name="auto_speech">自动播放回复（晓晓）</string>
     <string name="notifications">开启任务通知</string>
-    <string name="about">手表版 0.1 · Android 13+</string>
+    <string name="about">关于</string>
+    <string name="app_version">版本号：%1$s</string>
     <string name="monitor_channel">任务连接</string>
     <string name="result_channel">任务结果</string>
     <string name="monitor_title">GalaxySSI 正在后台运行</string>
