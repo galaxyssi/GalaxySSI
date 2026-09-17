@@ -1,4 +1,22 @@
 <resources>
+    <string name="location_permission">Allow location permission and try again. Approximate location is supported.</string>
+    <string name="location_disabled">Location is off. Enable it in the watch system settings.</string>
+    <string name="location_locating">Getting your current location…</string>
+    <string name="location_unavailable">A fresh location is unavailable. Try again in an open area.</string>
+    <string name="location_address_loading">Looking up roads and address…</string>
+    <string name="location_address_missing">Location found; road name is unavailable.</string>
+    <string name="location_near">You are near %1$s. The road and address are approximate.</string>
+    <string name="location_system">System location</string>
+    <string name="location_accuracy">Accuracy about %1$d m · %2$s</string>
+    <string name="location_map">Current location map</string>
+    <string name="location_map_open">Tap to enlarge map</string>
+    <string name="location_map_loading">Loading map…</string>
+    <string name="location_map_failed">Map unavailable; tap to enlarge and retry</string>
+    <string name="location_settings">Location and maps</string>
+    <string name="location_privacy">One location fix only when you ask where you are. Coordinates go to system geocoding and your configured address service; map area requests go to the map provider. Location is encrypted with the conversation. No continuous tracking. No Key needed by default.</string>
+    <string name="location_tile_source">Map tile base URL (HTTPS)</string>
+    <string name="location_address_source">Fallback address service (Photon by default; blank for system only)</string>
+    <string name="location_source_invalid">Enter an HTTPS service URL without credentials or query parameters.</string>
     <string name="app_name">GalaxySSI</string>
     <string name="say_something">Speak</string>
     <string name="recent">Recent conversations</string>

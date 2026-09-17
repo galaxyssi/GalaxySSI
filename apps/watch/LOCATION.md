@@ -1,0 +1,18 @@
+# On-demand location and maps
+
+Questions such as “我在哪”, “现在是什么地方”, “现在是什么道路”, and “where am I” run a local watch operation. They do not require a model API key. The first request asks for foreground coarse/fine location permission. GPS, system fused, and network providers are queried once; unsupported providers are skipped. The operation waits up to 25 seconds, checks monotonic sample age (maximum 30 seconds), stores accuracy and sample time without displaying them in the reply, and cancels its location requests on completion or Stop. No background location permission or continuous tracking is used.
+
+System geocoding is tried first with an eight-second deadline. Photon is the default keyless fallback, with a bounded response, two-second per-process request spacing and a small in-memory address cache. Results are explicitly described as nearby/approximate, never as proof of a road or house number. Address lookup failure retains the fix and map card; accuracy and timestamp remain in the stored metadata. The location metadata is stored in the existing encrypted conversation database and is not accepted from model-generated map URLs.
+
+The native map uses Web Mercator tiles and a position marker directly inside the conversation. One finger moves the map horizontally; vertical swipes scroll the conversation. Two fingers pan in both directions and pinch to zoom around their focal point. The inline map is 140 dp tall. There is no click-to-open screen or loading caption. Compact map attribution remains visible. Shared bounded bitmap caching refreshes all attached cards, and scrolling a card into view triggers its tile load. Only tiles needed by a visible viewport are requested. HTTP caching directives are respected, with a seven-day fallback if the service supplies none. Tile requests carry a stable application User-Agent. No area download, bulk prefetch or background map watch is provided.
+
+Settings → Location and maps can change the HTTPS tile base and reverse-geocoding endpoint without an app update. The default tile server is `https://tile.openstreetmap.org`; the default address endpoint is `https://photon.komoot.io/reverse`. An empty address endpoint disables the external fallback. Custom endpoints accept the Nominatim reverse JSON format. The public Nominatim server is not enabled by default: its aggregate application-wide quota cannot be enforced by independent watch clients.
+
+## Service conditions
+
+- OSM standard tiles: https://operations.osmfoundation.org/policies/tiles/
+- Photon public demo: https://github.com/komoot/photon#demo-server — reasonable low-volume use only, no availability guarantee; larger deployments should use their own service.
+- Public Nominatim: https://operations.osmfoundation.org/policies/nominatim/
+- OSM France tiles: https://www.openstreetmap.fr/usage/ — free, non-profit, public and moderate-volume use only. The development watch was configured to `https://a.tile.openstreetmap.fr/hot` because the standard OSM host timed out on its network. This is a device preference, not the release default. The renderer includes HOT/OSM France credits for that source. Commercial distribution must choose a suitable provider or self-host.
+
+Coordinates are sent to the system geocoder and, on fallback, the configured address service. Map providers receive the requested map areas. Requests are initiated by the user's location question or map interaction. Location records persist with the conversation; there is no separate movement log. Provider data and network reachability vary, especially for road-level detail. Do not treat a nearest indexed feature as a navigation-quality road match.

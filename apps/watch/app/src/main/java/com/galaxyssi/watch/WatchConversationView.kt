@@ -263,7 +263,10 @@ class WatchConversationView(
                 bubble(container, turn.prompt, true)
                 var replyView: TextView? = null
                 if (turn.reply.isNotBlank()) {
-                    replyView = bubble(container, turn.reply, false, readable = true, taskId = turn.id)
+                    val locationFix = WatchLocationFix.parse(turn.location)
+                    val displayReply = if (locationFix != null) turn.reply.substringBefore("\n\n") else turn.reply
+                    replyView = bubble(container, displayReply, false, readable = true, taskId = turn.id)
+                    WatchLocationFix.parse(turn.location)?.let { fix -> container.addView(WatchLocationMap.card(context, fix), LayoutParams(-1, -2)) }
                     WatchReplyImages.views(context, turn.reply).forEach {
                         container.addView(it, LayoutParams(-1, dp(110)).apply { bottomMargin = dp(6) })
                     }

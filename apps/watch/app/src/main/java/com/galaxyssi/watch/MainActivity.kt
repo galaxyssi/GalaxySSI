@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private var webCredentialValue = ""
     private var followUpId = ""
     private var draft = ""
+    private var pendingLocationPrompt: String? = null
     private var pairingText = ""
     private var pairingOffer: JSONObject? = null
     private var apiStyle = "openai"
@@ -97,6 +98,7 @@ class MainActivity : Activity() {
         followUpId = savedInstanceState?.getString("followup") ?: ""
         detailDesktop = savedInstanceState?.getString("desktop") ?: ""
         draft = savedInstanceState?.getString("draft") ?: repo.store.draft
+        pendingLocationPrompt = savedInstanceState?.getString("pending-location")
         history.addAll(savedInstanceState?.getStringArrayList("history") ?: emptyList())
         // Pairing offers are intentionally not saved into instance state or logs.
         if (page.startsWith("pair")) page = "devices"
@@ -188,6 +190,7 @@ class MainActivity : Activity() {
         out.putBoolean("voice_entry_pending", voiceEntryPending)
         out.putString("page", page); out.putString("task", selectedTask); out.putString("followup", followUpId)
         out.putString("desktop", detailDesktop); out.putString("draft", draft)
+        out.putString("pending-location", pendingLocationPrompt)
         out.putStringArrayList("history", ArrayList(history)); super.onSaveInstanceState(out)
     }
 
@@ -277,6 +280,7 @@ class MainActivity : Activity() {
             "pair-review" -> pairReview()
             "forget" -> confirmForget()
             "settings" -> settings()
+            "location-settings" -> locationSettings()
             "about" -> {
                 title(R.string.about)
                 label(getString(R.string.app_name), 18, Color.WHITE)
@@ -450,8 +454,15 @@ class MainActivity : Activity() {
     }
     private fun sendFromHome(prompt: String = draft) {
         if (busy || prompt.isBlank()) return
+        val locationRequest = WatchLocationIntent.matches(prompt)
+        if (locationRequest && !WatchLocation.permitted(this)) {
+            draft = prompt; repo.saveDraft(prompt); conversationView?.setDraft(prompt)
+            pendingLocationPrompt = prompt
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 44)
+            return
+        }
         val previous = repo.store.cachedTask(selectedTask)
-        if (previous == null && !repo.store.apiPreferred && (repo.store.selectedDesktop.isBlank() || repo.store.selectedAgent.isBlank())) {
+        if (!locationRequest && (previous == null || previous.desktopId == "watch-location") && !repo.store.apiPreferred && (repo.store.selectedDesktop.isBlank() || repo.store.selectedAgent.isBlank())) {
             navigate("devices"); return
         }
         busy = true; conversationView?.sending(true); updateScreenAwake()
@@ -605,6 +616,7 @@ class MainActivity : Activity() {
         button(R.string.cancel, true) { back() }
     }
     private fun settings() {
+        button(R.string.location_settings) { navigate("location-settings") }
         title(R.string.settings)
         toggle(R.string.background_enabled, repo.store.backgroundEnabled) {
             repo.store.backgroundEnabled = it
@@ -639,6 +651,27 @@ class MainActivity : Activity() {
         button(R.string.api_title) { openApiSettings() }
         label(getString(R.string.monitor_body), 12)
     }
+    private fun locationSettings() {
+        title(R.string.location_settings)
+        label(getString(R.string.location_privacy), 12)
+        val prefs = getSharedPreferences("watch-location", MODE_PRIVATE)
+        var tile = prefs.getString("tile_base", "https://tile.openstreetmap.org").orEmpty()
+        var address = prefs.getString("address_endpoint", "https://photon.komoot.io/reverse").orEmpty()
+        label(getString(R.string.location_tile_source), 12)
+        input(tile, R.string.location_tile_source, 500) { tile = it }
+        label(getString(R.string.location_address_source), 12)
+        input(address, R.string.location_address_source, 500) { address = it }
+        button(R.string.confirm) {
+            fun valid(value: String): Boolean = runCatching {
+                val uri = java.net.URI(value)
+                uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null
+            }.getOrDefault(false)
+            if (!valid(tile.trim()) || (address.isNotBlank() && !valid(address.trim()))) { toast(R.string.location_source_invalid); return@button }
+            prefs.edit().putString("tile_base", tile.trim().trimEnd('/')).putString("address_endpoint", address.trim()).apply()
+            back()
+        }
+    }
+
     private fun webSources() {
         title(R.string.web_sources_title)
         val sources = com.galaxyssi.chat.AgentWebIntelligenceEngineCatalog.entries
@@ -776,6 +809,11 @@ class MainActivity : Activity() {
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 44) {
+            val prompt = pendingLocationPrompt; pendingLocationPrompt = null
+            if (WatchLocation.permitted(this) && prompt != null) sendFromHome(prompt)
+            else toast(R.string.location_permission)
+        }
         if (requestCode == 43) {
             setWakePreference(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
             if (!wakePreference) toast(R.string.wake_permission_needed)
