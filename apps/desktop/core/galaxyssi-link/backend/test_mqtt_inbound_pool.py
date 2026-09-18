@@ -127,6 +127,12 @@ class InboundPoolTest(unittest.TestCase):
         self.assertEqual(1, pool.snapshot()["failed"])
         self.assertEqual(0, pool.snapshot()["retained_bytes"])
 
+    def test_handler_reported_failure_is_not_counted_as_success(self):
+        pool = self.pool(lambda _: False)
+        pool.submit("route", "invalid", 1)
+        self.assertTrue(pool.wait_idle())
+        self.assertEqual(1, pool.snapshot()["failed"])
+
     def test_cancel_pending_preserves_active_charge_and_blocks_new_work(self):
         pool, release, processed = self.hold(size=10, max_workers=1)
         pool.submit("a", "discard-a", 20)

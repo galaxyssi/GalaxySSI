@@ -107,7 +107,7 @@ class InboundRoutePool:
                 self._active.add(route)
             failed = False
             try:
-                self.process(item)
+                failed = self.process(item) is False
             except BaseException as error:
                 failed = True
                 log.error("MQTT inbound handler failed (%s)", type(error).__name__)

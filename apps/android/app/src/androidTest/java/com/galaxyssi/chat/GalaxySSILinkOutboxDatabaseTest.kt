@@ -102,6 +102,24 @@ class GalaxySSILinkOutboxDatabaseTest {
         } finally { context.deleteDatabase(name) }
     }
 
+    @Test fun repeatedPathWakePreservesReceiptWindowAndUnsentWorkIsImmediate() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_wake_backoff_${System.nanoTime()}.db"
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                val now = System.currentTimeMillis()
+                database.insert(item(1, now).put("attempts", 4).put("next_attempt_at", now + 300_000))
+                database.insert(item(2, now).put("next_attempt_at", now + 300_000))
+                repeat(20) { database.makePendingImmediatelyRetryable(now + it * 500) }
+                val early = database.retryCandidates(now + 10_000, true, 6, 9, 4)
+                assertEquals(1, early.length())
+                assertEquals("message-2", early.getJSONObject(0).getString("message_id"))
+                assertEquals(2, database.retryCandidates(now + 30_000, true, 6, 9, 4).length())
+                assertTrue(database.contains("message-1"))
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test
     fun indexedOutboxUpdatesOneRowWithoutRewritingTheQueue() {
         val context = ApplicationProvider.getApplicationContext<Context>()
