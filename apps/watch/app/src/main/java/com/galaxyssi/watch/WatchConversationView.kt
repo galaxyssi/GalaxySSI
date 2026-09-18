@@ -372,8 +372,11 @@ class WatchConversationView(
     }
     private fun bubble(parent: LinearLayout, value: String, outgoing: Boolean, readable: Boolean = false, taskId: String = ""): TextView {
         val row = LinearLayout(context).apply { gravity = if (outgoing) Gravity.END else Gravity.START }
+        var selectionMode: ActionMode? = null
         val message = (if (readable) ParagraphSelectingTextView(context).apply {
+            exclusiveParagraphDoubleTap = true
             setOnParagraphDoubleTapListener { selection ->
+                selectionMode?.finish(); selectionMode = null
                 onReadFrom?.invoke(taskId, selection.sourceText, selection.startOffset)
                     ?: onRead(selection.sourceText.substring(selection.startOffset))
             }
@@ -408,6 +411,7 @@ class WatchConversationView(
                 }
                 message.customSelectionActionModeCallback = object : ActionMode.Callback {
                     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                        selectionMode = mode
                         expandOnRelease = true
                         pauseSpeechFollow(); onStopReading(); return true
                     }
@@ -420,7 +424,7 @@ class WatchConversationView(
                         }
                         return false
                     }
-                    override fun onDestroyActionMode(mode: ActionMode) { expandOnRelease = false }
+                    override fun onDestroyActionMode(mode: ActionMode) { selectionMode = null; expandOnRelease = false }
                 }
             } else message.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         }
