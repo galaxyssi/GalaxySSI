@@ -21,14 +21,16 @@ data class WatchTask(
     val reply: String = "",
     val state: TaskState = TaskState.QUEUED,
     val sequence: Long = -1,
-    val progress: String = ""
+    val progress: String = "",
+    val localOperation: String = "",
+    val location: String = ""
 ) {
     val contactId: String get() = "$desktopId:$agentId"
     fun json(): JSONObject = JSONObject().put("id", id).put("desktop", desktopId)
         .put("route", routeId).put("agent", agentId).put("conversation", conversationId)
         .put("turn", turnId).put("message", messageId).put("source", sourceId)
         .put("prompt", prompt).put("reply", reply).put("state", state.name)
-        .put("sequence", sequence).put("progress", progress)
+        .put("sequence", sequence).put("progress", progress).put("local_operation", localOperation).put("location", location)
 
     fun request(language: String): JSONObject = JSONObject().put("type", "text")
         .put("message_id", messageId).put("content", prompt).put("contact_id", contactId)
@@ -75,7 +77,7 @@ data class WatchTask(
         fun fromJson(j: JSONObject) = WatchTask(j.getString("id"), j.getString("desktop"),
             j.getString("route"), j.getString("agent"), j.getString("conversation"),
             j.getString("turn"), j.getString("message"), j.getLong("source"), j.getString("prompt"),
-            j.optString("reply"), TaskState.valueOf(j.getString("state")), j.optLong("sequence", -1), j.optString("progress"))
+            j.optString("reply"), TaskState.valueOf(j.getString("state")), j.optLong("sequence", -1), j.optString("progress"), j.optString("local_operation"), j.optString("location"))
     }
 }
 

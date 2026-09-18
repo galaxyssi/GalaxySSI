@@ -54,7 +54,7 @@ class WatchRepository(private val context: Context) {
             runCatching {
                 // HTTP operations are never automatically replayed after process
                 // death, since a provider may have accepted and billed the request.
-                store.tasks().filter { it.desktopId == "api" && !it.state.terminal }.forEach {
+                store.tasks().filter { (it.desktopId == "api" || it.localOperation == "location") && !it.state.terminal }.forEach {
                     store.save(it.copy(state = TaskState.FAILED, progress = context.getString(R.string.api_interrupted)))
                 }
                 changed()
@@ -216,6 +216,8 @@ class WatchRepository(private val context: Context) {
     }
 
     fun send(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
+        if (WatchLocationIntent.matches(prompt)) { sendLocation(prompt, previous, done); return }
+        if (previous?.desktopId == "watch-location") { send(prompt, null, done); return }
         if (previous?.desktopId == "api" || (previous == null && store.apiPreferred)) {
             sendApi(prompt, previous, done); return
         }
@@ -245,6 +247,33 @@ class WatchRepository(private val context: Context) {
         }
         changed(); main.post { done(result) }
     } }
+
+    private fun sendLocation(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
+        apiState.execute {
+            val profile = store.apiProfile
+            val desktop = previous?.desktopId ?: if (store.apiPreferred && profile != null) "api" else "watch-location"
+            val task = WatchTask.create(desktop, previous?.routeId ?: profile?.id ?: "local",
+                previous?.agentId ?: profile?.model ?: "Location", prompt, previous?.conversationId ?: UUID.randomUUID().toString())
+                .copy(state = TaskState.RUNNING, localOperation = "location", progress = context.getString(R.string.location_locating))
+            val operation = WatchApiOperation()
+            apiCalls[task.id] = operation; store.save(task); saveDraft(""); main.post { done(task) }; changed()
+            apiWorker.execute {
+                val outcome = runCatching { WatchLocation(context).answer(operation) { value ->
+                    apiState.execute { store.task(task.id)?.takeIf { !it.state.terminal }?.let { store.save(it.copy(progress = value)); changed() } }
+                } }
+                apiState.execute {
+                    apiCalls.remove(task.id)
+                    val latest = store.task(task.id) ?: return@execute
+                    if (!latest.state.terminal) {
+                        val result = outcome.fold(
+                            onSuccess = { latest.copy(state = TaskState.COMPLETED, reply = it.reply, location = it.fix.json()) },
+                            onFailure = { latest.copy(state = TaskState.FAILED, progress = context.getString((it as? ApiFailure)?.reason ?: R.string.location_unavailable)) })
+                        store.save(result); changed(); main.post { WatchNotifications.completed(context, result) }
+                    }
+                }
+            }
+        }
+    }
 
     private fun sendApi(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
         apiState.execute {
@@ -335,11 +364,11 @@ class WatchRepository(private val context: Context) {
         runCatching { tick() }; changed()
     } }
 
-    fun cancel(task: WatchTask) { (if (task.desktopId == "api") apiState else worker).execute {
+    fun cancel(task: WatchTask) { (if (task.desktopId == "api" || task.localOperation == "location") apiState else worker).execute {
         runCatching {
             val current = store.task(task.id) ?: return@runCatching
             if (current.state.terminal || current.state == TaskState.STOP_REQUESTED) return@runCatching
-            if (current.desktopId == "api") {
+            if (current.desktopId == "api" || current.localOperation == "location") {
                 apiCalls.remove(current.id)?.cancel()
                 store.save(current.copy(state = TaskState.CANCELLED, progress = context.getString(R.string.api_cancelled)))
                 return@runCatching
