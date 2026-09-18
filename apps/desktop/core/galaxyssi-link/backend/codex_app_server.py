@@ -40,6 +40,7 @@ from web_evidence_pack import (
     validate_answer_citations,
     verify_evidence_pack,
 )
+from research_quality import assess_answer, quality_repair_prompt, research_quality_prompt, research_stage
 
 
 log = logging.getLogger("galaxyssi.codex")
@@ -71,7 +72,7 @@ GalaxySSI execution policy:
 - When the user requests a returned file, create it inside the task workspace `outputs` directory and verify that it exists before the final response.
 - For requested image annotations, use local image tools or a short script, preserve readable resolution, and save the finished image under `outputs`.
 - If the requested media-editing capability is unavailable, say so briefly and still return every useful textual finding.
-""".strip()
+""".strip() + "\n\n" + research_quality_prompt()
 CODEX_STALL_TIMEOUT_SECONDS = max(30, int(os.environ.get("GALAXYSSI_CODEX_STALL_TIMEOUT_SECONDS", "180")))
 MAX_LOADED_CODEX_THREADS = max(
     2,
@@ -176,6 +177,8 @@ class CodexRun:
     reasoning_effort: str = "medium"
     web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
     citation_repair_attempted: bool = False
+    research_observed: bool = False
+    research_quality: dict[str, Any] = field(default_factory=dict)
     generated_images: dict[str, dict] = field(default_factory=dict)
     generated_image_errors: dict[str, str] = field(default_factory=dict)
     host_config_guard: object | None = field(default=None, repr=False)
@@ -563,6 +566,10 @@ class CodexAppServer:
                     "The original Codex turn is no longer available; the task was not replayed"
                 )
             run.final_text = self._latest_agent_message(turn)
+            run.research_observed = any(isinstance(item, Mapping) and item.get("type") == "webSearch"
+                                        for item in turn.get("items", []))
+            if run.execution_harness is not None:
+                run.citation_repair_attempted = bool(run.execution_harness.checkpoint.verification.get("citation_repair"))
             turn_status = str(turn.get("status") or "")
             if turn_status == "completed":
                 image_error = finalize_run_images(run, turn, self.env.get("CODEX_HOME") or Path.home() / ".codex")
@@ -580,6 +587,10 @@ class CodexAppServer:
                     raise RuntimeError(
                         "The original Codex turn completed without a final response"
                     )
+                if self._apply_web_citation_gate(task_id, run, {
+                    "thread_id": clean_thread_id, "turn_id": clean_turn_id,
+                }, clean_turn_id):
+                    return run
                 if run.execution_harness is not None:
                     run.execution_harness.account_usage(
                         output_tokens=estimate_text_tokens(run.final_text),
@@ -607,6 +618,9 @@ class CodexAppServer:
                     "status": "completed",
                     "current_step": "",
                     "result": run.final_text,
+                    "research_quality": run.research_quality,
+                    "research": research_stage("synthesis_completed", outcome=run.research_quality.get("outcome", "produced"))
+                        if run.research_observed else {},
                 })
                 return run
             if turn_status in {"failed", "interrupted"}:
@@ -921,9 +935,10 @@ class CodexAppServer:
         if "fail" not in raw_status and raw_status != "declined":
             return
         item_type = str(item.get("type") or "tool")
-        if item_type == "dynamicToolCall":
+        if item_type in {"dynamicToolCall", "webSearch"}:
             # The model receives the structured failure result and can choose a
-            # fallback in the same turn. Steering an additional replan here
+            # fallback in the same turn, including a native failed source.
+            # Steering an additional replan here
             # duplicates context and delays the model's native recovery path.
             return
         detail = self._item_detail(item, item_type) or raw_status or item_type
@@ -1704,6 +1719,7 @@ class CodexAppServer:
                 if (
                     run.agent_message_phases.get(item_id) != "commentary"
                     and not run.web_evidence_packs
+                    and not run.research_observed
                 ):
                     self._emit_output_delta(task_id, run, common)
         elif method == "item/reasoning/summaryTextDelta":
@@ -1716,6 +1732,9 @@ class CodexAppServer:
                 )[:MAX_VISIBLE_PROGRESS_TEXT]
         elif method == "item/started":
             item = params.get("item") or {}
+            if str(item.get("type") or "") == "webSearch":
+                run.research_observed = True
+                self._checkpoint_progress(run, "act", research=research_stage("retrieving"))
             if is_generated_image(item) and str(item.get("id") or "missing") not in run.generated_images:
                 run.generated_image_errors[str(item.get("id") or "missing")] = "image_generation_pending"
             if str(item.get("type") or "") == "agentMessage":
@@ -1731,6 +1750,9 @@ class CodexAppServer:
             item = params.get("item") or {}
             self._record_failed_item(run, item)
             item_type = str(item.get("type") or "")
+            if item_type == "webSearch":
+                run.research_observed = True
+                self._checkpoint_progress(run, "observe", research=research_stage("retrieval_observed"))
             item_id = str(item.get("id") or params.get("itemId") or "")
             if is_generated_image(item):
                 capture_run_image(run, item, self.env.get("CODEX_HOME") or Path.home() / ".codex")
@@ -1754,7 +1776,7 @@ class CodexAppServer:
                         )
                     else:
                         run.final_text = text
-                        if not run.web_evidence_packs:
+                        if not run.web_evidence_packs and not run.research_observed:
                             self._emit_output_delta(
                                 task_id,
                                 run,
@@ -1867,6 +1889,10 @@ class CodexAppServer:
                 "status": mapped,
                 "current_step": "",
                 "result": run.final_text,
+                "research_quality": run.research_quality,
+                "research": research_stage("synthesis_completed", outcome=(
+                    run.research_quality.get("outcome", "produced")
+                )) if mapped == "completed" and (run.research_observed or run.web_evidence_packs) else {},
             }
             if turn_error:
                 event["error"] = turn_error
@@ -1997,6 +2023,7 @@ class CodexAppServer:
                 run = self._runs.get(task_id)
                 if run is not None and not run.finished:
                     run.web_evidence_packs.append(dict(evidence_pack))
+                    run.research_observed = True
         self._write_server_response(message.get("id"), result)
         direct_fetch = tool_name == CODEX_DYNAMIC_FETCH_TOOL
         direct_urls = arguments.get("urls") if isinstance(arguments, Mapping) else []
@@ -2029,16 +2056,20 @@ class CodexAppServer:
         common: Mapping[str, Any],
         completed_turn_id: str,
     ) -> bool:
-        """Start one repair turn for invalid GalaxySSI Evidence Pack citations."""
-        if not run.web_evidence_packs:
-            return False
+        """Review the native result once; never run a second host search loop."""
+        run.research_quality = assess_answer(run.final_text,
+            research_observed=run.research_observed or bool(run.web_evidence_packs))
         validation = validate_answer_citations(
             run.final_text,
             packs=run.web_evidence_packs,
         )
-        if not validation.requires_repair:
+        quality_failed = bool(run.research_quality["risks"])
+        self._checkpoint_progress(run, "verify", research=research_stage("quality_checked",
+            quality=run.research_quality, citation_integrity=validation.status))
+        if not validation.requires_repair and not quality_failed:
             return False
-        if validation.verified_evidence_item_count <= 0 or run.citation_repair_attempted:
+        if (validation.requires_repair and validation.verified_evidence_item_count <= 0) or run.citation_repair_attempted:
+            run.research_quality["outcome"] = "partial"
             run.final_text = self._verified_web_evidence_fallback(run)
             return False
 
@@ -2053,7 +2084,10 @@ class CodexAppServer:
             )
             for index, pack in enumerate(run.web_evidence_packs, start=1)
         ]
-        repair_prompt = citation_repair_prompt(validation, encoded_results)
+        repair_prompt = "\n\n".join(part for part in (
+            citation_repair_prompt(validation, encoded_results) if validation.requires_repair else "",
+            quality_repair_prompt(run.research_quality) if quality_failed else "",
+        ) if part)
         run.citation_repair_attempted = True
         run.final_text = ""
         run.last_agent_text = ""
@@ -2131,6 +2165,7 @@ class CodexAppServer:
         common: Mapping[str, Any],
         completed_turn_id: str,
     ) -> None:
+        run.research_quality["outcome"] = "partial"
         run.final_text = self._verified_web_evidence_fallback(run)
         mapped = "completed"
         if run.execution_harness is not None:
@@ -2168,10 +2203,15 @@ class CodexAppServer:
             "status": mapped,
             "current_step": "",
             "result": run.final_text,
+            "research_quality": run.research_quality,
+            "research": research_stage("synthesis_completed", outcome="partial") if mapped == "completed" else {},
         })
 
     @staticmethod
     def _verified_web_evidence_fallback(run: CodexRun) -> str:
+        if run.research_quality.get("risks") and not run.web_evidence_packs:
+            return ("\u672c\u6b21\u7814\u7a76\u5c1a\u672a\u5f62\u6210\u8bc1\u636e\u5145\u5206\u7684\u7ed3\u8bba\u3002\u8fd9\u4e0d\u4ee3\u8868\u76f8\u5173\u4e8b\u5b9e\u6216\u8bb0\u5f55\u4e0d\u5b58\u5728\u3002"
+                    if run.prefers_chinese else "This research did not establish a sufficiently supported conclusion. This does not prove that the facts or records do not exist.")
         heading = (
             "引用复核未通过，以下仅返回已经过完整性校验的来源证据："
             if run.prefers_chinese else
@@ -2362,7 +2402,9 @@ class CodexAppServer:
             "event_title": cls._item_label(item),
             "event_status": status,
             "event_detail": detail,
-            "event_metadata": {"provider": "codex", "item_type": item_type},
+            "event_metadata": {"provider": "codex", "item_type": item_type,
+                **({"research": research_stage("retrieval_observed" if status == "completed" else "retrieving")}
+                   if item_type == "webSearch" else {})},
         }
 
     @staticmethod

@@ -31,7 +31,7 @@ const releaseLock = acquireGalaxySSILock(bundlePython ? "package:win:python" : "
 const sidecarDir = path.join(backendSrc, "signal_sidecar");
 const sidecarRuntimeName = "galaxyssi-link-sidecar";
 const sidecarRuntimeDir = path.join(sidecarDir, "build", "install", sidecarRuntimeName);
-const backendDataEntries = ["web_source_sites.tsv"];
+const backendDataEntries = ["web_source_sites.tsv", "research_contract"];
 
 process.on("exit", releaseLock);
 

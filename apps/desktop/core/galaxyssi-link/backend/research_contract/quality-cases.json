@@ -1,0 +1,13 @@
+[
+  {"id":"missing_is_not_absent","answer":"没有权威来源记载两人存在合作关系。[资料](https://example.org/bio)","research":true,"risks":["unbounded_absence_of_evidence"]},
+  {"id":"english_absence","answer":"No authoritative records exist for their collaboration.","research":true,"risks":["unbounded_absence_of_evidence"]},
+  {"id":"qualified_unknown","answer":"本次检索尚未确认两人的导师关系，不能仅凭共同署名推断。","research":true,"risks":[]},
+  {"id":"coauthorship_only","answer":"两人是该论文的共同作者。[论文](https://example.org/paper) 共同署名不能证明亲属或导师关系。","research":true,"risks":[]},
+  {"id":"speculation","answer":"若确有交集，最可能的形式是前辈与后学。","research":true,"risks":["speculative_relationship"]},
+  {"id":"english_speculation","answer":"They are most likely mentor and student.","research":true,"risks":["speculative_relationship"]},
+  {"id":"code_example","answer":"```text\nNo authoritative records exist.\n```\nThis is an invalid inference.","research":true,"risks":[]},
+  {"id":"quoted_bad_answer","answer":"> 没有权威来源记载两人存在合作关系。\n这句话不严谨。","research":true,"risks":[]},
+  {"id":"ordinary_chat","answer":"好的。","research":false,"risks":[]},
+  {"id":"partial_source_failure","answer":"一个来源未能打开。已核对的官方记录支持A；B暂未确认。","research":true,"risks":[]},
+  {"id":"unprovable_but_structurally_clean","answer":"They are siblings. [paper](https://example.org/paper)","research":true,"risks":[]}
+]

@@ -132,11 +132,12 @@ class ResponsePolicyTest(unittest.TestCase):
             "Conversation context:\nUser: old request\nAssistant: old result\n\n"
             "Current user request:\nRead report.xlsx"
         )
-        self.assertEqual(
-            "GalaxySSI turn policy: Turn language: English (en-US). Respond in English unless the user explicitly requests another language.\n\n"
-            "Read report.xlsx",
-            compact_codex_turn_prompt(prompt, "en-US"),
-        )
+        result = compact_codex_turn_prompt(prompt, "en-US")
+        self.assertTrue(result.startswith("GalaxySSI turn policy: Turn language: English (en-US)."))
+        self.assertTrue(result.endswith("Read report.xlsx"))
+        self.assertIn("GalaxySSI research quality (galaxyssi.research-quality/1.0)", result)
+        self.assertNotIn("old request", result)
+        self.assertNotIn("old result", result)
 
     def test_configured_language_is_not_inferred_from_conversation_history(self):
         prompt = (

@@ -51,7 +51,7 @@ internal class CloudWebToolLoopProgress {
         if (outputsByCall.containsKey(key)) return false
         outputsByCall[key] = output
         val errorCode = runCatching { JSONObject(output).optString("error_code") }.getOrDefault("")
-        if (errorCode in setOf("web_source_timeout", "renderer_unavailable")) {
+        if (errorCode in setOf("web_source_timeout", "web_tool_timeout", "renderer_unavailable")) {
             resourceKey(toolName, arguments)?.let { unavailableResources[it] = output }
         }
         if (canReuseBody(toolName, arguments)) {
@@ -80,6 +80,18 @@ internal class CloudWebToolLoopProgress {
     }
 
     fun requestRepair(kind: String): Boolean = requestedRepairs.add(kind)
+
+    fun requestDeadlineSynthesis(hasEvidence: Boolean): Boolean =
+        hasEvidence && requestFinalization()
+
+    fun requestEmptySynthesisRepair(answer: String, hasEvidence: Boolean): Boolean =
+        hasEvidence && answer.isBlank() && requestRepair("empty_synthesis")
+
+    fun requestSynthesisCitationRepair(): Boolean {
+        if (!requestRepair("stream_citations")) return false
+        requestFinalization()
+        return true
+    }
 
     fun requestFinalization(): Boolean {
         if (finalizationRequested) return false

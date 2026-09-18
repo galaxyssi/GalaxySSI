@@ -661,6 +661,9 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     )
     if not structured_connector_response and "GalaxySSI final response self-check:" not in current_prompt:
         current_prompt = f"{current_prompt}\n\n{self_check_contract}"
+    from research_quality import research_quality_prompt, assess_answer, research_stage
+    if not structured_connector_response and "GalaxySSI research quality (" not in current_prompt:
+        current_prompt = f"{current_prompt}\n\n{research_quality_prompt()}"
     failure = ""
     failed_self_check = None
 
@@ -918,16 +921,18 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 output_artifacts=output_artifacts,
             )
             if verification_passed and failed_self_check.accepted:
+                quality_report = assess_answer(reply)
                 harness.progress(
                     "verify",
                     response_nonempty=True,
+                    research=research_stage("quality_checked", quality=quality_report),
                     artifacts=(
                         artifact_finalization.verification
                         if artifact_finalization is not None else {}
                     ),
                 )
                 add_phase("verify", "Agent result verified")
-                harness.progress("finalize")
+                harness.progress("finalize", research=research_stage("synthesis_completed", quality=quality_report))
                 if collaboration_context.cursors:
                     agent_collaboration_bus().acknowledge_context(
                         agent_id=collaboration_actor_id,

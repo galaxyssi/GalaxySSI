@@ -96,9 +96,9 @@ object CloudModelClient {
         val style = contact.optString("cloud_api_style", "openai")
         val customSystemPrompt = systemPromptOverride.trim()
         val effectiveSystemPrompt = (if (customSystemPrompt.isNotBlank()) {
-            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS)
+            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) + "\n" + ResearchQualityStandard.get(context).prompt
         } else {
-            defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+            defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt(context)
         }) + "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
@@ -532,7 +532,7 @@ object CloudModelClient {
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
         val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt() +
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
                 "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(
             context,
@@ -743,7 +743,7 @@ object CloudModelClient {
                 .ifBlank { json.optString("output_text") }
                 .let(CloudWebGrounding::stripInternalToolProtocol)
         }
-        if (reply.isBlank() || CloudWebGrounding.citationValidation(reply, evidenceResults).requiresRepair) {
+        if (reply.isBlank() || CloudWebGrounding.citationRepairPrompt(reply, evidenceResults) != null) {
             reply = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(imageSession.appendTo(reply), usage.inputTokens, usage.outputTokens, usage.costMicros)
@@ -771,7 +771,7 @@ object CloudModelClient {
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
         val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt() +
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
                 "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
@@ -969,7 +969,7 @@ object CloudModelClient {
             )
             if (repaired.isNotBlank()) finalText = repaired
         }
-        if (finalText.isBlank() || CloudWebGrounding.citationValidation(finalText, evidenceResults).requiresRepair) {
+        if (finalText.isBlank() || CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults) != null) {
             finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(
@@ -1005,7 +1005,7 @@ object CloudModelClient {
         val separator = if (endpoint.contains("?")) "&" else "?"
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
         val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt() +
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
                 "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
@@ -1230,7 +1230,7 @@ object CloudModelClient {
             val repaired = CloudWebGrounding.stripInternalToolProtocol(textBlocks(parts))
             if (repaired.isNotBlank()) finalText = repaired
         }
-        if (finalText.isBlank() || CloudWebGrounding.citationValidation(finalText, evidenceResults).requiresRepair) {
+        if (finalText.isBlank() || CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults) != null) {
             finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(

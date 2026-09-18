@@ -141,11 +141,7 @@ internal object AgentWebEvidenceVerification {
             evidenceItems += items.size
             items.forEach { item ->
                 val url = canonical(item["url"])
-                val hash = item["content_sha256"]?.toString().orEmpty().lowercase(Locale.ROOT)
-                val citationId = item["citation_id"]?.toString().orEmpty().lowercase(Locale.ROOT)
-                if (isWebUrl(url) && SHA256.matches(hash) &&
-                    citationId == AgentWebIntelligenceText.citationId(url, hash)
-                ) {
+                if (verifiedCitationUrl(item) != null) {
                     allowed += url
                     objectList(item["images"]).forEach { image ->
                         listOf(image["url"], image["thumbnail_url"], image["original_url"]).map(::canonical)
@@ -191,19 +187,28 @@ internal object AgentWebEvidenceVerification {
     ): String {
         val allowed = encodedToolResults.mapNotNull { (_, encoded) -> decodePack(encoded) }
             .flatMap { pack -> objectList(pack["items"]) }
-            .mapNotNull { item ->
-                canonical(item["url"]).takeIf(String::isNotBlank)
-            }
+            .mapNotNull(::verifiedCitationUrl)
             .distinct()
-            .take(12)
+            .sortedByDescending { it in validation.citedUrls }
         return buildString {
             append("Your draft did not pass GalaxySSI citation verification (status=")
             append(validation.status).append("). Rewrite the complete user-facing answer once. ")
             append("Keep useful conclusions, compare material disagreement between independent retrieved bodies, ")
             append("state uncertainty, and place Markdown source links next to supported claims. ")
+            append("Use [source title](https://...) links, not bare URLs or source numbers without link definitions. ")
             append("Cite only these verified Evidence Pack URLs; do not invent or substitute links:\n")
-            allowed.forEach { append("- ").append(it).append('\n') }
-        }.take(8_000)
+            // Keep complete URLs and prioritize already-valid citations in the draft.
+            allowed.forEach { if (length + it.length + 3 <= 8_000) append("- ").append(it).append('\n') }
+            if (allowed.isEmpty()) append("No verified citation URLs are available. State that evidence is insufficient; do not invent facts.\n")
+        }
+    }
+
+    private fun verifiedCitationUrl(item: AgentNativeJsonObject): String? {
+        val url = canonical(item["url"])
+        val hash = item["content_sha256"]?.toString().orEmpty().lowercase(Locale.ROOT)
+        val citationId = item["citation_id"]?.toString().orEmpty().lowercase(Locale.ROOT)
+        return url.takeIf { isWebUrl(it) && SHA256.matches(hash) &&
+            citationId == AgentWebIntelligenceText.citationId(it, hash) }
     }
 
     private fun conflictReview(items: List<AgentNativeJsonObject>): AgentNativeJsonObject {

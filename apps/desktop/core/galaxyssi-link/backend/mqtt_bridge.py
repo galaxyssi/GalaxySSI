@@ -39,6 +39,7 @@ from agent_task_manager import (
     agent_task_manager,
 )
 from codex_app_server import CodexAppServer, CodexConversationBusyError
+from research_quality import standard as research_quality_standard
 import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
 import link_delivery as link_delivery_storage
@@ -5818,6 +5819,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 return
             nonlocal result_published, recovery_attempts
             event_status = str(event.get("status") or "running")
+            research = event.get("research")
+            if isinstance(research, dict) and research.get("contract") == research_quality_standard()["version"]:
+                add_task_trace("research_" + str(research.get("stage") or "unknown"), json.dumps({
+                    "research": research, "quality": event.get("research_quality") or {},
+                }, ensure_ascii=False, separators=(",", ":")), meaningful_progress=False)
             approval_request = event.get("approval_request")
             if event_status == "waiting_approval" and isinstance(approval_request, dict):
                 stored_decision = None
