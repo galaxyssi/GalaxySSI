@@ -31,7 +31,8 @@ internal enum class AgentLongTaskRecoveryMode {
     INITIAL_PLANNING,
     REPLANNING,
     INTERRUPTED_EXECUTION,
-    LIVENESS_ASSESSMENT
+    LIVENESS_ASSESSMENT,
+    REMOTE_SILENCE
 }
 
 internal data class AgentLongTaskRecoveryDecision(
@@ -182,11 +183,20 @@ class AgentLongTaskRecoveryWorker(
                 Result.success()
             }
         }
-        val decision = AgentLongTaskRecoveryPolicy.decide(
-            workspace,
-            sessionStore.load(),
-            activeWorkspaceIds
-        ) ?: return Result.success()
+        val savedSession = sessionStore.load()
+        val savedMetadata = savedSession?.lastActionResult?.metadata.orEmpty()
+        val savedSource = savedMetadata["source_message_id"]?.toLongOrNull() ?: 0L
+        val remoteExpired = savedSession?.phase == AgentPhase.WAITING_RESPONSE &&
+            savedMetadata["resource_location"] == "desktop" && !workspace.status.isTerminal &&
+            AndroidAgentRemoteSilence.expired(applicationContext, savedSource, savedMetadata)
+        if (!remoteExpired && savedSession?.phase == AgentPhase.WAITING_RESPONSE &&
+            savedMetadata["resource_location"] == "desktop") {
+            AndroidAgentRecoveryWake.request(applicationContext)
+            return Result.success()
+        }
+        val decision = if (remoteExpired) AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.REMOTE_SILENCE,
+            "Desktop did not answer repeated task status probes") else AgentLongTaskRecoveryPolicy.decide(
+            workspace, savedSession, activeWorkspaceIds) ?: return Result.success()
         runCatching { setForeground(foregroundInfo(workspaceId)) }
             .onFailure { Log.w(LOG_TAG, "Could not promote recovery worker to foreground", it) }
         val claim = AgentLongTaskRecoveryClaims.tryAcquire(workspaceId) ?: return Result.retry()
@@ -208,14 +218,35 @@ class AgentLongTaskRecoveryWorker(
                         AgentRecoveryTranscript.state(saved)
                     } else {
                         val runtime = MobileNativeAgent(context, sessionStore = sessionStore)
+                        if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
+                            AgentTranscriptStore(context).conversation(workspace.conversationId)?.let { conversation ->
+                                runtime.activeConversationContext = AgentConversationContext(workspace.conversationId,
+                                    "", emptyList(), conversation.privateMode, trackingPaused = conversation.trackingPaused)
+                                runtime.activeConversationTurnId = workspace.taskId
+                            }
+                        }
                         runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
                             taskContext.persistExecutionLoop(event)
                         })
                         // The runtime owns dispatch and permission waits; recovery never grants consent.
-                        val recovered = if (decision.mode == AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT) {
+                        val recovered = if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
+                            val current = runtime.pendingConnectorMetadata(savedSource)
+                            if (AndroidAgentRemoteSilence.expired(context, savedSource, current)) {
+                                runtime.handleConnectorTimeout(savedSource, AgentConnectorTimeoutStage.NOT_ACCEPTED,
+                                    recoveryExhausted = true) ?: runtime.snapshot()
+                            } else runtime.snapshot()
+                        } else if (decision.mode == AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT) {
                             runtime.assessLivenessWithModel(decision.reason)
                         } else runtime.resumeCurrentTask()
                         runtime.persistSession()
+                        val next = recovered.lastActionResult?.metadata.orEmpty()
+                        val nextSource = next["source_message_id"]?.toLongOrNull() ?: 0L
+                        if (recovered.phase == AgentPhase.WAITING_RESPONSE && nextSource > 0 && nextSource != savedSource) {
+                            AgentPendingDeliveryStore.put(context, AgentPendingDelivery(nextSource,
+                                workspace.conversationId, workspaceId, next["remote_task_id"].orEmpty().ifBlank { workspaceId },
+                                next["contact_id"].orEmpty()))
+                            AndroidAgentRecoveryWake.request(context)
+                        }
                         recovered
                     }
                     try {

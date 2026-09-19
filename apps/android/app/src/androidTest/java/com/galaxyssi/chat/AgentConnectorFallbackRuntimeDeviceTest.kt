@@ -82,10 +82,16 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         assertEquals(AgentPhase.FAILED, exercise(true, true, unconfirmedDelivery = true).phase)
     }
 
+    @Test fun repeatedSilenceSwitchesReadOnlyQuestionToAnotherProvider() {
+        val state = exercise(true, true, allowTerminalFallback = true, silenceFallback = true)
+        assertEquals(AgentPhase.WAITING_RESPONSE, state.phase)
+        assertEquals("test-hermes", state.lastActionResult?.metadata?.get("contact_id"))
+    }
+
     private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false,
         cancelCloud: Boolean = false, terminalStatus: String = "", observedGeneration: Long = 1,
         observedSequence: Long = -1, allowTerminalFallback: Boolean = false,
-        deliveryFailureCode: String = "", unconfirmedDelivery: Boolean = false): AgentUiState {
+        deliveryFailureCode: String = "", unconfirmedDelivery: Boolean = false, silenceFallback: Boolean = false): AgentUiState {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
         val session = InMemoryAgentSessionStore()
@@ -118,7 +124,7 @@ class AgentConnectorFallbackRuntimeDeviceTest {
                     assertEquals(expectedTarget, action.parameters["connector_id"])
                     assertEquals("desktop-agent", action.parameters["connector_adapter_type"])
                     assertEquals(expectedTarget, session.load()?.currentPlan?.actions?.single()?.parameters?.get("connector_id"))
-                    if (dispatches > 1 && allowTerminalFallback) {
+                    if (dispatches > 1 && allowTerminalFallback && !silenceFallback) {
                         assertEquals("actual remote outcome", session.load()?.lastActionResult?.message)
                         assertEquals(terminalStatus, session.load()?.lastActionResult?.metadata?.get("remote_task_status"))
                     }
@@ -208,6 +214,19 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         )))
         assertEquals(1, dispatches)
         assertEquals(state.phase, session.load()?.phase)
+        if (silenceFallback) {
+            val isolatedSource = Long.MAX_VALUE - 72
+            agent.currentGoal = "What is two plus two?"
+            agent.lastActionResult = agent.lastActionResult!!.copy(metadata = agent.lastActionResult!!.metadata + mapOf(
+                "source_message_id" to isolatedSource.toString(), "resource_location" to "desktop",
+                "manual_target_locked" to "true", "resource_started_at" to "1000"))
+            assertTrue(agent.startExecutionLoop("silence-test-turn"))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.WAITING_RESPONSE, "Test wait", action.id))
+            val next = requireNotNull(agent.handleConnectorTimeout(isolatedSource, AgentConnectorTimeoutStage.NOT_ACCEPTED, true))
+            assertEquals(2, dispatches)
+            return next
+        }
         if (unconfirmedDelivery) {
             assertNull(agent.handleConnectorDeliveryFailure(903, "Other turn", allowFallback = false))
             assertEquals(AgentPhase.WAITING_RESPONSE, agent.snapshot().phase)

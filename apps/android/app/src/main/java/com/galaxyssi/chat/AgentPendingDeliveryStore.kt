@@ -28,8 +28,17 @@ internal object AgentPendingDeliveryStore {
     fun recoverySuccessorForResponse(context: Context, sourceMessageId: Long, conversationId: String, turnId: String): Long? =
         find(context, sourceMessageId)?.takeIf { AgentPendingDeliveryCodec.sameTurn(it, conversationId, turnId) }
             ?.recoverySuccessorSourceMessageId?.takeIf { it > 0 }
-    fun completeResponse(context: Context, delivery: AgentPendingDelivery?) = journal(context).completeResponse(delivery)
-    fun remove(context: Context, sourceMessageId: Long) = journal(context).remove(sourceMessageId)
+    fun completeResponse(context: Context, delivery: AgentPendingDelivery?) {
+        journal(context).completeResponse(delivery)
+        delivery?.let {
+            AndroidAgentRemoteSilence.retire(context, it.sourceMessageId)
+            AndroidAgentRemoteSilence.retire(context, it.recoverySuccessorSourceMessageId)
+        }
+    }
+    fun remove(context: Context, sourceMessageId: Long) {
+        journal(context).remove(sourceMessageId)
+        AndroidAgentRemoteSilence.retire(context, sourceMessageId)
+    }
     fun isSuperseded(context: Context, sourceMessageId: Long, conversationId: String, turnId: String): Boolean =
         journal(context).isSuperseded(sourceMessageId, conversationId, turnId)
     internal fun page(context: Context, beforeSource: Long? = null): AgentPendingDeliveryPage = journal(context).page(beforeSource)

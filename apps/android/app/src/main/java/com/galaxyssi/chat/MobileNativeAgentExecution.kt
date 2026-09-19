@@ -1580,7 +1580,7 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
     val action = plan.actions.firstOrNull { it.id == failedResult.actionId } ?: return null
     val manuallyLocked = failedResult.metadata["manual_target_locked"] == "true" ||
         action.parameters["manual_target_locked"] == "true"
-    if (manuallyLocked) return null
+    if (manuallyLocked && failedResult.metadata["allow_unavailable_target_fallback"] != "true") return null
     val failedResourceId = failedResult.metadata["resource_id"].orEmpty()
     val attemptedIds = AgentConnectorFallbackAction.attempted(failedResult.metadata)
     val connectorSnapshot = connectorRegistry.planningSnapshot()
@@ -1593,6 +1593,7 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         targets = connectorSnapshot.targets,
         decision = currentRouting
     )?.decision?.orderedTargetIds.orEmpty()
+    val silenceFallback = failedResult.metadata["allow_unavailable_target_fallback"] == "true"
     val fallbackIds = AgentConnectorFallbackTrail.mergeAvailable(
         rememberedResourceIds = AgentConnectorFallbackTrail.parse(
             failedResult.metadata["remaining_fallback_ids"].orEmpty()
@@ -1602,14 +1603,16 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         attemptedResourceIds = attemptedIds
     )
         .filter { connectorId ->
-            AgentConnectorFailureScope.permitsFallback(failedResult.metadata, connectorFailureDomain(connectorId))
+            (!silenceFallback || connectorId in currentFallbackIds) &&
+                AgentConnectorFailureScope.permitsFallback(failedResult.metadata, connectorFailureDomain(connectorId))
         }
     val selection = AgentConnectorFallbackTrail.selectNext(
         failedResourceId = failedResourceId,
         remainingResourceIds = fallbackIds,
         deferredRetryIds = AgentConnectorFallbackTrail.parse(
             failedResult.metadata["deferred_retry_ids"].orEmpty()
-        ),
+        ).filter { connectorId -> !silenceFallback || (connectorId in currentFallbackIds &&
+            AgentConnectorFailureScope.permitsFallback(failedResult.metadata, connectorFailureDomain(connectorId))) },
         retriedResourceIds = AgentConnectorFallbackTrail.parse(
             failedResult.metadata["retried_resource_ids"].orEmpty()
         ).toSet(),
@@ -1617,7 +1620,8 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         attemptedResourceIds = attemptedIds
     ) ?: return null
     val retryAction = AgentConnectorFallbackAction.prepare(
-        action,
+        if (failedResult.metadata["allow_unavailable_target_fallback"] == "true")
+            action.copy(parameters = action.parameters - "manual_target_locked") else action,
         selection,
         connectorSnapshot.targets.firstOrNull { it.id == selection.resourceId }
     )

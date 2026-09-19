@@ -35,7 +35,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             Path(self.temp.name) / "diagnostics.json"
         )
         self.client_route_id = link_protocol.new_route_id()
-        self.desktop_id = "desktop-test"
+        self.desktop_id = "desktop_" + "a" * 16
         self.signal_name = "galaxyssi:test-phone"
         self.link_secret = link_protocol.new_link_secret()
         self.desktop_fingerprint = "a" * 64

@@ -971,6 +971,9 @@
     <string name="delivery_status_sent">已发送</string>
     <string name="delivery_status_failed">失败</string>
     <string name="agent_message_not_delivered">暂未确认送达。请检查连接和原任务状态，避免重复提交导致重复执行。</string>
+    <string name="agent_remote_silence_no_model">多次查询任务状态后，Desktop 仍未响应。没有适合接续的可用模型，已停止本地等待和重试。远端任务可能仍在执行。</string>
+    <string name="agent_remote_silence_unknown">多次查询任务状态后，Desktop 仍未响应，已停止本地等待和重试。远端执行结果未知，为避免重复操作，没有自动换模型重做此任务。</string>
+    <string name="agent_trace_delivery_wait_ended">未确认送达 · 等待 %1$s%2$s</string>
     <string name="delivery_status_local_saved">本地保存</string>
     <string name="delivery_status_replied">已回复</string>
     <string name="delivery_status_delivered">已送达</string>

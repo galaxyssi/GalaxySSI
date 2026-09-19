@@ -103,6 +103,9 @@ class RacingPublishMqtt:
 
 class MqttRouteDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
+        admission = patch("mqtt_ingress_admission.classify", side_effect=lambda payload, *_: ("signal", payload, False))
+        admission.start()
+        self.addCleanup(admission.stop)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         storage = patch.object(link_delivery, "DB_PATH", Path(directory.name) / "inbound.db")

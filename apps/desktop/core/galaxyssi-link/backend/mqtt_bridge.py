@@ -3102,7 +3102,8 @@ def _publish_phone_payload(
         "remote_whisper_result", "remote_whisper_error", "remote_whisper_cancelled",
     } else "down"
     target_topic = _topics_for_client(paired_client).send
-    reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
+    from mqtt_query_delivery import needs_durable_outbox
+    reliable = needs_durable_outbox(reply_payload.get("type")) if durable is None else bool(durable)
     with phone_publish_lock:
         info = _publish_to_registered_client(
             mqttc, paired_client, reply_payload, channel,
@@ -6919,8 +6920,8 @@ def _process_message(mqttc, userdata, msg):
                 return
             ciphertext_digest = _signal_ciphertext_digest(wire_payload)
             # Only authenticated, endpoint-bound ciphertext may use this cache.
-            failure_key = (client_route_id, hashlib.sha256(str(paired_client.get("link_secret") or "").encode()).digest(),
-                           ciphertext_digest)
+            from mqtt_ingress_admission import failure_key as decrypt_failure_key
+            failure_key = decrypt_failure_key(paired_client, ciphertext_digest)
             replay_lookup_started_ns = timing_now_ns()
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             decrypt_started_at = int(time.time() * 1000)
@@ -7630,7 +7631,7 @@ def mqtt_ingress_status() -> dict:
         return status
 
 
-def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage | _StoredInboxMessage) -> bool:
+def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage | _StoredInboxMessage, *, dedup_key=None) -> bool:
     global inbound_route_pool, inbound_rejection_last_log
     with inbound_route_pool_lock:
         if not inbound_route_accepting:
@@ -7640,13 +7641,13 @@ def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage |
             inbound_route_pool = _new_inbound_pool()
         size = (message.byte_count if isinstance(message, _StoredInboxMessage)
                 else len(message.payload) + len(message.topic.encode("utf-8"))) + 256
-        result = inbound_route_pool.submit(route_key, (mqttc, message), size)
-        should_log = result != "accepted" and time.monotonic() - inbound_rejection_last_log >= 5.0
+        result = inbound_route_pool.submit(route_key, (mqttc, message), size, key=dedup_key)
+        should_log = result not in {"accepted", "coalesced"} and time.monotonic() - inbound_rejection_last_log >= 5.0
         if should_log:
             inbound_rejection_last_log = time.monotonic()
     if should_log:
         log.warning("MQTT inbound admission deferred (%s); no application delivery ACK sent", result)
-    return result == "accepted"
+    return result in {"accepted", "coalesced"}
 
 
 def on_mqtt_message(mqttc, userdata, msg):
@@ -7668,6 +7669,17 @@ def on_mqtt_message(mqttc, userdata, msg):
         return False
     route_key = (f"signal:{identity}" if route_kind == "client" else
                  "pair:" + hashlib.sha256(str(route_data.get("token") or "").encode("utf-8")).hexdigest())
+    dedup_key = None
+    if route_kind == "client":
+        from mqtt_ingress_admission import classify
+        try:
+            lane, dedup_key, deferred = classify(payload, route_data, _signal_ciphertext_digest, decrypt_backoff)
+            if deferred:
+                return False
+            route_key = f"{lane}:{identity}"
+        except Exception:
+            log.warning("MQTT inbound authentication rejected before queue admission")
+            return False
     return _queue_inbound_message(
         mqttc,
         route_key,
@@ -7679,6 +7691,7 @@ def on_mqtt_message(mqttc, userdata, msg):
             broker_id=str(getattr(msg, "broker_id", "") or ""),
             broker_generation=int(getattr(msg, "broker_generation", 0) or 0),
         ),
+        dedup_key=dedup_key,
     )
 
 

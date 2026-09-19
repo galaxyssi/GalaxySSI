@@ -388,7 +388,7 @@ class PeerRouteExchangeTest(unittest.TestCase):
                     "local_identity_fingerprint": binding.sender, "identity_fingerprint": binding.receiver,
                     "signal_name": "phone-" + binding.scope})
         queued = []
-        def process(mqttc, identity, message):
+        def process(mqttc, identity, message, **_admission):
             queued.append((identity, message.broker_id, message.broker_generation))
             mqtt_bridge._process_message(mqttc, None, message)
             return True
@@ -401,7 +401,7 @@ class PeerRouteExchangeTest(unittest.TestCase):
         self.assertTrue(self.left.routes.ready("left"))
         self.assertTrue(self.right.routes.ready("right"))
         self.assertEqual(BROKER_IDS, {item[1] for item in queued})
-        self.assertEqual({"signal:phone-left", "signal:phone-right"}, {item[0] for item in queued})
+        self.assertEqual({"transport:phone-left", "transport:phone-right"}, {item[0] for item in queued})
         decrypt.assert_not_called()
         dispatch.assert_not_called()
 

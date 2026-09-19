@@ -9,6 +9,37 @@ from mqtt_inbound_pool import InboundRoutePool
 
 
 class InboundPoolTest(unittest.TestCase):
+    def test_same_ciphertext_coalesces_while_active_and_can_retry_after_completion(self):
+        entered, release = threading.Event(), threading.Event()
+        seen = []
+        def process(item):
+            entered.set()
+            release.wait(3)
+            seen.append(item)
+        pool = self.pool(process)
+        self.addCleanup(release.set)
+        self.assertEqual("accepted", pool.submit("a", "first", 10, key="cipher"))
+        self.assertTrue(entered.wait(1))
+        for _ in range(4000):
+            self.assertEqual("coalesced", pool.submit("a", "duplicate", 10, key="cipher"))
+        self.assertEqual(0, pool.snapshot()["pending"])
+        self.assertEqual(10, pool.snapshot()["retained_bytes"])
+        release.set()
+        self.assertTrue(pool.wait_idle())
+        self.assertEqual(["first"], seen)
+        self.assertEqual("accepted", pool.submit("a", "receipt-retry", 10, key="cipher"))
+        self.assertTrue(pool.wait_idle())
+        self.assertEqual(4000, pool.snapshot()["coalesced"])
+
+    def test_dedup_identity_does_not_cross_routes(self):
+        pool, release, processed = self.hold(max_workers=1)
+        self.assertEqual("accepted", pool.submit("a", "a2", 10, key="same"))
+        self.assertEqual("accepted", pool.submit("b", "b1", 10, key="same"))
+        self.assertEqual("coalesced", pool.submit("b", "b2", 10, key="same"))
+        release.set()
+        self.assertTrue(pool.wait_idle())
+        self.assertEqual(["held", "b1", "a2"], processed)
+
     def pool(self, process, **limits):
         pool = InboundRoutePool(process, **limits)
         self.addCleanup(pool.close)

@@ -79,6 +79,8 @@ internal object AndroidAgentRemoteRecovery {
 
     private fun resolveQuery(context: Context, contactId: String, source: Long,
         conversationId: String, turnId: String): Query? {
+        if (AgentTerminalDeliveryStore.isTerminal(context, source) ||
+            AgentPendingDeliveryStore.isSuperseded(context, source, conversationId, turnId)) return null
         if (GalaxySSITransportPrivacyPolicy.isLocalOnly(JSONObject().put("conversation_id", conversationId))) return null
         val contact = AppStore.contactById(context, contactId) ?: return null
         val desktopId = contact.optString("desktop_id").takeIf { it.isNotBlank() } ?: return null
@@ -99,11 +101,13 @@ internal object AndroidAgentRemoteRecovery {
             buildList {
                 queries.distinctBy { listOf(it.desktopId, it.payload.toString()) }
                     .groupBy { it.desktopId to it.routeId }.values.forEach { group ->
-                    group.chunked(32).forEach batches@{ candidates ->
+                    // Keep each task's status request and retry independent on the wire.
+                    group.chunked(1).forEach batches@{ candidates ->
                         // Recheck immediately before each batch; a previous query may have started a body transfer.
                         val batch = if (automaticDiscovery) candidates.filter {
                             AndroidAgentResultRecovery.eligible(context, it.desktopId, it.payload) &&
-                                !AndroidAgentResultRecovery.deferAutomaticDiscovery(context, it.desktopId, it.payload)
+                                !AndroidAgentResultRecovery.deferAutomaticDiscovery(context, it.desktopId, it.payload) &&
+                                AndroidAgentRemoteSilence.shouldProbe(context, it.payload.optLong("source_message_id"))
                         } else candidates
                         if (batch.isEmpty()) return@batches
                         val first = batch.first()
@@ -199,6 +203,7 @@ internal object AndroidAgentRemoteRecovery {
             if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
                 firstPage = result.optJSONObject("result_page"))
         }
+        AndroidAgentRemoteSilence.observed(context, identity.sourceMessageId)
         return observation
     }
 

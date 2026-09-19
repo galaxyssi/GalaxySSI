@@ -35,19 +35,25 @@ class InboundRoutePool:
         self._high_pending = self._high_bytes = 0
         self._accepted = self._processed = self._failed = self._cancelled = 0
         self._rejected = {}
+        self._keys = set()
+        self._coalesced = 0
         self._closed = False
 
     def _reject(self, reason):
         self._rejected[reason] = self._rejected.get(reason, 0) + 1
         return reason
 
-    def submit(self, route, item, size):
+    def submit(self, route, item, size, *, key=None):
         """Return an admission code; never wait for a worker or invoke the handler inline."""
         if not isinstance(route, str) or not route or len(route) > 512 or type(size) is not int or size < 1:
             raise ValueError("A bounded route and positive retained wire size are required")
         with self._condition:
             if self._closed:
                 return self._reject("closed")
+            scoped_key = (route, key) if key is not None else None
+            if scoped_key is not None and scoped_key in self._keys:
+                self._coalesced += 1
+                return "coalesced"
             lane = self._routes.get(route)
             if lane is not None and len(lane) >= self.route_pending:
                 return self._reject("route_pending")
@@ -58,7 +64,9 @@ class InboundRoutePool:
             if self._retained_bytes + size > self.max_bytes:
                 return self._reject("global_bytes")
             lane = self._routes.setdefault(route, deque())
-            lane.append((item, size))
+            lane.append((item, size, scoped_key))
+            if scoped_key is not None:
+                self._keys.add(scoped_key)
             self._pending += 1
             self._retained_bytes += size
             self._route_bytes[route] = self._route_bytes.get(route, 0) + size
@@ -74,6 +82,7 @@ class InboundRoutePool:
                     self._workers.remove(worker)
                     if not self._workers:
                         lane.pop()
+                        self._keys.discard(scoped_key)
                         self._pending -= 1
                         self._release(route, size)
                         self._ready.pop(route, None)
@@ -102,7 +111,7 @@ class InboundRoutePool:
                     self._condition.notify_all()
                     return
                 route, _ = self._ready.popitem(last=False)
-                item, size = self._routes[route].popleft()
+                item, size, scoped_key = self._routes[route].popleft()
                 self._pending -= 1
                 self._active.add(route)
             failed = False
@@ -116,6 +125,7 @@ class InboundRoutePool:
                 item = None
                 with self._condition:
                     self._active.remove(route)
+                    self._keys.discard(scoped_key)
                     self._release(route, size)
                     if self._routes.get(route):
                         self._ready[route] = None
@@ -131,7 +141,7 @@ class InboundRoutePool:
                 "active": len(self._active), "pending": self._pending, "routes": len(self._routes),
                 "retained_bytes": self._retained_bytes, "high_pending": self._high_pending,
                 "high_bytes": self._high_bytes, "accepted": self._accepted, "processed": self._processed,
-                "failed": self._failed, "cancelled": self._cancelled,
+                "failed": self._failed, "cancelled": self._cancelled, "coalesced": self._coalesced,
                 "rejected": dict(self._rejected), "closed": self._closed}
 
     def wait_idle(self, timeout=5.0):
@@ -145,7 +155,8 @@ class InboundRoutePool:
                 for route in list(self._routes):
                     lane = self._routes[route]
                     while lane:
-                        item, size = lane.popleft()
+                        item, size, scoped_key = lane.popleft()
+                        self._keys.discard(scoped_key)
                         item = None
                         self._pending -= 1
                         self._cancelled += 1

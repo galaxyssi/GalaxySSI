@@ -577,6 +577,7 @@ class MobileNativeAgent(
             else pendingResult.metadata["remote_task_status_seq"]?.toLongOrNull() ?: -1L
         if (statusSeq >= 0L && statusSeq < previousSeq) return snapshot()
         val now = System.currentTimeMillis()
+        AndroidAgentRemoteSilence.observed(appContext, sourceMessageId, now)
         if (AgentRemoteTaskStatusPolicy.keepsResourceHealthy(taskStatus)) {
             pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
                 AgentResourceHealthStore(appContext).markAvailable("domain:$domain")
@@ -711,7 +712,8 @@ class MobileNativeAgent(
     @Synchronized
     fun handleConnectorTimeout(
         sourceMessageId: Long,
-        stage: AgentConnectorTimeoutStage
+        stage: AgentConnectorTimeoutStage,
+        recoveryExhausted: Boolean = false
     ): AgentUiState? {
         if (sourceMessageId <= 0L || phase != AgentPhase.WAITING_RESPONSE) return null
         val pending = AgentProviderAttemptJournal.recover(appContext, lastActionResult ?: return null)
@@ -728,13 +730,13 @@ class MobileNativeAgent(
         val viableFallbackIds = fallbackIds.filter { fallbackId ->
             AgentConnectorFailureScope.permitsFallback(timeoutMetadata, connectorFailureDomain(fallbackId))
         }
-        if (AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage, status, viableFallbackIds.isNotEmpty())) {
+        if (!recoveryExhausted && AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage, status, viableFallbackIds.isNotEmpty())) {
             return null
         }
-        val timedOut = AgentFailoverPolicy.shouldFailOver(stage, status, liveReadOnly)
+        val timedOut = recoveryExhausted || AgentFailoverPolicy.shouldFailOver(stage, status, liveReadOnly)
         if (!timedOut) return null
         val targetId = pending.metadata["resource_id"].orEmpty()
-        if (stage == AgentConnectorTimeoutStage.READ_ONLY_STALE) {
+        if (!recoveryExhausted && stage == AgentConnectorTimeoutStage.READ_ONLY_STALE) {
             val hasDifferentDomainFallback = viableFallbackIds.isNotEmpty()
             if (!hasDifferentDomainFallback) return null
         }
@@ -745,13 +747,22 @@ class MobileNativeAgent(
         if (failureDomain.isNotBlank() && AgentConnectorFailureScope.sharedTransportFailed(timeoutMetadata)) {
             health.recordFailureDomainTimeout("domain:$failureDomain", elapsed)
         }
+        val safeReplay = AgentRemoteSilencePolicy.permitsReplay(
+            currentPlan?.actions?.firstOrNull { it.id == pending.actionId }, currentGoal)
+        val timeoutMessage = if (!recoveryExhausted) "${pending.metadata["target"].orEmpty().ifBlank { "Selected resource" }} timed out"
+            else appContext.getString(if (safeReplay) R.string.agent_remote_silence_no_model else R.string.agent_remote_silence_unknown)
         val failed = pending.copy(
             success = false,
-            message = "${pending.metadata["target"].orEmpty().ifBlank { "Selected resource" }} timed out",
+            message = timeoutMessage,
             metadata = pending.metadata + mapOf(
                 "awaiting_response" to "false",
                 "timeout_stage" to stage.name,
-                "timeout_elapsed_ms" to elapsed.toString()
+                "timeout_elapsed_ms" to elapsed.toString(),
+                "remote_task_terminal_at" to System.currentTimeMillis().toString(),
+                "delivery_confirmation_unknown" to recoveryExhausted.toString(),
+                "delivery_failed" to recoveryExhausted.toString(),
+                "allow_unavailable_target_fallback" to (recoveryExhausted && safeReplay).toString(),
+                "non_retriable" to recoveryExhausted.toString()
             )
         )
         recordAudit(
@@ -760,11 +771,20 @@ class MobileNativeAgent(
         )
         val plan = currentPlan ?: return null
         AgentCloudDispatchRegistry.cancel(pending)
-        continueWithConnectorFallback(plan, failed)?.let { return it }
+        if (recoveryExhausted) {
+            AgentPendingDeliveryStore.find(appContext, sourceMessageId)?.let {
+                AgentTerminalDeliveryStore.mark(appContext, it, timeoutMessage)
+            }
+            GalaxySSILinkDeliveryStore.discardClientSourceMessages(appContext, setOf(sourceMessageId))
+            AgentPendingDeliveryStore.remove(appContext, sourceMessageId)
+            AndroidAgentRemoteSilence.retire(appContext, sourceMessageId)
+        }
+        if (!recoveryExhausted || safeReplay) continueWithConnectorFallback(plan, failed)?.let { return it }
         lastActionResult = failed
         currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
         phase = AgentPhase.FAILED
         saveTaskRecord(result = failed.message)
+        persistSession()
         return reconcileExecutionLoop(snapshot())
     }
 

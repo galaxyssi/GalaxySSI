@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import mqtt_bridge
+import link_protocol
 
 
 PROBE_TOPIC = "p" * 43
@@ -163,7 +164,7 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         }
         message = SimpleNamespace(
             topic="r" * 43,
-            payload=b"{}",
+            payload=link_protocol.seal_wire_packet('{"type":"link_resume"}', paired_client["link_secret"]).encode(),
         )
 
         with (

@@ -32,6 +32,8 @@ internal class GalaxySSILinkOutboxDatabase(
                 blocked_dependency_count INTEGER NOT NULL,
                 client_source_message_id INTEGER NOT NULL,
                 attachment_transfer_id TEXT NOT NULL,
+                route_scope TEXT NOT NULL DEFAULT '',
+                payload_type TEXT NOT NULL DEFAULT '',
                 encrypted_item TEXT NOT NULL
             )
             """.trimIndent()
@@ -49,10 +51,34 @@ internal class GalaxySSILinkOutboxDatabase(
             """.trimIndent()
         )
         createMigrationMetadata(db, complete = true)
+        db.execSQL("CREATE INDEX outbox_route_capacity ON outbox_messages(route_scope,status)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         createMigrationMetadata(db, complete = false)
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE outbox_messages ADD COLUMN route_scope TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE outbox_messages ADD COLUMN payload_type TEXT NOT NULL DEFAULT ''")
+            db.execSQL("CREATE INDEX outbox_route_capacity ON outbox_messages(route_scope,status)")
+        }
+    }
+
+    @Synchronized
+    fun holdStaleUncorrelated(nowMillis: Long): Int = writableDatabase.update(
+        TABLE_OUTBOX, ContentValues().apply { put("status", "held_unclassified") },
+        "client_source_message_id = 0 AND attachment_transfer_id = '' AND blocked_dependency_count = 0 " +
+            "AND payload_type = '' " +
+            "AND created_at < ? AND status <> 'held_unclassified'",
+        arrayOf((nowMillis - 15 * 60_000L).toString())
+    )
+
+    @Synchronized
+    fun canEnqueue(routeScope: String, control: Boolean): Boolean {
+        val limit = if (control) 64 else 56
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_OUTBOX WHERE status <> 'held_unclassified' AND (route_scope = ? OR route_scope = '')",
+            arrayOf(routeScope)
+        ).use { it.moveToFirst() && it.getInt(0) < limit }
     }
 
     @Synchronized
@@ -192,7 +218,7 @@ internal class GalaxySSILinkOutboxDatabase(
     ): JSONArray {
         ensureLegacyRowsMigrated()
         val selection = buildString {
-            append("blocked_dependency_count = 0 AND next_attempt_at <= ?")
+            append("status <> 'held_unclassified' AND blocked_dependency_count = 0 AND next_attempt_at <= ?")
             if (!allowValidatedNetworkMessages) append(" AND requires_validated_network = 0")
             if (maxAttempts < Int.MAX_VALUE) {
                 append(
@@ -223,7 +249,7 @@ internal class GalaxySSILinkOutboxDatabase(
         ensureLegacyRowsMigrated()
         return queryItems(
             selection =
-                "next_attempt_at <= ? AND ((attachment_transfer_id = '' AND attempts >= ?)" +
+                "status <> 'held_unclassified' AND next_attempt_at <= ? AND ((attachment_transfer_id = '' AND attempts >= ?)" +
                     " OR (attachment_transfer_id <> '' AND attempts >= ?))",
             selectionArgs = arrayOf(
                 nowMillis.toString(),
@@ -237,7 +263,7 @@ internal class GalaxySSILinkOutboxDatabase(
     @Synchronized
     fun nextRetryAt(allowValidatedNetworkMessages: Boolean): Long? {
         val selection = buildString {
-            append("blocked_dependency_count = 0")
+            append("status <> 'held_unclassified' AND blocked_dependency_count = 0")
             if (!allowValidatedNetworkMessages) append(" AND requires_validated_network = 0")
         }
         return readableDatabase.rawQuery(
@@ -252,12 +278,11 @@ internal class GalaxySSILinkOutboxDatabase(
     fun makePendingImmediatelyRetryable(nowMillis: Long) {
         // Path flaps must not turn every resume ACK into a full outbox replay.
         // Fresh work can wake immediately; previously sent work keeps a receipt window.
-        val retryAt = nowMillis + GalaxySSILinkRetryPolicy.delayMillis(1)
         writableDatabase.execSQL(
             "UPDATE $TABLE_OUTBOX SET status = 'queued', next_attempt_at = " +
-                "CASE WHEN attempts = 0 THEN ? ELSE MIN(next_attempt_at, ?) END " +
-                "WHERE next_attempt_at > ?",
-            arrayOf(nowMillis, retryAt, nowMillis)
+                "CASE WHEN attempts = 0 THEN ? ELSE next_attempt_at END " +
+                "WHERE next_attempt_at > ? AND status <> 'held_unclassified'",
+            arrayOf(nowMillis, nowMillis)
         )
     }
 
@@ -293,7 +318,7 @@ internal class GalaxySSILinkOutboxDatabase(
         ensureLegacyRowsMigrated()
         return readableDatabase.query(
             TABLE_OUTBOX,
-            arrayOf("encrypted_item"),
+            arrayOf("encrypted_item", "status", "next_attempt_at"),
             "message_id = ?",
             arrayOf(messageId),
             null,
@@ -301,7 +326,10 @@ internal class GalaxySSILinkOutboxDatabase(
             null,
             "1"
         ).use { cursor ->
-            if (!cursor.moveToFirst()) null else decode(messageId, cursor.getString(0))
+            if (!cursor.moveToFirst()) null else decode(messageId, cursor.getString(0))?.apply {
+                put("status", cursor.getString(1))
+                put("next_attempt_at", cursor.getLong(2))
+            }
         }
     }
 
@@ -346,6 +374,8 @@ internal class GalaxySSILinkOutboxDatabase(
             put("blocked_dependency_count", dependencies)
             put("client_source_message_id", item.optLong("client_source_message_id", 0L))
             put("attachment_transfer_id", item.optString(KEY_ATTACHMENT_TRANSFER_ID))
+            put("route_scope", item.optString("receipt_binding"))
+            put("payload_type", item.optString("payload_type"))
             put("encrypted_item", rowCipher.encrypt(item.toString(), associatedData(messageId)))
         }
     }
@@ -447,7 +477,7 @@ internal class GalaxySSILinkOutboxDatabase(
 
     private companion object {
         const val DATABASE_NAME = "opaque_link_outbox_v3.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
         const val SQL_BIND_BATCH_SIZE = 500
         const val BULK_DELETE_CHECKPOINT_THRESHOLD = 500
         const val TABLE_OUTBOX = "outbox_messages"
