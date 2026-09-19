@@ -274,6 +274,9 @@ object AgentWebIntelligenceNativeTools {
     private fun fetchSchema(): AgentNativeJsonSchema = objectSchema(
         mapOf(
             "url" to string(8, 4_096),
+            "offset" to integer(0, 240_000),
+            "length" to integer(256, AgentWebReadingWindow.MAX_CHARS),
+            "document_sha256" to string(0, 64),
             "force" to AgentNativeJsonSchema.boolean(),
             "max_bytes" to integer(1_024, AgentWebIntelligenceService.MAX_FETCH_BYTES),
             "timeout_ms" to integer(1_000, 120_000),
@@ -336,7 +339,7 @@ object AgentWebIntelligenceNativeTools {
         buildMap {
             put("query", string(1, 4_096))
             put("query_plan", researchQueryPlanSchema())
-            put("evidence_limit", integer(2, 24))
+            put("evidence_limit", integer(2, 64))
             put("engine_fanout", integer(1, 32))
             put(
                 "profile",
@@ -356,10 +359,10 @@ object AgentWebIntelligenceNativeTools {
             )
             put("categories", stringArray(32, 64))
             put("use_cache", AgentNativeJsonSchema.boolean())
-            put("timeout_ms", integer(2_000, 60_000))
+            put("timeout_ms", integer(2_000, 150_000))
             put("page_read_parallelism", integer(1, 6))
             put("per_host_parallelism", integer(1, 2))
-            put("page_read_timeout_ms", integer(2_000, 60_000))
+            put("page_read_timeout_ms", integer(2_000, 120_000))
             put("early_complete", AgentNativeJsonSchema.boolean())
         },
         setOf("query")
@@ -370,6 +373,8 @@ object AgentWebIntelligenceNativeTools {
             properties = mapOf(
                 "query" to string(1, AgentWebResearchPlanCodec.MAX_QUERY_CHARACTERS),
                 "purpose" to string(0, AgentWebResearchPlanCodec.MAX_PURPOSE_CHARACTERS),
+                "subquestion" to string(0, AgentWebResearchPlanCodec.MAX_PURPOSE_CHARACTERS),
+                "language" to string(0, 64),
                 "verticals" to AgentNativeJsonSchema.array(
                     AgentNativeJsonSchema.string(
                         enumValues = AgentWebIntelligenceVertical.entries.map { it.wireValue }

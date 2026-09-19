@@ -105,6 +105,8 @@ internal object AgentWebEvidenceVerification {
         }
         return linkedMapOf(
             "status" to status,
+            "scope" to "citation_manifest_integrity_not_factual_entailment",
+            "semantic_verification" to "not_independently_verified",
             "protocol_valid" to protocolValid,
             "item_count" to items.size,
             "valid_item_count" to valid.size,

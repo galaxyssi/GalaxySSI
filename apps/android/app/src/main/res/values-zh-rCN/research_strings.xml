@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="research_trace_summary">搜索 %1$d 个关键词，参考 %2$d 篇资料</string>
+    <string name="research_trace_summary">搜索 %1$d 个关键词，找到 %2$d 条资料</string>
+    <string name="research_trace_discovered">搜索结果，未确认读取正文</string>
+    <string name="research_trace_body">已获取正文，可能仅提供节选</string>
+    <string name="research_trace_open_reported">Agent 已报告打开，正文覆盖未知</string>
+    <string name="research_trace_unavailable">正文获取失败</string>
+    <string name="research_trace_cited">本回复已引用</string>
+    <string name="research_trace_more">显示更多资料（剩余 %1$d 条）</string>
     <string name="research_trace_remote_pending">搜索 %1$d 个关键词，资料未回传</string>
     <string name="research_trace_recorded_subset">（已记录部分）</string>
     <string name="research_trace_expand">展开搜索详情</string>

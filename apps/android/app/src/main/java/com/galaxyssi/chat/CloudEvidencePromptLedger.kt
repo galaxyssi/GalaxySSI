@@ -27,6 +27,8 @@ internal class CloudEvidencePromptLedger(private val query: String = "") {
 
     fun project(encoded: String): String {
         val result = runCatching { JSONObject(encoded) }.getOrNull() ?: return encoded
+        // Disclosure receipts are kept locally; do not duplicate all URLs in every model round.
+        result.remove("research_trace")
         val pack = result.optJSONObject("evidence_pack") ?: run {
             // Empty searches still carry large routing diagnostics, not source evidence.
             if (result.optString("operation") != "search" ||
@@ -78,7 +80,7 @@ internal class CloudEvidencePromptLedger(private val query: String = "") {
                 if (rank != null) compact.put("rank", rank)
                 if (retrievedAt != null) compact.put("retrieved_at_millis", retrievedAt)
                 val excerpt = compact.optString("excerpt")
-                if (excerpt.length > excerptLimit) {
+                if (excerpt.length > excerptLimit && compact.optJSONObject("reading_window") == null) {
                     compact.put("excerpt", selectPassages(excerpt, "$query ${pack.optString("query")} ${item.optString("title")}"))
                     compact.put("excerpt_projection", "selected_original_passages_not_full_document")
                     compact.put("original_excerpt_chars", excerpt.length)

@@ -40,6 +40,10 @@ object CloudWebGrounding {
             "the App does not infer topics or append search phrases from the user's words. After retrieval, inspect " +
             "research_context coverage and unresolved queries before deciding whether to search again or answer. " +
             "For complex research, briefly state the investigation plan, then iterate: retrieve, compare evidence, " +
+            "group queries by subquestion and language, search Chinese/English or original-language sources where useful, " +
+            "and read relevant bodies before synthesis. Use web_fetch offset/length to read long cached bodies in order; " +
+            "continue next_offset and pass document_sha256 to detect changed pages. A body excerpt is not full reading. " +
+            "Track decisive claims, exact passages, dates, contradictions and missing checks by subquestion. " +
             "identify a specific gap or conflict, refine only that gap, and synthesize. Do not expose private reasoning. " +
             "A failed source is not a failed research task; use an independent source or explain what remains unknown. " +
             "Separate supported findings, uncertainty and unresolved questions. More sources alone do not mean better evidence. " +
@@ -132,8 +136,10 @@ object CloudWebGrounding {
         ))
         put(functionTool(
             "web_fetch",
-            "Fetch and cache bounded readable content from one public HTTPS URL.",
-            objectProperties("url" to stringProperty()),
+            "Read a cached or fetched body window from a public URL. Continue next_offset for long sources; " +
+                "pass document_sha256 from reading_window when continuing. Extracted text is not independent verification.",
+            objectProperties("url" to stringProperty(), "offset" to integerProperty(0, 240_000),
+                "length" to integerProperty(256, AgentWebReadingWindow.MAX_CHARS), "document_sha256" to stringProperty()),
             listOf("url")
         ))
         put(functionTool(
@@ -243,7 +249,9 @@ object CloudWebGrounding {
             }
         }
         val serviceCompleted = System.nanoTime()
-        val encoded = boundedModelJson(if (name == "web_image_search") CloudImageSearchEvidence.prepare(output) else output)
+        val bounded = boundedModelJson(if (name == "web_image_search") CloudImageSearchEvidence.prepare(output) else output)
+        val trace = AgentResearchTrace.observe(name, arguments, AgentNativeJsonCodec.stringify(output))
+        val encoded = if (trace.visible) JSONObject(bounded).put("research_trace", trace.toJson()).toString() else bounded
         Log.i("GalaxySSIWebLatency", "web_tool tool=$name " +
             "service_ms=${(serviceCompleted - serviceStarted) / 1_000_000L} " +
             "encode_ms=${(System.nanoTime() - serviceCompleted) / 1_000_000L} " +
@@ -606,6 +614,10 @@ object CloudWebGrounding {
                 "content_type" to item["content_type"]?.toString().orEmpty().take(96),
                 "content_sha256" to item["content_sha256"]?.toString().orEmpty().take(64),
                 "excerpt" to item["excerpt"]?.toString().orEmpty().take(excerptLimit),
+                // A compacted fallback cannot certify delivery of the original reading window.
+                "body_excerpt_only" to true,
+                "reading_truncated" to (item["reading_window"] is Map<*, *>),
+                "body_chars" to item["body_chars"],
                 "rank" to item["rank"],
                 "source_ids" to (item["source_ids"] as? Iterable<*>)
                     ?.take(8)?.map { it?.toString().orEmpty().take(64) }.orEmpty(),
@@ -679,7 +691,7 @@ object CloudWebGrounding {
     private fun researchProperties(): JSONObject = objectProperties(
         "query" to stringProperty(),
         "query_plan" to researchQueryPlanProperty(),
-        "evidence_limit" to integerProperty(2, 24),
+        "evidence_limit" to integerProperty(2, 64),
         "engine_fanout" to integerProperty(1, 32),
         "profile" to enumProperty("fast", "balanced", "deep"),
         "engines" to stringArrayProperty(32),
@@ -691,10 +703,10 @@ object CloudWebGrounding {
         ),
         "categories" to stringArrayProperty(32),
         "use_cache" to booleanProperty(),
-        "timeout_ms" to integerProperty(2_000, 60_000),
+        "timeout_ms" to integerProperty(2_000, 150_000),
         "page_read_parallelism" to integerProperty(1, 6),
         "per_host_parallelism" to integerProperty(1, 2),
-        "page_read_timeout_ms" to integerProperty(2_000, 60_000),
+        "page_read_timeout_ms" to integerProperty(2_000, 120_000),
         "early_complete" to booleanProperty()
     )
 
@@ -710,6 +722,8 @@ object CloudWebGrounding {
                     objectProperties(
                         "query" to stringProperty(),
                         "purpose" to stringProperty(),
+                        "subquestion" to stringProperty(),
+                        "language" to stringProperty(),
                         "verticals" to enumArrayProperty(
                             AgentWebIntelligenceVertical.entries.size,
                             *AgentWebIntelligenceVertical.entries

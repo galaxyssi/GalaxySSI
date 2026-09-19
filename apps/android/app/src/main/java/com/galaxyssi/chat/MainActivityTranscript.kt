@@ -1523,7 +1523,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                 }
             }
         })
-        addView(agentResearchTraceRow(entry))
+        addView(agentResearchTraceRow(entry, turnEntries.filter { it.role == AgentTranscriptRole.ASSISTANT }
+            .joinToString("\n") { it.text }))
         if (progressPresentation.visible) {
             addView(agentPlanProgressSummaryRow(entry, groupKey, progressPresentation))
         }

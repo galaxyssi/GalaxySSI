@@ -10,6 +10,12 @@ from codex_app_server import CODEX_TASK_POLICY, CodexAppServer, CodexRun
 
 
 class ResearchQualityTests(unittest.TestCase):
+    def test_deep_research_requires_reading_gaps_and_synthesis_not_source_quotas(self):
+        prompt = research_quality_prompt()
+        for requirement in ("subquestions", "Chinese and English", "next_offset", "claim-to-evidence",
+                            "counterevidence", "never a quota", "synthesize across sources"):
+            self.assertIn(requirement, prompt)
+
     def test_shared_regression_cases(self):
         cases = json.loads((Path(__file__).with_name("research_contract") / "quality-cases.json").read_text(encoding="utf-8"))
         for case in cases:

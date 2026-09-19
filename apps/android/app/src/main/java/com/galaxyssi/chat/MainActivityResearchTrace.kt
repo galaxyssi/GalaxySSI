@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry): View {
+internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry, answer: String = entry.text): View {
     val stateKey = "research:${entry.conversationId}:${entry.turnId}"
     val container = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -26,6 +26,9 @@ internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry): Vi
     }
     var expanded = agentResponseSectionExpansion[stateKey] == true
     var current: AgentResearchTrace? = null
+    var sourceLimit = 50
+    var scope: CoroutineScope? = null
+    val citedUrls = AgentResearchTrace.citedUrls(answer)
     fun render(trace: AgentResearchTrace) {
         container.removeAllViews()
         container.visibility = if (trace.visible) View.VISIBLE else View.GONE
@@ -39,7 +42,7 @@ internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry): Vi
         }
         val title = getString(
             if (trace.remote && trace.sources.isEmpty()) R.string.research_trace_remote_pending
-            else R.string.research_trace_summary, trace.queries.size, trace.sources.size
+            else R.string.research_trace_summary, trace.queries.size, trace.displayedSourceCount
         ) + if (trace.truncated) getString(R.string.research_trace_recorded_subset) else ""
         header.addView(TextView(this).apply {
             text = title
@@ -72,7 +75,7 @@ internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry): Vi
             setTextIsSelectable(true)
             setPadding(0, dp(6), 0, dp(8))
         })
-        trace.sources.forEachIndexed { index, source ->
+        trace.sources.take(sourceLimit).forEachIndexed { index, source ->
             container.addView(TextView(this).apply {
                 text = "${index + 1}. ${source.title.ifBlank { Uri.parse(source.url).host.orEmpty() }}"
                 textSize = 14f
@@ -89,9 +92,38 @@ internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry): Vi
                     }
                 }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            container.addView(TextView(this).apply {
+                text = getString(when (source.status) {
+                    "body_retrieved" -> R.string.research_trace_body
+                    "open_reported" -> R.string.research_trace_open_reported
+                    "unavailable" -> R.string.research_trace_unavailable
+                    else -> R.string.research_trace_discovered
+                }) + if (source.url in citedUrls)
+                    " · " + getString(R.string.research_trace_cited) else ""
+                textSize = 12f
+                setTextColor(getColorCompat(R.color.text_secondary))
+                setPadding(0, 0, 0, dp(6))
+            })
         }
+        if (trace.displayedSourceCount > sourceLimit) container.addView(TextView(this).apply {
+            text = getString(R.string.research_trace_more, trace.displayedSourceCount - sourceLimit)
+            textSize = 13f
+            minHeight = dp(44)
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(getColorCompat(R.color.accent_green))
+            isFocusable = true
+            setOnClickListener {
+                sourceLimit += 50
+                scope?.launch {
+                    val next = withContext(Dispatchers.IO) {
+                        AgentResearchTraceStore.read(applicationContext, entry.conversationId, entry.turnId, sourceLimit)
+                    }
+                    current = next
+                    render(next)
+                }
+            }
+        })
     }
-    var scope: CoroutineScope? = null
     container.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) {
             scope?.cancel()
@@ -99,7 +131,7 @@ internal fun MainActivity.agentResearchTraceRow(entry: AgentTranscriptEntry): Vi
                 active.launch {
                     AgentResearchTraceStore.revision.collectLatest {
                         val trace = withContext(Dispatchers.IO) {
-                            AgentResearchTraceStore.read(applicationContext, entry.conversationId, entry.turnId)
+                            AgentResearchTraceStore.read(applicationContext, entry.conversationId, entry.turnId, sourceLimit)
                         }
                         if (trace != current) { current = trace; render(trace) }
                     }

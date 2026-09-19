@@ -385,6 +385,15 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             continue
                         }
                         val validationStarted = System.nanoTime()
+                        val readingReview = research.readingReview(candidate)
+                        if (candidate.isNotBlank() && readingReview != null && research.stopReason() == null &&
+                            !toolProgress.finalizationRequested && toolProgress.requestRepair("decisive_body_reading")) {
+                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            appendPlainConversationTurn(prepared, "assistant", candidate)
+                            appendPlainConversationTurn(prepared, "user", readingReview)
+                            onToolEvent?.invoke(CloudToolEvent("research", "verifying", "\u6b63\u5728\u8865\u8bfb\u5173\u952e\u539f\u6587\u5e76\u6838\u5bf9\u7ed3\u8bba"))
+                            continue
+                        }
                         val citationValidation = CloudWebGrounding.citationValidation(candidate, evidenceResults)
                         val qualityReport = quality.assess(candidate, true)
                         val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)

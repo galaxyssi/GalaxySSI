@@ -109,7 +109,7 @@ object CloudModelClient {
                 val body = JSONObject()
                     .put("model", contact.getString("cloud_model"))
                     .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
-                    .put("max_tokens", 1200)
+                    .put("max_tokens", conversationOutputLimit(contact))
                     .put("messages", messages)
                     .put("tools", anthropicWebTools(images))
                     .put("stream", true)
@@ -157,7 +157,7 @@ object CloudModelClient {
                         "generationConfig",
                         JSONObject()
                             .put("temperature", 0.7)
-                            .put("maxOutputTokens", 1200)
+                            .put("maxOutputTokens", conversationOutputLimit(contact))
                     )
                     .put("tools", geminiWebTools(images))
                 PreparedCloudConversationStream(
@@ -780,7 +780,7 @@ object CloudModelClient {
         val body = JSONObject()
             .put("model", contact.getString("cloud_model"))
             .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
-            .put("max_tokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
+            .put("max_tokens", conversationOutputLimit(contact))
             .put("messages", messages)
             .put("tools", anthropicWebTools(images))
             .apply {
@@ -1018,7 +1018,7 @@ object CloudModelClient {
             .put("contents", contents)
             .put("generationConfig", JSONObject()
                 .put("temperature", if (isDefaultSystemPrompt(systemPrompt)) 0.7 else 0.1)
-                .put("maxOutputTokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
+                .put("maxOutputTokens", conversationOutputLimit(contact))
             )
             .put("tools", geminiWebTools(images))
         var totalUsage = CloudModelUsage()
@@ -1811,6 +1811,10 @@ object CloudModelClient {
     private const val DEFAULT_CONTEXT_WINDOW_TOKENS = 64_000
     private const val MAX_CONTEXT_WINDOW_TOKENS = 1_000_000
     private const val DEFAULT_OUTPUT_RESERVE_TOKENS = 4_096
+    private fun conversationOutputLimit(contact: JSONObject): Int = contact
+        .optInt("cloud_max_output_tokens", DEFAULT_OUTPUT_RESERVE_TOKENS)
+        .coerceIn(512, (contact.optInt("cloud_context_window_tokens", DEFAULT_CONTEXT_WINDOW_TOKENS)
+            .coerceIn(MIN_CONTEXT_WINDOW_TOKENS, MAX_CONTEXT_WINDOW_TOKENS) / 2).coerceAtMost(32_768))
     private const val MIN_REFINED_SUMMARY_CHARACTERS = 40
     private const val FINALIZE_WEB_RESEARCH_PROMPT =
         "Tool execution is complete. Do not call another tool. Using the evidence already in this " +

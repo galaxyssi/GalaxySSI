@@ -13,7 +13,7 @@ internal class CloudResearchCheckpoint(private val records: AgentModelLoopRecord
         check(JSONObject(initial).getString("binding") == binding) { "research_checkpoint_binding_changed" }
         initialized = true
         val restored = mutableListOf<Observation>()
-        while (count < 512) {
+        while (count < 4096) {
             val value = records.read("observation:$count") ?: break
             val item = JSONObject(value)
             val observation = Observation(item.getString("tool"), item.getJSONObject("arguments"), item.getString("output"))
@@ -26,7 +26,7 @@ internal class CloudResearchCheckpoint(private val records: AgentModelLoopRecord
 
     fun record(tool: String, arguments: JSONObject, output: String) {
         if (!isReadOnly(tool, arguments)) return
-        check(count < 512) { "research_checkpoint_capacity" }
+        check(count < 4096) { "research_checkpoint_capacity" }
         initialize()
         records.write("observation:$count", JSONObject().put("tool", tool)
             .put("arguments", arguments).put("output", output).toString())

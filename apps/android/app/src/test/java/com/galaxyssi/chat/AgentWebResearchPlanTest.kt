@@ -122,7 +122,8 @@ class AgentWebResearchPlanTest {
 
         assertEquals("model_supplied", metadata["query_plan_source"])
         assertEquals(2, metadata["queries_executed"])
-        assertEquals(listOf("covered", "covered"), coverage.map { it["status"] })
+        assertEquals(listOf("body_retrieved", "body_retrieved"), coverage.map { it["status"] })
+        assertTrue(coverage.all { it["verification_status"] == "requires_claim_level_review" })
         assertTrue(coverage.all { (it["retrieved_document_count"] as Number).toInt() >= 1 })
         assertEquals(emptyList<String>(), research["unresolved_queries"])
         assertEquals(2, (researchContext["query_plan"] as List<*>).size)

@@ -28,6 +28,7 @@ data class AgentWebIntelligenceDocument(
         "title" to title,
         "content_type" to contentType,
         "content_sha256" to contentSha256,
+        "body_chars" to content.length,
         "retrieved_at_millis" to retrievedAtMillis,
         "expires_at_millis" to expiresAtMillis,
         "links" to links,
@@ -866,7 +867,7 @@ class AgentWebIntelligenceService(
         )
         return base("fetch", "completed", started) + linkedMapOf(
             "url" to document.url,
-            "documents" to listOf(document.publicValue()),
+            "documents" to listOf(AgentWebReadingWindow.document(document, arguments)),
             "receipts" to listOf(receipt.publicValue()),
             "cache" to (linkedMapOf(
                 "hit" to cacheHit,
@@ -1306,17 +1307,20 @@ class AgentWebIntelligenceService(
     ): AgentNativeJsonObject {
         val started = clock()
         val query = arguments.requiredString("query", 4_096)
-        val evidenceLimit = arguments.integer("evidence_limit", if (autonomous) 12 else 8, 2, 24)
+        val evidenceLimit = arguments.integer("evidence_limit", 24, 2, 64)
         val pageReadParallelism = arguments.integer("page_read_parallelism", 6, 1, 6)
         val perHostParallelism = arguments.integer("per_host_parallelism", 1, 1, 2)
-        val pageReadTimeoutMillis = arguments.long("page_read_timeout_ms", 18_000L, 2_000L, 60_000L)
-        val earlyComplete = arguments.boolean("early_complete", true)
+        val pageReadTimeoutMillis = arguments.long("page_read_timeout_ms", 60_000L, 2_000L, 120_000L)
+        val earlyComplete = arguments.boolean("early_complete", false)
         val queryPlan = AgentWebResearchPlanCodec.decode(query, arguments["query_plan"])
         val globalEngines = arguments.stringList("engines", 32, 64)
         // Validate the entire plan before any cache read, health lookup or network call.
         searchCoordinator.validateEngines(globalEngines + queryPlan.flatMap { it.engines })
         val profile = AgentWebIntelligenceSearchProfile.from(arguments.string("profile", "balanced"))
-        val budget = AgentWebExecutionBudget(arguments.long("timeout_ms", 30_000L, 2_000L, 60_000L))
+        val totalMillis = arguments.long("timeout_ms", 120_000L, 2_000L, 150_000L)
+        val budget = AgentWebExecutionBudget(totalMillis)
+        // Search cannot spend the reserved body-reading stage; synthesis has its own allowance.
+        val searchBudget = AgentWebExecutionBudget(AgentWebReadingWindow.searchAllowance(totalMillis, pageReadTimeoutMillis))
         var queriesExecuted = 0
         val globalVerticals = arguments.stringList(
             "verticals",
@@ -1337,7 +1341,7 @@ class AgentWebIntelligenceService(
         queryPlan.forEach { item ->
             checkpoint()
             if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
-            if (budget.remainingMillis < 1_000L) {
+            if (searchBudget.remainingMillis < if (queriesExecuted == 0) 500L else 1_000L) {
                 resultGroups.add(emptyList())
                 receiptGroups.add(emptyList())
                 return@forEach
@@ -1347,7 +1351,7 @@ class AgentWebIntelligenceService(
                     "query" to item.query,
                     "limit" to evidenceLimit,
                     "engine_fanout" to arguments.integer("engine_fanout", profile.defaultFanout, 1, 32),
-                    "timeout_ms" to minOf(profile.defaultTimeoutMillis, budget.remainingMillis).coerceAtLeast(1_000L),
+                    "timeout_ms" to minOf(profile.defaultTimeoutMillis, searchBudget.remainingMillis).coerceAtLeast(1_000L),
                     "profile" to profile.wireValue,
                     "engines" to item.engines.ifEmpty { globalEngines },
                     "verticals" to item.verticals.ifEmpty { globalVerticals }
@@ -1441,10 +1445,12 @@ class AgentWebIntelligenceService(
                 "executed_queries" to executedQueries,
                 "coverage" to coverage.map(AgentWebResearchQueryCoverage::publicValue),
                 "unresolved_queries" to coverage
-                    .filter { it.status != "covered" }
+                    .filter { it.status != "body_retrieved" }
                     .map { it.item.query },
                 "evidence_brief" to evidenceBrief(query, documents, results.values),
-                "citation_count" to (documents.size + results.size).coerceAtMost(evidenceLimit),
+                "candidate_count" to results.size,
+                "retrieved_document_count" to documents.size,
+                "verification_status" to "requires_claim_level_review",
                 "synthesis_contract" to linkedMapOf(
                     "producer" to "selected_galaxyssi_model_or_agent",
                     "evidence_is_untrusted" to true,
@@ -1461,6 +1467,7 @@ class AgentWebIntelligenceService(
                 },
                 "queries_executed" to queriesExecuted,
                 "shared_budget_exhausted" to budget.expired,
+                "search_budget_exhausted" to searchBudget.expired,
                 "page_read_parallelism" to pageReadParallelism,
                 "page_read_per_host" to perHostParallelism,
                 "page_read_candidates" to pageReads.candidateCount,

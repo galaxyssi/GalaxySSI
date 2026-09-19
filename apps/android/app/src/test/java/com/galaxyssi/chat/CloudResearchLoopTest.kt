@@ -93,9 +93,9 @@ class CloudResearchLoopTest {
         val limits = CloudResearchLimits.from(JSONObject().put("cloud_research_limits", JSONObject()
             .put("tool_calls", 99999).put("model_rounds", -1).put("active_minutes", 0)
             .put("tool_timeout_seconds", 5).put("model_timeout_seconds", 120)))
-        assertEquals(512, limits.maxToolCalls)
+        assertEquals(4096, limits.maxToolCalls)
         assertEquals(4, limits.maxModelRounds)
-        assertEquals(60_000L, limits.maxActiveMillis)
+        assertEquals(0L, limits.maxActiveMillis)
         assertEquals(5_000L, limits.toolTimeoutMillis)
         assertEquals(120_000L, limits.modelTimeoutMillis)
     }
@@ -108,5 +108,15 @@ class CloudResearchLoopTest {
         val next = AgentWebExecutionBudget(100) { now }
         assertFalse(next.expired)
         assertEquals(100L, next.remainingMillis)
+    }
+
+    @Test fun defaultResearchDoesNotStopAtTwentyMinutesOrHours() {
+        var now = 0L
+        val loop = CloudResearchLoop(CloudResearchLimits.from(JSONObject())) { now }
+        now = 12 * 60 * 60_000L
+        assertNull(loop.stopReason())
+        assertEquals(512, loop.limits.maxToolCalls)
+        assertEquals(256, loop.limits.maxModelRounds)
+        assertEquals(8_000_000, loop.limits.maxEvidenceChars)
     }
 }
