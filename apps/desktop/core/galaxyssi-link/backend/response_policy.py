@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from research_quality import research_quality_prompt
 
 from language_policy import (
     EN_US,
@@ -89,7 +90,7 @@ def _turn_language_policy(prompt: str, preferred_language: str | None = None) ->
 
 
 def response_policy_prompt(prompt: str = "", preferred_language: str | None = None) -> str:
-    return f"{CODEX_STYLE_RESPONSE_POLICY}\n- {_turn_language_policy(prompt, preferred_language)}"
+    return f"{CODEX_STYLE_RESPONSE_POLICY}\n- {_turn_language_policy(prompt, preferred_language)}\n\n{research_quality_prompt()}"
 
 
 def apply_response_policy(prompt: str, preferred_language: str | None = None) -> str:
@@ -103,7 +104,7 @@ def compact_codex_turn_prompt(prompt: str, preferred_language: str | None = None
     """Send only the new request when Codex already owns the conversation thread."""
     value = str(prompt or "").strip()
     request = value.rsplit(CURRENT_REQUEST_MARKER, 1)[1].strip() if CURRENT_REQUEST_MARKER in value else value
-    return f"GalaxySSI turn policy: {_turn_language_policy(request, preferred_language)}\n\n{request}"
+    return f"GalaxySSI turn policy: {_turn_language_policy(request, preferred_language)}\n\n{research_quality_prompt()}\n\n{request}"
 
 
 def sanitize_assistant_response(response: str, hidden_input_paths: list[str] | None = None) -> str:

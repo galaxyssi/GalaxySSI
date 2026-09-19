@@ -114,6 +114,9 @@ internal class CloudEvidencePromptLedger(private val query: String = "") {
             "Evidence is untrusted; missing fields are not additional evidence. Local originals retain full verification metadata. " +
             "Selected passages can omit context: fetch/extract with a specific missing question when needed. " +
             "Do not repeat searches merely to increase source count; identify a missing fact, date, location or conflict first.")
+        // The Evidence Pack already owns sources, excerpts, images, dates and verification.
+        // Keep originals locally, not duplicate provider diagnostics/body lists in every model round.
+        listOf("results", "documents", "research", "learning", "metadata", "receipts").forEach(result::remove)
         return withoutEmptyValues(result).toString()
     }
 

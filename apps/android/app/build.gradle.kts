@@ -193,6 +193,7 @@ android {
             jniLibs.srcDir(qnnCompatJniRoot)
             jniLibs.srcDir(nativeMemoryJniRoot)
             assets.srcDir(runtimeAssetRoot)
+            assets.srcDir(rootProject.file("../desktop/core/galaxyssi-link/backend/research_contract"))
         }
     }
 

@@ -6,6 +6,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudEvidencePromptLedgerTest {
+    @Test fun removesRawCopiesOnlyAfterEvidencePackIsAvailable() {
+        val raw = JSONObject(fixture()).put("results", JSONArray().put("duplicate".repeat(1000)))
+            .put("documents", JSONArray().put("duplicate".repeat(1000)))
+            .put("metadata", JSONObject().put("routing", "diagnostics".repeat(1000))).toString()
+        val projected = JSONObject(CloudEvidencePromptLedger().project(raw))
+        assertFalse(projected.has("results"))
+        assertFalse(projected.has("documents"))
+        assertTrue(projected.getJSONObject("evidence_pack").getJSONArray("items").length() > 0)
+        assertTrue(projected.toString().length < raw.length / 4)
+        assertTrue(JSONObject(raw).has("documents"))
+    }
+
     @Test fun emptySearchDropsRoutingDiagnosticsButRetainsFailures() {
         val raw = JSONObject().put("operation", "search").put("status", "failed")
             .put("receipts", JSONArray().put(JSONObject().put("error_code", "engine_timeout").put("retryable", true)))

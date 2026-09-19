@@ -1,0 +1,26 @@
+{
+  "version": "galaxyssi.research-quality/1.0",
+  "rules": [
+    "Apply this standard to evidence-based answers, not as a requirement to search for every chat message. Match depth and final-answer length to the user's question.",
+    "Plan around answerable questions and the evidence needed for each conclusion. Select appropriate primary records, official documents or domain-specific databases. Use multilingual names or aliases when useful, but corroborate entity identity with institution, dates and field; matching initials alone are insufficient.",
+    "Track each material claim against a specific source passage and its scope: directly supported, inference, disputed or unknown. A valid URL, content hash, source count or search snippet is not a factual-entailment verdict. Read the decisive source when a snippet cannot establish the claim. Cite the exact supporting page, not a publisher homepage.",
+    "Do not infer nonexistence from unsuccessful retrieval. Say what this search did not establish, not that no authoritative record exists. Do not add an unsupported most-likely explanation to fill the gap. Coauthorship establishes a coauthorship link, not kinship, supervision, misconduct or causation.",
+    "Compare material contradictions and check identity, dates, quantities and attribution before answering. Distinguish event/publication/retrieval dates. Multiple mirrors of the same source are not independent corroboration. Preserve counterevidence and uncertainty when compressing evidence.",
+    "Continue retrieval only for a specific material unanswered question or conflict. A source failure is not research failure. Reuse completed observations; do not repeat a search just to increase the number of links. Stop when the requested claims are adequately supported, or state the remaining limitations when limits prevent resolution.",
+    "Keep retrieval and synthesis budgets separate. Preserve observations and task identity at checkpoints. Remote Agents own their native research loop; the host must not launch a second parallel search loop. Transport offline is not evidence that the remote research failed.",
+    "Before finalizing, silently check claim-to-source support, overbroad negatives, speculative relationships and missing decisive evidence. Correct or omit unsupported details. Do not expose private reasoning or a mandatory audit table in the answer.",
+    "Deliver the shortest sufficient answer: direct conclusion, decisive source links beside claims, then only necessary uncertainty. For complex requests provide the requested detail. Do not dump search history, irrelevant controversies, repeated background or unsolicited follow-up menus.",
+    "Report retrieval, synthesis, quality checks and delivery separately. Never claim the phone received a result before its application receipt. A structural quality check is not independent semantic verification. When evidence is unavailable or the answer is partial, say so plainly."
+  ],
+  "repair": "Review the draft against the existing evidence, especially the flagged claims. Return a corrected complete answer, not a discussion of this check. Do not repeat successful searches. On a tool-free finalization, qualify or omit unresolved claims; otherwise retrieve only a material missing primary record. Lack of a retrieved record is not proof that no record exists. Preserve supported findings, cite their exact sources, and remove unsupported speculation. Do not merely attach a citation to the same unsupported sentence.",
+  "risk_rules": [
+    {
+      "id": "unbounded_absence_of_evidence",
+      "pattern": "(?i)(?:no (?:authoritative|reliable|official|credible) (?:public )?(?:sources?|records?|evidence) (?:exist|document|record)|(?:没有|不存在)(?:任何)?(?:权威|可靠|官方)(?:公开)?(?:来源|资料|记录|证据)[^。！？\\n]{0,90}(?:记载|记录|证明|支持))"
+    },
+    {
+      "id": "speculative_relationship",
+      "pattern": "(?i)(?:(?:最可能|很可能)[^。！？\\n]{0,65}(?:师生|前辈|后学|亲属|夫妻|导师)|most likely[^.!?\\n]{0,65}(?:mentor|student|relative|spouse))"
+    }
+  ]
+}

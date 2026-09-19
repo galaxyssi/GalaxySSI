@@ -1501,11 +1501,22 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
                             systemPromptOverride = supervisedEnvelope?.systemPrompt.orEmpty(),
                             citationPreviewEnabled = !managedTeamAction,
+                            recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
+                                AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
+                                    connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
+                                else null,
                             onToolEvent = { event ->
                                 Log.i(
                                     "GalaxySSILatency",
                                     "agent_cloud stage=tool_${event.stage} source=$messageId tool=${event.tool}"
                                 )
+                                if (event.tool == "research") runCatching {
+                                    AgentTaskRuntime.supervisor(appContext).progress(
+                                        workspaceId = connectorTurnId,
+                                        stage = "research.${event.stage}",
+                                        message = event.detail
+                                    )
+                                }
                             }
                         ).collect { event ->
                             dispatchLease.checkActive()
