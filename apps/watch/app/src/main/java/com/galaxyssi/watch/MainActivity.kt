@@ -216,7 +216,14 @@ class MainActivity : Activity() {
         else if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
-        if (page == "home") { showConversation(); return }
+        if (page == "home") {
+            if (repo.store.apiProfile == null && repo.links().none { it.paired }) {
+                voiceEntryPending = false
+                startActivity(Intent(this, WatchPhoneSetupActivity::class.java))
+                finish(); return
+            }
+            showConversation(); return
+        }
         val listKey = if (page == "sessions") SessionsKey(repo.store.cachedTasks(), sessionQuery, repo.store.cachedReadRevision, repo.errorResource) else null
         if (listKey != null && listKey == sessionsKey && sessionsFrame != null) {
             val frame = requireNotNull(sessionsFrame)
@@ -616,6 +623,7 @@ class MainActivity : Activity() {
         button(R.string.cancel, true) { back() }
     }
     private fun settings() {
+        button(R.string.phone_setup_settings) { startActivity(Intent(this, WatchPhoneSetupActivity::class.java)) }
         button(R.string.location_settings) { navigate("location-settings") }
         title(R.string.settings)
         toggle(R.string.background_enabled, repo.store.backgroundEnabled) {
