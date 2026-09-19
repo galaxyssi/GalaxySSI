@@ -77,7 +77,8 @@ class AgentTimingClockTest(unittest.TestCase):
 
     def test_actual_inbound_callback_and_default_tracer_share_origin(self):
         with patch.object(bridge, "_handle_transport_probe_message", return_value=False), \
-                patch.object(bridge, "_resolve_inbound_topic", return_value=("client", {"client_route_id": "route"})), \
+                patch.object(bridge, "_resolve_inbound_topic", return_value=("client", {"client_route_id": "route", "signal_name": "phone"})), \
+                patch("mqtt_ingress_admission.classify", return_value=("signal", "fixture", False)), \
                 patch.object(bridge, "transport_probe_state", Mock()), \
                 patch.object(bridge, "_queue_inbound_message") as queued:
             bridge.on_mqtt_message(SimpleNamespace(), None, SimpleNamespace(topic="opaque", payload=b"test"))

@@ -1324,6 +1324,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
     val displayCompletedAt = completedAt
         ?: execution.completedAtMillis.takeIf { it > 0L }
     val completed = displayCompletedAt != null
+    val deliveryUnconfirmed = turnEntries.any { it.dedupeKey.startsWith("delivery-failed:") }
     val expanded = hasProcessDetails &&
         AgentTranscriptPresentationPolicy.processExpanded(
             completed = completed,
@@ -1406,7 +1407,9 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                             }
                             val elapsedMillis = clock.elapsed(System.currentTimeMillis())
                             val nextText = getString(
-                                if (clock.completedAtMillis != null) {
+                                if (deliveryUnconfirmed) {
+                                    R.string.agent_trace_delivery_wait_ended
+                                } else if (clock.completedAtMillis != null) {
                                     R.string.agent_trace_processed
                                 } else {
                                     R.string.agent_trace_processing

@@ -1217,6 +1217,9 @@
     <string name="delivery_status_sent">Sent</string>
     <string name="delivery_status_failed">Failed</string>
     <string name="agent_message_not_delivered">Delivery could not be confirmed. Check the connection and task status before resubmitting to avoid duplicate execution.</string>
+    <string name="agent_remote_silence_no_model">Desktop has not responded to repeated task status checks. No suitable alternative model is available; local waiting and retries have stopped. The remote task may still be running.</string>
+    <string name="agent_remote_silence_unknown">Desktop has not responded to repeated task status checks. Local waiting and retries have stopped. The remote execution result is unknown; this task was not replayed on another model to avoid duplicate actions.</string>
+    <string name="agent_trace_delivery_wait_ended">Delivery unconfirmed · waited %1$s%2$s</string>
     <string name="delivery_status_local_saved">Saved locally</string>
     <string name="delivery_status_replied">Replied</string>
     <string name="delivery_status_delivered">Delivered</string>

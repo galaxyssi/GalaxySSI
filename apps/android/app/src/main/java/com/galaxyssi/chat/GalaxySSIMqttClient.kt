@@ -325,6 +325,13 @@ object GalaxySSIMqttClient {
         } ?: return false
         val mqtt = client ?: return false
         if (!mqtt.isConnected || !link.paired || !GalaxySSICrypto.hasDesktopSession(context, desktopId)) return false
+        val transientQuery = MqttQueryDeliveryPolicy.isTransient(payload.optString("type"))
+        if (transientQuery && peerRoutes?.readyForTopic(link.routes.control) != true) return false
+        val durableDelivery = durable && !transientQuery
+        if (durableDelivery && !GalaxySSILinkDeliveryStore.hasCapacity(context, link.routes, MqttTrafficPolicy.classify(payload))) {
+            Log.w(TAG, "Desktop control deferred: durable outbox capacity reached")
+            return false
+        }
         payload.put("desktop_id", desktopId)
         val envelope = runCatching {
             GalaxySSILinkProtocol.makeEnvelope(payload, GalaxySSICrypto.localGalaxySSIId(), desktopId)
@@ -332,9 +339,10 @@ object GalaxySSIMqttClient {
         val encrypted = GalaxySSICrypto.encryptPayloadForDesktop(desktopId, envelope) ?: return false
         val messageId = envelope.getString("message_id")
         val wirePayload = encrypted.toString()
-        if (durable) {
-            GalaxySSILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload,
-                receiptRoutes = link.routes, transportTraffic = MqttTrafficPolicy.classify(payload))
+        if (durableDelivery) {
+            if (!GalaxySSILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload,
+                receiptRoutes = link.routes, transportTraffic = MqttTrafficPolicy.classify(payload),
+                payloadType = payload.optString("type"))) return false
             if (peerRoutes?.readyForTopic(link.routes.control) != true) {
                 scheduleOutboxRetries()
                 return true
@@ -346,9 +354,9 @@ object GalaxySSIMqttClient {
             link.routes.control,
             wirePayload,
             "desktop_control",
-            messageId, transportTraffic = MqttTrafficPolicy.classify(payload)
+            messageId.takeIf { durableDelivery }, transportTraffic = MqttTrafficPolicy.classify(payload)
         )) {
-            if (durable) {
+            if (durableDelivery) {
                 scheduleOutboxRetries()
                 return true
             }
@@ -1191,6 +1199,10 @@ object GalaxySSIMqttClient {
             return MqttPublishResult.FAILED
         }
         val context = appContext ?: return MqttPublishResult.FAILED
+        val callerRetried = MqttQueryDeliveryPolicy.hasRetryOwner(payload.optString("type"))
+        if (callerRetried && (client?.isConnected != true || peerRoutes?.readyForTopic(topic) != true)) {
+            return MqttPublishResult.FAILED
+        }
         if (payload.optString("trace_id").isBlank()) {
             payload.put("trace_id", UUID.randomUUID().toString())
         }
@@ -1201,6 +1213,10 @@ object GalaxySSIMqttClient {
             GalaxySSILinkProtocol.allServerLinks(context).firstOrNull { topic in it.routes.sendWindow }?.routes
         } else AppStore.phoneRoutesForIdentity(context, contactId)?.takeIf { topic in it.sendWindow }
         if (receiptRoutes == null) return MqttPublishResult.FAILED
+        if (!callerRetried && !GalaxySSILinkDeliveryStore.hasCapacity(context, receiptRoutes, MqttTrafficPolicy.classify(payload))) {
+            Log.w(TAG, "Message deferred: durable outbox capacity reached")
+            return MqttPublishResult.FAILED
+        }
         if (usesPcConnectorTunnel(contactId) &&
             !AppStore.isDesktopDeviceContact(context, contactId) &&
             payload.optString("task_id").isNotBlank()
@@ -1292,6 +1308,12 @@ object GalaxySSIMqttClient {
         }
         val messageId = applicationEnvelope.getString("message_id")
         val wirePayload = encrypted.toString()
+        if (callerRetried) {
+            val transport = client ?: return MqttPublishResult.FAILED
+            return if (publishWirePayload(transport, topic, wirePayload, "caller_owned_query",
+                    transportTraffic = MqttTrafficPolicy.classify(payload))) MqttPublishResult.PUBLISHED
+                else MqttPublishResult.FAILED
+        }
         val brokerAckTimeoutMillis = MqttBrokerAckTimeoutPolicy.forPayloadType(
             payload.optString("type")
         )
@@ -1306,7 +1328,7 @@ object GalaxySSIMqttClient {
             return MqttPublishResult.FAILED
         }
         val deferMediaUpload = payload.optBoolean("defer_media_upload", false)
-        GalaxySSILinkDeliveryStore.enqueue(
+        if (!GalaxySSILinkDeliveryStore.enqueue(
             context,
             messageId,
             topic,
@@ -1319,13 +1341,14 @@ object GalaxySSIMqttClient {
             attachmentTransferId = attachmentTransferId,
             receiptRoutes = receiptRoutes,
             transportTraffic = MqttTrafficPolicy.classify(payload),
+            payloadType = payload.optString("type"),
             recoverableEnvelope = GalaxySSILinkDeliveryStore.recoverablePeerEnvelope(
                 payload,
                 applicationEnvelope,
                 isDirectPhoneContact = AppStore.phoneRoutesForIdentity(context, contactId) != null &&
                     !usesPcConnectorTunnel(contactId)
             )
-        )
+        )) return MqttPublishResult.FAILED
         if (!payload.optBoolean("peer_chat")) {
             AgentLatencyTelemetry.transportQueued(context, targetId, messageId,
                 com.galaxyssi.chat.metrics.AgentTransportTiming.taskId(payload))
@@ -1381,6 +1404,8 @@ object GalaxySSIMqttClient {
         val context = appContext ?: return
         val mqtt = client ?: return
         if (!mqtt.isConnected || !isRequestReplyReady()) return
+        val held = GalaxySSILinkDeliveryStore.holdStaleUncorrelated(context)
+        if (held > 0) Log.w(TAG, "Held $held stale uncorrelated outbox records; retained for inspection, not acknowledged")
         GalaxySSILinkDeliveryStore.discardExhausted(
             context,
             MAX_OUTBOX_DELIVERY_ATTEMPTS,
@@ -1458,7 +1483,9 @@ object GalaxySSIMqttClient {
                 GalaxySSILinkDeliveryStore.discard(context, pending.messageId)
                 continue
             }
-            if (AgentDeliveryRetryPolicy.expired(pending.recoveryFirstAttemptMillis, System.currentTimeMillis())) {
+            if (pending.attachmentTransferId.isBlank() &&
+                AgentDeliveryRetryPolicy.eligible(context, pending.clientSourceMessageId, pending.contactId) &&
+                AgentDeliveryRetryPolicy.expired(pending.recoveryFirstAttemptMillis, System.currentTimeMillis())) {
                 GalaxySSILinkDeliveryStore.discard(context, pending.messageId)
                 listeners.forEach { it.onDeliveryFailed(pending.clientSourceMessageId,
                     pending.contactId, "delivery_recovery_expired") }
@@ -1476,6 +1503,11 @@ object GalaxySSIMqttClient {
             }
             if (currentTopic == null || peerRoutes?.readyForTopic(currentTopic) != true) {
                 GalaxySSILinkDeliveryStore.waitForPeerRoute(context, pending.messageId)
+                continue
+            }
+            val creditDelay = GalaxySSILinkDeliveryStore.retryWindow.acquire(currentTopic, pending.messageId)
+            if (creditDelay > 0L) {
+                GalaxySSILinkDeliveryStore.waitForReceiptCredit(context, pending.messageId, creditDelay)
                 continue
             }
             GalaxySSILinkDeliveryStore.markAttempt(context, pending.messageId)
@@ -2953,6 +2985,7 @@ object GalaxySSIMqttClient {
             lastConnectorStatusRequestAt = now
         }
         eligibleLinks.forEach { link ->
+                if (peerRoutes?.readyForTopic(link.routes.control) != true) return@forEach
                 val requestManifest = forceCapabilityManifest ||
                     GalaxySSILinkProtocol.needsCapabilityManifest(link)
                 val payload = JSONObject()

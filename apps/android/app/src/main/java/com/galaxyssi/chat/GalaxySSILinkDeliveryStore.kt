@@ -9,6 +9,7 @@ import java.util.ArrayDeque
 import java.util.UUID
 
 object GalaxySSILinkDeliveryStore {
+    internal val retryWindow = MqttOutboxRetryWindow()
     private const val PREFS = "opaque_link_delivery_v2"
     private const val RECOVERY_DATABASE = "opaque_link_peer_recovery_v1"
     private const val KEY_OUTBOX = "outbox"
@@ -106,11 +107,13 @@ object GalaxySSILinkDeliveryStore {
         attachmentTransferId: String = "",
         recoverableEnvelope: String = "",
         receiptRoutes: GalaxySSILinkProtocol.Routes? = null,
-        transportTraffic: String = "message"
-    ) {
+        transportTraffic: String = "message",
+        payloadType: String = ""
+    ): Boolean {
         MqttTrafficPolicy.parse(transportTraffic)
         val database = outboxDatabase(context)
-        if (database.contains(messageId)) return
+        if (database.contains(messageId)) return true
+        if (!database.canEnqueue(receiptRoutes?.let(::receiptBinding).orEmpty(), transportTraffic == "control")) return false
         val item = JSONObject()
             .put("message_id", messageId)
             .put("topic", topic)
@@ -120,6 +123,7 @@ object GalaxySSILinkDeliveryStore {
             .put("client_source_message_id", clientSourceMessageId)
             .put("contact_id", contactId)
             .put("transport_traffic", transportTraffic)
+            .put("payload_type", payloadType)
             .put(
                 BROKER_ACK_TIMEOUT_MILLIS,
                 MqttBrokerAckTimeoutPolicy.normalize(brokerAckTimeoutMillis)
@@ -154,7 +158,16 @@ object GalaxySSILinkDeliveryStore {
             recoveryDatabase(context).writeString(recoveryKey(messageId), recoverableEnvelope)
         }
         check(database.insert(item)) { "Encrypted outbox message could not be persisted" }
+        return true
     }
+
+    @Synchronized
+    internal fun hasCapacity(context: Context, routes: GalaxySSILinkProtocol.Routes, traffic: String): Boolean =
+        outboxDatabase(context).canEnqueue(receiptBinding(routes), traffic == "control")
+
+    @Synchronized
+    internal fun holdStaleUncorrelated(context: Context): Int =
+        outboxDatabase(context).holdStaleUncorrelated(System.currentTimeMillis())
 
     internal fun recoverablePeerEnvelope(
         payload: JSONObject,
@@ -181,6 +194,7 @@ object GalaxySSILinkDeliveryStore {
         var changed = 0
         for (index in 0 until values.length()) {
             val item = values.optJSONObject(index) ?: continue
+            if (item.optString("status") == "held_unclassified") continue
             if (item.optString("contact_id") != contactId) continue
             val messageId = item.optString("message_id")
             val encodedEnvelope = recoveryDatabase(context).readString(
@@ -291,6 +305,7 @@ object GalaxySSILinkDeliveryStore {
     @Synchronized
     fun markPublished(context: Context, messageId: String) {
         updateOutbox(context, messageId) { item ->
+            if (item.optString("status") == "held_unclassified") return@updateOutbox
             val attempts = item.optInt("attempts").coerceAtLeast(1)
             item.put("status", "published")
                 .put(
@@ -322,6 +337,13 @@ object GalaxySSILinkDeliveryStore {
     }
 
     @Synchronized
+    internal fun waitForReceiptCredit(context: Context, messageId: String, delayMillis: Long) {
+        updateOutbox(context, messageId) { item ->
+            item.put("next_attempt_at", System.currentTimeMillis() + delayMillis.coerceAtLeast(250L))
+        }
+    }
+
+    @Synchronized
     fun acknowledge(context: Context, messageId: String) {
         removePendingMessage(context, messageId)
     }
@@ -333,6 +355,7 @@ object GalaxySSILinkDeliveryStore {
     internal fun acknowledgeVerified(context: Context, routes: GalaxySSILinkProtocol.Routes, payload: JSONObject): Boolean {
         val (messageId, wireHash) = runCatching { MqttDeliveryEnvelope.parseStoredReceipt(payload) }.getOrNull() ?: return false
         val removed = outboxDatabase(context).deleteForVerifiedReceipt(messageId, receiptBinding(routes), wireHash) ?: return false
+        retryWindow.release(messageId)
         // UI correlation comes from our outbox, never from peer-supplied display IDs.
         val sourceId = removed.optLong("client_source_message_id")
         payload.put("client_source_message_id", sourceId).put("source_message_id", sourceId)
@@ -386,6 +409,7 @@ object GalaxySSILinkDeliveryStore {
 
     private fun removePendingMessage(context: Context, messageId: String) {
         if (messageId.isBlank()) return
+        retryWindow.release(messageId)
         outboxDatabase(context).delete(messageId)?.let { deleteOutboxPayload(context, it) }
     }
 
@@ -555,6 +579,7 @@ object GalaxySSILinkDeliveryStore {
         var earliest: Long? = null
         for (index in 0 until values.length()) {
             val item = values.optJSONObject(index) ?: continue
+            if (item.optString("status") == "held_unclassified") continue
             if (hasAttachmentDependencies(item)) continue
             if (
                 item.optBoolean("requires_validated_network", false) &&
@@ -583,6 +608,7 @@ object GalaxySSILinkDeliveryStore {
         val byRoute = linkedMapOf<String, ArrayDeque<PendingMessage>>()
         for (index in 0 until values.length()) {
             val item = values.optJSONObject(index) ?: continue
+            if (item.optString("status") == "held_unclassified") continue
             if (hasAttachmentDependencies(item)) continue
             if (
                 item.optBoolean("requires_validated_network", false) &&
@@ -612,9 +638,7 @@ object GalaxySSILinkDeliveryStore {
                     )
                 ),
                 item.optString(ATTACHMENT_TRANSFER_ID).lowercase(),
-                if (item.optInt("agent_recovery_attempts") > 0) {
-                    item.optLong("first_attempt_at", item.optLong("created_at"))
-                } else 0L,
+                item.optLong("first_attempt_at", item.optLong("created_at")),
                 item.optString("transport_traffic", "message")
             )
             byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)

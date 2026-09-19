@@ -15,6 +15,45 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GalaxySSILinkOutboxDatabaseTest {
+    @Test fun legacyUncorrelatedBacklogIsHeldWithoutDeletingRealMessagesOrAttachments() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_hold_${System.nanoTime()}.db"
+        val now = System.currentTimeMillis()
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { db ->
+                repeat(100) { db.insert(item(it, now - 86_400_000).put("client_source_message_id", 0)) }
+                db.insert(item(100, now - 86_400_000).put("client_source_message_id", 911))
+                db.insert(item(101, now - 86_400_000).put("client_source_message_id", 0)
+                    .put("attachment_transfer_id", "a".repeat(64)))
+                db.insert(item(102, now - 86_400_000).put("client_source_message_id", 0).put("payload_type", "text"))
+                assertEquals(100, db.holdStaleUncorrelated(now))
+                assertEquals(103, db.count())
+                assertEquals(3, db.retryCandidates(now, true, 6, 9, 128).length())
+                db.makePendingImmediatelyRetryable(now + 30_000)
+                assertEquals(3, db.retryCandidates(now + 30_000, true, 6, 9, 128).length())
+                assertEquals("held_unclassified", db.readAll().getJSONObject(0).getString("status"))
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
+    @Test fun perPeerCapacityReservesControlSlotsAndDoesNotBlockAnotherPeer() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "mqtt_capacity_${System.nanoTime()}.db"
+        val now = System.currentTimeMillis()
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { db ->
+                repeat(56) { db.insert(item(it, now).put("receipt_binding", "a")) }
+                assertFalse(db.canEnqueue("a", false))
+                assertTrue(db.canEnqueue("a", true))
+                assertTrue(db.canEnqueue("b", false))
+                repeat(8) { db.insert(item(it + 56, now).put("receipt_binding", "a")) }
+                assertFalse(db.canEnqueue("a", true))
+                db.delete("message-0")
+                assertTrue(db.canEnqueue("a", true))
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun messageTrafficSurvivesDatabaseReopenAndRetrySelection() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "mqtt_traffic_${System.nanoTime()}.db"
@@ -114,7 +153,8 @@ class GalaxySSILinkOutboxDatabaseTest {
                 val early = database.retryCandidates(now + 10_000, true, 6, 9, 4)
                 assertEquals(1, early.length())
                 assertEquals("message-2", early.getJSONObject(0).getString("message_id"))
-                assertEquals(2, database.retryCandidates(now + 30_000, true, 6, 9, 4).length())
+                assertEquals(1, database.retryCandidates(now + 30_000, true, 6, 9, 4).length())
+                assertEquals(2, database.retryCandidates(now + 300_000, true, 6, 9, 4).length())
                 assertTrue(database.contains("message-1"))
             }
         } finally { context.deleteDatabase(name) }
@@ -242,7 +282,10 @@ class GalaxySSILinkOutboxDatabaseTest {
             null,
             SQLiteDatabase.OPEN_READWRITE
         ).use { database ->
-            database.execSQL("DROP TABLE IF EXISTS row_storage_metadata")
+              database.execSQL("DROP TABLE IF EXISTS row_storage_metadata")
+              database.execSQL("DROP INDEX IF EXISTS outbox_route_capacity")
+              database.execSQL("ALTER TABLE outbox_messages DROP COLUMN route_scope")
+              database.execSQL("ALTER TABLE outbox_messages DROP COLUMN payload_type")
             database.execSQL("PRAGMA user_version = 1")
         }
 

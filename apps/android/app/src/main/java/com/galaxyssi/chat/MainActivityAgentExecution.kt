@@ -750,26 +750,14 @@ internal fun MainActivity.scheduleConnectorTimeout(
     callback = Runnable {
         agentConnectorTimeoutCallbacks.remove(callbackKey, callback)
         if (isFinishing || isDestroyed) return@Runnable
-        if (stage == AgentConnectorTimeoutStage.NOT_ACCEPTED &&
-            GalaxySSILinkDeliveryStore.hasPendingClientSourceMessageId(this, sourceMessageId)
-        ) {
-            scheduleConnectorTimeout(
-                runtime = runtime,
-                sourceMessageId = sourceMessageId,
-                conversationId = conversationId,
-                turnId = turnId,
-                delayMs = CONNECTOR_TRANSPORT_RECHECK_MILLIS,
-                stage = stage
-            )
-            return@Runnable
-        }
         thread(name = "galaxyssi-connector-timeout-${stage.name.lowercase(Locale.US)}") {
             if (deferConnectorTimeoutForRemoteObservation(runtime, sourceMessageId, conversationId, turnId, stage)) {
                 return@thread
             }
             val before = runtime.pendingConnectorMetadata(sourceMessageId)
             bindAgentExecutionLoop(runtime, turnId)
-            var state = runtime.handleConnectorTimeout(sourceMessageId, stage) ?: return@thread
+            var state = runtime.handleConnectorTimeout(sourceMessageId, stage,
+                recoveryExhausted = AndroidAgentRemoteSilence.expired(this, sourceMessageId, before)) ?: return@thread
             state = finalizeAgentExecutionLoop(runtime, turnId, state)
             persistAgentWorkspaceSnapshot(turnId, state, runtime)
             val remoteTaskId = before["remote_task_id"].orEmpty()
@@ -817,8 +805,6 @@ internal fun MainActivity.scheduleConnectorTimeout(
         ?.let(handler::removeCallbacks)
     handler.postDelayed(callback, delayMs)
 }
-
-private const val CONNECTOR_TRANSPORT_RECHECK_MILLIS = 5_000L
 
 internal fun MainActivity.cancelConnectorTimeouts(sourceMessageId: Long) {
     val prefix = "$sourceMessageId:"

@@ -9,8 +9,30 @@ internal fun MainActivity.deferConnectorTimeoutForRemoteObservation(runtime: Mob
     val state = runtime.snapshot()
     if (state.phase != AgentPhase.WAITING_RESPONSE) return false
     val pending = AgentProviderAttemptJournal.recover(applicationContext, state.lastActionResult ?: return false)
-    if (pending.metadata["source_message_id"]?.toLongOrNull() != source ||
-        !AgentConnectorHandoffRecovery.needsPreTimeoutObservation(pending.metadata, stage)) return false
+    if (pending.metadata["source_message_id"]?.toLongOrNull() != source) return false
+    if (pending.metadata["resource_location"] == "desktop") {
+        if (AndroidAgentRemoteSilence.expired(this, source, pending.metadata)) {
+            // One durable lease owns fallback, even when several windows show this task.
+            AgentLongTaskRecoveryScheduler.enqueue(this, turn, "Desktop task heartbeat recovery exhausted")
+            return true
+        }
+        val delivery = AgentPendingDeliveryStore.find(this, source)
+        if (delivery != null && delivery.conversationId == conversation && delivery.turnId == turn &&
+            AndroidAgentRemoteSilence.shouldProbe(this, source) && GalaxySSIMqttClient.isRequestReplyReady()) {
+            runCatching { runBlocking { AndroidAgentRemoteRecovery.inspectPendingReply(applicationContext, delivery) } }
+                .getOrNull()?.let { observation ->
+                    if (runtime.canAcceptConnectorResponse(source, delivery.contactId, conversation, turn, observation.remoteTaskId)) {
+                        runtime.recordConnectorTaskStatus(source, delivery.contactId, observation.remoteTaskId, observation.status,
+                            observation.statusSequence, conversation, turn, observation.executionGeneration)
+                        runtime.persistSession()
+                    }
+                }
+        }
+        AndroidAgentRecoveryWake.request(this)
+        scheduleConnectorTimeout(runtime, source, conversation, turn, AgentRemoteSilencePolicy.PROBE_INTERVAL, stage)
+        return true
+    }
+    if (!AgentConnectorHandoffRecovery.needsPreTimeoutObservation(pending.metadata, stage)) return false
     val delivery = AgentPendingDeliveryStore.find(this, source) ?: return false
     if (delivery.conversationId != conversation || delivery.turnId != turn ||
         !AndroidAgentRemoteRecovery.hasCurrentBinding(this, delivery)) return false
