@@ -4,6 +4,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AgentInlineMarkdownTest {
+    @Test fun angleDelimitedCitationShowsOnlyItsLabelAndKeepsExactTarget() {
+        val url = "https://example.com/report_(revision)?a=one&signature=x*y"
+        val segments = AgentInlineMarkdown.parse("Result [12](<$url>).")
+        assertEquals("Result 12.", segments.joinToString("") { it.text })
+        assertEquals(url, segments.single { it.style == AgentInlineStyle.LINK }.url)
+    }
+
+    @Test fun malformedOrNonWebAngleLinksDoNotBecomeClickable() {
+        for (value in listOf("[x](<https://example.com/)", "[x](https://example.com/>)",
+            "[x](<javascript:alert(1)>)", "[x](<https://example.com/a b>)")) {
+            assertEquals(value, 0, AgentInlineMarkdown.parse(value).count { it.style == AgentInlineStyle.LINK })
+        }
+    }
+
     @Test
     fun parsesBoldCodeAndLinksWithoutLeavingMarkdownMarkers() {
         val segments = AgentInlineMarkdown.parse(

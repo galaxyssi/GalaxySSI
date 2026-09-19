@@ -10,6 +10,9 @@ import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
+import org.commonmark.node.AbstractVisitor
+import org.commonmark.node.Link
+import org.commonmark.parser.Parser
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -80,7 +83,15 @@ class AgentWebSynthesisDeviceTest {
             assertTrue("No final answer", answer.isNotBlank())
             assertFalse("Sources-only fallback", answer.contains(context.getString(R.string.cloud_web_fallback_sources)))
             assertFalse("Empty-evidence fallback", answer.contains(context.getString(R.string.cloud_web_fallback_empty)))
-            assertTrue("No source citation", Regex("\\[[^]]+]\\(https?://").containsMatchIn(answer))
+            var hasSource = false
+            Parser.builder().build().parse(answer).accept(object : AbstractVisitor() {
+                override fun visit(link: Link) {
+                    if (link.destination.startsWith("https://") || link.destination.startsWith("http://")) hasSource = true
+                    visitChildren(link)
+                }
+            })
+            assertTrue("No source citation", hasSource)
+            assertFalse("Unresolved internal citation", answer.contains("[[cite:"))
             assertNotEquals("Structural research quality risk: $quality", "needs_review", quality.getString("status"))
             expected?.let { assertTrue("Required content not found", Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(answer)) }
             forbidden?.let { assertFalse("Unsupported inference found", Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(answer)) }

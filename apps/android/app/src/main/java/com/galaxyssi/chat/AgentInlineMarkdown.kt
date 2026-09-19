@@ -13,7 +13,7 @@ object AgentInlineMarkdown {
     private val tokens = listOf(
         AgentInlineStyle.BOLD to Regex("\\*\\*([^*\\n]+)\\*\\*"),
         AgentInlineStyle.STRIKE to Regex("~~([^~\\n]+)~~"),
-        AgentInlineStyle.LINK to Regex("\\[([^]\\n]+)]\\((https?://[^)\\s]+)\\)"),
+        AgentInlineStyle.LINK to Regex("\\[([^]\\n]+)]\\((<https?://[^<>\\s]+>|https?://[^)\\s<>]+)\\)"),
         AgentInlineStyle.CODE to Regex("`([^`\\n]+)`"),
         AgentInlineStyle.ITALIC to Regex("(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)")
     )
@@ -38,7 +38,7 @@ object AgentInlineMarkdown {
                 AgentInlineStyle.LINK -> AgentInlineSegment(
                     text = match.groupValues[1],
                     style = style,
-                    url = match.groupValues[2]
+                    url = match.groupValues[2].removeSurrounding("<", ">")
                 )
                 else -> AgentInlineSegment(match.groupValues[1], style)
             }

@@ -125,8 +125,17 @@ internal object AgentWebEvidenceVerification {
         encodedToolResults: List<Pair<String, String>>
     ): AgentWebCitationValidation {
         val packs = encodedToolResults.mapNotNull { (_, encoded) -> decodePack(encoded) }
-        return validateAnswerPacks(answer, packs)
+        val resolved = CloudEvidenceCitations.resolve(answer, encodedToolResults)
+        val result = validateAnswerPacks(resolved.text, packs)
+        return if (resolved.unresolved.isEmpty()) result else result.copy(status = "unresolved_citations",
+            invalidCitationUrls = result.invalidCitationUrls + resolved.unresolved.map { "cite:$it" })
     }
+
+    internal fun citationSources(results: List<Pair<String, String>>): List<CloudEvidenceCitations.Source> =
+        results.mapNotNull { (_, encoded) -> decodePack(encoded) }.flatMap { pack -> objectList(pack["items"]) }
+            .mapNotNull { item -> verifiedCitationUrl(item)?.let { url ->
+                CloudEvidenceCitations.Source(item["citation_id"].toString(), url, item["title"]?.toString().orEmpty())
+            } }.distinctBy { it.id to it.url }
 
     fun validateAnswerPacks(
         answer: String,
