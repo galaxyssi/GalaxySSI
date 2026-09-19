@@ -4,7 +4,8 @@ import android.content.Context
 import org.json.JSONObject
 
 /** Shares the packaged contract with Desktop. Lint success never proves factual truth. */
-internal class ResearchQualityStandard(private val contract: JSONObject) {
+internal class ResearchQualityStandard(private val contract: JSONObject, private val auditSpec: JSONObject? = null) {
+    val auditTool: JSONObject? get() = auditSpec?.let { JSONObject().put("type", "function").put("function", JSONObject(it.toString())) }
     val version: String = contract.getString("version")
     val prompt: String = "GalaxySSI research quality ($version):\n" +
         contract.getJSONArray("rules").let { rules ->
@@ -36,6 +37,7 @@ internal class ResearchQualityStandard(private val contract: JSONObject) {
         val loaded: ResearchQualityStandard? get() = cached
         fun get(context: Context): ResearchQualityStandard = cached ?: synchronized(this) {
             cached ?: ResearchQualityStandard(JSONObject(context.assets.open("research-quality.json")
+                .bufferedReader().use { it.readText() }), JSONObject(context.assets.open("research-audit-tool.json")
                 .bufferedReader().use { it.readText() })).also { cached = it }
         }
     }

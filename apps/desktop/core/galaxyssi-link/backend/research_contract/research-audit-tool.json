@@ -1,0 +1,38 @@
+{
+  "name": "research_audit",
+  "description": "Record a concise, public research evidence ledger, not private reasoning. No network requests. Submit a complete replacement snapshot for this task. Source URLs and exact quotes are checked against previously observed tool evidence; a match is NOT semantic verification. Keep uncertain identities pending and explain coverage gaps. Use for investigations or exhaustive lists, not routine lookups.",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "scope": {"type": "string", "maxLength": 2000},
+      "entities": {"type": "array", "maxItems": 40, "items": {"type": "object", "additionalProperties": false, "properties": {
+        "id": {"type": "string", "maxLength": 80},
+        "name": {"type": "string", "maxLength": 200},
+        "decision": {"type": "string", "enum": ["include", "pending", "exclude"]},
+        "basis": {"type": "string", "enum": ["positive_match", "positive_mismatch", "insufficient_evidence"]},
+        "reason": {"type": "string", "maxLength": 1000},
+        "evidence": {"type": "array", "maxItems": 8, "items": {"type": "object", "additionalProperties": false, "properties": {
+          "url": {"type": "string", "maxLength": 4096}, "quote": {"type": "string", "maxLength": 1200}
+        }, "required": ["url", "quote"]}}
+      }, "required": ["id", "name", "decision", "basis", "reason", "evidence"]}},
+      "claims": {"type": "array", "maxItems": 80, "items": {"type": "object", "additionalProperties": false, "properties": {
+        "id": {"type": "string", "maxLength": 80},
+        "statement": {"type": "string", "maxLength": 1500},
+        "entity_ids": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 80}},
+        "assessment": {"type": "string", "enum": ["supported", "inference", "disputed", "unknown"]},
+        "evidence": {"type": "array", "maxItems": 8, "items": {"type": "object", "additionalProperties": false, "properties": {
+          "url": {"type": "string", "maxLength": 4096}, "quote": {"type": "string", "maxLength": 1200},
+          "relation": {"type": "string", "enum": ["supports", "contradicts", "context"]}
+        }, "required": ["url", "quote", "relation"]}}
+      }, "required": ["id", "statement", "entity_ids", "assessment", "evidence"]}},
+      "coverage": {"type": "array", "maxItems": 40, "items": {"type": "object", "additionalProperties": false, "properties": {
+        "facet": {"type": "string", "maxLength": 300},
+        "status": {"type": "string", "enum": ["searched", "unavailable", "not_searched"]},
+        "query": {"type": "string", "maxLength": 1024},
+        "gap": {"type": "string", "maxLength": 1000}
+      }, "required": ["facet", "status", "query", "gap"]}}
+    },
+    "required": ["scope", "entities", "claims", "coverage"]
+  }
+}

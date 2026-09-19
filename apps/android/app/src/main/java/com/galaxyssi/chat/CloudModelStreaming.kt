@@ -151,6 +151,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 toolProgress.record(observation.tool, observation.arguments, observation.output)
                 evidenceResults += observation.tool to observation.output
                 research.observe(observation.output, restored = true)
+                if (observation.tool == ResearchEvidenceAudit.TOOL) imageSession.researchAudit.restore(observation.tool, observation.arguments)
+                else runCatching { imageSession.researchAudit.observe(JSONObject(observation.output)) }
                 onToolEvent?.invoke(CloudToolEvent(observation.tool, "restored", "",
                     AgentResearchTrace.observe(observation.tool, observation.arguments, observation.output).toJson().toString()))
             }
@@ -385,6 +387,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             continue
                         }
                         val validationStarted = System.nanoTime()
+                        val auditReview = imageSession.researchAudit.reviewPrompt(turns.lastOrNull { it.isMine }?.content.orEmpty())
+                        if (candidate.isNotBlank() && auditReview != null && research.stopReason() == null &&
+                            !toolProgress.finalizationRequested && toolProgress.requestRepair("public_evidence_audit")) {
+                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            appendPlainConversationTurn(prepared, "assistant", candidate)
+                            appendPlainConversationTurn(prepared, "user", auditReview)
+                            continue
+                        }
                         val readingReview = research.readingReview(candidate)
                         if (candidate.isNotBlank() && readingReview != null && research.stopReason() == null &&
                             !toolProgress.finalizationRequested && toolProgress.requestRepair("decisive_body_reading")) {
@@ -396,6 +406,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         }
                         val citationValidation = CloudWebGrounding.citationValidation(candidate, evidenceResults)
                         val qualityReport = quality.assess(candidate, true)
+                            .put("evidence_audit", imageSession.researchAudit.report())
+                        if (candidate.isNotBlank() && qualityReport.getJSONArray("risks").length() > 0 &&
+                            toolProgress.requestRepair("research_quality")) {
+                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            appendPlainConversationTurn(prepared, "assistant", candidate)
+                            appendPlainConversationTurn(prepared, "user", quality.repairPrompt(qualityReport))
+                            continue
+                        }
                         val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
                         Log.i("GalaxySSIWebLatency", "research_quality request=$requestId report=$qualityReport")
                         if (citationValidation.invalidCitationUrls.isNotEmpty()) Log.w("GalaxySSIWebLatency",

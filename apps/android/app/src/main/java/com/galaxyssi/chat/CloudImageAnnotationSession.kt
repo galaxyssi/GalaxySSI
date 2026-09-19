@@ -22,6 +22,7 @@ internal class CloudImageAnnotationSession(
     private val images: List<CloudImagePayload>,
     private val sessionId: String = UUID.randomUUID().toString()
 ) {
+    val researchAudit = ResearchEvidenceAudit()
     private val completed = linkedMapOf<Int, AgentRichBlock>()
     private val rendered = mutableMapOf<String, AgentRichBlock>()
 
@@ -30,8 +31,14 @@ internal class CloudImageAnnotationSession(
         token: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         checkpoint: () -> Unit = {}
     ): String {
+        if (name == ResearchEvidenceAudit.TOOL) {
+            checkpoint()
+            return researchAudit.submit(arguments).toString()
+        }
         if (name != CloudImageAnnotationPlan.TOOL) {
-            return CloudWebGrounding.executeTool(context, name, arguments, token, checkpoint)
+            return CloudWebGrounding.executeTool(context, name, arguments, token, checkpoint).also { output ->
+                runCatching { researchAudit.observe(JSONObject(output)) }
+            }
         }
         return try {
             checkpoint()
