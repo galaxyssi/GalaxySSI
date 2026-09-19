@@ -25,7 +25,7 @@ internal class CloudCitationPreview(private val evidence: List<Pair<String, Stri
         val boundary = raw.lastIndexOf("\n\n").takeIf { it >= 0 }?.plus(2) ?: return null
         if (boundary <= checkedThrough) return null
         checkedThrough = boundary
-        val prefix = raw.substring(0, boundary)
+        val prefix = CloudEvidenceCitations.resolve(raw.substring(0, boundary), evidence).text
         var unsafe = false
         Parser.builder().build().parse(prefix).accept(object : AbstractVisitor() {
             override fun visit(node: HtmlInline) { unsafe = true }

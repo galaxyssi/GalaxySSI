@@ -93,6 +93,9 @@ internal class CloudWebToolLoopProgress {
         return true
     }
 
+    fun requestPartialSynthesisRepair(): Boolean =
+        "stream_citations" in requestedRepairs && requestRepair("partial_synthesis")
+
     fun requestFinalization(): Boolean {
         if (finalizationRequested) return false
         finalizationRequested = true

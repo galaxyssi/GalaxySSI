@@ -129,6 +129,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             return@flow
         }
         if (!allowExternalTools) disableExternalTools(prepared)
+        else appendPlainConversationTurn(prepared, "user", CloudEvidenceCitations.instruction)
         val globalSequence = AtomicLong(0L)
         val toolProgress = CloudWebToolLoopProgress()
         val research = CloudResearchLoop(CloudResearchLimits.from(contact))
@@ -372,7 +373,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     }
                     if (bufferForCitationVerification) {
                         onToolEvent?.invoke(CloudToolEvent("research", "verifying", "\u6b63\u5728\u68c0\u67e5\u7ed3\u8bba\u4e0e\u6765\u6e90\u5f15\u7528"))
-                        val candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+                        val candidate = CloudEvidenceCitations.resolve(
+                            CloudWebGrounding.stripInternalToolProtocol(rawRoundText), evidenceResults).text
                         if (toolProgress.requestEmptySynthesisRepair(candidate, evidenceResults.isNotEmpty())) {
                             if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                             Log.i("GalaxySSIWebLatency", "synthesis_recovery request=$requestId reason=empty_answer")
@@ -385,6 +387,9 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         val qualityReport = quality.assess(candidate, true)
                         val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
                         Log.i("GalaxySSIWebLatency", "research_quality request=$requestId report=$qualityReport")
+                        if (citationValidation.invalidCitationUrls.isNotEmpty()) Log.w("GalaxySSIWebLatency",
+                            "citation_mismatch request=$requestId status=${citationValidation.status} " +
+                                "reference_hashes=${citationValidation.invalidCitationUrls.map { AgentNativeJsonCodec.sha256(it).take(12) }}")
                         Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=citation_validation " +
                             "elapsed_ms=${(System.nanoTime() - validationStarted) / 1_000_000L} repair=${citationRepair != null} " +
                             "status=${citationValidation.status} invalid_count=${citationValidation.invalidCitationUrls.size}")
@@ -393,9 +398,21 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         ) {
                             if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                             appendPlainConversationTurn(prepared, role = "assistant", text = candidate)
-                            appendPlainConversationTurn(prepared, role = "user", text = citationRepair)
+                            appendPlainConversationTurn(prepared, role = "user", text = citationRepair + "\n" +
+                                CloudEvidenceCitations.repairPrompt(evidenceResults, partial = false))
                             disableExternalTools(prepared)
                             Log.i("GalaxySSIWebLatency", "synthesis_recovery request=$requestId reason=citations")
+                            continue
+                        }
+                        if (candidate.isNotBlank() && citationRepair != null &&
+                            toolProgress.requestPartialSynthesisRepair()) {
+                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            appendPlainConversationTurn(prepared, "assistant", candidate)
+                            appendPlainConversationTurn(prepared, "user",
+                                CloudEvidenceCitations.repairPrompt(evidenceResults, partial = true))
+                            disableExternalTools(prepared)
+                            Log.i("GalaxySSIWebLatency", "synthesis_recovery request=$requestId reason=partial_citation_repair " +
+                                "status=${citationValidation.status} invalid_count=${citationValidation.invalidCitationUrls.size}")
                             continue
                         }
                         val visibleAnswer = if (candidate.isNotBlank() && citationRepair == null) {
