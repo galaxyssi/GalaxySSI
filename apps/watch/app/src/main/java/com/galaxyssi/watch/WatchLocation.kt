@@ -104,7 +104,7 @@ internal class WatchLocation(private val context: Context) {
                     if (base.host == "photon.komoot.io") builder.addQueryParameter("limit", "1").addQueryParameter("radius", "1")
                     else builder.addQueryParameter("format", "jsonv2").addQueryParameter("addressdetails", "1").addQueryParameter("zoom", "17")
                     val url = builder.build()
-                    val request = okhttp3.Request.Builder().url(url).header("User-Agent", "GalaxySSI-Watch/0.2.29 (+https://github.com/galaxyssi/GalaxySSI)").build()
+                    val request = okhttp3.Request.Builder().url(url).header("User-Agent", "GalaxySSI-Watch/0.3.0 (+https://github.com/galaxyssi/GalaxySSI)").build()
                     synchronized(addressLock) {
                         while (SystemClock.elapsedRealtime() - lastAddressRequest < 2000) { operation.checkActive(); Thread.sleep(100) }
                         lastAddressRequest = SystemClock.elapsedRealtime()

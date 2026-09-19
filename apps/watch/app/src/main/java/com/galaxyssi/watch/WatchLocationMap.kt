@@ -280,7 +280,7 @@ internal class WatchLocationMap(context: Context, private val fix: WatchLocation
     private fun load(key: String) {
         if (!key.startsWith("https://")) { failed.add(key); return }
         val request = Request.Builder().url(key)
-            .header("User-Agent", "GalaxySSI-Watch/0.2.29 (+https://github.com/galaxyssi/GalaxySSI)").build()
+            .header("User-Agent", "GalaxySSI-Watch/0.3.0 (+https://github.com/galaxyssi/GalaxySSI)").build()
         val call = client().newCall(request); pending[key] = call
         val revision = generation
         workers.execute {
