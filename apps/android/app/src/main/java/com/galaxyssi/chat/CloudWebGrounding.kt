@@ -94,6 +94,7 @@ object CloudWebGrounding {
             (context?.let { "\n\n" + ResearchQualityStandard.get(it).prompt } ?: "")
 
     fun openAiTools(): JSONArray = JSONArray().apply {
+        ResearchQualityStandard.loaded?.auditTool?.let { put(it) }
         put(functionTool("web_weather", "Get structured weather forecasts for a requested local day or date range within the next 16 days. " +
             "Prefer this for ordinary weather questions. Supply city and first-level region names in English " +
             "(not coordinates), and ISO country_code. The tool checks location and local forecast date. " +
@@ -313,7 +314,7 @@ object CloudWebGrounding {
             val name = start.groupValues[1].trim()
             val body = content.substring(start.range.last + 1, close.range.first)
             val arguments = parseInlineArguments(body)
-            if (operationForTool(name) != null || name == CloudImageAnnotationPlan.TOOL) calls += InlineToolCall(name, arguments)
+            if (operationForTool(name) != null || name == CloudImageAnnotationPlan.TOOL || name == ResearchEvidenceAudit.TOOL) calls += InlineToolCall(name, arguments)
             cursor = close.range.last + 1
         }
         return calls

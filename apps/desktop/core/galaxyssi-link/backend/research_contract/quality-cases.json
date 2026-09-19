@@ -8,6 +8,9 @@
   {"id":"code_example","answer":"```text\nNo authoritative records exist.\n```\nThis is an invalid inference.","research":true,"risks":[]},
   {"id":"quoted_bad_answer","answer":"> 没有权威来源记载两人存在合作关系。\n这句话不严谨。","research":true,"risks":[]},
   {"id":"ordinary_chat","answer":"好的。","research":false,"risks":[]},
+  {"id":"exhaustive_overclaim","answer":"已经找齐他的所有论文。","research":true,"risks":["unqualified_exhaustive_claim"]},
+  {"id":"identity_exclusion","answer":"该文被 excluded solely because of the publication year.","research":true,"risks":["unsupported_identity_exclusion"]},
+  {"id":"honest_inventory","answer":"目前确认三篇，另有一篇身份待核实；数据库覆盖尚不完整。","research":true,"risks":[]},
   {"id":"partial_source_failure","answer":"一个来源未能打开。已核对的官方记录支持A；B暂未确认。","research":true,"risks":[]},
   {"id":"unprovable_but_structurally_clean","answer":"They are siblings. [paper](https://example.org/paper)","research":true,"risks":[]}
 ]

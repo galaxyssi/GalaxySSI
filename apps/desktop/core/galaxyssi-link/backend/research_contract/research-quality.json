@@ -1,7 +1,11 @@
 {
-  "version": "galaxyssi.research-quality/1.1",
+  "version": "galaxyssi.research-quality/1.2",
   "rules": [
     "Apply this standard to evidence-based answers, not as a requirement to search for every chat message. Match depth and final-answer length to the user's question.",
+    "For investigations, exhaustive lists or disputed identities, use research_audit when available to retain a public evidence ledger, not private chain-of-thought. Submit scope, entity candidates, important claims and coverage facets. The tool checks only observed provenance, never semantic truth. An identity decision remains a model assessment even when its quote matches. Use the tool's real observed counters; never reconstruct executed queries or visited-page totals from memory. Native activity missing from host observations must remain unknown, not zero.",
+    "Maintain separate included, pending and excluded candidates. Absence from search, a publication gap, matching initials, or an apparent career discontinuity cannot by itself settle identity. Exclusion requires affirmative distinguishing evidence; otherwise retain the candidate as pending outside the confirmed list. Preserve original names and mark uncertain translations; do not expand initials into Chinese names without a source. Claims depending on unresolved identity inherit that uncertainty.",
+    "For requests using all, complete or exhaustive, explicitly define the population and date range, publication types, languages and databases checked. Separate executed searches from planned queries and unavailable databases. Broaden beyond an initial date or collaborator filter before claiming coverage. Report a confirmed-so-far list plus pending candidates and specific gaps; no finite web search by itself proves completeness. Track DOI/PMID and versions when available, and distinguish the same work appearing in multiple databases from genuinely independent studies. Similar titles or overlapping authors alone do not justify merging works or claiming duplicate publication.",
+    "Read to the evidentiary depth the claim requires: authoritative bibliographic records can establish titles, dates and author order; abstracts support explicitly abstract-based summaries; judgments about methods, duplicated studies, contributions or disputed findings require decisive full-text passages or an explicit unknown. Retain source locators, publication/event dates and counterevidence. A whole document fetch is not proof it was fully read. Present conclusion and useful table first, then uncertainty and coverage; keep the full public ledger available without dumping it into every answer.",
     "Plan around answerable questions and the evidence needed for each conclusion. Select appropriate primary records, official documents or domain-specific databases. Use multilingual names or aliases when useful, but corroborate entity identity with institution, dates and field; matching initials alone are insufficient.",
     "For complex research, maintain subquestions with a purpose, language, evidence found, remaining gap and material conflicts. Start broad, then narrow. Search Chinese and English when both can add independent evidence, and the original source language where useful; do not mechanically translate every query. Batch independent subquestions, then adapt the next batch to observed gaps. Scale to hundreds of queries and thousands or tens of thousands of candidate records when the investigation warrants it, never a quota. Partition large corpora by subquestion and retain compact attributable findings instead of loading every full text into one context. A large discovered corpus does not imply all records were read or checked. Simple weather, picture and daily-news requests remain focused lookups.",
     "Read the readable body of relevant sources as completely as practical before relying on them, prioritizing decisive primary records. For long pages use sequential cached reading windows, continue from next_offset, and retain passage offsets and document version. A retrieved body may only have been shown as an excerpt: do not claim full reading from a fetch receipt. Explicitly account for inaccessible, truncated, excluded and snippet-only sources. Do not spend the budget reading irrelevant hits or duplicate reprints merely to inflate coverage.",
@@ -26,6 +30,14 @@
     {
       "id": "speculative_relationship",
       "pattern": "(?i)(?:(?:最可能|很可能)[^。！？\\n]{0,65}(?:师生|前辈|后学|亲属|夫妻|导师)|most likely[^.!?\\n]{0,65}(?:mentor|student|relative|spouse))"
+    },
+    {
+      "id": "unqualified_exhaustive_claim",
+      "pattern": "(?i)(?:已经找齐(?:了)?(?:他的|她的|该作者的)?所有论文|这就是(?:他的|她的|该作者的)?全部论文|this is (?:the )?complete list of all (?:his |her |their )?publications)"
+    },
+    {
+      "id": "unsupported_identity_exclusion",
+      "pattern": "(?i)(?:仅因(?:为)?[^。！？\\n]{0,35}(?:年代|年份|履历)[^。！？\\n]{0,35}(?:因此排除|所以排除)|excluded solely because[^.!?\\n]{0,60}(?:year|career|date))"
     }
   ]
 }

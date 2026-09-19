@@ -53,7 +53,7 @@ internal class CloudResearchCheckpoint(private val records: AgentModelLoopRecord
     companion object {
         fun isReadOnly(tool: String, arguments: JSONObject): Boolean = tool in setOf(
             "web_weather", "web_search", "web_image_search", "web_fetch", "web_crawl", "web_extract",
-            "web_find_similar", "web_research", "web_agent", "web_diff"
+            "web_find_similar", "web_research", "web_agent", "web_diff", ResearchEvidenceAudit.TOOL
         ) || (tool == "web_cache" && arguments.optString("action") in setOf("status", "query", "get", "source_health", "learned_sources"))
     }
 }

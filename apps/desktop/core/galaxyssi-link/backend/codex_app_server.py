@@ -41,6 +41,7 @@ from web_evidence_pack import (
     verify_evidence_pack,
 )
 from research_quality import assess_answer, quality_repair_prompt, research_quality_prompt, research_stage
+from research_audit import ResearchEvidenceAudit, TOOL as RESEARCH_AUDIT_TOOL, tool_spec as research_audit_tool_spec
 from research_trace import search_receipt
 
 
@@ -180,6 +181,7 @@ class CodexRun:
     citation_repair_attempted: bool = False
     research_observed: bool = False
     research_quality: dict[str, Any] = field(default_factory=dict)
+    research_audit: ResearchEvidenceAudit = field(default_factory=ResearchEvidenceAudit, repr=False)
     generated_images: dict[str, dict] = field(default_factory=dict)
     generated_image_errors: dict[str, str] = field(default_factory=dict)
     host_config_guard: object | None = field(default=None, repr=False)
@@ -207,7 +209,7 @@ class CodexAppServer:
         self._loaded_thread_access_sequence = 0
         self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
-        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec()]
+        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec()]
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -1753,6 +1755,7 @@ class CodexAppServer:
             item_type = str(item.get("type") or "")
             if item_type == "webSearch":
                 run.research_observed = True
+                run.research_audit.observe({"research_trace": search_receipt(item, completed=True)})
                 self._checkpoint_progress(run, "observe", research=research_stage("retrieval_observed"))
             item_id = str(item.get("id") or params.get("itemId") or "")
             if is_generated_image(item):
@@ -1981,7 +1984,17 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name == CODEX_DYNAMIC_SEARCH_TOOL:
+            if tool_name == RESEARCH_AUDIT_TOOL:
+                with self._lock:
+                    run = self._runs.get(task_id)
+                    if run is None or run.finished:
+                        raise ValueError("Research task is no longer active")
+                    audit = run.research_audit.submit(arguments if isinstance(arguments, Mapping) else {})
+                self._checkpoint_progress(run, "verify", research_audit=audit)
+                self._write_server_response(message.get("id"), {"success": audit.get("status") == "recorded",
+                    "contentItems": [{"type": "inputText", "text": json.dumps(audit, ensure_ascii=False)}]})
+                return
+            elif tool_name == CODEX_DYNAMIC_SEARCH_TOOL:
                 result = execute_codex_dynamic_search(
                     arguments if isinstance(arguments, Mapping) else {},
                     task_id,
@@ -2024,6 +2037,8 @@ class CodexAppServer:
                 run = self._runs.get(task_id)
                 if run is not None and not run.finished:
                     run.web_evidence_packs.append(dict(evidence_pack))
+                    run.research_audit.observe({"evidence_pack": dict(evidence_pack), "research_trace": {
+                        "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
         direct_fetch = tool_name == CODEX_DYNAMIC_FETCH_TOOL
@@ -2060,6 +2075,7 @@ class CodexAppServer:
         """Review the native result once; never run a second host search loop."""
         run.research_quality = assess_answer(run.final_text,
             research_observed=run.research_observed or bool(run.web_evidence_packs))
+        run.research_quality["evidence_audit"] = run.research_audit.report()
         validation = validate_answer_citations(
             run.final_text,
             packs=run.web_evidence_packs,
