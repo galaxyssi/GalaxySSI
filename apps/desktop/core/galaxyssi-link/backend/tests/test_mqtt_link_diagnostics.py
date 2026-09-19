@@ -12,6 +12,9 @@ import link_protocol
 import link_delivery
 import mqtt_bridge
 from link_transport_diagnostics import LinkTransportDiagnostics
+from mqtt_receipt_replay_gate import ReceiptReplayGate
+from mqtt_decrypt_backoff import DecryptBackoff
+from galaxyssi_client import SignalSidecarError
 from tests.receive_test_support import store_received_envelope, complete_received_envelope
 
 
@@ -142,7 +145,9 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
 
     def test_replayed_request_resends_ack_without_executing_again(self) -> None:
         message_id = self.stored()
+        now = [0.0]
         with (
+            patch.object(mqtt_bridge, "signal_receipt_replay_gate", ReceiptReplayGate(clock=lambda: now[0])),
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
             patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
@@ -151,11 +156,49 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             for _ in range(12):
                 mqtt_bridge.on_message(object(), None,
                     FakeMessage(self.topics.receive, self.wire, self.link_secret))
-        self.assertEqual(12, publish.call_count)
+            self.assertEqual(1, publish.call_count)
+            now[0] = 3.0
+            mqtt_bridge.on_message(object(), None,
+                FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        self.assertEqual(2, publish.call_count)
         self.assertEqual(message_id, publish.call_args.args[2]["transport_message_id"])
         self.assertEqual("210", publish.call_args.args[2]["client_source_message_id"])
         decrypt.assert_not_called()
         start_task.assert_not_called()
+
+    def test_invalid_ciphertext_backoff_never_acknowledges_or_dispatches(self) -> None:
+        now = [0.0]
+        failure = SignalSidecarError(500, json.dumps({"error": "InvalidMessageException"}))
+        with (
+            patch.object(mqtt_bridge, "decrypt_backoff", DecryptBackoff(clock=lambda: now[0])) as gate,
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=None),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope", side_effect=failure) as decrypt,
+            patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
+            patch.object(mqtt_bridge, "_start_remote_agent_task") as dispatch,
+        ):
+            for _ in range(100):
+                mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+            self.assertEqual(1, decrypt.call_count)
+            self.assertEqual(99, gate.snapshot()["deferred"])
+            now[0] = 3.0
+            mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+            self.assertEqual(2, decrypt.call_count)
+            publish.assert_not_called()
+            dispatch.assert_not_called()
+
+    def test_durable_receive_proof_bypasses_negative_cache(self) -> None:
+        message_id = self.stored()
+        with (
+            patch.object(mqtt_bridge, "decrypt_backoff") as gate,
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
+        ):
+            gate.defer.return_value = True
+            mqtt_bridge.on_message(object(), None, FakeMessage(self.topics.receive, self.wire, self.link_secret))
+            gate.defer.assert_not_called()
+            decrypt.assert_not_called()
+            publish.assert_called_once()
 
     def test_missing_durable_receipt_body_cannot_restart_ack_exchange(self) -> None:
         with (

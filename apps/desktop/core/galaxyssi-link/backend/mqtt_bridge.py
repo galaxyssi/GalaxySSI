@@ -24,6 +24,7 @@ import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
 from mqtt_inbound_pool import InboundRoutePool
+from mqtt_decrypt_backoff import DecryptBackoff
 from mqtt_receipt_replay_gate import ReceiptReplayGate
 from task_progress_window import TaskProgressWindow
 from attachment_request_broker import (
@@ -6767,6 +6768,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         add_task_trace("desktop_task_created", created.task_id)
 
 
+decrypt_backoff = DecryptBackoff()
+
+
 def _process_message(mqttc, userdata, msg):
     try:
         if isinstance(msg, _StoredInboxMessage):
@@ -6910,6 +6914,9 @@ def _process_message(mqttc, userdata, msg):
                 log.warning("Rejected MQTT message: cryptographic sender does not match route")
                 return
             ciphertext_digest = _signal_ciphertext_digest(wire_payload)
+            # Only authenticated, endpoint-bound ciphertext may use this cache.
+            failure_key = (client_route_id, hashlib.sha256(str(paired_client.get("link_secret") or "").encode()).digest(),
+                           ciphertext_digest)
             replay_lookup_started_ns = timing_now_ns()
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             decrypt_started_at = int(time.time() * 1000)
@@ -6931,9 +6938,12 @@ def _process_message(mqttc, userdata, msg):
                         message_id=replay_message_id, detail_code="durable_body",
                     )
                 else:
+                    if decrypt_backoff.defer(failure_key):
+                        return "decrypt_deferred"
                     application_envelope = decrypt_signal_envelope(
                         wire_payload, remote_name=paired_client["signal_name"],
                     )
+                decrypt_backoff.succeeded(failure_key)
                 signal_decrypt_finished_ns = timing_now_ns()
             except CompletedReceiveReplay as completed:
                 acknowledge_completed(sys.modules[__name__], mqttc, paired_client, wire_payload, completed.envelope,
@@ -6941,6 +6951,7 @@ def _process_message(mqttc, userdata, msg):
                 _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
                 return
             except Exception as exc:
+                decrypt_backoff.failed(failure_key, exc)
                 link_transport_diagnostics().record(
                     classify_decryption_error(exc), route_id=client_route_id,
                     message_id=ciphertext_digest, detail_code=getattr(exc, "diagnostic_code", exc.__class__.__name__),
@@ -6989,7 +7000,9 @@ def _process_message(mqttc, userdata, msg):
                                     chunk_transfer=chunk_transfer)
         _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
     except Exception as e:
-        log.error("MQTT message handling error (%s)", getattr(e, "diagnostic_code", type(e).__name__))
+        log.error("MQTT message handling error (%s:%s)", getattr(e, "diagnostic_code", type(e).__name__),
+                  getattr(e, "diagnostic_reason", "unspecified"))
+        return False
 
 
 def _chunk_peer_identity(paired):
@@ -7608,6 +7621,7 @@ def mqtt_ingress_status() -> dict:
         if current is None or (inbound_route_accepting and current["closed"] and current["workers"] == 0):
             inbound_route_pool = _new_inbound_pool()
         status = inbound_route_pool.snapshot()
+        status["decrypt_backoff"] = decrypt_backoff.snapshot()
         status["accepting"] = inbound_route_accepting and not status["closed"]
         return status
 

@@ -250,15 +250,14 @@ internal class GalaxySSILinkOutboxDatabase(
 
     @Synchronized
     fun makePendingImmediatelyRetryable(nowMillis: Long) {
-        val values = ContentValues().apply {
-            put("status", "queued")
-            put("next_attempt_at", nowMillis)
-        }
-        writableDatabase.update(
-            TABLE_OUTBOX,
-            values,
-            "next_attempt_at > ?",
-            arrayOf(nowMillis.toString())
+        // Path flaps must not turn every resume ACK into a full outbox replay.
+        // Fresh work can wake immediately; previously sent work keeps a receipt window.
+        val retryAt = nowMillis + GalaxySSILinkRetryPolicy.delayMillis(1)
+        writableDatabase.execSQL(
+            "UPDATE $TABLE_OUTBOX SET status = 'queued', next_attempt_at = " +
+                "CASE WHEN attempts = 0 THEN ? ELSE MIN(next_attempt_at, ?) END " +
+                "WHERE next_attempt_at > ?",
+            arrayOf(nowMillis, retryAt, nowMillis)
         )
     }
 

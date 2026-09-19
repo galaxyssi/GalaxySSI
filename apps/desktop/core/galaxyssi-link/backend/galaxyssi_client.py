@@ -45,6 +45,7 @@ class SignalSidecarError(RuntimeError):
     """Keep private error text separate from the allowlisted diagnostic code."""
     def __init__(self, status: int, body: str):
         super().__init__(f"Signal sidecar HTTP {status}: {body}")
+        value = None
         try:
             value = json.loads(body)
             kind = value.get("error") if isinstance(value, dict) else None
@@ -54,6 +55,12 @@ class SignalSidecarError(RuntimeError):
             "InvalidKeyIdException", "InvalidKeyException", "UntrustedIdentityException",
             "IllegalStateException", "IllegalArgumentException", "JSONException"}
         self.diagnostic_code = kind if kind in allowed else "SignalSidecarError"
+        message = str(value.get("message", "")).lower() if isinstance(value, dict) else ""
+        self.diagnostic_reason = next((code for text, code in (
+            ("old counter", "old_counter"), ("bad mac", "bad_mac"),
+            ("no valid sessions", "no_valid_sessions"), ("too far into the future", "future_counter"),
+            ("uninitialized session", "uninitialized_session"),
+        ) if text in message), "unspecified")
 
 
 def _peer_lock(remote_name: str, remote_device_id: int) -> threading.RLock:
