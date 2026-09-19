@@ -41,6 +41,7 @@ from agent_task_manager import (
 )
 from codex_app_server import CodexAppServer, CodexConversationBusyError
 from research_quality import standard as research_quality_standard
+from research_trace import replay_receipts
 import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
 import link_delivery as link_delivery_storage
@@ -3932,6 +3933,9 @@ def _agent_task_payload(
         payload["result_summary"] = image_link_preview(str(task.get("result") or ""))
     if readable_progress:
         payload["events"] = readable_progress
+    research_receipts = replay_receipts(events)
+    if research_receipts:
+        payload["research_trace"] = research_receipts
     receipt, snapshot = _task_reputation_evidence(task)
     if receipt:
         payload["execution_receipt"] = receipt

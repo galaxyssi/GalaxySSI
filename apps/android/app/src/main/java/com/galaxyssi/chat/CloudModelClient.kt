@@ -1828,7 +1828,7 @@ object CloudModelClient {
             "Use concise section headings and bullets. Return only the handoff summary."
 }
 
-data class CloudToolEvent(val tool: String, val stage: String, val detail: String)
+data class CloudToolEvent(val tool: String, val stage: String, val detail: String, val researchTraceJson: String = "")
 
 data class CloudModelUsage(
     val inputTokens: Long = 0L,

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="research_trace_summary">搜索 %1$d 个关键词，参考 %2$d 篇资料</string>
+    <string name="research_trace_remote_pending">搜索 %1$d 个关键词，资料未回传</string>
+    <string name="research_trace_recorded_subset">（已记录部分）</string>
+    <string name="research_trace_expand">展开搜索详情</string>
+    <string name="research_trace_collapse">收起搜索详情</string>
+    <string name="research_trace_open_failed">无法打开此来源</string>
+</resources>

@@ -151,6 +151,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 toolProgress.record(observation.tool, observation.arguments, observation.output)
                 evidenceResults += observation.tool to observation.output
                 research.observe(observation.output, restored = true)
+                onToolEvent?.invoke(CloudToolEvent(observation.tool, "restored", "",
+                    AgentResearchTrace.observe(observation.tool, observation.arguments, observation.output).toJson().toString()))
             }
             if (restored.isNotEmpty()) {
                 toolProgress.observeEvidenceBatch(restored.map { it.output })
@@ -504,7 +506,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         }
                         onToolEvent?.invoke(CloudToolEvent("research", "progress",
                             "\u5df2\u6536\u96c6 ${research.sourceCount} \u4e2a\u6765\u6e90\uff0c\u6b63\u5728\u68c0\u67e5\u8bc1\u636e\u4e0e\u4fe1\u606f\u7f3a\u53e3"))
-                        onToolEvent?.invoke(CloudToolEvent(completed.call.name, "completed", completed.output.take(240)))
+                        onToolEvent?.invoke(CloudToolEvent(completed.call.name, "completed", completed.output.take(240),
+                            AgentResearchTrace.observe(completed.call.name, arguments, completed.output).toJson().toString()))
                     }
                 ) { preparedCall ->
                     try {

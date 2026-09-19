@@ -1331,6 +1331,7 @@ class AgentWebIntelligenceService(
             .mapNotNull(::normalizeAgentWebCategoryTag)
             .toSet()
         val resultGroups = mutableListOf<List<AgentNativeJsonObject>>()
+        val executedQueries = mutableListOf<String>()
         val receiptGroups = mutableListOf<List<AgentNativeJsonObject>>()
         val receipts = mutableListOf<Any?>()
         queryPlan.forEach { item ->
@@ -1358,6 +1359,7 @@ class AgentWebIntelligenceService(
                 checkpoint
             )
             queriesExecuted += 1
+            executedQueries += item.query
             val queryResults = (searched["results"] as? List<*>)
                 ?.filterIsInstance<Map<*, *>>()
                 ?.map(Map<*, *>::toStringMap)
@@ -1436,6 +1438,7 @@ class AgentWebIntelligenceService(
             "cache" to (mapOf("hit" to false) + store.cacheMetadata()),
             "research" to linkedMapOf(
                 "query_plan" to queryPlan.map(AgentWebResearchQueryPlanItem::publicValue),
+                "executed_queries" to executedQueries,
                 "coverage" to coverage.map(AgentWebResearchQueryCoverage::publicValue),
                 "unresolved_queries" to coverage
                     .filter { it.status != "covered" }

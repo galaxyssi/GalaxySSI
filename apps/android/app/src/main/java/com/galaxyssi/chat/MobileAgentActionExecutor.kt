@@ -1506,6 +1506,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
                                 else null,
                             onToolEvent = { event ->
+                                if (event.researchTraceJson.isNotBlank()) runCatching {
+                                    AgentResearchTraceStore.merge(appContext, conversationId, connectorTurnId,
+                                        AgentResearchTrace.decode(JSONObject(event.researchTraceJson)))
+                                }
                                 Log.i(
                                     "GalaxySSILatency",
                                     "agent_cloud stage=tool_${event.stage} source=$messageId tool=${event.tool}"

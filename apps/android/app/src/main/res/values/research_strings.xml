@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="research_trace_summary">Searched %1$d queries, referenced %2$d sources</string>
+    <string name="research_trace_remote_pending">Searched %1$d queries; sources not supplied</string>
+    <string name="research_trace_recorded_subset"> (recorded subset)</string>
+    <string name="research_trace_expand">Expand search details</string>
+    <string name="research_trace_collapse">Collapse search details</string>
+    <string name="research_trace_open_failed">Unable to open this source</string>
+</resources>
