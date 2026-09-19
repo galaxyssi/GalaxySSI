@@ -7,9 +7,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 
-internal class AgentWebBudgetExceededException : RuntimeException("The shared web evidence deadline was reached")
+internal class AgentWebBudgetExceededException : RuntimeException("The web operation deadline was reached")
 
-/** One monotonic deadline across model rounds, search plans and queued web calls. */
+/** A cancellable operation deadline. Research creates one after each tool acquires its execution slot. */
 internal class AgentWebExecutionBudget(
     durationMillis: Long,
     private val clockNanos: () -> Long = System::nanoTime
@@ -37,7 +37,12 @@ internal class AgentWebExecutionBudget(
         try {
             runInterruptible(Dispatchers.IO) {
                 checkpoint()
-                block(source.token, checkpoint)
+                val result = try { block(source.token, checkpoint) } catch (error: AgentNativeToolCancelledException) {
+                    if (expired) throw AgentWebBudgetExceededException()
+                    throw error
+                }
+                checkpoint()
+                result
             }
         } finally {
             watchdog.cancel()

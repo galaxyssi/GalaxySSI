@@ -744,6 +744,7 @@ internal fun MainActivity.requestCloudModelReplyLegacy(
 }
 
 internal fun MainActivity.postCloudToolEvent(contact: Contact, event: CloudToolEvent) {
+    if (event.tool == "research") return
     handler.post {
         if (isDestroyed) return@post
         val detail = event.detail.replace(Regex("[\\r\\n]+"), " ").take(120)

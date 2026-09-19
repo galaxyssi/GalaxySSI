@@ -6,6 +6,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentWebEvidenceVerificationTest {
+    @Test fun citationRepairNeverWhitelistsTamperedEvidence() {
+        val pack = AgentWebEvidencePack.build("fixture", "completed", listOf(
+            document("https://good.example/report", "Evidence", "a".repeat(64)),
+            document("https://bad.example/report", "Tampered", "b".repeat(64))
+        ), emptyList(), emptyList(), 1L).toMutableMap()
+        val items = (pack["items"] as List<*>).map { (it as Map<*, *>).entries.associate { it.key.toString() to it.value }.toMutableMap() }
+        items[1]["citation_id"] = "0".repeat(24)
+        pack["items"] = items
+        val results = listOf("web_search" to AgentNativeJsonCodec.stringify(mapOf("evidence_pack" to pack)))
+        val validation = AgentWebEvidenceVerification.validateAnswer("No citations", results)
+        val prompt = AgentWebEvidenceVerification.repairPrompt(validation, results)
+        assertTrue(prompt.contains("https://good.example/report"))
+        assertFalse(prompt.contains("https://bad.example/report"))
+    }
+
+    @Test fun repairKeepsLateValidCitationsAndCompleteUrls() {
+        val urls = (1..20).map { "https://example.com/report-$it" }
+        val results = urls.chunked(10).map { batch ->
+            val pack = AgentWebEvidencePack.build("fixture", "completed", batch.map {
+                document(it, "Evidence", "a".repeat(64))
+            }, emptyList(), emptyList(), 1L)
+            "web_search" to AgentNativeJsonCodec.stringify(mapOf("evidence_pack" to pack))
+        }
+        val validation = AgentWebEvidenceVerification.validateAnswer(
+            "[valid](${urls.last()}) and [invalid](https://foreign.example/report)", results)
+        val prompt = AgentWebEvidenceVerification.repairPrompt(validation, results)
+        assertTrue(prompt.contains(urls.last()))
+        assertFalse(prompt.contains("https://foreign.example/report"))
+        assertTrue(prompt.length <= 8_000)
+        assertTrue(prompt.lineSequence().filter { it.startsWith("- ") }.all { it.removePrefix("- ") in urls })
+    }
+
     @Test fun standardMarkdownCitationsDoNotTriggerAnUnnecessaryRepair() {
         val url = "https://example.com/report_(revision)"
         val pack = AgentWebEvidencePack.build("fixture", "completed",

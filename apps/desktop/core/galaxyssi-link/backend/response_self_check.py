@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Mapping
+from research_quality import assess_answer, quality_repair_prompt
 
 
 class ResponseSelfCheckStatus(str, Enum):
@@ -162,7 +163,8 @@ def response_repair_prompt(
         f"self-check ({', '.join(result.reasons) or 'response_not_verified'}).\n"
         "Return only the corrected final answer. Do not return an acknowledgement or discuss "
         "this self-check. Use already available attachments instead of asking for them again.\n"
-        f"Request digest: {result.request_digest}\n"
+        + quality_repair_prompt({"risks": list(result.reasons)}) + "\n"
+        + f"Request digest: {result.request_digest}\n"
         + (
             "Available attachments: " + ", ".join(attachments) + "\n"
             if attachments else ""
@@ -210,6 +212,7 @@ def evaluate_response(
             reasons.append("acknowledgement_only")
         if actionable and _normalized(reply) == _normalized(request):
             reasons.append("request_echo")
+        reasons.extend(assess_answer(reply)["risks"])
         if reasons:
             status = ResponseSelfCheckStatus.REPAIR
 

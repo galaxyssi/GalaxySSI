@@ -9,6 +9,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudWebToolLoopProgressTest {
+    @Test fun retrievalDeadlineStillAllowsOneToolFreeSynthesis() {
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(progress.requestDeadlineSynthesis(false))
+        assertFalse(progress.finalizationRequested)
+        assertTrue(progress.requestDeadlineSynthesis(true))
+        assertTrue(progress.finalizationRequested)
+        assertFalse(progress.requestDeadlineSynthesis(true))
+    }
+
+    @Test fun citationRepairGetsItsOwnSynthesisBudgetAndDoesNotLoop() {
+        val progress = CloudWebToolLoopProgress()
+        assertTrue(progress.requestSynthesisCitationRepair())
+        assertTrue(progress.finalizationRequested)
+        assertFalse(progress.requestSynthesisCitationRepair())
+        assertFalse(progress.requestDeadlineSynthesis(true))
+    }
+
+    @Test fun finalizationStillAllowsOneCitationCorrection() {
+        val progress = CloudWebToolLoopProgress()
+        progress.requestFinalization()
+        assertTrue(progress.requestSynthesisCitationRepair())
+        assertFalse(progress.requestSynthesisCitationRepair())
+    }
+
+    @Test fun emptySynthesisIsRetriedOnceWithoutRepeatingTools() {
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(progress.requestEmptySynthesisRepair("", false))
+        assertFalse(progress.requestEmptySynthesisRepair("Answer", true))
+        assertTrue(progress.requestEmptySynthesisRepair("  ", true))
+        assertFalse(progress.requestEmptySynthesisRepair("", true))
+        assertTrue(CloudWebToolLoopProgress().requestEmptySynthesisRepair("", true))
+    }
+
     @Test fun aRetrievedPageIsReusedOnlyForEquivalentUnfocusedReads() {
         val progress = CloudWebToolLoopProgress()
         val args = JSONObject().put("url", "https://example.test/page")

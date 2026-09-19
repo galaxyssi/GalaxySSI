@@ -71,6 +71,7 @@ class AgentWebLatencyDeviceTest {
             .put("completed", completed).put("failure", failure).put("answer", answer.toString())
             .put("events", JSONArray(events.toList()))
         val reportFile = File(context.getExternalFilesDir("reports"), "web-latency-latest.json")
+        reportFile.parentFile?.mkdirs()
         reportFile.writeText(report.toString(2))
         Log.i("GalaxySSIWebLatency", "completed=$completed elapsed_ms=$elapsed first_text_ms=$firstTextMillis images=$imageCount failure=$failure")
         assertEquals(failure, "", failure)
@@ -78,6 +79,12 @@ class AgentWebLatencyDeviceTest {
         assertNotEquals("image_search", finishReason)
         assertTrue("Provider did not complete", completed)
         assertTrue("No visible answer", answer.isNotBlank())
+        if (arguments.getString("require_synthesis", "true") == "true") {
+            assertFalse("Sources-only fallback is not a completed synthesis",
+                answer.contains(context.getString(R.string.cloud_web_fallback_sources)))
+            assertFalse("Missing evidence is not a completed synthesis",
+                answer.contains(context.getString(R.string.cloud_web_fallback_empty)))
+        }
         if (arguments.getString("require_image", "true") == "true") {
             assertTrue("No Markdown image in real response", imageCount > 0)
             assertTrue("No source link in real response", Regex("(?<!!)\\[[^]]*]\\(https?://").containsMatchIn(answer))
