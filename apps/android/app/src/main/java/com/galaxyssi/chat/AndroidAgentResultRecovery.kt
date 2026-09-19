@@ -69,6 +69,7 @@ internal object AndroidAgentResultRecovery {
         }
 
     fun publishResult(context: Context, payload: JSONObject, response: AgentConnectorResponse): Boolean {
+        AgentResearchTraceStore.receiveAuthenticated(context, payload)
         val digest = payload.optJSONObject("result_recovery")?.optString("sha256").orEmpty()
         val receipt = if (Regex("[a-f0-9]{64}").matches(digest)) {
             val desktop = AppStore.contactById(context, payload.optString("contact_id"))?.optString("desktop_id").orEmpty()

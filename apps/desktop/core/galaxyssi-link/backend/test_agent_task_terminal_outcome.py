@@ -68,6 +68,13 @@ class TerminalOutcomeTest(unittest.TestCase):
         self.assertEqual("cancelled", payload["terminal_reason"])
         self.assertFalse(payload["success"])
 
+    def test_failed_research_keeps_recorded_sources_in_archive(self):
+        receipt = {"queries": ["news"], "sources": [{"url": "https://example.org", "title": "Source"}],
+                   "remote": True, "truncated": False}
+        task = {**self.task, "events": [{"metadata": {"research_trace": receipt}}]}
+        self.assertIsNotNone(persist_terminal_outcome(task, self.archive))
+        self.assertEqual(receipt, self.stored()["research_trace"])
+
     def test_nonterminal_and_completed_tasks_are_not_reconstructed(self):
         for status in ("accepted", "running", "paused", "completed", "waiting_input", "unknown"):
             with self.subTest(status=status):
