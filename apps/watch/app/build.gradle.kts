@@ -150,7 +150,7 @@ val webFiles = listOf(
     "MicrosoftEdgeTts.kt", "MicrosoftEdgeTtsProtocol.kt", "MicrosoftTtsVoiceCatalog.kt",
     "voice/metrics/VoiceLatencyTracer.kt", "voice/audio/VoiceCommunicationAudioSession.kt",
     "voice/modelstream/SentenceCommitter.kt", "ui/AgentComposerUiPolicy.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
-    "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
+    "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
 val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt")
@@ -204,3 +204,5 @@ val phoneWebAssets by tasks.registering(Sync::class) {
 }
 android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/phoneWebAssets"))
 tasks.named("preBuild").configure { dependsOn(phoneWebAssets) }
+
+android.sourceSets.getByName("main").assets.srcDir(rootProject.file("../desktop/core/galaxyssi-link/backend/research_contract"))

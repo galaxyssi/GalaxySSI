@@ -1,0 +1,189 @@
+package com.galaxyssi.watch
+
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.provider.Settings
+import android.view.Gravity
+import android.view.WindowInsets
+import android.widget.*
+import org.json.JSONObject
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+
+/** No credentials or peer secrets are displayed, saved in instance state, or logged. */
+class WatchPhoneSetupActivity : Activity() {
+    private val repo get() = (application as WatchApplication).repository
+    private var server: WatchPhoneSetupServer? = null
+    private var state = WatchPhoneSetupServer.State("starting")
+    private var screen = "intro"
+    private var generation = 0
+    @Volatile private var resumed = false
+    private var pendingDesktop = ""
+    private var pendingAgent = ""
+    private val desktopUpdate: () -> Unit = {
+        if (pendingDesktop.isNotEmpty()) {
+            val paired = repo.links().any { it.desktopId == pendingDesktop && it.paired }
+            val agents = repo.store.agents(pendingDesktop)
+            if (paired && agents.isNotEmpty()) {
+                val selected = agents.firstOrNull { it.id == pendingAgent }
+                if (selected != null) {
+                    repo.store.selectedDesktop = pendingDesktop; repo.store.selectedAgent = selected.id
+                    repo.store.apiPreferred = false; pendingDesktop = ""
+                    openHome()
+                } else { screen = "agents"; render() }
+            }
+        }
+    }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setShowWhenLocked(false)
+        render()
+    }
+    override fun onResume() {
+        super.onResume(); resumed = true; repo.listen(desktopUpdate); repo.foreground(true)
+        if (state.phase !in setOf("saved", "pairing_started")) startReceiver()
+    }
+    override fun onPause() {
+        resumed = false; generation++; server?.close(); server = null
+        repo.unlisten(desktopUpdate); repo.foreground(false)
+        super.onPause()
+    }
+    private fun startReceiver() {
+        generation++; val owner = generation
+        server?.close(); state = WatchPhoneSetupServer.State("starting")
+        screen = "intro"; render()
+        server = WatchPhoneSetupServer(this, { value ->
+            if (owner == generation && resumed) {
+                state = value
+                if (value.phase == "confirm") screen = "confirm"
+                else if (screen == "confirm") screen = "intro"
+                if (value.phase == "saved") openHome() else render()
+            }
+        }, ::applyConfiguration).also { it.start() }
+    }
+    private fun applyConfiguration(payload: JSONObject): JSONObject {
+        require(resumed)
+        return when (payload.getString("kind")) {
+            "cloud" -> {
+                val profile = ApiProfile.fromJson(payload.getJSONObject("profile"))
+                val previous = repo.store.apiProfile; val preferred = repo.store.apiPreferred
+                try {
+                    repo.store.apiProfile = profile; repo.store.apiPreferred = true
+                } catch (error: Exception) {
+                    repo.store.apiProfile = previous; repo.store.apiPreferred = preferred
+                    throw error
+                }
+                JSONObject().put("status", "saved").put("kind", "cloud")
+            }
+            "desktop" -> {
+                val qr = repo.inspectPairing(payload.getJSONObject("pairing_offer").toString())
+                val agent = payload.optString("agent_id").take(128)
+                val completed = CompletableFuture<Boolean>()
+                repo.pair(qr) { completed.complete(it) }
+                require(completed.get(20, TimeUnit.SECONDS))
+                runOnUiThread {
+                    pendingDesktop = qr.getString("desktop_id"); pendingAgent = agent
+                    desktopUpdate()
+                }
+                // The existing Signal/MQTT pairing must be confirmed by the desktop before it is usable.
+                JSONObject().put("status", "pairing_started").put("kind", "desktop")
+            }
+            else -> throw IllegalArgumentException("Unsupported configuration")
+        }
+    }
+    private fun openHome() {
+        server?.close()
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        finish()
+    }
+    private fun render() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(18), dp(8), dp(18), dp(14)); setBackgroundColor(Color.BLACK)
+        }
+        fun label(value: String, size: Float = 12f, color: Int = Color.WHITE, bold: Boolean = false) = TextView(this).apply {
+            text = value; textSize = size; gravity = Gravity.CENTER; setTextColor(color); includeFontPadding = false
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+            box.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) })
+        }
+        fun button(value: String, action: () -> Unit) {
+            box.addView(Button(this).apply {
+                text = value; textSize = 12f; isAllCaps = false; minHeight = dp(34); minimumHeight = dp(34)
+                setPadding(dp(8), dp(2), dp(8), dp(2)); setTextColor(Color.WHITE)
+                background = GradientDrawable().apply { setColor(Color.rgb(35, 42, 45)); cornerRadius = dp(24).toFloat() }
+                setOnClickListener { action() }
+            }, LinearLayout.LayoutParams(dp(150), -2).apply { topMargin = dp(2); bottomMargin = dp(3) })
+        }
+        val secondary = Color.rgb(168, 176, 184)
+        when (screen) {
+            "agents" -> {
+                label(getString(R.string.choose_agent), 17f, bold = true)
+                repo.store.agents(pendingDesktop).forEach { agent ->
+                    button(agent.name) {
+                        repo.store.selectedDesktop = pendingDesktop; repo.store.selectedAgent = agent.id
+                        repo.store.apiPreferred = false; pendingDesktop = ""; openHome()
+                    }
+                }
+            }
+            "confirm" -> {
+                label(getString(R.string.phone_setup_confirm), 17f, bold = true)
+                label(getString(R.string.phone_setup_compare), 12f, secondary)
+                label(state.code.chunked(3).joinToString(" "), 30f, bold = true)
+                label(getString(R.string.phone_setup_allow), 11f, secondary)
+                button(getString(R.string.phone_setup_accept)) { server?.confirm(true); state = state.copy(phase = "receiving"); screen = "intro"; render() }
+                button(getString(R.string.cancel)) { server?.confirm(false); screen = "intro"; render() }
+            }
+            "help" -> {
+                label(getString(R.string.phone_setup_manual), 17f, bold = true)
+                label(getString(R.string.phone_setup_manual_body), 12f, secondary)
+                label(getString(R.string.phone_setup_address), 11f, secondary)
+                label(state.host.ifBlank { "—" }, 19f)
+                label(getString(R.string.phone_setup_port), 11f, secondary)
+                label(if (state.port > 0) state.port.toString() else "—", 23f)
+                label(getString(R.string.phone_setup_verify_after), 10f, secondary)
+                button(getString(R.string.phone_setup_wifi)) { wifiSettings() }
+                button(getString(R.string.back)) { screen = "intro"; render() }
+            }
+            else -> {
+                label(java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), 10f, secondary)
+                val brand = LinearLayout(this).apply { gravity = Gravity.CENTER }
+                brand.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(28), dp(28)))
+                brand.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, 0, 0)
+                    addView(TextView(this@WatchPhoneSetupActivity).apply { text = getString(R.string.app_name); textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
+                    addView(TextView(this@WatchPhoneSetupActivity).apply { text = getString(R.string.agent_brand); textSize = 9f; gravity = Gravity.CENTER; setTextColor(secondary) })
+                })
+                box.addView(brand, LinearLayout.LayoutParams(-1, dp(30)))
+                label(getString(R.string.phone_setup_title), 14f, bold = true)
+                label(getString(R.string.phone_setup_step_wifi), 11f)
+                label(getString(R.string.phone_setup_step_phone), 11f)
+                label(getString(R.string.phone_setup_path), 10.5f, secondary)
+                val status = when (state.phase) {
+                    "starting" -> R.string.phone_setup_starting
+                    "wifi_required", "network_changed" -> R.string.phone_setup_need_wifi
+                    "expired" -> R.string.phone_setup_expired
+                    "error", "retry" -> R.string.phone_setup_retry
+                    "receiving" -> R.string.phone_setup_receiving
+                    "pairing_started" -> R.string.phone_setup_pairing
+                    else -> R.string.phone_setup_waiting
+                }
+                label(getString(status), 11f, Color.rgb(101, 217, 203))
+                if (state.phase in setOf("error", "expired", "network_changed", "wifi_required")) {
+                    button(getString(R.string.phone_setup_wifi)) { wifiSettings() }
+                    button(getString(R.string.phone_setup_restart)) { startReceiver() }
+                } else button(getString(R.string.phone_setup_help)) { screen = "help"; render() }
+            }
+        }
+        setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(Color.BLACK); addView(box) })
+        window.insetsController?.hide(WindowInsets.Type.systemBars())
+    }
+    private fun wifiSettings() {
+        val wear = Intent("com.google.android.clockwork.settings.connectivity.wifi.ADD_NETWORK_SETTINGS")
+        runCatching { startActivity(wear) }.onFailure { runCatching { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) } }
+    }
+}
