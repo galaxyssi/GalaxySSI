@@ -1075,6 +1075,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (draftConversation?.id == conversationId) draftConversation = null
         if (loadDraftConversation()?.id == conversationId) preferences.remove(draftPreferenceKey)
         entryDatabase.deleteConversation(conversationId)
+        AgentResearchTraceStore.delete(appContext, conversationId)
         preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
         if (activeConversationId() == conversationId) {
@@ -1094,6 +1095,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val ids = unique.map(AgentConversation::id)
         val deleted = conversationDatabase.deleteConversations(ids)
         entryDatabase.deleteConversations(ids)
+        ids.forEach { AgentResearchTraceStore.delete(appContext, it) }
         ids.forEach(preparedContextCache::invalidate)
         AgentModelSelectionSettings.clearConversations(appContext, ids)
         draftConversation?.takeIf { it.id in ids }?.let {
@@ -1496,6 +1498,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationDatabase.clearActiveConversationId()
         conversationsMigrated = true
         entryDatabase.clear()
+        AgentResearchTraceStore.clear(appContext)
     }
 
     @Synchronized

@@ -1520,6 +1520,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                 }
             }
         })
+        addView(agentResearchTraceRow(entry))
         if (progressPresentation.visible) {
             addView(agentPlanProgressSummaryRow(entry, groupKey, progressPresentation))
         }

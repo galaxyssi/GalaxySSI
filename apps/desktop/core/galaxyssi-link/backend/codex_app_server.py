@@ -41,6 +41,7 @@ from web_evidence_pack import (
     verify_evidence_pack,
 )
 from research_quality import assess_answer, quality_repair_prompt, research_quality_prompt, research_stage
+from research_trace import search_receipt
 
 
 log = logging.getLogger("galaxyssi.codex")
@@ -2403,6 +2404,8 @@ class CodexAppServer:
             "event_status": status,
             "event_detail": detail,
             "event_metadata": {"provider": "codex", "item_type": item_type,
+                **({"research_trace": search_receipt(item, completed=status == "completed")}
+                   if item_type == "webSearch" else {}),
                 **({"research": research_stage("retrieval_observed" if status == "completed" else "retrieving")}
                    if item_type == "webSearch" else {})},
         }
@@ -2487,6 +2490,7 @@ class CodexAppServer:
             )))
         elif item_type == "webSearch":
             code, started_title, completed_title = "web_search", "Searching the web", "Searched the web"
+            metadata["research_trace"] = search_receipt(item, completed=completed and status != "failed")
             action = item.get("action") if isinstance(item.get("action"), dict) else {}
             queries = action.get("queries") if isinstance(action.get("queries"), list) else []
             detail = cls._clean_visible_text(

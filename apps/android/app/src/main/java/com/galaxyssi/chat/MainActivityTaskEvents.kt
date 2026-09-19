@@ -578,7 +578,9 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         targetName = targetName
     )
     traceTaskEvent("approval")
+    AgentResearchTraceStore.remote(this, conversationId, turnId, envelope)
     envelope.optJSONObject("progress_event")?.let { progress ->
+        AgentResearchTraceStore.remote(this, conversationId, turnId, progress)
         val eventId = progress.optString("event_id").trim()
         val progressText = connectorProgressText(progress)
         if (eventId.isNotBlank() && progressText.isNotBlank()) {
@@ -1312,6 +1314,7 @@ internal fun MainActivity.syncRemoteTaskEvents(
     val events = envelope.optJSONArray("events") ?: return
     for (index in 0 until events.length()) {
         val event = events.optJSONObject(index) ?: continue
+        AgentResearchTraceStore.remote(this, conversationId, turnId, event)
         val eventId = event.optString("event_id").trim()
         val kind = event.optString("kind").trim().lowercase(Locale.ROOT)
         val title = event.optString("title").trim()
