@@ -73,7 +73,7 @@ internal fun readAgentWebEvidence(
         checkpoint: () -> Unit
     ) -> AgentWebEvidenceFetchedDocument
 ): AgentWebEvidenceReadBatch {
-    val candidateLimit = min(24, max(evidenceLimit * 2, evidenceLimit + parallelism))
+    val candidateLimit = min(128, max(evidenceLimit * 2, evidenceLimit + parallelism))
     val seen = linkedSetOf<String>()
     val candidates = results.mapNotNull { result ->
         val rawUrl = result["url"]?.toString().orEmpty()

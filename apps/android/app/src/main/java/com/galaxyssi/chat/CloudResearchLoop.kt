@@ -4,23 +4,23 @@ import org.json.JSONObject
 
 /** Safety ceilings, not a shared short deadline for search plus synthesis. */
 internal data class CloudResearchLimits(
-    val maxToolCalls: Int = 128,
-    val maxModelRounds: Int = 64,
-    val maxActiveMillis: Long = 20 * 60_000L,
-    val toolTimeoutMillis: Long = 45_000L,
-    val modelTimeoutMillis: Long = 120_000L,
-    val maxEvidenceChars: Int = 2_000_000
+    val maxToolCalls: Int = 512,
+    val maxModelRounds: Int = 256,
+    val maxActiveMillis: Long = 0L,
+    val toolTimeoutMillis: Long = 180_000L,
+    val modelTimeoutMillis: Long = 180_000L,
+    val maxEvidenceChars: Int = 8_000_000
 ) {
     companion object {
         fun from(contact: JSONObject): CloudResearchLimits {
             val config = contact.optJSONObject("cloud_research_limits") ?: JSONObject()
             return CloudResearchLimits(
-                config.optInt("tool_calls", 128).coerceIn(4, 512),
-                config.optInt("model_rounds", 64).coerceIn(4, 256),
-                config.optLong("active_minutes", 20).coerceIn(1, 120) * 60_000L,
-                config.optLong("tool_timeout_seconds", 45).coerceIn(5, 180) * 1_000L,
-                config.optLong("model_timeout_seconds", 120).coerceIn(15, 300) * 1_000L,
-                config.optInt("evidence_chars", 2_000_000).coerceIn(24_000, 8_000_000)
+                config.optInt("tool_calls", 512).coerceIn(4, 4096),
+                config.optInt("model_rounds", 256).coerceIn(4, 2048),
+                config.optLong("active_minutes", 0).coerceIn(0, 1440) * 60_000L,
+                config.optLong("tool_timeout_seconds", 180).coerceIn(5, 600) * 1_000L,
+                config.optLong("model_timeout_seconds", 180).coerceIn(15, 600) * 1_000L,
+                config.optInt("evidence_chars", 8_000_000).coerceIn(24_000, 32_000_000)
             )
         }
     }
@@ -32,6 +32,7 @@ internal class CloudResearchLoop(
 ) {
     private val started = clock()
     private val sources = linkedSetOf<String>()
+    private val coverage = CloudResearchCoverage()
     var toolCalls = 0
         private set
     var modelRounds = 0
@@ -44,12 +45,13 @@ internal class CloudResearchLoop(
     fun stopReason(): String? = when {
         toolCalls >= limits.maxToolCalls -> "tool_limit"
         modelRounds >= limits.maxModelRounds -> "round_limit"
-        elapsedMillis >= limits.maxActiveMillis -> "active_time_limit"
+        limits.maxActiveMillis > 0 && elapsedMillis >= limits.maxActiveMillis -> "active_time_limit"
         evidenceChars >= limits.maxEvidenceChars -> "evidence_limit"
         else -> null
     }
 
     fun beginModelRound() { modelRounds++ }
+    fun readingReview(answer: String): String? = coverage.readingReview(answer)
 
     fun reserveTools(count: Int): Boolean {
         require(count >= 0)
@@ -61,6 +63,7 @@ internal class CloudResearchLoop(
     fun observe(output: String, restored: Boolean = false) {
         if (restored) toolCalls++
         evidenceChars += output.length
+        runCatching { coverage.observe(JSONObject(output)) }
         val items = runCatching { JSONObject(output).optJSONObject("evidence_pack")?.optJSONArray("items") }.getOrNull()
         if (items != null) for (i in 0 until items.length()) {
             items.optJSONObject(i)?.optString("url")?.takeIf(String::isNotBlank)?.let {
@@ -70,7 +73,7 @@ internal class CloudResearchLoop(
     }
 
     fun guidance(reason: String? = null): String =
-        "Research state: $sourceCount distinct source URLs, $toolCalls executed tool calls. " +
+        "Research state: $sourceCount distinct source URLs, $toolCalls executed tool calls. " + coverage.guidance() +
             if (reason == null) "Continue only for a specific unanswered part of the user's question or a material conflict. " +
                 "Use primary sources where available. Source count is not proof; do not keep searching merely to add links. " +
                 "When evidence is enough, answer. When identity is ambiguous, ask for clarification. " +

@@ -50,7 +50,7 @@ internal object AgentWebEvidencePack {
         if (operation in setOf("research", "agent")) {
             val research = researchDetails.toMutableMap()
             research["evidence_brief"] = modelBrief(pack)
-            research["citation_count"] = objectList(pack["items"]).size
+            research["available_evidence_count"] = objectList(pack["items"]).size
             attached["research"] = research
         }
         return attached
@@ -136,11 +136,13 @@ internal object AgentWebEvidencePack {
         excerptLimit: Int
     ): AgentNativeJsonObject {
         val metadata = stringMap(value["metadata"])
-        val excerpt = compact(
-            if (kind == "document") value["content"]?.toString().orEmpty()
-            else value["excerpt"]?.toString().orEmpty(),
-            excerptLimit
-        )
+        val body = value["content"]?.toString().orEmpty()
+        val window = stringMap(value["reading_window"])
+        val excerpt = if (kind == "document" && window.isNotEmpty()) {
+            val start = nonNegativeLong(window["offset"]).toInt().coerceAtMost(body.length)
+            val end = nonNegativeLong(window["end_offset"]).toInt().coerceIn(start, body.length)
+            body.substring(start, end)
+        } else compact(if (kind == "document") body else value["excerpt"]?.toString().orEmpty(), excerptLimit)
         val contentSha256 = value["content_sha256"]?.toString().orEmpty()
             .takeIf { it.matches(Regex("[a-fA-F0-9]{64}")) }
             ?.lowercase(Locale.ROOT)
@@ -166,6 +168,9 @@ internal object AgentWebEvidencePack {
             "content_type" to value["content_type"]?.toString().orEmpty().take(128),
             "content_sha256" to contentSha256,
             "excerpt" to excerpt,
+            "reading_window" to window,
+            "body_chars" to if (kind == "document") body.length else 0,
+            "body_excerpt_only" to (kind == "document" && (window.isEmpty() || excerpt.length < body.length)),
             "language" to value["language"]?.toString().orEmpty()
                 .ifBlank { AgentWebIntelligenceText.language(excerpt) },
             "rank" to rank,
@@ -230,6 +235,8 @@ internal object AgentWebEvidencePack {
                     "query" to compact(item["query"]?.toString().orEmpty(), 1_024),
                     "purpose" to compact(item["purpose"]?.toString().orEmpty(), 512),
                     "verticals" to stringValues(item["verticals"], AgentWebIntelligenceVertical.entries.size),
+                    "subquestion" to compact(item["subquestion"]?.toString().orEmpty(), 512),
+                    "language" to compact(item["language"]?.toString().orEmpty(), 64),
                     "categories" to stringValues(item["categories"], AgentWebResearchPlanCodec.MAX_CATEGORIES),
                     "engines" to stringValues(item["engines"], AgentWebResearchPlanCodec.MAX_ENGINES)
                 )
@@ -241,6 +248,8 @@ internal object AgentWebEvidencePack {
                     "query" to compact(item["query"]?.toString().orEmpty(), 1_024),
                     "purpose" to compact(item["purpose"]?.toString().orEmpty(), 512),
                     "status" to item["status"]?.toString().orEmpty().take(32),
+                    "subquestion" to compact(item["subquestion"]?.toString().orEmpty(), 512),
+                    "verification_status" to "requires_claim_level_review",
                     "candidate_count" to nonNegativeLong(item["candidate_count"]),
                     "retrieved_document_count" to nonNegativeLong(item["retrieved_document_count"]),
                     "independent_domain_count" to nonNegativeLong(item["independent_domain_count"]),

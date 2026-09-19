@@ -28,7 +28,7 @@ class AgentResearchTraceDeviceTest {
         try {
             AgentResearchTraceStore.merge(context, conversation.id, "turn-a", trace)
             AgentResearchTraceStore.merge(context, conversation.id, "turn-a", trace)
-            assertEquals(trace, AgentResearchTraceStore.read(context, conversation.id, "turn-a"))
+            assertEquals(trace.copy(totalSourceCount = 1), AgentResearchTraceStore.read(context, conversation.id, "turn-a"))
             assertFalse(AgentResearchTraceStore.read(context, conversation.id, "turn-b").visible)
             assertFalse(AgentResearchTraceStore.read(context, "another-conversation", "turn-a").visible)
         } finally { store.deleteConversation(conversation.id) }
@@ -46,15 +46,16 @@ class AgentResearchTraceDeviceTest {
         val now = System.currentTimeMillis()
         val queries = listOf("\u73e0\u6d77\u4eca\u5929\u5929\u6c14", "\u73e0\u6d77\u5929\u6c14\u5b98\u65b9\u9884\u62a5")
         val sources = listOf(
-            AgentResearchTrace.Source("https://www.cma.gov.cn/", "\u4e2d\u56fd\u6c14\u8c61\u5c40"),
+            AgentResearchTrace.Source("https://www.cma.gov.cn/", "\u4e2d\u56fd\u6c14\u8c61\u5c40", "body_retrieved"),
             AgentResearchTrace.Source("https://weather.cma.cn/", "\u4e2d\u592e\u6c14\u8c61\u53f0"))
         store.append(AgentTranscriptRole.USER, queries.first(), timestampMillis = now,
             conversationId = conversation.id, turnId = turn, taskId = turn)
         store.append(AgentTranscriptRole.PROCESS, "\u6b63\u5728\u6838\u5bf9\u5929\u6c14\u6765\u6e90", timestampMillis = now + 1,
             conversationId = conversation.id, turnId = turn, taskId = turn)
-        store.append(AgentTranscriptRole.ASSISTANT, "\u8fd9\u662f\u641c\u7d22\u8be6\u60c5 UI \u6d4b\u8bd5\uff0c\u4e0d\u662f\u5b9e\u65f6\u5929\u6c14\u62a5\u544a\u3002", timestampMillis = now + 8000,
+        store.append(AgentTranscriptRole.ASSISTANT, "\u8fd9\u662f\u641c\u7d22\u8be6\u60c5 UI \u6d4b\u8bd5\uff0c\u4e0d\u662f\u5b9e\u65f6\u5929\u6c14\u62a5\u544a\u3002 [\u6765\u6e90](https://www.cma.gov.cn/)", timestampMillis = now + 8000,
             conversationId = conversation.id, turnId = turn, taskId = turn)
         AgentResearchTraceStore.merge(context, conversation.id, turn, AgentResearchTrace(queries, sources))
+        val firstSource = AgentResearchTraceStore.read(context, conversation.id, turn).sources.first()
         val monitor = instrumentation.addMonitor(ConversationWindowActivity::class.java.name, null, false)
         var activity: MainActivity? = null
         try {
@@ -72,13 +73,15 @@ class AgentResearchTraceDeviceTest {
                 val label = texts(main.window.decorView).first { it.text.toString() == title }
                 assertTrue((label.parent as View).performClick())
             }
-            await { texts(main.window.decorView).any { it.text.toString() == "1. ${sources.first().title}" && it.isShown } }
+            await { texts(main.window.decorView).any { it.text.toString() == "1. ${firstSource.title}" && it.isShown } }
+            await { texts(main.window.decorView).any { it.text.toString().contains(context.getString(R.string.research_trace_body)) &&
+                it.text.toString().contains(context.getString(R.string.research_trace_cited)) && it.isShown } }
             val sourceMonitor = instrumentation.addMonitor(android.content.IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("https") },
                 android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_OK, null), true)
             try {
                 instrumentation.runOnMainSync {
                     assertTrue(texts(main.window.decorView).first {
-                        it.text.toString() == "1. ${sources.first().title}"
+                        it.text.toString() == "1. ${firstSource.title}"
                     }.performClick())
                 }
                 assertEquals("Source title must open the URL handler", 1, sourceMonitor.hits)
@@ -94,7 +97,7 @@ class AgentResearchTraceDeviceTest {
                 file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 bitmap.recycle()
                 assertTrue((label.parent as View).performClick())
-                assertFalse(texts(main.window.decorView).any { it.text.toString() == "1. ${sources.first().title}" })
+                assertFalse(texts(main.window.decorView).any { it.text.toString() == "1. ${firstSource.title}" })
                 // Rebuilding the transcript must preserve the collapsed state and the stored counts.
                 main.clearAgentTranscriptRows()
                 main.refreshAgentTranscriptWindow(conversation.id)

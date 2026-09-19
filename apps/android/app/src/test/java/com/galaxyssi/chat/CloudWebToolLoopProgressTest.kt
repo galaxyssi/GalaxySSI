@@ -53,6 +53,8 @@ class CloudWebToolLoopProgressTest {
         assertNull(progress.cached("web_extract", JSONObject(args.toString()).put("fields", JSONArray().put("date"))))
         assertNull(progress.cached("web_fetch", JSONObject(args.toString()).put("force", true)))
         assertNull(progress.cached("web_fetch", JSONObject(args.toString()).put("focus", "missing counterexample")))
+        assertNull(progress.cached("web_fetch", JSONObject(args.toString()).put("offset", 8000)))
+        assertNull(progress.cached("web_fetch", JSONObject(args.toString()).put("length", 4000)))
         assertNull(CloudWebToolLoopProgress().cached("web_extract", args))
     }
 

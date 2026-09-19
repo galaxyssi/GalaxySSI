@@ -27,6 +27,17 @@ class ResearchTraceTests(unittest.TestCase):
         result = search_receipt({"type": "webSearch", "action": {"type": "openPage", "url": "https://example.org"}}, completed=True)
         self.assertEqual([], result["queries"])
         self.assertEqual("https://example.org", result["sources"][0]["url"])
+        self.assertEqual("open_reported", result["sources"][0]["status"])
+
+    def test_open_receipt_is_not_full_reading_and_survives_replay(self):
+        search = search_receipt({"type": "webSearch", "sources": [{"url": "https://example.org", "title": "Original"}]}, completed=True)
+        opened = search_receipt({"type": "webSearch", "action": {"type": "openPage", "url": "https://example.org"}}, completed=True)
+        for receipts in ([search, opened, search], [opened, search]):
+            result = replay_receipts([{"metadata": {"research_trace": receipt}} for receipt in receipts])
+            self.assertEqual("Original", result["sources"][0]["title"])
+            self.assertEqual("open_reported", result["sources"][0]["status"])
+        failed = search_receipt({"type": "webSearch", "status": "failed", "action": {"type": "openPage", "url": "https://example.org"}}, completed=True)
+        self.assertNotIn("status", failed["sources"][0])
 
     def test_reconnect_replays_receipts_without_double_counting(self):
         receipt = search_receipt({"type": "webSearch", "query": "news",

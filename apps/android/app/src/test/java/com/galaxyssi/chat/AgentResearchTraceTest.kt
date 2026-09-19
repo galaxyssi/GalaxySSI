@@ -47,8 +47,27 @@ class AgentResearchTraceTest {
     }
 
     @Test fun boundedProjectionDeclaresPartialInsteadOfInventingTotal() {
-        val trace = AgentResearchTrace().merge(AgentResearchTrace((1..130).map { "query $it" }))
-        assertEquals(128, trace.queries.size)
+        val trace = AgentResearchTrace().merge(AgentResearchTrace((1..514).map { "query $it" }))
+        assertEquals(512, trace.queries.size)
         assertTrue(trace.truncated)
+    }
+
+    @Test fun sourceRetrievalIsNotClaimVerificationAndCannotRegress() {
+        val args = JSONObject().put("query", "test")
+        val found = AgentResearchTrace.observe("web_search", args,
+            """{"results":[{"url":"https://example.org/a","title":"A"}]}""")
+        assertEquals("discovered", found.sources.single().status)
+        val body = AgentResearchTrace.observe("web_fetch", args,
+            """{"evidence_pack":{"items":[{"url":"https://example.org/a","evidence_level":"retrieved_body","excerpt":"Original text"}]}}""")
+        val merged = found.merge(body).merge(found)
+        assertEquals("body_retrieved", merged.sources.single().status)
+        assertEquals(merged, AgentResearchTrace.decode(merged.toJson()))
+        assertEquals("discovered", AgentResearchTrace(sources = listOf(AgentResearchTrace.Source("https://example.org", "", "verified")))
+            .merge(AgentResearchTrace()).sources.single().status)
+    }
+
+    @Test fun actualCitationsExcludeImagesAndSubstringMatches() {
+        assertEquals(setOf("https://example.org/a"), AgentResearchTrace.citedUrls(
+            "[A](https://example.org/a#section) ![image](https://example.org/b) https://example.org/c"))
     }
 }

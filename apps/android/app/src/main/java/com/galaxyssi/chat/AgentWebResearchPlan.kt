@@ -8,11 +8,15 @@ internal data class AgentWebResearchQueryPlanItem(
     val purpose: String = "",
     val verticals: Set<AgentWebIntelligenceVertical> = emptySet(),
     val categories: Set<String> = emptySet(),
-    val engines: List<String> = emptyList()
+    val engines: List<String> = emptyList(),
+    val subquestion: String = "",
+    val language: String = ""
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "query" to query,
         "purpose" to purpose,
+        "subquestion" to subquestion,
+        "language" to language,
         "verticals" to verticals.map(AgentWebIntelligenceVertical::wireValue).sorted(),
         "categories" to categories.sorted(),
         "engines" to engines
@@ -29,7 +33,7 @@ internal data class AgentWebResearchQueryCoverage(
 ) {
     val status: String
         get() = when {
-            retrievedUrls.isNotEmpty() -> "covered"
+            retrievedUrls.isNotEmpty() -> "body_retrieved"
             candidateUrls.isNotEmpty() -> "discovered_only"
             else -> "unresolved"
         }
@@ -37,6 +41,9 @@ internal data class AgentWebResearchQueryCoverage(
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "query" to item.query,
         "purpose" to item.purpose,
+        "subquestion" to item.subquestion,
+        "language" to item.language,
+        "verification_status" to "requires_claim_level_review",
         "status" to status,
         "candidate_count" to candidateUrls.size,
         "retrieved_document_count" to retrievedUrls.size,
@@ -49,7 +56,7 @@ internal data class AgentWebResearchQueryCoverage(
 
 /** Decodes only the research plan chosen by the current model; it never expands query semantics. */
 internal object AgentWebResearchPlanCodec {
-    const val MAX_ITEMS = 32
+    const val MAX_ITEMS = 100
     const val MAX_QUERY_CHARACTERS = 4_096
     const val MAX_PURPOSE_CHARACTERS = 512
     const val MAX_CATEGORIES = 32
@@ -100,7 +107,9 @@ internal object AgentWebResearchPlanCodec {
                 .cleanWebResearchText(MAX_PURPOSE_CHARACTERS),
             verticals = verticals,
             categories = categories,
-            engines = engines
+            engines = engines,
+            subquestion = value["subquestion"]?.toString().orEmpty().cleanWebResearchText(MAX_PURPOSE_CHARACTERS),
+            language = value["language"]?.toString().orEmpty().cleanWebResearchText(64)
         )
     }
 

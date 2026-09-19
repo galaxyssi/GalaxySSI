@@ -29,15 +29,21 @@ def replay_receipts(events: list) -> dict:
                 queries.setdefault(query.casefold(), query)
         for source in receipt.get("sources", []):
             if isinstance(source, dict) and source.get("url"):
-                sources.setdefault(source["url"], source)
+                previous = sources.get(source["url"], {})
+                merged = dict(previous or source)
+                if not merged.get("title"):
+                    merged["title"] = source.get("title", "")
+                if source.get("status") == "open_reported":
+                    merged["status"] = "open_reported"
+                sources[source["url"]] = merged
     if not queries and not sources:
         return {}
     # Older receipts included the display summary beside the real query arguments.
     recorded_queries = [q for q in queries.values() if not (
         (q.endswith(" ...") and q[:-4].casefold() in queries)
         or (q.endswith("\u2026") and q[:-1].rstrip().casefold() in queries))]
-    return bound_receipt({"queries": recorded_queries[:128], "sources": list(sources.values())[:512],
-                          "remote": True, "truncated": truncated or len(queries) > 128 or len(sources) > 512}, 48_000)
+    return bound_receipt({"queries": recorded_queries[:512], "sources": list(sources.values())[:2048],
+                          "remote": True, "truncated": truncated or len(queries) > 512 or len(sources) > 2048}, 48_000)
 
 
 def search_receipt(item: dict, *, completed: bool) -> dict:
@@ -82,5 +88,10 @@ def search_receipt(item: dict, *, completed: bool) -> dict:
                     add(value)
         if action.get("type") in {"openPage", "open_page"}:
             add(action)
+            if not item.get("error") and item.get("status") not in {"failed", "error"}:
+                # Completion does not expose the amount of text seen or semantic validation.
+                for source in sources.values():
+                    if source["url"] == action.get("url", "").split("#", 1)[0]:
+                        source["status"] = "open_reported"
     return bound_receipt({"queries": queries[:128], "sources": list(sources.values())[:512], "remote": True,
                          "truncated": len(queries) > 128 or len(sources) > 512})

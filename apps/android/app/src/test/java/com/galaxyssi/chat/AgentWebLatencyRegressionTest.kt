@@ -112,7 +112,7 @@ class AgentWebLatencyRegressionTest {
         assertTrue(budget.expired)
     }
 
-    @Test fun researchQueriesShareOneDeadlineAndPreservePartialEvidence() {
+    @Test fun researchQueriesReserveReadingTimeAndPreservePartialEvidence() {
         val fetcher = object : AgentWebIntelligenceFetcher {
             override fun fetch(url: String, maxBytes: Long, timeoutMillis: Long,
                 cancellationToken: AgentNativeToolCancellationToken, checkpoint: () -> Unit): AgentWebIntelligenceFetched {
@@ -123,9 +123,9 @@ class AgentWebLatencyRegressionTest {
         }
         val service = AgentWebIntelligenceService(fetcher, AgentInMemoryWebIntelligenceStore())
         val started = System.nanoTime()
-        val result = service.invoke("research", mapOf("query" to "public test", "timeout_ms" to 2_000L,
+        val result = service.invoke("research", mapOf("query" to "public test", "timeout_ms" to 4_000L,
             "engines" to listOf("brave"), "query_plan" to (1..5).map { mapOf("query" to "evidence $it") }))
-        assertTrue("Plan multiplied its deadline", (System.nanoTime() - started) / 1_000_000L < 3_500L)
+        assertTrue("Plan multiplied its deadline", (System.nanoTime() - started) / 1_000_000L < 5_000L)
         assertEquals(1, (result["metadata"] as Map<*, *>)["queries_executed"])
         assertEquals("partial", result["status"])
         assertTrue((result["results"] as List<*>).isNotEmpty())
@@ -146,11 +146,15 @@ class AgentWebLatencyRegressionTest {
     @Test fun deadlineCancelsTheActualBlockingTransport() = runBlocking {
         val stopped = CountDownLatch(1)
         val budget = AgentWebExecutionBudget(150)
-        budget.execute { token, _ ->
-            val registration = token.invokeOnCancellation { stopped.countDown() }
-            try { assertTrue(stopped.await(2, TimeUnit.SECONDS)) } finally { registration.dispose() }
-        }
+        try {
+            budget.execute { token, _ ->
+                val registration = token.invokeOnCancellation { stopped.countDown() }
+                try { assertTrue(stopped.await(2, TimeUnit.SECONDS)) } finally { registration.dispose() }
+            }
+            org.junit.Assert.fail("A timed-out operation must not report success")
+        } catch (_: AgentWebBudgetExceededException) { }
         assertTrue(budget.expired)
+        assertEquals(0L, stopped.count)
     }
 
     @Test fun parentCancellationClosesTransportWithoutWaitingForDeadline() = runBlocking {

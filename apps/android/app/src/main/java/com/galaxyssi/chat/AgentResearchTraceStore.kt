@@ -12,9 +12,27 @@ internal object AgentResearchTraceStore {
     private fun key(conversation: String, turn: String) = prefix(conversation) + AgentNativeJsonCodec.sha256(turn)
 
     @Synchronized
-    fun read(context: Context, conversation: String, turn: String): AgentResearchTrace {
+    fun read(context: Context, conversation: String, turn: String, sourceLimit: Int = 50): AgentResearchTrace {
         if (conversation.isBlank() || turn.isBlank()) return AgentResearchTrace()
-        return AgentResearchTrace.decode(runCatching { JSONObject(db(context).readString(key(conversation, turn), "{}")) }.getOrNull())
+        val database = db(context)
+        val recordKey = key(conversation, turn)
+        val trace = AgentResearchTrace.decode(runCatching { JSONObject(database.readString(recordKey, "{}")) }.getOrNull())
+        val sourcePrefix = "$recordKey:source:"
+        val count = database.countKeys(sourcePrefix)
+        if (count == 0) return trace
+        val sources = mutableListOf<AgentResearchTrace.Source>()
+        var after = ""
+        val limit = sourceLimit.coerceIn(1, 20_000)
+        while (sources.size < limit) {
+            val keys = database.keysAfter(sourcePrefix, after, minOf(256, limit - sources.size))
+            if (keys.isEmpty()) break
+            keys.forEach { sourceKey ->
+                val row = JSONObject(database.readString(sourceKey, "{}"))
+                sources += AgentResearchTrace.Source(row.getString("url"), row.optString("title"), row.optString("status", "discovered"))
+            }
+            after = keys.last()
+        }
+        return trace.copy(sources = sources, totalSourceCount = count)
     }
 
     @Synchronized
@@ -22,10 +40,30 @@ internal object AgentResearchTraceStore {
         if (!delta.visible || conversation.isBlank() || turn.isBlank()) return
         val database = db(context)
         if (database.contains(prefix(conversation) + "deleted")) return
-        val before = read(context, conversation, turn)
-        val after = before.merge(delta)
-        if (before == after) return
-        database.writeString(key(conversation, turn), after.toJson().toString())
+        val recordKey = key(conversation, turn)
+        val before = AgentResearchTrace.decode(JSONObject(database.readString(recordKey, "{}")))
+        val after = before.merge(delta.copy(sources = emptyList())).copy(sources = emptyList())
+        val writes = linkedMapOf<String, String>()
+        // One encrypted row per URL: retain large investigations without rewriting a giant JSON blob.
+        var count = database.countKeys("$recordKey:source:")
+        var truncated = after.truncated
+        (before.sources + delta.sources).forEach { source ->
+            val url = AgentResearchTrace.safeUrl(source.url) ?: return@forEach
+            val sourceKey = "$recordKey:source:${AgentNativeJsonCodec.sha256(url)}"
+            val existing = writes[sourceKey] ?: database.readString(sourceKey, "")
+            if (existing.isEmpty() && count >= 20_000) { truncated = true; return@forEach }
+            val prior = existing.takeIf(String::isNotEmpty)?.let { row -> JSONObject(row).let {
+                AgentResearchTrace.Source(it.getString("url"), it.optString("title"), it.optString("status", "discovered"))
+            } }
+            val merged = AgentResearchTrace(sources = listOfNotNull(prior)).merge(AgentResearchTrace(sources = listOf(source))).sources.single()
+            val encoded = JSONObject().put("url", merged.url).put("title", merged.title).put("status", merged.status).toString()
+            if (encoded != existing) writes[sourceKey] = encoded
+            if (existing.isEmpty()) count++
+        }
+        val encoded = after.copy(truncated = truncated).toJson().toString()
+        if (encoded != before.toJson().toString()) writes[recordKey] = encoded
+        if (writes.isEmpty()) return
+        database.mutateStrings(writes, emptyList())
         revision.value++
     }
 

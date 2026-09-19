@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="research_trace_summary">Searched %1$d queries, referenced %2$d sources</string>
+    <string name="research_trace_summary">Searched %1$d queries, found %2$d sources</string>
+    <string name="research_trace_discovered">Search result; body not confirmed</string>
+    <string name="research_trace_body">Body retrieved; may be excerpted</string>
+    <string name="research_trace_open_reported">Agent reported opening; body coverage unknown</string>
+    <string name="research_trace_unavailable">Unable to retrieve body</string>
+    <string name="research_trace_cited">Cited in this answer</string>
+    <string name="research_trace_more">Show more sources (%1$d remaining)</string>
     <string name="research_trace_remote_pending">Searched %1$d queries; sources not supplied</string>
     <string name="research_trace_recorded_subset"> (recorded subset)</string>
     <string name="research_trace_expand">Expand search details</string>

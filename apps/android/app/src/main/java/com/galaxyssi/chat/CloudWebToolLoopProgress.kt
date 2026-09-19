@@ -30,7 +30,8 @@ internal class CloudWebToolLoopProgress {
                 val url = item.optString("url")
                 if (url.isBlank()) continue
                 val key = url + "|" + item.optString("content_sha256") + "|" +
-                    item.optString("evidence_level") + "|" + canonicalJson(item.optJSONArray("images"))
+                    item.optString("evidence_level") + "|" + canonicalJson(item.optJSONArray("images")) +
+                    "|" + canonicalJson(item.optJSONObject("reading_window"))
                 if (evidenceKeys.add(key)) gainedEvidence = true
             }
         }
@@ -71,7 +72,8 @@ internal class CloudWebToolLoopProgress {
         toolName.lowercase(Locale.ROOT) in setOf("web_fetch", "web_extract") &&
             !arguments.optBoolean("force") && !arguments.has("content") &&
             (arguments.optJSONArray("fields")?.length() ?: 0) == 0 &&
-            !arguments.has("focus")
+            !arguments.has("focus") && !arguments.has("offset") && !arguments.has("length") &&
+            !arguments.has("document_sha256")
 
     private fun resourceKey(toolName: String, arguments: JSONObject): String? {
         if (toolName.lowercase(Locale.ROOT) !in setOf("web_fetch", "web_extract", "web_diff")) return null
