@@ -2349,6 +2349,7 @@ object GalaxySSIMqttClient {
             if (payload.optString("type") == "text" && payload.optString("task_status") in AgentRemoteOutcomeCodec.FAILURES) {
                 payload.put("content", AgentRemoteOutcomeCodec.content(context, payload))
             }
+            AgentResearchTraceStore.receiveAuthenticated(context, payload)
         }
         if (payload.optString("type") == "agent_task_result_receipt_confirmed") {
             AndroidAgentResultReceipts.receive(context, payload, sourceDesktopId)

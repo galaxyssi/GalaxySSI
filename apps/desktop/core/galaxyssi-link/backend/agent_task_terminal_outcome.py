@@ -8,6 +8,7 @@ import uuid
 
 from agent_task_recovery_query import IDENTITY_FIELDS, TASK_FIELDS
 from agent_task_result_archive import execution_generation, identity
+from research_trace import replay_receipts
 
 ERROR_STATUSES = frozenset({"failed", "timed_out", "cancelled"})
 log = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ def terminal_outcome(task: dict) -> dict | None:
         return None
     error = str(task.get("error") or "")
     result = str(task.get("result") or "")
-    return {
+    payload = {
         **fields, "type": "text", "task_status": status, "success": False,
         "execution_generation": generation, "status_sequence": sequence,
         "content": error if error.strip() else result,
@@ -32,6 +33,10 @@ def terminal_outcome(task: dict) -> dict | None:
             ["galaxyssi-terminal-outcome", *fields.values(), generation], ensure_ascii=False))),
         "sender": "other", "time": float(task.get("completed_at") or task.get("updated_at") or 0) / 1000,
     }
+    trace = replay_receipts(task.get("events") or [])
+    if trace:
+        payload["research_trace"] = trace
+    return payload
 
 
 def persist_terminal_outcome(task: dict, result_archive) -> dict | None:

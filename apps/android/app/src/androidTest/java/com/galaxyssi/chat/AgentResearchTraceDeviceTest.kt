@@ -73,6 +73,16 @@ class AgentResearchTraceDeviceTest {
                 assertTrue((label.parent as View).performClick())
             }
             await { texts(main.window.decorView).any { it.text.toString() == "1. ${sources.first().title}" && it.isShown } }
+            val sourceMonitor = instrumentation.addMonitor(android.content.IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("https") },
+                android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_OK, null), true)
+            try {
+                instrumentation.runOnMainSync {
+                    assertTrue(texts(main.window.decorView).first {
+                        it.text.toString() == "1. ${sources.first().title}"
+                    }.performClick())
+                }
+                assertEquals("Source title must open the URL handler", 1, sourceMonitor.hits)
+            } finally { instrumentation.removeMonitor(sourceMonitor) }
             instrumentation.runOnMainSync {
                 val label = texts(main.window.decorView).first { it.text.toString() == title }
                 val block = (label.parent as View).parent as View

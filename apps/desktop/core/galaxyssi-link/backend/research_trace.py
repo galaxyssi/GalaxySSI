@@ -32,7 +32,11 @@ def replay_receipts(events: list) -> dict:
                 sources.setdefault(source["url"], source)
     if not queries and not sources:
         return {}
-    return bound_receipt({"queries": list(queries.values())[:128], "sources": list(sources.values())[:512],
+    # Older receipts included the display summary beside the real query arguments.
+    recorded_queries = [q for q in queries.values() if not (
+        (q.endswith(" ...") and q[:-4].casefold() in queries)
+        or (q.endswith("\u2026") and q[:-1].rstrip().casefold() in queries))]
+    return bound_receipt({"queries": recorded_queries[:128], "sources": list(sources.values())[:512],
                           "remote": True, "truncated": truncated or len(queries) > 128 or len(sources) > 512}, 48_000)
 
 
@@ -41,9 +45,11 @@ def search_receipt(item: dict, *, completed: bool) -> dict:
         return {}
     action = item.get("action") if isinstance(item.get("action"), dict) else {}
     queries = []
-    values = [item.get("query"), action.get("query")]
+    values = [action.get("query")]
     if isinstance(action.get("queries"), list):
         values.extend(action["queries"][:128])
+    if not any(isinstance(value, str) and value.strip() for value in values):
+        values = [item.get("query")]
     for value in values:
         if not isinstance(value, str):
             continue

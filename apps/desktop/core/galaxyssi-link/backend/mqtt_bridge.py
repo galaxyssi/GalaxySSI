@@ -5357,6 +5357,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "sender": "other",
             "time": time.time(),
         }
+        research_receipts = replay_receipts(task.get("events") or [])
+        if research_receipts:
+            reply_payload["research_trace"] = research_receipts
         if rich_output:
             artifact_by_uri = {artifact.artifact_uri: artifact for artifact in artifacts}
             for block in rich_output.get("blocks", []):
@@ -9251,6 +9254,9 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
         payload["exact_content_encoding"] = "base64-utf8"
         payload["exact_content_b64"] = base64.b64encode(raw_result.encode("utf-8")).decode("ascii")
     payload["latency"] = _trace_metrics(trace)
+    research_receipts = replay_receipts(task.get("events") or [])
+    if research_receipts:
+        payload["research_trace"] = research_receipts
     return payload
 
 

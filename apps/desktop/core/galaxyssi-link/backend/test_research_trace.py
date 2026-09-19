@@ -7,7 +7,7 @@ class ResearchTraceTests(unittest.TestCase):
     def test_all_explicit_queries_are_kept_and_deduplicated(self):
         result = search_receipt({"type": "webSearch", "query": "AI news",
                                  "action": {"queries": ["ai news", "Chip news"]}}, completed=False)
-        self.assertEqual(["AI news", "Chip news"], result["queries"])
+        self.assertEqual(["ai news", "Chip news"], result["queries"])
         self.assertEqual([], result["sources"])
 
     def test_sources_require_completion_and_safe_urls(self):
@@ -48,3 +48,35 @@ class ResearchTraceTests(unittest.TestCase):
         item = {"id": "search", "type": "webSearch", "query": "news"}
         event = CodexAppServer._item_event(item, "completed")
         self.assertEqual(["news"], event["event_metadata"]["research_trace"]["queries"])
+
+    def test_display_summary_is_not_an_executed_query(self):
+        result = search_receipt({"type": "webSearch", "query": "news ...",
+                                 "action": {"queries": ["news", "chip news"]}}, completed=True)
+        self.assertEqual(["news", "chip news"], result["queries"])
+
+    def test_legacy_summary_is_removed_during_replay(self):
+        events = [{"metadata": {"research_trace": {
+            "queries": ["news ...", "news", "chip news\u2026", "chip news"], "sources": []}}}]
+        self.assertEqual(["news", "chip news"], replay_receipts(events)["queries"])
+
+    def test_final_replay_and_archive_keep_receipts_without_progress(self):
+        import base64
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import mqtt_bridge
+        from agent_task_result_archive import TaskResultArchive
+        receipt = search_receipt({"type": "webSearch", "query": "news",
+                                  "results": [{"url": "https://example.org", "title": "Source"}]}, completed=True)
+        task = {"task_id": "trace-task", "agent_id": "codex", "status": "completed", "result": "Answer",
+                "client_route_id": "trace-route", "client_conversation_id": "trace-conversation",
+                "client_turn_id": "trace-turn", "contact_id": "trace-contact", "source_message_id": "42",
+                "events": [{"metadata": {"research_trace": receipt}}]}
+        with tempfile.TemporaryDirectory() as directory, patch.object(mqtt_bridge, "mobile_connector_agents", return_value=[]):
+            payload = mqtt_bridge._build_republished_task_result(task, "trace-route")
+            self.assertEqual(receipt, payload["research_trace"])
+            archive = TaskResultArchive(Path(directory) / "result.db")
+            digest = archive.put(payload)
+            page = archive.page(dict(payload, request_id="trace-request", page_index=0, **digest), client_route_id="trace-route")
+            restored = json.loads(base64.b64decode(page["data_b64"]))
+            self.assertEqual(receipt, restored["research_trace"])

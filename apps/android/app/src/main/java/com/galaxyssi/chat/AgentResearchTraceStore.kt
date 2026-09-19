@@ -35,6 +35,26 @@ internal object AgentResearchTraceStore {
         merge(context, conversation, turn, AgentResearchTrace.decode(trace).copy(remote = true))
     }
 
+    /** Called after transport authentication, before UI/background routing or result acknowledgement. */
+    fun receiveAuthenticated(context: Context, payload: JSONObject) {
+        if (payload.optBoolean("peer_chat") || GalaxySSITransportPrivacyPolicy.isLocalOnly(payload) ||
+            !AgentTaskIdentityStore.matchesRegistered(context, payload)) return
+        val identity = AgentRemoteOutcomeCodec.observation(payload) ?: return
+        if (!AgentConnectorResponseStore.isCurrentExecution(context, identity) ||
+            AgentPendingDeliveryStore.isSuperseded(context, identity.sourceMessageId,
+                identity.conversationId, identity.turnId)) return
+        var trace = AgentResearchTrace.decode(payload.optJSONObject("research_trace"))
+        payload.optJSONObject("progress_event")?.let {
+            trace = trace.merge(AgentResearchTrace.decode(it.optJSONObject("metadata")?.optJSONObject("research_trace")))
+        }
+        val events = payload.optJSONArray("events")
+        for (index in 0 until minOf(events?.length() ?: 0, 100)) {
+            trace = trace.merge(AgentResearchTrace.decode(events?.optJSONObject(index)
+                ?.optJSONObject("metadata")?.optJSONObject("research_trace")))
+        }
+        merge(context, identity.conversationId, identity.turnId, trace.copy(remote = true))
+    }
+
     @Synchronized
     fun delete(context: Context, conversation: String) {
         val database = db(context)
