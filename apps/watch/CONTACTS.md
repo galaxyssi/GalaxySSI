@@ -1,6 +1,6 @@
 # Wear OS contacts
 
-Version 0.3.8 includes a separate person-to-person contact directory. Existing Desktop
+Version 0.3.13 includes a separate person-to-person contact directory. Existing Desktop
 Agents remain under Devices and the Agent selector. Contacts are also accessible
 from phone setup, so a cloud API key or Desktop pairing is not required.
 
@@ -72,5 +72,5 @@ Removing a contact retires active routes while preserving identity-bound monoton
 route epochs and replay watermarks. Re-adding the same identity can resume with
 an older peer that still remembers the previous route epoch.
 
-The chat header contains a left-aligned back chevron and a single-line contact name.
+The chat header contains a left-aligned back chevron and a single-line contact name, clipped to the available width without an ellipsis.
 The header avatar, overflow menu, and contact settings/detail pages are removed.

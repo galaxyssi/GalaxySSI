@@ -118,8 +118,8 @@ class WatchContactsActivity : Activity() {
                     strokeJoin = android.graphics.Paint.Join.ROUND
                 }
                 override fun onDraw(canvas: android.graphics.Canvas) {
-                    val right = width - 2f
-                    val center = height / 2f - 2f
+                    val right = width - 6f
+                    val center = height / 2f
                     canvas.drawPath(android.graphics.Path().apply {
                         moveTo(right, center - dp(5)); lineTo(right - dp(5), center)
                         lineTo(right, center + dp(5))
@@ -143,15 +143,22 @@ class WatchContactsActivity : Activity() {
         }
         bar.addView(text(title, 16).apply {
             setTypeface(typeface, Typeface.BOLD); maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            if (page == "chat") { gravity = Gravity.START or Gravity.CENTER_VERTICAL; includeFontPadding = false }
+            ellipsize = if (page == "chat") null else android.text.TextUtils.TruncateAt.END
+            if (page == "chat") {
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL; includeFontPadding = false
+                setHorizontallyScrolling(true)
+            }
         }, LinearLayout.LayoutParams(0, dp(36), 1f).apply { if (page == "chat") leftMargin = 3 })
         if (page == "list") bar.addView(text("+", 23).apply {
             contentDescription = getString(R.string.peer_my_qr); setOnClickListener { openQr() }
         }, LinearLayout.LayoutParams(dp(36), dp(36)))
         if (page !in setOf("actions", "paste")) root.addView(bar)
         val scroller = ScrollView(this).apply { isFillViewport = false; clipToPadding = false }
-        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(4), dp(8), dp(10)) }
+        body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val sidePadding = if (page == "chat") (dp(8) - 5).coerceAtLeast(0) else dp(8)
+            setPadding(sidePadding, dp(4), sidePadding, dp(10))
+        }
         scroller.addView(body); root.addView(scroller, LinearLayout.LayoutParams(-1, 0, 1f)); scroll = scroller
         when (page) {
             "list" -> {
@@ -237,7 +244,7 @@ class WatchContactsActivity : Activity() {
                 gravity = Gravity.START; setPadding(dp(10), dp(7), dp(10), dp(7)); setTextIsSelectable(true)
                 setTextColor(if (message.outgoing) Color.BLACK else Color.WHITE)
                 background = background(if (message.outgoing) 0xff95ec69.toInt() else 0xff26282b.toInt())
-                maxWidth = (resources.displayMetrics.widthPixels * .67f).toInt()
+                maxWidth = (resources.displayMetrics.widthPixels * .67f).toInt() + 10
             }
             val messageRow = LinearLayout(this).apply {
                 gravity = Gravity.TOP or if (message.outgoing) Gravity.END else Gravity.START
