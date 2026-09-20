@@ -1,7 +1,9 @@
 package com.galaxyssi.watch
 
 import android.app.Activity
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -9,6 +11,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowInsets
+import android.view.WindowManager
 import android.widget.*
 import org.json.JSONObject
 import java.util.concurrent.CompletableFuture
@@ -21,6 +24,7 @@ class WatchPhoneSetupActivity : Activity() {
     private var state = WatchPhoneSetupServer.State("starting")
     private var screen = "intro"
     private var generation = 0
+    private var requestedDeviceName = false
     @Volatile private var resumed = false
     @Volatile private var pendingDesktop = ""
     private val desktopUpdate: () -> Unit = {}
@@ -28,32 +32,48 @@ class WatchPhoneSetupActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(false)
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        requestedDeviceName = savedInstanceState?.getBoolean("requestedDeviceName") ?: false
         render()
     }
     override fun onResume() {
         super.onResume(); resumed = true; repo.listen(desktopUpdate); repo.foreground(true)
+        if (!requestedDeviceName && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            requestedDeviceName = true
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 71)
+            return
+        }
         if (state.phase != "saved") startReceiver()
     }
     override fun onPause() {
         resumed = false; generation++; server?.close(); server = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         repo.unlisten(desktopUpdate); repo.foreground(false)
         super.onPause()
     }
     private fun startReceiver() {
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Discovery is foreground-only: keep this bounded setup window visible until it ends.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         generation++; val owner = generation
         server?.close(); state = WatchPhoneSetupServer.State("starting")
         screen = "intro"; render()
         server = WatchPhoneSetupServer(this, { value ->
             if (owner == generation && resumed) {
                 state = value
-                if (value.phase in setOf("expired", "error", "network_changed", "wifi_required")) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                if (value.phase in setOf("expired", "network_changed", "wifi_required", "error", "saved"))
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 if (value.phase == "confirm") screen = "confirm"
                 else if (screen == "confirm") screen = "intro"
                 if (value.phase == "saved") openHome() else render()
             }
         }, ::applyConfiguration).also { it.start() }
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("requestedDeviceName", requestedDeviceName)
+        super.onSaveInstanceState(outState)
+    }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 71 && resumed && state.phase != "saved") startReceiver()
     }
     private fun applyConfiguration(payload: JSONObject): JSONObject {
         require(resumed)

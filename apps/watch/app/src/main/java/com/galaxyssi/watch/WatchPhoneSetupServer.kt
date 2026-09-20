@@ -40,6 +40,7 @@ internal class WatchPhoneSetupServer(
     @Volatile private var accepted = false
     @Volatile private var address = ""
     @Volatile private var port = 0
+    private var deviceName = "Watch"
     private var registration: NsdManager.RegistrationListener? = null
     private val nsd = context.getSystemService(NsdManager::class.java)
     private val timeout = Runnable { close(); onState(State("expired")) }
@@ -55,6 +56,7 @@ internal class WatchPhoneSetupServer(
         Thread({
             try {
                 val ip = wifiAddress(context) ?: return@Thread emit("wifi_required")
+                deviceName = WatchDeviceName.current(context)
                 val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 val alias = "watch-phone-setup-ec-v1"
                 if (!keys.containsAlias(alias)) {
@@ -144,7 +146,7 @@ internal class WatchPhoneSetupServer(
         }
         registration = callback
         runCatching { nsd.registerService(NsdServiceInfo().apply {
-            serviceName = "GalaxySSI Watch"; serviceType = "_galaxyssi-watch._tcp."; port = this@WatchPhoneSetupServer.port
+            serviceName = deviceName; serviceType = "_galaxyssi-watch._tcp."; port = this@WatchPhoneSetupServer.port
             setAttribute("v", "1")
         }, NsdManager.PROTOCOL_DNS_SD, callback) }
     }

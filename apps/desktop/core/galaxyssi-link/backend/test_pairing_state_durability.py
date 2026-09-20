@@ -173,6 +173,30 @@ class PairingStateDurabilityTests(unittest.TestCase):
             self._persisted_state()["clients"][paired["client_route_id"]]["display_name"],
         )
 
+    def test_watch_name_survives_restart_and_repair_preserves_user_alias(self):
+        name = "Galaxy Watch5 Pro \u00b7 EV1W"
+        metadata = dict(
+            fingerprint="c" * 64,
+            remote_name="galaxyssi:watch",
+            client_route_id=new_route_id(),
+            display_name=name,
+            device_name=name,
+            device_model="SM-R920",
+            platform="android",
+            link_secret=new_link_secret(),
+            local_identity_fingerprint="d" * 64,
+        )
+        pairing_state.record_pairing_success(**metadata)
+        self._simulate_restart()
+        listed = pairing_state.list_clients()[0]
+        self.assertEqual(name, listed["display_name"])
+        self.assertEqual(name, listed["device_name"])
+        self.assertEqual("SM-R920", listed["device_model"])
+        pairing_state.rename_client(metadata["client_route_id"], "My training watch")
+        pairing_state.record_pairing_success(**metadata)
+        self._simulate_restart()
+        self.assertEqual("My training watch", pairing_state.list_clients()[0]["display_name"])
+
     def test_existing_duplicate_name_is_normalized_without_overwriting_user_alias(self):
         paired = self._pair_client()
         state = pairing_state._read_state()
