@@ -7,7 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import com.galaxyssi.chat.GalaxySSICrypto as Crypto
 import com.galaxyssi.chat.GalaxySSILinkProtocol as Link
-import com.galaxyssi.chat.WatchWireChunks
+import com.galaxyssi.chat.WatchLinkTransport
 import org.eclipse.paho.client.mqttv3.*
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import org.json.JSONObject
@@ -34,8 +34,7 @@ class WatchRepository(private val context: Context) {
     private val api = WatchApi()
     private val apiCalls = java.util.concurrent.ConcurrentHashMap<String, WatchApiOperation>()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
-    private val chunks = WatchWireChunks()
-    private var mqtt: MqttAsyncClient? = null
+    private var mqtt: WatchLinkTransport? = null
     private var subscribed = emptySet<String>()
     private var pendingPairing: JSONObject? = null
     private var lastPairing = 0L
@@ -48,6 +47,12 @@ class WatchRepository(private val context: Context) {
     @Volatile var errorResource = 0
         private set
     private val seen = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val recovery by lazy { WatchRemoteRecovery(context,
+        publish = { desktop, payload -> worker.submit<Boolean> {
+            Link.serverLink(context, desktop)?.let { sendEphemeral(it, payload) } ?: false
+        }.get() },
+        accept = { desktop, payload -> worker.submit { applyPayload(desktop, payload) }.get() },
+        current = store::task) }
 
     init {
         apiState.execute {
@@ -68,7 +73,7 @@ class WatchRepository(private val context: Context) {
                 Crypto.initialize(context)
                 store.inbox.entries().forEach { (key, raw) ->
                     val entry = JSONObject(raw)
-                    if (!entry.optBoolean("applied")) entry.optJSONObject("payload")?.let {
+                    entry.optJSONObject("payload")?.let {
                         applyPayload(entry.getString("desktop"), it, live = false)
                         store.inbox.writeString(key, entry.put("applied", true).toString())
                     }
@@ -102,10 +107,11 @@ class WatchRepository(private val context: Context) {
         System.currentTimeMillis() - (seen[desktop] ?: 0) < 90_000
     fun refresh() = worker.execute { lastStatus = 0; errorResource = 0; tick(); changed() }
     fun activeTasks(): Boolean = store.tasks().any { !it.state.terminal }
+    internal fun transportDiagnostics() = mqtt?.diagnostics().orEmpty()
 
     private fun tick() {
         if (!visible && !monitoring && System.currentTimeMillis() - hiddenAt > 15_000) {
-            mqtt?.let { if (it.isConnected) it.disconnect().waitForCompletion(3000) }
+            mqtt?.close(); mqtt = null
             connection = ConnectionState.DISCONNECTED
             seen.clear()
             subscribed = emptySet()
@@ -121,57 +127,53 @@ class WatchRepository(private val context: Context) {
             else if (System.currentTimeMillis() - lastPairing > 20_000) claim(qr)
         }
         if (System.currentTimeMillis() - lastStatus > 30_000) {
-            lastStatus = System.currentTimeMillis()
+            var requested = false
             links().filter { it.paired }.forEach {
-                sendEphemeral(it, JSONObject().put("type", "connector_status_request")
+                if (sendEphemeral(it, JSONObject().put("type", "connector_status_request")
                     .put("contact_id", "system").put("desktop_id", it.desktopId)
-                    .put("request_capability_manifest", true).put("capability_manifest_version", 0))
+                    .put("request_capability_manifest", true).put("capability_manifest_version", 0))) requested = true
             }
+            if (requested) lastStatus = System.currentTimeMillis()
         }
         flush()
+        recovery.refresh(store.tasks().filter { task -> links().any { it.desktopId == task.desktopId && mqtt?.ready(it) == true } })
         changed()
     }
 
     private fun connect() {
-        if (mqtt?.isConnected == true) return
+        if (mqtt != null) return
         connection = ConnectionState.CONNECTING; changed()
-        val client = mqtt ?: MqttAsyncClient("ssl://broker.emqx.io:8883",
-            "watch-${Crypto.localIdentitySha256().take(18)}", MemoryPersistence()).also { mqtt = it }
-        client.setCallback(object : MqttCallback {
-            override fun connectionLost(cause: Throwable?) {
-                worker.execute { subscribed = emptySet(); seen.clear(); connection = ConnectionState.DISCONNECTED; changed() }
-            }
-            override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
-            override fun messageArrived(topic: String, message: MqttMessage) {
-                if (message.payload.size > 1024 * 1024) return
-                val bytes = message.payload.copyOf()
-                worker.execute { runCatching { incoming(topic, bytes) }.onFailure {
-                    errorResource = R.string.message_rejected; changed()
-                } }
-            }
-        })
-        try {
-            client.connect(MqttConnectOptions().apply {
-                isCleanSession = true
-                isAutomaticReconnect = false
-                connectionTimeout = 8
-                keepAliveInterval = 45
-                isHttpsHostnameVerificationEnabled = true
-            }).waitForCompletion(10_000)
-            connection = ConnectionState.BROKER_CONNECTED
-            subscribed = emptySet()
-        } catch (_: Exception) { connection = ConnectionState.ERROR }
-        changed()
+        val transport = WatchLinkTransport(context,
+            onState = { connected -> worker.execute {
+                connection = if (connected) ConnectionState.BROKER_CONNECTED else ConnectionState.DISCONNECTED
+                if (!connected) seen.clear()
+                changed()
+            } },
+            onControl = { desktop, payload -> worker.submit { pairingControl(desktop, payload) }.get() },
+            onPayload = { desktop, payload -> worker.submit { applyPayload(desktop, payload) }.get() },
+            onStored = { desktop, id, hash -> worker.execute { received(desktop, id, hash) } },
+            onReady = { worker.execute { runCatching { tick() }; changed() } })
+        mqtt = transport
+        transport.start()
     }
 
     private fun subscribe() {
-        val client = mqtt ?: return
         val topics = links().flatMap { it.routes.receiveWindow }.toSet()
-        val removed = subscribed - topics
-        if (removed.isNotEmpty()) client.unsubscribe(removed.toTypedArray()).waitForCompletion(8000)
-        val added = topics - subscribed
-        if (added.isNotEmpty()) client.subscribe(added.toTypedArray(), IntArray(added.size) { 1 }).waitForCompletion(8000)
-        subscribed = topics
+        if (subscribed != topics) { mqtt?.refresh(); subscribed = topics }
+    }
+
+    private fun received(desktop: String, id: String, hash: String) {
+        val raw = store.outbox.readString(id, "")
+        if (raw.isBlank()) return
+        val entry = JSONObject(raw)
+        val link = Link.serverLink(context, desktop) ?: return
+        if (entry.optString("desktop") != desktop || entry.optString("client_route_id") != link.routes.clientRouteId ||
+            mqtt?.hash(entry.getString("wire")) != hash) return
+        store.outbox.remove(id)
+        store.task(entry.optString("task"))?.let {
+            if (it.state in setOf(TaskState.QUEUED, TaskState.SENT)) store.save(it.copy(state = TaskState.ACCEPTED))
+        }
+        seen[desktop] = System.currentTimeMillis(); changed()
     }
 
     fun inspectPairing(raw: String): JSONObject {
@@ -210,9 +212,8 @@ class WatchRepository(private val context: Context) {
             .put("identity_public_key", Crypto.localIdentityPublicKey())
             .put("signal_bundle", Crypto.localSignalBundleJson())
             .put("requested_access_profile", Link.ACCESS_RESTRICTED).put("time", System.currentTimeMillis())
-        mqtt!!.publish(qr.getString("pairing_topic"), Link.encryptPairingClaim(payload, qr).toByteArray(), 1, false)
-            .waitForCompletion(8000)
-        lastPairing = System.currentTimeMillis()
+        if (mqtt!!.bootstrap(qr.getString("pairing_topic"), Link.encryptPairingClaim(payload, qr), link.routes.receiveWindow))
+            lastPairing = System.currentTimeMillis()
     }
 
     fun send(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
@@ -346,12 +347,11 @@ class WatchRepository(private val context: Context) {
                 store.task(entry.optString("task"))?.let { if (!it.state.terminal) store.save(it.copy(state = TaskState.FAILED)) }
                 return@forEach
             }
-            if (entry.optInt("attempts") >= 6 || System.currentTimeMillis() < entry.optLong("next")) return@forEach
+            if (!client.ready(link) || System.currentTimeMillis() < entry.optLong("next")) return@forEach
             val attempts = entry.optInt("attempts") + 1
-            entry.put("attempts", attempts).put("next", System.currentTimeMillis() + minOf(120_000L, 5000L * (1L shl attempts)))
+            if (!client.publish(link, id, entry.getString("wire"), entry.optString("type"))) return@forEach
+            entry.put("attempts", attempts).put("next", System.currentTimeMillis() + minOf(120_000L, 5000L * (1L shl minOf(attempts, 5))))
             store.outbox.writeString(id, entry.toString())
-            val wire = Link.sealWirePacket(entry.getString("wire"), link.routes.linkSecret)
-            client.publish(link.routes.up, wire.toByteArray(), 1, false).waitForCompletion(8000)
             store.task(entry.optString("task"))?.let {
                 if (entry.optString("type") == "text" && it.state == TaskState.QUEUED) store.save(it.copy(state = TaskState.SENT))
             }
@@ -384,6 +384,7 @@ class WatchRepository(private val context: Context) {
             val link = Link.serverLink(context, current.desktopId) ?: return@runCatching
             require(link.routes.clientRouteId == current.routeId)
             val request = current.request(Locale.getDefault().toLanguageTag())
+                .put("task_id", current.remoteTaskId.ifBlank { current.id })
                 .put("type", "agent_task_cancel").put("message_id", UUID.randomUUID().toString()).removeContent()
             queue(link, request, current.id)
             store.save(current.copy(state = TaskState.STOP_REQUESTED))
@@ -399,12 +400,11 @@ class WatchRepository(private val context: Context) {
         store.forgetAgents(desktop); seen.remove(desktop)
         if (store.selectedDesktop == desktop) { store.selectedDesktop = ""; store.selectedAgent = "" }
         store.tasks().filter { it.desktopId == desktop && !it.state.terminal }.forEach { store.save(it.copy(state = TaskState.FAILED)) }
-        runCatching { subscribe() }; changed()
+        runCatching { mqtt?.refresh(); subscribe() }; changed()
     } }
 
-    private fun incoming(topic: String, bytes: ByteArray) {
-        val link = links().firstOrNull { topic in it.routes.receiveWindow } ?: return
-        val raw = JSONObject(Link.openWirePacket(bytes, link.routes.linkSecret))
+    private fun pairingControl(desktop: String, raw: JSONObject) {
+        val link = Link.serverLink(context, desktop) ?: return
         if (raw.optString("type") == "pairing_confirmed") {
             require(raw.optString("protocol") == Link.NAME && raw.optInt("version") == Link.VERSION)
             require(raw.optString("desktop_id") == link.desktopId && raw.optString("client_route_id") == link.routes.clientRouteId)
@@ -419,38 +419,13 @@ class WatchRepository(private val context: Context) {
             seen[link.desktopId] = System.currentTimeMillis()
             raw.optJSONArray("connector_agents")?.let { store.saveAgents(link.desktopId, it) }
             if (store.selectedDesktop.isBlank()) store.selectedDesktop = link.desktopId
-            lastStatus = 0; changed(); return
+            mqtt?.refresh(); lastStatus = 0; changed(); return
         }
-        require(raw.optString("from") == link.desktopId && raw.optString("to") == Crypto.localGalaxySSIId())
-        val wire = chunks.accept(link.desktopId, raw) ?: return
-        require(wire.optString("from") == link.desktopId && wire.optString("to") == Crypto.localGalaxySSIId())
-        require(wire.optString("scheme") == "signal" && Link.isCryptographicallyReady(context, link))
-        val digest = MessageDigest.getInstance("SHA-256").digest((link.desktopId + wire.getString("body")).toByteArray())
-            .joinToString("") { "%02x".format(it) }
-        val cached = store.inbox.readString(digest, "")
-        if (cached.isNotBlank()) {
-            val entry = JSONObject(cached)
-            entry.optJSONObject("payload")?.let {
-                if (!entry.optBoolean("applied")) applyPayload(link.desktopId, it)
-                store.inbox.writeString(digest, entry.put("applied", true).toString())
-                receipt(link, it)
-            }
-            return
-        }
-        val envelope = Crypto.decryptEnvelope(wire) ?: return
-        require(envelope.optString("source_id") == link.desktopId && envelope.optString("target_id") == Crypto.localGalaxySSIId())
-        val payload = Link.unwrapEnvelope(envelope) ?: return
-        val entry = JSONObject().put("desktop", link.desktopId).put("payload", payload).put("time", System.currentTimeMillis())
-        store.inbox.writeString(digest, entry.toString())
-        applyPayload(link.desktopId, payload)
-        store.inbox.writeString(digest, entry.put("applied", true).toString())
-        receipt(link, payload)
-        val keys = store.inbox.oldestKeys("", 2100)
-        if (keys.size > 2000) store.inbox.removeAll(keys.take(keys.size - 2000))
     }
 
     private fun applyPayload(desktop: String, payload: JSONObject, live: Boolean = true) {
         if (live) seen[desktop] = System.currentTimeMillis()
+        if (recovery.receive(desktop, payload)) return
         payload.optJSONArray("connector_agents")?.let { store.saveAgents(desktop, it) }
         if (payload.optString("type") == "pairing_revoked") { forget(desktop); return }
         if (payload.optString("type") == "delivery_ack") {
@@ -466,10 +441,17 @@ class WatchRepository(private val context: Context) {
                 }
             }
         } else {
-            store.task(payload.optString("task_id"))?.let { old ->
+            store.tasks().firstOrNull { it.matches(desktop, payload) }?.let { old ->
                 val updated = old.reduce(desktop, payload)
                 if (old != updated) {
                     store.save(updated); store.outbox.remove(old.messageId)
+                    if (updated.state.terminal && updated.reply.isNotBlank()) {
+                        com.galaxyssi.chat.AgentResultReceipt.from(payload, desktop)?.let { receipt ->
+                            Link.serverLink(context, desktop)?.let { link ->
+                                queue(link, receipt.payload().put("message_id", receipt.id))
+                            }
+                        }
+                    }
                     if (live && !old.state.terminal && updated.state.terminal) main.post { WatchNotifications.completed(context, updated) }
                 }
             }
@@ -477,18 +459,11 @@ class WatchRepository(private val context: Context) {
         changed()
     }
 
-    private fun receipt(link: Link.ServerLink, payload: JSONObject) {
-        if (payload.optString("type") == "delivery_ack") return
-        sendEphemeral(link, JSONObject().put("type", "delivery_ack")
-            .put("transport_message_id", payload.getString("message_id"))
-            .put("source_message_id", payload.getString("message_id")).put("delivery_status", "accepted"))
-    }
-
-    private fun sendEphemeral(link: Link.ServerLink, payload: JSONObject) {
-        val client = mqtt ?: return
-        if (!client.isConnected) return
+    private fun sendEphemeral(link: Link.ServerLink, payload: JSONObject): Boolean {
+        val client = mqtt ?: return false
+        if (!client.isConnected || !client.ready(link)) return false
         val envelope = Link.makeEnvelope(payload, Crypto.localGalaxySSIId(), link.desktopId)
-        val encrypted = Crypto.encryptPayloadForDesktop(link.desktopId, envelope) ?: return
-        client.publish(link.routes.up, Link.sealWirePacket(encrypted.toString(), link.routes.linkSecret).toByteArray(), 1, false)
+        val encrypted = Crypto.encryptPayloadForDesktop(link.desktopId, envelope) ?: return false
+        return client.publish(link, envelope.getString("message_id"), encrypted.toString(), payload.optString("type"))
     }
 }

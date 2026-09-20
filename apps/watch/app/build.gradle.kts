@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 32
-        versionName = "0.3.0"
+        versionCode = 33
+        versionName = "0.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -139,6 +139,11 @@ tasks.named("preBuild").configure { dependsOn(syncPhoneBrand) }
 // Compile Android's complete Web Intelligence engine from an explicit source allowlist.
 val phoneWebRoot = file("../../android/app/src/main/java/com/galaxyssi/chat")
 val webFiles = listOf(
+    "AgentRemoteRecoveryClient.kt", "AgentResultRecoveryClient.kt", "AgentResultRecoveryPageCodec.kt",
+    "AgentResultPageCheckpoint.kt", "AgentResultPageDatabase.kt", "GalaxySSITransportPrivacyPolicy.kt",
+    "metrics/AgentRecoveryTiming.kt", "metrics/AgentLatencyTrace.kt",
+    "metrics/AgentModelTiming.kt", "metrics/AgentPlanningTiming.kt", "metrics/AgentRuntimeTiming.kt",
+    "metrics/AgentTimingJournal.kt",
     "AgentWebIntelligence.kt", "AgentWebIntelligenceService.kt", "AgentWebIntelligenceTransport.kt",
     "AgentWebEvidenceReader.kt", "AgentWebEvidencePack.kt", "AgentWebEvidenceVerification.kt",
     "AgentWebResearchPlan.kt", "AgentWebRendererHealth.kt", "AgentWebMaintenanceQueue.kt",
@@ -150,10 +155,11 @@ val webFiles = listOf(
     "MicrosoftEdgeTts.kt", "MicrosoftEdgeTtsProtocol.kt", "MicrosoftTtsVoiceCatalog.kt",
     "voice/metrics/VoiceLatencyTracer.kt", "voice/audio/VoiceCommunicationAudioSession.kt",
     "voice/modelstream/SentenceCommitter.kt", "ui/AgentComposerUiPolicy.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
+    "AgentWebReadingWindow.kt", "AgentResearchTrace.kt", "ResearchEvidenceAudit.kt",
     "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
 val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
-    "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt")
+    "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt", "AgentRemoteOutcomeCodec.kt", "AgentResultReceipt.kt")
 val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
 val syncPhoneWebParser by tasks.registering {
     inputs.files((webFiles + webSlices).map { phoneWebRoot.resolve(it) })
@@ -173,6 +179,12 @@ val syncPhoneWebParser by tasks.registering {
         }) }
         write("GalaxySSIApplication.kt", phoneWebRoot.resolve("GalaxySSIApplication.kt").readText()
             .replace("class GalaxySSIApplication", "open class GalaxySSIApplication"))
+        // The UI response bus below this boundary belongs to the phone; version fencing is shared.
+        write("AgentRemoteOutcomeCodec.kt", phoneWebRoot.resolve("AgentRemoteOutcomeCodec.kt").readText()
+            .substringBefore("    fun observation(") + "}\n")
+        val resultReceipt = phoneWebRoot.resolve("AgentResultReceipt.kt").readText()
+        write("AgentResultReceipt.kt", resultReceipt.substringBefore("    fun matches(") +
+            "    companion object" + resultReceipt.substringAfter("    companion object"))
         val media = phoneWebRoot.resolve("AgentWebMediaNativeTools.kt").readText()
         val imports = media.lineSequence().filter { it.startsWith("import java.") ||
             it.startsWith("import okhttp3.") || it.startsWith("import org.json.") }.joinToString("\n")
@@ -197,6 +209,14 @@ val syncPhoneWebParser by tasks.registering {
 }
 android.sourceSets.getByName("main").java.srcDir(webParserOutput)
 tasks.named("preBuild").configure { dependsOn(syncPhoneWebParser) }
+val syncPhoneRecoveryTests by tasks.registering(Sync::class) {
+    from("../../android/app/src/test/java") {
+        include("com/galaxyssi/chat/AgentRemoteRecoveryClientTest.kt", "com/galaxyssi/chat/AgentResultRecoveryClientTest.kt")
+    }
+    into(layout.buildDirectory.dir("generated/phoneRecoveryTests"))
+}
+android.sourceSets.getByName("test").java.srcDir(syncPhoneRecoveryTests.map { it.destinationDir })
+tasks.named("preBuild").configure { dependsOn(syncPhoneRecoveryTests) }
 
 val phoneWebAssets by tasks.registering(Sync::class) {
     from("../../android/app/src/main/assets") { include("web-intelligence/**") }

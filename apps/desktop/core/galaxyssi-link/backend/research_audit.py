@@ -14,7 +14,7 @@ TOOL = "research_audit"
 
 def tool_spec():
     spec = json.loads((Path(__file__).with_name("research_contract") / "research-audit-tool.json").read_text(encoding="utf-8"))
-    return {"name": TOOL, "description": spec["description"], "inputSchema": spec["parameters"]}
+    return {"type": "function", "name": TOOL, "description": spec["description"], "inputSchema": spec["parameters"]}
 
 
 def canonical(raw):

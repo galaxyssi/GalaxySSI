@@ -88,6 +88,7 @@
             android:launchMode="singleTop"
             android:theme="@style/Theme.GalaxySSI.Main"
             android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".WatchSetupActivity" android:exported="false" android:configChanges="orientation|screenSize|uiMode" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".ConversationWindowActivity"
             android:exported="false"
