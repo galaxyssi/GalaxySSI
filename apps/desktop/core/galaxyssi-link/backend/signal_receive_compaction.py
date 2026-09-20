@@ -1,11 +1,11 @@
-"""Retire delivered large bodies, retaining authenticated, non-executable proofs."""
+"""Retire delivered bodies of every size, retaining authenticated replay proofs."""
 from contextlib import closing
 import hashlib
 import json
 
 import link_delivery as delivery
 
-MIN_BODY_BYTES = 64 * 1024
+MIN_BODY_BYTES = 0
 MAX_PROOF_BYTES = 8192
 HEADERS = ("protocol", "version", "message_id", "source_id", "target_id", "conversation_id", "sent_at", "expires_at")
 ACK_FIELDS = ("type", "source_message_id", "contact_id")
@@ -65,6 +65,7 @@ def compact_in_transaction(db, route, mid):
                      (route, mid, MIN_BODY_BYTES)).fetchone()
     if row is None:
         return False
+    db.execute("INSERT OR IGNORE INTO inbound_signal_compaction_queue VALUES(?,?,0)", (route, mid))
     envelope = json.loads(_body(db, route, mid))
     summary = {key: envelope[key] for key in HEADERS if key in envelope}
     summary["payload"] = {key: envelope["payload"][key] for key in ACK_FIELDS if key in envelope["payload"]}
@@ -73,21 +74,37 @@ def compact_in_transaction(db, route, mid):
         return False
     protected = delivery._protect(proof, _purpose(route, mid))
     size = len(protected.encode("utf-8")) + 512
-    if size >= row[0]:
-        return False
     db.execute("INSERT INTO inbound_signal_completed VALUES(?,?,?,?)", (route, mid, protected, size))
     db.execute("DELETE FROM inbound_signal_bodies WHERE client_route_id=? AND message_id=?", (route, mid))
-    _adjust(db, "total", size - row[0], 0, MAX_TOTAL_BYTES, MAX_TOTAL_RECORDS)
-    _adjust(db, route, size - row[0], 0, MAX_PEER_BYTES, MAX_PEER_RECORDS)
+    db.execute("DELETE FROM inbound_signal_compaction_queue WHERE client_route_id=? AND message_id=?", (route, mid))
+    _adjust(db, "total", -row[0], -1, MAX_TOTAL_BYTES, MAX_TOTAL_RECORDS)
+    _adjust(db, route, -row[0], -1, MAX_PEER_BYTES, MAX_PEER_RECORDS)
     return True
 
 
-def compact_backlog(db, route, limit=16):
-    # Only completed large bodies are candidates; unfinished recovery bodies and
-    # the permanent ID/content/cipher bindings never become quota eviction victims.
-    rows = db.execute(f"""SELECT b.message_id FROM inbound_signal_bodies b
+def compact_backlog(db, route=None, limit=16):
+    # Never evict unfinished handoffs, uncertain side effects or replay bindings.
+    # Filter in SQL so an ineligible old row cannot starve eligible newer rows.
+    condition, args = ("q.client_route_id=? AND", (route, limit)) if route is not None else ("", (limit,))
+    rows = db.execute(f"""SELECT b.client_route_id,b.message_id FROM inbound_signal_compaction_queue q
+                         JOIN inbound_signal_bodies b USING(client_route_id,message_id)
                          JOIN inbound_messages m USING(client_route_id,message_id)
-                         WHERE b.client_route_id=? AND m.dispatch_state='dispatched' AND b.byte_count>={MIN_BODY_BYTES}
-                         ORDER BY b.created_at LIMIT ?""", (route, limit)).fetchall()
-    for (mid,) in rows:
-        compact_in_transaction(db, route, mid)
+                         WHERE {condition} m.dispatch_state='dispatched'
+                         AND EXISTS (SELECT 1 FROM inbound_signal_handoffs h WHERE h.client_route_id=b.client_route_id
+                                     AND h.message_id=b.message_id)
+                         AND NOT EXISTS (SELECT 1 FROM inbound_signal_handoffs h WHERE h.client_route_id=b.client_route_id
+                                         AND h.message_id=b.message_id AND h.released=0)
+                         AND EXISTS (SELECT 1 FROM inbound_ciphertexts c WHERE c.client_route_id=b.client_route_id
+                                     AND c.message_id=b.message_id AND c.receipt_hash<>'')
+                         ORDER BY q.created_at LIMIT ?""", args).fetchall()
+    return sum(compact_in_transaction(db, peer, mid) for peer, mid in rows)
+
+
+def compact_completed(limit=32):
+    if not 1 <= limit <= 256:
+        raise ValueError("Invalid completed receive page limit")
+    with delivery._lock, closing(delivery._connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        count = compact_backlog(db, limit=limit)
+        db.commit()
+        return count

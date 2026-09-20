@@ -121,4 +121,50 @@ class LinkTransportReceiptDeviceTest {
         it.reconnect(11)
         assertEquals("", it.claim(receipt().key, 11)!!.wire)
     }
+
+    @Test fun acknowledgedReplayReusesCiphertextWithoutGrowingPendingQueue() = withJournal {
+        val receipt = receipt()
+        it.enqueue(receipt, 100)
+        val first = it.claim(receipt.key, 100)!!
+        it.prepared(first, "same-signal-ciphertext", 100)
+        it.acknowledge(first.attempt, 101)
+        repeat(1000) { _ -> it.enqueue(receipt, 102) }
+        assertTrue(it.due(102).isEmpty())
+        assertEquals(listOf(receipt.key), it.due(2101))
+        val replay = it.claim(receipt.key, 2101)!!
+        assertEquals("same-signal-ciphertext", replay.wire)
+        assertTrue(it.acknowledge(replay.attempt, 2102))
+        assertNull(it.nextDue())
+    }
+
+    @Test fun replayCacheIsBoundedAndDoesNotExposePayload() = withJournal {
+        repeat(300) { index ->
+            val value = receipt("cached-$index")
+            it.enqueue(value, index.toLong())
+            val work = it.claim(value.key, index.toLong())!!
+            it.prepared(work, "private-wire")
+            assertTrue(it.acknowledge(work.attempt, index.toLong()))
+        }
+        it.readableDatabase.rawQuery("SELECT COUNT(*),MAX(payload) FROM receipt_replays", null).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(256, cursor.getInt(0))
+            assertFalse(cursor.getString(1).contains("private-wire"))
+        }
+        assertNull(it.nextDue())
+    }
+
+    @Test fun repeatedAcknowledgementsCannotExtendEncryptedReceiptLifetime() = withJournal {
+        val value = receipt()
+        it.enqueue(value, 100)
+        val first = it.claim(value.key, 100)!!
+        it.prepared(first, "old-ciphertext", 100)
+        it.acknowledge(first.attempt, 101)
+        it.enqueue(value, 5_000)
+        val replay = it.claim(value.key, 5_000)!!
+        assertEquals("old-ciphertext", replay.wire)
+        it.acknowledge(replay.attempt, 5_001)
+        val later = LinkTransportReceiptJournal.REPLAY_TTL + 101
+        it.enqueue(value, later)
+        assertEquals("", it.claim(value.key, later)!!.wire)
+    }
 }

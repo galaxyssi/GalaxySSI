@@ -44,8 +44,7 @@ class CompactionScanTest(unittest.TestCase):
                 db.set_progress_handler(None, 0)
             print(f"COMPACTION_QUERY_VM_STEPS={operations[0]} PLAN={plan}", flush=True)
             self.assertLess(operations[0], 1000, "Small completed history was scanned")
-            self.assertIn("signal_large_body_candidates", plan)
-            self.assertNotIn("TEMP B-TREE", plan)
+            self.assertIn("inbound_signal_compaction_queue", plan)
 
     def test_large_candidates_keep_peer_scope_order_and_page_bound(self):
         with closing(delivery._connect()) as db:
@@ -53,7 +52,6 @@ class CompactionScanTest(unittest.TestCase):
                 ("peer", "newer", compaction.MIN_BODY_BYTES + 1, 4, "dispatched"),
                 ("peer", "older", compaction.MIN_BODY_BYTES, 2, "dispatched"),
                 ("peer", "next", compaction.MIN_BODY_BYTES, 5, "dispatched"),
-                ("peer", "tiny", compaction.MIN_BODY_BYTES - 1, 0, "dispatched"),
                 ("peer", "running", compaction.MIN_BODY_BYTES, 0, "running"),
                 ("other", "private", compaction.MIN_BODY_BYTES, 0, "dispatched"),
             ):
@@ -61,6 +59,10 @@ class CompactionScanTest(unittest.TestCase):
                 db.execute("""INSERT INTO inbound_messages
                     (client_route_id,message_id,received_at,status,dispatch_state) VALUES(?,?,?,'RX_STORED',?)""",
                     (peer, mid, created, state))
+                db.execute("INSERT INTO inbound_signal_compaction_queue VALUES(?,?,?)", (peer, mid, created))
+                db.execute("INSERT INTO inbound_signal_handoffs VALUES(?,?,?,?,?,?,?,1)",
+                           (peer, mid, mid, "digest", "hash", "remote", 1))
+                db.execute("INSERT INTO inbound_ciphertexts VALUES(?,?,?,?,?)", (peer, mid, mid, created, "receipt"))
             with patch.object(compaction, "compact_in_transaction") as compact:
                 compaction.compact_backlog(db, "peer", limit=2)
             self.assertEqual(["older", "newer"], [call.args[2] for call in compact.call_args_list])

@@ -442,6 +442,8 @@ def api_link_transport_diagnostics(request: Request):
 
     snapshot = link_transport_diagnostics().snapshot()
     snapshot["mqtt"] = mqtt_bridge_status()
+    from signal_receive_handoff import storage_snapshot
+    snapshot["receive_storage"] = storage_snapshot()
     return snapshot
 
 

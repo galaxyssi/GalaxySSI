@@ -53,6 +53,31 @@ class MqttPeerRoutesTest {
         routes.handleVerified(ours.scope, payload, rig.ingress(broker), ours.identity)
     private fun sentCount() = rig.clients.values.flatten().sumOf { it.sent.size }
 
+    @Test fun routineLeaseRenewalsDoNotRestartApplicationRecovery() {
+        start()
+        receive(ack())
+        assertEquals(listOf("pair"), notifications)
+        repeat(100) { index ->
+            val step = MqttBrokerCatalog.RESUME_TTL_MS / 2 + 1
+            rig.clock.addAndGet(step)
+            rig.wall.addAndGet(step)
+            routes.maintenance()
+            receive(ack(advertisement = remote(epoch = index + 2L)))
+            assertTrue(routes.ready("pair"))
+        }
+        assertEquals(listOf("pair"), notifications)
+    }
+
+    @Test fun expiredVerifiedLeaseWakesRecoveryAgain() {
+        start()
+        receive(ack())
+        rig.wall.addAndGet(MqttBrokerCatalog.RESUME_TTL_MS + 1)
+        rig.clock.addAndGet(MqttBrokerCatalog.RESUME_TTL_MS + 1)
+        routes.maintenance()
+        receive(ack(advertisement = remote(epoch = 2)))
+        assertEquals(listOf("pair", "pair"), notifications)
+    }
+
     private fun wire() = JSONObject().put("scheme", "signal").put("from", "alice").put("to", "bob")
         .put("signal_type", "prekey").put("message_type", 3).put("body", "AQIDBA==")
     private fun deliveryFrames() = rig.clients.values.flatten().flatMap { it.sent }.mapNotNull {

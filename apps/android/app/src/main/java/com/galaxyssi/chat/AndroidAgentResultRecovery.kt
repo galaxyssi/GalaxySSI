@@ -100,6 +100,12 @@ internal object AndroidAgentResultRecovery {
             pending.conversationId != fields.optString("conversation_id") || pending.turnId != fields.optString("turn_id") ||
             (pending.taskId != fields.optString("task_id") && pending.taskId != pending.turnId) ||
             pending.recoverySuccessorSourceMessageId > 0) return false
+        val currentGeneration = !fields.has("execution_generation")
+        if (AgentConnectorResponseStore.receivedExecution(context, observation, currentGeneration)) {
+            // Do not rewrite task state here: another execution generation can
+            // start concurrently. Its own generation-bound result remains eligible.
+            return false
+        }
         return !AgentPendingDeliveryStore.isSuperseded(context, source, pending.conversationId, pending.turnId) &&
             !AgentConnectorResponseStore.containsTurn(context, pending.conversationId, pending.turnId)
     }

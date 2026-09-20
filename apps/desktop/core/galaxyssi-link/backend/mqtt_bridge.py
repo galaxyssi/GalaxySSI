@@ -7165,7 +7165,9 @@ def _process_stored_message(mqttc, message: _StoredInboxMessage):
 
 def flush_pending_inbound_messages(mqttc) -> int:
     from signal_receive_dispatch import pending
+    from signal_receive_compaction import compact_completed
 
+    compact_completed()
     admitted, remaining = 0, 4 * 1024 * 1024
     for route, message_id, size, token in pending(limit=16):
         paired = get_client(route)

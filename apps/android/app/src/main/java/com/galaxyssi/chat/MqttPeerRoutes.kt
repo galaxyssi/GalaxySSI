@@ -34,6 +34,8 @@ internal class MqttPeerRoutes(
         var generations: Map<String, Long> = emptyMap()
         var confirmedEpoch = 0L
         var remoteEpoch = 0L
+        var readyLeaseUntil = 0L
+        var readyGenerations: Map<String, Long> = emptyMap()
         var nextSend = 0L
         var failureUntil = 0L
         val responses = mutableMapOf<String, Pair<String, Long>>()
@@ -203,8 +205,15 @@ internal class MqttPeerRoutes(
                 }
             }
             if (type == "link_resume_ack") {
-                notify = peer.confirmedEpoch != peer.local!!.epoch
+                // A lease renewal or one flapping broker is not a new application
+                // connection while a previously verified path still survives.
+                notify = peer.confirmedEpoch != peer.local!!.epoch &&
+                    (peer.readyLeaseUntil <= at || peer.generations.none { (broker, generation) ->
+                        peer.readyGenerations[broker] == generation
+                    })
                 peer.confirmedEpoch = peer.local!!.epoch
+                peer.readyGenerations = peer.generations.toMap()
+                peer.readyLeaseUntil = minOf(peer.local!!.expiresAtMs, advertisement.expiresAtMs)
             } else {
                 val ours = local(peer, at)
                 val key = "${advertisement.epoch}:${advertisement.resumeId}"
@@ -220,6 +229,7 @@ internal class MqttPeerRoutes(
         response?.let { control(binding, it, ingress.brokerId) }
         if (expedite) request(scope)
         if (notify) onReady(scope)
+        else if (type == "link_resume_ack") onChanged()
         return true
     }
 

@@ -40,6 +40,26 @@ class AgentConnectorInboxDeviceTest {
     private fun reply(id: Long) = AgentConnectorResponse(id, "test-provider",
         "\u6062\u590d\u9a8c\u8bc1-$id", "conversation-$id", "turn-$id", "task-$id")
 
+    @Test fun handledResultStillProvesDeliveryAfterBodyRemovalAndRestart() {
+        val response = reply(701).copy(executionGeneration = 2, taskStatus = "completed")
+        assertTrue(inbox.append(response))
+        assertTrue(inbox.acknowledge(response))
+        reopen()
+        assertFalse(inbox.containsTurn(response.conversationId, response.turnId))
+        assertTrue(inbox.receivedExecution(response, handledOnly = true))
+        assertTrue(inbox.receivedExecution(response.copy(executionGeneration = 1), currentGeneration = true))
+        assertFalse(inbox.receivedExecution(response.copy(executionGeneration = 3)))
+        assertTrue(inbox.observeExecution(response.copy(executionGeneration = 3)))
+        assertFalse(inbox.receivedExecution(response, currentGeneration = true))
+    }
+
+    @Test fun localFailurePlaceholderDoesNotProveRemoteResultReceived() {
+        val response = reply(702).copy(deliveryFailureCode = "transport_timeout")
+        assertTrue(inbox.append(response))
+        inbox.acknowledge(response)
+        assertFalse(inbox.receivedExecution(response, currentGeneration = true))
+    }
+
     private fun reopen() {
         inbox.close()
         inbox = AgentConnectorResponseInbox(context, databaseName, preferences)
