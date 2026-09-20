@@ -204,7 +204,7 @@ class WatchRepository(private val context: Context) {
             .put("type", "galaxyssi_pairing_claim").put("pairing_token", qr.getString("pairing_token"))
             .put("from", Crypto.localGalaxySSIId()).put("signal_name", Crypto.localGalaxySSIId())
             .put("signal_device_id", 1).put("client_route_id", link.routes.clientRouteId)
-            .put("client_name", "GalaxySSI Watch").put("device_name", Build.MODEL)
+            .also { WatchDeviceName.addPairingFields(it, WatchDeviceName.current(context)) }
             .put("platform", "android").put("device_category", "watch")
             .put("client_device_id", Crypto.localGalaxySSIId()).put("device_model", Build.MODEL)
             .put("device_manufacturer", Build.MANUFACTURER).put("platform_version", Build.VERSION.RELEASE)
