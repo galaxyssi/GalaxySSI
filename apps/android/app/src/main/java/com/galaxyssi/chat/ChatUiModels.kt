@@ -330,7 +330,7 @@ internal class MessageAdapter(
         holder.systemText.visibility = View.GONE
         holder.avatar.visibility = View.VISIBLE
         holder.bubble.visibility = View.VISIBLE
-        holder.bubble.text = message.content
+        if (holder.bubble.text.toString() != message.content) holder.bubble.text = message.content
         holder.bubble.maxWidth = messageMaxWidth
         holder.bubble.visibility = if (message.content.isBlank()) View.GONE else View.VISIBLE
         holder.bubble.setLineSpacing(0f, 1.18f)
@@ -351,14 +351,18 @@ internal class MessageAdapter(
         }
 
         if (message.content.startsWith(holder.itemView.context.getString(R.string.message_voice_prefix)) || message.content.startsWith("[\u8bed\u97f3]")) {
+            holder.bubble.customSelectionActionModeCallback = null
+            holder.bubble.setTextIsSelectable(false)
             holder.bubble.setOnClickListener { onPlayVoiceMessage?.invoke(message.id) }
+            holder.bubble.setOnLongClickListener {
+                showCurrentMessageActions(message.id)
+                true
+            }
         } else {
             holder.bubble.setOnClickListener(null)
-        }
-
-        holder.bubble.setOnLongClickListener {
-            onMessageActions?.invoke(position)
-            true
+            holder.bubble.attachPeerTextSelectionActions(
+                onMessageActions?.let { { showCurrentMessageActions(message.id) } }
+            )
         }
 
         if (message.isMine) {
@@ -390,6 +394,11 @@ internal class MessageAdapter(
     }
 
     override fun getItemCount(): Int = messages.size
+
+    private fun showCurrentMessageActions(messageId: Long) {
+        val position = messages.indexOfFirst { it.id == messageId }
+        if (position >= 0) onMessageActions?.invoke(position)
+    }
 
     override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
         if (payloads.isNotEmpty() && payloads.all { it == MessageRowSnapshotFactory.ATTACHMENT_PROGRESS } &&
@@ -480,8 +489,11 @@ internal class MessageAdapter(
                 else -> ""
             }
             if (transcript.isNotBlank()) {
-                addView(TextView(context).apply {
+                addView(com.galaxyssi.chat.ui.ParagraphSelectingTextView(context).apply {
                     text = transcript
+                    attachPeerTextSelectionActions(
+                        onMessageActions?.let { { showCurrentMessageActions(message.id) } }
+                    )
                     textSize = 14f
                     maxWidth = holder.messageMaxWidth()
                     setTextColor(context.getColor(R.color.text_secondary))

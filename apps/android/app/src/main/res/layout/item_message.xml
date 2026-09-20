@@ -39,7 +39,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <TextView
+            <com.galaxyssi.chat.ui.ParagraphSelectingTextView
                 android:id="@+id/messageBubble"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
