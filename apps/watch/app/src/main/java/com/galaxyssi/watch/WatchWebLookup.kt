@@ -4,6 +4,8 @@ import android.content.Context
 import com.galaxyssi.chat.CloudWebToolLoopProgress
 import com.galaxyssi.chat.CloudWebGrounding
 import com.galaxyssi.chat.AgentUntrustedEvidenceBoundary
+import com.galaxyssi.chat.ResearchEvidenceAudit
+import com.galaxyssi.chat.ResearchQualityStandard
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,6 +28,8 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
     }
     private fun runLoop(profile: ApiProfile, task: WatchTask, history: List<WatchTask>, operation: WatchApiOperation,
         progress: (String) -> Unit, weatherEvidence: (String) -> Unit): String {
+        val quality = ResearchQualityStandard.get(context)
+        val audit = ResearchEvidenceAudit()
         val tools = CloudWebGrounding.openAiTools()
         val nativeTools = profile.style == "openai"
         val exchanges = JSONArray()
@@ -37,12 +41,14 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
         var repair = ""
         var formatRepairs = 0
         var citationRepaired = false
+        var auditReviewed = false
+        var qualityReviewed = false
         val deadline = System.nanoTime() + 300_000_000_000L
         fun checkpoint() {
             operation.checkActive()
             if (System.nanoTime() >= deadline) throw ApiFailure(R.string.web_budget_exhausted)
         }
-        val instructions = CloudWebGrounding.currentEvidencePrompt() + "\n" + AgentUntrustedEvidenceBoundary.systemPolicy +
+        val instructions = CloudWebGrounding.currentEvidencePrompt(context) + "\n" + AgentUntrustedEvidenceBoundary.systemPolicy +
             "\nUSER PREFERENCE: Research substantive factual and analytical questions before answering, including follow-ups. " +
             "Use the conversation to resolve short replies such as yes, go ahead, or try again. Repeating a request means refresh the evidence. " +
             "Prior assistant statements are not verified evidence and may describe outdated tool limitations. " +
@@ -100,6 +106,19 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
             }
             val answer = decision.optString("answer").trim()
             if (answer.isNotBlank()) {
+                val auditReview = if (auditReviewed) null else audit.reviewPrompt(task.prompt)
+                val qualityReport = quality.assess(answer, results.length() > 0)
+                val qualityReview = if (!qualityReviewed && qualityReport.optString("status") == "needs_review")
+                    quality.repairPrompt(qualityReport) else null
+                val review = auditReview ?: qualityReview
+                if (review != null && !toolProgress.finalizationRequested) {
+                    if (auditReview != null) auditReviewed = true else qualityReviewed = true
+                    if (nativeTools) {
+                        exchanges.put(JSONObject().put("role", "assistant").put("content", answer))
+                        exchanges.put(JSONObject().put("role", "user").put("content", review))
+                    } else repair += "\n$review"
+                    continue
+                }
                 val evidence = (0 until results.length()).map {
                     results.getJSONObject(it).let { entry -> entry.getString("tool") to entry.getJSONObject("result").toString() }
                 }
@@ -164,7 +183,9 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
                 val result = cached ?: if (deadline - System.nanoTime() < 60_000_000_000L) {
                     toolProgress.requestFinalization()
                     JSONObject().put("status", "not_executed").put("message", "Research time budget reached; summarize retrieved evidence and remaining gaps.").toString()
-                } else CloudWebGrounding.executeTool(context, name, arguments, operation.webToken, ::checkpoint)
+                } else if (name == ResearchEvidenceAudit.TOOL) audit.submit(arguments).toString()
+                else CloudWebGrounding.executeTool(context, name, arguments, operation.webToken, ::checkpoint)
+                if (name != ResearchEvidenceAudit.TOOL) runCatching { audit.observe(JSONObject(result)) }
                 if (cached == null && toolProgress.record(name, arguments, result)) madeProgress = true
                 observeTool(name, arguments, result)
                 if (name == "web_weather") weatherEvidence(result)

@@ -17,7 +17,7 @@ class WatchPhoneSetupTest {
         val states = LinkedBlockingQueue<WatchPhoneSetupServer.State>()
         val payloads = LinkedBlockingQueue<JSONObject>()
         val server = WatchPhoneSetupServer(InstrumentationRegistry.getInstrumentation().targetContext, { states.offer(it) }, {
-            payloads.offer(it); JSONObject().put("status", "saved")
+            payloads.offer(it); JSONObject().put("status", if (it.optString("kind") == "pending_test") "pairing_started" else "saved")
         })
         fun await(phase: String): WatchPhoneSetupServer.State {
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
@@ -55,6 +55,10 @@ class WatchPhoneSetupTest {
             fixture.server.confirm(true)
             WatchPhoneSetupServer.write(output, JSONObject().put("type", "confirm").put("accept", true))
             assertEquals("ready", WatchPhoneSetupServer.read(input).getString("type"))
+            // A desktop submission must leave the authenticated channel open for status and selection.
+            WatchPhoneSetupServer.write(output, JSONObject().put("type", "configure").put("kind", "pending_test"))
+            assertEquals("pairing_started", WatchPhoneSetupServer.read(input).getString("status"))
+            assertEquals("pending_test", fixture.payloads.poll(3, TimeUnit.SECONDS)?.getString("kind"))
             WatchPhoneSetupServer.write(output, JSONObject().put("type", "configure").put("kind", "test"))
             assertEquals("saved", WatchPhoneSetupServer.read(input).getString("status"))
             assertEquals("test", fixture.payloads.poll(3, TimeUnit.SECONDS)?.getString("kind"))

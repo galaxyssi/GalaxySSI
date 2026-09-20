@@ -115,6 +115,8 @@ class ResearchAuditTests(unittest.TestCase):
         self.assertEqual(80, spec["inputSchema"]["properties"]["claims"]["maxItems"])
         server = CodexAppServer("codex", {}, lambda *_: None)
         self.assertIn(TOOL, [tool["name"] for tool in server._dynamic_tools])
+        # App Server rejects a mixture of canonical (typed) and legacy definitions.
+        self.assertEqual({"function"}, {tool.get("type") for tool in server._dynamic_tools})
 
     def test_codex_tool_checkpoint_response_and_task_isolation(self):
         server = CodexAppServer("codex", {}, lambda *_: None)

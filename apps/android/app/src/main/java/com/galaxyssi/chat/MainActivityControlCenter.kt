@@ -855,6 +855,7 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "routing.add_cloud" -> openExistingControlCenterPage { showCloudProviderPage() }
         "routing.manage" -> openExistingControlCenterPage { showAgentFeaturePage() }
         "routing.policy" -> openExistingControlCenterPage { showRoutingPolicyPage() }
+        "advanced.watch_setup" -> startActivity(Intent(this, WatchSetupActivity::class.java))
         "advanced.protocol" -> openExistingControlCenterPage { showSignalLinkProtocolPage() }
         "advanced.web_sources" -> openExistingControlCenterPage { showWebIntelligenceSourcesPage() }
         "advanced.voice_performance" -> openExistingControlCenterPage { showVoicePerformanceDashboardPage() }

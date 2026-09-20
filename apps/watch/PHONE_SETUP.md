@@ -1,40 +1,29 @@
-# Phone-assisted watch setup (v1)
+# Phone-assisted watch setup
 
-Implemented here: watch UI, Wi-Fi-only receiver, NSD announcement, interactive numeric comparison, cloud-profile import, and forwarding fresh desktop pairing offers through the existing Signal/MQTT pairing flow. **The Android phone developer-options UI and its NSD/client integration are not part of this change.** `tools/phone_setup_client.py` is the interoperability reference client.
+Entry: Android Settings → General → Developer options → Configure watch.
 
-## User flow
+The phone implements Wi-Fi NSD discovery and manual IPv4/port entry, certificate-bound six-digit comparison, cloud provider/model selection using the existing Android catalog, copying saved model credentials without modifying phone contacts, optional HTTPS connection testing, transfer confirmation, QR/manual desktop offers, authorization polling, agent selection, and recovery after disconnection. Both sides must approve the comparison before any credentials are sent. Cloud test results describe the phone connection only.
 
-A watch without any cloud profile or paired desktop opens the setup Activity. Connect the phone and watch to the same Wi-Fi, then use GalaxySSI on the phone → Settings → General → Developer options → Configure watch (phone UI still to implement). Existing configured watches keep their chat home and can open the receiver explicitly from Settings → Configure from phone.
+Drafts stay in the Activity memory, not saved-instance state or plaintext preferences. Leaving the app closes the setup connection except during its QR scanner step. Reconnection requires another comparison; drafts may be lost if Android destroys the process. Release builds protect the screen against capture. Never log payloads or keys.
 
-The main page has the horizontal logo/wordmark, clock, two steps, and connection status. Connection help shows the watch IPv4 address and dynamically allocated port. Subpages omit the clock. Comparison appears only after a handshake, with a fresh six-digit code and explicit accept/cancel buttons. A cloud profile is acknowledged only after encrypted storage succeeds; the watch then returns to chat. A desktop offer returns `pairing_started`, not `saved`: the existing desktop authorization must finish before use.
+The watch listens only on a Wi-Fi IPv4 interface and advertises `_galaxyssi-watch._tcp.`. Setup is foreground-only, closes on pause/address changes/completion, and expires after 15 minutes. Screen stays awake within this bounded setup session. Each receiver allows three failed sessions. After confirmation the idle read deadline is five minutes; ordinary phone requests have a 30-second reply deadline.
 
-The service binds a Wi-Fi interface, never a wildcard/cellular address. It advertises `_galaxyssi-watch._tcp.` with TXT `v=1`. NSD failure still permits manual connection. It closes on Activity pause, Wi-Fi/address changes, successful delivery, three failed sessions, or a five-minute window expiry. Open the page/retry to restart. There is no ADB, Bluetooth, background listener, or automatic trust based on LAN membership.
+## Wire protocol
 
-## Wire format
+TLS 1.2/1.3 with an AndroidKeyStore EC certificate. Frames are a four-byte big-endian length followed by UTF-8 JSON (2–32768 bytes).
 
-TLS 1.2/1.3, self-signed AndroidKeyStore server certificate. Each frame is a 4-byte unsigned big-endian UTF-8 length followed by a JSON object; 2–32768 bytes. Normal socket deadline 60 seconds. No HTTP endpoints or web browser support.
+1. Client commits SHA256(random 32-byte Nc) in `{type:hello,version:1,commitment:hex}`.
+2. Watch commits SHA256(random 32-byte Ns) in `{type:challenge,version:1,commitment:hex}`.
+3. Both reveal their nonces and validate commitments.
+4. Compare the six-digit decimal SHA256(`GalaxySSI-Watch-Setup-v1` || SHA256(certificate DER) || Nc || Ns), modulo 1,000,000. Each device requires explicit human approval.
+5. Client sends `{type:confirm,accept:true}` and waits for `{type:ready}` before sending configuration.
+6. Every request has `type:configure` and one of the kinds below.
 
-1. Client generates random 32-byte Nc and sends `{type:"hello",version:1,commitment:hex(SHA256(Nc))}`.
-2. Server generates random 32-byte Ns, sends `{type:"challenge",version:1,commitment:hex(SHA256(Ns))}`.
-3. Client reveals `{type:"reveal",nonce:hex(Nc)}`; server verifies its commitment and reveals `{type:"reveal",nonce:hex(Ns)}`. Client MUST verify this commitment.
-4. Both display the zero-padded six-digit decimal reduction modulo 1,000,000 of `SHA256(UTF8("GalaxySSI-Watch-Setup-v1") || SHA256(serverCertificateDER) || Nc || Ns)`, interpreted as an unsigned big-endian integer. Commitments precede reveals; changing the TLS identity changes the comparison code.
-5. User explicitly compares and accepts on BOTH devices. Client sends `{type:"confirm",accept:true}`. The server also requires its own on-watch approval, then sends `{type:"ready"}`. Nothing confidential may be sent before this point.
-6. Client sends configuration; server validates, applies, sends a result and closes.
+- `cloud`: profile contains `endpoint`, `model`, `api_key`, `api_style` (`openai`, `anthropic`, `gemini`). Watch validates and encrypts storage; `status:saved` acknowledges storage, not provider validity. The channel closes.
+- `desktop`: `pairing_offer` contains fresh computer pairing QR contents, not the phone's Signal identity or sessions. `status:pairing_started` means submitted, not authorized. The channel remains open.
+- `desktop_status`: within the same authenticated session, returns `pairing_started` or `agents_ready` with an `agents` array of `{id,name}` from the paired watch connection.
+- `select_agent`: `agent_id` must belong to that authorized desktop's current list. Watch saves the selected route; `status:saved,kind:desktop,agent_name:...` confirms completion and closes the channel.
 
-Trust is confirmed per session; there is no persistent phone binding or unattended resynchronization in v1. Do not trust a self-signed certificate without the complete commitment exchange and human comparison. The reference client's bootstrap trust policy must never be reused for unrelated API/desktop requests. This bespoke provisioning protocol needs independent security review before unattended or large-scale distribution.
+There is no persistent phone trust or unattended resynchronization. The bootstrap TLS trust manager must never be reused outside this numeric-comparison protocol. Independent protocol review is still required before large-scale distribution.
 
-Cloud payload:
-
-```json
-{"type":"configure","kind":"cloud","profile":{"endpoint":"https://api.deepseek.com/chat/completions","model":"YOUR_MODEL","api_key":"YOUR_KEY","api_style":"openai"}}
-```
-
-Supported API styles reuse watch validation: `openai`, `anthropic`, `gemini`. Endpoint must be HTTPS with the matching provider request path. Provider/model catalogs stay on the phone; v1 imports one selected profile. Existing thought-mode behavior stays disabled by the watch's existing API request policy. Result: `{"status":"saved","kind":"cloud"}`. This confirms storage, not reachability or validity of the provider key.
-
-Desktop payload: `{"type":"configure","kind":"desktop","pairing_offer":{...fresh desktop QR contents...},"agent_id":"optional selected agent"}`. The phone passes the fresh pairing offer, never its own Signal identity/session secrets. Result `{"status":"pairing_started","kind":"desktop"}` means the request was submitted, not that the desktop authorized it. The watch waits for its own desktop pairing and agent listing. In v1 use the current watch UI to finish selection if needed; automatic receipt of phone configuration is not a cloud account sync.
-
-## Developer check
-
-Open receiver from watch settings. Run `python tools/phone_setup_client.py WATCH_IP PORT` to compare codes without changing settings, or add `--config PRIVATE_JSON_FILE` to import after manual confirmation. Never include keys on the command line or commit the private JSON file. No payloads are logged.
-
-Instrumentation tests exercise TLS/commitment roundtrip and acknowledgment with an in-memory handler (no user credential changes), commitment mismatch rejection, and local refusal. Test via `com.galaxyssi.watch.WatchPhoneSetupTest`.
+`tools/phone_setup_client.py` remains a diagnostic handshake/cloud-transfer client; the Android UI implements the complete desktop flow. Tests use in-memory handlers and dummy credentials, not user API keys.

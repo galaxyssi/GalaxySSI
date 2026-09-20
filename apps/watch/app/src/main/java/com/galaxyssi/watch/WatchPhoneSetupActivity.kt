@@ -22,31 +22,18 @@ class WatchPhoneSetupActivity : Activity() {
     private var screen = "intro"
     private var generation = 0
     @Volatile private var resumed = false
-    private var pendingDesktop = ""
-    private var pendingAgent = ""
-    private val desktopUpdate: () -> Unit = {
-        if (pendingDesktop.isNotEmpty()) {
-            val paired = repo.links().any { it.desktopId == pendingDesktop && it.paired }
-            val agents = repo.store.agents(pendingDesktop)
-            if (paired && agents.isNotEmpty()) {
-                val selected = agents.firstOrNull { it.id == pendingAgent }
-                if (selected != null) {
-                    repo.store.selectedDesktop = pendingDesktop; repo.store.selectedAgent = selected.id
-                    repo.store.apiPreferred = false; pendingDesktop = ""
-                    openHome()
-                } else { screen = "agents"; render() }
-            }
-        }
-    }
+    @Volatile private var pendingDesktop = ""
+    private val desktopUpdate: () -> Unit = {}
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(false)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         render()
     }
     override fun onResume() {
         super.onResume(); resumed = true; repo.listen(desktopUpdate); repo.foreground(true)
-        if (state.phase !in setOf("saved", "pairing_started")) startReceiver()
+        if (state.phase != "saved") startReceiver()
     }
     override fun onPause() {
         resumed = false; generation++; server?.close(); server = null
@@ -54,12 +41,14 @@ class WatchPhoneSetupActivity : Activity() {
         super.onPause()
     }
     private fun startReceiver() {
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         generation++; val owner = generation
         server?.close(); state = WatchPhoneSetupServer.State("starting")
         screen = "intro"; render()
         server = WatchPhoneSetupServer(this, { value ->
             if (owner == generation && resumed) {
                 state = value
+                if (value.phase in setOf("expired", "error", "network_changed", "wifi_required")) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 if (value.phase == "confirm") screen = "confirm"
                 else if (screen == "confirm") screen = "intro"
                 if (value.phase == "saved") openHome() else render()
@@ -82,16 +71,26 @@ class WatchPhoneSetupActivity : Activity() {
             }
             "desktop" -> {
                 val qr = repo.inspectPairing(payload.getJSONObject("pairing_offer").toString())
-                val agent = payload.optString("agent_id").take(128)
                 val completed = CompletableFuture<Boolean>()
                 repo.pair(qr) { completed.complete(it) }
                 require(completed.get(20, TimeUnit.SECONDS))
-                runOnUiThread {
-                    pendingDesktop = qr.getString("desktop_id"); pendingAgent = agent
-                    desktopUpdate()
-                }
+                pendingDesktop = qr.getString("desktop_id")
                 // The existing Signal/MQTT pairing must be confirmed by the desktop before it is usable.
                 JSONObject().put("status", "pairing_started").put("kind", "desktop")
+            }
+            "desktop_status" -> {
+                require(pendingDesktop.isNotEmpty())
+                val paired = repo.links().any { it.desktopId == pendingDesktop && it.paired }
+                val agents = if (paired) repo.store.agents(pendingDesktop) else emptyList()
+                JSONObject().put("status", if (agents.isEmpty()) "pairing_started" else "agents_ready")
+                    .put("agents", org.json.JSONArray().also { list -> agents.forEach { list.put(JSONObject().put("id", it.id).put("name", it.name)) } })
+            }
+            "select_agent" -> {
+                require(pendingDesktop.isNotEmpty() && repo.links().any { it.desktopId == pendingDesktop && it.paired })
+                val selected = repo.store.agents(pendingDesktop).first { it.id == payload.getString("agent_id") }
+                repo.store.selectedDesktop = pendingDesktop; repo.store.selectedAgent = selected.id
+                repo.store.apiPreferred = false
+                JSONObject().put("status", "saved").put("kind", "desktop").put("agent_name", selected.name)
             }
             else -> throw IllegalArgumentException("Unsupported configuration")
         }
@@ -169,7 +168,7 @@ class WatchPhoneSetupActivity : Activity() {
                     "expired" -> R.string.phone_setup_expired
                     "error", "retry" -> R.string.phone_setup_retry
                     "receiving" -> R.string.phone_setup_receiving
-                    "pairing_started" -> R.string.phone_setup_pairing
+                    "pairing_started", "agents_ready" -> R.string.phone_setup_pairing
                     else -> R.string.phone_setup_waiting
                 }
                 label(getString(status), 11f, Color.rgb(101, 217, 203))

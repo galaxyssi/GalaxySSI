@@ -52,4 +52,25 @@ class WatchTaskTest {
     @Test fun preservesApprovalState() {
         assertEquals(TaskState.WAITING_APPROVAL, task.reduce(task.desktopId, event("waiting_approval")).state)
     }
+    @Test fun acceptsDesktopAllocatedIdentityOnlyWithExactClientCorrelation() {
+        val wire = event("failed").put("task_id", "desktop-allocated")
+            .put("source_message_id", task.sourceId.toString()).put("error", "Tool registration failed")
+        val failed = task.reduce(task.desktopId, wire)
+        assertEquals(TaskState.FAILED, failed.state)
+        assertEquals("desktop-allocated", failed.remoteTaskId)
+        assertEquals("Tool registration failed", failed.progress)
+        assertEquals(failed, WatchTask.fromJson(failed.json()))
+        for (field in listOf("source_message_id", "client_route_id", "conversation_id", "turn_id", "agent_id", "contact_id")) {
+            assertEquals(task, task.reduce(task.desktopId, JSONObject(wire.toString()).put(field, "unrelated")))
+        }
+        assertEquals(failed, failed.reduce(task.desktopId, JSONObject(wire.toString()).put("task_id", "other-task")))
+    }
+    @Test fun generationFencesLateRepliesAndAllowsARealRemoteRetry() {
+        val failed = task.reduce(task.desktopId, event("failed", 9))
+        val retried = failed.reduce(task.desktopId, event("running", 1).put("execution_generation", 2))
+        assertEquals(TaskState.RUNNING, retried.state)
+        assertEquals(2L, retried.executionGeneration)
+        assertEquals(retried, retried.reduce(task.desktopId,
+            event("completed", 99).put("type", "text").put("content", "old execution")))
+    }
 }

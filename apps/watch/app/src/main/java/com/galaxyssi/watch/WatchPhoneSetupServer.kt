@@ -51,7 +51,7 @@ internal class WatchPhoneSetupServer(
         }
     }
     fun start() {
-        main.postDelayed(timeout, 5 * 60_000L)
+        main.postDelayed(timeout, 15 * 60_000L)
         Thread({
             try {
                 val ip = wifiAddress(context) ?: return@Thread emit("wifi_required")
@@ -110,14 +110,16 @@ internal class WatchPhoneSetupServer(
                             val confirm = read(input)
                             require(confirm.getString("type") == "confirm" && confirm.getBoolean("accept"))
                             write(output, JSONObject().put("type", "ready"))
-                            val config = read(input)
-                            require(config.getString("type") == "configure")
-                            emit("receiving")
-                            val result = apply(config)
-                            write(output, result)
-                            emit(result.getString("status"))
-                            close()
-                            return@Thread
+                            socket.soTimeout = 5 * 60_000
+                            repeat(200) {
+                                val config = read(input)
+                                require(config.getString("type") == "configure")
+                                val result = apply(config)
+                                write(output, result)
+                                emit(result.getString("status"))
+                                if (result.getString("status") == "saved") { close(); return@Thread }
+                            }
+                            close(); return@Thread
                         }
                     } catch (_: Exception) {
                         decision = null; accepted = false
