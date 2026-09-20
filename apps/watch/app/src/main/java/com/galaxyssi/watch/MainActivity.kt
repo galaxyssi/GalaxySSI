@@ -194,7 +194,9 @@ class MainActivity : Activity() {
         out.putStringArrayList("history", ArrayList(history)); super.onSaveInstanceState(out)
     }
 
-    private fun navigate(destination: String) { speech?.stop(); history.addLast(page); page = if (destination in setOf("task", "compose")) "home" else destination; render() }
+    private fun navigate(destination: String) {
+        if (destination == "contacts") { speech?.stop(); startActivity(Intent(this, WatchContactsActivity::class.java)); return }
+        speech?.stop(); history.addLast(page); page = if (destination in setOf("task", "compose")) "home" else destination; render() }
     private fun back() {
         if (busy) return
         speech?.stop()

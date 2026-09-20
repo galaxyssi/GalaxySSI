@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="peer_my_qr">My QR code</string>
+    <string name="peer_requests">New contacts</string>
+    <string name="peer_request">Contact request</string>
+    <string name="peer_empty">Show your QR code to add a contact.</string>
+    <string name="peer_qr_help">Scan with GalaxySSI on your phone. Approval required.</string>
+    <string name="peer_refresh_qr">Refresh QR code</string>
+    <string name="peer_no_requests">No pending requests</string>
+    <string name="peer_request_help">Wants to add you as a contact</string>
+    <string name="peer_approve">Accept</string>
+    <string name="peer_reject">Decline</string>
+    <string name="peer_settings">Chat settings</string>
+    <string name="peer_input">Message</string>
+    <string name="peer_voice">Voice input</string>
+    <string name="peer_send">Send</string>
+    <string name="peer_mute">Mute notifications</string>
+    <string name="peer_detail">View contact</string>
+    <string name="peer_clear">Clear chat history</string>
+    <string name="peer_delete">Delete contact</string>
+    <string name="peer_clear_confirm">Clear this conversation and pending messages?</string>
+    <string name="peer_delete_confirm">Delete this contact and chat history? A new request will require approval.</string>
+    <string name="peer_error">Could not complete this action. Please retry.</string>
+    <string name="peer_delivered">Delivered</string>
+    <string name="peer_failed">Expired · send again</string>
+    <string name="peer_queued">Waiting for delivery</string>
+    <string name="peer_attachment">[Attachment · view on phone]</string>
+</resources>

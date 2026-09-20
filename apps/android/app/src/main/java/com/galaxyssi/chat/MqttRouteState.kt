@@ -26,7 +26,9 @@ internal class MqttRouteState(private val database: AgentEncryptedDatabase) : Mq
             val previous = if (stored.isEmpty()) 0L else stored.toLong()
             check(previous >= 0) { "Invalid stored route epoch" }
             check(previous < MqttRouteAdvertisement.MAX_EPOCH) { "Route epoch exhausted" }
-            val advertisement = MqttRouteAdvertisement(sender, receiver, previous + 1,
+            // Preserve ordering across old releases that erased counters on unpairing.
+            val nextEpoch = maxOf(previous + 1, nowMs.coerceAtMost(MqttRouteAdvertisement.MAX_EPOCH))
+            val advertisement = MqttRouteAdvertisement(sender, receiver, nextEpoch,
                 UUID.randomUUID().toString().replace("-", ""), nowMs, nowMs + MqttBrokerCatalog.RESUME_TTL_MS,
                 receiveBrokers.toSet(), packetBytes)
             MqttRouteAdvertisement.parseVerified(advertisement.toWire(), sender, receiver, nowMs)
@@ -65,7 +67,17 @@ internal class MqttRouteState(private val database: AgentEncryptedDatabase) : Mq
     }
 
     fun forgetRoute(peer: String) {
-        database.removeAll(listOf(key(peer, "local"), key(peer, "remote")))
+        // Retiring a live binding must not roll back identity-bound anti-replay state.
+        // Keep counters, but remove the cached capability so it cannot be reused.
+        database.indexedTransaction {
+            val remoteKey = key(peer, "remote")
+            val raw = database.readString(remoteKey, "")
+            check(raw.isNotEmpty() || !database.contains(remoteKey)) { "Remote route watermark is unreadable" }
+            if (raw.isNotEmpty()) {
+                val watermark = JSONObject(raw).apply { remove("advertisement") }
+                database.writeString(remoteKey, watermark.toString())
+            }
+        }
     }
 
     private fun key(peer: String, direction: String): String {
