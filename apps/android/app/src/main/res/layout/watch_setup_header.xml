@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="56dp"
+    android:background="@color/bar_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="0dp"
+    android:paddingEnd="12dp">
+
+    <ImageButton
+        android:id="@+id/watchSetupBack"
+        style="@style/Widget.GalaxySSI.NavigationBackButton"
+        android:contentDescription="@string/watch_setup_back" />
+
+    <TextView
+        android:id="@+id/watchSetupTitle"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textColor="@color/text_primary"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+</LinearLayout>

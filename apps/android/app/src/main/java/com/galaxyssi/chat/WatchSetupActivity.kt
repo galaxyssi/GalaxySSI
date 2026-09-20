@@ -3,7 +3,6 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -31,7 +30,7 @@ class WatchSetupActivity : Activity() {
     private var client: WatchSetupClient? = null
     private var generation = 0
     private var discovery: NsdManager.DiscoveryListener? = null
-    private val devices = linkedMapOf<String, NsdServiceInfo>()
+    private val devices = WatchDiscoveryCatalog<NsdServiceInfo>()
     private var page = "discover"
     private var connected = false
     private var scanning = false
@@ -68,7 +67,7 @@ class WatchSetupActivity : Activity() {
         }
     }
     override fun onDestroy() { disconnect(); stopDiscovery(); main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy() }
-    private fun disconnect() { generation++; client?.close(); client = null; connected = false; busy = false }
+    private fun disconnect() { generation++; client?.close(); client = null; connected = false; busy = false; devices.releaseSelection() }
     private fun go(value: String) {
         currentFocus?.windowToken?.let { getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(it, 0) }
         pageRevision++; page = value; render()
@@ -126,15 +125,15 @@ class WatchSetupActivity : Activity() {
     private fun render() {
         if (isDestroyed) return
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(color(R.color.page_bg)) }
-        val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(color(R.color.bar_bg)) }
-        toolbar.addView(TextView(this).apply { text = "‹"; textSize = 32f; gravity = Gravity.CENTER; setTextColor(color(R.color.text_primary)); setOnClickListener { onBackPressed() } }, LinearLayout.LayoutParams(dp(52), dp(56)))
-        toolbar.addView(TextView(this).apply { text = when (page) {
+        val toolbar = layoutInflater.inflate(R.layout.watch_setup_header, root, false)
+        toolbar.findViewById<ImageButton>(R.id.watchSetupBack).setOnClickListener { onBackPressed() }
+        toolbar.findViewById<TextView>(R.id.watchSetupTitle).text = when (page) {
             "manual" -> tr("手动连接", "Manual connection"); "confirm" -> tr("核对连接", "Verify connection")
             "cloud" -> tr("云端 API Key", "Cloud API Key"); "edit" -> tr("编辑云端配置", "Edit cloud configuration")
             "preview" -> tr("确认同步", "Confirm transfer"); "remote" -> tr("添加远端电脑", "Add remote computer")
             "waiting", "agents" -> tr("远端 Agent", "Remote Agent"); "success" -> tr("同步完成", "Transfer complete")
             "offline" -> tr("连接已断开", "Disconnected"); else -> tr("配置手表", "Configure watch")
-        }; textSize = 19f; setTypeface(typeface, Typeface.BOLD); setTextColor(color(R.color.text_primary)) })
+        }
         root.addView(toolbar)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12)) }
         root.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -259,7 +258,7 @@ class WatchSetupActivity : Activity() {
         val cm = getSystemService(ConnectivityManager::class.java)
         val network = cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
         val number = port.toIntOrNull()
-        if (network == null || number == null || number !in 1..65535) { Toast.makeText(this, tr("请连接 Wi-Fi 并检查 IP 和端口", "Connect to Wi-Fi and check the IP and port."), Toast.LENGTH_LONG).show(); return }
+        if (network == null || number == null || number !in 1..65535) { devices.releaseSelection(); busy = false; render(); Toast.makeText(this, tr("请连接 Wi-Fi 并检查 IP 和端口", "Connect to Wi-Fi and check the IP and port."), Toast.LENGTH_LONG).show(); return }
         stopDiscovery(); disconnect(); val owner = generation
         val connection = WatchSetupClient(); client = connection; go("connecting")
         worker.execute {
@@ -309,21 +308,37 @@ class WatchSetupActivity : Activity() {
             override fun onDiscoveryStopped(type: String) = Unit
             override fun onStartDiscoveryFailed(type: String, error: Int) = Unit
             override fun onStopDiscoveryFailed(type: String, error: Int) = Unit
-            override fun onServiceFound(info: NsdServiceInfo) { main.post { if (discovery === this && page == "discover") { devices[info.serviceName] = info; render() } } }
-            override fun onServiceLost(info: NsdServiceInfo) { main.post { if (discovery === this) { devices.remove(info.serviceName); if (page == "discover") render() } } }
+            override fun onServiceFound(info: NsdServiceInfo) { main.post { if (discovery === this && page == "discover") { devices.put(serviceKey(info), info); render() } } }
+            override fun onServiceLost(info: NsdServiceInfo) { main.post { if (discovery === this) {
+                if (devices.remove(serviceKey(info))) busy = false
+                if (page == "discover") render()
+            } } }
         }
         discovery = listener
         runCatching { getSystemService(NsdManager::class.java).discoverServices("_galaxyssi-watch._tcp.", NsdManager.PROTOCOL_DNS_SD, listener) }
     }
     private fun resolve(info: NsdServiceInfo) {
         val owner = generation
-        getSystemService(NsdManager::class.java).resolveService(info, object : NsdManager.ResolveListener {
-            override fun onResolveFailed(service: NsdServiceInfo, error: Int) { main.post { if (owner == generation) go("manual") } }
-            override fun onServiceResolved(service: NsdServiceInfo) { main.post { if (owner == generation && page == "discover") {
+        val key = serviceKey(info)
+        if (!devices.select(key)) return
+        val selection = devices.selectionRevision
+        busy = true; render()
+        val listener = object : NsdManager.ResolveListener {
+            override fun onResolveFailed(service: NsdServiceInfo, error: Int) { main.post { if (owner == generation && devices.selected == key && devices.selectionRevision == selection) {
+                devices.releaseSelection(); busy = false; go("manual")
+            } } }
+            override fun onServiceResolved(service: NsdServiceInfo) { main.post { if (owner == generation && page == "discover" && devices.selected == key && devices.selectionRevision == selection) {
+                busy = false
                 host = if (android.os.Build.VERSION.SDK_INT >= 34) service.hostAddresses.firstOrNull { it is java.net.Inet4Address }?.hostAddress.orEmpty()
                     else service.host?.hostAddress.orEmpty()
                 port = service.port.toString(); deviceName = service.serviceName; connect()
             } } }
-        })
+        }
+        runCatching { getSystemService(NsdManager::class.java).resolveService(info, listener) }
+            .onFailure { listener.onResolveFailed(info, NsdManager.FAILURE_INTERNAL_ERROR) }
     }
+    private fun serviceKey(info: NsdServiceInfo) = WatchDiscoveryCatalog.Key(
+        info.serviceName, info.serviceType.trimEnd('.'),
+        if (android.os.Build.VERSION.SDK_INT >= 33) info.network?.networkHandle?.toString().orEmpty() else ""
+    )
 }

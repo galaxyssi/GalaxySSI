@@ -1,1 +1,1 @@
-<resources><string name="watch_setup_title">配置手表</string><string name="watch_setup_subtitle">通过 Wi-Fi 配置云端 API Key 与远端 Agent</string></resources>
+<resources><string name="watch_setup_title">配置手表</string><string name="watch_setup_subtitle">通过 Wi-Fi 配置云端 API Key 与远端 Agent</string><string name="watch_setup_back">返回</string></resources>

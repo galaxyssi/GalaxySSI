@@ -42,6 +42,23 @@ Existing watches must run the updated watch app and reopen setup to advertise
 the new name. Existing Desktop records get the name on pairing again, not merely
 when the phone rediscovers the watch.
 
+## Phone list and navigation
+
+Discovery lists all available watches. Rows are keyed by DNS-SD service instance,
+service type and network, rather than a global selected-watch slot. Rediscovery
+updates one row; loss removes only that row. Only one connection attempt can be
+selected at a time, and callbacks from an earlier selection are ignored.
+
+Every phone setup subpage uses the Android settings navigation-back button style
+and the same 56dp toolbar with a centered 17sp bold title. Other settings pages
+and the watch chat UI are unchanged. Desktop Agent selection stays on the phone;
+after `select_agent` is acknowledged, the watch opens its chat screen directly.
+
+Regression checks cover multiple rows, duplicate discoveries, service loss,
+selection races, matching header attributes, and Desktop name persistence.
+Device acceptance still requires discovery of multiple physical watches and
+completion of the phone-selected Agent flow on the newly built packages.
+
 ## Configuration frames
 
 - `cloud`: profile contains `endpoint`, `model`, `api_key`, `api_style` (`openai`, `anthropic`, `gemini`). Watch validates and encrypts storage; `status:saved` acknowledges storage, not provider validity. The channel closes.
