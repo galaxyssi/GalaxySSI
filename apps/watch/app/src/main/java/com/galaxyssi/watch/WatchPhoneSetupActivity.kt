@@ -196,6 +196,7 @@ class WatchPhoneSetupActivity : Activity() {
                     button(getString(R.string.phone_setup_wifi)) { wifiSettings() }
                     button(getString(R.string.phone_setup_restart)) { startReceiver() }
                 } else button(getString(R.string.phone_setup_help)) { screen = "help"; render() }
+                button(getString(R.string.contacts)) { startActivity(Intent(this, WatchContactsActivity::class.java)) }
             }
         }
         setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(Color.BLACK); addView(box) })

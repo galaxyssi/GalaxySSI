@@ -3,12 +3,8 @@ package com.galaxyssi.watch
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.text.Editable
-import android.text.InputFilter
-import android.text.TextWatcher
 import android.view.*
 import android.widget.*
-import com.galaxyssi.chat.ui.AgentComposerUiPolicy
 import com.galaxyssi.chat.ui.ParagraphSelectingTextView
 
 /** Fixed Android-style brand/composer around an independently scrolling transcript. */
@@ -87,51 +83,8 @@ class WatchConversationView(
             else { scrollToReplyStart(); visibility = GONE }
         }
     }
-    private var keyboardVisible = false
-    private var keyboardVisibleAtTouchDown = false
-    val input = object : EditText(context) {
-        override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
-            val connection = super.onCreateInputConnection(outAttrs)
-            // Samsung's full-screen editor copies this before IME insets arrive.
-            outAttrs.hintText = context.getString(R.string.message_hint)
-            return connection
-        }
-    }.apply {
-        setText(draft); setHint(R.string.composer_hint); setTextColor(Color.WHITE); setHintTextColor(secondary)
-        textSize = 12.5f; minHeight = dp(36); includeFontPadding = false; maxLines = if (draft.isBlank()) 1 else 2
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        background = null; setPadding(0, dp(4), 0, dp(4))
-        filters = arrayOf(InputFilter.LengthFilter(4000))
-        inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                keyboardVisibleAtTouchDown = rootWindowInsets?.isVisible(WindowInsets.Type.ime()) ?: keyboardVisible
-            }
-            false
-        }
-        setOnLongClickListener {
-            if (keyboardVisibleAtTouchDown || keyboardVisible) false
-            else { onVoice(); true }
-        }
-    }
-    // Android keeps send and more as separate controls, even when they share a layout slot.
-    private val sendAction = ImageButton(context).apply {
-        background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
-        setImageResource(R.drawable.ic_composer_send_plane)
-        contentDescription = context.getString(R.string.send)
-        setOnClickListener { if (!busy && input.text.isNotBlank()) onSend() }
-    }
-    private val menuAction = ImageButton(context).apply {
-        background = null; setPadding(dp(8), dp(8), dp(8), dp(8))
-        setImageResource(R.drawable.ic_input_menu_layers)
-        contentDescription = context.getString(R.string.home_menu)
-        setOnClickListener { if (!busy) onMenu() }
-    }
-    private val actionSlot = FrameLayout(context).apply {
-        addView(menuAction, FrameLayout.LayoutParams(-1, -1))
-        addView(sendAction, FrameLayout.LayoutParams(-1, -1))
-    }
-    private var busy = false
+    private val composer = WatchMessageComposer(context, draft, onDraft, onSend, onVoice, onMenu)
+    val input get() = composer.input
     private var lastTurns = emptyList<WatchTask>()
     private var lastReady: Boolean? = null
     private data class RenderedTurn(val task: WatchTask, val container: LinearLayout, val status: TextView?, val reply: TextView?)
@@ -158,16 +111,10 @@ class WatchConversationView(
     override fun onDetachedFromWindow() { removeCallbacks(ticker); scrollAnimation?.cancel(); super.onDetachedFromWindow() }
 
     init {
-        setOnApplyWindowInsetsListener { _, insets ->
-            keyboardVisible = insets.isVisible(WindowInsets.Type.ime())
-            input.setHint(if (keyboardVisible) R.string.message_hint else R.string.composer_hint)
-            insets
-        }
         orientation = VERTICAL; setBackgroundColor(Color.BLACK)
         isFocusableInTouchMode = true
         val headerInset = (resources.configuration.screenWidthDp * 0.125f).toInt().coerceAtLeast(24)
         val transcriptInset = (resources.configuration.screenWidthDp * 0.055f).toInt().coerceAtLeast(10)
-        val composerInset = (resources.configuration.screenWidthDp * 0.15f).toInt().coerceAtLeast(28)
         setPadding(0, dp(10), 0, dp(18))
         addView(clockLabel, LayoutParams(-1, dp(12)))
         val header = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(headerInset), 0, dp(headerInset), 0) }
@@ -200,30 +147,12 @@ class WatchConversationView(
             addView(transcriptScroll, FrameLayout.LayoutParams(-1, -1))
             addView(newReply, FrameLayout.LayoutParams(-1, dp(24), Gravity.BOTTOM))
         }, LayoutParams(-1, 0, 1f).apply { leftMargin = dp(transcriptInset); rightMargin = dp(transcriptInset) })
-        addView(LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(input, LayoutParams(0, -2, 1f))
-            addView(actionSlot, LayoutParams(dp(40), dp(36)))
-        }, LayoutParams(-1, -2).apply { topMargin = dp(2); leftMargin = dp(composerInset); rightMargin = dp(composerInset) })
-        input.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { onDraft(s?.toString().orEmpty()); refreshAction() }
-            override fun afterTextChanged(s: Editable?) = Unit
-        })
-        refreshAction()
+        addView(composer, composer.placement())
         requestFocus()
     }
 
-    private fun refreshAction() {
-        input.maxLines = if (input.text.isBlank()) 1 else 2
-        val state = AgentComposerUiPolicy.resolve(input.text.isNotBlank(), textModeActive = true, actionTrayRequested = false)
-        sendAction.visibility = if (state.showSendButton) VISIBLE else GONE
-        menuAction.visibility = if (state.showMoreButton) VISIBLE else GONE
-        sendAction.isEnabled = !busy
-        menuAction.isEnabled = !busy
-    }
-    fun sending(value: Boolean) { busy = value; input.isEnabled = !value; refreshAction() }
-    fun setDraft(value: String) { if (input.text.toString() != value) input.setText(value) }
+    fun sending(value: Boolean) = composer.sending(value)
+    fun setDraft(value: String) = composer.setDraft(value)
     private fun statusText(task: WatchTask): String {
         val seconds = ((System.currentTimeMillis() - task.sourceId) / 1000).coerceAtLeast(0)
         val status = context.getString(R.string.waiting_elapsed, context.getString(task.state.label()), seconds)

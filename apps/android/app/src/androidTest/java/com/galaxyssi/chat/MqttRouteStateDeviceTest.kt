@@ -26,10 +26,10 @@ class MqttRouteStateDeviceTest {
         store.issueLocalResume(peer, sender, receiver, MqttBrokerCatalog.brokers.keys, now)
 
     @Test fun separateStoreInstancesSharePersistedEpochAndRemainPairScoped() = withStore { store, _, name ->
-        assertEquals(1L, issue(store).epoch)
-        assertEquals(1L, issue(store, "other").epoch)
+        assertEquals(1000L, issue(store).epoch)
+        assertEquals(1000L, issue(store, "other").epoch)
         val reopened = AgentEncryptedDatabase(context, name)
-        try { assertEquals(2L, issue(MqttRouteState(reopened)).epoch) }
+        try { assertEquals(1001L, issue(MqttRouteState(reopened)).epoch) }
         finally { reopened.close() }
     }
 
@@ -38,7 +38,7 @@ class MqttRouteStateDeviceTest {
         try {
             val results = (1..30).map { executor.submit<Long> { issue(MqttRouteState(database)).epoch } }
                 .map { it.get(30, TimeUnit.SECONDS) }.sorted()
-            assertEquals((1L..30L).toList(), results)
+            assertEquals((1000L..1029L).toList(), results)
         } finally { executor.shutdownNow(); assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS)) }
     }
 
@@ -69,6 +69,23 @@ class MqttRouteStateDeviceTest {
         assertNull(store.loadVerifiedResume("peer", sender, receiver, 1000))
         assertNotNull(store.loadVerifiedResume("other", sender, receiver, 1000))
         assertEquals("retained", database.readString("pending:unrelated-message", ""))
+    }
+
+    @Test fun readdingSameIdentityDoesNotRollBackEpochOrForgetReplayProtection() = withStore { store, _, _ ->
+        val previous = issue(store)
+        assertEquals(MqttRouteState.Result.NEW, store.recordVerifiedResume("peer", previous, 1000))
+        store.forgetRoute("peer")
+        assertNull(store.loadVerifiedResume("peer", sender, receiver, 1000))
+        val renewed = issue(store, now = 900) // Clock rollback must also preserve ordering.
+        assertTrue(renewed.epoch > previous.epoch)
+        assertEquals(MqttRouteState.Result.CONFLICT, store.recordVerifiedResume("peer",
+            previous.copy(resumeId = "f".repeat(32)), 1000))
+        assertEquals(MqttRouteState.Result.NEW, store.recordVerifiedResume("peer", renewed, 1000))
+    }
+
+    @Test fun upgradesPastLegacyCounterEvenIfOldReleaseErasedIt() = withStore { store, database, _ ->
+        database.writeString("multipath:local:${MqttRouteAdvertisement.sha256("peer")}", "42")
+        assertTrue(issue(store, now = 2000).epoch > 42)
     }
 
     @Test fun invalidCounterCannotResetAnExistingRouteEpoch() = withStore { store, database, _ ->

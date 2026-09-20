@@ -10,8 +10,8 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.Locale
 
-/** One display label for Wi-Fi discovery and the Desktop pairing registry. */
-internal object WatchDeviceName {
+/** One display label for contacts, Wi-Fi discovery and the Desktop pairing registry. */
+object WatchDeviceName {
     private val trailingSuffix = Regex("\\s*(?:\\(([A-Za-z0-9]{4})\\)|\\u00b7\\s*([A-Za-z0-9]{4}))$")
 
     fun current(context: Context): String {

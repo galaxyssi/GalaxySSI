@@ -34,6 +34,16 @@ class WatchRepository(private val context: Context) {
     private val api = WatchApi()
     private val apiCalls = java.util.concurrent.ConcurrentHashMap<String, WatchApiOperation>()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
+    val contacts = com.galaxyssi.chat.WatchContacts(context, ::changed) { person, text, request ->
+        WatchContactNotifications.show(context, person, text, request)
+    }
+    fun contactAction(action: com.galaxyssi.chat.WatchContacts.() -> Unit, done: (Boolean) -> Unit = {}) {
+        worker.execute {
+            val success = runCatching { contacts.action(); connect(); mqtt?.refresh(); mqtt?.let(contacts::tick) }
+                .onFailure { android.util.Log.w("WatchContacts", "Contact action failed", it) }.isSuccess
+            main.post { done(success) }; changed()
+        }
+    }
     private var mqtt: WatchLinkTransport? = null
     private var subscribed = emptySet<String>()
     private var pendingPairing: JSONObject? = null
@@ -71,6 +81,7 @@ class WatchRepository(private val context: Context) {
                 changed()
                 com.galaxyssi.chat.WatchSignalUpgrade.prepare(context)
                 Crypto.initialize(context)
+                contacts.load()
                 store.inbox.entries().forEach { (key, raw) ->
                     val entry = JSONObject(raw)
                     entry.optJSONObject("payload")?.let {
@@ -118,10 +129,12 @@ class WatchRepository(private val context: Context) {
             return
         }
         if (!visible && !monitoring) return
-        if (links().isEmpty() && pendingPairing == null) return
+        if (links().isEmpty() && pendingPairing == null && !contacts.hasRoutes()) return
         connect()
         if (mqtt?.isConnected != true) return
         subscribe()
+        mqtt?.refresh()
+        mqtt?.let(contacts::tick)
         pendingPairing?.let { qr ->
             if (!Link.validatePairingQr(qr)) { pendingPairing = null; errorResource = R.string.pairing_expired; changed() }
             else if (System.currentTimeMillis() - lastPairing > 20_000) claim(qr)
@@ -150,9 +163,17 @@ class WatchRepository(private val context: Context) {
                 changed()
             } },
             onControl = { desktop, payload -> worker.submit { pairingControl(desktop, payload) }.get() },
-            onPayload = { desktop, payload -> worker.submit { applyPayload(desktop, payload) }.get() },
-            onStored = { desktop, id, hash -> worker.execute { received(desktop, id, hash) } },
-            onReady = { worker.execute { runCatching { tick() }; changed() } })
+            onPayload = { desktop, payload -> worker.submit {
+                if (contacts.isPeer(desktop)) contacts.accept(desktop, payload) else applyPayload(desktop, payload)
+            }.get() },
+            onStored = { desktop, id, hash -> worker.execute {
+                if (contacts.isPeer(desktop)) contacts.stored(desktop, id, hash) else received(desktop, id, hash)
+            } },
+            onReady = { worker.execute { runCatching { tick() }; changed() } }, contacts = contacts,
+            onContactControl = { topic, payload -> worker.submit {
+                if (topic == "recovery") contacts.requestRecovery(payload.getString("peer")) else contacts.control(topic, payload)
+                mqtt?.refresh(); mqtt?.let(contacts::tick)
+            }.get() })
         mqtt = transport
         transport.start()
     }
@@ -187,6 +208,7 @@ class WatchRepository(private val context: Context) {
     fun pair(qr: JSONObject, done: (Boolean) -> Unit) { worker.execute {
         val result = runCatching {
             Crypto.initialize(context)
+                contacts.load()
             require(Link.validatePairingQr(qr) && Crypto.verifyPcIdentityFromQr(qr.toString()))
             val existing = Link.serverLink(context, qr.getString("desktop_id"))
             Link.ensureServerLink(context, qr, rotateClientRoute = Link.shouldRotateClientRoute(existing, qr))

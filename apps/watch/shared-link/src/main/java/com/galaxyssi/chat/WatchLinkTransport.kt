@@ -15,7 +15,9 @@ class WatchLinkTransport(
     private val onControl: (String, JSONObject) -> Unit,
     private val onPayload: (String, JSONObject) -> Unit,
     private val onStored: (String, String, String) -> Unit,
-    private val onReady: () -> Unit
+    private val onReady: () -> Unit,
+    private val contacts: WatchContacts? = null,
+    private val onContactControl: (String, JSONObject) -> Unit = { _, _ -> }
 ) : AutoCloseable {
     private data class Packet(val ingress: MqttBrokerPool.Ingress, val topic: String, val bytes: ByteArray)
     private val closed = AtomicBoolean()
@@ -56,13 +58,13 @@ class WatchLinkTransport(
     }
 
     @Synchronized fun refresh() {
-        val links = GalaxySSILinkProtocol.allServerLinks(context)
-        bindings.replace(links.map { it.desktopId to it.routes.receiveWindow }, emptySet())
+        val links = allLinks()
+        bindings.replace(links.map { it.desktopId to it.routes.receiveWindow }, contacts?.rendezvousTopics().orEmpty())
         peers.replace(links.map { link -> val r = link.routes
             MqttPeerRoutes.Binding(scope(r), r.localFingerprint.lowercase(), r.remoteFingerprint.lowercase(),
                 r.linkSecret, r.up, r.sendWindow, r.receiveWindow, link.paired)
         })
-        val desired = links.flatMap { it.routes.receiveWindow }.toSet()
+        val desired = links.flatMap { it.routes.receiveWindow }.toSet() + contacts?.rendezvousTopics().orEmpty()
         val callback = object : IMqttActionListener {
             override fun onSuccess(token: IMqttToken?) { onReady() }
             override fun onFailure(token: IMqttToken?, error: Throwable?) { error?.let(::failed) }
@@ -112,9 +114,17 @@ class WatchLinkTransport(
 
     private fun receive(packet: Packet) {
         if (closed.get()) return
-        val link = GalaxySSILinkProtocol.allServerLinks(context).firstOrNull { packet.topic in it.routes.receiveWindow } ?: return
+        contacts?.session(packet.topic)?.let { session ->
+            val raw = JSONObject(GalaxySSILinkProtocol.openWirePacket(packet.bytes, session.getString("secret")))
+            onContactControl(packet.topic, raw)
+            return
+        }
+        val link = allLinks().firstOrNull { packet.topic in it.routes.receiveWindow } ?: return
         val r = link.routes
         val raw = JSONObject(GalaxySSILinkProtocol.openWirePacket(packet.bytes, r.linkSecret))
+        if (contacts?.isPeer(link.desktopId) == true && PhoneContactCard.isRelationshipControlType(raw.optString("type"))) {
+            onContactControl(packet.topic, raw); return
+        }
         if (peers.handleVerified(scope(r), raw, packet.ingress, identity(r))) return
         if (raw.optString("type") == MqttDeliveryEnvelope.RECEIPT_TYPE) {
             peers.acceptDeliveryReceipt(scope(r), raw, packet.ingress, identity(r)) { frame ->
@@ -137,16 +147,18 @@ class WatchLinkTransport(
 
     private fun decode(link: GalaxySSILinkProtocol.ServerLink, wire: JSONObject,
                        frame: MqttDeliveryEnvelope.Frame?, transfer: String?) {
-        require(wire.optString("scheme") == "signal" && GalaxySSILinkProtocol.isCryptographicallyReady(context, link))
+        val phone = contacts?.isPeer(link.desktopId) == true
+        require(wire.optString("scheme") == "signal" && if (phone) contacts?.approved(link.desktopId) == true
+            else GalaxySSILinkProtocol.isCryptographicallyReady(context, link))
         require(wire.optString("from") == link.desktopId && wire.optString("to") == GalaxySSICrypto.localGalaxySSIId())
         val r = link.routes
-        val peer = GalaxySSILinkInbox.Peer(scope(r), link.desktopId, false)
+        val peer = GalaxySSILinkInbox.Peer(scope(r), link.desktopId, phone)
         val hash = MqttDeliveryEnvelope.contentHash(wire)
         // An upgrade cannot decrypt an already consumed Signal ratchet message again.
         // Old encrypted inbox records prove this exact ciphertext was previously stored.
         val legacyKey = MqttImmutableContent.sha256(link.desktopId + wire.getString("body"))
         val legacy = legacyInbox.readString(legacyKey, "")
-        if (legacy.isNotBlank()) {
+        if (!phone && legacy.isNotBlank()) {
             val record = JSONObject(legacy)
             require(record.getString("desktop") == link.desktopId)
             val payload = record.getJSONObject("payload")
@@ -172,10 +184,16 @@ class WatchLinkTransport(
                 envelope.optString("target_id") == GalaxySSICrypto.localGalaxySSIId())
             frame?.validateApplication(envelope.optString("message_id"), hash)
             val payload = GalaxySSILinkProtocol.unwrapEnvelope(envelope) ?: error("Invalid application envelope")
+            if (phone && payload.optString("type") == "peer_message") require(WatchPeerProtocol.validIncoming(
+                payload, link.desktopId, GalaxySSICrypto.localGalaxySSIId(), r.clientRouteId))
             accepted = inbox.accept(peer, envelope.getString("message_id"), MqttImmutableContent.hash(envelope),
                 payload, hash, payload.optString("type") != "delivery_ack", hash)
         }
-        if (result !is GalaxySSICrypto.EnvelopeDecryptionResult.Success) error("Signal receive rejected")
+        if (result !is GalaxySSICrypto.EnvelopeDecryptionResult.Success) {
+            if (phone && result is GalaxySSICrypto.EnvelopeDecryptionResult.Failure)
+                onContactControl("recovery", JSONObject().put("peer", link.desktopId))
+            error("Signal receive rejected")
+        }
         val saved = checkNotNull(accepted)
         val id = saved.payload.getString("message_id")
         AndroidMqttChunks.releaseStored(context, r, transfer, hash)
@@ -194,14 +212,16 @@ class WatchLinkTransport(
         val proof = inbox.storedReceipt(scope(link.routes), id) ?: return
         val payload = MqttDeliveryEnvelope.storedReceipt(id, proof.wireHash)
         val envelope = GalaxySSILinkProtocol.makeEnvelope(payload, GalaxySSICrypto.localGalaxySSIId(), link.desktopId)
-        val encrypted = GalaxySSICrypto.encryptPayloadForDesktop(link.desktopId, envelope) ?: return
+        val encrypted = (if (contacts?.isPeer(link.desktopId) == true)
+            GalaxySSICrypto.encryptPayloadForContact(link.desktopId, envelope)
+            else GalaxySSICrypto.encryptPayloadForDesktop(link.desktopId, envelope)) ?: return
         runCatching { publish(link, envelope.getString("message_id"), encrypted.toString(), "delivery_ack") }.onFailure(::failed)
     }
 
     private fun dispatch(desktop: String, payload: JSONObject) {
         if (payload.optString("type") == "delivery_ack") {
             val (id, hash) = MqttDeliveryEnvelope.parseStoredReceipt(payload)
-            val link = GalaxySSILinkProtocol.serverLink(context, desktop) ?: return
+            val link = findLink(desktop) ?: return
             onStored(desktop, id, hash)
             receiptCredit.release(id)
             mqtt.delivery.acceptVerifiedMessage(scope(link.routes), id, hash)
@@ -214,14 +234,16 @@ class WatchLinkTransport(
         do {
             val pending = inbox.pending(cursor)
             pending.forEach { entry ->
-                val link = GalaxySSILinkProtocol.serverLink(context, entry.peer.endpoint)
-                if (link != null && scope(link.routes) == entry.peer.scope) dispatch(entry.peer.endpoint, JSONObject(entry.payload))
+                val link = findLink(entry.peer.endpoint)
+                if (link != null && (!entry.peer.phone || contacts?.approved(entry.peer.endpoint) == true) && scope(link.routes) == entry.peer.scope) dispatch(entry.peer.endpoint, JSONObject(entry.payload))
             }
             cursor = pending.lastOrNull()?.recordKey.orEmpty()
         } while (cursor.isNotEmpty())
         inbox.pruneCompleted()
     }
 
+    private fun allLinks() = GalaxySSILinkProtocol.allServerLinks(context) + contacts?.links().orEmpty()
+    private fun findLink(id: String) = GalaxySSILinkProtocol.serverLink(context, id) ?: contacts?.link(id)
     fun hash(raw: String): String = MqttDeliveryEnvelope.contentHash(JSONObject(raw))
     fun diagnostics(): String = mqtt.snapshot().entries.joinToString { "${it.key}:${it.value.state}" }
     private fun scope(r: GalaxySSILinkProtocol.Routes) = GalaxySSILinkDeliveryStore.peerScope(r)
