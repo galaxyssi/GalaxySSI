@@ -20,6 +20,11 @@ MAX_PEER_RECORDS = 20_000
 MAX_CIPHER_BINDINGS = 8
 
 
+class ReceiveStorageFull(RuntimeError):
+    diagnostic_code = "receive_storage_full"
+    diagnostic_reason = "pending_receive_quota_exhausted"
+
+
 def ensure_schema(db):
     from signal_receive_compaction import ensure_schema as ensure_completed_schema
     ensure_completed_schema(db)
@@ -40,6 +45,27 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS signal_handoff_pending ON inbound_signal_handoffs(released)")
     db.execute("""CREATE TABLE IF NOT EXISTS inbound_signal_usage (
         scope TEXT PRIMARY KEY, byte_count INTEGER NOT NULL, record_count INTEGER NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS inbound_signal_compaction_queue (
+        client_route_id TEXT NOT NULL, message_id TEXT NOT NULL, created_at REAL NOT NULL,
+        PRIMARY KEY(client_route_id,message_id))""")
+    db.execute("CREATE INDEX IF NOT EXISTS signal_compaction_order ON inbound_signal_compaction_queue(created_at)")
+    # Completed replay proofs are history, not outstanding crash-recovery work.
+    key = "receive_active_usage_v1"
+    if db.execute("SELECT value FROM delivery_metadata WHERE key=?", (key,)).fetchone() is None:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT value FROM delivery_metadata WHERE key=?", (key,)).fetchone() is None:
+            db.execute("DELETE FROM inbound_signal_usage")
+            db.execute("""INSERT INTO inbound_signal_usage
+                          SELECT client_route_id,SUM(byte_count),COUNT(*) FROM inbound_signal_bodies
+                          GROUP BY client_route_id""")
+            db.execute("""INSERT INTO inbound_signal_usage SELECT 'total',SUM(byte_count),COUNT(*)
+                          FROM inbound_signal_bodies HAVING COUNT(*)>0""")
+            db.execute("""INSERT OR IGNORE INTO inbound_signal_compaction_queue
+                          SELECT b.client_route_id,b.message_id,b.created_at FROM inbound_signal_bodies b
+                          JOIN inbound_messages m USING(client_route_id,message_id)
+                          WHERE m.dispatch_state='dispatched'""")
+            db.execute("INSERT INTO delivery_metadata VALUES(?, '1')", (key,))
+        db.commit()
 
 
 def _cipher_key(remote_name, remote_device_id, receive_digest):
@@ -204,8 +230,8 @@ def _adjust(db, scope, byte_count, record_count, max_bytes, max_records):
     total_bytes, total_records = row[0] + byte_count, row[1] + record_count
     if total_bytes < 0 or total_records < 0:
         raise RuntimeError("Receive usage counter underflow")
-    if total_bytes > max_bytes or total_records > max_records:
-        raise RuntimeError("Durable receive storage is full")
+    if (byte_count > 0 and total_bytes > max_bytes) or (record_count > 0 and total_records > max_records):
+        raise ReceiveStorageFull("Durable receive storage is full")
     if total_records == 0:
         db.execute("DELETE FROM inbound_signal_usage WHERE scope=?", (scope,))
     else:
@@ -221,3 +247,17 @@ def discard_route_in_transaction(db, route):
     db.execute("DELETE FROM inbound_signal_bodies WHERE client_route_id=?", (route,))
     db.execute("DELETE FROM inbound_signal_completed WHERE client_route_id=?", (route,))
     db.execute("DELETE FROM inbound_signal_handoffs WHERE client_route_id=?", (route,))
+    db.execute("DELETE FROM inbound_signal_compaction_queue WHERE client_route_id=?", (route,))
+
+
+def storage_snapshot():
+    from contextlib import closing
+    with delivery._lock, closing(delivery._connect()) as db:
+        total = db.execute("SELECT byte_count,record_count FROM inbound_signal_usage WHERE scope='total'").fetchone() or (0, 0)
+        peers = db.execute("SELECT byte_count,record_count FROM inbound_signal_usage WHERE scope<>'total'").fetchall()
+        return {"pending_body_bytes": total[0], "pending_body_records": total[1],
+                "peer_byte_limit": MAX_PEER_BYTES, "peer_record_limit": MAX_PEER_RECORDS,
+                "peers_under_pressure": sum(size >= MAX_PEER_BYTES * .9 or count >= MAX_PEER_RECORDS * .9
+                                            for size, count in peers),
+                "completed_replay_proofs": db.execute("SELECT COUNT(*) FROM inbound_signal_completed").fetchone()[0],
+                "completion_cleanup_pending": db.execute("SELECT COUNT(*) FROM inbound_signal_compaction_queue").fetchone()[0]}

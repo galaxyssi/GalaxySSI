@@ -187,6 +187,9 @@ def finish(guard: DispatchGuard, claim: Claim, *, error: Exception | None = None
                           WHERE client_route_id=? AND message_id=? AND dispatch_token=?""",
                        (state, time.time(), retry_at, type(error).__name__ if error else "", route, message_id, claim.token))
             if state == "dispatched":
+                db.execute("""INSERT OR IGNORE INTO inbound_signal_compaction_queue
+                              SELECT client_route_id,message_id,created_at FROM inbound_signal_bodies
+                              WHERE client_route_id=? AND message_id=?""", (route, message_id))
                 compact_in_transaction(db, route, message_id)
             db.commit()
             return True

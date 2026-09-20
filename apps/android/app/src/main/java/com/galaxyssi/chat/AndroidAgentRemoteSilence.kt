@@ -54,6 +54,7 @@ internal object AndroidAgentRemoteSilence {
     }
 
     @Synchronized fun retire(context: Context, source: Long) {
+        AndroidAgentRecoveryPacing.retire(context, source)
         store(context).edit().remove("$source:probe").remove("$source:response").remove("$source:misses")
             .remove("$source:first").apply()
     }

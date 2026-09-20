@@ -51,6 +51,10 @@ object AgentConnectorResponseStore {
     internal fun wasRecorded(context: Context, response: AgentConnectorResponse): Boolean =
         store(context).wasRecorded(response)
 
+    internal fun receivedExecution(context: Context, response: AgentConnectorResponse,
+                                   currentGeneration: Boolean = false, handledOnly: Boolean = false): Boolean =
+        store(context).receivedExecution(response, currentGeneration, handledOnly)
+
     internal fun hasReceivedDelivery(context: Context, sourceMessageId: Long, contactId: String): Boolean {
         val inbox = store(context)
         if (inbox.hasReceivedDelivery(sourceMessageId, contactId)) return true

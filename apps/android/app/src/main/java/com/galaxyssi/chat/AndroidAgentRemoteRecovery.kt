@@ -107,6 +107,7 @@ internal object AndroidAgentRemoteRecovery {
                         val batch = if (automaticDiscovery) candidates.filter {
                             AndroidAgentResultRecovery.eligible(context, it.desktopId, it.payload) &&
                                 !AndroidAgentResultRecovery.deferAutomaticDiscovery(context, it.desktopId, it.payload) &&
+                                AndroidAgentRecoveryPacing.reserve(context, it.payload.optLong("source_message_id")) &&
                                 AndroidAgentRemoteSilence.shouldProbe(context, it.payload.optLong("source_message_id"))
                         } else candidates
                         if (batch.isEmpty()) return@batches
@@ -200,6 +201,7 @@ internal object AndroidAgentRemoteRecovery {
         }
         if (persist) {
             if (!AgentConnectorResponseStore.observeExecution(context, identity)) return null
+            AndroidAgentRecoveryPacing.observed(context, identity.sourceMessageId, result)
             if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
                 firstPage = result.optJSONObject("result_page"))
         }

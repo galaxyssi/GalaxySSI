@@ -439,11 +439,13 @@ object GalaxySSIMqttClient {
             setSecureReady(isRequestReplyReady())
             flushPendingPairingClaim()
             flushPendingOpaquePackets()
-            if (secureReady && (requested || !wasReady)) {
+            if (secureReady && requested) {
                 GalaxySSILinkDeliveryStore.makePendingImmediatelyRetryable(context)
                 AndroidAgentRecoveryWake.connectionChanged(context, true)
                 requestMissingSignalSessions(context)
                 requestConnectorStatuses(context)
+            }
+            if (secureReady && (requested || !wasReady)) {
                 dispatchPendingMessages()
                 scheduleOutboxRetries()
             }
@@ -2671,7 +2673,9 @@ object GalaxySSIMqttClient {
     }
 
     private fun requestMissingSignalSessions(context: Context) {
-        AndroidBlobArtifactCapability.refresh(context, reconnect = true)
+        // Durable capability state survives broker reconnects; unchanged state
+        // must not create a new Signal message on every route renewal.
+        AndroidBlobArtifactCapability.refresh(context)
         setSecureReady(isRequestReplyReady())
         resumePendingAttachmentTransfers(context)
         resumePendingIncomingAttachmentDownloads(context)

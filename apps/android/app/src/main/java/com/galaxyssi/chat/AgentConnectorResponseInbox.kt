@@ -106,6 +106,18 @@ internal class AgentConnectorResponseInbox(
     }
 
     @Synchronized
+    fun receivedExecution(response: AgentConnectorResponse, currentGeneration: Boolean = false,
+                          handledOnly: Boolean = false): Boolean {
+        migrate()
+        val expected = if (currentGeneration) response.copy(executionGeneration =
+            currentVersion(helper.readableDatabase, response)?.generation ?: response.executionGeneration) else response
+        // Handled bodies are gone, but their exact generation-bound receipt remains.
+        // Local transport-failure placeholders are not proof of remote delivery.
+        return exists("identity_key=? AND delivery_key<>''" + if (handledOnly) " AND handled=1" else "",
+            arrayOf(AgentConnectorResponseCodec.identity(expected)))
+    }
+
+    @Synchronized
     fun hasReceivedDelivery(sourceMessageId: Long, contactId: String, legacyTurnKey: String = ""): Boolean {
         if (sourceMessageId <= 0 || contactId.isBlank()) return false
         migrate()

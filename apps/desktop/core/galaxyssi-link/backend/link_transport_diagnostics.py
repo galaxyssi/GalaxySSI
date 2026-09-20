@@ -19,6 +19,7 @@ EVENT_KINDS = (
     "duplicate_receipt",
     "old_counter",
     "decrypt_failure",
+    "receive_storage_full",
     "chunk_duplicate",
     "fragment_rejected",
     "message_content_conflict",
@@ -56,6 +57,8 @@ def _nonnegative_int(value: Any) -> int:
 
 
 def classify_decryption_error(error: BaseException) -> str:
+    if getattr(error, "diagnostic_code", "") == "receive_storage_full":
+        return "receive_storage_full"
     class_name = error.__class__.__name__.lower()
     message = str(error or "").lower()
     if "old counter" in message or "oldcounter" in message:

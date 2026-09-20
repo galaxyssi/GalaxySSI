@@ -60,8 +60,7 @@ class ReceiveCompactionTest(unittest.TestCase):
         with closing(delivery._connect()) as db:
             self.assertEqual(0, db.execute("SELECT count(*) FROM inbound_signal_bodies").fetchone()[0])
             usage = db.execute("SELECT byte_count,record_count FROM inbound_signal_usage WHERE scope='total'").fetchone()
-            self.assertLess(usage[0], 4096)
-            self.assertEqual(1, usage[1])
+            self.assertIsNone(usage)
         with dispatch.DispatchGuard("pair", self.mid) as guard:
             self.assertEqual("dispatched", dispatch.begin(guard, self.envelope).state)
         self.assertEqual([], dispatch.pending())
@@ -151,7 +150,7 @@ class ReceiveCompactionTest(unittest.TestCase):
                 self.finish()
         with closing(delivery._connect()) as db:
             self.assertEqual(13, db.execute("SELECT count(*) FROM inbound_signal_completed").fetchone()[0])
-            self.assertLess(db.execute("SELECT byte_count FROM inbound_signal_usage WHERE scope='total'").fetchone()[0], 32768)
+            self.assertIsNone(db.execute("SELECT byte_count FROM inbound_signal_usage WHERE scope='total'").fetchone())
 
     def test_compaction_and_quota_update_roll_back_together(self):
         self.release()
