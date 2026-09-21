@@ -1,4 +1,150 @@
+import CryptoKit
 import Foundation
+
+struct AgentResultRecoveryIdentity: Codable, Equatable, Hashable {
+  var clientRouteId: String
+  var conversationId: String
+  var taskId: String
+  var turnId: String
+  var contactId: String
+  var sourceMessageId: String
+  var agentId: String
+
+  var isValid: Bool {
+    [clientRouteId, conversationId, taskId, turnId, contactId, sourceMessageId, agentId]
+      .allSatisfy { !$0.isBlank && $0.count <= 200 }
+  }
+}
+
+struct AgentResultRecoveryPage: Equatable {
+  var identity: AgentResultRecoveryIdentity
+  var pageIndex: Int
+  var pageCount: Int
+  var totalBytes: Int
+  var sha256: String
+  var pageSHA256: String
+  var dataBase64: String
+  var status: String = "ready"
+}
+
+final class AgentResultRecoveryAssembler {
+  static let pageBytes = 16 * 1_024
+  static let maximumResultBytes = 128 * 1_024
+
+  private let identity: AgentResultRecoveryIdentity
+  private let stillPending: () -> Bool
+  private var data = Data()
+  private var expectedDigest = ""
+  private var expectedTotal = 0
+  private var expectedPages = 0
+  private var nextPage = 0
+
+  init(identity: AgentResultRecoveryIdentity, stillPending: @escaping () -> Bool = { true }) {
+    self.identity = identity
+    self.stillPending = stillPending
+  }
+
+  func consume(_ page: AgentResultRecoveryPage) -> AgentConnectorResponse? {
+    guard identity.isValid, stillPending(), page.identity == identity,
+          page.status == "ready", page.pageIndex == nextPage,
+          Self.validDigest(page.sha256), Self.validDigest(page.pageSHA256),
+          page.totalBytes > 0, page.totalBytes <= Self.maximumResultBytes,
+          page.pageCount == (page.totalBytes + Self.pageBytes - 1) / Self.pageBytes,
+          page.pageCount > 0, page.pageIndex < page.pageCount else {
+      reset()
+      return nil
+    }
+    if nextPage == 0 {
+      expectedDigest = page.sha256
+      expectedTotal = page.totalBytes
+      expectedPages = page.pageCount
+      data.reserveCapacity(expectedTotal)
+    } else if page.sha256 != expectedDigest || page.totalBytes != expectedTotal ||
+                page.pageCount != expectedPages {
+      reset()
+      return nil
+    }
+    guard page.dataBase64.count <= ((Self.pageBytes + 2) / 3) * 4,
+          let chunk = Data(base64Encoded: page.dataBase64),
+          chunk.count == min(Self.pageBytes, expectedTotal - nextPage * Self.pageBytes),
+          Self.sha256(chunk) == page.pageSHA256 else {
+      reset()
+      return nil
+    }
+    data.append(chunk)
+    nextPage += 1
+    guard nextPage == expectedPages else { return nil }
+    defer { reset() }
+    guard stillPending(), data.count == expectedTotal, Self.sha256(data) == expectedDigest,
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Self.identity(from: object) == identity,
+          object["type"] as? String == "text",
+          object["task_status"] as? String == "completed" else {
+      return nil
+    }
+    let exact = Self.exactContent(object)
+    let content = exact.ifBlank(object["content"] as? String ?? "")
+    let richOutput = Self.richOutput(object["rich_output"])
+    guard !content.isBlank || !richOutput.isBlank,
+          let sourceMessageId = Int64(identity.sourceMessageId) else { return nil }
+    return AgentConnectorResponse(
+      sourceMessageId: sourceMessageId,
+      contactId: identity.contactId,
+      content: content,
+      conversationId: identity.conversationId,
+      turnId: identity.turnId,
+      taskId: identity.taskId,
+      richOutputJson: richOutput
+    )
+  }
+
+  static func sha256(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func identity(from object: [String: Any]) -> AgentResultRecoveryIdentity {
+    let sourceMessageId = (object["source_message_id"] as? String)
+      ?? (object["source_message_id"] as? NSNumber)?.stringValue
+      ?? ""
+    return AgentResultRecoveryIdentity(
+      clientRouteId: object["client_route_id"] as? String ?? "",
+      conversationId: object["conversation_id"] as? String ?? "",
+      taskId: object["task_id"] as? String ?? "",
+      turnId: object["turn_id"] as? String ?? "",
+      contactId: object["contact_id"] as? String ?? "",
+      sourceMessageId: sourceMessageId,
+      agentId: object["agent_id"] as? String ?? ""
+    )
+  }
+
+  private static func exactContent(_ object: [String: Any]) -> String {
+    guard object["exact_content_encoding"] as? String == "base64-utf8",
+          let encoded = object["exact_content_b64"] as? String,
+          encoded.count <= 256 * 1_024,
+          let data = Data(base64Encoded: encoded), data.count <= maximumResultBytes else { return "" }
+    return String(data: data, encoding: .utf8) ?? ""
+  }
+
+  private static func richOutput(_ value: Any?) -> String {
+    guard let value, JSONSerialization.isValidJSONObject(value),
+          let data = try? JSONSerialization.data(withJSONObject: value),
+          data.count <= maximumResultBytes else { return "" }
+    return String(data: data, encoding: .utf8) ?? ""
+  }
+
+  private static func validDigest(_ value: String) -> Bool {
+    value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+  }
+
+  private func reset() {
+    data.resetBytes(in: 0..<data.count)
+    data.removeAll(keepingCapacity: false)
+    expectedDigest = ""
+    expectedTotal = 0
+    expectedPages = 0
+    nextPage = 0
+  }
+}
 
 struct AgentConnectorResponse: Codable, Equatable {
   var sourceMessageId: Int64

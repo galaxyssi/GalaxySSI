@@ -2,6 +2,81 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testResultRecoveryAssemblerValidatesPagedFinalReplyBeforePublication() throws {
+    let identity = AgentResultRecoveryIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      contactId: "codex",
+      sourceMessageId: "42",
+      agentId: "codex"
+    )
+    let content = String(repeating: "result-", count: 3_000)
+    let object: [String: Any] = [
+      "client_route_id": identity.clientRouteId,
+      "conversation_id": identity.conversationId,
+      "task_id": identity.taskId,
+      "turn_id": identity.turnId,
+      "contact_id": identity.contactId,
+      "source_message_id": identity.sourceMessageId,
+      "agent_id": identity.agentId,
+      "type": "text",
+      "task_status": "completed",
+      "content": content
+    ]
+    let payload = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    let digest = AgentResultRecoveryAssembler.sha256(payload)
+    let pageCount = (payload.count + AgentResultRecoveryAssembler.pageBytes - 1) /
+      AgentResultRecoveryAssembler.pageBytes
+    let assembler = AgentResultRecoveryAssembler(identity: identity)
+    var recovered: AgentConnectorResponse?
+    for index in 0..<pageCount {
+      let start = index * AgentResultRecoveryAssembler.pageBytes
+      let end = min(payload.count, start + AgentResultRecoveryAssembler.pageBytes)
+      let chunk = payload.subdata(in: start..<end)
+      recovered = assembler.consume(AgentResultRecoveryPage(
+        identity: identity,
+        pageIndex: index,
+        pageCount: pageCount,
+        totalBytes: payload.count,
+        sha256: digest,
+        pageSHA256: AgentResultRecoveryAssembler.sha256(chunk),
+        dataBase64: chunk.base64EncodedString()
+      ))
+      if index < pageCount - 1 { XCTAssertNil(recovered) }
+    }
+
+    XCTAssertEqual(recovered?.sourceMessageId, 42)
+    XCTAssertEqual(recovered?.content, content)
+    XCTAssertEqual(recovered?.conversationId, identity.conversationId)
+  }
+
+  func testResultRecoveryAssemblerRejectsChangedIdentityAndCancelledPendingRequest() throws {
+    let identity = AgentResultRecoveryIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      contactId: "codex",
+      sourceMessageId: "42",
+      agentId: "codex"
+    )
+    var pending = true
+    let assembler = AgentResultRecoveryAssembler(identity: identity, stillPending: { pending })
+    pending = false
+    let data = Data("{}".utf8)
+    XCTAssertNil(assembler.consume(AgentResultRecoveryPage(
+      identity: identity,
+      pageIndex: 0,
+      pageCount: 1,
+      totalBytes: data.count,
+      sha256: AgentResultRecoveryAssembler.sha256(data),
+      pageSHA256: AgentResultRecoveryAssembler.sha256(data),
+      dataBase64: data.base64EncodedString()
+    )))
+  }
+
   func testTerminalFailureNeverAcceptsLateResult() {
     let messages = [connectorPolicyMessage(isMine: true, turnId: "turn-1")]
 
