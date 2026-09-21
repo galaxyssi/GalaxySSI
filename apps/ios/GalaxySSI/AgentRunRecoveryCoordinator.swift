@@ -1,5 +1,83 @@
 import Foundation
 import Combine
+import CryptoKit
+
+struct AgentRecoveryTimingEvent: Codable, Equatable, Sendable {
+  var traceId: String
+  var operationId: String
+  var stage: String
+  var outcome: String
+  var monotonicNanoseconds: UInt64
+  var wallClockMillis: Int64
+}
+
+final class AgentRecoveryTimingStore {
+  static let shared = AgentRecoveryTimingStore()
+  private let lock = NSLock()
+  private var events: [AgentRecoveryTimingEvent] = []
+
+  func begin(taskId: String, phase: String) -> AgentRecoveryTimingSpan {
+    let cleanTask = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTask.isEmpty, Self.phases.contains(phase) else { return AgentRecoveryTimingSpan() }
+    let traceId = Self.opaqueId(cleanTask)
+    let operationId = Self.opaqueId(UUID().uuidString)
+    append(traceId: traceId, operationId: operationId, stage: "phone_recovery_\(phase)_started", outcome: "")
+    return AgentRecoveryTimingSpan { [weak self] outcome in
+      self?.append(
+        traceId: traceId,
+        operationId: operationId,
+        stage: "phone_recovery_\(phase)_finished",
+        outcome: Self.outcomes.contains(outcome) ? outcome : "failed"
+      )
+    }
+  }
+
+  func snapshot() -> [AgentRecoveryTimingEvent] {
+    lock.lock()
+    defer { lock.unlock() }
+    return events
+  }
+
+  private func append(traceId: String, operationId: String, stage: String, outcome: String) {
+    let event = AgentRecoveryTimingEvent(
+      traceId: traceId,
+      operationId: operationId,
+      stage: stage,
+      outcome: outcome,
+      monotonicNanoseconds: UInt64(max(0, ProcessInfo.processInfo.systemUptime) * 1_000_000_000),
+      wallClockMillis: Int64(max(0, Date().timeIntervalSince1970) * 1_000)
+    )
+    lock.lock()
+    events.append(event)
+    if events.count > Self.maximumEvents { events.removeFirst(events.count - Self.maximumEvents) }
+    lock.unlock()
+  }
+
+  private static func opaqueId(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static let phases: Set<String> = ["query", "checkpoint", "publish"]
+  private static let outcomes: Set<String> = ["completed", "failed", "cancelled", "timed_out"]
+  private static let maximumEvents = 8_000
+}
+
+final class AgentRecoveryTimingSpan {
+  private let lock = NSLock()
+  private var finishAction: ((String) -> Void)?
+
+  init(_ finish: ((String) -> Void)? = nil) {
+    finishAction = finish
+  }
+
+  func finish(_ outcome: String) {
+    lock.lock()
+    let action = finishAction
+    finishAction = nil
+    lock.unlock()
+    action?(outcome)
+  }
+}
 
 enum AgentRunRecoveryOutcome: String, Codable, CaseIterable, Identifiable {
   case restoredLocalWait = "RESTORED_LOCAL_WAIT"
@@ -113,7 +191,9 @@ final class AgentRunRecoveryCoordinator {
             let adapter = try await recoverOrNil({ try await adapterResolver(snapshot.agentId) }) else {
         continue
       }
+      let timing = AgentRecoveryTimingStore.shared.begin(taskId: snapshot.taskId, phase: "query")
       let candidates = try await recoverOrNil { try await adapter.inspectRecoverableRuns() } ?? []
+      timing.finish(candidates.isEmpty ? "failed" : "completed")
       inspected.append(contentsOf: exactRemoteMatches(
         candidates,
         snapshot: snapshot,
@@ -210,11 +290,13 @@ final class AgentRunRecoveryCoordinator {
     let adapter = try await recoverOrNil { try await adapterResolver(snapshot.agentId) }
     let workspace = workspaceFor(snapshot)
     let recoverable: [AgentRecoverableRun]
+    let queryTiming = AgentRecoveryTimingStore.shared.begin(taskId: snapshot.taskId, phase: "query")
     if let adapter = adapter {
       recoverable = try await recoverOrNil { try await adapter.recoverRuns() } ?? []
     } else {
       recoverable = []
     }
+    queryTiming.finish(recoverable.isEmpty ? "failed" : "completed")
     try Task.checkCancellation()
     let matches = exactRemoteMatches(
       recoverable,
@@ -258,15 +340,22 @@ final class AgentRunRecoveryCoordinator {
     }
 
     let reason = "remote_status_\(observation.status)"
-    try restoreWorkspace(
-      snapshot: snapshot,
-      status: remoteStatus,
-      eventKind: "task.reconnected_remote",
-      checkpoint: AgentMcpJSONCodec.stringify(remote.checkpoint),
-      remoteHandle: remote.handle,
-      remoteSequence: remote.lastEventSequence,
-      reason: reason
-    )
+    let checkpointTiming = AgentRecoveryTimingStore.shared.begin(taskId: snapshot.taskId, phase: "checkpoint")
+    do {
+      try restoreWorkspace(
+        snapshot: snapshot,
+        status: remoteStatus,
+        eventKind: "task.reconnected_remote",
+        checkpoint: AgentMcpJSONCodec.stringify(remote.checkpoint),
+        remoteHandle: remote.handle,
+        remoteSequence: remote.lastEventSequence,
+        reason: reason
+      )
+      checkpointTiming.finish("completed")
+    } catch {
+      checkpointTiming.finish(error is CancellationError ? "cancelled" : "failed")
+      throw error
+    }
     appendRecoveryEvent(
       snapshot,
       type: recoveryEventType(remoteStatus),
