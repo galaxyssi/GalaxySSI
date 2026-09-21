@@ -19,6 +19,10 @@ import java.util.concurrent.TimeUnit
 
 /** No credentials or peer secrets are displayed, saved in instance state, or logged. */
 class WatchPhoneSetupActivity : Activity() {
+    companion object {
+        const val EXTRA_CONFIGURE_MODELS = "configure_models"
+    }
+    private val configuringModels get() = intent.getBooleanExtra(EXTRA_CONFIGURE_MODELS, false)
     private val repo get() = (application as WatchApplication).repository
     private var server: WatchPhoneSetupServer? = null
     private var state = WatchPhoneSetupServer.State("starting")
@@ -128,7 +132,7 @@ class WatchPhoneSetupActivity : Activity() {
         fun label(value: String, size: Float = 12f, color: Int = Color.WHITE, bold: Boolean = false) = TextView(this).apply {
             text = value; textSize = size; gravity = Gravity.CENTER; setTextColor(color); includeFontPadding = false
             if (bold) setTypeface(typeface, Typeface.BOLD)
-            box.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) })
+            box.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(if (configuringModels) 3 else 4) })
         }
         fun button(value: String, action: () -> Unit) {
             box.addView(Button(this).apply {
@@ -139,6 +143,19 @@ class WatchPhoneSetupActivity : Activity() {
             }, LinearLayout.LayoutParams(dp(150), -2).apply { topMargin = dp(2); bottomMargin = dp(3) })
         }
         val secondary = Color.rgb(168, 176, 184)
+        if (configuringModels) {
+            val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+            header.addView(TextView(this).apply {
+                text = "‹"; textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                contentDescription = getString(R.string.back)
+                setOnClickListener { finish() }
+            }, LinearLayout.LayoutParams(dp(30), dp(32)))
+            header.addView(TextView(this).apply {
+                text = getString(R.string.configure_models); textSize = 15f; setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            box.addView(header, LinearLayout.LayoutParams(-2, dp(28)).apply { bottomMargin = dp(3) })
+        }
         when (screen) {
             "agents" -> {
                 label(getString(R.string.choose_agent), 17f, bold = true)
@@ -169,19 +186,34 @@ class WatchPhoneSetupActivity : Activity() {
                 button(getString(R.string.back)) { screen = "intro"; render() }
             }
             else -> {
-                label(java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), 10f, secondary)
-                val brand = LinearLayout(this).apply { gravity = Gravity.CENTER }
-                brand.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(28), dp(28)))
-                brand.addView(LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, 0, 0)
-                    addView(TextView(this@WatchPhoneSetupActivity).apply { text = getString(R.string.app_name); textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
-                    addView(TextView(this@WatchPhoneSetupActivity).apply { text = getString(R.string.agent_brand); textSize = 9f; gravity = Gravity.CENTER; setTextColor(secondary) })
-                })
-                box.addView(brand, LinearLayout.LayoutParams(-1, dp(30)))
-                label(getString(R.string.phone_setup_title), 14f, bold = true)
-                label(getString(R.string.phone_setup_step_wifi), 11f)
-                label(getString(R.string.phone_setup_step_phone), 11f)
-                label(getString(R.string.phone_setup_path), 10.5f, secondary)
+                if (configuringModels) {
+                    label(getString(R.string.configure_models_title), 14f, bold = true)
+                    label(getString(R.string.configure_models_wifi), 10f, secondary)
+                    label(getString(R.string.configure_models_phone), 10f, secondary).apply {
+                        (layoutParams as LinearLayout.LayoutParams).topMargin = dp(3)
+                    }
+                    label(getString(R.string.configure_models_path), 11f).apply {
+                        setPadding(dp(6), dp(7), dp(6), dp(7))
+                        background = GradientDrawable().apply {
+                            setColor(Color.rgb(35, 38, 40)); cornerRadius = dp(18).toFloat()
+                        }
+                    }
+                    label(getString(R.string.configure_models_description), 10f, secondary)
+                } else {
+                    label(java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), 10f, secondary)
+                    val brand = LinearLayout(this).apply { gravity = Gravity.CENTER }
+                    brand.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(28), dp(28)))
+                    brand.addView(LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, 0, 0)
+                        addView(TextView(this@WatchPhoneSetupActivity).apply { text = getString(R.string.app_name); textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
+                        addView(TextView(this@WatchPhoneSetupActivity).apply { text = getString(R.string.agent_brand); textSize = 9f; gravity = Gravity.CENTER; setTextColor(secondary) })
+                    })
+                    box.addView(brand, LinearLayout.LayoutParams(-1, dp(30)))
+                    label(getString(R.string.phone_setup_title), 14f, bold = true)
+                    label(getString(R.string.phone_setup_step_wifi), 11f)
+                    label(getString(R.string.phone_setup_step_phone), 11f)
+                    label(getString(R.string.phone_setup_path), 10.5f, secondary)
+                }
                 val status = when (state.phase) {
                     "starting" -> R.string.phone_setup_starting
                     "wifi_required", "network_changed" -> R.string.phone_setup_need_wifi
@@ -191,12 +223,12 @@ class WatchPhoneSetupActivity : Activity() {
                     "pairing_started", "agents_ready" -> R.string.phone_setup_pairing
                     else -> R.string.phone_setup_waiting
                 }
-                label(getString(status), 11f, Color.rgb(101, 217, 203))
-                if (state.phase in setOf("error", "expired", "network_changed", "wifi_required")) {
+                label((if (configuringModels) "●  " else "") + getString(status), 11f, Color.rgb(101, 217, 203))
+                if (state.phase in setOf("error", "expired", "network_changed", "wifi_required", "retry")) {
                     button(getString(R.string.phone_setup_wifi)) { wifiSettings() }
                     button(getString(R.string.phone_setup_restart)) { startReceiver() }
-                } else button(getString(R.string.phone_setup_help)) { screen = "help"; render() }
-                button(getString(R.string.contacts)) { startActivity(Intent(this, WatchContactsActivity::class.java)) }
+                } else if (!configuringModels) button(getString(R.string.phone_setup_help)) { screen = "help"; render() }
+                if (!configuringModels) button(getString(R.string.contacts)) { startActivity(Intent(this, WatchContactsActivity::class.java)) }
             }
         }
         setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(Color.BLACK); addView(box) })

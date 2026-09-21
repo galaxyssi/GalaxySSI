@@ -374,6 +374,10 @@ class MainActivity : Activity() {
         button(R.string.contacts) { navigate("contacts") }
         button(R.string.paste_message) { navigate("paste") }
         button(R.string.api_provider) { openApiSettings() }
+        button(R.string.configure_models) {
+            startActivity(Intent(this, WatchPhoneSetupActivity::class.java)
+                .putExtra(WatchPhoneSetupActivity.EXTRA_CONFIGURE_MODELS, true))
+        }
         button(R.string.devices) { navigate("devices") }
         button(R.string.settings) { navigate("settings") }
         button(R.string.about) { navigate("about") }
