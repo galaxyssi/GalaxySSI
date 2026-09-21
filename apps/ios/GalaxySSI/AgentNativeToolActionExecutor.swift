@@ -157,9 +157,9 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       return explicit
     }
     switch descriptor.idempotency {
-    case .idempotent, .idempotencyKeyRequired:
+    case .idempotencyKeyRequired, .nonIdempotent:
       return action.id
-    case .nonIdempotent:
+    case .idempotent:
       return nil
     }
   }

@@ -3,6 +3,31 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelToolLoopTests: XCTestCase {
+  func testNonIdempotentModelCallReceivesStableDerivedEffectKey() async throws {
+    var capturedKeys: [String?] = []
+    let registry = try registry(idempotency: .nonIdempotent) { invocation in
+      capturedKeys.append(invocation.context.idempotencyKey)
+      return .success()
+    }
+    let adapter = ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("non-idempotent-call")]),
+      AgentModelResponse(assistantText: "Done.")
+    )
+
+    let first = await loop(adapter: adapter, registry: registry).run(request())
+    let secondAdapter = ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("non-idempotent-call")]),
+      AgentModelResponse(assistantText: "Done.")
+    )
+    let second = await loop(adapter: secondAdapter, registry: registry).run(request())
+
+    XCTAssertEqual(first.status, .completed)
+    XCTAssertEqual(second.status, .completed)
+    XCTAssertEqual(capturedKeys.count, 1)
+    XCTAssertNotNil(capturedKeys[0])
+    XCTAssertTrue(second.messages.contains { $0.toolResult?.nativeResult?.receipt.replayed == true })
+  }
+
   func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() async throws {
     var capturedContexts: [AgentNativeToolInvocationContext] = []
     let registry = try registry(idempotency: .idempotent) { invocation in

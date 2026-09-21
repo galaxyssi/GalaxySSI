@@ -98,11 +98,13 @@ final class GlobalAutonomousSkillHostTests: XCTestCase {
     )
     let second = try nativeDescriptor("galaxyssi.test.second")
     var order: [String] = []
+    var effectKeys: [String?] = []
     let registry = try AgentNativeToolRegistry().registerExecutables([
       AgentNativeToolExecutableDefinition(
         definition: AgentPhoneNativeToolDefinition(descriptor: first, executorId: "test.first"),
         executor: { invocation in
           order.append(invocation.descriptor.id)
+          effectKeys.append(invocation.context.idempotencyKey)
           return .success(output: [
             "value": invocation.input["value"] ?? .null,
             "permission_granted": .bool(invocation.context.grantedPermissions.contains("native.echo"))
@@ -113,6 +115,7 @@ final class GlobalAutonomousSkillHostTests: XCTestCase {
         definition: AgentPhoneNativeToolDefinition(descriptor: second, executorId: "test.second"),
         executor: { invocation in
           order.append(invocation.descriptor.id)
+          effectKeys.append(invocation.context.idempotencyKey)
           return .success(output: ["step": .string(invocation.descriptor.id)], message: "second")
         }
       )
@@ -138,6 +141,7 @@ final class GlobalAutonomousSkillHostTests: XCTestCase {
 
     XCTAssertTrue(result.isSuccess)
     XCTAssertEqual(order, [first.id, second.id])
+    XCTAssertEqual(effectKeys, ["skill-run-key:step1", "skill-run-key:step2"])
     XCTAssertEqual(result.output["completed_steps"], .int(2))
     XCTAssertEqual(result.output["total_steps"], .int(2))
     XCTAssertEqual(result.output["steps"]?.arrayValue?.count, 2)
