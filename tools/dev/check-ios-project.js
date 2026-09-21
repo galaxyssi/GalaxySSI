@@ -1840,6 +1840,8 @@ const requiredSourceSnippets = [
   [tests, "testAgentNativeEffectJournalReplaysFailuresAndCommitsBeforeFinishedHook"],
   [tests, "testEncryptedDatabaseRetainsMoreThanLegacyCapAcrossReopen"],
   [tests, "testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys"],
+  [tests, "testEmbeddingVectorsNormalizeAndCompareFiniteValues"],
+  [tests, "testEmbeddingVectorsRejectEmptyZeroMismatchedAndNonfiniteValues"],
   [tests, "testAgentNativeToolReplayJsonCodecSkipsMalformedEntries"],
   [tests, "testAgentCapabilityCatalogIdsAreStableAndUnique"],
   [tests, "testAgentCapabilityCatalogMarketplaceUnifiesToolsMcpAndAutomationState"],

@@ -696,6 +696,8 @@
     A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000536 /* AgentKnowledgeModels.swift */; };
     A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000880 /* AgentKnowledgeDatabase.swift */; };
     A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */; };
+    A10000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */; };
+    A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */; };
     A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */; };
     A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000537 /* GlobalPersistentContextObservations.swift */; };
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
@@ -1670,6 +1672,8 @@
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000880 /* AgentKnowledgeDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabase.swift; sourceTree = "<group>"; };
     A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabaseTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntime.swift; sourceTree = "<group>"; };
+    A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOfficeDocumentExtractor.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
@@ -2696,6 +2700,7 @@
         A20000000000000000001522 /* LocalModelInferenceModels.swift */,
         A20000000000000000001523 /* LocalModelInferenceRuntime.swift */,
         A20000000000000000001524 /* GalaxySSILlamaNativeBackend.swift */,
+        A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */,
         A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */,
         A20000000000000000001527 /* LocalModelCooperativeRuntime.swift */,
         A20000000000000000001528 /* GalaxySSIMqttReliability.swift */,
@@ -2820,6 +2825,7 @@
         A20000000000000000000212 /* GlobalMemoryAuditTests.swift */,
         A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */,
         A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */,
+        A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */,
         A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */,
         A20000000000000000000216 /* VoiceProviderCapabilityTests.swift */,
         A20000000000000000000217 /* AgentControlPlaneTests.swift */,
@@ -3824,6 +3830,7 @@
         A10000000000000000001522 /* LocalModelInferenceModels.swift in Sources */,
         A10000000000000000001523 /* LocalModelInferenceRuntime.swift in Sources */,
         A10000000000000000001524 /* GalaxySSILlamaNativeBackend.swift in Sources */,
+        A10000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift in Sources */,
         A10000000000000000001525 /* LocalModelAgentPlanningProvider.swift in Sources */,
         A10000000000000000001527 /* LocalModelCooperativeRuntime.swift in Sources */,
         A10000000000000000001528 /* GalaxySSIMqttReliability.swift in Sources */,
@@ -3939,6 +3946,7 @@
         A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */,
         A10000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift in Sources */,
         A10000000000000000000214 /* LocalModelRuntimePreflightTests.swift in Sources */,
+        A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */,
         A10000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift in Sources */,
         A10000000000000000000216 /* VoiceProviderCapabilityTests.swift in Sources */,
         A10000000000000000000217 /* AgentControlPlaneTests.swift in Sources */,
