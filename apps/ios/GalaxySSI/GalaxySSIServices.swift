@@ -30,6 +30,14 @@ final class MessageCoordinator: ObservableObject {
   let deliveryStore: GalaxySSILinkDeliveryStore
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
+  private let blobRelayConfigurationStore = AgentBlobRelayConfigurationStore()
+  lazy var blobOutgoingCoordinator = AgentBlobOutgoingCoordinator(
+    configurationStore: blobRelayConfigurationStore,
+    attachmentStore: attachmentTransferStore
+  ) { [weak self] payload, attachment in
+    guard let self else { throw GalaxySSIError.transportUnavailable }
+    try await self.publishBlobOffer(payload, attachment: attachment)
+  }
   private let phoneAttachmentQueue = DispatchQueue(
     label: "org.galaxyssi.ios.phone-attachment-receive",
     qos: .utility
@@ -7784,8 +7792,14 @@ final class MessageCoordinator: ObservableObject {
     )
     if !outboundAttachments.isEmpty {
       do {
+        var blobTransferIds = Set<String>()
+        for attachment in outboundAttachments {
+          if try await blobOutgoingCoordinator.register(attachment, link: link) {
+            blobTransferIds.insert(attachment.transferId)
+          }
+        }
         let attachmentRequests = try makeOutboundAttachmentDeliveryRequests(
-          outboundAttachments,
+          outboundAttachments.filter { !blobTransferIds.contains($0.transferId) },
           link: link,
           sourceMessageId: sourceMessageId,
           contactId: contact.id
@@ -7807,7 +7821,9 @@ final class MessageCoordinator: ObservableObject {
           taskId: taskIdentity.taskId,
           stage: .phoneRequestQueued
         )
+        try await blobOutgoingCoordinator.activate(blobTransferIds)
       } catch {
+        try? await blobOutgoingCoordinator.cancel(Set(outboundAttachments.map(\.transferId)))
         attachmentTransferStore.discard(
           outboundAttachments.map(\.transferId),
           deliveryStore: deliveryStore
@@ -7896,6 +7912,31 @@ final class MessageCoordinator: ObservableObject {
         attachmentTransferId: step.attachment.transferId
       )
     }
+  }
+
+  private func publishBlobOffer(
+    _ payload: [String: Any],
+    attachment: AgentPreparedOutboundAttachment
+  ) async throws {
+    guard let link = store.serverLinks.first(where: {
+      $0.paired &&
+        $0.desktopId == attachment.scope.desktopId &&
+        $0.routes.clientRouteId == attachment.scope.clientRouteId
+    }) else {
+      throw GalaxySSIError.notPaired
+    }
+    let wire = try linkWirePayload(payload, link: link)
+    deliveryStore.discardAttachmentTransferMessages(attachment.transferId)
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.upTopic,
+      wirePayload: wire.wireText,
+      requiresValidatedNetwork: true,
+      clientSourceMessageId: attachment.scope.clientMessageId ?? "",
+      contactId: attachment.scope.contactId,
+      attachmentTransferId: attachment.transferId
+    )
+    scheduleOutboxFlush(after: 0)
   }
 
   @discardableResult
@@ -8856,6 +8897,25 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     let sourceDesktopID = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+    if appPayload.string("type") == AgentBlobRelayConfiguration.payloadType {
+      guard let link, link.paired else { return }
+      do {
+        try blobRelayConfigurationStore.ingest(appPayload, link: link)
+        Task { await blobOutgoingCoordinator.wake() }
+        if !messageId.isEmpty {
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+      } catch {
+        recordLinkDiagnostic(
+          .fragmentRejected,
+          link: link,
+          topic: topic,
+          messageIdentity: messageId,
+          detailCode: "blob_relay_config"
+        )
+      }
+      return
+    }
     let trustedRemoteWhisperSource = link?.paired == true &&
       sourceDesktopID == link?.desktopId
     if appPayload.string("type") == "capability_manifest", trustedRemoteWhisperSource {

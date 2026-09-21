@@ -13,40 +13,42 @@ extension MessageCoordinator {
       return
     }
     if payload.string("status") == "stored" {
-      if let contact = store.visibleContacts.first(where: {
-        $0.isDesktopDeviceContact && $0.desktopId == transfer.scope.desktopId
-      }) {
-        var completion = payload
-        completion["source_message_id"] = transfer.scope.clientMessageId ?? ""
-        completion["attachment_ordinal"] = transfer.ordinal
-        completion["name"] = transfer.originalName
-        completion["mime_type"] = transfer.mimeType
-        completion["size_bytes"] = transfer.originalSizeBytes
-        completion["progress"] = 100
-        completion["state"] = GalaxySSIPeerAttachmentTransferProgress.complete
-        applyPeerAttachmentTransferProgress(completion, contact: contact)
+      Task { [weak self] in
+        guard let self else { return }
+        if await blobOutgoingCoordinator.owns(transfer.transferId) {
+          guard (try? await blobOutgoingCoordinator.acceptStored(
+            payload,
+            link: link,
+            attachment: transfer
+          )) == true else { return }
+        }
+        completeStoredAttachment(payload, transfer: transfer)
       }
-      guard attachmentTransferStore.acknowledgeStored(
-        payload: payload,
-        deliveryStore: deliveryStore
-      ) != nil else {
-        return
-      }
-      scheduleOutboxFlush(after: 0)
       return
     }
-    guard payload.string("status") == "missing",
-          let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
-            payload["missing_ranges"],
-            chunkCount: transfer.chunkCount
-          ),
-          !requested.isEmpty else {
-      return
+    if payload.string("status") == "missing" {
+      Task { [weak self] in
+        guard let self else { return }
+        if await blobOutgoingCoordinator.owns(transfer.transferId) {
+          await blobOutgoingCoordinator.wake()
+          return
+        }
+        resendMissingAttachmentChunks(payload, transfer: transfer, link: link)
+      }
     }
+  }
+
+  private func resendMissingAttachmentChunks(
+    _ payload: [String: Any],
+    transfer: AgentPreparedOutboundAttachment,
+    link: ServerLink
+  ) {
+    guard let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
+      payload["missing_ranges"],
+      chunkCount: transfer.chunkCount
+    ), !requested.isEmpty else { return }
     for index in requested {
-      guard let chunkPayload = try? transfer.chunkPayload(index: index) else {
-        continue
-      }
+      guard let chunkPayload = try? transfer.chunkPayload(index: index) else { continue }
       try? enqueueLinkPayload(
         chunkPayload,
         link: link,
@@ -56,6 +58,30 @@ extension MessageCoordinator {
         contactId: transfer.scope.contactId
       )
     }
+    scheduleOutboxFlush(after: 0)
+  }
+
+  private func completeStoredAttachment(
+    _ payload: [String: Any],
+    transfer: AgentPreparedOutboundAttachment
+  ) {
+    if let contact = store.visibleContacts.first(where: {
+      $0.isDesktopDeviceContact && $0.desktopId == transfer.scope.desktopId
+    }) {
+      var completion = payload
+      completion["source_message_id"] = transfer.scope.clientMessageId ?? ""
+      completion["attachment_ordinal"] = transfer.ordinal
+      completion["name"] = transfer.originalName
+      completion["mime_type"] = transfer.mimeType
+      completion["size_bytes"] = transfer.originalSizeBytes
+      completion["progress"] = 100
+      completion["state"] = GalaxySSIPeerAttachmentTransferProgress.complete
+      applyPeerAttachmentTransferProgress(completion, contact: contact)
+    }
+    guard attachmentTransferStore.acknowledgeStored(
+      payload: payload,
+      deliveryStore: deliveryStore
+    ) != nil else { return }
     scheduleOutboxFlush(after: 0)
   }
 
