@@ -396,7 +396,6 @@ final class MessageCoordinator: ObservableObject {
   func start() {
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
-    recoverInterruptedLocalPlanNodes()
     AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
       guard let settings = self?.store.globalAgentSettings else { return false }
       return settings.enabled && settings.autonomousResearchEnabled
@@ -426,16 +425,19 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func recoverInterruptedLocalPlanNodes() {
+  @discardableResult
+  func reconcileInterruptedLocalPlanNodes() -> Int {
+    var recoveredTaskCount = 0
     for var task in store.recentAgentTasks(limit: 500) where task.phase == .executing {
-      guard var plan = task.activePlan,
-            let outgoing = localOutgoingMessage(for: task) else { continue }
+      guard var plan = task.activePlan else { continue }
+      let outgoing = localOutgoingMessage(for: task)
       var recoveredActions: [AgentAction] = []
       var foundJournaledNode = false
       var journalRecoveryFailed = false
       for index in plan.actions.indices where plan.actions[index].status == .running {
         let action = plan.actions[index]
-        guard let key = AgentPlanNodeKey.make(
+        guard let outgoing,
+              let key = AgentPlanNodeKey.make(
           sessionId: task.sessionId.ifBlank(outgoing.conversationId),
           plan: plan,
           action: action,
@@ -456,6 +458,7 @@ final class MessageCoordinator: ObservableObject {
           )
           task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
           store.upsertAgentTask(task)
+          recoveredTaskCount += 1
           break
         }
         foundJournaledNode = true
@@ -475,7 +478,26 @@ final class MessageCoordinator: ObservableObject {
         recoveredActions.append(recovered)
       }
       guard !journalRecoveryFailed else { continue }
-      guard foundJournaledNode else { continue }
+      if !foundJournaledNode {
+        plan = plan.recoverInterruptedExecution()
+        let resumable = plan.actions.filter {
+          [.proposed, .pendingConfirmation, .running, .waitingResponse].contains($0.status)
+        }
+        task.activePlan = plan
+        task.planContext = AgentTaskPlanContext(plan: plan)
+        task.pendingActions = resumable
+        task.pendingAction = resumable.first
+        task.phase = .paused
+        task.result = ""
+        if task.verification.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          task.verification = "Task interrupted by a previous app process"
+        }
+        task.executionLog.append("Native tools: paused after app process interruption")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        recoveredTaskCount += 1
+        continue
+      }
       task.activePlan = plan
       task.planContext = AgentTaskPlanContext(plan: plan)
       let recoveredIds = Set(recoveredActions.map(\.id))
@@ -491,7 +513,9 @@ final class MessageCoordinator: ObservableObject {
       )
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
+      recoveredTaskCount += 1
     }
+    return recoveredTaskCount
   }
 
   func resumePendingAgentDelivery() {

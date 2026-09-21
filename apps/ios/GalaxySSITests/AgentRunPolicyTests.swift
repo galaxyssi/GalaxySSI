@@ -2876,6 +2876,44 @@ extension GalaxySSIStoreTests {
     second.close()
   }
 
+  @MainActor
+  func testAgentStartupRecoveryReconcilesBeforeDispatchAndFailsClosed() async throws {
+    var events: [String] = []
+    try await AgentStartupRecoverySequence.run(
+      recoverRuns: {
+        events.append("runs")
+        return 2
+      },
+      reconcileLocalTasks: {
+        events.append("local")
+        return 3
+      },
+      dispatch: { count in
+        events.append("dispatch:\(count)")
+      }
+    )
+    XCTAssertEqual(events, ["runs", "local", "dispatch:5"])
+
+    enum StartupFailure: Error { case failed }
+    events = []
+    do {
+      try await AgentStartupRecoverySequence.run(
+        recoverRuns: {
+          events.append("runs")
+          throw StartupFailure.failed
+        },
+        reconcileLocalTasks: {
+          events.append("local")
+          return 0
+        },
+        dispatch: { _ in events.append("dispatch") }
+      )
+      XCTFail("Expected startup reconciliation to fail")
+    } catch StartupFailure.failed {
+      XCTAssertEqual(events, ["runs"])
+    }
+  }
+
   private func longTaskSession(interrupted: Bool) -> AgentSessionSnapshot {
     let action = AgentAction(
       id: "action",

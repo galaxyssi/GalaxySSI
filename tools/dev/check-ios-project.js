@@ -1897,6 +1897,7 @@ const requiredSourceSnippets = [
   [tests, "testAgentExecutionLoopTimelineModelsUseAndroidWireNames"],
   [tests, "testAgentRunEventStoreReducerPreservesTerminalStateUntilExplicitRecovery"],
   [tests, "testAgentRunRecoveryPolicyMatchesAndroidDurableDesktopRules"],
+  [tests, "testAgentStartupRecoveryReconcilesBeforeDispatchAndFailsClosed"],
   [tests, "testAgentRunRecoveryModelsUseAndroidWireNames"],
   [tests, "testAgentRunStartReceiptStoreReservesAndReplaysIdempotentRequests"],
   [tests, "testAgentRunStartReceiptStoreAcceptsPersistsAndRejectsMismatchedHandles"],

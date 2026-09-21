@@ -714,6 +714,19 @@ final class AgentRecoveryWakeCoordinator {
   }
 }
 
+struct AgentStartupRecoverySequence {
+  @MainActor
+  static func run(
+    recoverRuns: () async throws -> Int,
+    reconcileLocalTasks: () -> Int,
+    dispatch: (Int) -> Void
+  ) async throws {
+    let runCount = try await recoverRuns()
+    let recoveredCount = runCount + reconcileLocalTasks()
+    dispatch(recoveredCount)
+  }
+}
+
 @MainActor
 final class AgentStartupRecoveryCoordinator: ObservableObject {
   @Published private(set) var isRecovering = false
@@ -721,47 +734,69 @@ final class AgentStartupRecoveryCoordinator: ObservableObject {
   @Published private(set) var lastError = ""
 
   private var hasStarted = false
+  private var recoveryTask: Task<Void, Never>?
 
-  func start(store: GalaxySSIStore) {
+  func start(
+    store: GalaxySSIStore,
+    reconcileLocalTasks: @escaping @MainActor () -> Int,
+    completion: @escaping @MainActor () -> Void
+  ) {
     guard !hasStarted else { return }
     hasStarted = true
     isRecovering = true
     lastError = ""
 
     let contacts = store.contacts
-    Task { @MainActor [weak self] in
-      let runStore = UserDefaultsAgentRunEventStore()
-      let workspaceStore = FileAgentWorkspaceStore()
-      let recordedStore = UserDefaultsAgentRecordedRunStore()
-      let recovery = AgentRunRecoveryCoordinator(
-        runStore: runStore,
-        workspaceStore: workspaceStore,
-        recordedRun: { runId in
-          recordedStore.runs().first { $0.runId == runId }
-        },
-        registration: { agentId, deviceId in
-          Self.recoveryRegistration(
-            agentId: agentId,
-            deviceId: deviceId,
-            contacts: contacts
+    recoveryTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await AgentStartupRecoverySequence.run(
+            recoverRuns: {
+              try await Task.detached(priority: .utility) {
+                let runStore = UserDefaultsAgentRunEventStore()
+                let workspaceStore = FileAgentWorkspaceStore()
+                let recordedStore = UserDefaultsAgentRecordedRunStore()
+                let recovery = AgentRunRecoveryCoordinator(
+                  runStore: runStore,
+                  workspaceStore: workspaceStore,
+                  recordedRun: { runId in
+                    recordedStore.runs().first { $0.runId == runId }
+                  },
+                  registration: { agentId, deviceId in
+                    Self.recoveryRegistration(
+                      agentId: agentId,
+                      deviceId: deviceId,
+                      contacts: contacts
+                    )
+                  },
+                  adapterResolver: { _ in nil }
+                )
+                return (try await recovery.recover()).count
+              }.value
+            },
+            reconcileLocalTasks: reconcileLocalTasks,
+            dispatch: { recoveredCount in
+              guard let self, !Task.isCancelled else { return }
+              self.recoveredRunCount = recoveredCount
+              self.lastError = ""
+              self.isRecovering = false
+              store.refreshAgentRuntimeState()
+              completion()
+            }
           )
-        },
-        adapterResolver: { _ in nil }
-      )
-
-      do {
-        let results = try await recovery.recover()
-        guard let self else { return }
-        self.recoveredRunCount = results.count
-        store.refreshAgentRuntimeState()
-      } catch {
-        self?.lastError = error.localizedDescription
+          return
+        } catch is CancellationError {
+          return
+        } catch {
+          guard let self else { return }
+          self.lastError = error.localizedDescription
+          try? await Task.sleep(nanoseconds: 10_000_000_000)
+        }
       }
-      self?.isRecovering = false
     }
   }
 
-  private static func recoveryRegistration(
+  nonisolated private static func recoveryRegistration(
     agentId: String,
     deviceId: String,
     contacts: [GalaxySSIContact]
@@ -796,6 +831,10 @@ final class AgentStartupRecoveryCoordinator: ObservableObject {
       location: location,
       connectionKind: connectionKind
     )
+  }
+
+  deinit {
+    recoveryTask?.cancel()
   }
 }
 

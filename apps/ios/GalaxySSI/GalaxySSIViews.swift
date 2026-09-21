@@ -307,11 +307,18 @@ private struct GalaxySSIRuntimeRoot: View {
       .galaxySSITextScale(runtime.store.displaySettings)
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")
-        runtime.coordinator.start()
-        runtime.agentStartupRecovery.start(store: runtime.store)
-        runtime.voiceAgentRunRecovery.start()
-        runtime.workflowTriggerCoordinator.start()
-        runtime.backgroundScheduler.start()
+        runtime.agentStartupRecovery.start(
+          store: runtime.store,
+          reconcileLocalTasks: {
+            runtime.coordinator.reconcileInterruptedLocalPlanNodes()
+          },
+          completion: {
+            runtime.coordinator.start()
+            runtime.voiceAgentRunRecovery.start()
+            runtime.workflowTriggerCoordinator.start()
+            runtime.backgroundScheduler.start()
+          }
+        )
         requestNotificationPermissionIfNeeded()
       }
   }
