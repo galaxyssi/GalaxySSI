@@ -155,25 +155,50 @@ struct AgentControlMessage: Codable, Equatable, Identifiable {
   private static let maxAttachments = 64
 }
 
+struct AgentRemoteRecoveryObservation: Codable, Equatable {
+  var conversationId: String
+  var deviceId: String
+  var status: String
+  var remoteTaskId: String
+  var remoteRunId: String
+  var statusSequence: Int64
+
+  var workspaceStatus: AgentWorkspaceStatus? {
+    switch status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "accepted", "queued", "starting", "running", "recovering": return .running
+    case "waiting_input", "waiting_approval": return .waitingConfirmation
+    case "pausing", "paused", "takeover", "interrupted": return .paused
+    case "completed": return .waitingResponse
+    case "failed", "timed_out": return .failed
+    case "cancelled": return .cancelled
+    default: return nil
+    }
+  }
+}
+
 struct AgentRecoverableRun: Codable, Equatable {
   var handle: AgentRunHandle
   var lastEventSequence: Int64
   var checkpoint: AgentMcpJSONObject
+  var observation: AgentRemoteRecoveryObservation?
 
   init(
     handle: AgentRunHandle,
     lastEventSequence: Int64,
-    checkpoint: AgentMcpJSONObject = [:]
+    checkpoint: AgentMcpJSONObject = [:],
+    observation: AgentRemoteRecoveryObservation? = nil
   ) {
     self.handle = handle
     self.lastEventSequence = max(lastEventSequence, 0)
     self.checkpoint = checkpoint
+    self.observation = observation
   }
 
   enum CodingKeys: String, CodingKey {
     case handle
     case lastEventSequence = "last_event_sequence"
     case checkpoint
+    case observation
   }
 
   init(from decoder: Decoder) throws {
@@ -181,7 +206,8 @@ struct AgentRecoverableRun: Codable, Equatable {
     self.init(
       handle: try container.decode(AgentRunHandle.self, forKey: .handle),
       lastEventSequence: try container.decodeIfPresent(Int64.self, forKey: .lastEventSequence) ?? 0,
-      checkpoint: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .checkpoint) ?? [:]
+      checkpoint: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .checkpoint) ?? [:],
+      observation: try container.decodeIfPresent(AgentRemoteRecoveryObservation.self, forKey: .observation)
     )
   }
 }

@@ -81,7 +81,15 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
             "cursor": .int(22),
             "permission_wait": .bool(true),
             "active_tool_call_id": .string("shell-1")
-          ]
+          ],
+          observation: AgentRemoteRecoveryObservation(
+            conversationId: "conversation-1",
+            deviceId: "desktop-1",
+            status: "running",
+            remoteTaskId: "turn-1",
+            remoteRunId: "remote-1",
+            statusSequence: 4
+          )
         )
       ]
     )

@@ -181,19 +181,29 @@ final class AgentRunRecoveryCoordinator {
     _ snapshot: AgentRunControlSnapshot,
     decision: AgentRunRecoveryDecision
   ) async throws -> AgentRunRecoveryResult {
-    let adapter = try? await adapterResolver(snapshot.agentId)
+    try Task.checkCancellation()
+    let adapter = try await recoverOrNil { try await adapterResolver(snapshot.agentId) }
     let workspace = workspaceFor(snapshot)
     let recoverable: [AgentRecoverableRun]
     if let adapter = adapter {
-      recoverable = (try? await adapter.recoverRuns()) ?? []
+      recoverable = try await recoverOrNil { try await adapter.recoverRuns() } ?? []
     } else {
       recoverable = []
     }
-    let remote = recoverable.first { candidate in
-      candidate.handle.runId == snapshot.runId ||
-        candidate.handle.taskId == snapshot.taskId ||
-        candidate.handle.remoteRunId == workspace?.remoteRunId
+    try Task.checkCancellation()
+    let matches = recoverable.filter { candidate in
+      guard let observation = candidate.observation,
+            observation.workspaceStatus != nil else { return false }
+      return candidate.handle.runId == snapshot.runId &&
+        candidate.handle.taskId == snapshot.taskId &&
+        candidate.handle.agentId == snapshot.agentId &&
+        observation.conversationId == snapshot.lastEvent.conversationId &&
+        observation.deviceId == adapter?.registration.deviceId &&
+        observation.remoteTaskId == candidate.handle.taskId &&
+        observation.remoteRunId == candidate.handle.remoteRunId &&
+        observation.statusSequence >= 0
     }
+    let remote = matches.count == 1 ? matches[0] : nil
 
     guard let remote else {
       try restoreWorkspace(
@@ -215,9 +225,12 @@ final class AgentRunRecoveryCoordinator {
     }
 
     let priorWorkspace = workspaceFor(snapshot)
-    if snapshot.lastEvent.type == .runRecovered,
-      let priorWorkspace,
-      priorWorkspace.lastRemoteEventSequence >= remote.lastEventSequence {
+    let observation = remote.observation!
+    let remoteStatus = observation.workspaceStatus!
+    if snapshot.lastEvent.payload["remote_status"]?.stringValue == observation.status,
+      snapshot.lastEvent.payload["remote_status_sequence"]?.intValue == observation.statusSequence,
+      priorWorkspace?.status == remoteStatus,
+      priorWorkspace?.remoteRunId == observation.remoteRunId {
       return AgentRunRecoveryResult(
         runId: snapshot.runId,
         outcome: .alreadyCurrent,
@@ -226,27 +239,50 @@ final class AgentRunRecoveryCoordinator {
       )
     }
 
+    let reason = "remote_status_\(observation.status)"
     try restoreWorkspace(
       snapshot: snapshot,
-      status: .running,
+      status: remoteStatus,
       eventKind: "task.reconnected_remote",
       checkpoint: AgentMcpJSONCodec.stringify(remote.checkpoint),
       remoteHandle: remote.handle,
       remoteSequence: remote.lastEventSequence,
-      reason: decision.reason
+      reason: reason
     )
     appendRecoveryEvent(
       snapshot,
-      reason: decision.reason,
+      type: recoveryEventType(remoteStatus),
+      reason: reason,
       remoteSequence: remote.lastEventSequence,
-      source: "durable_remote"
+      observation: observation
     )
     return AgentRunRecoveryResult(
       runId: snapshot.runId,
       outcome: .reconnectedRemote,
       lastRemoteEventSequence: remote.lastEventSequence,
-      reason: decision.reason
+      reason: reason
     )
+  }
+
+  private func recoverOrNil<T>(_ operation: () async throws -> T) async throws -> T? {
+    do {
+      return try await operation()
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      return nil
+    }
+  }
+
+  private func recoveryEventType(_ status: AgentWorkspaceStatus) -> AgentRunControlEventType {
+    switch status {
+    case .cancelled: return .runCancelled
+    case .failed: return .runFailed
+    case .paused: return .paused
+    case .waitingConfirmation: return .waitingForUser
+    case .waitingResponse: return .waitingForDevice
+    default: return .runRecovered
+    }
   }
 
   private func workspaceFor(_ snapshot: AgentRunControlSnapshot) -> AgentWorkspace? {
@@ -325,17 +361,22 @@ final class AgentRunRecoveryCoordinator {
 
   private func appendRecoveryEvent(
     _ snapshot: AgentRunControlSnapshot,
+    type: AgentRunControlEventType,
     reason: String,
     remoteSequence: Int64,
-    source: String
+    observation: AgentRemoteRecoveryObservation
   ) {
     _ = runStore.appendNext(event(
       from: snapshot,
-      type: .runRecovered,
+      type: type,
       payload: snapshot.lastEvent.payload.adding([
-        "recovery_source": .string(source),
+        "recovery_source": .string("verified_remote"),
         "reason": .string(reason),
-        "last_remote_event_sequence": .int(remoteSequence)
+        "last_remote_event_sequence": .int(remoteSequence),
+        "remote_status": .string(observation.status),
+        "remote_status_sequence": .int(observation.statusSequence),
+        "remote_task_id": .string(observation.remoteTaskId),
+        "remote_run_id": .string(observation.remoteRunId)
       ])
     ))
   }
