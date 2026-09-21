@@ -5,6 +5,7 @@ protocol AgentRunEventPersistence: AgentRunControlStore {
   func events(runId: String) -> [AgentRunControlEvent]
   func latestEvent(runId: String) -> AgentRunControlEvent?
   func snapshot(runId: String) -> AgentRunControlSnapshot?
+  func containsIdempotencyKey(runId: String, key: String) -> Bool
 }
 
 final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
@@ -109,6 +110,14 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     lock.lock()
     defer { lock.unlock() }
     return snapshotLocked(runId)
+  }
+
+  func containsIdempotencyKey(runId: String, key: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let normalizedKey = clean(key)
+    guard !normalizedKey.isEmpty else { return false }
+    return eventsLocked(runId).contains { $0.idempotencyKey == normalizedKey }
   }
 
   func recoverableRuns() -> [AgentRunControlSnapshot] {

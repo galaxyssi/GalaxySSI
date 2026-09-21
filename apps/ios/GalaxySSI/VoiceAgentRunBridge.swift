@@ -613,7 +613,7 @@ final class VoiceAgentRunBridge {
       let eventId = string(normalizedEnvelope, "event_id").ifBlank(
         "status:\(current.taskId):\(max(statusSequence, partialSequence)):\(eventKind)"
       )
-      if current.seenEventIds.contains(eventId) {
+      if current.seenEventIds.contains(eventId) || hasPersistedEvent(runId: current.runId, eventId: eventId) {
         return nil
       }
       let progressMessage = string(progressPayload, "message")
@@ -944,7 +944,7 @@ final class VoiceAgentRunBridge {
     payload: AgentRunControlPayload
   ) {
     _ = controlStore.appendNext(AgentRunControlEvent(
-      eventId: eventId,
+      eventId: projectedEventId(runId: snapshot.runId, remoteEventId: eventId),
       conversationId: snapshot.conversationId,
       messageId: snapshot.sourceMessageId.ifBlank(snapshot.turnId),
       taskId: snapshot.taskId.ifBlank(snapshot.runId),
@@ -954,8 +954,21 @@ final class VoiceAgentRunBridge {
       type: type,
       sequence: 0,
       timestampMillis: snapshot.updatedAtMillis,
-      payload: payload
+      payload: payload,
+      idempotencyKey: eventId,
+      actionId: eventId
     ))
+  }
+
+  private func hasPersistedEvent(runId: String, eventId: String) -> Bool {
+    (controlStore as? AgentRunEventPersistence)?
+      .containsIdempotencyKey(runId: runId, key: eventId) == true
+  }
+
+  private func projectedEventId(runId: String, remoteEventId: String) -> String {
+    let source = "voice-projection\u{001f}\(runId)\u{001f}\(remoteEventId)"
+    let digest = SHA256.hash(data: Data(source.utf8))
+    return "voice-" + digest.map { String(format: "%02x", $0) }.joined().prefix(32)
   }
 
   private func controlEventType(
