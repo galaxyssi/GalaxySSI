@@ -14,17 +14,20 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
         id: "item-\(index)",
         kind: .document,
         title: "Title \(index)",
-        content: "Private body \(index)",
+        content: index == 1_200 ? "Private body 1200 with unique marker and \u{72ec}\u{7279}\u{77e5}\u{8bc6}" : "Private body \(index)",
         source: "source-\(index / 10)",
         updatedAtMillis: Int64(index)
       )
     }
 
     XCTAssertTrue(AgentKnowledgeDatabase(fileURL: url, secrets: secrets).replaceAll(items))
-    let restored = try AgentKnowledgeDatabase(fileURL: url, secrets: secrets).all()
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let restored = try reopened.all()
 
     XCTAssertEqual(restored.count, 1_201)
     XCTAssertEqual(Set(restored.map(\.id)), Set(items.map(\.id)))
+    XCTAssertEqual(try reopened.searchCandidates(query: "1200").map(\.id), ["item-1200"])
+    XCTAssertEqual(try reopened.searchCandidates(query: "\u{72ec}\u{7279}\u{77e5}\u{8bc6}").map(\.id), ["item-1200"])
     let raw = String(decoding: try Data(contentsOf: url), as: UTF8.self)
     XCTAssertFalse(raw.contains("Private body 1200"))
     XCTAssertFalse(raw.contains("source-120"))
