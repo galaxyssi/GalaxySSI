@@ -18,14 +18,14 @@ final class AgentIncomingAttachmentTransferStore {
   private let rootURL: URL
   private let fileManager: FileManager
   private let now: () -> Date
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let cipher: any GalaxySSILocalAttachmentStoring
   private let lock = NSLock()
 
   init(
     rootURL: URL? = nil,
     fileManager: FileManager = .default,
     now: @escaping () -> Date = Date.init,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.fileManager = fileManager
     self.now = now
@@ -87,7 +87,7 @@ final class AgentIncomingAttachmentTransferStore {
         resolved["size_bytes"] = stored.sizeBytes
         resolved["uri"] = stored.dataURL.absoluteString
         resolved["artifact_uri"] = stored.dataURL.absoluteString
-        resolved["storage"] = "attachment_aes_256_gcm"
+        resolved["storage"] = "app_private_file"
         resolved["encryption_purpose"] = dataPurpose(transferId)
         if stored.mimeType.hasPrefix("audio/") {
           let duration = payload.int64("duration_ms")
@@ -204,7 +204,7 @@ final class AgentIncomingAttachmentTransferStore {
       ]
       if let stored {
         event["uri"] = stored.dataURL.absoluteString
-        event["storage"] = "attachment_aes_256_gcm"
+        event["storage"] = "app_private_file"
         event["encryption_purpose"] = dataPurpose(transferId)
       }
       return event

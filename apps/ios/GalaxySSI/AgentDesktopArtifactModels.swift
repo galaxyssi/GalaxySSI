@@ -99,13 +99,13 @@ final class AgentDesktopArtifactStore {
 
   private let rootURL: URL
   private let fileManager: FileManager
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let cipher: any GalaxySSILocalAttachmentStoring
   private let lock = NSRecursiveLock()
 
   init(
     rootURL: URL,
     fileManager: FileManager = .default,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.rootURL = rootURL
     self.fileManager = fileManager
@@ -115,7 +115,7 @@ final class AgentDesktopArtifactStore {
   convenience init(
     applicationSupportDirectory: URL,
     fileManager: FileManager = .default,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.init(
       rootURL: applicationSupportDirectory.appendingPathComponent(Self.defaultRootDirectoryName, isDirectory: true),
@@ -271,7 +271,7 @@ final class AgentDesktopArtifactStore {
         "original_size_bytes": String(originalSize),
         "sha256": record.sha256,
         "transport": "encrypted-fragmented",
-        "storage": "attachment_aes_256_gcm",
+        "storage": "app_private_file",
         "saved_to_downloads": record.savedToDownloads ? "true" : "false"
       ]) { _, new in new }
     )
