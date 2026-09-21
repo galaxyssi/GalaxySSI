@@ -2,7 +2,11 @@ import SwiftUI
 
 extension AgentHomeView {
   var agentOutput: some View {
-    GalaxySSIAgentHomeTranscriptView(
+    let replyRuntimeIndex = AgentReplyRuntimeIndex(
+      remoteTasks: Array(coordinator.remoteAgentTaskStatuses.values),
+      voiceRuns: voiceAgentRunRecovery.activeSnapshots
+    )
+    return GalaxySSIAgentHomeTranscriptView(
       visibleMessageLimit: $visibleAgentMessageLimit,
       olderTranscriptAnchor: $olderTranscriptAnchor,
       transcriptTopLoadTriggered: $transcriptTopLoadTriggered,
@@ -150,8 +154,18 @@ extension AgentHomeView {
               t: t,
               mergedSourceLabel: { mergedSourceLabel(for: $0) },
               agentTask: { agentTask(for: $0) },
-              remoteAgentTask: { remoteAgentTask(for: $0) },
-              voiceAgentRun: { voiceAgentRun(for: $0) },
+              remoteAgentTask: {
+                replyRuntimeIndex.remoteTask(
+                  for: $0,
+                  activeConversationId: store.activeAgentConversationId
+                )
+              },
+              voiceAgentRun: {
+                replyRuntimeIndex.voiceRun(
+                  for: $0,
+                  activeConversationId: store.activeAgentConversationId
+                )
+              },
               remoteAgentTimelineLine: remoteAgentTimelineLine,
               executionDuration: { startedAtMillis, updatedAtMillis in
                 executionDuration(
