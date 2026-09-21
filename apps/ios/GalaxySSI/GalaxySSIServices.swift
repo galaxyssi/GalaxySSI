@@ -138,6 +138,7 @@ final class MessageCoordinator: ObservableObject {
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private var lastIncomingAttachmentResumeAtMillis: Int64 = 0
+  private var connectorResponseReplayActive = false
   private let peerSessionRecoveryGate = GalaxySSIPeerSessionRecoveryGate()
   private var approvedPhoneDecisionReplayScheduled = false
   private let transportEpoch = "v11-opaque-link-v2"
@@ -147,6 +148,7 @@ final class MessageCoordinator: ObservableObject {
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
   private static let incomingAttachmentResumeThrottleMillis: Int64 = 2_000
+  private static let connectorResponseReplayPageSize = 32
 
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
@@ -9933,11 +9935,23 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func replayPendingConnectorResponses() {
-    connectorResponseBus.pending().forEach { response in
+    guard !connectorResponseReplayActive else { return }
+    connectorResponseReplayActive = true
+    replayPendingConnectorResponsePage()
+  }
+
+  private func replayPendingConnectorResponsePage() {
+    let responses = connectorResponseBus.pending(limit: Self.connectorResponseReplayPageSize)
+    guard !responses.isEmpty else {
+      connectorResponseReplayActive = false
+      return
+    }
+    responses.forEach { response in
       let payload: [String: Any] = [
         "type": "agent_connector_response",
         "source_message_id": String(response.sourceMessageId),
         "contact_id": response.contactId,
+        "resolved_contact_id": response.resolvedContactId,
         "content": response.content,
         "conversation_id": response.conversationId,
         "turn_id": response.turnId,
@@ -9956,6 +9970,13 @@ final class MessageCoordinator: ObservableObject {
         allowStage: false
       )
       connectorResponseBus.remove(response)
+    }
+    if responses.count == Self.connectorResponseReplayPageSize {
+      DispatchQueue.main.async { [weak self] in
+        self?.replayPendingConnectorResponsePage()
+      }
+    } else {
+      connectorResponseReplayActive = false
     }
   }
 

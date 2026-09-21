@@ -3,6 +3,7 @@ import Foundation
 struct AgentConnectorResponse: Codable, Equatable {
   var sourceMessageId: Int64
   var contactId: String
+  var resolvedContactId: String
   var content: String
   var conversationId: String
   var turnId: String
@@ -17,6 +18,7 @@ struct AgentConnectorResponse: Codable, Equatable {
   init(
     sourceMessageId: Int64,
     contactId: String = "",
+    resolvedContactId: String = "",
     content: String = "",
     conversationId: String = "",
     turnId: String = "",
@@ -30,6 +32,7 @@ struct AgentConnectorResponse: Codable, Equatable {
   ) {
     self.sourceMessageId = max(sourceMessageId, 0)
     self.contactId = contactId
+    self.resolvedContactId = resolvedContactId
     self.content = String(content.prefix(Self.maxContentCharacters))
     self.conversationId = conversationId
     self.turnId = turnId
@@ -45,6 +48,7 @@ struct AgentConnectorResponse: Codable, Equatable {
   enum CodingKeys: String, CodingKey {
     case sourceMessageId = "source_message_id"
     case contactId = "contact_id"
+    case resolvedContactId = "resolved_contact_id"
     case content
     case conversationId = "conversation_id"
     case turnId = "turn_id"
@@ -62,6 +66,7 @@ struct AgentConnectorResponse: Codable, Equatable {
     self.init(
       sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
       contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "",
+      resolvedContactId: try container.decodeIfPresent(String.self, forKey: .resolvedContactId) ?? "",
       content: try container.decodeIfPresent(String.self, forKey: .content) ?? "",
       conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
       turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
@@ -101,6 +106,7 @@ struct AgentConnectorResponse: Codable, Equatable {
     return AgentConnectorResponse(
       sourceMessageId: sourceMessageId,
       contactId: payload.string("contact_id"),
+      resolvedContactId: payload.string("resolved_contact_id"),
       content: content,
       conversationId: payload.string("conversation_id"),
       turnId: payload.string("turn_id"),
@@ -134,6 +140,12 @@ protocol AgentConnectorResponseSink: AnyObject {
   func pending() -> [AgentConnectorResponse]
   func remove(_ response: AgentConnectorResponse)
   func clear()
+}
+
+extension AgentConnectorResponseSink {
+  func pending(limit: Int) -> [AgentConnectorResponse] {
+    Array(pending().prefix(max(1, min(limit, 64))))
+  }
 }
 
 final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
@@ -285,9 +297,6 @@ final class AgentManagedConnectorResponseRegistry {
 }
 
 final class AgentConnectorResponseStore: AgentConnectorResponseSink {
-  static let maxResponses = 30
-  static let maxResponseAgeMillis: Int64 = 24 * 60 * 60 * 1_000
-
   private let lock = NSRecursiveLock()
   private let nowMillis: () -> Int64
   private var responses: [AgentConnectorResponse]
@@ -315,11 +324,9 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
       return false
     }
     responses = (pendingLocked(nowMillis: now).filter {
-      !($0.sourceMessageId == normalized.sourceMessageId && $0.contactId == normalized.contactId)
+      !Self.matches($0, normalized)
     } + [normalized])
       .sorted { $0.receivedAtMillis < $1.receivedAtMillis }
-      .suffix(Self.maxResponses)
-      .map { $0 }
     return true
   }
 
@@ -338,7 +345,7 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
     lock.lock()
     defer { lock.unlock() }
     responses = pendingLocked(nowMillis: nowMillis()).filter {
-      !($0.sourceMessageId == response.sourceMessageId && $0.contactId == response.contactId)
+      !Self.matches($0, response)
     }
   }
 
@@ -356,13 +363,20 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
   }
 
   private func pendingLocked(nowMillis: Int64) -> [AgentConnectorResponse] {
-    let cutoff = nowMillis - Self.maxResponseAgeMillis
-    return responses.compactMap { response in
-      guard response.receivedAtMillis >= cutoff else {
-        return nil
-      }
-      return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
+    responses.compactMap {
+      AgentConnectorResponseNormalizer.normalized($0, nowMillis: nowMillis)
     }
+  }
+
+  private static func matches(
+    _ candidate: AgentConnectorResponse,
+    _ expected: AgentConnectorResponse
+  ) -> Bool {
+    candidate.sourceMessageId == expected.sourceMessageId
+      && candidate.contactId == expected.contactId
+      && candidate.conversationId == expected.conversationId
+      && candidate.turnId == expected.turnId
+      && candidate.taskId == expected.taskId
   }
 }
 
@@ -436,6 +450,10 @@ final class AgentConnectorResponseBus {
     store.pending()
   }
 
+  func pending(limit: Int) -> [AgentConnectorResponse] {
+    store.pending(limit: limit)
+  }
+
   func remove(_ response: AgentConnectorResponse) {
     store.remove(response)
   }
@@ -471,7 +489,6 @@ enum AgentConnectorResponseStoreCodec {
           let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
       return []
     }
-    let cutoff = max(nowMillis, 0) - AgentConnectorResponseStore.maxResponseAgeMillis
     return values.compactMap { value in
       guard case .object(let object) = value else {
         return nil
@@ -482,6 +499,7 @@ enum AgentConnectorResponseStoreCodec {
       let response = AgentConnectorResponse(
         sourceMessageId: object.int64("source_message_id"),
         contactId: object.string("contact_id"),
+        resolvedContactId: object.string("resolved_contact_id"),
         content: object.string("content"),
         conversationId: object.string("conversation_id"),
         turnId: object.string("turn_id"),
@@ -493,9 +511,6 @@ enum AgentConnectorResponseStoreCodec {
         richOutputJson: object.string("rich_output"),
         receivedAtMillis: receivedAt
       )
-      guard receivedAt >= cutoff else {
-        return nil
-      }
       return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
     }
   }
@@ -504,6 +519,7 @@ enum AgentConnectorResponseStoreCodec {
     .object([
       "source_message_id": .int(response.sourceMessageId),
       "contact_id": .string(response.contactId),
+      "resolved_contact_id": .string(response.resolvedContactId),
       "content": .string(String(response.content.prefix(AgentConnectorResponse.maxContentCharacters))),
       "conversation_id": .string(response.conversationId),
       "turn_id": .string(response.turnId),
@@ -537,6 +553,7 @@ enum AgentConnectorResponseNormalizer {
     return AgentConnectorResponse(
       sourceMessageId: response.sourceMessageId,
       contactId: response.contactId,
+      resolvedContactId: response.resolvedContactId,
       content: String(content.prefix(AgentConnectorResponse.maxContentCharacters)),
       conversationId: response.conversationId,
       turnId: response.turnId,
