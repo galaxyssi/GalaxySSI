@@ -2024,6 +2024,12 @@ final class MessageCoordinator: ObservableObject {
       richOutputJson: richOutputJson,
       messageId: outgoingMessageId
     )
+    if !isPeerSend {
+      AgentLatencyTelemetry.shared.record(
+        taskId: outgoing.id.uuidString,
+        stage: .phoneSendStarted
+      )
+    }
     if isPeerSend {
       store.appendDeliveryTrace(
         outgoing.id,
@@ -7475,6 +7481,12 @@ final class MessageCoordinator: ObservableObject {
       taskId: taskId,
       turnId: turnId
     )
+    if !peerChat {
+      AgentLatencyTelemetry.shared.record(
+        taskId: taskIdentity.taskId,
+        stage: .phonePublishStarted
+      )
+    }
     let session = store.agentSession(id: conversationId)
     let conversationContext = AgentConversationContext(
       conversationId: conversationId,
@@ -7715,6 +7727,10 @@ final class MessageCoordinator: ObservableObject {
             )
           ]
         )
+        AgentLatencyTelemetry.shared.record(
+          taskId: taskIdentity.taskId,
+          stage: .phoneRequestQueued
+        )
       } catch {
         attachmentTransferStore.discard(
           outboundAttachments.map(\.transferId),
@@ -7740,6 +7756,10 @@ final class MessageCoordinator: ObservableObject {
       requiresValidatedNetwork: requiresValidatedNetwork,
       clientSourceMessageId: sourceMessageId,
       contactId: contact.id
+    )
+    AgentLatencyTelemetry.shared.record(
+      taskId: taskIdentity.taskId,
+      stage: .phoneRequestQueued
     )
     if requiresValidatedNetwork {
       store.appendDeliveryTrace(
@@ -8775,6 +8795,7 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
+    recordIncomingAgentLatency(appPayload)
     if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
       applyAgentConnectorStreamUpdate(streamUpdate)
       if !messageId.isEmpty {
@@ -9320,6 +9341,26 @@ final class MessageCoordinator: ObservableObject {
     }
     if let current {
       onIncomingMessageDelta?(current)
+    }
+  }
+
+  private func recordIncomingAgentLatency(_ payload: [String: Any]) {
+    let taskId = payload.string("task_id")
+    guard !taskId.isEmpty else { return }
+    let type = payload.string("type")
+    let status = AgentRemoteTaskStatusPolicy.normalize(
+      payload.string("task_status").ifBlank(payload.string("status"))
+    )
+    let terminal = type == "text" || AgentRemoteTaskStatusPolicy.isTerminal(status)
+    let visiblePartial = AgentConnectorStreamUpdate(payload: payload) != nil
+    guard terminal || visiblePartial else { return }
+    AgentLatencyTelemetry.shared.record(taskId: taskId, stage: .phoneResponseReceived)
+    if terminal {
+      AgentLatencyTelemetry.shared.record(
+        taskId: taskId,
+        stage: .phoneFinalReceived,
+        outcome: status
+      )
     }
   }
 
