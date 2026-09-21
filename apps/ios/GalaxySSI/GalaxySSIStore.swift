@@ -1922,7 +1922,7 @@ final class GalaxySSIStore: ObservableObject {
       desktopFingerprint: pairing.desktopFingerprint,
       signalName: pairing.desktopId,
       routes: routes,
-      paired: existing?.paired ?? false,
+      paired: rotateClientRoute ? false : existing?.paired ?? false,
       accessProfile: pairing.access.profile,
       accessScopes: pairing.access.scopes,
       capabilityManifestVersion: existing?.capabilityManifestVersion ?? 0,
@@ -1942,7 +1942,9 @@ final class GalaxySSIStore: ObservableObject {
     hermes.setupDetail = link.paired ? "GalaxySSI Link is paired" : "Waiting for desktop confirmation"
     hermes.updatedAt = Date()
     upsert(hermes)
-    upsertDesktopAgentContacts(from: pairing, link: link)
+    if link.paired {
+      upsertDesktopAgentContacts(from: pairing, link: link)
+    }
     save()
     return link
   }

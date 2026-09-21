@@ -80,6 +80,13 @@ struct PairingView: View {
     .sheet(isPresented: $myQRCodePresented) {
       MyContactQRCodeView()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)) { note in
+      let desktopId = note.userInfo?["desktopId"] as? String ?? ""
+      guard desktopId == pendingPairing?.desktopId else { return }
+      errorText = t("galaxyssi.pairing.desktop_confirmed", "Pairing confirmed")
+      pairingNoticeIsError = false
+      pendingPairing = nil
+    }
   }
 
   private var desktopSection: some View {
@@ -502,18 +509,10 @@ struct PairingView: View {
       pairingNoticeIsError = false
       try await coordinator.pair(using: value)
       errorText = String(
-        format: t("galaxyssi.pairing.desktop_added", "%@ added"),
+        format: t("galaxyssi.pairing.desktop_waiting", "Waiting for %@ to confirm pairing..."),
         pairing?.desktopName ?? pendingPairing?.desktopName ?? t("galaxyssi.pairing.title", "Pairing")
       )
-      NotificationCenter.default.post(
-        name: .galaxySSIDesktopPairingDidComplete,
-        object: nil,
-        userInfo: [
-          "desktopId": pairing?.desktopId ?? pendingPairing?.desktopId ?? ""
-        ]
-      )
       pairingNoticeIsError = false
-      pendingPairing = nil
     } catch {
       errorText = error.localizedDescription
       pairingNoticeIsError = true

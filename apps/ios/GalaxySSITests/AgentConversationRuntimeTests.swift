@@ -1985,6 +1985,12 @@ extension GalaxySSIStoreTests {
     )
     XCTAssertTrue(GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(hasExistingSession: false))
     XCTAssertFalse(GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(hasExistingSession: true))
+    XCTAssertTrue(
+      GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(
+        hasExistingSession: true,
+        routePaired: false
+      )
+    )
     XCTAssertTrue(GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(.staged))
     XCTAssertFalse(GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(.pending))
     XCTAssertFalse(GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(.completed))

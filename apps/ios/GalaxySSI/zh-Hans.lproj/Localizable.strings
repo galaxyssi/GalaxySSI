@@ -1546,6 +1546,10 @@
 "galaxyssi.pairing.hermes_request_received" = "已收到 Hermes 请求：%@";
 "galaxyssi.pairing.scan_failed" = "扫描失败：%@";
 "galaxyssi.pairing.desktop_added" = "%@ 已添加";
+"galaxyssi.pairing.desktop_waiting" = "正在等待 %@ 确认配对…";
+"galaxyssi.pairing.desktop_confirmed" = "配对已确认";
+"galaxyssi.pairing.desktop_code_used" = "此二维码已被使用，请扫描桌面端上的新二维码。";
+"galaxyssi.pairing.desktop_timed_out" = "桌面端未确认配对，请检查连接并扫描新二维码。";
 "galaxyssi.pairing.desktop_claim_sending" = "正在添加 %@...";
 "galaxyssi.pairing.desktop_claim_sent" = "%@ 已添加，可在联系人中使用。";
 "galaxyssi.pairing.desktop_claim_sent_detailed" = "%@ 已添加为 %@，%d 个 Agent 可在联系人中使用。";
