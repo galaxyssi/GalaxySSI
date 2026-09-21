@@ -8900,7 +8900,7 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     if richOutputJson.isEmpty,
-       ["failed", "timed_out", "not_found"].contains(remoteTaskStatus) {
+       ["failed", "timed_out", "cancelled", "not_found"].contains(remoteTaskStatus) {
       let failure = appPayload.string("error")
         .ifBlank(appPayload.string("content"))
         .ifBlank(appPayload.string("text"))
@@ -8942,9 +8942,14 @@ final class MessageCoordinator: ObservableObject {
           .ifBlank(appPayload.string("message_id"))
       )
     }
-    let content = appPayload.string("content")
-      .ifBlank(appPayload.string("text"))
-      .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
+    let content = AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus)
+      ? appPayload.string("error")
+        .ifBlank(appPayload.string("content"))
+        .ifBlank(appPayload.string("text"))
+        .ifBlank(remoteTaskStatus)
+      : appPayload.string("content")
+        .ifBlank(appPayload.string("text"))
+        .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
     guard !content.isEmpty || !richOutputJson.isEmpty else {
       liveConnectorMessageIds.removeValue(forKey: streamKey)
       liveConnectorSequenceByKey.removeValue(forKey: streamKey)
@@ -9028,7 +9033,12 @@ final class MessageCoordinator: ObservableObject {
         turnId: responseTurnId,
         taskId: responseTaskId,
         contactId: contactId,
-        reason: remoteTaskStatus
+        reason: remoteTaskStatus,
+        executionGeneration: max(
+          Int64(appPayload.string("execution_generation"))
+            ?? Int64(appPayload.int("execution_generation")),
+          1
+        )
       ))
       agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
     }
@@ -9943,6 +9953,9 @@ final class MessageCoordinator: ObservableObject {
         "turn_id": response.turnId,
         "task_id": response.taskId,
         "success": response.success,
+        "task_status": response.taskStatus,
+        "execution_generation": String(response.executionGeneration),
+        "status_sequence": String(response.statusSequence),
         "input_tokens": String(response.inputTokens),
         "output_tokens": String(response.outputTokens),
         "cost_micros": String(response.costMicros),

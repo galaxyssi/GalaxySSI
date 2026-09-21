@@ -346,6 +346,81 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(store.pending().contains { $0.sourceMessageId == 35 && $0.contactId == "codex" })
   }
 
+  func testTypedTerminalOutcomePreservesErrorAndExecutionVersion() throws {
+    let response = try XCTUnwrap(AgentConnectorResponse.fromPayload([
+      "source_message_id": "901",
+      "contact_id": "desktop-agent",
+      "conversation_id": "conversation-1",
+      "turn_id": "turn-1",
+      "task_id": "task-1",
+      "task_status": "failed",
+      "error": "provider request rejected",
+      "execution_generation": 3,
+      "status_sequence": 17
+    ], nowMillis: 100_000))
+
+    XCTAssertFalse(response.success)
+    XCTAssertEqual(response.content, "provider request rejected")
+    XCTAssertEqual(response.taskStatus, "failed")
+    XCTAssertEqual(response.executionGeneration, 3)
+    XCTAssertEqual(response.statusSequence, 17)
+
+    let roundTrip = try XCTUnwrap(
+      AgentConnectorResponseStoreCodec.decode(
+        AgentConnectorResponseStoreCodec.encode([response]),
+        nowMillis: 100_000
+      ).first
+    )
+    XCTAssertEqual(roundTrip, response)
+  }
+
+  func testStatusOnlyCancellationIsAcceptedWithoutInventedResultText() throws {
+    let response = try XCTUnwrap(AgentConnectorResponse.fromPayload([
+      "source_message_id": "902",
+      "contact_id": "desktop-agent",
+      "conversation_id": "conversation-1",
+      "turn_id": "turn-2",
+      "task_id": "task-2",
+      "task_status": "cancelled",
+      "execution_generation": 2
+    ], nowMillis: 100_000))
+
+    XCTAssertFalse(response.success)
+    XCTAssertEqual(response.taskStatus, "cancelled")
+    XCTAssertTrue(response.content.isEmpty)
+    XCTAssertNotNil(AgentConnectorResponseNormalizer.normalized(response, nowMillis: 100_000))
+  }
+
+  func testOldGenerationTerminalAndRemovalDoNotConsumeRetryOutcome() {
+    let old = AgentConnectorResponse(
+      sourceMessageId: 903,
+      contactId: "desktop-agent",
+      content: "old failure",
+      receivedAtMillis: 100_000,
+      taskStatus: "failed",
+      executionGeneration: 1
+    )
+    let retry = AgentConnectorResponse(
+      sourceMessageId: 903,
+      contactId: "desktop-agent",
+      content: "retry result",
+      receivedAtMillis: 100_000,
+      taskStatus: "completed",
+      executionGeneration: 2
+    )
+    let store = AgentConnectorResponseStore(nowMillis: { 100_000 })
+    XCTAssertTrue(store.publish(old))
+    XCTAssertTrue(store.publish(retry))
+    store.remove(old)
+    XCTAssertEqual(store.pending(), [retry])
+
+    let terminal = InMemoryAgentTerminalDeliveryStore(records: [
+      AgentTerminalDelivery(sourceMessageId: 903, reason: "failed", executionGeneration: 1)
+    ])
+    XCTAssertTrue(terminal.isTerminal(old))
+    XCTAssertFalse(terminal.isTerminal(retry))
+  }
+
   func testAgentConnectorFinalResultPersistsBeforeLiveStreamRetires() {
     var calls: [String] = []
 
