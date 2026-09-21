@@ -474,7 +474,6 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
 #!/bin/sh
 set -eu
 export LC_ALL=C GIT_TERMINAL_PROMPT=0
-export GIT_PROTOCOL_FROM_USER=1
 github_token="${GALAXYSSI_GITHUB_TOKEN-}"
 unset GALAXYSSI_GITHUB_TOKEN
 repository_url="$1"
