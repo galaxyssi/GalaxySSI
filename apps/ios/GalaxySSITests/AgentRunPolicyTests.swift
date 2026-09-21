@@ -636,6 +636,54 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(paused, .paused)
   }
 
+  func testAgentRunKernelCanonicalizesPortableIdentityAndWireContract() throws {
+    let canonical = try XCTUnwrap(AgentRunKernelContract.canonical(runKernelEvent()))
+    let encoded = String(decoding: try JSONEncoder().encode(canonical), as: UTF8.self)
+
+    XCTAssertEqual(canonical.protocolId, "galaxyssi.agent-run-event.v1")
+    XCTAssertEqual(canonical.schemaVersion, 1)
+    XCTAssertEqual(canonical.idempotencyKey, "event-1")
+    XCTAssertEqual(canonical.clientRouteId, "phone-1")
+    XCTAssertEqual(canonical.goalId, "task-1")
+    XCTAssertEqual(canonical.turnId, "message-1")
+    XCTAssertEqual(canonical.actionId, "step-1")
+    XCTAssertTrue(encoded.contains(#""protocol":"galaxyssi.agent-run-event.v1""#))
+    XCTAssertTrue(encoded.contains(#""schema_version":1"#))
+    XCTAssertTrue(encoded.contains(#""idempotency_key":"event-1""#))
+    XCTAssertTrue(encoded.contains(#""client_route_id":"phone-1""#))
+  }
+
+  func testAgentRunKernelPreservesCheckpointStateAndPausesInterruptedRun() {
+    for state in AgentRunControlState.allCases {
+      XCTAssertEqual(AgentRunEventStore.reduce(current: state, event: .checkpointSaved), state)
+    }
+    XCTAssertEqual(
+      AgentRunEventStore.reduce(current: .running, event: .runInterrupted),
+      .paused
+    )
+    XCTAssertEqual(
+      AgentRunEventStore.reduce(current: .paused, event: .runRecovered),
+      .running
+    )
+  }
+
+  func testAgentRunEventStoreRejectsCrossRootAndConflictingIdempotencyReplay() throws {
+    let suiteName = "AgentRunKernelTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = UserDefaultsAgentRunEventStore(defaults: defaults, storageKey: "events")
+    let first = store.appendNext(runKernelEvent())
+    var crossRoot = runKernelEvent(eventId: "event-2")
+    crossRoot.conversationId = "conversation-2"
+    var conflictingReplay = runKernelEvent(eventId: "event-3")
+    conflictingReplay.idempotencyKey = first.idempotencyKey
+    conflictingReplay.type = .runCompleted
+
+    XCTAssertEqual(store.appendNext(crossRoot), first)
+    XCTAssertEqual(store.appendNext(conflictingReplay), first)
+    XCTAssertEqual(store.events(runId: "run-1"), [first])
+  }
+
   func testAgentRunRecoveryPolicyMatchesAndroidDurableDesktopRules() {
     let snapshot = runControlSnapshot(state: .waitingForDevice)
     let recorded = AgentRecordedRun(
@@ -2746,5 +2794,20 @@ private func rollingAction(status: AgentActionStatus) -> AgentAction {
     status: status,
     description: "Inspect evidence",
     requiresConfirmation: false
+  )
+}
+
+private func runKernelEvent(eventId: String = "event-1") -> AgentRunControlEvent {
+  AgentRunControlEvent(
+    eventId: eventId,
+    conversationId: "conversation-1",
+    messageId: "message-1",
+    taskId: "task-1",
+    runId: "run-1",
+    stepId: "step-1",
+    agentId: "codex",
+    deviceId: "phone-1",
+    type: .runStarted,
+    sequence: 1
   )
 }
