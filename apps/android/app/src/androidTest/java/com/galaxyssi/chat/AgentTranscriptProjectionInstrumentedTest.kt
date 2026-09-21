@@ -14,6 +14,15 @@ class AgentTranscriptProjectionInstrumentedTest {
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
     private val screen = ScreenContext("projection-test", pageTitle = "Projection")
 
+    @Test fun finalEnrichmentPreservesTheOriginalCompletionTimestamp() = withConversation { store, id, turn ->
+        val key = AgentFinalResponseIdentity.dedupeKey(turn)
+        store.upsert(AgentTranscriptRole.ASSISTANT, "Final answer", key, 1000L, id, turn, "task")
+        store.upsert(AgentTranscriptRole.ASSISTANT, "Final answer with verified citation", key, 9000L, id, turn, "task")
+        val answer = store.list(id).single { it.role == AgentTranscriptRole.ASSISTANT }
+        assertEquals(1000L, answer.timestampMillis)
+        assertEquals("Final answer with verified citation", answer.text)
+    }
+
     @Test fun applicationContextPersistsFinalAndImageMetadataIdempotently() = withConversation { store, id, turn ->
         assertFalse(context is Activity)
         val image = AgentRichBlock("image-1", AgentRichBlockType.IMAGE,

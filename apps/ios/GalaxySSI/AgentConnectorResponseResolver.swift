@@ -24,6 +24,10 @@ enum AgentConnectorResponseResolver {
        expectedContactId != response.contactId {
       return false
     }
+    if let expectedGeneration = Int64(pending.metadata["execution_generation"] ?? ""),
+       expectedGeneration != response.executionGeneration {
+      return false
+    }
     return AgentTaskIdentityPolicy.matchesDesktopResponse(
       expected: pending.metadata,
       conversationId: clean(response.conversationId),
@@ -50,6 +54,9 @@ enum AgentConnectorResponseResolver {
     metadata["awaiting_response"] = "false"
     metadata["response_received_at"] = String(now)
     metadata["connector_disposition"] = "response"
+    metadata["task_status"] = response.taskStatus
+    metadata["execution_generation"] = String(response.executionGeneration)
+    metadata["status_sequence"] = String(response.statusSequence)
     if !response.conversationId.isEmpty {
       metadata["conversation_id"] = response.conversationId
     }
@@ -78,6 +85,9 @@ enum AgentConnectorResponseResolver {
         "turn_id": .string(response.turnId),
         "task_id": .string(response.taskId),
         "success": .bool(response.success),
+        "task_status": .string(response.taskStatus),
+        "execution_generation": .int(response.executionGeneration),
+        "status_sequence": .int(response.statusSequence),
         "result": .string(response.content),
         "error": .string(response.success ? "" : response.content)
       ]

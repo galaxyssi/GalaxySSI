@@ -10,6 +10,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WatchApiTest {
+    @org.junit.Test fun retiredModelCannotBeProvisionedOrRestored() {
+        for (model in listOf("gpt-5.3-codex-spark", " GPT-5.3-CODEX-SPARK ")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                ApiProfile("https://example.com/chat/completions", model, "test-key")
+            }
+        }
+        assertFalse(WATCH_MODEL_PRESETS.any {
+            com.galaxyssi.chat.RetiredAgentModelPolicy.isRetired(it.model)
+        })
+    }
+
     @Test fun nativeWebToolCallsRoundTripWithCorrelatedResults() = withServer { server, api ->
         val profile = ApiProfile(server.url("/chat/completions").toString(), "test", "test-key")
         val task = WatchTask.create("api", profile.id, profile.model, "Technology news")

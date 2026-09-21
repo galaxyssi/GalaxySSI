@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 45
-        versionName = "0.3.13"
+        versionCode = 47
+        versionName = "0.3.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -140,6 +140,7 @@ tasks.named("preBuild").configure { dependsOn(syncPhoneBrand) }
 // Compile Android's complete Web Intelligence engine from an explicit source allowlist.
 val phoneWebRoot = file("../../android/app/src/main/java/com/galaxyssi/chat")
 val webFiles = listOf(
+    "RetiredAgentModelPolicy.kt",
     "GalaxySSIIdenticon.kt", "GalaxySSIIdenticonDrawable.kt",
     "AgentRemoteRecoveryClient.kt", "AgentResultRecoveryClient.kt", "AgentResultRecoveryPageCodec.kt",
     "AgentResultPageCheckpoint.kt", "AgentResultPageDatabase.kt", "GalaxySSITransportPrivacyPolicy.kt",

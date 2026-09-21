@@ -1363,6 +1363,66 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(retry.retriedResourceIds, ["desktop:codex"])
   }
 
+  func testFallbackTrailDoesNotResurrectAttemptedResourcesAfterCatalogRefresh() throws {
+    let candidates = AgentConnectorFallbackTrail.mergeAvailable(
+      rememberedResourceIds: ["desktop:claude", "cloud:qwen"],
+      currentResourceIds: ["desktop:codex", "desktop:claude", "cloud:qwen"],
+      failedResourceId: "desktop:codex",
+      attemptedResourceIds: ["desktop:codex", "desktop:claude"]
+    )
+    XCTAssertEqual(candidates, ["cloud:qwen"])
+
+    let selected = try XCTUnwrap(AgentConnectorFallbackTrail.selectNext(
+      failedResourceId: "desktop:codex",
+      remainingResourceIds: candidates,
+      deferredRetryIds: [],
+      retriedResourceIds: [],
+      retryFailedResource: false,
+      attemptedResourceIds: ["desktop:codex", "desktop:claude"]
+    ))
+    XCTAssertEqual(selected.resourceId, "cloud:qwen")
+    XCTAssertTrue(selected.attemptedResourceIds.isSuperset(of: ["desktop:codex", "desktop:claude"]))
+  }
+
+  func testConnectorFailureScopeSeparatesAgentExecutionFromSharedTransport() {
+    let agentFailure = [
+      "failure_domain": "desktop-a",
+      "resource_location": "desktop"
+    ]
+    XCTAssertFalse(AgentConnectorFailureScope.sharedTransportFailed(agentFailure))
+    XCTAssertTrue(AgentConnectorFailureScope.remoteExecutionReached(agentFailure))
+    XCTAssertTrue(AgentConnectorFailureScope.permitsFallback(agentFailure, candidateDomain: "desktop-a"))
+
+    let transportFailure = [
+      "failure_domain": "desktop-a",
+      "delivery_failed": "true"
+    ]
+    XCTAssertTrue(AgentConnectorFailureScope.sharedTransportFailed(transportFailure))
+    XCTAssertFalse(AgentConnectorFailureScope.permitsFallback(transportFailure, candidateDomain: "desktop-a"))
+    XCTAssertTrue(AgentConnectorFailureScope.permitsFallback(transportFailure, candidateDomain: "cloud-b"))
+  }
+
+  func testFallbackActionTrailBelongsOnlyToItsOwningAction() {
+    var stale = AgentAction(
+      id: "new-action",
+      kind: .callConnector,
+      target: "Codex",
+      risk: .low,
+      status: .proposed,
+      description: "Run",
+      parameters: [
+        "routing_fallback_action_id": "old-action",
+        AgentConnectorFallbackAction.attemptedParameter: "desktop:codex",
+        "routing_deferred_retry_ids": "desktop:claude"
+      ],
+      requiresConfirmation: false
+    )
+    stale = AgentConnectorFallbackAction.forDispatch(stale)
+
+    XCTAssertNil(stale.parameters[AgentConnectorFallbackAction.attemptedParameter])
+    XCTAssertNil(stale.parameters["routing_deferred_retry_ids"])
+  }
+
   func testAgentResourceRoutingModelsUseAndroidWireNames() throws {
     let codexResource = routingResource(
       targetId: "codex",

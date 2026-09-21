@@ -8,6 +8,7 @@ struct AgentTerminalDelivery: Codable, Equatable {
   var contactId: String
   var reason: String
   var terminalAtMillis: Int64
+  var executionGeneration: Int64
 
   init(
     sourceMessageId: Int64,
@@ -16,7 +17,8 @@ struct AgentTerminalDelivery: Codable, Equatable {
     taskId: String = "",
     contactId: String = "",
     reason: String = "",
-    terminalAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+    terminalAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    executionGeneration: Int64 = 1
   ) {
     self.sourceMessageId = max(sourceMessageId, 0)
     self.conversationId = Self.clean(conversationId)
@@ -25,6 +27,9 @@ struct AgentTerminalDelivery: Codable, Equatable {
     self.contactId = Self.clean(contactId)
     self.reason = String(reason.prefix(1_000))
     self.terminalAtMillis = max(terminalAtMillis, 0)
+    self.executionGeneration = AgentRemoteOutcomePolicy.validGeneration(executionGeneration)
+      ? executionGeneration
+      : 1
   }
 
   var hasIdentity: Bool {
@@ -32,6 +37,7 @@ struct AgentTerminalDelivery: Codable, Equatable {
   }
 
   func matches(_ response: AgentConnectorResponse) -> Bool {
+    guard executionGeneration == response.executionGeneration else { return false }
     if sourceMessageId > 0, sourceMessageId == response.sourceMessageId {
       return true
     }
@@ -46,6 +52,25 @@ struct AgentTerminalDelivery: Codable, Equatable {
     let responseContactId = Self.clean(response.contactId)
     return (taskId.isEmpty || taskId == responseTaskId) &&
       (contactId.isEmpty || contactId == responseContactId)
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case sourceMessageId, conversationId, turnId, taskId, contactId, reason, terminalAtMillis
+    case executionGeneration
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "",
+      reason: try container.decodeIfPresent(String.self, forKey: .reason) ?? "",
+      terminalAtMillis: try container.decodeIfPresent(Int64.self, forKey: .terminalAtMillis) ?? 0,
+      executionGeneration: try container.decodeIfPresent(Int64.self, forKey: .executionGeneration) ?? 1
+    )
   }
 
   private static func clean(_ value: String) -> String {
@@ -77,11 +102,13 @@ final class InMemoryAgentTerminalDeliveryStore: AgentTerminalDeliveryStoring {
     defer { lock.unlock() }
     values.removeAll { existing in
       if delivery.sourceMessageId > 0 {
-        return existing.sourceMessageId == delivery.sourceMessageId
+        return existing.sourceMessageId == delivery.sourceMessageId &&
+          existing.executionGeneration == delivery.executionGeneration
       }
       return existing.sourceMessageId == 0 &&
         existing.conversationId == delivery.conversationId &&
-        existing.turnId == delivery.turnId
+        existing.turnId == delivery.turnId &&
+        existing.executionGeneration == delivery.executionGeneration
     }
     values = Self.normalized(values + [delivery])
   }

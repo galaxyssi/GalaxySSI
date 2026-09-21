@@ -18,6 +18,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
   var conversationId: String
   var turnId: String
   var taskId: String
+  var executionGeneration: Int64
   var state: AgentManagedResponseState
   var response: AgentConnectorResponse?
   var createdAtMillis: Int64
@@ -33,6 +34,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     conversationId: String = "",
     turnId: String = "",
     taskId: String = "",
+    executionGeneration: Int64 = 1,
     state: AgentManagedResponseState = .pending,
     response: AgentConnectorResponse? = nil,
     createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
@@ -47,6 +49,9 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     self.conversationId = conversationId
     self.turnId = turnId
     self.taskId = taskId
+    self.executionGeneration = AgentRemoteOutcomePolicy.validGeneration(executionGeneration)
+      ? executionGeneration
+      : 1
     self.state = state
     self.response = response
     self.createdAtMillis = max(createdAtMillis, 0)
@@ -63,6 +68,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     case conversationId = "conversation_id"
     case turnId = "turn_id"
     case taskId = "task_id"
+    case executionGeneration = "execution_generation"
     case state
     case response
     case createdAtMillis = "created_at_millis"
@@ -81,6 +87,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
       conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
       turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
       taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      executionGeneration: try container.decodeIfPresent(Int64.self, forKey: .executionGeneration) ?? 1,
       state: try container.decodeIfPresent(AgentManagedResponseState.self, forKey: .state) ?? .pending,
       response: try container.decodeIfPresent(AgentConnectorResponse.self, forKey: .response),
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
@@ -90,6 +97,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
 
   func correlates(_ response: AgentConnectorResponse) -> Bool {
     sourceMessageId == response.sourceMessageId &&
+      executionGeneration == response.executionGeneration &&
       (contactId.isEmpty || response.contactId.isEmpty || contactId == response.contactId) &&
       AgentTaskIdentityPolicy.matchesResponseIdentity(
         expectedConversationId: conversationId,
@@ -153,6 +161,7 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
       conversationId: current.conversationId,
       turnId: current.turnId,
       taskId: current.taskId,
+      executionGeneration: current.executionGeneration,
       state: .completed,
       response: response,
       createdAtMillis: current.createdAtMillis,
@@ -180,6 +189,7 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
       conversationId: current.conversationId,
       turnId: current.turnId,
       taskId: current.taskId,
+      executionGeneration: current.executionGeneration,
       state: .applied,
       response: response,
       createdAtMillis: current.createdAtMillis,
@@ -294,6 +304,7 @@ enum AgentManagedResponseCodec {
         conversationId: object.string("conversation_id"),
         turnId: object.string("turn_id"),
         taskId: object.string("task_id"),
+        executionGeneration: max(object.int64("execution_generation"), 1),
         state: AgentManagedResponseState(rawValue: object.string("state")) ?? .pending,
         response: decodeResponse(object.object("response")),
         createdAtMillis: object.int64("created_at_millis"),
@@ -313,6 +324,7 @@ enum AgentManagedResponseCodec {
       "conversation_id": .string(record.conversationId),
       "turn_id": .string(record.turnId),
       "task_id": .string(record.taskId),
+      "execution_generation": .int(record.executionGeneration),
       "state": .string(record.state.rawValue),
       "response": record.response.map { .object(responseObject($0)) } ?? .null,
       "created_at_millis": .int(record.createdAtMillis),
@@ -329,6 +341,9 @@ enum AgentManagedResponseCodec {
       "turn_id": .string(response.turnId),
       "task_id": .string(response.taskId),
       "success": .bool(response.success),
+      "task_status": .string(response.taskStatus),
+      "execution_generation": .int(response.executionGeneration),
+      "status_sequence": .int(response.statusSequence),
       "input_tokens": .int(response.inputTokens),
       "output_tokens": .int(response.outputTokens),
       "cost_micros": .int(response.costMicros),
@@ -344,9 +359,11 @@ enum AgentManagedResponseCodec {
     let sourceMessageId = object.int64("source_message_id")
     let content = object.string("content")
     let richOutput = object.string("rich_output")
+    let taskStatus = AgentRemoteOutcomePolicy.normalizedStatus(object.string("task_status"))
     guard sourceMessageId > 0,
       !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        AgentRemoteOutcomePolicy.isFailure(taskStatus) else {
       return nil
     }
     return AgentConnectorResponse(
@@ -356,12 +373,17 @@ enum AgentManagedResponseCodec {
       conversationId: object.string("conversation_id"),
       turnId: object.string("turn_id"),
       taskId: object.string("task_id"),
-      success: object["success"] == nil ? true : object.bool("success"),
+      success: taskStatus.isEmpty
+        ? (object["success"] == nil ? true : object.bool("success"))
+        : taskStatus == "completed",
       inputTokens: object.int64("input_tokens"),
       outputTokens: object.int64("output_tokens"),
       costMicros: object.int64("cost_micros"),
       richOutputJson: richOutput,
-      receivedAtMillis: object.int64("received_at_millis")
+      receivedAtMillis: object.int64("received_at_millis"),
+      taskStatus: taskStatus,
+      executionGeneration: max(object.int64("execution_generation"), 1),
+      statusSequence: object["status_sequence"] == nil ? -1 : object.int64("status_sequence")
     )
   }
 }

@@ -2,6 +2,34 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRunRecoveryCoordinatorTests: XCTestCase {
+  func testRecoveryWakeCoalescesConcurrentEventsAndRetainsOfflineWake() async throws {
+    let firstStarted = expectation(description: "first recovery started")
+    let passesFinished = expectation(description: "coalesced recovery passes finished")
+    passesFinished.expectedFulfillmentCount = 2
+    let counter = RecoveryWakeCounter()
+    let coordinator = AgentRecoveryWakeCoordinator {
+      let count = counter.increment()
+      if count == 1 {
+        firstStarted.fulfill()
+        try await Task.sleep(nanoseconds: 80_000_000)
+      }
+      passesFinished.fulfill()
+    }
+
+    coordinator.request(isConnected: false)
+    XCTAssertTrue(coordinator.hasPendingWake)
+    XCTAssertFalse(coordinator.isRunning)
+    coordinator.connectionChanged(true)
+    await fulfillment(of: [firstStarted], timeout: 1)
+    coordinator.request()
+    coordinator.request()
+    coordinator.request()
+    await fulfillment(of: [passesFinished], timeout: 2)
+
+    XCTAssertEqual(counter.value, 2)
+    XCTAssertFalse(coordinator.hasPendingWake)
+  }
+
   func testProcessRecreationReconnectsRemoteCursorCheckpointAndToolState() async throws {
     let workspaceStore = InMemoryAgentWorkspaceStore(clock: { 2_000 })
     _ = try workspaceStore.upsert(AgentWorkspace(
@@ -184,6 +212,24 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
       type: type,
       sequence: sequence
     )
+  }
+}
+
+private final class RecoveryWakeCounter {
+  private let lock = NSLock()
+  private var count = 0
+
+  func increment() -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    count += 1
+    return count
+  }
+
+  var value: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return count
   }
 }
 

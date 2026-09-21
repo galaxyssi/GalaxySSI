@@ -3,6 +3,81 @@ import XCTest
 
 @MainActor
 final class AgentProviderHealthRecoveryTests: XCTestCase {
+  func testProviderAttemptJournalRestoresStructuredFactsWithoutContent() throws {
+    let suiteName = "AgentProviderAttemptJournalTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defaults.removePersistentDomain(forName: suiteName)
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let identity = AgentProviderAttemptReport(
+      sourceMessageId: "message-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      taskId: "task-1",
+      actionId: "action-1"
+    )
+    let eventStore = UserDefaultsAgentRunEventStore(
+      defaults: defaults,
+      storageKey: "provider-attempt-events"
+    )
+    let journal = AgentProviderAttemptJournal(store: eventStore, identity: identity)
+    let tracker = AgentProviderAttemptTracker(report: identity) { journal.checkpoint($0) }
+
+    tracker.start(
+      requestId: "request-1",
+      resourceId: "cloud:deepseek",
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      nowMillis: 1_000
+    )
+    tracker.progress("connected", elapsedMillis: 20, httpStatus: 200)
+    tracker.progress("first_output", elapsedMillis: 80)
+    tracker.finish(elapsedMillis: 150)
+    journal.finish(tracker.report)
+
+    let restored = try XCTUnwrap(journal.restore())
+    XCTAssertEqual(restored, tracker.report)
+    XCTAssertEqual(restored.attempts.single?.state, "completed")
+    XCTAssertEqual(restored.attempts.single?.httpStatus, 200)
+    let serialized = String(data: try JSONEncoder().encode(restored), encoding: .utf8) ?? ""
+    XCTAssertFalse(serialized.contains("prompt"))
+    XCTAssertFalse(serialized.contains("api_key"))
+  }
+
+  func testProviderAttemptReportMergesOuterFallbackWithoutReopeningFailedResource() {
+    let report = AgentProviderAttemptReport(
+      sourceMessageId: "message-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      taskId: "task-1",
+      actionId: "action-1",
+      attempts: [
+        AgentProviderAttemptRecord(
+          ordinal: 1,
+          requestId: "request-1",
+          resourceId: "cloud:deepseek",
+          providerId: "deepseek",
+          modelId: "deepseek-chat",
+          startedAtMillis: 1_000,
+          elapsedMillis: 50,
+          state: "failed",
+          failureClass: "authorization",
+          retryable: false,
+          httpStatus: 401
+        )
+      ]
+    )
+
+    let metadata = report.mergingMetadata([
+      "remaining_fallback_ids": "cloud:deepseek,cloud:qwen"
+    ])
+
+    XCTAssertEqual(metadata["resource_id"], "cloud:deepseek")
+    XCTAssertEqual(metadata["resolved_model_id"], "deepseek-chat")
+    XCTAssertEqual(metadata["provider_failure_class"], "authorization")
+    XCTAssertEqual(metadata["remaining_fallback_ids"], "cloud:qwen")
+    XCTAssertEqual(metadata["non_retriable"], "true")
+  }
+
   func testNewerConfigurationRecoversOlderProviderCircuit() {
     let ledger = InMemoryAgentProviderHealthLedger()
     let registration = deepSeekRegistration()

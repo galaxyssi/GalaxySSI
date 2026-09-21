@@ -2,7 +2,11 @@ import SwiftUI
 
 extension AgentHomeView {
   var agentOutput: some View {
-    GalaxySSIAgentHomeTranscriptView(
+    let replyRuntimeIndex = AgentReplyRuntimeIndex(
+      remoteTasks: Array(coordinator.remoteAgentTaskStatuses.values),
+      voiceRuns: voiceAgentRunRecovery.activeSnapshots
+    )
+    return GalaxySSIAgentHomeTranscriptView(
       visibleMessageLimit: $visibleAgentMessageLimit,
       olderTranscriptAnchor: $olderTranscriptAnchor,
       transcriptTopLoadTriggered: $transcriptTopLoadTriggered,
@@ -150,8 +154,18 @@ extension AgentHomeView {
               t: t,
               mergedSourceLabel: { mergedSourceLabel(for: $0) },
               agentTask: { agentTask(for: $0) },
-              remoteAgentTask: { remoteAgentTask(for: $0) },
-              voiceAgentRun: { voiceAgentRun(for: $0) },
+              remoteAgentTask: {
+                replyRuntimeIndex.remoteTask(
+                  for: $0,
+                  activeConversationId: store.activeAgentConversationId
+                )
+              },
+              voiceAgentRun: {
+                replyRuntimeIndex.voiceRun(
+                  for: $0,
+                  activeConversationId: store.activeAgentConversationId
+                )
+              },
               remoteAgentTimelineLine: remoteAgentTimelineLine,
               executionDuration: { startedAtMillis, updatedAtMillis in
                 executionDuration(
@@ -184,7 +198,19 @@ extension AgentHomeView {
               onDeleteMessage: { message in
                 store.deleteMessage(message.id, contactId: contact.id)
               },
-              onRetryMessage: retryAgentMessage
+              onRetryMessage: retryAgentMessage,
+              onMessageVisible: { message in
+                guard !message.isMine, !message.isSystem else { return }
+                let localTask = agentTask(for: message)
+                let remoteTask = remoteAgentTask(for: message)
+                let taskId = localTask?.taskId ?? remoteTask?.taskId ?? ""
+                let final = localTask.map {
+                  [.completed, .failed, .cancelled, .blocked].contains($0.phase)
+                } ?? remoteTask.map {
+                  AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+                } ?? false
+                AgentLatencyTelemetry.shared.visible(taskId: taskId, final: final)
+              }
             )
             ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
               AgentReplyWaitingIndicatorView()

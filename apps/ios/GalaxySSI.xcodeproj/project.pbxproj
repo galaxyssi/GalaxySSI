@@ -292,6 +292,9 @@
     A10000000000000000000015 /* GalaxySSIContactExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* GalaxySSIContactExchangeTests.swift */; };
     A10000000000000000000480 /* GalaxySSILinkOutboxPayloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000480 /* GalaxySSILinkOutboxPayloadStore.swift */; };
     A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */; };
+    A1B270100000000000000001 /* AgentBlobProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B270100000000000000001 /* AgentBlobProtocol.swift */; };
+    A1B270100000000000000002 /* AgentBlobRelayConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B270100000000000000002 /* AgentBlobRelayConfiguration.swift */; };
+    A1B270100000000000000003 /* AgentBlobTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B270100000000000000003 /* AgentBlobTransfer.swift */; };
     A1F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift */; };
     A1F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift */; };
     A1F249800000000000000001 /* GalaxySSIAttachmentAtRestCipher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F249800000000000000001 /* GalaxySSIAttachmentAtRestCipher.swift */; };
@@ -493,6 +496,7 @@
     A10000000000000000000618 /* VoiceLatencyPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000618 /* VoiceLatencyPrivacy.swift */; };
     A10000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift */; };
     A10000000000000000000620 /* VoiceLatencyTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000620 /* VoiceLatencyTelemetry.swift */; };
+    F28070000000000000000001 /* AgentLatencyTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28070000000000000000002 /* AgentLatencyTelemetry.swift */; };
     A10000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */; };
     A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000622 /* VoicePcmCaptureModels.swift */; };
     A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000623 /* VoicePcmRingBuffer.swift */; };
@@ -1273,6 +1277,9 @@
     A20000000000000000000017 /* GalaxySSIContactExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactExchangeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000480 /* GalaxySSILinkOutboxPayloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILinkOutboxPayloadStore.swift; sourceTree = "<group>"; };
     A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOutboundAttachmentTransfer.swift; sourceTree = "<group>"; };
+    A2B270100000000000000001 /* AgentBlobProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobProtocol.swift; sourceTree = "<group>"; };
+    A2B270100000000000000002 /* AgentBlobRelayConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobRelayConfiguration.swift; sourceTree = "<group>"; };
+    A2B270100000000000000003 /* AgentBlobTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobTransfer.swift; sourceTree = "<group>"; };
     A2F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIncomingAttachmentTransfer.swift; sourceTree = "<group>"; };
     A2F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerVoiceMessageAudio.swift; sourceTree = "<group>"; };
     A2F249800000000000000001 /* GalaxySSIAttachmentAtRestCipher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAttachmentAtRestCipher.swift; sourceTree = "<group>"; };
@@ -1614,6 +1621,7 @@
     A20000000000000000000618 /* VoiceLatencyPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyPrivacy.swift; sourceTree = "<group>"; };
     A20000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyDiagnosticsStore.swift; sourceTree = "<group>"; };
     A20000000000000000000620 /* VoiceLatencyTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTelemetry.swift; sourceTree = "<group>"; };
+    F28070000000000000000002 /* AgentLatencyTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLatencyTelemetry.swift; sourceTree = "<group>"; };
     A20000000000000000000622 /* VoicePcmCaptureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmCaptureModels.swift; sourceTree = "<group>"; };
     A20000000000000000000623 /* VoicePcmRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBuffer.swift; sourceTree = "<group>"; };
     A20000000000000000000624 /* VoiceActivityDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivityDetector.swift; sourceTree = "<group>"; };
@@ -2299,6 +2307,7 @@
         A20000000000000000000618 /* VoiceLatencyPrivacy.swift */,
         A20000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift */,
         A20000000000000000000620 /* VoiceLatencyTelemetry.swift */,
+        F28070000000000000000002 /* AgentLatencyTelemetry.swift */,
         A20000000000000000000622 /* VoicePcmCaptureModels.swift */,
         A20000000000000000000623 /* VoicePcmRingBuffer.swift */,
         A20000000000000000000624 /* VoiceActivityDetector.swift */,
@@ -2469,6 +2478,9 @@
         A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */,
         A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */,
         A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */,
+        A2B270100000000000000001 /* AgentBlobProtocol.swift */,
+        A2B270100000000000000002 /* AgentBlobRelayConfiguration.swift */,
+        A2B270100000000000000003 /* AgentBlobTransfer.swift */,
         A2F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift */,
         A2F248600000000000000002 /* GalaxySSIVisibleConversationTracker.swift */,
         A2F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift */,
@@ -3357,6 +3369,7 @@
         A10000000000000000000618 /* VoiceLatencyPrivacy.swift in Sources */,
         A10000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift in Sources */,
         A10000000000000000000620 /* VoiceLatencyTelemetry.swift in Sources */,
+        F28070000000000000000001 /* AgentLatencyTelemetry.swift in Sources */,
         A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */,
         A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */,
         A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */,
@@ -3588,6 +3601,9 @@
         A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */,
         A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */,
         A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */,
+        A1B270100000000000000001 /* AgentBlobProtocol.swift in Sources */,
+        A1B270100000000000000002 /* AgentBlobRelayConfiguration.swift in Sources */,
+        A1B270100000000000000003 /* AgentBlobTransfer.swift in Sources */,
         A1F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift in Sources */,
         A1F248600000000000000002 /* GalaxySSIVisibleConversationTracker.swift in Sources */,
         A1F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift in Sources */,

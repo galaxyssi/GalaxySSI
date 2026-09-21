@@ -127,10 +127,18 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readLaunchIntent(intent); render() }
     private fun readLaunchIntent(intent: Intent, acceptVoice: Boolean = true) {
+        if (acceptVoice) {
+            handler.removeCallbacks(openVoiceEntry)
+            voiceEntryScheduled = false
+            voiceEntryPending = false
+        }
         if (acceptVoice && WatchVoiceEntryPolicy.requestsVoice(intent.action,
                 intent.component?.className == "$packageName.VoiceEntry",
-                repo.store.voiceOnOpen, intent.hasExtra("task_id"))) {
+                intent.hasExtra("task_id"))) {
             voiceEntryPending = true
+            // Consume this launch request; subsequent task recreation is an ordinary open.
+            intent.action = Intent.ACTION_MAIN
+            intent.component = android.content.ComponentName(this, MainActivity::class.java)
             page = "home"
             setTurnScreenOn(true)
         }
@@ -637,8 +645,6 @@ class MainActivity : Activity() {
         label(getString(R.string.web_search_description), 12)
         button(R.string.web_sources_title) { navigate("web-sources") }
         toggle(R.string.vibrate, repo.store.vibration) { repo.store.vibration = it }
-        toggle(R.string.voice_on_open, repo.store.voiceOnOpen) { repo.store.voiceOnOpen = it }
-        label(getString(R.string.voice_on_open_help), 12)
         button(R.string.voice_entry_try) { voiceEntryPending = true; page = "home"; render() }
         toggle(R.string.samsung_confirm_toggle, repo.store.samsungAutoConfirm) {
             repo.store.samsungAutoConfirm = it

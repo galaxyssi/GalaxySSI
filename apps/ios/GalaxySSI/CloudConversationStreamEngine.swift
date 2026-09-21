@@ -37,6 +37,7 @@ protocol CloudConversationStreaming {
     images: [CloudImagePayload],
     requestId: String
   ) -> AsyncThrowingStream<ModelStreamEvent, Error>
+  func cancel(requestId: String, reason: ModelStreamCancelReason) async
 }
 
 extension CloudConversationStreaming {
@@ -49,6 +50,8 @@ extension CloudConversationStreaming {
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     streamConversation(contact: contact, store: store, turns: turns, requestId: requestId)
   }
+
+  func cancel(requestId: String, reason: ModelStreamCancelReason) async {}
 }
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
