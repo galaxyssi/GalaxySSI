@@ -346,7 +346,7 @@ final class MessageCoordinator: ObservableObject {
       Task { @MainActor in
         guard let self else { return }
         self.transportConnected = connected
-        self.pendingReplyRecoveryWake.connectionChanged(connected)
+        self.pendingReplyRecoveryWake.connectionChanged(false)
         if connected {
           self.requestConnectorStatuses()
           Task {
@@ -367,16 +367,20 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.deliveryStore.makePendingImmediatelyRetryable()
         self.scheduleOutboxFlush(after: 0)
-        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
+        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
     self.mqttClient.onRelationshipSubscriptionsReady = { [weak self] in
       Task { @MainActor in
         guard let self else { return }
         self.replayApprovedPhoneContactDecisionsOnce()
-        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
+        self.pendingReplyRecoveryWake.connectionChanged(self.mqttClient.isConnected)
+        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
         Task { await self.refreshBlobArtifactCapabilities() }
       }
+    }
+    self.mqttClient.onRelationshipSubscriptionReadinessChanged = { [weak self] ready in
+      self?.pendingReplyRecoveryWake.connectionChanged(ready)
     }
   }
 
@@ -404,7 +408,7 @@ final class MessageCoordinator: ObservableObject {
       rendezvousExpirations: phoneRendezvousExpirations()
     )
     installForegroundRecoveryWake()
-    pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
+    pendingReplyRecoveryWake.request(isConnected: mqttClient.relationshipSubscriptionsReady)
     Task {
       await blobOutgoingCoordinator.wake()
       await blobArtifactReceiver.wake()
@@ -417,12 +421,16 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func resumePendingAgentDelivery() {
+    guard mqttClient.relationshipSubscriptionsReady else {
+      pendingReplyRecoveryWake.request(isConnected: false)
+      return
+    }
     let hasMoreIncoming = replayPendingIncoming()
     let hasMoreConnectorResponses = replayPendingConnectorResponses()
     resumePendingIncomingAttachmentDownloads()
     scheduleOutboxFlush(after: 0)
     if hasMoreIncoming || hasMoreConnectorResponses {
-      pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
+      pendingReplyRecoveryWake.request(isConnected: mqttClient.relationshipSubscriptionsReady)
     }
   }
 
@@ -435,7 +443,7 @@ final class MessageCoordinator: ObservableObject {
     ) { [weak self] _ in
       Task { @MainActor in
         guard let self else { return }
-        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
+        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
       }
     }
   }
@@ -10285,7 +10293,7 @@ final class MessageCoordinator: ObservableObject {
     )
 
     if silentStatus {
-      pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
+      pendingReplyRecoveryWake.request(isConnected: mqttClient.relationshipSubscriptionsReady)
     }
 
     // Presence heartbeats update route and capability state without creating
