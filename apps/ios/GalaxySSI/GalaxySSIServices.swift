@@ -9257,6 +9257,11 @@ final class MessageCoordinator: ObservableObject {
       incoming = appended
     }
     onIncomingMessage?(incoming)
+    hydrateBlobArtifactPresentation(
+      message: incoming,
+      contactId: displayContactId,
+      sourceMessageId: appPayload.string("source_message_id").ifBlank(remoteMessageId)
+    )
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
@@ -9288,6 +9293,50 @@ final class MessageCoordinator: ObservableObject {
         body: notificationPreview(content: content, payload: appPayload),
         userInfo: notificationUserInfo(for: displayContactId)
       )
+    }
+  }
+
+  private func hydrateBlobArtifactPresentation(
+    message: ChatMessage,
+    contactId: String,
+    sourceMessageId: String
+  ) {
+    guard !message.isMine, !sourceMessageId.isEmpty else { return }
+    let blocks = AgentRichContentCodec.decode(message.richOutputJson)
+    let transferIds = Set(
+      blocks.compactMap { block in
+        let transferId = block.metadata["transfer_id"] ?? ""
+        let artifactURI = block.metadata["artifact_source_uri"] ?? block.uri
+        guard AgentBlobProtocol.validHex(transferId, bytes: 32),
+              artifactURI.hasPrefix("galaxyssi-artifact://blob/") else {
+          return nil
+        }
+        return transferId
+      }
+    )
+    guard !transferIds.isEmpty else { return }
+    let contactIds = Set(
+      ([contactId] + blocks.compactMap { $0.metadata["desktop_id"] })
+        .filter { !$0.isEmpty }
+    )
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let presentations = await blobArtifactReceiver.terminalPresentations(
+        contactIds: contactIds,
+        sourceMessageId: sourceMessageId,
+        transferIds: transferIds
+      )
+      for presentation in presentations {
+        guard let manifest = try? JSONSerialization.jsonObject(
+          with: presentation.manifestData
+        ) as? [String: Any] else { continue }
+        applyBlobArtifactPresentation(
+          manifest: manifest,
+          state: presentation.state,
+          progress: presentation.state == GalaxySSIPeerAttachmentTransferProgress.complete ? 100 : 0,
+          errorCode: presentation.errorCode
+        )
+      }
     }
   }
 
@@ -10020,6 +10069,11 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     onIncomingMessage?(incoming)
+    hydrateBlobArtifactPresentation(
+      message: incoming,
+      contactId: contactId,
+      sourceMessageId: messageId
+    )
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }

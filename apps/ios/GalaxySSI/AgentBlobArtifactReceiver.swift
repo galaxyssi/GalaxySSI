@@ -1,6 +1,12 @@
 import CryptoKit
 import Foundation
 
+struct AgentBlobArtifactTerminalPresentation: Sendable {
+  var manifestData: Data
+  var state: String
+  var errorCode: String
+}
+
 enum AgentBlobArtifactContract {
   static let offerType = "artifact_blob_offer"
   static let receiptType = "artifact_blob_receipt"
@@ -167,6 +173,16 @@ actor AgentBlobArtifactReceiver {
     var nextAttemptAtMillis: Int64
   }
 
+  private struct TerminalEvent: Codable, Equatable {
+    var transferId: String
+    var contactId: String
+    var sourceMessageId: String
+    var manifestData: Data
+    var state: String
+    var errorCode: String
+    var storedAtMillis: Int64
+  }
+
   typealias IdentityProvider = @Sendable (String) async -> Identity?
   typealias Progress = @Sendable ([String: Any], Int) async -> Void
   typealias Completion = @Sendable ([String: Any], Bool, String) async -> Void
@@ -174,6 +190,7 @@ actor AgentBlobArtifactReceiver {
 
   private let rootURL: URL
   private let journalURL: URL
+  private let terminalEventsURL: URL
   private let artifactStore: AgentDesktopArtifactStore
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let identityProvider: IdentityProvider
@@ -196,6 +213,7 @@ actor AgentBlobArtifactReceiver {
     ).first ?? FileManager.default.temporaryDirectory
     rootURL = support.appendingPathComponent("blob-artifact-receives-v1", isDirectory: true)
     journalURL = rootURL.appendingPathComponent("journal.saenc", isDirectory: false)
+    terminalEventsURL = rootURL.appendingPathComponent("terminal-events.saenc", isDirectory: false)
     self.artifactStore = artifactStore
     self.cipher = cipher
     self.identityProvider = identityProvider
@@ -255,6 +273,31 @@ actor AgentBlobArtifactReceiver {
     drainTask = Task { await drain() }
   }
 
+  func terminalPresentations(
+    contactIds: Set<String>,
+    sourceMessageId: String,
+    transferIds: Set<String>
+  ) -> [AgentBlobArtifactTerminalPresentation] {
+    guard !contactIds.isEmpty, !sourceMessageId.isEmpty, !transferIds.isEmpty else { return [] }
+    return ((try? loadTerminalEvents()) ?? []).compactMap { event in
+      guard contactIds.contains(event.contactId),
+            event.sourceMessageId == sourceMessageId,
+            transferIds.contains(event.transferId),
+            let manifest = try? JSONSerialization.jsonObject(with: event.manifestData) as? [String: Any],
+            (try? AgentBlobArtifactContract.validateManifest(manifest)) != nil,
+            manifest.string("transfer_id") == event.transferId,
+            contactIds.contains(manifest.string("contact_id")),
+            manifest.string("source_message_id") == sourceMessageId else {
+        return nil
+      }
+      return AgentBlobArtifactTerminalPresentation(
+        manifestData: event.manifestData,
+        state: event.state,
+        errorCode: event.errorCode
+      )
+    }
+  }
+
   private func drain() async {
     defer { drainTask = nil }
     while !Task.isCancelled {
@@ -279,7 +322,9 @@ actor AgentBlobArtifactReceiver {
         var latest = (try? loadJobs()) ?? []
         if isTerminal(code) {
           latest.removeAll { $0.transferId == job.transferId }
-          await completion((try? manifest(job)) ?? [:], false, code)
+          let value = (try? manifest(job)) ?? [:]
+          try? storeTerminalEvent(manifest: value, completed: false, errorCode: code)
+          await completion(value, false, code)
         } else if let current = latest.firstIndex(where: { $0.transferId == job.transferId }) {
           latest[current].attempts += 1
           let seconds = min(300, 2 << min(latest[current].attempts, 7))
@@ -342,6 +387,7 @@ actor AgentBlobArtifactReceiver {
       throw AgentBlobFailure.invalid("plaintext_hash_mismatch")
     }
     try artifactStore.ingestBlobArtifact(manifest: manifest, plaintext: plaintext)
+    try storeTerminalEvent(manifest: manifest, completed: true, errorCode: "")
     await completion(manifest, true, "")
     guard await publishReceipt(AgentBlobArtifactContract.storedReceipt(manifest), job.desktopId) else {
       throw AgentBlobFailure.invalid("artifact_blob_receipt_pending")
@@ -369,6 +415,50 @@ actor AgentBlobArtifactReceiver {
       try JSONEncoder().encode(jobs),
       to: journalURL,
       purpose: "blob-artifact-receive-journal-v1"
+    )
+  }
+
+  private func storeTerminalEvent(
+    manifest: [String: Any],
+    completed: Bool,
+    errorCode: String
+  ) throws {
+    let value = try AgentBlobArtifactContract.validateManifest(manifest)
+    let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    var events = try loadTerminalEvents()
+    let transferId = value.string("transfer_id")
+    if let index = events.firstIndex(where: { $0.transferId == transferId }) {
+      if events[index].state == GalaxySSIPeerAttachmentTransferProgress.complete {
+        return
+      }
+      events.remove(at: index)
+    }
+    events.append(TerminalEvent(
+      transferId: transferId,
+      contactId: value.string("contact_id"),
+      sourceMessageId: value.string("source_message_id"),
+      manifestData: data,
+      state: completed
+        ? GalaxySSIPeerAttachmentTransferProgress.complete
+        : GalaxySSIPeerAttachmentTransferProgress.failed,
+      errorCode: errorCode,
+      storedAtMillis: nowMillis()
+    ))
+    if events.count > 1_024 {
+      events = Array(events.sorted { $0.storedAtMillis > $1.storedAtMillis }.prefix(1_024))
+    }
+    try cipher.write(
+      try JSONEncoder().encode(events),
+      to: terminalEventsURL,
+      purpose: "blob-artifact-terminal-events-v1"
+    )
+  }
+
+  private func loadTerminalEvents() throws -> [TerminalEvent] {
+    guard FileManager.default.fileExists(atPath: terminalEventsURL.path) else { return [] }
+    return try JSONDecoder().decode(
+      [TerminalEvent].self,
+      from: cipher.read(from: terminalEventsURL, purpose: "blob-artifact-terminal-events-v1")
     )
   }
 
