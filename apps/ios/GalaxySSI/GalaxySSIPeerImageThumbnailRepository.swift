@@ -34,12 +34,12 @@ final class GalaxySSIPeerImageThumbnailRepository {
   private let thumbnailWriteLock = NSLock()
   private var pending: [String: [(Data?) -> Void]] = [:]
   private var generation = 0
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let cipher: any GalaxySSILocalAttachmentStoring
   private let fileManager: FileManager
   private var memoryWarningObserver: NSObjectProtocol?
 
   init(
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared,
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared,
     fileManager: FileManager = .default
   ) {
     self.cipher = cipher
@@ -143,7 +143,7 @@ final class GalaxySSIPeerImageThumbnailRepository {
     guard let url = URL(string: block.uri),
           url.isFileURL,
           fileManager.fileExists(atPath: url.path) else { return nil }
-    if block.metadata["storage"] == "attachment_aes_256_gcm",
+    if ["attachment_aes_256_gcm", "app_private_file"].contains(block.metadata["storage"] ?? ""),
        let purpose = block.metadata["encryption_purpose"],
        !purpose.isEmpty {
       return try? cipher.read(from: url, purpose: purpose)
@@ -152,7 +152,7 @@ final class GalaxySSIPeerImageThumbnailRepository {
   }
 
   private func storedThumbnailURL(for block: AgentRichBlock) -> URL? {
-    guard block.metadata["storage"] == "attachment_aes_256_gcm",
+    guard ["attachment_aes_256_gcm", "app_private_file"].contains(block.metadata["storage"] ?? ""),
           let url = URL(string: block.uri),
           url.isFileURL,
           fileManager.fileExists(atPath: url.path) else { return nil }

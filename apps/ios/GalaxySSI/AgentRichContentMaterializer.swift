@@ -8,13 +8,13 @@ final class AgentRichContentMaterializer {
 
   private let directoryURL: URL
   private let fileManager: FileManager
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let cipher: any GalaxySSILocalAttachmentStoring
   private let lock = NSLock()
 
   init(
     directoryURL: URL,
     fileManager: FileManager = .default,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.directoryURL = directoryURL.standardizedFileURL
     self.fileManager = fileManager
@@ -24,7 +24,7 @@ final class AgentRichContentMaterializer {
   convenience init(
     applicationSupportDirectory: URL,
     fileManager: FileManager = .default,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.init(
       directoryURL: applicationSupportDirectory
@@ -94,7 +94,7 @@ final class AgentRichContentMaterializer {
       metadata: block.metadata.merging([
         "size_bytes": String(data.count),
         "sha256": digest,
-        "storage": "attachment_aes_256_gcm",
+        "storage": "app_private_file",
         "encryption_purpose": purpose,
         "display_extension": extensionFor(block)
       ]) { _, new in new }

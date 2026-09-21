@@ -33,13 +33,13 @@ struct GalaxySSIPeerMessageAttachmentStore {
   private let rootURL: URL
   private let cacheRootURLs: [URL]
   private let fileManager: FileManager
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let cipher: any GalaxySSILocalAttachmentStoring
 
   init(
     rootURL: URL? = nil,
     cacheRootURLs: [URL]? = nil,
     fileManager: FileManager = .default,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.fileManager = fileManager
     self.cipher = cipher

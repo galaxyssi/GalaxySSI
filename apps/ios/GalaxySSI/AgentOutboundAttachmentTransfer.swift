@@ -71,7 +71,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
   var requiresValidatedNetwork: Bool
   var scope: AgentAttachmentTransferScope
   fileprivate var chunkDirectoryURL: URL
-  fileprivate var cipher: GalaxySSIAttachmentAtRestCipher
+  fileprivate var cipher: any GalaxySSILocalAttachmentStoring
 
   func descriptor() -> [String: Any] {
     [
@@ -327,14 +327,14 @@ final class AgentOutboundAttachmentTransferStore {
   private let rootURL: URL
   private let fileManager: FileManager
   private let now: () -> Date
-  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let cipher: any GalaxySSILocalAttachmentStoring
   private let lock = NSLock()
 
   init(
     rootURL: URL? = nil,
     fileManager: FileManager = .default,
     now: @escaping () -> Date = Date.init,
-    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+    cipher: any GalaxySSILocalAttachmentStoring = GalaxySSILocalAttachmentStore.shared
   ) {
     self.fileManager = fileManager
     self.now = now
