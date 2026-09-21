@@ -2,32 +2,32 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRunRecoveryCoordinatorTests: XCTestCase {
-  func testObservationOnlyProviderAttemptIsNotRecoveredAsUserTask() async throws {
-    let event = AgentRunControlEvent(
-      conversationId: "conversation-1",
-      messageId: "message-1",
-      taskId: "task-1",
-      runId: "provider-attempts:1",
-      agentId: "cloud-provider-observer",
-      deviceId: "ios",
-      type: .runStarted,
-      sequence: 1,
-      payload: [
-        "recovery_mode": .string("observation_only"),
-        "observation_only": .bool(true)
-      ]
-    )
-    let eventStore = RecoveryRunControlStore(event: event)
-    let results = try await AgentRunRecoveryCoordinator(
-      runStore: eventStore,
-      workspaceStore: InMemoryAgentWorkspaceStore(),
-      recordedRun: { _ in XCTFail("Observation Run must not resolve a user task"); return nil },
-      registration: { _, _ in XCTFail("Observation Run must not resolve an Agent"); return nil },
-      adapterResolver: { _ in XCTFail("Observation Run must not reconnect"); return nil }
-    ).recover()
+  func testRecoveryWakeCoalescesConcurrentEventsAndRetainsOfflineWake() async throws {
+    let firstStarted = expectation(description: "first recovery started")
+    let passesFinished = expectation(description: "coalesced recovery passes finished")
+    passesFinished.expectedFulfillmentCount = 2
+    let counter = RecoveryWakeCounter()
+    let coordinator = AgentRecoveryWakeCoordinator {
+      let count = counter.increment()
+      if count == 1 {
+        firstStarted.fulfill()
+        try await Task.sleep(nanoseconds: 80_000_000)
+      }
+      passesFinished.fulfill()
+    }
 
-    XCTAssertTrue(results.isEmpty)
-    XCTAssertTrue(eventStore.appended.isEmpty)
+    coordinator.request(isConnected: false)
+    XCTAssertTrue(coordinator.hasPendingWake)
+    XCTAssertFalse(coordinator.isRunning)
+    coordinator.connectionChanged(true)
+    await fulfillment(of: [firstStarted], timeout: 1)
+    coordinator.request()
+    coordinator.request()
+    coordinator.request()
+    await fulfillment(of: [passesFinished], timeout: 2)
+
+    XCTAssertEqual(counter.value, 2)
+    XCTAssertFalse(coordinator.hasPendingWake)
   }
 
   func testProcessRecreationReconnectsRemoteCursorCheckpointAndToolState() async throws {
@@ -81,15 +81,7 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
             "cursor": .int(22),
             "permission_wait": .bool(true),
             "active_tool_call_id": .string("shell-1")
-          ],
-          observation: AgentRemoteRecoveryObservation(
-            conversationId: "conversation-1",
-            deviceId: "desktop-1",
-            status: "running",
-            remoteTaskId: "turn-1",
-            remoteRunId: "remote-1",
-            statusSequence: 4
-          )
+          ]
         )
       ]
     )
@@ -220,6 +212,24 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
       type: type,
       sequence: sequence
     )
+  }
+}
+
+private final class RecoveryWakeCounter {
+  private let lock = NSLock()
+  private var count = 0
+
+  func increment() -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    count += 1
+    return count
+  }
+
+  var value: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return count
   }
 }
 

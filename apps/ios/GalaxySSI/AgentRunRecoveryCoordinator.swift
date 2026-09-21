@@ -487,6 +487,107 @@ final class AgentRunRecoveryCoordinator {
   private static let maxWriteAttempts = 4
 }
 
+final class AgentRecoveryWakeCoordinator {
+  private let lock = NSLock()
+  private let recover: () async throws -> Void
+  private let failed: (Error) -> Void
+  private var connected = false
+  private var pending = false
+  private var worker: Task<Void, Never>?
+  private var workerId: UUID?
+
+  init(
+    recover: @escaping () async throws -> Void,
+    failed: @escaping (Error) -> Void = { _ in }
+  ) {
+    self.recover = recover
+    self.failed = failed
+  }
+
+  func connectionChanged(_ value: Bool) {
+    let workerId = locked { () -> UUID? in
+      if value && !connected { pending = true }
+      connected = value
+      return claimWorkerLocked()
+    }
+    if let workerId { launchWorker(workerId) }
+  }
+
+  func request(isConnected: Bool? = nil) {
+    let workerId = locked { () -> UUID? in
+      if let isConnected { connected = isConnected }
+      pending = true
+      return claimWorkerLocked()
+    }
+    if let workerId { launchWorker(workerId) }
+  }
+
+  var isRunning: Bool { locked { workerId != nil } }
+  var hasPendingWake: Bool { locked { pending } }
+
+  func cancel() {
+    let active = locked { () -> Task<Void, Never>? in
+      let active = worker
+      worker = nil
+      workerId = nil
+      pending = false
+      return active
+    }
+    active?.cancel()
+  }
+
+  private func claimWorkerLocked() -> UUID? {
+    guard connected, pending, workerId == nil else { return nil }
+    let id = UUID()
+    workerId = id
+    return id
+  }
+
+  private func launchWorker(_ id: UUID) {
+    let task = Task { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled {
+        let shouldRecover = locked { () -> Bool in
+          guard connected, pending else { return false }
+          pending = false
+          return true
+        }
+        guard shouldRecover else { break }
+        do {
+          try await recover()
+        } catch is CancellationError {
+          break
+        } catch {
+          failed(error)
+        }
+      }
+      let restart = locked { () -> UUID? in
+        guard workerId == id else { return nil }
+        worker = nil
+        workerId = nil
+        return claimWorkerLocked()
+      }
+      if let restart { launchWorker(restart) }
+    }
+    let accepted = locked { () -> Bool in
+      guard workerId == id else { return false }
+      worker = task
+      return true
+    }
+    if !accepted { task.cancel() }
+  }
+
+  private func locked<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+
+  deinit {
+    worker?.cancel()
+  }
+}
+
 @MainActor
 final class AgentStartupRecoveryCoordinator: ObservableObject {
   @Published private(set) var isRecovering = false
