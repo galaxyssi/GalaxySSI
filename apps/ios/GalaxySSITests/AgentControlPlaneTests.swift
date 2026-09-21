@@ -2,6 +2,27 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testRemoteRecoveryObservationPreservesTerminalAndWaitingStates() {
+    func status(_ value: String) -> AgentWorkspaceStatus? {
+      AgentRemoteRecoveryObservation(
+        conversationId: "conversation",
+        deviceId: "desktop",
+        status: value,
+        remoteTaskId: "task",
+        remoteRunId: "run",
+        statusSequence: 1
+      ).workspaceStatus
+    }
+
+    XCTAssertEqual(status("running"), .running)
+    XCTAssertEqual(status("waiting_approval"), .waitingConfirmation)
+    XCTAssertEqual(status("paused"), .paused)
+    XCTAssertEqual(status("completed"), .waitingResponse)
+    XCTAssertEqual(status("failed"), .failed)
+    XCTAssertEqual(status("cancelled"), .cancelled)
+    XCTAssertNil(status("unknown"))
+  }
+
   func testAgentProtocolNegotiatorSelectsHighestCompatibleVersionAndCommonFeatures() {
     let local = AgentProtocolRange(
       preferred: "1.3",
