@@ -135,6 +135,8 @@ struct AgentModelToolLoopRequest {
   var turnId: String
   var taskId: String
   var workspaceId: String
+  var goalId: String
+  var clientRouteId: String
   var responseLanguage: String
   var messages: [AgentModelMessage]
   var budget: AgentModelToolLoopBudget
@@ -150,6 +152,8 @@ struct AgentModelToolLoopRequest {
     turnId: String,
     taskId: String,
     workspaceId: String,
+    goalId: String = "",
+    clientRouteId: String = "local",
     messages: [AgentModelMessage],
     budget: AgentModelToolLoopBudget = AgentModelToolLoopBudget(),
     callerId: String = "galaxyssi.mobile_model_tool_loop",
@@ -164,6 +168,8 @@ struct AgentModelToolLoopRequest {
     AgentModelToolLoopValidation.validateBoundId("Turn", turnId)
     AgentModelToolLoopValidation.validateBoundId("Task", taskId)
     AgentModelToolLoopValidation.validateBoundId("Workspace", workspaceId)
+    AgentModelToolLoopValidation.validateBoundId("Goal", goalId.ifBlank(taskId))
+    AgentModelToolLoopValidation.validateBoundId("Client route", clientRouteId.ifBlank("local"))
     precondition(!messages.isEmpty)
     precondition(!callerId.isBlank)
     precondition(grantedPermissions.allSatisfy { !$0.isBlank })
@@ -173,6 +179,8 @@ struct AgentModelToolLoopRequest {
     self.turnId = turnId
     self.taskId = taskId
     self.workspaceId = workspaceId
+    self.goalId = goalId.ifBlank(taskId)
+    self.clientRouteId = clientRouteId.ifBlank("local")
     self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
     self.messages = messages
     self.budget = budget

@@ -1343,6 +1343,133 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(serialized.contains(#""tool_id":"galaxyssi.test.snapshot.replay""#))
   }
 
+  func testAgentNativeEffectJournalScopesIdenticalKeysToTheirRunIdentity() throws {
+    var executions = 0
+    let descriptor = try nativeToolDescriptor(
+      "galaxyssi.test.scoped.effect",
+      idempotency: .idempotencyKeyRequired
+    )
+    let registry = try AgentNativeToolRegistry(replayStore: InMemoryAgentNativeToolReplayStore())
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.effect"),
+        executor: { _ in
+          executions += 1
+          return .success(output: ["execution": .int(Int64(executions))])
+        }
+      ))
+    let base = AgentNativeToolInvocationContext(
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "effect",
+      attributes: ["client_route_id": "phone", "goal_id": "goal", "task_id": "task"]
+    )
+    let contexts = [
+      base,
+      AgentNativeToolInvocationContext(sessionId: "other", conversationId: "conversation", turnId: "turn", idempotencyKey: "effect", attributes: base.attributes),
+      AgentNativeToolInvocationContext(sessionId: "session", conversationId: "other", turnId: "turn", idempotencyKey: "effect", attributes: base.attributes),
+      AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "other", idempotencyKey: "effect", attributes: base.attributes),
+      AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn", idempotencyKey: "effect", attributes: base.attributes.merging(["task_id": "other"]) { _, new in new }),
+      AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn", idempotencyKey: "effect", attributes: base.attributes.merging(["goal_id": "other"]) { _, new in new }),
+      AgentNativeToolInvocationContext(sessionId: "session", conversationId: "conversation", turnId: "turn", idempotencyKey: "effect", attributes: base.attributes.merging(["client_route_id": "other"]) { _, new in new })
+    ]
+
+    for context in contexts {
+      let first = registry.invoke(descriptor.id, input: [:], context: context)
+      var replayContext = context
+      replayContext.invocationId = UUID().uuidString
+      let replay = registry.invoke(descriptor.id, input: [:], context: replayContext)
+      XCTAssertTrue(first.isSuccess)
+      XCTAssertTrue(replay.receipt.replayed)
+      XCTAssertEqual(first.output, replay.output)
+    }
+    XCTAssertEqual(executions, contexts.count)
+  }
+
+  func testAgentNativeEffectJournalDoesNotRerunUnfinishedClaim() throws {
+    let descriptor = try nativeToolDescriptor(
+      "galaxyssi.test.interrupted.effect",
+      idempotency: .idempotencyKeyRequired
+    )
+    let context = AgentNativeToolInvocationContext(
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "effect",
+      attributes: ["task_id": "task", "goal_id": "goal", "client_route_id": "phone"]
+    )
+    let key = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: "effect",
+      scope: AgentNativeEffectScope(context: context)
+    )
+    let store = InMemoryAgentNativeToolReplayStore()
+    let inputSha256 = AgentMcpJSONCodec.sha256(AgentMcpJSONObject())
+    XCTAssertTrue(try store.claim(key, inputSha256: inputSha256, invocationId: "interrupted").acquired)
+    let registry = try AgentNativeToolRegistry(replayStore: store)
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.effect"),
+        executor: { _ in XCTFail("An uncertain effect must not execute again"); return .success() }
+      ))
+
+    let result = registry.invoke(descriptor.id, input: [:], context: context)
+
+    XCTAssertEqual(result.error?.code, "effect_outcome_unknown")
+    XCTAssertEqual(result.error?.retryable, false)
+    XCTAssertEqual(result.error?.details["original_invocation_id"], .string("interrupted"))
+  }
+
+  func testAgentNativeEffectJournalReplaysFailuresAndCommitsBeforeFinishedHook() throws {
+    var executions = 0
+    var durableBeforeHook = false
+    let store = InMemoryAgentNativeToolReplayStore()
+    let descriptor = try nativeToolDescriptor(
+      "galaxyssi.test.failed.effect",
+      idempotency: .idempotencyKeyRequired
+    )
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "first",
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "effect",
+      attributes: ["task_id": "task"]
+    )
+    let key = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: "effect",
+      scope: AgentNativeEffectScope(context: context)
+    )
+    let registry = try AgentNativeToolRegistry(replayStore: store)
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.effect"),
+        executor: { _ in
+          executions += 1
+          return .failure(code: "external_write_uncertain", message: "Connection lost after sending")
+        }
+      ))
+
+    let first = registry.invoke(
+      descriptor.id,
+      input: [:],
+      context: context,
+      hooks: AgentNativeToolInvocationHooks(onFinished: { result in
+        durableBeforeHook = store.get(key)?.receipt.invocationId == result.receipt.invocationId
+      })
+    )
+    var replayContext = context
+    replayContext.invocationId = "second"
+    let replay = registry.invoke(descriptor.id, input: [:], context: replayContext)
+
+    XCTAssertEqual(first.error?.code, "external_write_uncertain")
+    XCTAssertEqual(replay.error, first.error)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(executions, 1)
+    XCTAssertTrue(durableBeforeHook)
+  }
+
   func testAgentNativeToolRegistryAuditsReplayFailureAndUnknownTools() throws {
     var executions = 0
     let replayStore = InMemoryAgentNativeToolReplayStore()

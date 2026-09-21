@@ -308,6 +308,14 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   }
 }
 
+extension AgentNativeToolDescriptor {
+  // Mutating and explicitly keyed tools must claim their durable effect before execution.
+  // Parallel read-only idempotent tools can safely retain the lighter replay cache path.
+  var requiresEffectClaim: Bool {
+    idempotency != .idempotent || concurrency != .parallelReadOnly
+  }
+}
+
 enum AgentNativeVerificationStatus: String, Codable, CaseIterable, Identifiable {
   case passed
   case failed
@@ -683,15 +691,67 @@ private extension AgentNativeToolProvenance {
   }
 }
 
+struct AgentNativeEffectScope: Codable, Equatable, Hashable {
+  var clientRouteId: String
+  var sessionId: String
+  var conversationId: String
+  var goalId: String
+  var taskId: String
+  var turnId: String
+
+  init(
+    clientRouteId: String = "",
+    sessionId: String = "",
+    conversationId: String = "",
+    goalId: String = "",
+    taskId: String = "",
+    turnId: String = ""
+  ) {
+    self.clientRouteId = clientRouteId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.sessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.conversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.goalId = goalId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.taskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.turnId = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  init(context: AgentNativeToolInvocationContext) {
+    self.init(
+      clientRouteId: context.attributes["client_route_id"] ?? "",
+      sessionId: context.sessionId,
+      conversationId: context.conversationId,
+      goalId: context.attributes["goal_id"] ?? "",
+      taskId: context.attributes["task_id"] ?? "",
+      turnId: context.turnId
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case clientRouteId = "client_route_id"
+    case sessionId = "session_id"
+    case conversationId = "conversation_id"
+    case goalId = "goal_id"
+    case taskId = "task_id"
+    case turnId = "turn_id"
+  }
+}
+
 struct AgentNativeToolReplayKey: Codable, Equatable, Hashable {
   var toolId: String
   var toolVersion: String
   var idempotencyKey: String
+  var scope: AgentNativeEffectScope
 
-  init(toolId: String, toolVersion: String, idempotencyKey: String) {
+  init(
+    toolId: String,
+    toolVersion: String,
+    idempotencyKey: String,
+    scope: AgentNativeEffectScope = AgentNativeEffectScope()
+  ) {
     self.toolId = toolId.trimmingCharacters(in: .whitespacesAndNewlines)
     self.toolVersion = toolVersion.trimmingCharacters(in: .whitespacesAndNewlines)
     self.idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.scope = scope
   }
 
   var isComplete: Bool {
@@ -702,25 +762,59 @@ struct AgentNativeToolReplayKey: Codable, Equatable, Hashable {
     case toolId = "tool_id"
     case toolVersion = "tool_version"
     case idempotencyKey = "idempotency_key"
+    case scope
   }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      toolId: try container.decodeIfPresent(String.self, forKey: .toolId) ?? "",
+      toolVersion: try container.decodeIfPresent(String.self, forKey: .toolVersion) ?? "",
+      idempotencyKey: try container.decodeIfPresent(String.self, forKey: .idempotencyKey) ?? "",
+      scope: try container.decodeIfPresent(AgentNativeEffectScope.self, forKey: .scope) ?? AgentNativeEffectScope()
+    )
+  }
+}
+
+struct AgentNativeEffectClaim: Equatable {
+  var acquired: Bool
+  var invocationId: String
+  var inputSha256: String
+  var result: AgentNativeToolResult?
 }
 
 protocol AgentNativeToolReplayStore: AnyObject {
   func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult?
+  func observe(_ key: AgentNativeToolReplayKey) -> AgentNativeEffectClaim?
+  func claim(
+    _ key: AgentNativeToolReplayKey,
+    inputSha256: String,
+    invocationId: String
+  ) throws -> AgentNativeEffectClaim
+  func complete(
+    _ key: AgentNativeToolReplayKey,
+    invocationId: String,
+    result: AgentNativeToolResult
+  ) throws
   func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws
   func clear()
 }
 
 enum AgentNativeToolReplayError: Error, Equatable {
   case unsuccessfulResult
+  case missingClaim
+  case claimBindingChanged
+  case outcomeChanged
+  case legacyScopeUnverified
 }
 
 final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
+  // Kept as a source-compatible fixture constant. Effect receipts are no longer evicted.
   static let maxEntries = 2_000
 
   private let lock = NSRecursiveLock()
   private var entries: [AgentNativeToolReplayKey: AgentNativeToolResult] = [:]
-  private var order: [AgentNativeToolReplayKey] = []
+  private var claims: [AgentNativeToolReplayKey: AgentNativeEffectClaim] = [:]
 
   func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
     lock.lock()
@@ -728,31 +822,118 @@ final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
     return entries[key]
   }
 
+  func observe(_ key: AgentNativeToolReplayKey) -> AgentNativeEffectClaim? {
+    lock.lock()
+    defer { lock.unlock() }
+    if let result = entries[key] {
+      return AgentNativeEffectClaim(
+        acquired: false,
+        invocationId: result.receipt.invocationId,
+        inputSha256: result.receipt.inputSha256,
+        result: result
+      )
+    }
+    guard var claim = claims[key] else { return nil }
+    claim.acquired = false
+    return claim
+  }
+
+  func claim(
+    _ key: AgentNativeToolReplayKey,
+    inputSha256: String,
+    invocationId: String
+  ) throws -> AgentNativeEffectClaim {
+    lock.lock()
+    defer { lock.unlock() }
+    if let observed = observe(key) { return observed }
+    if key.scope != AgentNativeEffectScope(),
+       entries.keys.contains(where: {
+         $0.toolId == key.toolId &&
+           $0.toolVersion == key.toolVersion &&
+           $0.idempotencyKey == key.idempotencyKey &&
+           $0.scope == AgentNativeEffectScope()
+       }) {
+      throw AgentNativeToolReplayError.legacyScopeUnverified
+    }
+    let claim = AgentNativeEffectClaim(
+      acquired: true,
+      invocationId: invocationId,
+      inputSha256: inputSha256,
+      result: nil
+    )
+    claims[key] = claim
+    return claim
+  }
+
+  func complete(
+    _ key: AgentNativeToolReplayKey,
+    invocationId: String,
+    result: AgentNativeToolResult
+  ) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let claim = claims[key] else { throw AgentNativeToolReplayError.missingClaim }
+    guard claim.invocationId == invocationId,
+          result.receipt.invocationId == invocationId,
+          claim.inputSha256 == result.receipt.inputSha256 else {
+      throw AgentNativeToolReplayError.claimBindingChanged
+    }
+    if let existing = entries[key], existing != result {
+      throw AgentNativeToolReplayError.outcomeChanged
+    }
+    entries[key] = result
+    claims[key] = AgentNativeEffectClaim(
+      acquired: false,
+      invocationId: invocationId,
+      inputSha256: claim.inputSha256,
+      result: result
+    )
+  }
+
   func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
     lock.lock()
     defer { lock.unlock() }
-    if entries[key] == nil {
-      order.append(key)
-    }
     entries[key] = result
-    while entries.count > Self.maxEntries, let oldest = order.first {
-      order.removeFirst()
-      entries.removeValue(forKey: oldest)
-    }
   }
 
   func clear() {
     lock.lock()
     defer { lock.unlock() }
     entries.removeAll()
-    order.removeAll()
+    claims.removeAll()
   }
 }
 
 struct AgentNativeToolReplayEntry: Equatable {
   var key: AgentNativeToolReplayKey
-  var result: AgentNativeToolResult
+  var invocationId: String
+  var inputSha256: String
+  var result: AgentNativeToolResult?
   var savedAtMillis: Int64
+
+  init(
+    key: AgentNativeToolReplayKey,
+    invocationId: String,
+    inputSha256: String,
+    result: AgentNativeToolResult?,
+    savedAtMillis: Int64
+  ) {
+    self.key = key
+    self.invocationId = invocationId
+    self.inputSha256 = inputSha256
+    self.result = result
+    self.savedAtMillis = savedAtMillis
+  }
+
+  init(key: AgentNativeToolReplayKey, result: AgentNativeToolResult, savedAtMillis: Int64) {
+    self.init(
+      key: key,
+      invocationId: result.receipt.invocationId,
+      inputSha256: result.receipt.inputSha256,
+      result: result,
+      savedAtMillis: savedAtMillis
+    )
+  }
 }
 
 enum AgentNativeToolReplayJsonCodec {
@@ -766,21 +947,33 @@ enum AgentNativeToolReplayJsonCodec {
       return []
     }
     return values.compactMap { value in
-      guard let object = value.objectValue,
-            let resultObject = object.object("result"),
-            let result = AgentNativeToolResult.fromJSONObject(resultObject) else {
+      guard let object = value.objectValue else {
         return nil
       }
+      let result = object.object("result").flatMap(AgentNativeToolResult.fromJSONObject)
       let key = AgentNativeToolReplayKey(
         toolId: object.string("tool_id"),
         toolVersion: object.string("tool_version"),
-        idempotencyKey: object.string("idempotency_key")
+        idempotencyKey: object.string("idempotency_key"),
+        scope: AgentNativeEffectScope(
+          clientRouteId: object.object("scope")?.string("client_route_id") ?? "",
+          sessionId: object.object("scope")?.string("session_id") ?? "",
+          conversationId: object.object("scope")?.string("conversation_id") ?? "",
+          goalId: object.object("scope")?.string("goal_id") ?? "",
+          taskId: object.object("scope")?.string("task_id") ?? "",
+          turnId: object.object("scope")?.string("turn_id") ?? ""
+        )
       )
       guard key.isComplete else {
         return nil
       }
+      let invocationId = object.string("invocation_id").nilIfEmpty ?? result?.receipt.invocationId ?? ""
+      let inputSha256 = object.string("input_sha256").nilIfEmpty ?? result?.receipt.inputSha256 ?? ""
+      guard !invocationId.isEmpty, !inputSha256.isEmpty else { return nil }
       return AgentNativeToolReplayEntry(
         key: key,
+        invocationId: invocationId,
+        inputSha256: inputSha256,
         result: result,
         savedAtMillis: object.int64("saved_at_millis")
       )
@@ -792,13 +985,24 @@ enum AgentNativeToolReplayJsonCodec {
       "tool_id": .string(entry.key.toolId),
       "tool_version": .string(entry.key.toolVersion),
       "idempotency_key": .string(entry.key.idempotencyKey),
+      "scope": .object([
+        "client_route_id": .string(entry.key.scope.clientRouteId),
+        "session_id": .string(entry.key.scope.sessionId),
+        "conversation_id": .string(entry.key.scope.conversationId),
+        "goal_id": .string(entry.key.scope.goalId),
+        "task_id": .string(entry.key.scope.taskId),
+        "turn_id": .string(entry.key.scope.turnId)
+      ]),
+      "invocation_id": .string(entry.invocationId),
+      "input_sha256": .string(entry.inputSha256),
       "saved_at_millis": .int(entry.savedAtMillis),
-      "result": entry.result.toJsonValue()
+      "result": entry.result?.toJsonValue() ?? .null
     ])
   }
 }
 
 final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
+  // Kept for source compatibility with older tests and migrations; no TTL is applied.
   static let maxEntries = 2_000
   static let retentionMillis: Int64 = 30 * 24 * 60 * 60 * 1_000
 
@@ -817,12 +1021,78 @@ final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
   func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
     lock.lock()
     defer { lock.unlock() }
-    let loaded = load()
-    let retained = retainedEntries(loaded, nowMillis: nowMillis())
-    if retained.count != loaded.count {
-      save(retained)
+    return load().last { $0.key == key }?.result
+  }
+
+  func observe(_ key: AgentNativeToolReplayKey) -> AgentNativeEffectClaim? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let entry = load().last(where: { $0.key == key }) else { return nil }
+    return AgentNativeEffectClaim(
+      acquired: false,
+      invocationId: entry.invocationId,
+      inputSha256: entry.inputSha256,
+      result: entry.result
+    )
+  }
+
+  func claim(
+    _ key: AgentNativeToolReplayKey,
+    inputSha256: String,
+    invocationId: String
+  ) throws -> AgentNativeEffectClaim {
+    lock.lock()
+    defer { lock.unlock() }
+    if let observed = observe(key) { return observed }
+    var entries = load()
+    if key.scope != AgentNativeEffectScope(),
+       entries.contains(where: {
+         $0.key.toolId == key.toolId &&
+           $0.key.toolVersion == key.toolVersion &&
+           $0.key.idempotencyKey == key.idempotencyKey &&
+           $0.key.scope == AgentNativeEffectScope()
+       }) {
+      throw AgentNativeToolReplayError.legacyScopeUnverified
     }
-    return retained.last { $0.key == key }?.result
+    entries.append(AgentNativeToolReplayEntry(
+      key: key,
+      invocationId: invocationId,
+      inputSha256: inputSha256,
+      result: nil,
+      savedAtMillis: nowMillis()
+    ))
+    save(entries)
+    return AgentNativeEffectClaim(
+      acquired: true,
+      invocationId: invocationId,
+      inputSha256: inputSha256,
+      result: nil
+    )
+  }
+
+  func complete(
+    _ key: AgentNativeToolReplayKey,
+    invocationId: String,
+    result: AgentNativeToolResult
+  ) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    var entries = load()
+    guard let index = entries.lastIndex(where: { $0.key == key }) else {
+      throw AgentNativeToolReplayError.missingClaim
+    }
+    let claim = entries[index]
+    guard claim.invocationId == invocationId,
+          result.receipt.invocationId == invocationId,
+          claim.inputSha256 == result.receipt.inputSha256 else {
+      throw AgentNativeToolReplayError.claimBindingChanged
+    }
+    if let previous = claim.result, previous != result {
+      throw AgentNativeToolReplayError.outcomeChanged
+    }
+    entries[index].result = result
+    entries[index].savedAtMillis = nowMillis()
+    save(entries)
   }
 
   func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
@@ -831,11 +1101,8 @@ final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
     }
     lock.lock()
     defer { lock.unlock() }
-    let now = nowMillis()
-    var entries = Array(retainedEntries(load(), nowMillis: now)
-      .filter { $0.key != key }
-      .suffix(Self.maxEntries - 1))
-    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: now))
+    var entries = load().filter { $0.key != key }
+    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: nowMillis()))
     save(entries)
   }
 
@@ -857,13 +1124,6 @@ final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
 
   private func save(_ entries: [AgentNativeToolReplayEntry]) {
     serializedEntries = AgentNativeToolReplayJsonCodec.stringify(entries)
-  }
-
-  private func retainedEntries(
-    _ entries: [AgentNativeToolReplayEntry],
-    nowMillis: Int64
-  ) -> [AgentNativeToolReplayEntry] {
-    entries.filter { nowMillis - $0.savedAtMillis <= Self.retentionMillis }
   }
 }
 

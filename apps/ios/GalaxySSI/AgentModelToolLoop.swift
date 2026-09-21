@@ -594,6 +594,8 @@ final class AgentModelToolLoop {
   ) -> AgentNativeToolInvocationContext {
     var attributes: [String: String] = [
       "task_id": state.request.taskId,
+      "goal_id": state.request.goalId,
+      "client_route_id": state.request.clientRouteId,
       "workspace_id": state.request.workspaceId,
       "tool_call_id": call.callId,
       "tool_manifest_sha256": state.manifestSha256,
@@ -653,6 +655,8 @@ final class AgentModelToolLoop {
       )
       var attributes: [String: String] = [
         "task_id": state.request.taskId,
+        "goal_id": state.request.goalId,
+        "client_route_id": state.request.clientRouteId,
         "workspace_id": state.request.workspaceId,
         "tool_call_id": call.callId,
         "tool_manifest_sha256": state.manifestSha256,
