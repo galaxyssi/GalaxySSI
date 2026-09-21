@@ -79,7 +79,7 @@ class WatchSamsungConfirmService : AccessibilityService() {
         lastEvent = event?.eventType ?: 0
         when (event?.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED, AccessibilityEvent.TYPE_VIEW_LONG_CLICKED,
-            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> if (gate.hasCandidate) userCancelled()
+            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> userCancelled()
             // Samsung scrolls the result view itself as recognition updates; restart stability
             // instead of treating these programmatic events as a user cancellation.
             AccessibilityEvent.TYPE_VIEW_SCROLLED, AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> gate.reset()

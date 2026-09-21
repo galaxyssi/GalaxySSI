@@ -34,4 +34,26 @@ class WatchConfirmGateTest {
         assertFalse(gate.ready("result", 127000))
         assertFalse(gate.active(127000))
     }
+    @Test fun touchBeforeFirstRecognitionResultCancelsTheWholeSession() {
+        val gate = WatchConfirmGate()
+        gate.arm(0)
+        assertFalse(gate.hasCandidate)
+        gate.cancel()
+        assertFalse(gate.ready("later recognition", 1000))
+        assertFalse(gate.ready("later recognition", 2500))
+        assertFalse(gate.active(2500))
+    }
+    @Test fun touchJustBeforeCountdownEndsCannotBeUndoneByTextUpdates() {
+        val gate = WatchConfirmGate()
+        gate.arm(0)
+        gate.ready("result", 100)
+        assertFalse(gate.ready("result", 1599))
+        gate.cancel()
+        assertFalse(gate.ready("result", 1600))
+        gate.reset()
+        assertFalse(gate.ready("updated result", 4000))
+        gate.arm(5000)
+        assertFalse(gate.ready("new session", 5000))
+        assertTrue(gate.ready("new session", 6500))
+    }
 }
