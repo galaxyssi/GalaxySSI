@@ -14,6 +14,13 @@ struct GalaxySSIPeerAttachmentTransferUpdate: Equatable {
   var uri: String
   var storage: String
   var encryptionPurpose: String
+  var peerChat: Bool
+  var clientRouteId: String
+  var desktopId: String
+  var conversationId: String
+  var taskId: String
+  var turnId: String
+  var executionGeneration: Int64
 
   init?(payload: [String: Any]) {
     let transferId = payload.string("transfer_id").lowercased()
@@ -30,6 +37,13 @@ struct GalaxySSIPeerAttachmentTransferUpdate: Equatable {
     uri = payload.string("uri")
     storage = payload.string("storage")
     encryptionPurpose = payload.string("encryption_purpose")
+    peerChat = payload["peer_chat"] as? Bool ?? true
+    clientRouteId = payload.string("client_route_id")
+    desktopId = payload.string("desktop_id")
+    conversationId = payload.string("conversation_id")
+    taskId = payload.string("task_id")
+    turnId = payload.string("turn_id")
+    executionGeneration = payload.int64("execution_generation")
   }
 }
 
@@ -64,18 +78,23 @@ enum GalaxySSIPeerAttachmentTransferProgress {
     to richOutputJson: String
   ) -> String {
     var blocks = AgentRichContentCodec.decode(richOutputJson)
-    let index = blocks.firstIndex {
-      $0.metadata["transfer_id"] == update.transferId
-    } ?? update.ordinal.takeIf { blocks.indices.contains($0) }
+    if !update.peerChat, applyGalleryUpdate(update, blocks: &blocks) {
+      return AgentRichContentCodec.encode(blocks)
+    }
+    let index = blocks.firstIndex { block in
+      update.peerChat
+        ? block.metadata["transfer_id"] == update.transferId
+        : scopedMetadata(block.metadata, uri: block.metadata["artifact_source_uri"] ?? block.uri, matches: update)
+    } ?? (update.peerChat ? update.ordinal.takeIf { blocks.indices.contains($0) } : nil)
     guard let index else {
-      blocks.append(block(for: update))
+      if update.peerChat { blocks.append(block(for: update)) }
       return AgentRichContentCodec.encode(blocks)
     }
     if blocks[index].metadata["transfer_state"] == complete {
       return richOutputJson
     }
     blocks[index].metadata["transfer_id"] = update.transferId
-    blocks[index].metadata["transfer_progress"] = String(update.progress)
+    blocks[index].metadata["transfer_progress"] = String(presentationProgress(update))
     blocks[index].metadata["transfer_state"] = update.state
     blocks[index].metadata["sha256"] = update.sha256
     if !update.uri.isEmpty {
@@ -89,6 +108,53 @@ enum GalaxySSIPeerAttachmentTransferProgress {
       blocks[index].metadata["encryption_purpose"] = update.encryptionPurpose
     }
     return AgentRichContentCodec.encode(blocks)
+  }
+
+  private static func applyGalleryUpdate(
+    _ update: GalaxySSIPeerAttachmentTransferUpdate,
+    blocks: inout [AgentRichBlock]
+  ) -> Bool {
+    for blockIndex in blocks.indices where blocks[blockIndex].type == .gallery {
+      for (key, encoded) in blocks[blockIndex].metadata where key.hasPrefix("blob_item_") {
+        guard let data = encoded.data(using: .utf8),
+              var metadata = try? JSONDecoder().decode([String: String].self, from: data),
+              scopedMetadata(metadata, uri: metadata["artifact_source_uri"] ?? "", matches: update) else {
+          continue
+        }
+        if metadata["transfer_state"] == complete { return true }
+        metadata["transfer_progress"] = String(presentationProgress(update))
+        metadata["transfer_state"] = update.state
+        if !update.storage.isEmpty { metadata["storage"] = update.storage }
+        guard let replacement = try? JSONEncoder().encode(metadata),
+              let replacementText = String(data: replacement, encoding: .utf8) else {
+          return false
+        }
+        blocks[blockIndex].metadata[key] = replacementText
+        return true
+      }
+    }
+    return false
+  }
+
+  private static func scopedMetadata(
+    _ metadata: [String: String],
+    uri: String,
+    matches update: GalaxySSIPeerAttachmentTransferUpdate
+  ) -> Bool {
+    metadata["blob_client_route_id"] == update.clientRouteId &&
+      metadata["blob_desktop_id"] == update.desktopId &&
+      metadata["blob_conversation_id"] == update.conversationId &&
+      metadata["blob_task_id"] == update.taskId &&
+      metadata["blob_turn_id"] == update.turnId &&
+      metadata["blob_execution_generation"] == String(update.executionGeneration) &&
+      metadata["transfer_id"]?.lowercased() == update.transferId &&
+      uri == update.uri &&
+      metadata["sha256"]?.lowercased() == update.sha256 &&
+      metadata["size_bytes"] == String(update.sizeBytes)
+  }
+
+  private static func presentationProgress(_ update: GalaxySSIPeerAttachmentTransferUpdate) -> Int {
+    update.state == complete ? 100 : min(99, update.progress)
   }
 
   static func placeholder(_ update: GalaxySSIPeerAttachmentTransferUpdate) -> String {

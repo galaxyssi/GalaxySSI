@@ -9304,19 +9304,34 @@ final class MessageCoordinator: ObservableObject {
     guard !message.isMine, !sourceMessageId.isEmpty else { return }
     let blocks = AgentRichContentCodec.decode(message.richOutputJson)
     let transferIds = Set(
-      blocks.compactMap { block in
-        let transferId = block.metadata["transfer_id"] ?? ""
-        let artifactURI = block.metadata["artifact_source_uri"] ?? block.uri
-        guard AgentBlobProtocol.validHex(transferId, bytes: 32),
-              artifactURI.hasPrefix("galaxyssi-artifact://blob/") else {
-          return nil
+      blocks.flatMap { block -> [String] in
+        var values: [[String: String]] = [block.metadata]
+        values += block.metadata.compactMap { key, value in
+          guard key.hasPrefix("blob_item_"), let data = value.data(using: .utf8) else { return nil }
+          return try? JSONDecoder().decode([String: String].self, from: data)
         }
-        return transferId
+        return values.compactMap { metadata in
+          let transferId = metadata["transfer_id"] ?? ""
+          let artifactURI = metadata["artifact_source_uri"] ?? block.uri
+          guard AgentBlobProtocol.validHex(transferId, bytes: 32),
+                artifactURI.hasPrefix("galaxyssi-artifact://blob/") else {
+            return nil
+          }
+          return transferId
+        }
       }
     )
     guard !transferIds.isEmpty else { return }
     let contactIds = Set(
-      ([contactId] + blocks.compactMap { $0.metadata["desktop_id"] })
+      ([contactId] + blocks.flatMap { block in
+        var values = [block.metadata["blob_desktop_id"] ?? block.metadata["desktop_id"] ?? ""]
+        values += block.metadata.compactMap { key, value in
+          guard key.hasPrefix("blob_item_"), let data = value.data(using: .utf8),
+                let metadata = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
+          return metadata["blob_desktop_id"]
+        }
+        return values
+      })
         .filter { !$0.isEmpty }
     )
     Task { @MainActor [weak self] in
@@ -9779,7 +9794,14 @@ final class MessageCoordinator: ObservableObject {
       "progress": progress,
       "state": state,
       "uri": manifest.string("artifact_uri"),
-      "storage": "attachment_aes_256_gcm"
+      "storage": "attachment_aes_256_gcm",
+      "peer_chat": manifest["peer_chat"] as? Bool ?? false,
+      "client_route_id": manifest.string("client_route_id"),
+      "desktop_id": desktopId,
+      "conversation_id": manifest.string("conversation_id"),
+      "task_id": manifest.string("task_id"),
+      "turn_id": turnId,
+      "execution_generation": manifest.int64("execution_generation")
     ])
     guard let update else { return }
     for contactId in candidates {
@@ -9794,6 +9816,7 @@ final class MessageCoordinator: ObservableObject {
         update,
         to: match.richOutputJson
       )
+      guard richOutput != match.richOutputJson else { continue }
       if let updated = store.updateMessageContent(
         match.id,
         contactId: contactId,
