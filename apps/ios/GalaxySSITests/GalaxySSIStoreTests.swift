@@ -107,18 +107,46 @@ extension AgentRuntimePackCatalogEntry {
 final class GalaxySSIStoreTests: XCTestCase {
   func testSystemNotificationViewportStartsAtTopAndDoesNotFollowUpdates() {
     XCTAssertEqual(
-      GalaxySSIChatMessageViewportPolicy.initialPosition(systemNotifications: true),
+      GalaxySSIChatMessageViewportPolicy.initialPosition(
+        systemNotifications: true,
+        contentHeight: 200,
+        viewportHeight: 600
+      ),
       .first
     )
     XCTAssertFalse(
-      GalaxySSIChatMessageViewportPolicy.followsLatest(systemNotifications: true)
+      GalaxySSIChatMessageViewportPolicy.followsLatest(
+        systemNotifications: true,
+        nearLatest: true
+      )
     )
     XCTAssertEqual(
-      GalaxySSIChatMessageViewportPolicy.initialPosition(systemNotifications: false),
+      GalaxySSIChatMessageViewportPolicy.initialPosition(
+        systemNotifications: false,
+        contentHeight: 900,
+        viewportHeight: 600
+      ),
       .last
     )
     XCTAssertTrue(
-      GalaxySSIChatMessageViewportPolicy.followsLatest(systemNotifications: false)
+      GalaxySSIChatMessageViewportPolicy.followsLatest(
+        systemNotifications: false,
+        nearLatest: true
+      )
+    )
+    XCTAssertEqual(
+      GalaxySSIChatMessageViewportPolicy.initialPosition(
+        systemNotifications: false,
+        contentHeight: 200,
+        viewportHeight: 600
+      ),
+      .first
+    )
+    XCTAssertFalse(
+      GalaxySSIChatMessageViewportPolicy.followsLatest(
+        systemNotifications: false,
+        nearLatest: false
+      )
     )
   }
 

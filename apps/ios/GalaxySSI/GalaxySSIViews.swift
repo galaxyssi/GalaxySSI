@@ -433,6 +433,9 @@ struct ConversationView: View {
   @State private var loadingOlderMessages = false
   @State private var messageHistoryHasMore = true
   @State private var initialMessageScrollCompleted = false
+  @State private var messageContentHeight: CGFloat = 0
+  @State private var messageViewportHeight: CGFloat = 0
+  @State private var messageViewportNearLatest = true
   @State private var messageWindowContactId = ""
   @State private var pendingVoiceRiskConfirmation: GalaxySSIConversationVoiceRiskConfirmation?
   @State private var visibilityToken = UUID()
@@ -514,69 +517,74 @@ struct ConversationView: View {
     VStack(spacing: 0) {
       conversationHeader
       ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(spacing: 10) {
-            ForEach(Array(renderedMessages.enumerated()), id: \.element.id) { index, message in
-              conversationMessageRow(
-                index: index,
-                message: message,
-                firstRenderedMessageID: firstRenderedMessageID,
-                proxy: proxy
-              )
+        GeometryReader { viewport in
+          ScrollView {
+            LazyVStack(spacing: 10) {
+              ForEach(Array(renderedMessages.enumerated()), id: \.element.id) { index, message in
+                conversationMessageRow(
+                  index: index,
+                  message: message,
+                  firstRenderedMessageID: firstRenderedMessageID,
+                  lastRenderedMessageID: renderedMessages.last?.id,
+                  proxy: proxy
+                )
+              }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+            .background {
+              GeometryReader { content in
+                Color.clear.preference(
+                  key: GalaxySSIChatMessageContentHeightKey.self,
+                  value: content.size.height
+                )
+              }
             }
           }
-          .padding(.horizontal, 12)
-          .padding(.top, 14)
-          .padding(.bottom, 10)
-        }
-        .background(Color.galaxySSIPageBackground)
-        .onAppear {
-          resetMessageWindowIfNeeded()
-          guard !initialMessageScrollCompleted else { return }
-          let initialPosition = GalaxySSIChatMessageViewportPolicy.initialPosition(
-            systemNotifications: isSystemNoticeContact
-          )
-          let initialMessage = initialPosition == .first
-            ? renderedMessages.first
-            : renderedMessages.last
-          guard let initialMessage else { return }
-          DispatchQueue.main.async {
-            proxy.scrollTo(
-              initialMessage.id,
-              anchor: initialPosition == .first ? .top : .bottom
-            )
-            initialMessageScrollCompleted = true
+          .background(Color.galaxySSIPageBackground)
+          .onAppear {
+            messageViewportHeight = viewport.size.height
+            resetMessageWindowIfNeeded()
+            scrollToInitialMessageIfReady(proxy)
           }
-        }
-        .onChange(of: displayedMessages.count) { _ in
-          if !initialMessageScrollCompleted,
-             let first = renderedMessages.first,
-             isSystemNoticeContact {
-            proxy.scrollTo(first.id, anchor: .top)
-            initialMessageScrollCompleted = true
-          } else if GalaxySSIChatMessageViewportPolicy.followsLatest(
-            systemNotifications: isSystemNoticeContact
-          ), let last = renderedMessages.last {
-            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(last.id, anchor: .bottom)
+          .onChange(of: viewport.size.height) { height in
+            messageViewportHeight = height
+            scrollToInitialMessageIfReady(proxy)
+          }
+          .onPreferenceChange(GalaxySSIChatMessageContentHeightKey.self) { height in
+            messageContentHeight = height
+            scrollToInitialMessageIfReady(proxy)
+          }
+          .onChange(of: displayedMessages.count) { _ in
+            if !initialMessageScrollCompleted {
+              scrollToInitialMessageIfReady(proxy)
+            } else if GalaxySSIChatMessageViewportPolicy.followsLatest(
+              systemNotifications: isSystemNoticeContact,
+              nearLatest: messageViewportNearLatest
+            ), let last = renderedMessages.last {
+              withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+                proxy.scrollTo(last.id, anchor: .bottom)
+              }
             }
+            store.markContactRead(contact.id)
           }
-          store.markContactRead(contact.id)
-        }
-        .onChange(of: waitingMessageIDs.count) { _ in
-          guard GalaxySSIChatMessageViewportPolicy.followsLatest(
-            systemNotifications: isSystemNoticeContact
-          ) else { return }
-          guard let last = displayedMessages.last else { return }
-          let animation: Animation? = deviceInputPolicy.reduceMotion ? nil : .default
-          withAnimation(animation) {
-            if waitingMessageIDs.contains(last.id) {
-              proxy.scrollTo(
-                AgentReplyWaitingIndicatorPolicy.viewID(for: last),
-                anchor: .bottom
-              )
-            } else {
-              proxy.scrollTo(last.id, anchor: .bottom)
+          .onChange(of: waitingMessageIDs.count) { _ in
+            guard GalaxySSIChatMessageViewportPolicy.followsLatest(
+              systemNotifications: isSystemNoticeContact,
+              nearLatest: messageViewportNearLatest
+            ) else { return }
+            guard let last = displayedMessages.last else { return }
+            let animation: Animation? = deviceInputPolicy.reduceMotion ? nil : .default
+            withAnimation(animation) {
+              if waitingMessageIDs.contains(last.id) {
+                proxy.scrollTo(
+                  AgentReplyWaitingIndicatorPolicy.viewID(for: last),
+                  anchor: .bottom
+                )
+              } else {
+                proxy.scrollTo(last.id, anchor: .bottom)
+              }
             }
           }
         }
@@ -750,6 +758,7 @@ struct ConversationView: View {
     index: Int,
     message: ChatMessage,
     firstRenderedMessageID: UUID?,
+    lastRenderedMessageID: UUID?,
     proxy: ScrollViewProxy
   ) -> some View {
     if GalaxySSIConversationDateDivider.shouldShow(
@@ -786,6 +795,12 @@ struct ConversationView: View {
           }
         }
       }
+      .onAppear {
+        if message.id == lastRenderedMessageID { messageViewportNearLatest = true }
+      }
+      .onDisappear {
+        if message.id == lastRenderedMessageID { messageViewportNearLatest = false }
+      }
     if waitingMessageIDs.contains(message.id) {
       AgentReplyWaitingIndicatorView()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -806,12 +821,33 @@ struct ConversationView: View {
     visibleMessageCount = 100
     loadingOlderMessages = false
     initialMessageScrollCompleted = false
+    messageContentHeight = 0
+    messageViewportNearLatest = true
     let page = store.loadMessagePage(
       contactId: contact.id,
       conversationId: visibleAgentConversationId,
       pageSize: 100
     )
     messageHistoryHasMore = page.hasMore
+  }
+
+  private func scrollToInitialMessageIfReady(_ proxy: ScrollViewProxy) {
+    guard !initialMessageScrollCompleted,
+          messageContentHeight > 0,
+          messageViewportHeight > 0 else { return }
+    let initialPosition = GalaxySSIChatMessageViewportPolicy.initialPosition(
+      systemNotifications: isSystemNoticeContact,
+      contentHeight: messageContentHeight,
+      viewportHeight: messageViewportHeight
+    )
+    let initialMessage = initialPosition == .first
+      ? renderedMessages.first
+      : renderedMessages.last
+    guard let initialMessage else { return }
+    DispatchQueue.main.async {
+      proxy.scrollTo(initialMessage.id, anchor: initialPosition == .first ? .top : .bottom)
+      initialMessageScrollCompleted = true
+    }
   }
 
   private func dismissIfRevoked() {
