@@ -217,6 +217,7 @@ final class GalaxySSIStartupHandoff: ObservableObject {
   @Published private(set) var runtime: GalaxySSIStartupRuntime?
   private var started = false
   private var scenePhase: ScenePhase = .active
+  private var requestedConversationID = ""
 
   func start() {
     guard !started else { return }
@@ -226,6 +227,7 @@ final class GalaxySSIStartupHandoff: ObservableObject {
       guard let self, !Task.isCancelled else { return }
       let runtime = GalaxySSIStartupRuntime()
       self.runtime = runtime
+      activateRequestedConversation(in: runtime.store)
       applyScenePhase(to: runtime.store)
     }
   }
@@ -234,6 +236,17 @@ final class GalaxySSIStartupHandoff: ObservableObject {
     scenePhase = phase
     guard let store = runtime?.store else { return }
     applyScenePhase(to: store)
+  }
+
+  func activateConversation(_ conversationID: String) {
+    requestedConversationID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let store = runtime?.store else { return }
+    activateRequestedConversation(in: store)
+  }
+
+  private func activateRequestedConversation(in store: GalaxySSIStore) {
+    guard !requestedConversationID.isEmpty else { return }
+    _ = store.switchAgentSession(requestedConversationID)
   }
 
   private func applyScenePhase(to store: GalaxySSIStore) {
@@ -251,21 +264,33 @@ final class GalaxySSIStartupHandoff: ObservableObject {
 
 @main
 struct GalaxySSIApp: App {
-  @Environment(\.scenePhase) private var scenePhase
   @UIApplicationDelegateAdaptor(GalaxySSIAppDelegate.self) private var appDelegate
-  @StateObject private var startup = GalaxySSIStartupHandoff()
 
   var body: some Scene {
     WindowGroup {
-      Group {
-        if let runtime = startup.runtime {
-          GalaxySSIRuntimeRoot(runtime: runtime)
-        } else {
-          GalaxySSIStartupHandoffView()
-        }
+      GalaxySSIAppScene()
+    }
+  }
+}
+
+private struct GalaxySSIAppScene: View {
+  @Environment(\.scenePhase) private var scenePhase
+  @StateObject private var startup = GalaxySSIStartupHandoff()
+
+  var body: some View {
+    Group {
+      if let runtime = startup.runtime {
+        GalaxySSIRuntimeRoot(runtime: runtime)
+      } else {
+        GalaxySSIStartupHandoffView()
       }
-      .onAppear(perform: startup.start)
-      .onChange(of: scenePhase, perform: startup.handleScenePhase)
+    }
+    .onAppear(perform: startup.start)
+    .onChange(of: scenePhase, perform: startup.handleScenePhase)
+    .onContinueUserActivity(GalaxySSIConversationSceneController.activityType) { activity in
+      startup.activateConversation(
+        GalaxySSIConversationSceneController.conversationID(from: activity)
+      )
     }
   }
 }

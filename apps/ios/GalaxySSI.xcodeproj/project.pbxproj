@@ -7,6 +7,7 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    D12980000000000000000001 /* GalaxySSIConversationSceneController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */; };
     D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */; };
     F12660000000000000000001 /* GalaxySSIMermaidDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000001 /* GalaxySSIMermaidDiagramView.swift */; };
     F12660000000000000000002 /* mermaid in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000002 /* mermaid */; };
@@ -994,6 +995,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationSceneController.swift; sourceTree = "<group>"; };
     D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealthRecoveryTests.swift; sourceTree = "<group>"; };
     F22666000000000000000001 /* AgentInteractiveProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgress.swift; sourceTree = "<group>"; };
     F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentInteractiveProgressView.swift; sourceTree = "<group>"; };
@@ -2574,6 +2576,7 @@
         A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */,
         A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */,
         A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */,
+        D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */,
         A20000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift */,
         A20000000000000000001800 /* GalaxySSIAgentHomeEmptyStatePanel.swift */,
         A20000000000000000001601 /* GalaxySSIAgentHomeQuickActionsView.swift */,
@@ -3698,6 +3701,7 @@
         A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */,
         A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */,
         A10000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift in Sources */,
+        D12980000000000000000001 /* GalaxySSIConversationSceneController.swift in Sources */,
         A10000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift in Sources */,
         A10000000000000000001800 /* GalaxySSIAgentHomeEmptyStatePanel.swift in Sources */,
         A10000000000000000001601 /* GalaxySSIAgentHomeQuickActionsView.swift in Sources */,
@@ -4295,6 +4299,7 @@
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
         INFOPLIST_KEY_UIFileSharingEnabled = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+        INFOPLIST_KEY_UIApplicationSceneManifest_UIApplicationSupportsMultipleScenes = YES;
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -4357,6 +4362,7 @@
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
         INFOPLIST_KEY_UIFileSharingEnabled = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+        INFOPLIST_KEY_UIApplicationSceneManifest_UIApplicationSupportsMultipleScenes = YES;
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

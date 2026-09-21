@@ -9,8 +9,10 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   var brandSubtitle: String
   var voiceNavigationLabel: String
   var settingsNavigationLabel: String
+  var openWindowLabel: String
   var modelSelectionDestination: ModelSelectionDestination
   var onOpenSettings: () -> Void
+  var onOpenWindow: (() -> Void)?
   var onOpenVoice: () -> Void
 
   var body: some View {
@@ -107,6 +109,13 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("ios.agent.header.model-selection")
+    }
+    .contextMenu {
+      if let onOpenWindow {
+        Button(action: onOpenWindow) {
+          Label(openWindowLabel, systemImage: "macwindow.badge.plus")
+        }
+      }
     }
   }
 
