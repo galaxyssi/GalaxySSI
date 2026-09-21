@@ -30,6 +30,8 @@ final class MessageCoordinator: ObservableObject {
   let deliveryStore: GalaxySSILinkDeliveryStore
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
+  let transportReceiptJournal = GalaxySSITransportReceiptJournal()
+  var transportReceiptDrainTask: Task<Void, Never>?
   private let blobRelayConfigurationStore = AgentBlobRelayConfigurationStore()
   private let blobArtifactCapabilityPublisher = AgentBlobArtifactCapabilityPublisher()
   lazy var blobOutgoingCoordinator = AgentBlobOutgoingCoordinator(
@@ -380,7 +382,9 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     self.mqttClient.onRelationshipSubscriptionReadinessChanged = { [weak self] ready in
-      self?.pendingReplyRecoveryWake.connectionChanged(ready)
+      guard let self else { return }
+      self.pendingReplyRecoveryWake.connectionChanged(ready)
+      self.transportReceiptReadinessChanged(ready)
     }
   }
 
@@ -477,6 +481,7 @@ final class MessageCoordinator: ObservableObject {
   deinit {
     pairingConfirmationTimeoutTask?.cancel()
     pendingReplyRecoveryWake.cancel()
+    transportReceiptDrainTask?.cancel()
     if let foregroundRecoveryObserver {
       NotificationCenter.default.removeObserver(foregroundRecoveryObserver)
     }
@@ -8631,9 +8636,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func publishPhoneContactReceipt(contact: GalaxySSIContact, receivedMessageId: String) {
-    guard mqttClient.isConnected,
-          let topic = contact.opaquePhoneRoutes?.upTopic,
-          !receivedMessageId.isEmpty else { return }
+    guard let routes = contact.opaquePhoneRoutes, !receivedMessageId.isEmpty else { return }
+    let topic = routes.upTopic
     let ack: [String: Any] = [
       "type": "delivery_ack",
       "transport_message_id": receivedMessageId,
@@ -8651,8 +8655,17 @@ final class MessageCoordinator: ObservableObject {
       let wire = try? GalaxySSILinkProtocol.jsonData(encrypted) else {
       return
     }
-    Task {
-      _ = await mqttClient.publish(topic: topic, payload: wire)
+    do {
+      try transportReceiptJournal.enqueue(
+        peerId: contact.id,
+        phonePeer: true,
+        binding: GalaxySSITransportReceiptJournal.binding(peerId: contact.id, routes: routes),
+        receivedMessageId: receivedMessageId,
+        wirePayload: String(decoding: wire, as: UTF8.self)
+      )
+      wakeTransportReceiptDrain()
+    } catch {
+      lastError = error.localizedDescription
     }
   }
 
