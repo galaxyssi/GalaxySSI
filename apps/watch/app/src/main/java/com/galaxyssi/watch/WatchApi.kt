@@ -19,6 +19,7 @@ class ApiProfile(val endpoint: String, val model: String, val key: String, val i
         require(uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null)
         require(when (style) { "openai" -> uri.path.endsWith("/chat/completions"); "anthropic" -> uri.path.endsWith("/messages"); "gemini" -> uri.path.endsWith(":generateContent"); else -> false })
         require(model.isNotBlank() && model.length <= 128)
+        require(!com.galaxyssi.chat.RetiredAgentModelPolicy.isRetired(model))
         require(key.isNotBlank() && key.length <= 4096 && key.none { it == '\r' || it == '\n' })
     }
     fun json(): JSONObject = JSONObject().put("endpoint", endpoint).put("model", model).put("api_key", key).put("id", id).put("api_style", style)
