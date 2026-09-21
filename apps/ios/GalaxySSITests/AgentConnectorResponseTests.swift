@@ -476,6 +476,77 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reopened.pending().map(\.resolvedContactId), ["desktop-codex"])
   }
 
+  func testSQLiteConnectorResponseJournalPagesAndPersistsEncryptedRows() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("pending.sqlite3")
+    let secrets = InMemorySecretStore()
+    let suiteName = "connector-journal-\(UUID().uuidString)"
+    let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { suite.removePersistentDomain(forName: suiteName) }
+
+    var journal: SQLiteAgentConnectorResponseStore? = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    for index in 1...40 {
+      XCTAssertTrue(journal?.publish(AgentConnectorResponse(
+        sourceMessageId: Int64(index),
+        contactId: "codex",
+        content: "answer-\(index)",
+        receivedAtMillis: 100_000
+      )) ?? false)
+    }
+    let firstPage = try XCTUnwrap(journal?.pending())
+    XCTAssertEqual(firstPage.count, SQLiteAgentConnectorResponseStore.pageSize)
+    XCTAssertEqual(firstPage.first?.sourceMessageId, 1)
+    firstPage.forEach { journal?.remove($0) }
+    journal = nil
+
+    let reopened = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertEqual(reopened.pending().map(\.sourceMessageId), Array(33...40).map(Int64.init))
+    XCTAssertNil((try Data(contentsOf: fileURL)).range(of: Data("answer-40".utf8)))
+  }
+
+  func testSQLiteConnectorResponseJournalTombstoneWinsOverLegacyMigration() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("pending.sqlite3")
+    let secrets = InMemorySecretStore()
+    let suiteName = "connector-migration-\(UUID().uuidString)"
+    let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { suite.removePersistentDomain(forName: suiteName) }
+    let response = AgentConnectorResponse(
+      sourceMessageId: 77,
+      contactId: "desktop-agent",
+      content: "legacy",
+      receivedAtMillis: 100_000
+    )
+    let journal = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    journal.remove(response)
+    suite.set(AgentConnectorResponseStoreCodec.encode([response]), forKey: UserDefaultsAgentConnectorResponseStore.defaultStorageKey)
+
+    let reopened = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertTrue(reopened.pending().isEmpty)
+  }
+
   func testAgentConnectorFinalResultPersistsBeforeLiveStreamRetires() {
     var calls: [String] = []
 
@@ -512,4 +583,5 @@ extension GalaxySSIStoreTests {
       turnId: turnId
     )
   }
+
 }
