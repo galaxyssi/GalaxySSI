@@ -124,6 +124,16 @@ final class MessageCoordinator: ObservableObject {
     store: store,
     coordinator: self
   )
+  private lazy var pendingReplyRecoveryWake = AgentRecoveryWakeCoordinator(
+    recover: { [weak self] in
+      await self?.resumePendingAgentDelivery()
+    },
+    failed: { [weak self] error in
+      Task { @MainActor in
+        self?.lastError = error.localizedDescription
+      }
+    }
+  )
   let mqttClient: GalaxySSIMqttClient
   var outboxRetryTask: Task<Void, Never>?
   var outboxFlushInProgress = false
@@ -140,6 +150,7 @@ final class MessageCoordinator: ObservableObject {
   private var lastIncomingAttachmentResumeAtMillis: Int64 = 0
   private let peerSessionRecoveryGate = GalaxySSIPeerSessionRecoveryGate()
   private var approvedPhoneDecisionReplayScheduled = false
+  private var foregroundRecoveryObserver: NSObjectProtocol?
   private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
   static let maximumAttachmentOutboxDeliveryAttempts = 9
@@ -147,6 +158,7 @@ final class MessageCoordinator: ObservableObject {
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
   private static let incomingAttachmentResumeThrottleMillis: Int64 = 2_000
+  private static let pendingRecoveryPageSize = 32
 
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
@@ -285,10 +297,11 @@ final class MessageCoordinator: ObservableObject {
     }
     self.mqttClient.onConnectionChanged = { [weak self] connected in
       Task { @MainActor in
-        self?.transportConnected = connected
+        guard let self else { return }
+        self.transportConnected = connected
+        self.pendingReplyRecoveryWake.connectionChanged(connected)
         if connected {
-          self?.resumePendingAgentDelivery()
-          self?.requestConnectorStatuses()
+          self.requestConnectorStatuses()
         }
         NotificationCenter.default.post(
           name: .galaxySSIAgentRoutingDidUpdate,
@@ -302,11 +315,14 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.deliveryStore.makePendingImmediatelyRetryable()
         self.scheduleOutboxFlush(after: 0)
+        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
       }
     }
     self.mqttClient.onRelationshipSubscriptionsReady = { [weak self] in
       Task { @MainActor in
-        self?.replayApprovedPhoneContactDecisionsOnce()
+        guard let self else { return }
+        self.replayApprovedPhoneContactDecisionsOnce()
+        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
       }
     }
   }
@@ -334,7 +350,8 @@ final class MessageCoordinator: ObservableObject {
       rendezvousSecrets: phoneRendezvousSecrets(),
       rendezvousExpirations: phoneRendezvousExpirations()
     )
-    resumePendingAgentDelivery()
+    installForegroundRecoveryWake()
+    pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
     startAutomationScheduler()
     backgroundCognitionScheduler.start()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -343,10 +360,27 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func resumePendingAgentDelivery() {
-    replayPendingIncoming()
-    replayPendingConnectorResponses()
+    let hasMoreIncoming = replayPendingIncoming()
+    let hasMoreConnectorResponses = replayPendingConnectorResponses()
     resumePendingIncomingAttachmentDownloads()
     scheduleOutboxFlush(after: 0)
+    if hasMoreIncoming || hasMoreConnectorResponses {
+      pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
+    }
+  }
+
+  private func installForegroundRecoveryWake() {
+    guard foregroundRecoveryObserver == nil else { return }
+    foregroundRecoveryObserver = NotificationCenter.default.addObserver(
+      forName: UIApplication.didBecomeActiveNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        guard let self else { return }
+        self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
+      }
+    }
   }
 
   private func resumePendingIncomingAttachmentDownloads(
@@ -376,6 +410,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   deinit {
+    pendingReplyRecoveryWake.cancel()
+    if let foregroundRecoveryObserver {
+      NotificationCenter.default.removeObserver(foregroundRecoveryObserver)
+    }
     GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
     if let token = globalResearchResponseToken {
       connectorResponseBus.removeListener(token)
@@ -9840,6 +9878,10 @@ final class MessageCoordinator: ObservableObject {
       ]
     )
 
+    if silentStatus {
+      pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
+    }
+
     // Presence heartbeats update route and capability state without creating
     // user-visible chat messages or notifications.
     if silentStatus {
@@ -9929,8 +9971,10 @@ final class MessageCoordinator: ObservableObject {
     )
   }
 
-  private func replayPendingIncoming() {
-    deliveryStore.pendingIncoming().forEach { pending in
+  @discardableResult
+  private func replayPendingIncoming() -> Bool {
+    let pendingMessages = deliveryStore.pendingIncoming()
+    pendingMessages.prefix(Self.pendingRecoveryPageSize).forEach { pending in
       guard let data = pending.payload.data(using: .utf8),
             let rawObject = try? JSONSerialization.jsonObject(with: data),
             let object = rawObject as? [String: Any] else {
@@ -9940,10 +9984,13 @@ final class MessageCoordinator: ObservableObject {
       dispatchIncomingWire(topic: "", object: object, originalPayload: pending.payload, allowStage: false)
       deliveryStore.completeIncoming(messageId: pending.messageId)
     }
+    return pendingMessages.count > Self.pendingRecoveryPageSize
   }
 
-  private func replayPendingConnectorResponses() {
-    connectorResponseBus.pending().forEach { response in
+  @discardableResult
+  private func replayPendingConnectorResponses() -> Bool {
+    let pendingResponses = connectorResponseBus.pending()
+    pendingResponses.prefix(Self.pendingRecoveryPageSize).forEach { response in
       let payload: [String: Any] = [
         "type": "agent_connector_response",
         "source_message_id": String(response.sourceMessageId),
@@ -9970,6 +10017,7 @@ final class MessageCoordinator: ObservableObject {
       )
       connectorResponseBus.remove(response)
     }
+    return pendingResponses.count > Self.pendingRecoveryPageSize
   }
 
   private func serverLink(for topic: String, payload: [String: Any]) -> ServerLink? {

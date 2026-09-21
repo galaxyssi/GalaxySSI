@@ -1,5 +1,111 @@
 import Foundation
 
+struct AgentCloudDispatchIdentity: Hashable {
+  var sourceMessageId: String
+  var contactId: String
+  var conversationId: String
+  var turnId: String
+  var taskId: String
+  var actionId: String
+}
+
+final class AgentCloudDispatchLease {
+  private enum State { case active, completed, cancelled }
+  private let lock = NSLock()
+  private var state: State = .active
+  private var cancellation: (() -> Void)?
+
+  var isCancelled: Bool { locked { state == .cancelled } }
+
+  func bindCancellation(_ cancellation: @escaping () -> Void) {
+    let cancelNow = locked { () -> Bool in
+      self.cancellation = cancellation
+      return state == .cancelled
+    }
+    if cancelNow { cancellation() }
+  }
+
+  @discardableResult
+  func cancel() -> Bool {
+    let outcome = locked { () -> (Bool, (() -> Void)?) in
+      guard state == .active else { return (false, nil) }
+      state = .cancelled
+      return (true, cancellation)
+    }
+    outcome.1?()
+    return outcome.0
+  }
+
+  func claimCompletion() -> Bool {
+    locked {
+      guard state == .active else { return false }
+      state = .completed
+      cancellation = nil
+      return true
+    }
+  }
+
+  func checkActive() throws {
+    if isCancelled { throw CancellationError() }
+  }
+
+  private func locked<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+}
+
+final class AgentCloudDispatchRegistry {
+  static let shared = AgentCloudDispatchRegistry()
+  private let lock = NSLock()
+  private var active: [AgentCloudDispatchIdentity: AgentCloudDispatchLease] = [:]
+
+  func register(_ identity: AgentCloudDispatchIdentity) -> AgentCloudDispatchLease? {
+    locked {
+      guard active[identity] == nil else { return nil }
+      let lease = AgentCloudDispatchLease()
+      active[identity] = lease
+      return lease
+    }
+  }
+
+  @discardableResult
+  func cancel(_ identity: AgentCloudDispatchIdentity) -> Bool {
+    locked { active[identity] }?.cancel() ?? false
+  }
+
+  @discardableResult
+  func cancel(taskId: String, conversationId: String = "") -> Int {
+    let normalizedTask = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedConversation = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedTask.isEmpty else { return 0 }
+    let leases = locked {
+      active.filter {
+        $0.key.taskId == normalizedTask &&
+          (normalizedConversation.isEmpty || $0.key.conversationId == normalizedConversation)
+      }.map(\.value)
+    }
+    return leases.reduce(into: 0) { count, lease in
+      if lease.cancel() { count += 1 }
+    }
+  }
+
+  func release(_ identity: AgentCloudDispatchIdentity, lease: AgentCloudDispatchLease) {
+    locked {
+      if active[identity] === lease { active.removeValue(forKey: identity) }
+    }
+  }
+
+  var activeCount: Int { locked { active.count } }
+
+  private func locked<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+}
+
 enum ModelStreamProvider: String, Codable, Equatable {
   case openAICompatible = "OPENAI_COMPATIBLE"
   case anthropic = "ANTHROPIC"

@@ -45,6 +45,100 @@ struct AgentRunRecoveryDecision: Codable, Equatable {
   var reason: String
 }
 
+struct AgentRunRootIdentity: Equatable {
+  var clientRouteId: String
+  var conversationId: String
+  var goalId: String
+  var taskId: String
+  var runId: String
+}
+
+enum AgentRunKernelContract {
+  static let protocolId = "galaxyssi.agent-run-event.v1"
+  static let schemaVersion = 1
+
+  static func canonical(_ event: AgentRunControlEvent) -> AgentRunControlEvent? {
+    guard event.protocolId == protocolId,
+          event.schemaVersion == schemaVersion else { return nil }
+    let eventId = clean(event.eventId)
+    let taskId = clean(event.taskId)
+    let runId = clean(event.runId)
+    let agentId = clean(event.agentId)
+    guard !eventId.isEmpty, !taskId.isEmpty, !runId.isEmpty, !agentId.isEmpty else {
+      return nil
+    }
+    let deviceId = fallback(clean(event.deviceId), "local")
+    let messageId = clean(event.messageId)
+    let stepId = clean(event.stepId)
+    let toolCallId = clean(event.toolCallId)
+    var canonical = event
+    canonical.eventId = eventId
+    canonical.taskId = taskId
+    canonical.runId = runId
+    canonical.agentId = agentId
+    canonical.deviceId = deviceId
+    canonical.messageId = messageId
+    canonical.stepId = stepId
+    canonical.toolCallId = toolCallId
+    canonical.idempotencyKey = fallback(clean(event.idempotencyKey), eventId)
+    canonical.clientRouteId = fallback(clean(event.clientRouteId), deviceId)
+    canonical.conversationId = fallback(clean(event.conversationId), "conversation:\(taskId)")
+    canonical.goalId = fallback(clean(event.goalId), taskId)
+    canonical.turnId = fallback(clean(event.turnId), fallback(messageId, "turn:\(taskId)"))
+    canonical.actionId = fallback(
+      clean(event.actionId),
+      fallback(toolCallId, fallback(stepId, eventId))
+    )
+    return canonical
+  }
+
+  static func rootIdentity(_ event: AgentRunControlEvent) -> AgentRunRootIdentity? {
+    guard let canonical = canonical(event) else { return nil }
+    return AgentRunRootIdentity(
+      clientRouteId: canonical.clientRouteId,
+      conversationId: canonical.conversationId,
+      goalId: canonical.goalId,
+      taskId: canonical.taskId,
+      runId: canonical.runId
+    )
+  }
+
+  static func hasSameRoot(_ first: AgentRunControlEvent, _ second: AgentRunControlEvent) -> Bool {
+    guard let firstRoot = rootIdentity(first), let secondRoot = rootIdentity(second) else {
+      return false
+    }
+    return firstRoot == secondRoot
+  }
+
+  static func isIdempotentReplay(
+    _ firstEvent: AgentRunControlEvent,
+    _ replayEvent: AgentRunControlEvent
+  ) -> Bool {
+    guard let first = canonical(firstEvent), let replay = canonical(replayEvent) else {
+      return false
+    }
+    return first.idempotencyKey == replay.idempotencyKey
+      && hasSameRoot(first, replay)
+      && first.turnId == replay.turnId
+      && first.actionId == replay.actionId
+      && first.messageId == replay.messageId
+      && first.stepId == replay.stepId
+      && first.toolCallId == replay.toolCallId
+      && first.agentId == replay.agentId
+      && first.deviceId == replay.deviceId
+      && first.type == replay.type
+      && first.payload == replay.payload
+  }
+
+  private static func clean(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static func fallback(_ value: String, _ fallback: String) -> String {
+    value.isEmpty ? fallback : value
+  }
+}
+
 enum AgentRunEventStore {
   static func reduce(
     current: AgentRunControlState,
@@ -69,11 +163,14 @@ enum AgentRunEventStore {
          .stepCompleted,
          .runRecovered:
       next = .running
+    case .checkpointSaved:
+      next = current
     case .toolPermissionRequired,
          .waitingForUser:
       next = .waitingForUser
     case .permissionRevoked,
-         .paused:
+         .paused,
+         .runInterrupted:
       next = .paused
     case .waitingForDevice:
       next = .waitingForDevice

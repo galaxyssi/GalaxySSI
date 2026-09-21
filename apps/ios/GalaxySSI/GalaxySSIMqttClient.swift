@@ -18,6 +18,51 @@ enum MqttPublishResult: Equatable {
   }
 }
 
+enum AgentTransportTimingKind: String, Codable, CaseIterable {
+  case durableQueueWait = "durable_queue_wait"
+  case brokerPublishAck = "broker_publish_ack"
+  case encryptedPeerReceipt = "encrypted_peer_receipt"
+}
+
+struct AgentTransportTimingEvent: Codable, Equatable {
+  var kind: AgentTransportTimingKind
+  var attemptId: String
+  var logicalMessageId: String
+  var connectionGeneration: Int64
+  var durationMillis: Int64
+  var recordedAtMillis: Int64
+}
+
+final class AgentTransportTimingStore {
+  static let shared = AgentTransportTimingStore()
+  static let maximumEvents = 512
+
+  private let lock = NSLock()
+  private var events: [AgentTransportTimingEvent] = []
+
+  func record(_ event: AgentTransportTimingEvent) {
+    guard event.durationMillis >= 0, !event.attemptId.isBlank else { return }
+    lock.lock()
+    events.append(event)
+    if events.count > Self.maximumEvents {
+      events.removeFirst(events.count - Self.maximumEvents)
+    }
+    lock.unlock()
+  }
+
+  func snapshot() -> [AgentTransportTimingEvent] {
+    lock.lock()
+    defer { lock.unlock() }
+    return events
+  }
+
+  func clear() {
+    lock.lock()
+    events.removeAll()
+    lock.unlock()
+  }
+}
+
 protocol GalaxySSILinkTransport: AnyObject {
   var onMessage: ((String, Data) -> Void)? { get set }
   func connect(clientId: String, serverLinks: [ServerLink])
@@ -49,6 +94,15 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     var transferId: String?
     var relationshipBound: Bool
     var brokerAckTimeoutSeconds: TimeInterval
+    var attemptId: String
+    var logicalMessageId: String
+    var enqueuedAtMillis: Int64
+  }
+  private struct InFlightTiming {
+    var attemptId: String
+    var logicalMessageId: String
+    var connectionGeneration: Int64
+    var sentAtMillis: Int64
   }
   private var connection: NWConnection?
   private var brokerAckWorkItem: DispatchWorkItem?
@@ -67,6 +121,9 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
   private var packetIdentifier: UInt16 = 1
   private var pendingPacketPublishes: [PendingPublish] = []
   private var inFlightPublishes: [UInt16: PendingPublish] = [:]
+  private var inFlightTimings: [UInt16: InFlightTiming] = [:]
+  private var peerReceiptStartedAt: [String: Int64] = [:]
+  private var connectionGeneration: Int64 = 0
   private var fragmentTransferByPacketId: [UInt16: String] = [:]
   private var fragmentInflightByTransfer: [String: Int] = [:]
   private var fragmentInflight = 0
@@ -165,7 +222,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
             payload: sealed,
             transferId: nil,
             relationshipBound: false,
-            brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.defaultTimeoutSeconds
+            brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.defaultTimeoutSeconds,
+            attemptId: UUID().uuidString,
+            logicalMessageId: "",
+            enqueuedAtMillis: Self.nowMillis()
           )
         )
         self.pumpPendingPublishes()
@@ -262,6 +322,11 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
 
   private func sendWirePayload(topic: String, payload: Data, secret: String) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
+    let logicalMessageId = Self.logicalMessageId(payload)
+    let enqueuedAtMillis = Self.nowMillis()
+    if !logicalMessageId.isEmpty {
+      peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis
+    }
     guard let packets = try? GalaxySSIMqttWireChunking.encode(wirePayload: wirePayload) else {
       return false
     }
@@ -280,7 +345,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
         payload: packet,
         transferId: transferId,
         relationshipBound: true,
-        brokerAckTimeoutSeconds: brokerAckTimeoutSeconds
+        brokerAckTimeoutSeconds: brokerAckTimeoutSeconds,
+        attemptId: UUID().uuidString,
+        logicalMessageId: logicalMessageId,
+        enqueuedAtMillis: enqueuedAtMillis
       )
     })
     pumpPendingPublishes()
@@ -297,9 +365,24 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
         break
       }
       let pending = pendingPacketPublishes.remove(at: index)
+      let sentAtMillis = Self.nowMillis()
       let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
       mqttInflightPacketIds.insert(packetId)
       inFlightPublishes[packetId] = pending
+      inFlightTimings[packetId] = InFlightTiming(
+        attemptId: pending.attemptId,
+        logicalMessageId: pending.logicalMessageId,
+        connectionGeneration: connectionGeneration,
+        sentAtMillis: sentAtMillis
+      )
+      AgentTransportTimingStore.shared.record(AgentTransportTimingEvent(
+        kind: .durableQueueWait,
+        attemptId: pending.attemptId,
+        logicalMessageId: pending.logicalMessageId,
+        connectionGeneration: connectionGeneration,
+        durationMillis: max(0, sentAtMillis - pending.enqueuedAtMillis),
+        recordedAtMillis: sentAtMillis
+      ))
       brokerAckWatchdog.onPublished(
         packetId: packetId,
         timeoutSeconds: pending.brokerAckTimeoutSeconds
@@ -376,6 +459,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     switch packetType {
     case 2:
       reconnectAttempt = 0
+      connectionGeneration &+= 1
       setConnected(true)
       subscribeToCurrentTopics()
       flushQueuedPublishes()
@@ -385,6 +469,18 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
       var index = 0
       if let packetId = packet.payload.readUInt16(at: &index) {
         brokerAckWatchdog.onAcknowledged(packetId: packetId)
+        if let timing = inFlightTimings.removeValue(forKey: packetId),
+           timing.connectionGeneration == connectionGeneration {
+          let nowMillis = Self.nowMillis()
+          AgentTransportTimingStore.shared.record(AgentTransportTimingEvent(
+            kind: .brokerPublishAck,
+            attemptId: timing.attemptId,
+            logicalMessageId: timing.logicalMessageId,
+            connectionGeneration: timing.connectionGeneration,
+            durationMillis: max(0, nowMillis - timing.sentAtMillis),
+            recordedAtMillis: nowMillis
+          ))
+        }
         if mqttInflightPacketIds.remove(packetId) != nil {
           inFlightPublishes.removeValue(forKey: packetId)
           if let transferId = fragmentTransferByPacketId.removeValue(forKey: packetId) {
@@ -444,6 +540,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
         guard let assembled = try inboundChunkAssembler.accept(scope: topic, wire: object) else {
           return
         }
+        observePeerReceipt(Data(assembled.utf8))
         DispatchQueue.main.async {
           self.onMessage?(topic, Data(assembled.utf8))
         }
@@ -458,9 +555,51 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
       }
       return
     }
+    observePeerReceipt(payload)
     DispatchQueue.main.async {
       self.onMessage?(topic, Data(payload))
     }
+  }
+
+  private func observePeerReceipt(_ payload: Data) {
+    guard let raw = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+          ["delivery_ack", "agent_task_result_receipt_confirmed"].contains(raw.string("type")) else {
+      return
+    }
+    let identity = raw.string("received_message_id")
+      .ifBlank(raw.string("message_id"))
+      .ifBlank(raw.string("receipt_id"))
+    let logicalMessageId = Self.opaqueIdentity(identity)
+    guard !logicalMessageId.isEmpty,
+          let startedAt = peerReceiptStartedAt.removeValue(forKey: logicalMessageId) else { return }
+    let nowMillis = Self.nowMillis()
+    AgentTransportTimingStore.shared.record(AgentTransportTimingEvent(
+      kind: .encryptedPeerReceipt,
+      attemptId: UUID().uuidString,
+      logicalMessageId: logicalMessageId,
+      connectionGeneration: connectionGeneration,
+      durationMillis: max(0, nowMillis - startedAt),
+      recordedAtMillis: nowMillis
+    ))
+  }
+
+  private static func logicalMessageId(_ payload: Data) -> String {
+    guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else { return "" }
+    return opaqueIdentity(
+      object.string("message_id")
+        .ifBlank(object.string("source_message_id"))
+        .ifBlank(object.string("receipt_id"))
+    )
+  }
+
+  private static func opaqueIdentity(_ value: String) -> String {
+    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return "" }
+    return SHA256.hash(data: Data(clean.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func nowMillis() -> Int64 {
+    Int64((Date().timeIntervalSince1970 * 1_000).rounded())
   }
 
   private func flushQueuedPublishes() {
@@ -602,9 +741,15 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
 
   private func resetOutboundInflightForReconnect() {
     if !inFlightPublishes.isEmpty {
-      pendingPacketPublishes.insert(contentsOf: inFlightPublishes.values, at: 0)
+      let retries = inFlightPublishes.values.map { pending -> PendingPublish in
+        var retry = pending
+        retry.attemptId = UUID().uuidString
+        return retry
+      }
+      pendingPacketPublishes.insert(contentsOf: retries, at: 0)
     }
     inFlightPublishes.removeAll()
+    inFlightTimings.removeAll()
     fragmentTransferByPacketId.removeAll()
     fragmentInflightByTransfer.removeAll()
     fragmentInflight = 0

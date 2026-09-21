@@ -732,8 +732,14 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
     val lastPosition = agentTranscriptAdapter.itemCount - 1
     if (lastPosition < 0) return
     agentOutputList.scrollToPosition(lastPosition)
+    val generation = agentTranscriptScrollGeneration
+    val conversationId = agentRenderedConversationId.ifBlank { agentTranscriptWindow.conversationId }
     agentOutputList.post {
-        agentOutputList.scrollBy(0, agentOutputList.computeVerticalScrollRange())
+        if (generation == agentTranscriptScrollGeneration &&
+            conversationId == agentRenderedConversationId.ifBlank { agentTranscriptWindow.conversationId } &&
+            agentTranscriptAutoFollow && !isFinishing && !isDestroyed) {
+            agentOutputList.scrollBy(0, agentOutputList.computeVerticalScrollRange())
+        }
     }
 }
 
@@ -818,9 +824,12 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
                 "appended=${visibleEntries.size - diff.appendFromIndex} elapsed_ms=$elapsed"
         )
     }
+    val scrollGeneration = ++agentTranscriptScrollGeneration
     agentOutputList.post {
+        if (scrollGeneration != agentTranscriptScrollGeneration || isFinishing || isDestroyed ||
+            activeConversationId != agentRenderedConversationId.ifBlank { agentTranscriptWindow.conversationId }) return@post
         if (shouldFollow) {
-            scrollAgentTranscriptToBottom()
+            if (agentTranscriptAutoFollow) scrollAgentTranscriptToBottom()
         } else {
             restoreAgentTranscriptScrollAnchor(scrollAnchor)
         }

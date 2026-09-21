@@ -6,9 +6,6 @@ struct AgentDirectVisionInvocation: Equatable {
 }
 
 enum AgentDirectVisionPolicy {
-  static let textOnlyCodexModelId = "gpt-5.3-codex-spark"
-  static let visionFallbackModelId = "gpt-5.6-luna"
-
   static func instruction(_ attachments: [GalaxySSIDraftAttachment]) -> String {
     instructionForMimeTypes(attachments.map(\.mimeType))
   }
@@ -25,12 +22,10 @@ enum AgentDirectVisionPolicy {
     reasoningEffort: AgentModelReasoningEffort,
     mimeTypes: [String]
   ) -> AgentDirectVisionInvocation {
-    let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard containsImage(mimeTypes),
-          cleanModelId.caseInsensitiveCompare(textOnlyCodexModelId) == .orderedSame else {
-      return AgentDirectVisionInvocation(modelId: cleanModelId, reasoningEffort: reasoningEffort)
-    }
-    return AgentDirectVisionInvocation(modelId: visionFallbackModelId, reasoningEffort: .high)
+    AgentDirectVisionInvocation(
+      modelId: RetiredAgentModelPolicy.availableOrDefault(modelId),
+      reasoningEffort: reasoningEffort
+    )
   }
 
   static func containsImage(_ mimeTypes: [String]) -> Bool {

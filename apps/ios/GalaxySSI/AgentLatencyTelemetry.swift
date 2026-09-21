@@ -1,0 +1,278 @@
+import CryptoKit
+import Foundation
+
+enum AgentLatencyStage: String, Codable, CaseIterable {
+  case phoneSendStarted = "phone_send_started"
+  case phonePublishStarted = "phone_publish_started"
+  case phoneRequestQueued = "phone_request_queued"
+  case phoneResponseReceived = "phone_response_received"
+  case phoneFirstOutputVisible = "phone_first_output_visible"
+  case phoneFinalReceived = "phone_final_received"
+  case phoneFinalOutputVisible = "phone_final_output_visible"
+}
+
+struct AgentLatencyPoint: Codable, Equatable {
+  var traceId: String
+  var clockId: String
+  var stage: AgentLatencyStage
+  var monotonicNs: Int64
+  var wallClockMs: Int64
+  var outcome: String
+
+  enum CodingKeys: String, CodingKey {
+    case traceId = "trace_id"
+    case clockId = "clock_id"
+    case stage
+    case monotonicNs = "monotonic_ns"
+    case wallClockMs = "wall_clock_ms"
+    case outcome
+  }
+}
+
+struct AgentLatencyMetric: Equatable {
+  var count: Int
+  var incomplete: Int
+  var unsuccessful: Int
+  var p50Ms: Double?
+  var p95Ms: Double?
+  var p99Ms: Double?
+}
+
+enum AgentLatencyContract {
+  static let schema = "galaxyssi.agent-latency.v1"
+  static let eventLimit = 8_000
+  static let metricPairs: [(name: String, start: AgentLatencyStage, end: AgentLatencyStage)] = [
+    ("phone_context_route_ms", .phoneSendStarted, .phonePublishStarted),
+    ("phone_send_prepare_ms", .phoneSendStarted, .phoneRequestQueued),
+    ("phone_send_first_visible_ms", .phoneSendStarted, .phoneFirstOutputVisible),
+    ("phone_publish_prepare_ms", .phonePublishStarted, .phoneRequestQueued),
+    ("phone_response_roundtrip_ms", .phoneRequestQueued, .phoneResponseReceived),
+    ("phone_connector_first_visible_ms", .phonePublishStarted, .phoneFirstOutputVisible),
+    ("phone_connector_complete_visible_ms", .phonePublishStarted, .phoneFinalOutputVisible),
+    ("phone_render_ms", .phoneResponseReceived, .phoneFirstOutputVisible)
+  ]
+
+  static func opaqueId(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  static func valid(_ point: AgentLatencyPoint) -> Bool {
+    point.traceId.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil
+      && point.clockId.range(of: #"^[a-f0-9]{32}$"#, options: .regularExpression) != nil
+      && point.monotonicNs >= 0
+      && point.wallClockMs >= 0
+      && allowedOutcomes.contains(point.outcome)
+  }
+
+  static func summarize(_ points: [AgentLatencyPoint]) -> [String: AgentLatencyMetric] {
+    let groups = Dictionary(grouping: points.filter(valid), by: { "\($0.traceId):\($0.clockId)" })
+    return Dictionary(uniqueKeysWithValues: metricPairs.map { pair in
+      var incomplete = 0
+      var unsuccessful = 0
+      var samples: [Double] = []
+      for group in groups.values {
+        guard let start = group.filter({ $0.stage == pair.start }).map(\.monotonicNs).min() else {
+          continue
+        }
+        guard let end = group
+          .filter({ $0.stage == pair.end && $0.monotonicNs >= start })
+          .min(by: { $0.monotonicNs < $1.monotonicNs }) else {
+          incomplete += 1
+          continue
+        }
+        if unsuccessfulOutcomes.contains(end.outcome) {
+          unsuccessful += 1
+        } else {
+          samples.append(Double(end.monotonicNs - start) / 1_000_000)
+        }
+      }
+      samples.sort()
+      return (pair.name, AgentLatencyMetric(
+        count: samples.count,
+        incomplete: incomplete,
+        unsuccessful: unsuccessful,
+        p50Ms: percentile(samples, 0.50),
+        p95Ms: percentile(samples, 0.95),
+        p99Ms: percentile(samples, 0.99)
+      ))
+    })
+  }
+
+  private static func percentile(_ values: [Double], _ fraction: Double) -> Double? {
+    guard !values.isEmpty else { return nil }
+    let index = min(max(Int(ceil(fraction * Double(values.count))) - 1, 0), values.count - 1)
+    return values[index]
+  }
+
+  private static let allowedOutcomes: Set<String> = ["", "completed", "failed", "cancelled", "timed_out"]
+  private static let unsuccessfulOutcomes: Set<String> = ["failed", "cancelled", "timed_out"]
+}
+
+final class AgentLatencyJournal {
+  private let lock = NSLock()
+  private let fileURL: URL
+  private let previousURL: URL
+  private let maxEvents: Int
+  private let byteLimit: Int64
+  private let encoder = JSONEncoder()
+  private let decoder = JSONDecoder()
+  private var memory: [AgentLatencyPoint] = []
+
+  init(
+    fileURL: URL = AgentLatencyJournal.defaultFileURL(),
+    maxEvents: Int = AgentLatencyContract.eventLimit,
+    byteLimit: Int64 = 2 * 1024 * 1024
+  ) {
+    self.fileURL = fileURL
+    self.previousURL = fileURL.deletingLastPathComponent()
+      .appendingPathComponent("agent_latency_v1.previous.jsonl")
+    self.maxEvents = max(1, maxEvents)
+    self.byteLimit = max(1, byteLimit)
+  }
+
+  static func defaultFileURL() -> URL {
+    AgentNativeToolDefaultStorePaths.applicationSupportRootURL()
+      .appendingPathComponent("diagnostics", isDirectory: true)
+      .appendingPathComponent("agent_latency_v1.jsonl")
+  }
+
+  func append(_ point: AgentLatencyPoint) {
+    guard AgentLatencyContract.valid(point) else { return }
+    lock.lock()
+    defer { lock.unlock() }
+    memory.append(point)
+    memory = Array(memory.suffix(maxEvents))
+    do {
+      try FileManager.default.createDirectory(
+        at: fileURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try rotateIfNeeded()
+      var data = try encoder.encode(point)
+      data.append(Data("\n".utf8))
+      if FileManager.default.fileExists(atPath: fileURL.path) {
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { handle.closeFile() }
+        handle.seekToEndOfFile()
+        handle.write(data)
+      } else {
+        try data.write(to: fileURL, options: .atomic)
+      }
+    } catch {
+      return
+    }
+  }
+
+  func snapshot() -> [AgentLatencyPoint] {
+    lock.lock()
+    defer { lock.unlock() }
+    var seen: Set<String> = []
+    let loaded = [previousURL, fileURL].flatMap(load) + memory
+    return Array(loaded.filter { point in
+      let key = "\(point.traceId):\(point.clockId):\(point.stage.rawValue):\(point.monotonicNs)"
+      return AgentLatencyContract.valid(point) && seen.insert(key).inserted
+    }.suffix(maxEvents))
+  }
+
+  private func load(_ url: URL) -> [AgentLatencyPoint] {
+    guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+    return text.split(separator: "\n").compactMap {
+      try? decoder.decode(AgentLatencyPoint.self, from: Data($0.utf8))
+    }
+  }
+
+  private func rotateIfNeeded() throws {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+          let size = attributes[.size] as? NSNumber,
+          size.int64Value >= byteLimit else { return }
+    try? FileManager.default.removeItem(at: previousURL)
+    try FileManager.default.moveItem(at: fileURL, to: previousURL)
+  }
+}
+
+final class AgentLatencyTracer {
+  private let journal: AgentLatencyJournal
+  private let monotonicNs: () -> Int64
+  private let wallClockMs: () -> Int64
+  private let clockId: String
+  private let lock = NSLock()
+  private var seen: Set<String> = []
+  private var outcomes: [String: String] = [:]
+
+  init(
+    journal: AgentLatencyJournal,
+    monotonicNs: @escaping () -> Int64 = AgentLatencyTelemetry.currentMonotonicNs,
+    wallClockMs: @escaping () -> Int64 = AgentLatencyTelemetry.currentWallClockMs,
+    clockId: String = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+  ) {
+    self.journal = journal
+    self.monotonicNs = monotonicNs
+    self.wallClockMs = wallClockMs
+    self.clockId = clockId
+  }
+
+  func record(taskId: String, stage: AgentLatencyStage, outcome: String = "") {
+    let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTaskId.isEmpty else { return }
+    let traceId = AgentLatencyContract.opaqueId(cleanTaskId)
+    let key = "\(traceId):\(stage.rawValue)"
+    lock.lock()
+    guard seen.insert(key).inserted else {
+      lock.unlock()
+      return
+    }
+    if stage == .phoneFinalReceived {
+      outcomes[traceId] = normalizedOutcome(outcome)
+    }
+    if seen.count > AgentLatencyContract.eventLimit {
+      seen.removeAll(keepingCapacity: true)
+      seen.insert(key)
+      outcomes = outcomes.filter { $0.key == traceId }
+    }
+    lock.unlock()
+    journal.append(AgentLatencyPoint(
+      traceId: traceId,
+      clockId: clockId,
+      stage: stage,
+      monotonicNs: max(0, monotonicNs()),
+      wallClockMs: max(0, wallClockMs()),
+      outcome: stage == .phoneFinalReceived ? normalizedOutcome(outcome) : normalizedOutcome(outcome, emptyAllowed: true)
+    ))
+  }
+
+  func visible(taskId: String, final: Bool) {
+    let traceId = AgentLatencyContract.opaqueId(taskId)
+    lock.lock()
+    let hasResponse = seen.contains("\(traceId):\(AgentLatencyStage.phoneResponseReceived.rawValue)")
+    let hasFinal = seen.contains("\(traceId):\(AgentLatencyStage.phoneFinalReceived.rawValue)")
+    let outcome = outcomes[traceId] ?? "completed"
+    lock.unlock()
+    guard hasResponse else { return }
+    record(taskId: taskId, stage: .phoneFirstOutputVisible)
+    if final && hasFinal {
+      record(taskId: taskId, stage: .phoneFinalOutputVisible, outcome: outcome)
+    }
+  }
+
+  func summary() -> [String: AgentLatencyMetric] {
+    AgentLatencyContract.summarize(journal.snapshot())
+  }
+
+  private func normalizedOutcome(_ value: String, emptyAllowed: Bool = false) -> String {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if ["failed", "cancelled", "timed_out"].contains(normalized) { return normalized }
+    return emptyAllowed && normalized.isEmpty ? "" : "completed"
+  }
+}
+
+enum AgentLatencyTelemetry {
+  static let shared = AgentLatencyTracer(journal: AgentLatencyJournal())
+
+  static func currentMonotonicNs() -> Int64 {
+    Int64(clamping: DispatchTime.now().uptimeNanoseconds)
+  }
+
+  static func currentWallClockMs() -> Int64 {
+    Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+  }
+}

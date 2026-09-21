@@ -89,6 +89,10 @@ final class AgentRunRecoveryCoordinator {
   func recover() async throws -> [AgentRunRecoveryResult] {
     var results: [AgentRunRecoveryResult] = []
     for snapshot in runStore.recoverableRuns() {
+      if snapshot.lastEvent.payload["recovery_mode"]?.stringValue == "observation_only" ||
+          snapshot.lastEvent.payload["observation_only"]?.boolValue == true {
+        continue
+      }
       results.append(try await recover(snapshot))
     }
     return results
@@ -177,19 +181,29 @@ final class AgentRunRecoveryCoordinator {
     _ snapshot: AgentRunControlSnapshot,
     decision: AgentRunRecoveryDecision
   ) async throws -> AgentRunRecoveryResult {
-    let adapter = try? await adapterResolver(snapshot.agentId)
+    try Task.checkCancellation()
+    let adapter = try await recoverOrNil { try await adapterResolver(snapshot.agentId) }
     let workspace = workspaceFor(snapshot)
     let recoverable: [AgentRecoverableRun]
     if let adapter = adapter {
-      recoverable = (try? await adapter.recoverRuns()) ?? []
+      recoverable = try await recoverOrNil { try await adapter.recoverRuns() } ?? []
     } else {
       recoverable = []
     }
-    let remote = recoverable.first { candidate in
-      candidate.handle.runId == snapshot.runId ||
-        candidate.handle.taskId == snapshot.taskId ||
-        candidate.handle.remoteRunId == workspace?.remoteRunId
+    try Task.checkCancellation()
+    let matches = recoverable.filter { candidate in
+      guard let observation = candidate.observation,
+            observation.workspaceStatus != nil else { return false }
+      return candidate.handle.runId == snapshot.runId &&
+        candidate.handle.taskId == snapshot.taskId &&
+        candidate.handle.agentId == snapshot.agentId &&
+        observation.conversationId == snapshot.lastEvent.conversationId &&
+        observation.deviceId == adapter?.registration.deviceId &&
+        observation.remoteTaskId == candidate.handle.taskId &&
+        observation.remoteRunId == candidate.handle.remoteRunId &&
+        observation.statusSequence >= 0
     }
+    let remote = matches.count == 1 ? matches[0] : nil
 
     guard let remote else {
       try restoreWorkspace(
@@ -211,9 +225,12 @@ final class AgentRunRecoveryCoordinator {
     }
 
     let priorWorkspace = workspaceFor(snapshot)
-    if snapshot.lastEvent.type == .runRecovered,
-      let priorWorkspace,
-      priorWorkspace.lastRemoteEventSequence >= remote.lastEventSequence {
+    let observation = remote.observation!
+    let remoteStatus = observation.workspaceStatus!
+    if snapshot.lastEvent.payload["remote_status"]?.stringValue == observation.status,
+      snapshot.lastEvent.payload["remote_status_sequence"]?.intValue == observation.statusSequence,
+      priorWorkspace?.status == remoteStatus,
+      priorWorkspace?.remoteRunId == observation.remoteRunId {
       return AgentRunRecoveryResult(
         runId: snapshot.runId,
         outcome: .alreadyCurrent,
@@ -222,27 +239,50 @@ final class AgentRunRecoveryCoordinator {
       )
     }
 
+    let reason = "remote_status_\(observation.status)"
     try restoreWorkspace(
       snapshot: snapshot,
-      status: .running,
+      status: remoteStatus,
       eventKind: "task.reconnected_remote",
       checkpoint: AgentMcpJSONCodec.stringify(remote.checkpoint),
       remoteHandle: remote.handle,
       remoteSequence: remote.lastEventSequence,
-      reason: decision.reason
+      reason: reason
     )
     appendRecoveryEvent(
       snapshot,
-      reason: decision.reason,
+      type: recoveryEventType(remoteStatus),
+      reason: reason,
       remoteSequence: remote.lastEventSequence,
-      source: "durable_remote"
+      observation: observation
     )
     return AgentRunRecoveryResult(
       runId: snapshot.runId,
       outcome: .reconnectedRemote,
       lastRemoteEventSequence: remote.lastEventSequence,
-      reason: decision.reason
+      reason: reason
     )
+  }
+
+  private func recoverOrNil<T>(_ operation: () async throws -> T) async throws -> T? {
+    do {
+      return try await operation()
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      return nil
+    }
+  }
+
+  private func recoveryEventType(_ status: AgentWorkspaceStatus) -> AgentRunControlEventType {
+    switch status {
+    case .cancelled: return .runCancelled
+    case .failed: return .runFailed
+    case .paused: return .paused
+    case .waitingConfirmation: return .waitingForUser
+    case .waitingResponse: return .waitingForDevice
+    default: return .runRecovered
+    }
   }
 
   private func workspaceFor(_ snapshot: AgentRunControlSnapshot) -> AgentWorkspace? {
@@ -321,17 +361,22 @@ final class AgentRunRecoveryCoordinator {
 
   private func appendRecoveryEvent(
     _ snapshot: AgentRunControlSnapshot,
+    type: AgentRunControlEventType,
     reason: String,
     remoteSequence: Int64,
-    source: String
+    observation: AgentRemoteRecoveryObservation
   ) {
     _ = runStore.appendNext(event(
       from: snapshot,
-      type: .runRecovered,
+      type: type,
       payload: snapshot.lastEvent.payload.adding([
-        "recovery_source": .string(source),
+        "recovery_source": .string("verified_remote"),
         "reason": .string(reason),
-        "last_remote_event_sequence": .int(remoteSequence)
+        "last_remote_event_sequence": .int(remoteSequence),
+        "remote_status": .string(observation.status),
+        "remote_status_sequence": .int(observation.statusSequence),
+        "remote_task_id": .string(observation.remoteTaskId),
+        "remote_run_id": .string(observation.remoteRunId)
       ])
     ))
   }
@@ -440,6 +485,107 @@ final class AgentRunRecoveryCoordinator {
 
   private static let remoteUnavailableReason = "remote_run_temporarily_unavailable"
   private static let maxWriteAttempts = 4
+}
+
+final class AgentRecoveryWakeCoordinator {
+  private let lock = NSLock()
+  private let recover: () async throws -> Void
+  private let failed: (Error) -> Void
+  private var connected = false
+  private var pending = false
+  private var worker: Task<Void, Never>?
+  private var workerId: UUID?
+
+  init(
+    recover: @escaping () async throws -> Void,
+    failed: @escaping (Error) -> Void = { _ in }
+  ) {
+    self.recover = recover
+    self.failed = failed
+  }
+
+  func connectionChanged(_ value: Bool) {
+    let workerId = locked { () -> UUID? in
+      if value && !connected { pending = true }
+      connected = value
+      return claimWorkerLocked()
+    }
+    if let workerId { launchWorker(workerId) }
+  }
+
+  func request(isConnected: Bool? = nil) {
+    let workerId = locked { () -> UUID? in
+      if let isConnected { connected = isConnected }
+      pending = true
+      return claimWorkerLocked()
+    }
+    if let workerId { launchWorker(workerId) }
+  }
+
+  var isRunning: Bool { locked { workerId != nil } }
+  var hasPendingWake: Bool { locked { pending } }
+
+  func cancel() {
+    let active = locked { () -> Task<Void, Never>? in
+      let active = worker
+      worker = nil
+      workerId = nil
+      pending = false
+      return active
+    }
+    active?.cancel()
+  }
+
+  private func claimWorkerLocked() -> UUID? {
+    guard connected, pending, workerId == nil else { return nil }
+    let id = UUID()
+    workerId = id
+    return id
+  }
+
+  private func launchWorker(_ id: UUID) {
+    let task = Task { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled {
+        let shouldRecover = locked { () -> Bool in
+          guard connected, pending else { return false }
+          pending = false
+          return true
+        }
+        guard shouldRecover else { break }
+        do {
+          try await recover()
+        } catch is CancellationError {
+          break
+        } catch {
+          failed(error)
+        }
+      }
+      let restart = locked { () -> UUID? in
+        guard workerId == id else { return nil }
+        worker = nil
+        workerId = nil
+        return claimWorkerLocked()
+      }
+      if let restart { launchWorker(restart) }
+    }
+    let accepted = locked { () -> Bool in
+      guard workerId == id else { return false }
+      worker = task
+      return true
+    }
+    if !accepted { task.cancel() }
+  }
+
+  private func locked<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+
+  deinit {
+    worker?.cancel()
+  }
 }
 
 @MainActor

@@ -1436,7 +1436,10 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                 val eventEntry = if (previous != null) {
                     previous.copy(
                         id = UUID.randomUUID().toString(), role = role, text = cleanText,
-                        timestampMillis = timestampMillis,
+                        timestampMillis = if (role == AgentTranscriptRole.ASSISTANT &&
+                            previous.role == role && cleanKey.startsWith("assistant-final:")) {
+                            minOf(previous.timestampMillis, timestampMillis)
+                        } else timestampMillis,
                         turnId = turnId.ifBlank { previous.turnId },
                         taskId = taskId.ifBlank { previous.taskId },
                         richOutputJson = normalizedRichOutput.ifBlank { previous.richOutputJson }

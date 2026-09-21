@@ -2,6 +2,81 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testResultRecoveryAssemblerValidatesPagedFinalReplyBeforePublication() throws {
+    let identity = AgentResultRecoveryIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      contactId: "codex",
+      sourceMessageId: "42",
+      agentId: "codex"
+    )
+    let content = String(repeating: "result-", count: 3_000)
+    let object: [String: Any] = [
+      "client_route_id": identity.clientRouteId,
+      "conversation_id": identity.conversationId,
+      "task_id": identity.taskId,
+      "turn_id": identity.turnId,
+      "contact_id": identity.contactId,
+      "source_message_id": identity.sourceMessageId,
+      "agent_id": identity.agentId,
+      "type": "text",
+      "task_status": "completed",
+      "content": content
+    ]
+    let payload = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    let digest = AgentResultRecoveryAssembler.sha256(payload)
+    let pageCount = (payload.count + AgentResultRecoveryAssembler.pageBytes - 1) /
+      AgentResultRecoveryAssembler.pageBytes
+    let assembler = AgentResultRecoveryAssembler(identity: identity)
+    var recovered: AgentConnectorResponse?
+    for index in 0..<pageCount {
+      let start = index * AgentResultRecoveryAssembler.pageBytes
+      let end = min(payload.count, start + AgentResultRecoveryAssembler.pageBytes)
+      let chunk = payload.subdata(in: start..<end)
+      recovered = assembler.consume(AgentResultRecoveryPage(
+        identity: identity,
+        pageIndex: index,
+        pageCount: pageCount,
+        totalBytes: payload.count,
+        sha256: digest,
+        pageSHA256: AgentResultRecoveryAssembler.sha256(chunk),
+        dataBase64: chunk.base64EncodedString()
+      ))
+      if index < pageCount - 1 { XCTAssertNil(recovered) }
+    }
+
+    XCTAssertEqual(recovered?.sourceMessageId, 42)
+    XCTAssertEqual(recovered?.content, content)
+    XCTAssertEqual(recovered?.conversationId, identity.conversationId)
+  }
+
+  func testResultRecoveryAssemblerRejectsChangedIdentityAndCancelledPendingRequest() throws {
+    let identity = AgentResultRecoveryIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      contactId: "codex",
+      sourceMessageId: "42",
+      agentId: "codex"
+    )
+    var pending = true
+    let assembler = AgentResultRecoveryAssembler(identity: identity, stillPending: { pending })
+    pending = false
+    let data = Data("{}".utf8)
+    XCTAssertNil(assembler.consume(AgentResultRecoveryPage(
+      identity: identity,
+      pageIndex: 0,
+      pageCount: 1,
+      totalBytes: data.count,
+      sha256: AgentResultRecoveryAssembler.sha256(data),
+      pageSHA256: AgentResultRecoveryAssembler.sha256(data),
+      dataBase64: data.base64EncodedString()
+    )))
+  }
+
   func testTerminalFailureNeverAcceptsLateResult() {
     let messages = [connectorPolicyMessage(isMine: true, turnId: "turn-1")]
 
@@ -302,7 +377,7 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(bus.publish(AgentConnectorResponse(sourceMessageId: 502, content: "", richOutputJson: "{}")))
   }
 
-  func testAgentConnectorResponseStoreBoundsDedupeExpiryAndAndroidWireNames() throws {
+  func testAgentConnectorResponseStoreRetainsPendingBodiesAndUsesFullIdentity() throws {
     let store = AgentConnectorResponseStore(nowMillis: { 100_000 })
     for index in 0..<35 {
       store.append(AgentConnectorResponse(
@@ -312,8 +387,9 @@ extension GalaxySSIStoreTests {
         receivedAtMillis: Int64(index + 1)
       ))
     }
-    XCTAssertEqual(store.pending().count, AgentConnectorResponseStore.maxResponses)
-    XCTAssertEqual(store.pending().first?.sourceMessageId, 6)
+    XCTAssertEqual(store.pending().count, 35)
+    XCTAssertEqual(store.pending().first?.sourceMessageId, 1)
+    XCTAssertEqual(store.pending(limit: 32).count, 32)
 
     store.append(AgentConnectorResponse(
       sourceMessageId: 35,
@@ -324,9 +400,20 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(store.pending().filter { $0.sourceMessageId == 35 && $0.contactId == "codex" }.count, 1)
     XCTAssertEqual(store.pending().last?.content, "replacement")
 
+    store.append(AgentConnectorResponse(
+      sourceMessageId: 35,
+      contactId: "codex",
+      content: "other turn",
+      conversationId: "conversation-2",
+      turnId: "turn-2",
+      taskId: "task-2",
+      receivedAtMillis: 102_000
+    ))
+    XCTAssertEqual(store.pending().filter { $0.sourceMessageId == 35 }.count, 2)
+
     let encoded = store.serializedSnapshot()
     let array = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
-    let object = try XCTUnwrap(array.last)
+    let object = try XCTUnwrap(array.first { ($0["content"] as? String) == "replacement" })
     XCTAssertEqual(object["source_message_id"] as? Int, 35)
     XCTAssertEqual(object["received_at"] as? Int, 101_000)
     XCTAssertNil(object["received_at_millis"])
@@ -337,13 +424,127 @@ extension GalaxySSIStoreTests {
         sourceMessageId: 900,
         contactId: "codex",
         content: "old",
-        receivedAtMillis: 100_000 - AgentConnectorResponseStore.maxResponseAgeMillis - 1
+        receivedAtMillis: 1
       )
     ])
-    XCTAssertTrue(AgentConnectorResponseStore(serialized: stale, nowMillis: { 100_000 }).pending().isEmpty)
+    XCTAssertEqual(
+      AgentConnectorResponseStore(serialized: stale, nowMillis: { 100_000_000 }).pending().map(\.content),
+      ["old"]
+    )
 
     store.remove(AgentConnectorResponse(sourceMessageId: 35, contactId: "codex", content: ""))
-    XCTAssertFalse(store.pending().contains { $0.sourceMessageId == 35 && $0.contactId == "codex" })
+    XCTAssertEqual(store.pending().filter { $0.sourceMessageId == 35 }.map(\.content), ["other turn"])
+  }
+
+  func testUserDefaultsConnectorInboxMigratesPlaintextToEncryptedStorage() throws {
+    let suiteName = "AgentConnectorInboxTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let storageKey = "connector.responses"
+    let legacy = AgentConnectorResponseStoreCodec.encode([
+      AgentConnectorResponse(
+        sourceMessageId: 71,
+        contactId: "codex",
+        resolvedContactId: "desktop-codex",
+        content: "durable reply",
+        conversationId: "conversation",
+        turnId: "turn",
+        taskId: "task",
+        receivedAtMillis: 1
+      )
+    ])
+    defaults.set(legacy, forKey: storageKey)
+    let secrets = InMemorySecretStore()
+
+    let migrated = UserDefaultsAgentConnectorResponseStore(
+      defaults: defaults,
+      storageKey: storageKey,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+
+    XCTAssertEqual(migrated.pending().map(\.content), ["durable reply"])
+    XCTAssertNil(defaults.string(forKey: storageKey))
+    XCTAssertNotNil(defaults.data(forKey: "\(storageKey).encrypted.v1"))
+    let reopened = UserDefaultsAgentConnectorResponseStore(
+      defaults: defaults,
+      storageKey: storageKey,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertEqual(reopened.pending().map(\.taskId), ["task"])
+    XCTAssertEqual(reopened.pending().map(\.resolvedContactId), ["desktop-codex"])
+  }
+
+  func testSQLiteConnectorResponseJournalPagesAndPersistsEncryptedRows() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("pending.sqlite3")
+    let secrets = InMemorySecretStore()
+    let suiteName = "connector-journal-\(UUID().uuidString)"
+    let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { suite.removePersistentDomain(forName: suiteName) }
+
+    var journal: SQLiteAgentConnectorResponseStore? = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    for index in 1...40 {
+      XCTAssertTrue(journal?.publish(AgentConnectorResponse(
+        sourceMessageId: Int64(index),
+        contactId: "codex",
+        content: "answer-\(index)",
+        receivedAtMillis: 100_000
+      )) ?? false)
+    }
+    let firstPage = try XCTUnwrap(journal?.pending())
+    XCTAssertEqual(firstPage.count, SQLiteAgentConnectorResponseStore.pageSize)
+    XCTAssertEqual(firstPage.first?.sourceMessageId, 1)
+    firstPage.forEach { journal?.remove($0) }
+    journal = nil
+
+    let reopened = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertEqual(reopened.pending().map(\.sourceMessageId), Array(33...40).map(Int64.init))
+    XCTAssertNil((try Data(contentsOf: fileURL)).range(of: Data("answer-40".utf8)))
+  }
+
+  func testSQLiteConnectorResponseJournalTombstoneWinsOverLegacyMigration() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("pending.sqlite3")
+    let secrets = InMemorySecretStore()
+    let suiteName = "connector-migration-\(UUID().uuidString)"
+    let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { suite.removePersistentDomain(forName: suiteName) }
+    let response = AgentConnectorResponse(
+      sourceMessageId: 77,
+      contactId: "desktop-agent",
+      content: "legacy",
+      receivedAtMillis: 100_000
+    )
+    let journal = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    journal.remove(response)
+    suite.set(AgentConnectorResponseStoreCodec.encode([response]), forKey: UserDefaultsAgentConnectorResponseStore.defaultStorageKey)
+
+    let reopened = SQLiteAgentConnectorResponseStore(
+      fileURL: fileURL,
+      defaults: suite,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertTrue(reopened.pending().isEmpty)
   }
 
   func testTypedTerminalOutcomePreservesErrorAndExecutionVersion() throws {
@@ -457,4 +658,5 @@ extension GalaxySSIStoreTests {
       turnId: turnId
     )
   }
+
 }

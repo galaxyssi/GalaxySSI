@@ -390,7 +390,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         val auditReview = imageSession.researchAudit.reviewPrompt(turns.lastOrNull { it.isMine }?.content.orEmpty())
                         if (candidate.isNotBlank() && auditReview != null && research.stopReason() == null &&
                             !toolProgress.finalizationRequested && toolProgress.requestRepair("public_evidence_audit")) {
-                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            // Keep the provisional draft visible while auditing; it is not committed or spoken.
                             appendPlainConversationTurn(prepared, "assistant", candidate)
                             appendPlainConversationTurn(prepared, "user", auditReview)
                             continue
@@ -398,7 +398,6 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         val readingReview = research.readingReview(candidate)
                         if (candidate.isNotBlank() && readingReview != null && research.stopReason() == null &&
                             !toolProgress.finalizationRequested && toolProgress.requestRepair("decisive_body_reading")) {
-                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                             appendPlainConversationTurn(prepared, "assistant", candidate)
                             appendPlainConversationTurn(prepared, "user", readingReview)
                             onToolEvent?.invoke(CloudToolEvent("research", "verifying", "\u6b63\u5728\u8865\u8bfb\u5173\u952e\u539f\u6587\u5e76\u6838\u5bf9\u7ed3\u8bba"))
@@ -409,7 +408,9 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             .put("evidence_audit", imageSession.researchAudit.report())
                         if (candidate.isNotBlank() && qualityReport.getJSONArray("risks").length() > 0 &&
                             toolProgress.requestRepair("research_quality")) {
-                            if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            if (citationValidation.invalidCitationUrls.isNotEmpty()) {
+                                emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                            }
                             appendPlainConversationTurn(prepared, "assistant", candidate)
                             appendPlainConversationTurn(prepared, "user", quality.repairPrompt(qualityReport))
                             continue
