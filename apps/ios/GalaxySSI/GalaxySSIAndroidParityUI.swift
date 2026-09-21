@@ -103,11 +103,12 @@ struct AgentHomeView: View {
   @EnvironmentObject var coordinator: MessageCoordinator
   @ObservedObject var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
   @StateObject var agentReplySpeechRuntime = AgentReplySpeechRuntime()
-  @State var draft = ""
+  @SceneStorage("galaxyssi.agent.draft") var draft = ""
   @State var attachments: [GalaxySSIDraftAttachment] = []
   @State var actionTrayPresented = false
   @State var voiceTranscriptionPending = false
-  @State var transcriptAutoFollow = true
+  @SceneStorage("galaxyssi.agent.transcriptAutoFollow") var transcriptAutoFollow = true
+  @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @State var transcriptShowLatestButton = false
   @State var pendingAgentSwipeDirection = ""
   @State var agentSwipeRequest = 0
@@ -251,7 +252,11 @@ struct AgentHomeView: View {
       )
       .onAppear {
         coordinator.resumePendingAgentDelivery()
+        if !sceneConversationID.isEmpty {
+          _ = store.switchAgentSession(sceneConversationID)
+        }
         ensureActiveAgentSession()
+        sceneConversationID = store.activeAgentConversationId
         presentPendingPhonePublicPageExport()
         voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
@@ -291,6 +296,7 @@ struct AgentHomeView: View {
         coordinator.updateAgentScreenContext(snapshot.screen)
       }
       .onChange(of: store.activeAgentConversationId) { _ in
+        sceneConversationID = store.activeAgentConversationId
         resetAgentSessionPresentation()
         refreshAgentRouteState()
       }
@@ -533,6 +539,7 @@ struct AgentHomeView: View {
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
       voiceNavigationLabel: t("galaxyssi.agent.open_voice", "Open voice"),
       settingsNavigationLabel: t("galaxyssi.tab.settings", "Settings"),
+      openWindowLabel: t("galaxyssi.agent.open_window", "Open in New Window"),
       modelSelectionDestination: GalaxySSIAgentModelSelectionView {
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       },
@@ -540,6 +547,13 @@ struct AgentHomeView: View {
         actionTrayPresented = false
         agentSettingsShortcutActive = true
       },
+      onOpenWindow: GalaxySSIConversationSceneController.supportsIndependentWindows
+        ? {
+            GalaxySSIConversationSceneController.open(
+              conversationID: store.activeAgentConversationId
+            )
+          }
+        : nil,
       onOpenVoice: { openMainTab(.voice) }
     )
   }
