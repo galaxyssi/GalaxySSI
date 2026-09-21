@@ -592,18 +592,90 @@ protocol AgentConnectorResponseSink: AnyObject {
   func publish(_ response: AgentConnectorResponse) -> Bool
   func pending() -> [AgentConnectorResponse]
   func remove(_ response: AgentConnectorResponse)
+  func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool
   func clear()
+}
+
+extension AgentConnectorResponseSink {
+  func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool {
+    pending().contains { delivery.matches($0) && $0.deliveryFailureCode.isEmpty }
+  }
+}
+
+struct AgentReceivedDeliveryProof: Codable, Equatable {
+  var sourceIdentity: String
+  var turnIdentity: String
+  var receivedAtMillis: Int64
+
+  init(_ response: AgentConnectorResponse) {
+    sourceIdentity = Self.sourceIdentity(
+      sourceMessageId: response.sourceMessageId,
+      contactId: response.contactId,
+      executionGeneration: response.executionGeneration
+    )
+    turnIdentity = Self.turnIdentity(
+      conversationId: response.conversationId,
+      turnId: response.turnId,
+      contactId: response.contactId,
+      executionGeneration: response.executionGeneration
+    )
+    receivedAtMillis = response.receivedAtMillis
+  }
+
+  func matches(_ delivery: AgentTerminalDelivery) -> Bool {
+    if delivery.sourceMessageId > 0 {
+      return !delivery.contactId.isEmpty && sourceIdentity == Self.sourceIdentity(
+        sourceMessageId: delivery.sourceMessageId,
+        contactId: delivery.contactId,
+        executionGeneration: delivery.executionGeneration
+      )
+    }
+    return !delivery.conversationId.isEmpty && !delivery.turnId.isEmpty &&
+      !delivery.contactId.isEmpty && turnIdentity == Self.turnIdentity(
+        conversationId: delivery.conversationId,
+        turnId: delivery.turnId,
+        contactId: delivery.contactId,
+        executionGeneration: delivery.executionGeneration
+      )
+  }
+
+  private static func sourceIdentity(
+    sourceMessageId: Int64,
+    contactId: String,
+    executionGeneration: Int64
+  ) -> String {
+    digest(["source", String(sourceMessageId), contactId, String(executionGeneration)])
+  }
+
+  private static func turnIdentity(
+    conversationId: String,
+    turnId: String,
+    contactId: String,
+    executionGeneration: Int64
+  ) -> String {
+    guard !conversationId.isEmpty, !turnId.isEmpty else { return "" }
+    return digest(["turn", conversationId, turnId, contactId, String(executionGeneration)])
+  }
+
+  private static func digest(_ values: [String]) -> String {
+    let data = (try? JSONEncoder().encode(values)) ?? Data()
+    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
 }
 
 final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
   private let lock = NSRecursiveLock()
   private var responses: [AgentConnectorResponse] = []
+  private var receivedDeliveries: [AgentReceivedDeliveryProof] = []
 
   @discardableResult
   func publish(_ response: AgentConnectorResponse) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     responses.append(response)
+    if response.deliveryFailureCode.isEmpty {
+      receivedDeliveries.append(AgentReceivedDeliveryProof(response))
+    }
     return true
   }
 
@@ -619,14 +691,24 @@ final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
     responses.removeAll {
       $0.sourceMessageId == response.sourceMessageId &&
         $0.contactId == response.contactId &&
+        $0.conversationId == response.conversationId &&
+        $0.turnId == response.turnId &&
+        $0.taskId == response.taskId &&
         $0.executionGeneration == response.executionGeneration
     }
+  }
+
+  func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return receivedDeliveries.contains { $0.matches(delivery) }
   }
 
   func clear() {
     lock.lock()
     defer { lock.unlock() }
     responses.removeAll()
+    receivedDeliveries.removeAll()
   }
 }
 
@@ -758,13 +840,16 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
   private let lock = NSRecursiveLock()
   private let nowMillis: () -> Int64
   private var responses: [AgentConnectorResponse]
+  private var receivedDeliveries: [AgentReceivedDeliveryProof]
 
   init(
     serialized: String = "[]",
+    receivedDeliveries: [AgentReceivedDeliveryProof] = [],
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.nowMillis = nowMillis
     self.responses = AgentConnectorResponseStoreCodec.decode(serialized, nowMillis: nowMillis())
+    self.receivedDeliveries = receivedDeliveries
   }
 
   @discardableResult
@@ -782,13 +867,26 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
       return false
     }
     responses = (pendingLocked(nowMillis: now).filter {
-      !($0.sourceMessageId == normalized.sourceMessageId &&
-        $0.contactId == normalized.contactId &&
-        $0.executionGeneration == normalized.executionGeneration)
+      !sameIdentity($0, normalized)
     } + [normalized])
       .sorted { $0.receivedAtMillis < $1.receivedAtMillis }
       .suffix(Self.maxResponses)
       .map { $0 }
+    if normalized.deliveryFailureCode.isEmpty {
+      receivedDeliveries.removeAll { $0.matches(AgentTerminalDelivery(
+        sourceMessageId: normalized.sourceMessageId,
+        conversationId: normalized.conversationId,
+        turnId: normalized.turnId,
+        taskId: normalized.taskId,
+        contactId: normalized.contactId,
+        executionGeneration: normalized.executionGeneration
+      )) }
+      receivedDeliveries = Array(
+        (receivedDeliveries + [AgentReceivedDeliveryProof(normalized)])
+          .sorted { $0.receivedAtMillis > $1.receivedAtMillis }
+          .prefix(512)
+      )
+    }
     return true
   }
 
@@ -807,16 +905,27 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
     lock.lock()
     defer { lock.unlock() }
     responses = pendingLocked(nowMillis: nowMillis()).filter {
-      !($0.sourceMessageId == response.sourceMessageId &&
-        $0.contactId == response.contactId &&
-        $0.executionGeneration == response.executionGeneration)
+      !sameIdentity($0, response)
     }
+  }
+
+  func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return receivedDeliveries.contains { $0.matches(delivery) }
+  }
+
+  func receivedDeliverySnapshot() -> [AgentReceivedDeliveryProof] {
+    lock.lock()
+    defer { lock.unlock() }
+    return receivedDeliveries
   }
 
   func clear() {
     lock.lock()
     defer { lock.unlock() }
     responses.removeAll()
+    receivedDeliveries.removeAll()
   }
 
   func serializedSnapshot() -> String {
@@ -834,6 +943,18 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
       }
       return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
     }
+  }
+
+  private func sameIdentity(
+    _ lhs: AgentConnectorResponse,
+    _ rhs: AgentConnectorResponse
+  ) -> Bool {
+    lhs.sourceMessageId == rhs.sourceMessageId &&
+      lhs.contactId == rhs.contactId &&
+      lhs.conversationId == rhs.conversationId &&
+      lhs.turnId == rhs.turnId &&
+      lhs.taskId == rhs.taskId &&
+      lhs.executionGeneration == rhs.executionGeneration
   }
 }
 
@@ -888,13 +1009,15 @@ final class AgentConnectorResponseBus {
       store.remove(normalized)
       return true
     }
+    store.publish(normalized)
     if registry.consume(normalized) {
+      store.remove(normalized)
       return true
     }
     if managedLedger?.complete(normalized) != nil {
+      store.remove(normalized)
       return true
     }
-    store.publish(normalized)
     let callbacks: [(AgentConnectorResponse) -> Void]
     lock.lock()
     callbacks = Array(listeners.values)
@@ -917,6 +1040,13 @@ final class AgentConnectorResponseBus {
 
   func markTerminal(_ delivery: AgentTerminalDelivery) {
     terminalStore.mark(delivery)
+  }
+
+  @discardableResult
+  func markTransportFailure(_ delivery: AgentTerminalDelivery) -> Bool {
+    guard !store.hasReceivedDelivery(delivery) else { return false }
+    terminalStore.mark(delivery)
+    return true
   }
 
   func clear() {

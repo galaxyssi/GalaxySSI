@@ -1838,6 +1838,20 @@ final class MessageCoordinator: ObservableObject {
       let detail = failure.attachmentTransferId.isEmpty
         ? "MQTT delivery failed after \(failure.attempts) attempts."
         : "MQTT attachment delivery failed after \(failure.attempts) attempts."
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing,
+         !connectorResponseBus.markTransportFailure(AgentTerminalDelivery(
+           sourceMessageId: 0,
+           conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
+           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+           taskId: outgoing.id.uuidString,
+           contactId: outgoing.contactId,
+           reason: failureReason
+         )) {
+        continue
+      }
       if !failure.contactId.isEmpty {
         store.markMessage(
           sourceUUID,
@@ -1848,18 +1862,7 @@ final class MessageCoordinator: ObservableObject {
       } else {
         store.markMessage(sourceUUID, status: .failed, detail: detail)
       }
-      let outgoing = failure.contactId.isEmpty
-        ? nil
-        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
       if let outgoing {
-        connectorResponseBus.markTerminal(AgentTerminalDelivery(
-          sourceMessageId: 0,
-          conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
-          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-          taskId: outgoing.id.uuidString,
-          contactId: outgoing.contactId,
-          reason: failureReason
-        ))
         finishPendingAgentReply(for: outgoing)
         agentHomeDisplayContactIdsByTurnId.removeValue(
           forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1882,6 +1885,20 @@ final class MessageCoordinator: ObservableObject {
       let key = "\(failure.contactId)|\(sourceId)"
       guard handled.insert(key).inserted else { continue }
       let detail = "MQTT delivery rejected: \(failure.reason)"
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing,
+         !connectorResponseBus.markTransportFailure(AgentTerminalDelivery(
+           sourceMessageId: 0,
+           conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
+           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+           taskId: outgoing.id.uuidString,
+           contactId: outgoing.contactId,
+           reason: detail
+         )) {
+        continue
+      }
       if !failure.contactId.isEmpty {
         store.markMessage(
           sourceUUID,
@@ -1892,18 +1909,7 @@ final class MessageCoordinator: ObservableObject {
       } else {
         store.markMessage(sourceUUID, status: .failed, detail: detail)
       }
-      let outgoing = failure.contactId.isEmpty
-        ? nil
-        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
       if let outgoing {
-        connectorResponseBus.markTerminal(AgentTerminalDelivery(
-          sourceMessageId: 0,
-          conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
-          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-          taskId: outgoing.id.uuidString,
-          contactId: outgoing.contactId,
-          reason: detail
-        ))
         finishPendingAgentReply(for: outgoing)
         agentHomeDisplayContactIdsByTurnId.removeValue(
           forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1926,6 +1932,20 @@ final class MessageCoordinator: ObservableObject {
       let key = "\(failure.contactId)|\(sourceId)"
       guard handled.insert(key).inserted else { continue }
       let detail = "Message sending was interrupted before the transport confirmed it."
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing,
+         !connectorResponseBus.markTransportFailure(AgentTerminalDelivery(
+           sourceMessageId: 0,
+           conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
+           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+           taskId: outgoing.id.uuidString,
+           contactId: outgoing.contactId,
+           reason: detail
+         )) {
+        continue
+      }
       if !failure.contactId.isEmpty {
         store.markMessage(
           sourceUUID,
@@ -1936,18 +1956,7 @@ final class MessageCoordinator: ObservableObject {
       } else {
         store.markMessage(sourceUUID, status: .failed, detail: detail)
       }
-      let outgoing = failure.contactId.isEmpty
-        ? nil
-        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
       if let outgoing {
-        connectorResponseBus.markTerminal(AgentTerminalDelivery(
-          sourceMessageId: 0,
-          conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
-          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-          taskId: outgoing.id.uuidString,
-          contactId: outgoing.contactId,
-          reason: detail
-        ))
         finishPendingAgentReply(for: outgoing)
         agentHomeDisplayContactIdsByTurnId.removeValue(
           forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)

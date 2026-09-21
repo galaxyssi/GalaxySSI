@@ -409,6 +409,119 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(store.pending().contains { $0.sourceMessageId == 35 && $0.contactId == "codex" })
   }
 
+  func testAgentConnectorResponseStoreRetainsPendingBodiesAndUsesFullIdentity() {
+    let store = AgentConnectorResponseStore(nowMillis: { 100_000 })
+    let first = AgentConnectorResponse(
+      sourceMessageId: 71,
+      contactId: "codex",
+      content: "first answer",
+      conversationId: "conversation-a",
+      turnId: "turn-a",
+      taskId: "task-a",
+      receivedAtMillis: 90_000
+    )
+    let second = AgentConnectorResponse(
+      sourceMessageId: 71,
+      contactId: "codex",
+      content: "second answer",
+      conversationId: "conversation-b",
+      turnId: "turn-b",
+      taskId: "task-b",
+      receivedAtMillis: 91_000
+    )
+
+    XCTAssertTrue(store.append(first))
+    XCTAssertTrue(store.append(second))
+    XCTAssertEqual(store.pending().map(\.content), ["first answer", "second answer"])
+
+    store.remove(first)
+    XCTAssertEqual(store.pending().map(\.content), ["second answer"])
+    XCTAssertTrue(store.hasReceivedDelivery(AgentTerminalDelivery(
+      sourceMessageId: 0,
+      conversationId: first.conversationId,
+      turnId: first.turnId,
+      taskId: first.taskId,
+      contactId: first.contactId
+    )))
+    XCTAssertFalse(store.hasReceivedDelivery(AgentTerminalDelivery(
+      sourceMessageId: 0,
+      conversationId: "conversation-other",
+      turnId: first.turnId,
+      taskId: first.taskId,
+      contactId: first.contactId
+    )))
+  }
+
+  func testLateTransportFailureCannotReplaceConsumedReply() {
+    let store = AgentConnectorResponseStore(nowMillis: { 100_000 })
+    let terminals = InMemoryAgentTerminalDeliveryStore()
+    let bus = AgentConnectorResponseBus(
+      registry: AgentManagedConnectorResponseRegistry(),
+      managedLedger: nil,
+      store: store,
+      terminalStore: terminals,
+      nowMillis: { 100_000 }
+    )
+    let response = AgentConnectorResponse(
+      sourceMessageId: 72,
+      contactId: "codex",
+      content: "durable answer",
+      conversationId: "conversation",
+      turnId: "turn",
+      taskId: "task",
+      receivedAtMillis: 99_000
+    )
+    XCTAssertFalse(bus.publish(response))
+    bus.remove(response)
+
+    XCTAssertFalse(bus.markTransportFailure(AgentTerminalDelivery(
+      sourceMessageId: response.sourceMessageId,
+      conversationId: response.conversationId,
+      turnId: response.turnId,
+      taskId: response.taskId,
+      contactId: response.contactId,
+      reason: "delivery_retry_exhausted"
+    )))
+    XCTAssertNil(terminals.find(sourceMessageId: response.sourceMessageId))
+  }
+
+  func testReceivedDeliveryProofSurvivesConsumptionAndStoreReopen() {
+    let suite = "AgentConnectorResponseTests.received.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let key = "responses"
+    let response = AgentConnectorResponse(
+      sourceMessageId: 73,
+      contactId: "codex",
+      content: "persisted answer",
+      conversationId: "conversation",
+      turnId: "turn",
+      taskId: "task",
+      receivedAtMillis: 99_000
+    )
+    let store = UserDefaultsAgentConnectorResponseStore(
+      defaults: defaults,
+      storageKey: key,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertTrue(store.publish(response))
+    store.remove(response)
+    XCTAssertTrue(store.pending().isEmpty)
+
+    let reopened = UserDefaultsAgentConnectorResponseStore(
+      defaults: defaults,
+      storageKey: key,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertTrue(reopened.hasReceivedDelivery(AgentTerminalDelivery(
+      sourceMessageId: response.sourceMessageId,
+      conversationId: response.conversationId,
+      turnId: response.turnId,
+      taskId: response.taskId,
+      contactId: response.contactId
+    )))
+  }
+
   func testAgentConnectorFinalResultPersistsBeforeLiveStreamRetires() {
     var calls: [String] = []
 
