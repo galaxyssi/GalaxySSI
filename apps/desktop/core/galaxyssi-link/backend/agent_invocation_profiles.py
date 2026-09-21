@@ -9,9 +9,7 @@ from typing import Mapping, Sequence
 
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,127}$")
 CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
-CODEX_VISION_FALLBACK_MODEL = "gpt-5.6-luna"
-CODEX_VISION_FALLBACK_REASONING_EFFORT = "high"
-CODEX_TEXT_ONLY_MODELS = frozenset({"gpt-5.3-codex-spark"})
+RETIRED_CODEX_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MODELS = (
     ("gpt-5.6-sol", "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
     ("gpt-6-astra", "GPT-6 Astra\uff0c\u590d\u6742\u63a8\u7406\u3001\u7f16\u7801\u4e0e\u591a\u6b65\u9aa4\u4efb\u52a1"),
@@ -20,7 +18,6 @@ CODEX_MODELS = (
     ("gpt-5.5", "\u590d\u6742\u7f16\u7801\u3001\u7814\u7a76\u548c\u901a\u7528\u4efb\u52a1"),
     ("gpt-5.4", "\u65e5\u5e38\u7f16\u7801"),
     ("gpt-5.4-mini", "\u7b80\u5355\u4efb\u52a1\u3001\u5b50\u667a\u80fd\u4f53"),
-    ("gpt-5.3-codex-spark", "\u8d85\u9ad8\u901f\u7f16\u7801"),
 )
 CLAUDE_MODELS = (
     ("best", "\u6709\u6743\u9650\u65f6\u4f7f\u7528 Fable 5\uff0c\u5426\u5219 Opus 5"),
@@ -77,13 +74,12 @@ def effective_agent_invocation(
     """Return a per-turn invocation without mutating the saved conversation choice."""
     clean_agent_id = str(agent_id or "").strip().casefold()
     if (
-        has_image_input
-        and clean_agent_id == "codex"
-        and selection.model_id in CODEX_TEXT_ONLY_MODELS
+        clean_agent_id == "codex"
+        and selection.model_id.strip().casefold() in RETIRED_CODEX_MODELS
     ):
         return AgentInvocationSelection(
-            model_id=CODEX_VISION_FALLBACK_MODEL,
-            reasoning_effort=CODEX_VISION_FALLBACK_REASONING_EFFORT,
+            model_id=CODEX_MODELS[0][0],
+            reasoning_effort=selection.reasoning_effort,
         )
     return selection
 
@@ -94,7 +90,7 @@ def effective_agent_model(
     *,
     has_image_input: bool,
 ) -> str:
-    """Keep the saved selection, but use a native-vision model for image turns."""
+    """Normalize legacy selections for both text and image turns."""
     return effective_agent_invocation(
         agent_id,
         AgentInvocationSelection(model_id=str(model_id or "").strip()),
@@ -118,6 +114,8 @@ def invocation_profile_for(
         *(model_id for model_id, _ in catalog),
         *configured_models,
     ))
+    if clean_agent_id == "codex":
+        models = tuple(model for model in models if model.casefold() not in RETIRED_CODEX_MODELS)
     if clean_agent_id not in {"codex", "claude"}:
         return AgentInvocationProfile(agent_id=clean_agent_id)
     default_model = (
@@ -140,9 +138,14 @@ def requested_agent_invocation(
     command: Sequence[str] | None,
 ) -> AgentInvocationSelection:
     if not isinstance(value, Mapping):
+        if (str(agent_id).strip().casefold() == "codex"
+                and _command_model(command).casefold() in RETIRED_CODEX_MODELS):
+            return AgentInvocationSelection(model_id=invocation_profile_for(agent_id, command).default_model)
         return AgentInvocationSelection()
     profile = invocation_profile_for(agent_id, command)
     requested_model = str(value.get("model_id") or "").strip()
+    if profile.agent_id == "codex" and requested_model.casefold() in RETIRED_CODEX_MODELS:
+        requested_model = profile.default_model
     requested_effort = str(value.get("reasoning_effort") or "").strip().casefold()
     if requested_effort == "auto":
         requested_effort = ""
@@ -172,8 +175,11 @@ def _configured_models(agent_id: str) -> tuple[str, ...]:
 
 def _command_model(command: Sequence[str] | None) -> str:
     values = [str(value or "").strip() for value in command or ()]
-    for index, value in enumerate(values[:-1]):
-        if value in {"--model", "-m"}:
+    for index, value in enumerate(values):
+        if value.startswith("--model="):
+            candidate = value.partition("=")[2]
+            return candidate if MODEL_ID_PATTERN.fullmatch(candidate) else ""
+        if value in {"--model", "-m"} and index + 1 < len(values):
             candidate = values[index + 1]
             return candidate if MODEL_ID_PATTERN.fullmatch(candidate) else ""
     return ""

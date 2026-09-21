@@ -16,26 +16,44 @@ final class AgentDirectVisionPolicyTests: XCTestCase {
     XCTAssertTrue(AgentDirectVisionPolicy.instructionForMimeTypes(["application/pdf"]).isEmpty)
   }
 
-  func testCodexSparkImageUsesLunaWithHighReasoning() {
+  func testRetiredCodexImageUsesDesktopDefaultAndPreservesEffort() {
     let invocation = AgentDirectVisionPolicy.invocation(
       modelId: "gpt-5.3-codex-spark",
       reasoningEffort: .xhigh,
       mimeTypes: ["image/png"]
     )
 
-    XCTAssertEqual(invocation.modelId, "gpt-5.6-luna")
-    XCTAssertEqual(invocation.reasoningEffort, .high)
+    XCTAssertEqual(invocation.modelId, "")
+    XCTAssertEqual(invocation.reasoningEffort, .xhigh)
   }
 
-  func testTextTurnKeepsRequestedInvocation() {
+  func testRetiredCodexTextUsesDesktopDefault() {
     let invocation = AgentDirectVisionPolicy.invocation(
       modelId: "gpt-5.3-codex-spark",
       reasoningEffort: .xhigh,
       mimeTypes: []
     )
 
-    XCTAssertEqual(invocation.modelId, "gpt-5.3-codex-spark")
+    XCTAssertEqual(invocation.modelId, "")
     XCTAssertEqual(invocation.reasoningEffort, .xhigh)
+  }
+
+  func testRetiredModelIsRemovedFromCachedCatalogAndRequests() throws {
+    let profile = try JSONDecoder().decode(AgentInvocationProfile.self, from: Data("""
+      {"default_model":"gpt-5.3-codex-spark","models":["gpt-5.3-codex-spark","gpt-6-astra"]}
+      """.utf8))
+    XCTAssertEqual(profile.models.map(\.id), ["gpt-6-astra"])
+    XCTAssertEqual(profile.defaultModelId, "gpt-6-astra")
+    XCTAssertEqual(profile.normalizedModelId("gpt-5.3-codex-spark"), "gpt-6-astra")
+    XCTAssertNil(AgentInvocationRequestJsonCodec.encode(
+      modelId: " GPT-5.3-CODEX-SPARK ", reasoningEffort: .automatic))
+    XCTAssertEqual(AgentModelSelection(modelId: "gpt-5.3-codex-spark").modelId, "")
+  }
+
+  func testAvailableModelAndReasoningRemainUnchanged() {
+    XCTAssertEqual(AgentDirectVisionPolicy.invocation(
+      modelId: "gpt-6-astra", reasoningEffort: .xhigh, mimeTypes: ["image/png"]),
+      AgentDirectVisionInvocation(modelId: "gpt-6-astra", reasoningEffort: .xhigh))
   }
 
   func testAutomaticKnowledgeImportDoesNotExtractImageText() {

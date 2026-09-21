@@ -111,21 +111,33 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
   private let defaults: UserDefaults
   private let storageKey: String
   private let nowMillis: () -> Int64
+  private let secrets: GalaxySSISecretStore
   private let lock = NSRecursiveLock()
   private let store: AgentConnectorResponseStore
 
   init(
     defaults: UserDefaults = .standard,
     storageKey: String = UserDefaultsAgentConnectorResponseStore.defaultStorageKey,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.defaults = defaults
     self.storageKey = storageKey
     self.nowMillis = nowMillis
+    self.secrets = secrets
+    let encrypted = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    ).map { String(decoding: $0, as: UTF8.self) }
+    let legacy = defaults.string(forKey: storageKey)
     self.store = AgentConnectorResponseStore(
-      serialized: defaults.string(forKey: storageKey) ?? "[]",
+      serialized: encrypted ?? legacy ?? "[]",
       nowMillis: nowMillis
     )
+    if legacy != nil {
+      persistLocked()
+    }
   }
 
   @discardableResult
@@ -156,7 +168,11 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
     lock.lock()
     defer { lock.unlock() }
     store.clear()
-    defaults.removeObject(forKey: storageKey)
+    GalaxySSIEncryptedUserDefaultsStore.destroy(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
   }
 
   func serializedSnapshot() -> String {
@@ -167,6 +183,11 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
   }
 
   private func persistLocked() {
-    defaults.set(store.serializedSnapshot(), forKey: storageKey)
+    _ = GalaxySSIEncryptedUserDefaultsStore.write(
+      Data(store.serializedSnapshot().utf8),
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
   }
 }

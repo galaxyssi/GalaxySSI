@@ -90,6 +90,7 @@ class AgentRichContentView(
         var scope: RenderScope? = null
         var identity = ""
         var groups: List<List<AgentRichBlock>>? = null
+        var blocks: List<AgentRichBlock> = emptyList()
     }
 
     private fun presentationBlocks(entry: AgentTranscriptEntry): List<AgentRichBlock> {
@@ -107,7 +108,6 @@ class AgentRichContentView(
 
     internal fun update(view: View, entry: AgentTranscriptEntry): Boolean {
         val container = view as? ContentLayout ?: return false
-        val previous = container.groups ?: return false
         val scope = RenderScope(entry.conversationId, entry.taskId, entry.turnId)
         if (container.scope != scope || container.identity != AgentTranscriptRenderPolicy.identity(entry)) return false
         container.renderer?.takeUnless { it === this }?.let { renderer ->
@@ -115,6 +115,12 @@ class AgentRichContentView(
             return renderer.update(view, entry)
         }
         val blocks = presentationBlocks(entry)
+        if (AgentRichContentUpdatePolicy.supports(blocks) &&
+            AgentRichContentUpdatePolicy.sameContent(container.blocks, blocks)) {
+            rebindSelectableActions(container)
+            return true
+        }
+        val previous = container.groups ?: return false
         val layout = AgentResponseSectionOrganizer.organize(blocks)
         val singleAnswer = finalOnly(layout)
         if (enableResponseSections && layout.collapsible && !singleAnswer) return false
@@ -131,6 +137,9 @@ class AgentRichContentView(
                     group.all(AgentRichSelectableParagraphs::supports) -> {
                     child.text = AgentRichSelectableParagraphs.buildText(group, ::inlineMarkdown)
                 }
+                child is StableTableBlock && group.singleOrNull()?.type == AgentRichBlockType.TABLE -> {
+                    child.bind(group.single())
+                }
                 else -> {
                     if (child != null) container.removeViewAt(index)
                     addBlockGroup(container, group, scope, index)
@@ -140,6 +149,7 @@ class AgentRichContentView(
         }
         while (container.childCount > groups.size) container.removeViewAt(container.childCount - 1)
         container.groups = groups
+        container.blocks = blocks
         return true
     }
 
@@ -159,6 +169,7 @@ class AgentRichContentView(
             renderer = this@AgentRichContentView
             this.scope = scope
             identity = AgentTranscriptRenderPolicy.identity(entry)
+            this.blocks = blocks
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             layoutParams = LinearLayout.LayoutParams(
@@ -519,52 +530,67 @@ class AgentRichContentView(
         return container
     }
 
-    private fun tableBlock(block: AgentRichBlock): View {
-        val container = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        block.title.takeIf(String::isNotBlank)?.let { title ->
-            container.addView(selectableText(title, 16f).apply {
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, 0, 0, dp(7))
-            })
+    private fun tableBlock(block: AgentRichBlock): View = StableTableBlock(block)
+
+    private inner class StableTableBlock(initial: AgentRichBlock) : LinearLayout(activity) {
+        private var block = initial
+        private var expanded = false
+        private var renderedRows = emptyList<Pair<Boolean, List<String>>>()
+        private var renderedColumnCount = 0
+        private val title = selectableText("", 16f).apply {
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(7))
         }
-        val table = LinearLayout(activity).apply {
+        private val table = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = roundedBackground("#FFFFFF", 7f, "#E1E3E6")
         }
-        val scroll = HorizontalScrollView(activity).apply {
+        private val scroll = HorizontalScrollView(activity).apply {
             isHorizontalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addView(table)
         }
-        container.addView(scroll)
-        var expanded = false
-        fun renderRows() {
-            table.removeAllViews()
+        private val more = TextView(activity).apply {
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#087F69"))
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setOnClickListener { expanded = !expanded; bind(block) }
+        }
+
+        init {
+            orientation = VERTICAL
+            addView(title)
+            addView(scroll)
+            addView(more)
+            bind(initial)
+        }
+
+        fun bind(next: AgentRichBlock) {
+            block = next
+            if (title.text.toString() != block.title) title.text = block.title
+            title.visibility = if (block.title.isBlank()) View.GONE else View.VISIBLE
             val columnCount = maxOf(1, block.columns.size, block.rows.maxOfOrNull { it.size } ?: 0)
-            if (block.columns.isNotEmpty()) table.addView(tableRow(block.columns, true, columnCount = columnCount))
-            val rows = if (expanded) block.rows else block.rows.take(MAX_VISIBLE_TABLE_ROWS)
-            rows.forEachIndexed { index, row -> table.addView(tableRow(row, false, index, columnCount)) }
-        }
-        renderRows()
-        if (block.rows.size > MAX_VISIBLE_TABLE_ROWS) {
-            container.addView(TextView(activity).apply {
-                text = activity.getString(R.string.rich_output_more_rows, block.rows.size - MAX_VISIBLE_TABLE_ROWS)
-                textSize = 12f
-                gravity = Gravity.CENTER
-                setTextColor(Color.parseColor("#087F69"))
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                setOnClickListener {
-                    expanded = !expanded
-                    renderRows()
-                    text = if (expanded) {
-                        activity.getString(R.string.rich_output_show_less)
-                    } else {
-                        activity.getString(R.string.rich_output_more_rows, block.rows.size - MAX_VISIBLE_TABLE_ROWS)
-                    }
+            val rows = buildList {
+                if (block.columns.isNotEmpty()) add(true to block.columns)
+                (if (expanded) block.rows else block.rows.take(MAX_VISIBLE_TABLE_ROWS)).forEach { add(false to it) }
+            }
+            rows.forEachIndexed { index, row ->
+                if (renderedRows.getOrNull(index) != row || renderedColumnCount != columnCount) {
+                    val child = table.getChildAt(index)
+                    if (child != null) table.removeViewAt(index)
+                    table.addView(tableRow(row.second, row.first,
+                        index - if (block.columns.isEmpty()) 0 else 1, columnCount), index)
                 }
-            })
+            }
+            while (table.childCount > rows.size) table.removeViewAt(table.childCount - 1)
+            renderedRows = rows
+            renderedColumnCount = columnCount
+            more.visibility = if (block.rows.size > MAX_VISIBLE_TABLE_ROWS) View.VISIBLE else View.GONE
+            val label = if (expanded) activity.getString(R.string.rich_output_show_less) else
+                activity.getString(R.string.rich_output_more_rows, (block.rows.size - MAX_VISIBLE_TABLE_ROWS).coerceAtLeast(0))
+            if (more.text.toString() != label) more.text = label
         }
-        return container
     }
 
     private fun tableRow(

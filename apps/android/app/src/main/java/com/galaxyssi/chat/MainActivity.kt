@@ -691,6 +691,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentTranscriptRefreshPageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
     internal var agentRenderedConversationId = ""
     internal var agentTranscriptAutoFollow = true
+    internal var agentTranscriptScrollGeneration = 0L
     internal var agentTranscriptUserScrollActive = false
     internal val agentTranscriptWindow = AgentTranscriptWindow()
     internal val renderedAgentTranscriptIds = linkedSetOf<String>()

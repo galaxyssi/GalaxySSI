@@ -28,7 +28,6 @@ class AgentInvocationProfileTests(unittest.TestCase):
                 "gpt-5.5",
                 "gpt-5.4",
                 "gpt-5.4-mini",
-                "gpt-5.3-codex-spark",
             ),
             profile.models,
         )
@@ -133,9 +132,9 @@ class AgentInvocationProfileTests(unittest.TestCase):
 
         self.assertEqual("", selection.reasoning_effort)
 
-    def test_codex_spark_image_turn_uses_native_vision_model(self):
+    def test_retired_codex_image_turn_uses_current_default(self):
         self.assertEqual(
-            "gpt-5.6-luna",
+            "gpt-5.6-sol",
             effective_agent_model(
                 "codex",
                 "gpt-5.3-codex-spark",
@@ -143,7 +142,7 @@ class AgentInvocationProfileTests(unittest.TestCase):
             ),
         )
 
-    def test_codex_spark_image_turn_temporarily_uses_high_reasoning(self):
+    def test_retired_codex_preserves_requested_reasoning(self):
         requested = AgentInvocationSelection(
             model_id="gpt-5.3-codex-spark",
             reasoning_effort="xhigh",
@@ -155,20 +154,42 @@ class AgentInvocationProfileTests(unittest.TestCase):
             has_image_input=True,
         )
 
-        self.assertEqual("gpt-5.6-luna", effective.model_id)
-        self.assertEqual("high", effective.reasoning_effort)
+        self.assertEqual("gpt-5.6-sol", effective.model_id)
+        self.assertEqual("xhigh", effective.reasoning_effort)
         self.assertEqual("gpt-5.3-codex-spark", requested.model_id)
         self.assertEqual("xhigh", requested.reasoning_effort)
 
-    def test_codex_spark_text_turn_keeps_saved_model(self):
+    def test_retired_codex_text_turn_uses_current_default(self):
         self.assertEqual(
-            "gpt-5.3-codex-spark",
+            "gpt-5.6-sol",
             effective_agent_model(
                 "codex",
                 "gpt-5.3-codex-spark",
                 has_image_input=False,
             ),
         )
+
+    def test_retired_command_and_environment_cannot_restore_catalog_entry(self):
+        for args in (["--model", "gpt-5.3-codex-spark"], ["--model=GPT-5.3-CODEX-SPARK"]):
+            with self.subTest(args=args), patch.dict(os.environ, {
+                "GALAXYSSI_CODEX_MODELS": "gpt-5.3-codex-spark,GPT-5.3-CODEX-SPARK,gpt-custom"
+            }):
+                command = ["codex", "exec", *args, "-"]
+                profile = invocation_profile_for("codex", command)
+                self.assertFalse(any("spark" in model.lower() for model in profile.models))
+                self.assertEqual("gpt-5.6-sol", profile.default_model)
+                self.assertIn("gpt-custom", profile.models)
+                self.assertEqual("gpt-5.6-sol", requested_agent_invocation("codex", None, command).model_id)
+
+    def test_retired_saved_selection_uses_configured_available_default(self):
+        selected = requested_agent_invocation("codex", {
+            "model_id": " GPT-5.3-CODEX-SPARK ", "reasoning_effort": "xhigh"
+        }, ["codex", "--model", "gpt-6-astra"])
+        self.assertEqual(AgentInvocationSelection("gpt-6-astra", "xhigh"), selected)
+
+    def test_available_command_without_explicit_selection_is_not_changed(self):
+        self.assertEqual(AgentInvocationSelection(), requested_agent_invocation(
+            "codex", None, ["codex", "--model", "gpt-6-astra"]))
 
     def test_non_codex_image_turn_does_not_override_provider_model(self):
         self.assertEqual(

@@ -250,4 +250,28 @@ class AgentModelSelectionPolicyTest {
         assertEquals("xhigh", encoded.getString("reasoning_effort"))
         assertNull(AgentInvocationRequestJsonCodec.encode("", AgentModelReasoningEffort.AUTO))
     }
+
+    @Test
+    fun retiredModelIsRemovedFromCachedDesktopCatalog() {
+        val profile = AgentInvocationProfileJsonCodec.decode(JSONObject()
+            .put("default_model", "gpt-5.3-codex-spark")
+            .put("models", JSONArray().put("gpt-5.3-codex-spark")
+                .put(JSONObject().put("id", " GPT-5.3-CODEX-SPARK "))
+                .put("gpt-6-astra")))
+        assertEquals(listOf("gpt-6-astra"), profile.models.map { it.id })
+        assertEquals("gpt-6-astra", profile.defaultModelId)
+        assertEquals("gpt-6-astra", profile.normalizedModelId("gpt-5.3-codex-spark"))
+    }
+
+    @Test
+    fun retiredSelectionDelegatesToDesktopDefaultWithoutDroppingEffort() {
+        assertNull(AgentInvocationRequestJsonCodec.encode("gpt-5.3-codex-spark", AgentModelReasoningEffort.AUTO))
+        val request = checkNotNull(AgentInvocationRequestJsonCodec.encode(
+            " GPT-5.3-CODEX-SPARK ", AgentModelReasoningEffort.XHIGH))
+        assertEquals("", request.getString("model_id"))
+        assertEquals("xhigh", request.getString("reasoning_effort"))
+        val profile = AgentInvocationProfile(models = listOf(AgentModelOption("gpt-5.3-codex-spark")))
+        assertEquals("", profile.normalizedModelId("gpt-5.3-codex-spark"))
+        assertEquals("gpt-5.3-codex", RetiredAgentModelPolicy.availableOrDefault("gpt-5.3-codex"))
+    }
 }

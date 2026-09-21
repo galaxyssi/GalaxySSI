@@ -198,7 +198,19 @@ extension AgentHomeView {
               onDeleteMessage: { message in
                 store.deleteMessage(message.id, contactId: contact.id)
               },
-              onRetryMessage: retryAgentMessage
+              onRetryMessage: retryAgentMessage,
+              onMessageVisible: { message in
+                guard !message.isMine, !message.isSystem else { return }
+                let localTask = agentTask(for: message)
+                let remoteTask = remoteAgentTask(for: message)
+                let taskId = localTask?.taskId ?? remoteTask?.taskId ?? ""
+                let final = localTask.map {
+                  [.completed, .failed, .cancelled, .blocked].contains($0.phase)
+                } ?? remoteTask.map {
+                  AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+                } ?? false
+                AgentLatencyTelemetry.shared.visible(taskId: taskId, final: final)
+              }
             )
             ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
               AgentReplyWaitingIndicatorView()
