@@ -148,6 +148,8 @@ final class MessageCoordinator: ObservableObject {
   var outboxFlushInProgress = false
   var outboxFlushRequested = false
   private var automationSchedulerTask: Task<Void, Never>?
+  private var pairingConfirmationTimeoutTask: Task<Void, Never>?
+  private var pendingDesktopPairingClaim: PendingDesktopPairingClaim?
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
@@ -168,6 +170,14 @@ final class MessageCoordinator: ObservableObject {
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
   private static let incomingAttachmentResumeThrottleMillis: Int64 = 2_000
   private static let pendingRecoveryPageSize = 32
+  private static let pairingClaimMaximumAgeNanoseconds: UInt64 = 9 * 60 * 1_000_000_000
+
+  private struct PendingDesktopPairingClaim: Equatable {
+    var desktopId: String
+    var desktopName: String
+    var desktopFingerprint: String
+    var clientRouteId: String
+  }
 
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
@@ -419,6 +429,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   deinit {
+    pairingConfirmationTimeoutTask?.cancel()
     pendingReplyRecoveryWake.cancel()
     if let foregroundRecoveryObserver {
       NotificationCenter.default.removeObserver(foregroundRecoveryObserver)
@@ -7066,14 +7077,60 @@ final class MessageCoordinator: ObservableObject {
       payload: payload
     )
     if result.accepted {
-      store.markServerPaired(desktopId: qr.desktopId, access: qr.access)
-      _ = store.updatePairedDesktopDevice(from: qr.raw, link: link)
-      pairingStatus = "Pairing confirmed"
-      requestCapabilityManifestRefresh(force: true)
+      beginWaitingForPairingConfirmation(qr: qr, link: link)
     } else {
       pairingStatus = "Pairing claim failed"
       throw GalaxySSIError.invalidPayload("GalaxySSI Link is offline")
     }
+  }
+
+  private func beginWaitingForPairingConfirmation(qr: PairingQRCode, link: ServerLink) {
+    let pending = PendingDesktopPairingClaim(
+      desktopId: qr.desktopId,
+      desktopName: qr.desktopName,
+      desktopFingerprint: qr.desktopFingerprint,
+      clientRouteId: link.routes.clientRouteId
+    )
+    pendingDesktopPairingClaim = pending
+    pairingConfirmationTimeoutTask?.cancel()
+    pairingStatus = String(
+      format: GalaxySSILocalization.string(
+        "galaxyssi.pairing.desktop_waiting",
+        fallback: "Waiting for %@ to confirm pairing..."
+      ),
+      qr.desktopName
+    )
+    pairingConfirmationTimeoutTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: Self.pairingClaimMaximumAgeNanoseconds)
+      } catch {
+        return
+      }
+      guard let self,
+            self.pendingDesktopPairingClaim == pending,
+            self.store.serverLinks.first(where: { $0.desktopId == pending.desktopId })?.paired != true else {
+        return
+      }
+      self.pendingDesktopPairingClaim = nil
+      self.pairingStatus = GalaxySSILocalization.string(
+        "galaxyssi.pairing.desktop_timed_out",
+        fallback: "Desktop did not confirm pairing. Check the connection and scan a new QR code."
+      )
+    }
+  }
+
+  private func completePendingPairing(desktopId: String) {
+    if pendingDesktopPairingClaim?.desktopId == desktopId {
+      pendingDesktopPairingClaim = nil
+      pairingConfirmationTimeoutTask?.cancel()
+      pairingConfirmationTimeoutTask = nil
+    }
+    pairingStatus = "Pairing confirmed"
+    NotificationCenter.default.post(
+      name: .galaxySSIDesktopPairingDidComplete,
+      object: nil,
+      userInfo: ["desktopId": desktopId]
+    )
   }
 
   func myContactQRText(now: Date = Date()) throws -> String {
@@ -8618,6 +8675,33 @@ final class MessageCoordinator: ObservableObject {
     allowStage: Bool
   ) {
     let link = serverLink(for: topic, payload: object)
+    if object.string("type") == "pairing_rejected" {
+      guard object.string("protocol") == GalaxySSILinkProtocol.name,
+            object.int("version") == GalaxySSILinkProtocol.version,
+            let pairingLink = link,
+            !pairingLink.paired,
+            object.string("desktop_id") == pairingLink.desktopId,
+            object.string("desktop_fingerprint")
+              .caseInsensitiveCompare(pairingLink.desktopFingerprint) == .orderedSame,
+            object.string("client_route_id") == pairingLink.routes.clientRouteId,
+            pendingDesktopPairingClaim?.desktopId == pairingLink.desktopId,
+            pendingDesktopPairingClaim?.clientRouteId == pairingLink.routes.clientRouteId else {
+        return
+      }
+      pendingDesktopPairingClaim = nil
+      pairingConfirmationTimeoutTask?.cancel()
+      pairingConfirmationTimeoutTask = nil
+      pairingStatus = object.string("reason") == "token_bound"
+        ? GalaxySSILocalization.string(
+          "galaxyssi.pairing.desktop_code_used",
+          fallback: "This QR code has already been used. Scan a new code from Desktop."
+        )
+        : GalaxySSILocalization.string(
+          "galaxyssi.pairing.desktop_timed_out",
+          fallback: "Desktop did not confirm pairing. Check the connection and scan a new QR code."
+        )
+      return
+    }
     if object.string("type") == "pairing_confirmed" {
       let desktopId = object.string("desktop_id").ifBlank(link?.desktopId ?? "")
       guard !desktopId.isEmpty,
@@ -8629,12 +8713,17 @@ final class MessageCoordinator: ObservableObject {
       let hasExistingSession = !GalaxySSISignalEngine.isAvailable ||
         signalEngine.hasSession(remoteName: desktopId)
       if GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(
-        hasExistingSession: hasExistingSession
+        hasExistingSession: hasExistingSession,
+        routePaired: pairingLink.paired
       ) {
         guard let bundle = object.dictionary("signal_bundle"),
               let bundleFingerprint = GalaxySSISignalEngine.bundleIdentityFingerprint(bundle),
               bundleFingerprint.caseInsensitiveCompare(pairingLink.desktopFingerprint) == .orderedSame,
-              signalEngine.processBundle(bundle, remoteName: desktopId, replaceExisting: false) else {
+              signalEngine.processBundle(
+                bundle,
+                remoteName: desktopId,
+                replaceExisting: !pairingLink.paired
+              ) else {
           return
         }
       }
@@ -8652,7 +8741,7 @@ final class MessageCoordinator: ObservableObject {
         let stage = deliveryStore.stageIncoming(messageId: messageId, payload: originalPayload)
         guard GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(stage) else { return }
       }
-      pairingStatus = "Pairing confirmed"
+      completePendingPairing(desktopId: desktopId)
       scheduleOutboxFlush(after: 0)
       _ = requestConnectorStatuses(
         forceCapabilityManifest: true,
@@ -9864,7 +9953,7 @@ final class MessageCoordinator: ObservableObject {
         store.markServerPaired(desktopId: desktopId, access: access)
         link = serverLink(for: "", payload: ["desktop_id": desktopId]) ?? link
       }
-      pairingStatus = "Pairing confirmed"
+      completePendingPairing(desktopId: desktopId)
       scheduleOutboxFlush(after: 0)
       _ = requestConnectorStatuses(
         forceCapabilityManifest: true,

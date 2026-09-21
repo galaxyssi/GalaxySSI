@@ -282,8 +282,8 @@ enum GalaxySSIPairingConfirmationDeliveryPolicy {
       .ifBlank("pairing-confirmed:\(desktopId):\(clientRouteId)")
   }
 
-  static func needsSessionBootstrap(hasExistingSession: Bool) -> Bool {
-    !hasExistingSession
+  static func needsSessionBootstrap(hasExistingSession: Bool, routePaired: Bool = true) -> Bool {
+    !hasExistingSession || !routePaired
   }
 
   static func isFirstDelivery(_ stage: IncomingStageResult) -> Bool {

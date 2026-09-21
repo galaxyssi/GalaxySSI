@@ -257,6 +257,25 @@ struct AddContactView: View {
       guard !Task.isCancelled, autoOpenScanner else { return }
       contactScannerPresented = true
     }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)) { note in
+      let desktopId = note.userInfo?["desktopId"] as? String ?? ""
+      guard let pairing = pendingPairing, pairing.desktopId == desktopId else { return }
+      pendingPairing = nil
+      pairedDesktopName = pairing.desktopName
+      pairedDesktopAgentNames = Self.desktopAgentNames(from: pairing)
+      setImportStatus(
+        String(
+          format: t("galaxyssi.pairing.desktop_added", "%@ added"),
+          pairing.desktopName
+        ),
+        isError: false
+      )
+      let agentIDs = Self.desktopAgentIDs(from: pairing)
+      if !agentIDs.isEmpty {
+        onAgentAdded?(agentIDs)
+      }
+      notifyImportCompleted()
+    }
   }
 
   @ViewBuilder
@@ -519,34 +538,17 @@ struct AddContactView: View {
     )
     do {
       try await coordinator.pair(using: scannedQRCodeText)
-      pendingPairing = nil
       pendingScannedRequests = []
-      pairedDesktopName = pairing.desktopName
-      pairedDesktopAgentNames = Self.desktopAgentNames(from: pairing)
       setImportStatus(
         String(
           format: t(
-            "galaxyssi.pairing.desktop_claim_sent_detailed",
-            "%@ added with %@. %d Agents are ready in Contacts."
+            "galaxyssi.pairing.desktop_waiting",
+            "Waiting for %@ to confirm pairing..."
           ),
-          pairing.desktopName,
-          pairing.access.fullDesktopExecutor
-            ? t("galaxyssi.pairing.access_full", "Full Desktop Access")
-            : t("galaxyssi.pairing.access_restricted", "Restricted Desktop Access"),
-          Self.desktopAgentCount(pairing)
+          pairing.desktopName
         ),
         isError: false
       )
-      if !pairedDesktopAgentNames.isEmpty {
-        let agentIDs = Self.desktopAgentIDs(from: pairing)
-        onAgentAdded?(agentIDs)
-        NotificationCenter.default.post(
-          name: .galaxySSIDesktopPairingDidComplete,
-          object: nil,
-          userInfo: ["agentIDs": agentIDs]
-        )
-      }
-      notifyImportCompleted()
     } catch {
       setImportStatus(error.localizedDescription, isError: true)
     }
