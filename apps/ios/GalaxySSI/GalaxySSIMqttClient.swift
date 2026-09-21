@@ -71,10 +71,12 @@ protocol GalaxySSILinkTransport: AnyObject {
 
 final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
   @Published private(set) var isConnected = false
+  @Published private(set) var relationshipSubscriptionsReady = false
   var onMessage: ((String, Data) -> Void)?
   var onConnectionChanged: ((Bool) -> Void)?
   var onTransportRecovery: (() -> Void)?
   var onRelationshipSubscriptionsReady: (() -> Void)?
+  var onRelationshipSubscriptionReadinessChanged: ((Bool) -> Void)?
 
   private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
   private static let maximumMqttInflight = 12
@@ -124,6 +126,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
   private var inFlightTimings: [UInt16: InFlightTiming] = [:]
   private var peerReceiptStartedAt: [String: Int64] = [:]
   private var connectionGeneration: Int64 = 0
+  private var readySubscriptionGeneration: Int64 = -1
   private var fragmentTransferByPacketId: [UInt16: String] = [:]
   private var fragmentInflightByTransfer: [String: Int] = [:]
   private var fragmentInflight = 0
@@ -291,6 +294,13 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     let pending = pendingSubscriptions.values.reduce(into: Set<String>()) { $0.formUnion($1) }
     let missing = expected.subtracting(activeSubscriptions).subtracting(pending)
     guard !missing.isEmpty else { return }
+    readySubscriptionGeneration = -1
+    let generation = connectionGeneration
+    DispatchQueue.main.async {
+      guard self.isConnected, self.connectionGeneration == generation else { return }
+      self.relationshipSubscriptionsReady = false
+      self.onRelationshipSubscriptionReadinessChanged?(false)
+    }
     let packetId = nextPacketIdentifier()
     var payload = Data()
     payload.appendUInt16(packetId)
@@ -509,7 +519,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
         activeSubscriptions.formUnion(topics.intersection(Set(subscriptions)))
         let expected = Set(subscriptions)
         if !expected.isEmpty, activeSubscriptions.isSuperset(of: expected) {
+          readySubscriptionGeneration = connectionGeneration
+          let generation = connectionGeneration
           DispatchQueue.main.async {
+            guard self.isConnected, self.connectionGeneration == generation else { return }
+            self.relationshipSubscriptionsReady = true
+            self.onRelationshipSubscriptionReadinessChanged?(true)
             self.onRelationshipSubscriptionsReady?()
           }
         }
@@ -670,6 +685,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     if value {
       scheduleTopicRotationRefresh()
     } else {
+      readySubscriptionGeneration = -1
       topicRotationWorkItem?.cancel()
       topicRotationWorkItem = nil
       activeSubscriptions.removeAll()
@@ -677,6 +693,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     }
     DispatchQueue.main.async {
       self.isConnected = value
+      if !value {
+        self.relationshipSubscriptionsReady = false
+        self.onRelationshipSubscriptionReadinessChanged?(false)
+      }
       self.onConnectionChanged?(value)
     }
   }
