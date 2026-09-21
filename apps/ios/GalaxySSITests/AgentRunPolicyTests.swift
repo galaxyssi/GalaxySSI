@@ -636,6 +636,52 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(paused, .paused)
   }
 
+  func testAgentReplyRuntimeIndexResolvesNewestActiveTaskWithoutRowScan() throws {
+    func snapshot(id: String, status: String, updatedAt: Int64) -> AgentRemoteTaskStatusSnapshot {
+      AgentRemoteTaskStatusSnapshot(
+        taskId: id,
+        clientRouteId: "route",
+        contactId: "codex",
+        conversationId: "conversation",
+        turnId: "turn",
+        sourceMessageId: 42,
+        status: status,
+        target: "Codex",
+        location: "Desktop",
+        currentStep: "Working",
+        advertisedCancellable: true,
+        detail: "",
+        updatedAtMillis: updatedAt,
+        history: []
+      )
+    }
+    let index = AgentReplyRuntimeIndex(
+      remoteTasks: [
+        snapshot(id: "older", status: "running", updatedAt: 10),
+        snapshot(id: "newer", status: "running", updatedAt: 20),
+        snapshot(id: "terminal", status: "completed", updatedAt: 30)
+      ],
+      voiceRuns: []
+    )
+    let byTurn = ChatMessage(
+      contactId: "hermes",
+      content: "Progress",
+      isMine: false,
+      conversationId: "conversation",
+      turnId: "turn"
+    )
+    let bySource = ChatMessage(
+      contactId: "hermes",
+      content: "Progress",
+      isMine: false,
+      conversationId: "conversation",
+      remoteMessageId: "agent-stream-42"
+    )
+
+    XCTAssertEqual(index.remoteTask(for: byTurn, activeConversationId: "")?.taskId, "newer")
+    XCTAssertEqual(index.remoteTask(for: bySource, activeConversationId: "")?.taskId, "newer")
+  }
+
   func testAgentRunRecoveryPolicyMatchesAndroidDurableDesktopRules() {
     let snapshot = runControlSnapshot(state: .waitingForDevice)
     let recorded = AgentRecordedRun(
