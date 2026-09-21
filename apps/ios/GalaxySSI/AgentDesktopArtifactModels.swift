@@ -232,6 +232,43 @@ final class AgentDesktopArtifactStore {
     }
   }
 
+  func ingestBlobArtifact(manifest: [String: Any], plaintext: Data) throws {
+    try locked {
+      let artifactId = manifest.string("artifact_id")
+      let artifactURI = manifest.string("artifact_uri")
+      let digest = manifest.string("sha256")
+      let size = manifest.int64("size_bytes")
+      guard Self.isGalaxySSIArtifactURI(artifactURI),
+            artifactId.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+            digest.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+            size == Int64(plaintext.count),
+            sha256(plaintext) == digest else {
+        throw AgentDesktopArtifactStoreError.integrity("Blob artifact integrity check failed")
+      }
+      try fileManager.createDirectory(at: filesDirectory, withIntermediateDirectories: true)
+      let target = filesDirectory.appendingPathComponent("\(artifactId).saenc", isDirectory: false)
+      try cipher.write(plaintext, to: target, purpose: artifactPurpose(artifactId))
+      let record = AgentDesktopArtifactRecord(
+        artifactId: artifactId,
+        artifactURI: artifactURI,
+        taskId: manifest.string("task_id"),
+        name: Self.safeFileName(manifest.string("name")),
+        mimeType: manifest.string("mime_type").ifBlank("application/octet-stream"),
+        sizeBytes: size,
+        sha256: digest,
+        originalSizeBytes: max(size, manifest.int64("original_size_bytes")),
+        originalSHA256: manifest.string("original_sha256").ifBlank(digest),
+        chunkCount: 1,
+        relativeFile: try relativePath(from: rootURL, to: target),
+        storedAtMillis: nowMillis(),
+        savedToDownloads: false,
+        savedURI: "",
+        savedAtMillis: 0
+      )
+      try writeRecord(record, artifactURI: artifactURI)
+    }
+  }
+
   func resolveBlock(_ block: AgentRichBlock) -> AgentRichBlock {
     let sourceURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
     guard Self.isGalaxySSIArtifactURI(sourceURI),
