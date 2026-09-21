@@ -2,6 +2,71 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testCloudDispatchCancellationIsScopedToExactOwner() throws {
+    let registry = AgentCloudDispatchRegistry()
+    let first = AgentCloudDispatchIdentity(
+      sourceMessageId: "message-1",
+      contactId: "cloud-a",
+      conversationId: "conversation-a",
+      turnId: "turn-a",
+      taskId: "task-a",
+      actionId: "action-a"
+    )
+    let second = AgentCloudDispatchIdentity(
+      sourceMessageId: "message-2",
+      contactId: "cloud-b",
+      conversationId: "conversation-b",
+      turnId: "turn-b",
+      taskId: "task-b",
+      actionId: "action-b"
+    )
+    let firstLease = try XCTUnwrap(registry.register(first))
+    let secondLease = try XCTUnwrap(registry.register(second))
+    var firstCancellationCount = 0
+    var secondCancellationCount = 0
+    firstLease.bindCancellation { firstCancellationCount += 1 }
+    secondLease.bindCancellation { secondCancellationCount += 1 }
+
+    XCTAssertTrue(registry.cancel(first))
+    XCTAssertFalse(registry.cancel(first))
+    XCTAssertTrue(firstLease.isCancelled)
+    XCTAssertFalse(firstLease.claimCompletion())
+    XCTAssertFalse(secondLease.isCancelled)
+    XCTAssertTrue(secondLease.claimCompletion())
+    XCTAssertEqual(firstCancellationCount, 1)
+    XCTAssertEqual(secondCancellationCount, 0)
+
+    registry.release(first, lease: firstLease)
+    registry.release(second, lease: secondLease)
+    XCTAssertEqual(registry.activeCount, 0)
+  }
+
+  func testCloudDispatchTaskCancellationDoesNotCrossConversations() throws {
+    let registry = AgentCloudDispatchRegistry()
+    let first = AgentCloudDispatchIdentity(
+      sourceMessageId: "message-1",
+      contactId: "cloud-a",
+      conversationId: "conversation-a",
+      turnId: "turn-a",
+      taskId: "shared-task",
+      actionId: "action-a"
+    )
+    let second = AgentCloudDispatchIdentity(
+      sourceMessageId: "message-2",
+      contactId: "cloud-b",
+      conversationId: "conversation-b",
+      turnId: "turn-b",
+      taskId: "shared-task",
+      actionId: "action-b"
+    )
+    let firstLease = try XCTUnwrap(registry.register(first))
+    let secondLease = try XCTUnwrap(registry.register(second))
+
+    XCTAssertEqual(registry.cancel(taskId: "shared-task", conversationId: "conversation-a"), 1)
+    XCTAssertTrue(firstLease.isCancelled)
+    XCTAssertFalse(secondLease.isCancelled)
+  }
+
   func testToolLoopProgressUsesCanonicalArgumentsAndCachesResults() {
     let progress = CloudWebToolLoopProgress()
     let first: AgentMcpJSONObject = [

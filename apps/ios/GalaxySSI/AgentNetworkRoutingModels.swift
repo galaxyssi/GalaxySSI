@@ -415,6 +415,86 @@ struct AgentConnectorFallbackSelection: Equatable {
   var remainingResourceIds: [String]
   var deferredRetryIds: [String]
   var retriedResourceIds: Set<String>
+  var attemptedResourceIds: Set<String> = []
+}
+
+enum AgentConnectorFailureScope {
+  static func sharedTransportFailed(_ metadata: [String: String]) -> Bool {
+    metadata["delivery_failed"] == "true" || metadata["timeout_stage"] == "NOT_ACCEPTED"
+  }
+
+  static func permitsFallback(_ metadata: [String: String], candidateDomain: String) -> Bool {
+    !sharedTransportFailed(metadata) || (metadata["failure_domain"] ?? "").isBlank ||
+      candidateDomain != metadata["failure_domain"]
+  }
+
+  static func remoteExecutionReached(_ metadata: [String: String]) -> Bool {
+    ["desktop", "peer"].contains((metadata["resource_location"] ?? "").lowercased())
+  }
+}
+
+enum AgentConnectorFallbackAction {
+  static let attemptedParameter = "routing_attempted_resource_ids"
+  static let attemptedResult = "attempted_resource_ids"
+  private static let actionIdParameter = "routing_fallback_action_id"
+
+  static func hasActiveTrail(_ action: AgentAction) -> Bool {
+    action.parameters[actionIdParameter] == action.id &&
+      !(action.parameters[attemptedParameter] ?? "").isBlank
+  }
+
+  static func forDispatch(_ action: AgentAction) -> AgentAction {
+    guard let owner = action.parameters[actionIdParameter], owner != action.id else { return action }
+    var prepared = action
+    [
+      actionIdParameter,
+      attemptedParameter,
+      "routing_deferred_retry_ids",
+      "routing_retried_resource_ids"
+    ].forEach { prepared.parameters.removeValue(forKey: $0) }
+    return prepared
+  }
+
+  static func prepare(
+    action: AgentAction,
+    selection: AgentConnectorFallbackSelection,
+    target: AgentCallableTarget?
+  ) -> AgentAction {
+    var prepared = action
+    ["manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id"].forEach {
+      prepared.parameters.removeValue(forKey: $0)
+    }
+    prepared.parameters["connector_id"] = selection.resourceId
+    prepared.parameters["connector_kind"] = target?.kind.rawValue.lowercased() ?? ""
+    prepared.parameters["connector_adapter_type"] = target?.adapterType ?? ""
+    prepared.parameters["connector_failure_domain"] = target?.failureDomain ?? ""
+    prepared.parameters[actionIdParameter] = action.id
+    prepared.parameters["routing_fallback_ids"] = AgentConnectorFallbackTrail.encode(selection.remainingResourceIds)
+    prepared.parameters["routing_deferred_retry_ids"] = AgentConnectorFallbackTrail.encode(selection.deferredRetryIds)
+    prepared.parameters["routing_retried_resource_ids"] = AgentConnectorFallbackTrail.encode(selection.retriedResourceIds.sorted())
+    prepared.parameters[attemptedParameter] = AgentConnectorFallbackTrail.encode(selection.attemptedResourceIds.sorted())
+    prepared.target = target?.title ?? selection.resourceId
+    prepared.status = .proposed
+    prepared.result = ""
+    prepared.evidence = ""
+    return prepared
+  }
+
+  static func attempted(_ metadata: [String: String]) -> Set<String> {
+    Set(AgentConnectorFallbackTrail.parse(metadata[attemptedResult] ?? ""))
+      .union(AgentConnectorFallbackTrail.parse(metadata["deferred_retry_ids"] ?? ""))
+      .union(AgentConnectorFallbackTrail.parse(metadata["retried_resource_ids"] ?? ""))
+  }
+
+  static func resultMetadata(_ action: AgentAction) -> [String: String] {
+    [
+      attemptedResult: action.parameters[attemptedParameter] ?? "",
+      "remaining_fallback_ids": action.parameters["routing_fallback_ids"] ?? "",
+      "deferred_retry_ids": action.parameters["routing_deferred_retry_ids"] ?? "",
+      "retried_resource_ids": action.parameters["routing_retried_resource_ids"] ?? "",
+      "manual_target_locked": action.parameters["manual_target_locked"] ?? ""
+    ]
+  }
 }
 
 /// Preserves the original Auto route while incorporating connectors that became
@@ -423,10 +503,13 @@ enum AgentConnectorFallbackTrail {
   static func mergeAvailable(
     rememberedResourceIds: [String],
     currentResourceIds: [String],
-    failedResourceId: String
+    failedResourceId: String,
+    attemptedResourceIds: Set<String> = []
   ) -> [String] {
     let failed = failedResourceId.trimmingCharacters(in: .whitespacesAndNewlines)
-    return normalized(rememberedResourceIds + currentResourceIds).filter { $0 != failed }
+    return normalized(rememberedResourceIds + currentResourceIds).filter {
+      $0 != failed && !attemptedResourceIds.contains($0)
+    }
   }
 
   static func selectNext(
@@ -434,12 +517,16 @@ enum AgentConnectorFallbackTrail {
     remainingResourceIds: [String],
     deferredRetryIds: [String],
     retriedResourceIds: Set<String>,
-    retryFailedResource: Bool
+    retryFailedResource: Bool,
+    attemptedResourceIds: Set<String> = []
   ) -> AgentConnectorFallbackSelection? {
-    let remaining = normalized(remainingResourceIds)
     let retried = Set(normalized(Array(retriedResourceIds)))
-    var deferred = normalized(deferredRetryIds)
     let failed = failedResourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let attempted = Set(normalized(Array(attemptedResourceIds) + Array(retried) + deferredRetryIds + [failed]))
+    var deferred = normalized(deferredRetryIds).filter {
+      !retried.contains($0) && (retryFailedResource || $0 != failed)
+    }
+    let remaining = normalized(remainingResourceIds).filter { !attempted.contains($0) }
     if retryFailedResource,
        !failed.isEmpty,
        !retried.contains(failed),
@@ -453,7 +540,8 @@ enum AgentConnectorFallbackTrail {
         resourceId: next,
         remainingResourceIds: Array(remaining.dropFirst()),
         deferredRetryIds: deferred,
-        retriedResourceIds: retried
+        retriedResourceIds: retried,
+        attemptedResourceIds: attempted
       )
     }
     guard let retry = deferred.first(where: { !retried.contains($0) }) else { return nil }
@@ -461,7 +549,8 @@ enum AgentConnectorFallbackTrail {
       resourceId: retry,
       remainingResourceIds: [],
       deferredRetryIds: deferred.filter { $0 != retry },
-      retriedResourceIds: retried.union([retry])
+      retriedResourceIds: retried.union([retry]),
+      attemptedResourceIds: attempted
     )
   }
 
@@ -475,12 +564,9 @@ enum AgentConnectorFallbackTrail {
 
   private static func normalized(_ values: [String]) -> [String] {
     var seen = Set<String>()
-    return Array(
-      values.lazy
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty && seen.insert($0).inserted }
-        .prefix(12)
-    )
+    return Array(values.lazy
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty && seen.insert($0).inserted })
   }
 }
 

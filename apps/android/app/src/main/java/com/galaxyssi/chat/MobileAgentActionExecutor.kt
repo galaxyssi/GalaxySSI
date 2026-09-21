@@ -1473,6 +1473,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 var streamError: Throwable? = null
                 var providerError: ModelStreamError? = null
                 var previewVisible = false
+                val previewPresentation = CloudCitationPreviewPresentation()
                 Log.i(
                     "GalaxySSILatency",
                     "agent_cloud stage=request_start source=$messageId model=${model.optString("cloud_model")} " +
@@ -1587,10 +1588,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 }
                                 is ModelStreamEvent.ToolCallDelta -> Unit
                                 is ModelStreamEvent.CitationPreview -> {
+                                    val preview = previewPresentation.replace(event.text) ?: return@collect
                                     previewVisible = event.text.isNotBlank()
                                     if (!managedTeamAction) AgentConnectorStreamBus.publish(AgentConnectorStreamUpdate(
                                         sourceMessageId = messageId, contactId = candidateId,
-                                        content = merger.snapshot() + event.text,
+                                        content = merger.snapshot() + preview,
                                         conversationId = conversationId, turnId = turnId, taskId = connectorTaskId,
                                         attemptOrdinal = currentStreamAttemptOrdinal, previewOnly = previewVisible
                                     ))

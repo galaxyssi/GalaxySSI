@@ -28,46 +28,64 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   func appendNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent {
     lock.lock()
     defer { lock.unlock() }
-    let runId = clean(event.runId)
-    guard !runId.isEmpty, !clean(event.taskId).isEmpty else { return event }
+    guard let canonical = AgentRunKernelContract.canonical(event) else { return event }
+    let runId = canonical.runId
     var current = eventsLocked(runId)
-    if let existing = current.first(where: { $0.eventId == event.eventId }) {
+    if let root = current.first, !AgentRunKernelContract.hasSameRoot(root, canonical) {
+      return current.last ?? event
+    }
+    if let existing = current.first(where: {
+      $0.eventId == canonical.eventId || $0.idempotencyKey == canonical.idempotencyKey
+    }) {
+      guard AgentRunKernelContract.isIdempotentReplay(existing, canonical) else {
+        return current.last ?? existing
+      }
       return existing
     }
     let state = current.reduce(AgentRunControlState.created) {
       AgentRunEventStore.reduce(current: $0, event: $1.type)
     }
-    if state.isTerminal, event.type != .runRecovered {
+    if state.isTerminal, canonical.type != .runRecovered {
       return current.last ?? event
     }
-    let sequenced = event.withSequence((current.last?.sequence ?? 0) + 1)
+    let sequenced = canonical.withSequence((current.last?.sequence ?? 0) + 1)
     current.append(sequenced)
     persistLocked(runId: runId, events: Array(current.suffix(Self.maxEventsPerRun)))
     return sequenced
   }
 
   func appendNextAll(_ events: [AgentRunControlEvent]) -> [AgentRunControlEvent] {
-    guard let runId = events.first.map({ clean($0.runId) }),
-          !runId.isEmpty,
-          events.allSatisfy({ clean($0.runId) == runId && !clean($0.taskId).isEmpty }) else {
+    let canonicalEvents = events.compactMap(AgentRunKernelContract.canonical)
+    guard canonicalEvents.count == events.count,
+          let first = canonicalEvents.first,
+          canonicalEvents.allSatisfy({ AgentRunKernelContract.hasSameRoot(first, $0) }) else {
       return []
     }
+    let runId = first.runId
     lock.lock()
     defer { lock.unlock() }
     var current = eventsLocked(runId)
+    if let root = current.first, !AgentRunKernelContract.hasSameRoot(root, first) { return [] }
+    var knownEventsByIdempotencyKey: [String: AgentRunControlEvent] = [:]
+    current.forEach { knownEventsByIdempotencyKey[$0.idempotencyKey] = $0 }
     var knownEventIds = Set(current.map(\.eventId))
     var state = current.reduce(AgentRunControlState.created) {
       AgentRunEventStore.reduce(current: $0, event: $1.type)
     }
     var sequence = current.last?.sequence ?? 0
     var appended: [AgentRunControlEvent] = []
-    for event in events {
+    for event in canonicalEvents {
+      if let existing = knownEventsByIdempotencyKey[event.idempotencyKey] {
+        guard AgentRunKernelContract.isIdempotentReplay(existing, event) else { continue }
+        continue
+      }
       guard knownEventIds.insert(event.eventId).inserted else { continue }
       guard !state.isTerminal || event.type == .runRecovered else { continue }
       sequence += 1
       let sequenced = event.withSequence(sequence)
       current.append(sequenced)
       appended.append(sequenced)
+      knownEventsByIdempotencyKey[sequenced.idempotencyKey] = sequenced
       state = AgentRunEventStore.reduce(current: state, event: sequenced.type)
     }
     guard !appended.isEmpty else { return [] }
@@ -139,7 +157,9 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     } else {
       decoded = []
     }
-    let sorted = decoded.sorted { $0.sequence < $1.sequence }
+    let sorted = decoded.compactMap(AgentRunKernelContract.canonical).sorted {
+      $0.sequence < $1.sequence
+    }
     cachedEventsByRunId[cleanRunId] = sorted
     return sorted
   }

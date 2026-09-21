@@ -3,6 +3,25 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testTransportTimingSeparatesQueueBrokerAndPeerMetricsWithBoundedHistory() {
+    let store = AgentTransportTimingStore()
+    for index in 0..<(AgentTransportTimingStore.maximumEvents + 8) {
+      store.record(AgentTransportTimingEvent(
+        kind: index % 3 == 0 ? .durableQueueWait : (index % 3 == 1 ? .brokerPublishAck : .encryptedPeerReceipt),
+        attemptId: "attempt-\(index)",
+        logicalMessageId: "opaque-\(index)",
+        connectionGeneration: 4,
+        durationMillis: Int64(index),
+        recordedAtMillis: Int64(10_000 + index)
+      ))
+    }
+
+    let events = store.snapshot()
+    XCTAssertEqual(events.count, AgentTransportTimingStore.maximumEvents)
+    XCTAssertEqual(events.first?.attemptId, "attempt-8")
+    XCTAssertEqual(Set(events.map(\.kind), Set(AgentTransportTimingKind.allCases))
+    XCTAssertTrue(events.allSatisfy { $0.connectionGeneration == 4 })
+  }
   func testTransportPrivacyRequiresExplicitAuthorizationForBackgroundCognition() {
     let cognition: [String: Any] = [
       "type": "text",

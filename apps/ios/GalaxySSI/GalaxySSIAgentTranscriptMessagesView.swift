@@ -30,6 +30,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var onCopyMessage: (ChatMessage) -> Void
   var onDeleteMessage: (ChatMessage) -> Void
   var onRetryMessage: (ChatMessage) -> Void
+  var onMessageVisible: (ChatMessage) -> Void
 
   var body: some View {
     ForEach(messages) { message in
@@ -90,6 +91,12 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       }
     }
     .id(message.id)
+    .onAppear {
+      onMessageVisible(message)
+    }
+    .onChange(of: message.content) { _ in
+      onMessageVisible(message)
+    }
     .contextMenu {
       Button {
         onCopyMessage(message)

@@ -463,6 +463,19 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   @discardableResult
+  func discardAttachmentTransferMessages(_ transferId: String) -> Int {
+    guard !transferId.isEmpty else { return 0 }
+    let before = state.outbox.count
+    state.outbox
+      .filter { $0.attachmentTransferId == transferId }
+      .forEach(deleteOutboxPayload)
+    state.outbox.removeAll { $0.attachmentTransferId == transferId }
+    let removed = before - state.outbox.count
+    if removed > 0 { save() }
+    return removed
+  }
+
+  @discardableResult
   func discardExhausted(
     maxAttempts: Int,
     attachmentMaxAttempts: Int? = nil,

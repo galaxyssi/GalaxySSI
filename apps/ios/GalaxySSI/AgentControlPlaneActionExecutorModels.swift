@@ -974,6 +974,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       let responseConversationId = result.metadata["conversation_id"] ?? request.conversationId
       let responseTurnId = result.metadata["turn_id"] ?? request.messageId
       let responseTaskId = result.metadata["task_id"] ?? request.taskId
+      let executionGeneration = max(Int64(result.metadata["execution_generation"] ?? "") ?? 1, 1)
       lock.lock()
       activeByRunId[request.runId] = ActiveRun(
         request: request,
@@ -993,7 +994,8 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
           contactId: contactId,
           conversationId: responseConversationId,
           turnId: responseTurnId,
-          taskId: responseTaskId
+          taskId: responseTaskId,
+          executionGeneration: executionGeneration
         )
       )
       try? AgentManagedConnectorResponseRegistry.shared.register(
@@ -1002,7 +1004,8 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         ownerId: request.runId,
         conversationId: responseConversationId,
         turnId: responseTurnId,
-        taskId: responseTaskId
+        taskId: responseTaskId,
+        executionGeneration: executionGeneration
       ) { [weak self] response in
         guard let self else { return false }
         return self.acceptConnectorResponse(response, managedIdentityVerified: true) != nil
