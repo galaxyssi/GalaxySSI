@@ -10418,6 +10418,7 @@ final class MessageCoordinator: ObservableObject {
   private func replayPendingConnectorResponses() -> Bool {
     let pendingResponses = connectorResponseBus.pending()
     pendingResponses.prefix(Self.pendingRecoveryPageSize).forEach { response in
+      let timing = AgentRecoveryTimingStore.shared.begin(taskId: response.taskId, phase: "publish")
       let payload: [String: Any] = [
         "type": "agent_connector_response",
         "source_message_id": String(response.sourceMessageId),
@@ -10443,6 +10444,7 @@ final class MessageCoordinator: ObservableObject {
         allowStage: false
       )
       connectorResponseBus.remove(response)
+      timing.finish("completed")
     }
     return pendingResponses.count > Self.pendingRecoveryPageSize
   }
