@@ -3,6 +3,97 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+struct AgentReplyRuntimeIndex {
+  private var remoteByKey: [String: AgentRemoteTaskStatusSnapshot] = [:]
+  private var voiceByKey: [String: VoiceAgentRunSnapshot] = [:]
+
+  init(remoteTasks: [AgentRemoteTaskStatusSnapshot], voiceRuns: [VoiceAgentRunSnapshot]) {
+    for task in remoteTasks where !AgentRemoteTaskStatusPolicy.isTerminal(task.status) {
+      bindRemote(task, key: Self.turnKey(task.conversationId, task.turnId))
+      bindRemote(task, key: Self.turnKey(task.conversationId, task.taskId))
+      if task.sourceMessageId > 0 {
+        bindRemote(task, key: Self.sourceKey(String(task.sourceMessageId)))
+      }
+    }
+    for run in voiceRuns {
+      bindVoice(run, key: Self.turnKey(run.conversationId, run.turnId))
+      bindVoice(run, key: Self.turnKey(run.conversationId, run.taskId))
+      bindVoice(run, key: Self.sourceKey(run.sourceMessageId))
+    }
+  }
+
+  func remoteTask(
+    for message: ChatMessage,
+    activeConversationId: String
+  ) -> AgentRemoteTaskStatusSnapshot? {
+    candidates(message: message, activeConversationId: activeConversationId, values: remoteByKey)
+      .max { lhs, rhs in
+        lhs.updatedAtMillis == rhs.updatedAtMillis
+          ? lhs.id < rhs.id
+          : lhs.updatedAtMillis < rhs.updatedAtMillis
+      }
+  }
+
+  func voiceRun(
+    for message: ChatMessage,
+    activeConversationId: String
+  ) -> VoiceAgentRunSnapshot? {
+    candidates(message: message, activeConversationId: activeConversationId, values: voiceByKey)
+      .max { lhs, rhs in
+        lhs.updatedAtMillis == rhs.updatedAtMillis
+          ? lhs.runId < rhs.runId
+          : lhs.updatedAtMillis < rhs.updatedAtMillis
+      }
+  }
+
+  private mutating func bindRemote(_ task: AgentRemoteTaskStatusSnapshot, key: String?) {
+    guard let key else { return }
+    if let existing = remoteByKey[key], existing.updatedAtMillis > task.updatedAtMillis { return }
+    remoteByKey[key] = task
+  }
+
+  private mutating func bindVoice(_ run: VoiceAgentRunSnapshot, key: String?) {
+    guard let key else { return }
+    if let existing = voiceByKey[key], existing.updatedAtMillis > run.updatedAtMillis { return }
+    voiceByKey[key] = run
+  }
+
+  private func candidates<Value>(
+    message: ChatMessage,
+    activeConversationId: String,
+    values: [String: Value]
+  ) -> [Value] {
+    let conversationId = message.conversationId.ifBlank(activeConversationId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let turnId = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return [
+      Self.turnKey(conversationId, turnId),
+      Self.sourceKey(Self.sourceId(message.remoteMessageId))
+    ]
+      .compactMap { $0 }
+      .compactMap { values[$0] }
+  }
+
+  private static func turnKey(_ conversationId: String, _ turnId: String) -> String? {
+    let conversation = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let turn = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversation.isEmpty, !turn.isEmpty else { return nil }
+    return "turn:\(conversation)\u{001f}\(turn)"
+  }
+
+  private static func sourceKey(_ sourceId: String) -> String? {
+    let source = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return source.isEmpty ? nil : "source:\(source)"
+  }
+
+  private static func sourceId(_ remoteMessageId: String) -> String {
+    let value = remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.hasPrefix("agent-stream-")
+      ? String(value.dropFirst("agent-stream-".count))
+      : value
+  }
+}
+
 struct AgentHomeView: View {
   var onNavigateToMainTab: ((GalaxySSIMainTab) -> Void)? = nil
 
@@ -370,61 +461,6 @@ struct AgentHomeView: View {
     guard !turnID.isEmpty else { return nil }
     return store.agentTask(id: turnID)
   }
-
-  func remoteAgentTask(for message: ChatMessage) -> AgentRemoteTaskStatusSnapshot? {
-    let conversationID = message.conversationId.ifBlank(store.activeAgentConversationId)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !conversationID.isEmpty else { return nil }
-    let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
-    let remoteMessageID = message.remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
-    return coordinator.remoteAgentTaskStatuses.values
-      .filter { snapshot in
-        guard snapshot.conversationId == conversationID,
-              !AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) else {
-          return false
-        }
-        let turnMatches = !turnID.isEmpty &&
-          (snapshot.taskId == turnID || snapshot.turnId == turnID)
-        let sourceID = snapshot.sourceMessageId > 0
-          ? String(snapshot.sourceMessageId)
-          : ""
-        let sourceMatches = !remoteMessageID.isEmpty &&
-          (!sourceID.isEmpty &&
-            (remoteMessageID == sourceID || remoteMessageID == "agent-stream-\(sourceID)"))
-        return turnMatches || sourceMatches
-      }
-      .max { lhs, rhs in
-        if lhs.updatedAtMillis != rhs.updatedAtMillis {
-          return lhs.updatedAtMillis < rhs.updatedAtMillis
-        }
-        return lhs.id < rhs.id
-      }
-  }
-
-  func voiceAgentRun(for message: ChatMessage) -> VoiceAgentRunSnapshot? {
-    let conversationID = message.conversationId.ifBlank(store.activeAgentConversationId)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !conversationID.isEmpty else { return nil }
-    let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
-    let remoteMessageID = message.remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
-    return voiceAgentRunRecovery.activeSnapshots
-      .filter { run in
-        guard run.conversationId == conversationID else { return false }
-        let turnMatches = !turnID.isEmpty &&
-          (run.turnId == turnID || run.taskId == turnID)
-        let sourceMatches = !remoteMessageID.isEmpty &&
-          (run.sourceMessageId == remoteMessageID ||
-            remoteMessageID == "agent-stream-\(run.sourceMessageId)")
-        return turnMatches || sourceMatches
-      }
-      .max { lhs, rhs in
-        if lhs.updatedAtMillis != rhs.updatedAtMillis {
-          return lhs.updatedAtMillis < rhs.updatedAtMillis
-        }
-        return lhs.runId < rhs.runId
-      }
-  }
-
 
   func retryBlockedAgentTask(_ task: AgentTaskRecord) {
     guard task.blocked || task.phase == .blocked else { return }

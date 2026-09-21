@@ -52,9 +52,10 @@ data class AgentInvocationProfile(
 
     fun normalizedModelId(requested: String): String {
         val clean = requested.trim()
-        return models.firstOrNull { it.id == clean }?.id
-            ?: models.firstOrNull { it.id == defaultModelId }?.id
-            ?: models.firstOrNull()?.id
+        val available = models.filterNot { RetiredAgentModelPolicy.isRetired(it.id) }
+        return available.firstOrNull { it.id == clean }?.id
+            ?: available.firstOrNull { it.id == defaultModelId }?.id
+            ?: available.firstOrNull()?.id
             ?: ""
     }
 }
@@ -68,7 +69,7 @@ object AgentInvocationProfileJsonCodec {
                 val item = values.optJSONObject(index)
                 val id = item?.optString("id").orEmpty().trim()
                     .ifBlank { values.optString(index).trim() }
-                if (id.isBlank() || any { it.id == id }) continue
+                if (id.isBlank() || RetiredAgentModelPolicy.isRetired(id) || any { it.id == id }) continue
                 add(AgentModelOption(
                     id = id,
                     displayName = item?.optString("display_name").orEmpty().ifBlank { id },
@@ -84,7 +85,8 @@ object AgentInvocationProfileJsonCodec {
             }
         }
         return AgentInvocationProfile(
-            defaultModelId = root.optString("default_model").trim(),
+            defaultModelId = RetiredAgentModelPolicy.availableOrDefault(root.optString("default_model"))
+                .ifBlank { models.firstOrNull()?.id.orEmpty() },
             models = models,
             reasoningEfforts = efforts
         )
@@ -93,7 +95,7 @@ object AgentInvocationProfileJsonCodec {
 
 object AgentInvocationRequestJsonCodec {
     fun encode(modelId: String, effort: AgentModelReasoningEffort): JSONObject? {
-        val cleanModel = modelId.trim()
+        val cleanModel = RetiredAgentModelPolicy.availableOrDefault(modelId)
         if (cleanModel.isBlank() && effort == AgentModelReasoningEffort.AUTO) return null
         return JSONObject()
             .put("model_id", cleanModel)
@@ -211,7 +213,7 @@ object AgentModelSelectionSettings {
         return AgentModelSelection(
             mode = mode,
             targetId = preferences.getString(keyFor(KEY_TARGET_ID), "").orEmpty(),
-            modelId = preferences.getString(keyFor(KEY_MODEL_ID), "").orEmpty(),
+            modelId = readAvailableModel(preferences, keyFor(KEY_MODEL_ID)),
             displayName = preferences.getString(keyFor(KEY_DISPLAY_NAME), "").orEmpty(),
             reasoningEffort = AgentModelReasoningEffort.fromWireValue(
                 preferences.getString(keyFor(KEY_REASONING_EFFORT), AgentModelReasoningEffort.AUTO.wireValue)
@@ -246,7 +248,7 @@ object AgentModelSelectionSettings {
         val selection = AgentModelSelection(
             mode = AgentModelSelectionMode.MANUAL,
             targetId = targetId.trim(),
-            modelId = modelId.trim(),
+            modelId = RetiredAgentModelPolicy.availableOrDefault(modelId),
             displayName = displayName.trim(),
             reasoningEffort = reasoningEffort
         )
@@ -294,7 +296,7 @@ object AgentModelSelectionSettings {
         val scope = requireConversationId(conversationId)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         val updated = selection(context, scope).copy(
-            modelId = modelId.trim(),
+            modelId = RetiredAgentModelPolicy.availableOrDefault(modelId),
             reasoningEffort = reasoningEffort
         )
         require(updated.mode == AgentModelSelectionMode.MANUAL && updated.targetId.isNotBlank()) {
@@ -403,11 +405,18 @@ object AgentModelSelectionSettings {
         if (!preferences.contains(keyFor(KEY_MODEL_ID)) &&
             !preferences.contains(keyFor(KEY_REASONING_EFFORT))) return null
         return AgentTargetConfiguration(
-            modelId = preferences.getString(keyFor(KEY_MODEL_ID), "").orEmpty(),
+            modelId = readAvailableModel(preferences, keyFor(KEY_MODEL_ID)),
             reasoningEffort = AgentModelReasoningEffort.fromWireValue(
                 preferences.getString(keyFor(KEY_REASONING_EFFORT), AgentModelReasoningEffort.AUTO.wireValue)
             )
         )
+    }
+
+    private fun readAvailableModel(preferences: SharedPreferences, key: String): String {
+        val stored = preferences.getString(key, "").orEmpty()
+        val available = RetiredAgentModelPolicy.availableOrDefault(stored)
+        if (available != stored) preferences.edit().putString(key, available).apply()
+        return available
     }
 
     private fun writeTargetConfiguration(

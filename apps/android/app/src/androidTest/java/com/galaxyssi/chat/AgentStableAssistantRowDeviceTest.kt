@@ -6,6 +6,7 @@ import android.util.Base64
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.HorizontalScrollView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -17,6 +18,30 @@ import java.io.ByteArrayOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class AgentStableAssistantRowDeviceTest {
+    @Test fun tableUpdatesPreserveTheContainerUnchangedCellsAndExpansion() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                fun body(count: Int) = "Introduction.\n\n| Name | Value |\n| --- | --- |\n" +
+                    (1..count).joinToString("\n") { "| Result $it | $it |" }
+                val initial = entry(body(14))
+                val row = AgentStableAssistantRow(activity, initial)
+                val scroll = descendants(row).filterIsInstance<HorizontalScrollView>().single()
+                val firstCell = descendants(scroll).filterIsInstance<TextView>().first { it.text.toString() == "Result 1" }
+                descendants(row).filterIsInstance<TextView>().first {
+                    it.text.toString() == activity.getString(R.string.rich_output_more_rows, 2)
+                }.performClick()
+                repeat(30) { index ->
+                    assertTrue(row.bind(initial.copy(text = body(15 + index))))
+                    assertSame(scroll, descendants(row).filterIsInstance<HorizontalScrollView>().single())
+                    assertSame(firstCell, descendants(scroll).filterIsInstance<TextView>().first { it.text.toString() == "Result 1" })
+                    assertTrue(descendants(scroll).filterIsInstance<TextView>().any { it.text.toString() == "Result ${15 + index}" })
+                }
+                assertTrue(row.bind(initial.copy(id = "final-777", text = body(44))))
+                assertSame(scroll, descendants(row).filterIsInstance<HorizontalScrollView>().single())
+            }
+        }
+    }
+
     @Test fun streamAndFinalKeepTheSameParagraphViewAndRefreshSpeech() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

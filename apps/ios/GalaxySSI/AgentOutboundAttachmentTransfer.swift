@@ -103,6 +103,16 @@ struct AgentPreparedOutboundAttachment: Equatable {
   }
 
   func chunkPayload(index: Int, nowMillis: Int64 = AgentOutboundAttachmentTransferStore.nowMillis()) throws -> [String: Any] {
+    let chunk = try plaintextChunk(index: index)
+    var payload = commonPayload(type: "input_attachment_chunk", nowMillis: nowMillis)
+    payload["chunk_index"] = index
+    payload["chunk_size"] = chunk.count
+    payload["chunk_sha256"] = AgentAttachmentTransferProtocol.sha256(chunk)
+    payload["data_b64"] = chunk.base64EncodedString()
+    return payload
+  }
+
+  func plaintextChunk(index: Int) throws -> Data {
     guard (0..<chunkCount).contains(index) else {
       throw AgentAttachmentTransferError.invalidChunkRange
     }
@@ -127,12 +137,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
     guard chunk.count == expected else {
       throw AgentAttachmentTransferError.contentUnavailable
     }
-    var payload = commonPayload(type: "input_attachment_chunk", nowMillis: nowMillis)
-    payload["chunk_index"] = index
-    payload["chunk_size"] = chunk.count
-    payload["chunk_sha256"] = AgentAttachmentTransferProtocol.sha256(chunk)
-    payload["data_b64"] = chunk.base64EncodedString()
-    return payload
+    return chunk
   }
 
   static func == (lhs: Self, rhs: Self) -> Bool {
