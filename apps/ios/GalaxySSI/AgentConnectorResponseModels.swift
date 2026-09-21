@@ -1,155 +1,8 @@
-import CryptoKit
 import Foundation
-
-struct AgentResultRecoveryIdentity: Codable, Equatable, Hashable {
-  var clientRouteId: String
-  var conversationId: String
-  var taskId: String
-  var turnId: String
-  var contactId: String
-  var sourceMessageId: String
-  var agentId: String
-
-  var isValid: Bool {
-    [clientRouteId, conversationId, taskId, turnId, contactId, sourceMessageId, agentId]
-      .allSatisfy { !$0.isBlank && $0.count <= 200 }
-  }
-}
-
-struct AgentResultRecoveryPage: Equatable {
-  var identity: AgentResultRecoveryIdentity
-  var pageIndex: Int
-  var pageCount: Int
-  var totalBytes: Int
-  var sha256: String
-  var pageSHA256: String
-  var dataBase64: String
-  var status: String = "ready"
-}
-
-final class AgentResultRecoveryAssembler {
-  static let pageBytes = 16 * 1_024
-  static let maximumResultBytes = 128 * 1_024
-
-  private let identity: AgentResultRecoveryIdentity
-  private let stillPending: () -> Bool
-  private var data = Data()
-  private var expectedDigest = ""
-  private var expectedTotal = 0
-  private var expectedPages = 0
-  private var nextPage = 0
-
-  init(identity: AgentResultRecoveryIdentity, stillPending: @escaping () -> Bool = { true }) {
-    self.identity = identity
-    self.stillPending = stillPending
-  }
-
-  func consume(_ page: AgentResultRecoveryPage) -> AgentConnectorResponse? {
-    guard identity.isValid, stillPending(), page.identity == identity,
-          page.status == "ready", page.pageIndex == nextPage,
-          Self.validDigest(page.sha256), Self.validDigest(page.pageSHA256),
-          page.totalBytes > 0, page.totalBytes <= Self.maximumResultBytes,
-          page.pageCount == (page.totalBytes + Self.pageBytes - 1) / Self.pageBytes,
-          page.pageCount > 0, page.pageIndex < page.pageCount else {
-      reset()
-      return nil
-    }
-    if nextPage == 0 {
-      expectedDigest = page.sha256
-      expectedTotal = page.totalBytes
-      expectedPages = page.pageCount
-      data.reserveCapacity(expectedTotal)
-    } else if page.sha256 != expectedDigest || page.totalBytes != expectedTotal ||
-                page.pageCount != expectedPages {
-      reset()
-      return nil
-    }
-    guard page.dataBase64.count <= ((Self.pageBytes + 2) / 3) * 4,
-          let chunk = Data(base64Encoded: page.dataBase64),
-          chunk.count == min(Self.pageBytes, expectedTotal - nextPage * Self.pageBytes),
-          Self.sha256(chunk) == page.pageSHA256 else {
-      reset()
-      return nil
-    }
-    data.append(chunk)
-    nextPage += 1
-    guard nextPage == expectedPages else { return nil }
-    defer { reset() }
-    guard stillPending(), data.count == expectedTotal, Self.sha256(data) == expectedDigest,
-          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          Self.identity(from: object) == identity,
-          object["type"] as? String == "text",
-          object["task_status"] as? String == "completed" else {
-      return nil
-    }
-    let exact = Self.exactContent(object)
-    let content = exact.ifBlank(object["content"] as? String ?? "")
-    let richOutput = Self.richOutput(object["rich_output"])
-    guard !content.isBlank || !richOutput.isBlank,
-          let sourceMessageId = Int64(identity.sourceMessageId) else { return nil }
-    return AgentConnectorResponse(
-      sourceMessageId: sourceMessageId,
-      contactId: identity.contactId,
-      content: content,
-      conversationId: identity.conversationId,
-      turnId: identity.turnId,
-      taskId: identity.taskId,
-      richOutputJson: richOutput
-    )
-  }
-
-  static func sha256(_ data: Data) -> String {
-    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-  }
-
-  private static func identity(from object: [String: Any]) -> AgentResultRecoveryIdentity {
-    let sourceMessageId = (object["source_message_id"] as? String)
-      ?? (object["source_message_id"] as? NSNumber)?.stringValue
-      ?? ""
-    return AgentResultRecoveryIdentity(
-      clientRouteId: object["client_route_id"] as? String ?? "",
-      conversationId: object["conversation_id"] as? String ?? "",
-      taskId: object["task_id"] as? String ?? "",
-      turnId: object["turn_id"] as? String ?? "",
-      contactId: object["contact_id"] as? String ?? "",
-      sourceMessageId: sourceMessageId,
-      agentId: object["agent_id"] as? String ?? ""
-    )
-  }
-
-  private static func exactContent(_ object: [String: Any]) -> String {
-    guard object["exact_content_encoding"] as? String == "base64-utf8",
-          let encoded = object["exact_content_b64"] as? String,
-          encoded.count <= 256 * 1_024,
-          let data = Data(base64Encoded: encoded), data.count <= maximumResultBytes else { return "" }
-    return String(data: data, encoding: .utf8) ?? ""
-  }
-
-  private static func richOutput(_ value: Any?) -> String {
-    guard let value, JSONSerialization.isValidJSONObject(value),
-          let data = try? JSONSerialization.data(withJSONObject: value),
-          data.count <= maximumResultBytes else { return "" }
-    return String(data: data, encoding: .utf8) ?? ""
-  }
-
-  private static func validDigest(_ value: String) -> Bool {
-    value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
-  }
-
-  private func reset() {
-    data.resetBytes(in: 0..<data.count)
-    data.removeAll(keepingCapacity: false)
-    expectedDigest = ""
-    expectedTotal = 0
-    expectedPages = 0
-    nextPage = 0
-  }
-}
 
 struct AgentConnectorResponse: Codable, Equatable {
   var sourceMessageId: Int64
   var contactId: String
-  var resolvedContactId: String
   var content: String
   var conversationId: String
   var turnId: String
@@ -160,11 +13,13 @@ struct AgentConnectorResponse: Codable, Equatable {
   var costMicros: Int64
   var richOutputJson: String
   var receivedAtMillis: Int64
+  var taskStatus: String
+  var executionGeneration: Int64
+  var statusSequence: Int64
 
   init(
     sourceMessageId: Int64,
     contactId: String = "",
-    resolvedContactId: String = "",
     content: String = "",
     conversationId: String = "",
     turnId: String = "",
@@ -174,27 +29,32 @@ struct AgentConnectorResponse: Codable, Equatable {
     outputTokens: Int64 = 0,
     costMicros: Int64 = 0,
     richOutputJson: String = "",
-    receivedAtMillis: Int64 = 0
+    receivedAtMillis: Int64 = 0,
+    taskStatus: String = "",
+    executionGeneration: Int64 = 1,
+    statusSequence: Int64 = -1
   ) {
     self.sourceMessageId = max(sourceMessageId, 0)
     self.contactId = contactId
-    self.resolvedContactId = resolvedContactId
     self.content = String(content.prefix(Self.maxContentCharacters))
     self.conversationId = conversationId
     self.turnId = turnId
     self.taskId = taskId
-    self.success = success
+    let normalizedTaskStatus = AgentRemoteOutcomePolicy.normalizedStatus(taskStatus)
+    self.success = normalizedTaskStatus.isEmpty ? success : normalizedTaskStatus == "completed"
     self.inputTokens = max(inputTokens, 0)
     self.outputTokens = max(outputTokens, 0)
     self.costMicros = max(costMicros, 0)
     self.richOutputJson = String(richOutputJson.prefix(Self.maxRichOutputCharacters))
     self.receivedAtMillis = max(receivedAtMillis, 0)
+    self.taskStatus = normalizedTaskStatus
+    self.executionGeneration = AgentRemoteOutcomePolicy.validGeneration(executionGeneration) ? executionGeneration : 1
+    self.statusSequence = max(statusSequence, -1)
   }
 
   enum CodingKeys: String, CodingKey {
     case sourceMessageId = "source_message_id"
     case contactId = "contact_id"
-    case resolvedContactId = "resolved_contact_id"
     case content
     case conversationId = "conversation_id"
     case turnId = "turn_id"
@@ -205,6 +65,9 @@ struct AgentConnectorResponse: Codable, Equatable {
     case costMicros = "cost_micros"
     case richOutputJson = "rich_output"
     case receivedAtMillis = "received_at_millis"
+    case taskStatus = "task_status"
+    case executionGeneration = "execution_generation"
+    case statusSequence = "status_sequence"
   }
 
   init(from decoder: Decoder) throws {
@@ -212,7 +75,6 @@ struct AgentConnectorResponse: Codable, Equatable {
     self.init(
       sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
       contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "",
-      resolvedContactId: try container.decodeIfPresent(String.self, forKey: .resolvedContactId) ?? "",
       content: try container.decodeIfPresent(String.self, forKey: .content) ?? "",
       conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
       turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
@@ -222,7 +84,10 @@ struct AgentConnectorResponse: Codable, Equatable {
       outputTokens: try container.decodeIfPresent(Int64.self, forKey: .outputTokens) ?? 0,
       costMicros: try container.decodeIfPresent(Int64.self, forKey: .costMicros) ?? 0,
       richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
-      receivedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .receivedAtMillis) ?? 0
+      receivedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .receivedAtMillis) ?? 0,
+      taskStatus: try container.decodeIfPresent(String.self, forKey: .taskStatus) ?? "",
+      executionGeneration: try container.decodeIfPresent(Int64.self, forKey: .executionGeneration) ?? 1,
+      statusSequence: try container.decodeIfPresent(Int64.self, forKey: .statusSequence) ?? -1
     )
   }
 
@@ -235,13 +100,18 @@ struct AgentConnectorResponse: Codable, Equatable {
   ) -> AgentConnectorResponse? {
     let sourceMessageId = Int64(payload.string("source_message_id")) ?? Int64(payload.int("source_message_id"))
     guard sourceMessageId > 0 else { return nil }
-    let content = payload.string("content")
-      .ifBlank(payload.string("text"))
-      .ifBlank(payload.string("error"))
+    let taskStatus = AgentRemoteOutcomePolicy.normalizedStatus(payload.string("task_status"))
+    guard payload.string("task_status").isBlank || AgentRemoteOutcomePolicy.isTerminal(taskStatus) else {
+      return nil
+    }
+    let content = AgentRemoteOutcomePolicy.isFailure(taskStatus)
+      ? payload.string("error").ifBlank(payload.string("content")).ifBlank(payload.string("text"))
+      : payload.string("content").ifBlank(payload.string("text"))
     let richOutput = payload.string("rich_output")
       .ifBlank(payload.string("rich_output_json"))
     guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-      !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      AgentRemoteOutcomePolicy.isFailure(taskStatus) else {
       return nil
     }
     let receivedAtMillis = Int64(
@@ -249,20 +119,32 @@ struct AgentConnectorResponse: Codable, Equatable {
         .ifBlank(payload.string("received_at"))
         .ifBlank(payload.string("time"))
     ) ?? Int64(payload.int("received_at_millis"))
+    let executionGeneration = Int64(payload.string("execution_generation"))
+      ?? Int64(payload.int("execution_generation")).positiveOr(1)
+    guard AgentRemoteOutcomePolicy.validGeneration(executionGeneration) else { return nil }
+    let statusSequence = payload["status_sequence"] == nil && payload["status_seq"] == nil
+      ? -1
+      : Int64(payload.string("status_sequence").ifBlank(payload.string("status_seq")))
+        ?? Int64(payload.int("status_sequence")).nonnegativeOr(-1)
+    guard statusSequence >= -1 else { return nil }
     return AgentConnectorResponse(
       sourceMessageId: sourceMessageId,
       contactId: payload.string("contact_id"),
-      resolvedContactId: payload.string("resolved_contact_id"),
       content: content,
       conversationId: payload.string("conversation_id"),
       turnId: payload.string("turn_id"),
       taskId: payload.string("task_id"),
-      success: payloadBool(payload["success"], defaultValue: true),
+      success: taskStatus.isEmpty
+        ? payloadBool(payload["success"], defaultValue: true)
+        : taskStatus == "completed",
       inputTokens: Int64(payload.string("input_tokens")) ?? Int64(payload.int("input_tokens")),
       outputTokens: Int64(payload.string("output_tokens")) ?? Int64(payload.int("output_tokens")),
       costMicros: Int64(payload.string("cost_micros")) ?? Int64(payload.int("cost_micros")),
       richOutputJson: richOutput,
-      receivedAtMillis: receivedAtMillis > 0 ? receivedAtMillis : max(nowMillis, 0)
+      receivedAtMillis: receivedAtMillis > 0 ? receivedAtMillis : max(nowMillis, 0),
+      taskStatus: taskStatus,
+      executionGeneration: executionGeneration,
+      statusSequence: statusSequence
     )
   }
 
@@ -280,18 +162,31 @@ struct AgentConnectorResponse: Codable, Equatable {
   }
 }
 
+enum AgentRemoteOutcomePolicy {
+  static let terminalStatuses: Set<String> = ["completed", "failed", "timed_out", "cancelled"]
+  static let failureStatuses: Set<String> = ["failed", "timed_out", "cancelled"]
+  static let maximumGeneration: Int64 = 9_007_199_254_740_991
+
+  static func normalizedStatus(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  static func isTerminal(_ value: String) -> Bool { terminalStatuses.contains(normalizedStatus(value)) }
+  static func isFailure(_ value: String) -> Bool { failureStatuses.contains(normalizedStatus(value)) }
+  static func validGeneration(_ value: Int64) -> Bool { (1...maximumGeneration).contains(value) }
+}
+
+private extension Int64 {
+  func positiveOr(_ fallback: Int64) -> Int64 { self > 0 ? self : fallback }
+  func nonnegativeOr(_ fallback: Int64) -> Int64 { self >= 0 ? self : fallback }
+}
+
 protocol AgentConnectorResponseSink: AnyObject {
   @discardableResult
   func publish(_ response: AgentConnectorResponse) -> Bool
   func pending() -> [AgentConnectorResponse]
   func remove(_ response: AgentConnectorResponse)
   func clear()
-}
-
-extension AgentConnectorResponseSink {
-  func pending(limit: Int) -> [AgentConnectorResponse] {
-    Array(pending().prefix(max(1, min(limit, 64))))
-  }
 }
 
 final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
@@ -316,7 +211,9 @@ final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
     lock.lock()
     defer { lock.unlock() }
     responses.removeAll {
-      $0.sourceMessageId == response.sourceMessageId && $0.contactId == response.contactId
+      $0.sourceMessageId == response.sourceMessageId &&
+        $0.contactId == response.contactId &&
+        $0.executionGeneration == response.executionGeneration
     }
   }
 
@@ -339,6 +236,7 @@ final class AgentManagedConnectorResponseRegistry {
     var conversationId: String
     var turnId: String
     var taskId: String
+    var executionGeneration: Int64
     var consume: (AgentConnectorResponse) -> Bool
   }
 
@@ -352,6 +250,7 @@ final class AgentManagedConnectorResponseRegistry {
     conversationId: String = "",
     turnId: String = "",
     taskId: String = "",
+    executionGeneration: Int64 = 1,
     consume: @escaping (AgentConnectorResponse) -> Bool
   ) throws {
     guard sourceMessageId > 0 else {
@@ -368,6 +267,9 @@ final class AgentManagedConnectorResponseRegistry {
       conversationId: conversationId.trimmingCharacters(in: .whitespacesAndNewlines),
       turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines),
       taskId: taskId.trimmingCharacters(in: .whitespacesAndNewlines),
+      executionGeneration: AgentRemoteOutcomePolicy.validGeneration(executionGeneration)
+        ? executionGeneration
+        : 1,
       consume: consume
     )
   }
@@ -431,6 +333,7 @@ final class AgentManagedConnectorResponseRegistry {
   }
 
   private func identityMatches(_ interceptor: Interceptor, _ response: AgentConnectorResponse) -> Bool {
+    interceptor.executionGeneration == response.executionGeneration &&
     AgentTaskIdentityPolicy.matchesResponseIdentity(
       expectedConversationId: interceptor.conversationId,
       expectedTurnId: interceptor.turnId,
@@ -443,6 +346,9 @@ final class AgentManagedConnectorResponseRegistry {
 }
 
 final class AgentConnectorResponseStore: AgentConnectorResponseSink {
+  static let maxResponses = 30
+  static let maxResponseAgeMillis: Int64 = 24 * 60 * 60 * 1_000
+
   private let lock = NSRecursiveLock()
   private let nowMillis: () -> Int64
   private var responses: [AgentConnectorResponse]
@@ -470,9 +376,13 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
       return false
     }
     responses = (pendingLocked(nowMillis: now).filter {
-      !Self.matches($0, normalized)
+      !($0.sourceMessageId == normalized.sourceMessageId &&
+        $0.contactId == normalized.contactId &&
+        $0.executionGeneration == normalized.executionGeneration)
     } + [normalized])
       .sorted { $0.receivedAtMillis < $1.receivedAtMillis }
+      .suffix(Self.maxResponses)
+      .map { $0 }
     return true
   }
 
@@ -491,7 +401,9 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
     lock.lock()
     defer { lock.unlock() }
     responses = pendingLocked(nowMillis: nowMillis()).filter {
-      !Self.matches($0, response)
+      !($0.sourceMessageId == response.sourceMessageId &&
+        $0.contactId == response.contactId &&
+        $0.executionGeneration == response.executionGeneration)
     }
   }
 
@@ -509,20 +421,13 @@ final class AgentConnectorResponseStore: AgentConnectorResponseSink {
   }
 
   private func pendingLocked(nowMillis: Int64) -> [AgentConnectorResponse] {
-    responses.compactMap {
-      AgentConnectorResponseNormalizer.normalized($0, nowMillis: nowMillis)
+    let cutoff = nowMillis - Self.maxResponseAgeMillis
+    return responses.compactMap { response in
+      guard response.receivedAtMillis >= cutoff else {
+        return nil
+      }
+      return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
     }
-  }
-
-  private static func matches(
-    _ candidate: AgentConnectorResponse,
-    _ expected: AgentConnectorResponse
-  ) -> Bool {
-    candidate.sourceMessageId == expected.sourceMessageId
-      && candidate.contactId == expected.contactId
-      && candidate.conversationId == expected.conversationId
-      && candidate.turnId == expected.turnId
-      && candidate.taskId == expected.taskId
   }
 }
 
@@ -539,7 +444,7 @@ final class AgentConnectorResponseBus {
   init(
     registry: AgentManagedConnectorResponseRegistry = .shared,
     managedLedger: AgentManagedResponseLedger? = UserDefaultsAgentManagedResponseLedger(),
-    store: AgentConnectorResponseSink = SQLiteAgentConnectorResponseStore(),
+    store: AgentConnectorResponseSink = UserDefaultsAgentConnectorResponseStore(),
     terminalStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
     globalRunSlots: AgentGlobalRunSlotStoring = InMemoryAgentGlobalRunSlotStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
@@ -596,10 +501,6 @@ final class AgentConnectorResponseBus {
     store.pending()
   }
 
-  func pending(limit: Int) -> [AgentConnectorResponse] {
-    store.pending(limit: limit)
-  }
-
   func remove(_ response: AgentConnectorResponse) {
     store.remove(response)
   }
@@ -635,6 +536,7 @@ enum AgentConnectorResponseStoreCodec {
           let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
       return []
     }
+    let cutoff = max(nowMillis, 0) - AgentConnectorResponseStore.maxResponseAgeMillis
     return values.compactMap { value in
       guard case .object(let object) = value else {
         return nil
@@ -645,7 +547,6 @@ enum AgentConnectorResponseStoreCodec {
       let response = AgentConnectorResponse(
         sourceMessageId: object.int64("source_message_id"),
         contactId: object.string("contact_id"),
-        resolvedContactId: object.string("resolved_contact_id"),
         content: object.string("content"),
         conversationId: object.string("conversation_id"),
         turnId: object.string("turn_id"),
@@ -655,8 +556,14 @@ enum AgentConnectorResponseStoreCodec {
         outputTokens: object.int64("output_tokens"),
         costMicros: object.int64("cost_micros"),
         richOutputJson: object.string("rich_output"),
-        receivedAtMillis: receivedAt
+        receivedAtMillis: receivedAt,
+        taskStatus: object.string("task_status"),
+        executionGeneration: object.int64("execution_generation").positiveOr(1),
+        statusSequence: object.int64("status_sequence").nonnegativeOr(-1)
       )
+      guard receivedAt >= cutoff else {
+        return nil
+      }
       return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
     }
   }
@@ -665,12 +572,14 @@ enum AgentConnectorResponseStoreCodec {
     .object([
       "source_message_id": .int(response.sourceMessageId),
       "contact_id": .string(response.contactId),
-      "resolved_contact_id": .string(response.resolvedContactId),
       "content": .string(String(response.content.prefix(AgentConnectorResponse.maxContentCharacters))),
       "conversation_id": .string(response.conversationId),
       "turn_id": .string(response.turnId),
       "task_id": .string(response.taskId),
       "success": .bool(response.success),
+      "task_status": .string(response.taskStatus),
+      "execution_generation": .int(response.executionGeneration),
+      "status_sequence": .int(response.statusSequence),
       "input_tokens": .int(response.inputTokens),
       "output_tokens": .int(response.outputTokens),
       "cost_micros": .int(response.costMicros),
@@ -693,23 +602,28 @@ enum AgentConnectorResponseNormalizer {
       ? AgentConnectorRichOutput.fallbackText(richOutput)
       : response.content
     guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-      !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      AgentRemoteOutcomePolicy.isFailure(response.taskStatus) else {
       return nil
     }
+    guard response.taskStatus.isEmpty || AgentRemoteOutcomePolicy.isTerminal(response.taskStatus),
+          AgentRemoteOutcomePolicy.validGeneration(response.executionGeneration) else { return nil }
     return AgentConnectorResponse(
       sourceMessageId: response.sourceMessageId,
       contactId: response.contactId,
-      resolvedContactId: response.resolvedContactId,
       content: String(content.prefix(AgentConnectorResponse.maxContentCharacters)),
       conversationId: response.conversationId,
       turnId: response.turnId,
       taskId: response.taskId,
-      success: response.success,
+      success: response.taskStatus.isEmpty ? response.success : response.taskStatus == "completed",
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
       costMicros: response.costMicros,
       richOutputJson: richOutput,
-      receivedAtMillis: response.receivedAtMillis > 0 ? response.receivedAtMillis : max(nowMillis, 0)
+      receivedAtMillis: response.receivedAtMillis > 0 ? response.receivedAtMillis : max(nowMillis, 0),
+      taskStatus: response.taskStatus,
+      executionGeneration: response.executionGeneration,
+      statusSequence: response.statusSequence
     )
   }
 }
