@@ -235,6 +235,15 @@ final class AgentReplySpeechControllerTests: XCTestCase {
     )
   }
 
+  func testVoiceCallReplySessionsUseIndependentPrefix() {
+    let controller = AgentReplySpeechController(sessionPrefix: "voice-call")
+    let target = makeTarget(responseId: "response", entryId: "entry", text: "Hello")
+
+    let command = controller.toggle(target)
+
+    XCTAssertTrue(command.beginSessionId.hasPrefix("voice-call-"))
+  }
+
   private func makeTarget(
     responseId: String,
     entryId: String,

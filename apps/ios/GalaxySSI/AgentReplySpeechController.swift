@@ -82,6 +82,12 @@ final class AgentReplySpeechController {
 
   private var active: Session?
   private var playbackSequence: UInt64 = 0
+  private let sessionPrefix: String
+
+  init(sessionPrefix: String = "agent-reply") {
+    let normalized = sessionPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.sessionPrefix = normalized.isEmpty ? "agent-reply" : normalized
+  }
 
   func observe(_ target: AgentReplySpeechTarget?) -> AgentReplySpeechCommand {
     guard let target else {
@@ -204,7 +210,7 @@ final class AgentReplySpeechController {
     var session = initialSession
     let previousPlaybackSessionId = session.enabled ? session.playbackSessionId : ""
     playbackSequence &+= 1
-    session.playbackSessionId = Self.playbackSessionId(
+    session.playbackSessionId = playbackSessionId(
       session.target.responseId,
       sequence: playbackSequence
     )
@@ -260,9 +266,9 @@ final class AgentReplySpeechController {
     Set(values.compactMap { $0 }.filter { !$0.isEmpty })
   }
 
-  private static func playbackSessionId(_ responseId: String, sequence: UInt64) -> String {
+  private func playbackSessionId(_ responseId: String, sequence: UInt64) -> String {
     let digest = SHA256.hash(data: Data(responseId.utf8))
     let suffix = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-    return "agent-reply-\(suffix)-\(sequence)"
+    return "\(sessionPrefix)-\(suffix)-\(sequence)"
   }
 }
