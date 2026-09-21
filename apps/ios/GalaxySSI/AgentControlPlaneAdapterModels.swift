@@ -18,6 +18,13 @@ protocol AgentAdapter: AnyObject {
   func cancelRun(runId: String) async throws
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent>
   func recoverRuns() async throws -> [AgentRecoverableRun]
+  func inspectRecoverableRuns() async throws -> [AgentRecoverableRun]
+}
+
+extension AgentAdapter {
+  func inspectRecoverableRuns() async throws -> [AgentRecoverableRun] {
+    try await recoverRuns()
+  }
 }
 
 protocol AgentProvider: AnyObject {
@@ -185,6 +192,12 @@ final class TransportBackedAgentAdapter: AgentAdapter {
     guard negotiated.features.contains("run.recover") else {
       return []
     }
+    return try await transport.recoverRuns()
+  }
+
+  func inspectRecoverableRuns() async throws -> [AgentRecoverableRun] {
+    let negotiated = try await ensureConnected()
+    guard negotiated.features.contains("run.recover") else { return [] }
     return try await transport.recoverRuns()
   }
 
