@@ -71,6 +71,9 @@ enum GalaxySSIPeerAttachmentTransferProgress {
       blocks.append(block(for: update))
       return AgentRichContentCodec.encode(blocks)
     }
+    if blocks[index].metadata["transfer_state"] == complete {
+      return richOutputJson
+    }
     blocks[index].metadata["transfer_id"] = update.transferId
     blocks[index].metadata["transfer_progress"] = String(update.progress)
     blocks[index].metadata["transfer_state"] = update.state
