@@ -2,6 +2,49 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testVoiceAgentRunRepositoryMigratesAndIndexesEncryptedSnapshots() throws {
+    let suite = "voice-run-index-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let storageKey = "test.voice.runs"
+    let secrets = InMemorySecretStore()
+    func snapshot(_ suffix: String, updatedAt: Int64) -> VoiceAgentRunSnapshot {
+      VoiceAgentRunSnapshot(
+        runId: "run-\(suffix)",
+        sessionId: "session-\(suffix)",
+        conversationId: "conversation",
+        turnId: "turn-\(suffix)",
+        taskId: "task-\(suffix)",
+        sourceMessageId: "message-\(suffix)",
+        contactId: "codex",
+        agentId: "agent",
+        agentName: "Agent",
+        goal: "Goal \(suffix)",
+        idempotencyKey: "request-\(suffix)",
+        traceId: "trace-\(suffix)",
+        createdAtMillis: updatedAt,
+        updatedAtMillis: updatedAt
+      )
+    }
+    let older = snapshot("older", updatedAt: 10)
+    let newer = snapshot("newer", updatedAt: 20)
+    defaults.set(try JSONEncoder().encode([older, newer]), forKey: storageKey)
+
+    let repository = UserDefaultsVoiceAgentRunRepository(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
+
+    XCTAssertEqual(repository.find(runId: older.runId), older)
+    XCTAssertEqual(repository.find(sessionId: newer.sessionId), newer)
+    XCTAssertEqual(repository.findByTaskId(newer.taskId), newer)
+    XCTAssertEqual(repository.findBySourceMessageId(newer.sourceMessageId), newer)
+    XCTAssertEqual(repository.findByIdempotencyKey(newer.idempotencyKey), newer)
+    XCTAssertEqual(repository.recent(limit: 1).map(\.runId), [newer.runId])
+    XCTAssertNil(defaults.data(forKey: storageKey))
+  }
+
   func testAgentRollingPlanPolicyContinuesOnlyCompletedGuardedModelBatches() {
     let completed = rollingPlan(action: rollingAction(status: .completed))
     let result = AgentActionResult(actionId: "action", success: true, message: "observed")
