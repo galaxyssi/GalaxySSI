@@ -8,6 +8,24 @@
         "revision" : "b7fb7f7dea8a2469e6335d95a61b8f36d0dc83b2",
         "version" : "1.24.2"
       }
+    },
+    {
+      "identity" : "numkong",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ashvardanian/NumKong",
+      "state" : {
+        "revision" : "f8717e3fd0bcb438ff0aefbe64370fd26af98c79",
+        "version" : "7.5.0"
+      }
+    },
+    {
+      "identity" : "usearch",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/unum-cloud/USearch",
+      "state" : {
+        "revision" : "ca007416e66c642aeec13418d092c7362ef2891e",
+        "version" : "2.25.2"
+      }
     }
   ],
   "version" : 2
