@@ -30,6 +30,14 @@ final class MessageCoordinator: ObservableObject {
   let deliveryStore: GalaxySSILinkDeliveryStore
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
+  private let blobRelayConfigurationStore = AgentBlobRelayConfigurationStore()
+  lazy var blobOutgoingCoordinator = AgentBlobOutgoingCoordinator(
+    configurationStore: blobRelayConfigurationStore,
+    attachmentStore: attachmentTransferStore
+  ) { [weak self] payload, attachment in
+    guard let self else { throw GalaxySSIError.transportUnavailable }
+    try await self.publishBlobOffer(payload, attachment: attachment)
+  }
   private let phoneAttachmentQueue = DispatchQueue(
     label: "org.galaxyssi.ios.phone-attachment-receive",
     qos: .utility
@@ -39,7 +47,8 @@ final class MessageCoordinator: ObservableObject {
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
-  private let connectorResponseBus: AgentConnectorResponseBus
+  let connectorResponseBus: AgentConnectorResponseBus
+  let attachmentDeliveryFailureStore = AgentAttachmentDeliveryFailureStore()
   private let richContentMaterializer: AgentRichContentMaterializer
   private let remoteWhisperNodeRegistry = VoiceRemoteWhisperNodeRegistry.shared
   private let remoteWhisperNodeClient = VoiceRemoteWhisperNodeClient.shared
@@ -7838,6 +7847,29 @@ final class MessageCoordinator: ObservableObject {
         attachmentTransferId: step.attachment.transferId
       )
     }
+  }
+
+  private func publishBlobOffer(
+    _ payload: [String: Any],
+    attachment: AgentPreparedOutboundAttachment
+  ) async throws {
+    guard let link = store.serverLinks.first(where: {
+      $0.paired &&
+        $0.desktopId == attachment.scope.desktopId &&
+        $0.routes.clientRouteId == attachment.scope.clientRouteId
+    }) else { throw GalaxySSIError.notPaired }
+    let wire = try linkWirePayload(payload, link: link)
+    deliveryStore.discardAttachmentTransferMessages(attachment.transferId)
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.upTopic,
+      wirePayload: wire.wireText,
+      requiresValidatedNetwork: true,
+      clientSourceMessageId: attachment.scope.clientMessageId ?? "",
+      contactId: attachment.scope.contactId,
+      attachmentTransferId: attachment.transferId
+    )
+    scheduleOutboxFlush(after: 0)
   }
 
   @discardableResult

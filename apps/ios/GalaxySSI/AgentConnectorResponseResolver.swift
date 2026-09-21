@@ -69,6 +69,16 @@ enum AgentConnectorResponseResolver {
     if !response.richOutputJson.isEmpty {
       metadata["rich_output"] = response.richOutputJson
     }
+    if !response.deliveryFailureCode.isEmpty {
+      guard !response.success,
+            response.taskStatus.isEmpty,
+            AgentAttachmentDeliveryFailureContract.isTerminal(response.deliveryFailureCode) else {
+        return nil
+      }
+      metadata["delivery_failure_code"] = response.deliveryFailureCode
+      metadata["attachment_verified"] = "false"
+      metadata["connector_disposition"] = "delivery_failure"
+    }
     let result = AgentActionResult(
       actionId: pending.actionId,
       success: response.success,
@@ -88,6 +98,7 @@ enum AgentConnectorResponseResolver {
         "task_status": .string(response.taskStatus),
         "execution_generation": .int(response.executionGeneration),
         "status_sequence": .int(response.statusSequence),
+        "delivery_failure_code": .string(response.deliveryFailureCode),
         "result": .string(response.content),
         "error": .string(response.success ? "" : response.content)
       ]
