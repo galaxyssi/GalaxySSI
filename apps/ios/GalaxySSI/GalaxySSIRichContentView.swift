@@ -1908,7 +1908,7 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var mediaURL: URL? {
-    guard let url = GalaxySSILocalFileResource.url(for: block) ?? URL(string: block.uri),
+    guard let url = localArtifactFile ?? GalaxySSILocalFileResource.url(for: block) ?? URL(string: block.uri),
           ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
       return nil
     }
@@ -2861,6 +2861,7 @@ private final class GalaxySSIAudioArtifactPlayer: NSObject, ObservableObject, AV
 private struct GalaxySSIVideoArtifactView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @StateObject private var player: GalaxySSIVideoArtifactPlayer
+  @State private var showsFullscreen = false
   let title: String
 
   init(url: URL, title: String) {
@@ -2897,28 +2898,68 @@ private struct GalaxySSIVideoArtifactView: View {
         }
       }
         .frame(maxWidth: .infinity)
-        .frame(height: 220)
+        .aspectRatio(player.aspectRatio, contentMode: .fit)
+        .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { showsFullscreen = true }
         .accessibilityLabel(title.isEmpty
           ? GalaxySSILocalization.string("rich_output_type_video", fallback: "Video", language: interfaceLanguage)
           : title)
     }
-    .onDisappear {
-      player.stop()
+    .fullScreenCover(isPresented: $showsFullscreen) {
+      GalaxySSIVideoFullscreenView(player: player.player, title: title)
     }
+    .onDisappear {
+      if !showsFullscreen { player.stop() }
+    }
+  }
+}
+
+private struct GalaxySSIVideoFullscreenView: View {
+  let player: AVPlayer
+  let title: String
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    ZStack(alignment: .topTrailing) {
+      Color.black.ignoresSafeArea()
+      VideoPlayer(player: player)
+        .ignoresSafeArea()
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { dismiss() }
+      Button(action: { dismiss() }) {
+        Image(systemName: "xmark.circle.fill")
+          .font(.system(size: 30, weight: .semibold))
+          .symbolRenderingMode(.palette)
+          .foregroundStyle(Color.white, Color.black.opacity(0.55))
+      }
+      .buttonStyle(.plain)
+      .padding(18)
+      .accessibilityLabel(GalaxySSILocalization.string(
+        "common_close",
+        fallback: "Close",
+        language: interfaceLanguage
+      ))
+    }
+    .accessibilityLabel(title)
   }
 }
 
 private final class GalaxySSIVideoArtifactPlayer: ObservableObject {
   let player: AVPlayer
   @Published private(set) var hasFailed = false
+  @Published private(set) var aspectRatio: CGFloat = 16.0 / 9.0
   private var playbackObservation: NSKeyValueObservation? = nil
   private var statusObservation: NSKeyValueObservation? = nil
+  private var presentationSizeObservation: NSKeyValueObservation? = nil
 
   init(url: URL) {
     player = AVPlayer(url: url)
     installPlaybackObservation()
     installStatusObservation()
+    installPresentationSizeObservation()
   }
 
   private func installPlaybackObservation() {
@@ -2951,6 +2992,20 @@ private final class GalaxySSIVideoArtifactPlayer: ObservableObject {
     }
   }
 
+  private func installPresentationSizeObservation() {
+    guard let item = player.currentItem else { return }
+    presentationSizeObservation = item.observe(
+      \.presentationSize,
+      options: [.initial, .new]
+    ) { [weak self] item, _ in
+      let size = item.presentationSize
+      guard size.width > 0, size.height > 0 else { return }
+      DispatchQueue.main.async {
+        self?.aspectRatio = min(4, max(0.25, size.width / size.height))
+      }
+    }
+  }
+
   func stop() {
     GalaxySSIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     player.pause()
@@ -2963,6 +3018,7 @@ private final class GalaxySSIVideoArtifactPlayer: ObservableObject {
 
   deinit {
     playbackObservation?.invalidate()
+    presentationSizeObservation?.invalidate()
     statusObservation?.invalidate()
     GalaxySSIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
   }
