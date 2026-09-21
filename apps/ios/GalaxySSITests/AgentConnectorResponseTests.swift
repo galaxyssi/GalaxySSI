@@ -2,6 +2,69 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testResultReceiptBindsIdentityGenerationDigestAndConfirmation() throws {
+    let payload: [String: Any] = [
+      "client_route_id": "route-1",
+      "conversation_id": "conversation-1",
+      "task_id": "task-1",
+      "turn_id": "turn-1",
+      "contact_id": "agent-1",
+      "source_message_id": "901",
+      "agent_id": "agent-1",
+      "execution_generation": 3,
+      "sha256": String(repeating: "a", count: 64)
+    ]
+    let receipt = try XCTUnwrap(AgentResultReceipt.fromPayload(payload, desktopId: "desktop-1"))
+    XCTAssertEqual(receipt.payload["receipt_id"] as? String, receipt.id)
+
+    var confirmed = receipt.payload
+    confirmed["type"] = "agent_task_result_receipt_confirmed"
+    XCTAssertEqual(
+      AgentResultReceipt.confirmedPayload(confirmed, desktopId: "desktop-1"),
+      receipt
+    )
+    confirmed["execution_generation"] = 4
+    XCTAssertNil(AgentResultReceipt.confirmedPayload(confirmed, desktopId: "desktop-1"))
+  }
+
+  func testEncryptedResultReceiptJournalRequiresApplicationConfirmationBeforeCleanup() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("receipts.sqlite3")
+    let secrets = InMemorySecretStore()
+    let receipt = try XCTUnwrap(AgentResultReceipt.fromPayload([
+      "client_route_id": "route-1",
+      "conversation_id": "conversation-1",
+      "task_id": "task-1",
+      "turn_id": "turn-1",
+      "contact_id": "agent-1",
+      "source_message_id": "902",
+      "agent_id": "agent-1",
+      "execution_generation": 2,
+      "sha256": String(repeating: "b", count: 64)
+    ], desktopId: "desktop-1"))
+
+    var journal: AgentResultReceiptJournal? = AgentResultReceiptJournal(
+      fileURL: fileURL,
+      secrets: secrets
+    )
+    XCTAssertTrue(journal?.insert(receipt) ?? false)
+    let initial = try XCTUnwrap(journal?.due(nowMillis: 10_000).first)
+    XCTAssertEqual(initial.state, .pending)
+    XCTAssertTrue(journal?.claim(initial, nowMillis: 10_000) ?? false)
+    XCTAssertFalse(journal?.claim(initial, nowMillis: 10_000) ?? true)
+    XCTAssertEqual(journal?.nextWakeMillis, 15_000)
+    journal = nil
+
+    let reopened = AgentResultReceiptJournal(fileURL: fileURL, secrets: secrets)
+    XCTAssertTrue(reopened.due(nowMillis: 14_999).isEmpty)
+    XCTAssertEqual(reopened.due(nowMillis: 15_000).first?.receipt, receipt)
+    XCTAssertTrue(reopened.confirm(receipt))
+    XCTAssertEqual(reopened.due(nowMillis: 15_000).first?.state, .confirmed)
+    XCTAssertTrue(reopened.markCleaned(receipt))
+    XCTAssertTrue(reopened.due(nowMillis: Int64.max).isEmpty)
+  }
+
   func testTerminalFailureNeverAcceptsLateResult() {
     let messages = [connectorPolicyMessage(isMine: true, turnId: "turn-1")]
 
