@@ -14,6 +14,10 @@ enum AgentLongTaskPersistenceLimits {
 struct AgentSessionHistoryManifest: Codable, Equatable {
   var version: Int
   var sessionId: String
+  var activePlanId: String
+  var activePlanRevision: Int
+  var activeActionPageIds: [String]
+  var activeActionPageItemCounts: [Int]
   var actionPageIds: [String]
   var actionPageItemCounts: [Int]
   var checkpointPageIds: [String]
@@ -21,13 +25,21 @@ struct AgentSessionHistoryManifest: Codable, Equatable {
 
   init(
     sessionId: String,
+    activePlanId: String = "",
+    activePlanRevision: Int = 0,
+    activeActionPageIds: [String] = [],
+    activeActionPageItemCounts: [Int] = [],
     actionPageIds: [String],
     actionPageItemCounts: [Int],
     checkpointPageIds: [String],
     checkpointPageItemCounts: [Int]
   ) {
-    version = 1
+    version = activePlanId.isEmpty ? 1 : 2
     self.sessionId = sessionId
+    self.activePlanId = activePlanId
+    self.activePlanRevision = activePlanRevision
+    self.activeActionPageIds = activeActionPageIds
+    self.activeActionPageItemCounts = activeActionPageItemCounts
     self.actionPageIds = actionPageIds
     self.actionPageItemCounts = actionPageItemCounts
     self.checkpointPageIds = checkpointPageIds
@@ -35,25 +47,54 @@ struct AgentSessionHistoryManifest: Codable, Equatable {
   }
 
   var actionCount: Int { actionPageItemCounts.reduce(0, +) }
+  var activeActionCount: Int { activeActionPageItemCounts.reduce(0, +) }
   var checkpointCount: Int { checkpointPageItemCounts.reduce(0, +) }
 
   var isValid: Bool {
-    version == 1 &&
+    (version == 1 || version == 2) &&
       actionPageIds.count == actionPageItemCounts.count &&
+      activeActionPageIds.count == activeActionPageItemCounts.count &&
       checkpointPageIds.count == checkpointPageItemCounts.count &&
+      (version == 1 || (!activePlanId.isEmpty && activePlanRevision > 0)) &&
+      activeActionPageItemCounts.allSatisfy { $0 > 0 } &&
       actionPageItemCounts.allSatisfy { $0 > 0 } &&
       checkpointPageItemCounts.allSatisfy { $0 > 0 } &&
       actionPageIds.allSatisfy { !$0.isEmpty } &&
+      activeActionPageIds.allSatisfy { !$0.isEmpty } &&
       checkpointPageIds.allSatisfy { !$0.isEmpty }
   }
 
   enum CodingKeys: String, CodingKey {
     case version
     case sessionId = "session_id"
+    case activePlanId = "active_plan_id"
+    case activePlanRevision = "active_plan_revision"
+    case activeActionPageIds = "active_action_pages"
+    case activeActionPageItemCounts = "active_action_page_counts"
     case actionPageIds = "action_pages"
     case actionPageItemCounts = "action_page_counts"
     case checkpointPageIds = "checkpoint_pages"
     case checkpointPageItemCounts = "checkpoint_page_counts"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+    sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId) ?? ""
+    activePlanId = try container.decodeIfPresent(String.self, forKey: .activePlanId) ?? ""
+    activePlanRevision = try container.decodeIfPresent(Int.self, forKey: .activePlanRevision) ?? 0
+    activeActionPageIds = try container.decodeIfPresent([String].self, forKey: .activeActionPageIds) ?? []
+    activeActionPageItemCounts = try container.decodeIfPresent(
+      [Int].self,
+      forKey: .activeActionPageItemCounts
+    ) ?? []
+    actionPageIds = try container.decodeIfPresent([String].self, forKey: .actionPageIds) ?? []
+    actionPageItemCounts = try container.decodeIfPresent([Int].self, forKey: .actionPageItemCounts) ?? []
+    checkpointPageIds = try container.decodeIfPresent([String].self, forKey: .checkpointPageIds) ?? []
+    checkpointPageItemCounts = try container.decodeIfPresent(
+      [Int].self,
+      forKey: .checkpointPageItemCounts
+    ) ?? []
   }
 }
 
@@ -74,11 +115,13 @@ final class AgentTaskHistoryPersistence {
     fileprivate var prepared: [PreparedHistory]
     fileprivate var createdKeys: [String]
     fileprivate var sourceRecords: [String: AgentTaskRecord]
+    fileprivate var clearAfterCommitTaskIds: [String]
   }
 
   fileprivate struct PreparedHistory {
     var taskId: String
     var manifest: AgentSessionHistoryManifest
+    var activeActions: [AgentAction]
     var actions: [AgentAction]
     var checkpoints: [AgentExecutionCheckpoint]
     var previousManifest: AgentSessionHistoryManifest?
@@ -94,6 +137,7 @@ final class AgentTaskHistoryPersistence {
   private let defaults: UserDefaults
   private let secrets: GalaxySSISecretStore
   private var manifests: [String: AgentSessionHistoryManifest] = [:]
+  private var cachedActiveActions: [String: [AgentAction]] = [:]
   private var cachedActions: [String: [AgentAction]] = [:]
   private var cachedCheckpoints: [String: [AgentExecutionCheckpoint]] = [:]
   private var cachedSourceRecords: [String: AgentTaskRecord] = [:]
@@ -106,8 +150,49 @@ final class AgentTaskHistoryPersistence {
 
   func restore(_ records: [AgentTaskRecord]) -> [AgentTaskRecord] {
     records.map { record in
-      guard let manifest = record.historyManifest, manifest.isValid else { return record }
+      guard let manifest = record.historyManifest else { return record }
+      guard manifest.isValid else { return failedActivePlanRecovery(record) }
       manifests[record.taskId] = manifest
+      guard var plan = record.activePlan else {
+        return manifest.version >= 2 ? failedActivePlanRecovery(record) : record
+      }
+      if manifest.version >= 2 {
+        guard manifest.sessionId == record.sessionId,
+              manifest.activePlanId == plan.planId,
+              manifest.activePlanRevision == plan.revision,
+              let activeActions: [AgentAction] = readAllStrict(
+                taskId: record.taskId,
+                kind: Self.activeActionKind,
+                pageIds: manifest.activeActionPageIds,
+                pageItemCounts: manifest.activeActionPageItemCounts
+              ),
+              let actions: [AgentAction] = readAllStrict(
+                taskId: record.taskId,
+                kind: Self.actionKind,
+                pageIds: manifest.actionPageIds,
+                pageItemCounts: manifest.actionPageItemCounts
+              ),
+              let checkpoints: [AgentExecutionCheckpoint] = readAllStrict(
+                taskId: record.taskId,
+                kind: Self.checkpointKind,
+                pageIds: manifest.checkpointPageIds,
+                pageItemCounts: manifest.checkpointPageItemCounts
+              ),
+              activeActions.count == manifest.activeActionCount else {
+          return failedActivePlanRecovery(record)
+        }
+        plan.actions = activeActions
+        plan.actionHistory = actions
+        plan.checkpoints = checkpoints
+        var restored = record
+        restored.activePlan = plan
+        cachedActiveActions[record.taskId] = activeActions
+        cachedActions[record.taskId] = actions
+        cachedCheckpoints[record.taskId] = checkpoints
+        cachedSourceRecords[record.taskId] = restored
+        cachedRootRecords[record.taskId] = record
+        return restored
+      }
       let actions: [AgentAction] = readAll(
         taskId: record.taskId,
         kind: Self.actionKind,
@@ -118,7 +203,6 @@ final class AgentTaskHistoryPersistence {
         kind: Self.checkpointKind,
         pageIds: manifest.checkpointPageIds
       )
-      guard var plan = record.activePlan else { return record }
       var restored = record
       let activeIds = Set(plan.actions.map(\.id))
       if !actions.isEmpty {
@@ -140,6 +224,7 @@ final class AgentTaskHistoryPersistence {
     var rootRecords: [AgentTaskRecord] = []
     var prepared: [PreparedHistory] = []
     var createdKeys: [String] = []
+    var clearAfterCommitTaskIds: [String] = []
     let sourceRecords = Dictionary(records.map { ($0.taskId, $0) }) { _, latest in latest }
     do {
       for record in records {
@@ -149,10 +234,12 @@ final class AgentTaskHistoryPersistence {
           continue
         }
         guard let plan = record.activePlan else {
-          rootRecords.append(record)
-          if let manifest = record.historyManifest, manifest.isValid {
-            manifests[record.taskId] = manifest
+          var root = record
+          if record.historyManifest != nil || manifests[record.taskId] != nil {
+            root.historyManifest = nil
+            clearAfterCommitTaskIds.append(record.taskId)
           }
+          rootRecords.append(root)
           continue
         }
         let previousManifest = manifests[record.taskId] ?? record.historyManifest
@@ -164,26 +251,30 @@ final class AgentTaskHistoryPersistence {
           taskId: record.taskId,
           manifest: previousManifest
         )
+        let activeIds = Set(plan.actions.map(\.id))
         let actions = Array(
           AgentDurablePlanHistoryPolicy.latestSnapshots(
-            previousActions + plan.actionHistory + plan.actions
+            previousActions.filter { $0.id.isEmpty || !activeIds.contains($0.id) } + plan.actionHistory
           )
             .suffix(AgentLongTaskPersistenceLimits.maximumActions)
         )
-        let checkpoints = Array(
-          Self.latestCheckpoints(previousCheckpoints + plan.checkpoints)
-            .suffix(AgentLongTaskPersistenceLimits.maximumCheckpoints)
-        )
+        let activeActions = plan.actions
+        let checkpoints = Self.latestCheckpoints(previousCheckpoints + plan.checkpoints)
+        let activeActionPages = try encodePages(kind: Self.activeActionKind, items: activeActions)
         let actionPages = try encodePages(kind: Self.actionKind, items: actions)
         let checkpointPages = try encodePages(kind: Self.checkpointKind, items: checkpoints)
         let manifest = AgentSessionHistoryManifest(
           sessionId: record.sessionId,
+          activePlanId: plan.planId,
+          activePlanRevision: plan.revision,
+          activeActionPageIds: activeActionPages.map(\.id),
+          activeActionPageItemCounts: activeActionPages.map(\.itemCount),
           actionPageIds: actionPages.map(\.id),
           actionPageItemCounts: actionPages.map(\.itemCount),
           checkpointPageIds: checkpointPages.map(\.id),
           checkpointPageItemCounts: checkpointPages.map(\.itemCount)
         )
-        for page in actionPages + checkpointPages {
+        for page in activeActionPages + actionPages + checkpointPages {
           let key = pageKey(taskId: record.taskId, kind: page.kind, pageId: page.id)
           if GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets) == nil {
             guard GalaxySSIEncryptedUserDefaultsStore.write(
@@ -209,6 +300,7 @@ final class AgentTaskHistoryPersistence {
           PreparedHistory(
             taskId: record.taskId,
             manifest: manifest,
+            activeActions: activeActions,
             actions: actions,
             checkpoints: checkpoints,
             previousManifest: previousManifest
@@ -219,7 +311,8 @@ final class AgentTaskHistoryPersistence {
         rootRecords: rootRecords,
         prepared: prepared,
         createdKeys: createdKeys,
-        sourceRecords: sourceRecords
+        sourceRecords: sourceRecords,
+        clearAfterCommitTaskIds: clearAfterCommitTaskIds
       )
     } catch {
       destroy(keys: createdKeys)
@@ -233,6 +326,7 @@ final class AgentTaskHistoryPersistence {
     cachedRootRecords = Dictionary(transaction.rootRecords.map { ($0.taskId, $0) }) { _, latest in latest }
     for item in transaction.prepared {
       manifests[item.taskId] = item.manifest
+      cachedActiveActions[item.taskId] = item.activeActions
       cachedActions[item.taskId] = item.actions
       cachedCheckpoints[item.taskId] = item.checkpoints
       removeUnreferencedPages(
@@ -240,6 +334,9 @@ final class AgentTaskHistoryPersistence {
         previous: item.previousManifest,
         retained: item.manifest
       )
+    }
+    for taskId in transaction.clearAfterCommitTaskIds {
+      clear(taskId: taskId)
     }
     for taskId in Set(manifests.keys).subtracting(retainedTaskIds) {
       clear(taskId: taskId)
@@ -285,6 +382,7 @@ final class AgentTaskHistoryPersistence {
       destroy(keys: pageKeys(taskId: taskId, manifest: manifest))
     }
     cachedActions.removeValue(forKey: taskId)
+    cachedActiveActions.removeValue(forKey: taskId)
     cachedCheckpoints.removeValue(forKey: taskId)
     cachedSourceRecords.removeValue(forKey: taskId)
     cachedRootRecords.removeValue(forKey: taskId)
@@ -296,6 +394,7 @@ final class AgentTaskHistoryPersistence {
     }
     manifests.removeAll()
     cachedActions.removeAll()
+    cachedActiveActions.removeAll()
     cachedCheckpoints.removeAll()
     cachedSourceRecords.removeAll()
     cachedRootRecords.removeAll()
@@ -413,6 +512,27 @@ final class AgentTaskHistoryPersistence {
     }
   }
 
+  private func readAllStrict<Item: Decodable>(
+    taskId: String,
+    kind: String,
+    pageIds: [String],
+    pageItemCounts: [Int]
+  ) -> [Item]? {
+    guard pageIds.count == pageItemCounts.count else { return nil }
+    var restored: [Item] = []
+    for index in pageIds.indices {
+      guard let items: [Item] = decodePage(
+        taskId: taskId,
+        kind: kind,
+        pageId: pageIds[index]
+      ), items.count == pageItemCounts[index] else {
+        return nil
+      }
+      restored.append(contentsOf: items)
+    }
+    return restored
+  }
+
   private func decodePage<Item: Decodable>(
     taskId: String,
     kind: String,
@@ -452,8 +572,22 @@ final class AgentTaskHistoryPersistence {
   }
 
   private func pageKeys(taskId: String, manifest: AgentSessionHistoryManifest) -> [String] {
-    manifest.actionPageIds.map { pageKey(taskId: taskId, kind: Self.actionKind, pageId: $0) } +
+    manifest.activeActionPageIds.map {
+      pageKey(taskId: taskId, kind: Self.activeActionKind, pageId: $0)
+    } + manifest.actionPageIds.map { pageKey(taskId: taskId, kind: Self.actionKind, pageId: $0) } +
       manifest.checkpointPageIds.map { pageKey(taskId: taskId, kind: Self.checkpointKind, pageId: $0) }
+  }
+
+  private func failedActivePlanRecovery(_ record: AgentTaskRecord) -> AgentTaskRecord {
+    var failed = record
+    failed.activePlan = nil
+    if ![AgentPhase.completed, .cancelled].contains(record.phase) {
+      failed.phase = .paused
+      failed.blocked = true
+    }
+    failed.verification = "Active plan recovery failed integrity validation"
+    failed.executionLog.append("Active plan recovery: encrypted plan pages are missing or invalid")
+    return failed
   }
 
   private func pageKey(taskId: String, kind: String, pageId: String) -> String {
@@ -525,6 +659,7 @@ final class AgentTaskHistoryPersistence {
     JSONDecoder()
   }
 
+  private static let activeActionKind = "active-actions"
   private static let actionKind = "actions"
   private static let checkpointKind = "checkpoints"
 }
@@ -756,9 +891,7 @@ enum AgentExecutionContinuity {
 extension AgentPlan {
   func addCheckpoint(_ checkpoint: AgentExecutionCheckpoint) -> AgentPlan {
     var copy = self
-    copy.checkpoints = Array(
-      (copy.checkpoints + [checkpoint]).suffix(AgentLongTaskPersistenceLimits.maximumCheckpoints)
-    )
+    copy.checkpoints.append(checkpoint)
     return copy
   }
 

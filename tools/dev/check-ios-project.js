@@ -1887,6 +1887,8 @@ const requiredSourceSnippets = [
   [tests, "testAgentExecutionContinuityCreatesRollbackCheckpointAndAndroidDigest"],
   [tests, "testAgentExecutionContinuityReversesSwipeAndRestoresInterruptedActions"],
   [tests, "testAgentExecutionContinuityHistoryAndCheckpointCodecStayBackwardCompatible"],
+  [tests, "testAgentActivePlanPersistenceRestores2048ExecutableNodesAndFailsClosed"],
+  [tests, "testAgentExecutionContinuityRetainsCompleteActivePlanCheckpoints"],
   [tests, "testAgentExecutionLoopTimelinePolicyProjectsCanonicalPhases"],
   [tests, "testAgentExecutionLoopTimelinePolicyProjectsRecoveryCompletionAndRevision"],
   [tests, "testAgentExecutionLoopTimelinePolicyKeysActionsAndPlaceholderSuppression"],
