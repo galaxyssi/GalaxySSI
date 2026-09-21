@@ -58,6 +58,7 @@ class MainActivity : Activity() {
     private var sessionsScroll: ScrollView? = null
     private var sessionsContent: LinearLayout? = null
     private var sessionQuery = ""
+    private var modelPageProjection: List<Any?>? = null
     private var speech: WatchReplySpeech? = null
     private var wake: WatchForegroundWake? = null
     private var wakePreference = false
@@ -89,7 +90,7 @@ class MainActivity : Activity() {
     private val saveDraft = Runnable { repo.saveDraft(draft) }
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
-        else if (page !in setOf("session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
+        else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
 
     }
 
@@ -229,6 +230,18 @@ class MainActivity : Activity() {
     private val green = Color.rgb(20, 198, 106)
 
     private fun render(preserveScroll: Boolean = false) {
+        if (page !in setOf("switch-model", "agents")) modelPageProjection = null
+        else {
+            val links = repo.links().filter { it.paired }
+            val profile = repo.store.apiProfile
+            val projection = listOf(page, links.map { it.desktopId to it.desktopName },
+                links.flatMap { repo.store.agents(it.desktopId) },
+                profile?.let { listOf(it.id, it.model, it.endpoint) },
+                selectedTask, repo.store.selectedDesktop, repo.store.selectedAgent,
+                repo.store.apiPreferred, busy, repo.errorResource)
+            if (preserveScroll && modelPageProjection == projection) return
+            modelPageProjection = projection
+        }
         updateScreenAwake()
         updateConversationVisibility()
         if (page == "api-edit" || page == "web-credential") window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
