@@ -3,9 +3,14 @@ import SwiftUI
 enum ScannedAgentConversationPolicy {
   static func opensAgentConversation(_ contact: GalaxySSIContact?) -> Bool {
     guard let contact else { return false }
-    return contact.type.caseInsensitiveCompare("agent") == .orderedSame &&
-      contact.deliveryMode == .pcConnector &&
-      !contact.deleted
+    switch contact.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "person", "device", "group", "system":
+      return false
+    case "agent", "model", "hermes":
+      return true
+    default:
+      return contact.deliveryMode == .cloudAPI || !clean(contact.agentKind).isEmpty
+    }
   }
 
   static func contact(
@@ -51,12 +56,12 @@ enum ScannedAgentConversationPolicy {
     contact: GalaxySSIContact,
     targets: [AgentCallableTarget]
   ) -> AgentCallableTarget? {
-    guard opensAgentConversation(contact) else { return nil }
+    guard opensAgentConversation(contact), !contact.deleted else { return nil }
     guard let target = AgentExecutionTargetStatusPolicy.resolveTarget(
       connectorId: contact.connectorAgentId,
       contactId: contact.id,
       targets: targets
-    ), target.kind == .agent else { return nil }
+    ), target.kind == .agent || target.kind == .model else { return nil }
     return target
   }
 
@@ -100,10 +105,20 @@ enum ScannedAgentConversationRouter {
       contacts: store.contacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    guard let target = ScannedAgentConversationPolicy.resolveTarget(
+    let target = ScannedAgentConversationPolicy.resolveTarget(
       contact: contact,
       targets: targets
-    ) else { return nil }
+    ) ?? AgentCallableTarget(
+      id: contact.id,
+      title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+      kind: contact.deliveryMode == .cloudAPI || contact.type.lowercased() == "model"
+        ? .model
+        : .agent,
+      status: .disconnected,
+      capabilities: [.chat],
+      adapterType: contact.connectorAdapterName,
+      invocationProfile: contact.connectorInvocationProfile
+    )
 
     let conversation = store.createAgentSession(title: title)
     let remembered = AgentModelSelectionSettings.configurationForTarget(

@@ -2,13 +2,29 @@ import XCTest
 @testable import GalaxySSI
 
 final class ScannedAgentConversationPolicyTests: XCTestCase {
-  func testOnlyDesktopAgentContactsOpenAgentConversations() {
+  func testEveryAgentAndModelContactOpensAgentConversation() {
     let desktopAgent = contact()
 
     XCTAssertTrue(ScannedAgentConversationPolicy.opensAgentConversation(desktopAgent))
     XCTAssertFalse(ScannedAgentConversationPolicy.opensAgentConversation(contact(type: "device")))
-    XCTAssertFalse(ScannedAgentConversationPolicy.opensAgentConversation(contact(deliveryMode: .cloudAPI)))
-    XCTAssertFalse(ScannedAgentConversationPolicy.opensAgentConversation(contact(deleted: true)))
+    XCTAssertTrue(ScannedAgentConversationPolicy.opensAgentConversation(contact(deliveryMode: .cloudAPI)))
+    XCTAssertTrue(ScannedAgentConversationPolicy.opensAgentConversation(contact(type: "model")))
+    XCTAssertTrue(ScannedAgentConversationPolicy.opensAgentConversation(contact(type: "hermes")))
+    XCTAssertTrue(ScannedAgentConversationPolicy.opensAgentConversation(contact(deleted: true)))
+  }
+
+  func testPeerIdentityWinsOverStaleAgentMetadata() {
+    for type in ["person", "device", "group", "system"] {
+      XCTAssertFalse(ScannedAgentConversationPolicy.opensAgentConversation(contact(type: type)))
+    }
+  }
+
+  func testDeletedAgentCannotResolveLiveTarget() {
+    let deleted = contact(deleted: true)
+    XCTAssertNil(ScannedAgentConversationPolicy.resolveTarget(
+      contact: deleted,
+      targets: [target(id: deleted.id, title: deleted.displayName)]
+    ))
   }
 
   func testResolvesConcreteDesktopTargetBeforeGenericAgentTarget() throws {
