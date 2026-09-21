@@ -429,7 +429,9 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
   private let storageKey: String
   private let nowMillis: () -> Int64
   private let lock = NSRecursiveLock()
-  private let store: AgentConnectorResponseStore
+  private static let persistenceLock = NSRecursiveLock()
+  private var store: AgentConnectorResponseStore
+  private var receivedDeliveryStorageKey: String { "\(storageKey).received_deliveries" }
 
   init(
     defaults: UserDefaults = .standard,
@@ -441,49 +443,111 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
     self.nowMillis = nowMillis
     self.store = AgentConnectorResponseStore(
       serialized: defaults.string(forKey: storageKey) ?? "[]",
+      receivedDeliveries: Self.loadReceivedDeliveries(
+        defaults: defaults,
+        key: "\(storageKey).received_deliveries"
+      ),
       nowMillis: nowMillis
     )
   }
 
   @discardableResult
   func publish(_ response: AgentConnectorResponse) -> Bool {
+    Self.persistenceLock.lock()
     lock.lock()
-    defer { lock.unlock() }
+    defer {
+      lock.unlock()
+      Self.persistenceLock.unlock()
+    }
+    reloadLocked()
     let accepted = store.publish(response)
     persistLocked()
     return accepted
   }
 
   func pending() -> [AgentConnectorResponse] {
+    Self.persistenceLock.lock()
     lock.lock()
-    defer { lock.unlock() }
+    defer {
+      lock.unlock()
+      Self.persistenceLock.unlock()
+    }
+    reloadLocked()
     let responses = store.pending(nowMillis: nowMillis())
     persistLocked()
     return responses
   }
 
   func remove(_ response: AgentConnectorResponse) {
+    Self.persistenceLock.lock()
     lock.lock()
-    defer { lock.unlock() }
+    defer {
+      lock.unlock()
+      Self.persistenceLock.unlock()
+    }
+    reloadLocked()
     store.remove(response)
     persistLocked()
   }
 
-  func clear() {
+  func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool {
+    Self.persistenceLock.lock()
     lock.lock()
-    defer { lock.unlock() }
+    defer {
+      lock.unlock()
+      Self.persistenceLock.unlock()
+    }
+    reloadLocked()
+    return store.hasReceivedDelivery(delivery)
+  }
+
+  func clear() {
+    Self.persistenceLock.lock()
+    lock.lock()
+    defer {
+      lock.unlock()
+      Self.persistenceLock.unlock()
+    }
     store.clear()
     defaults.removeObject(forKey: storageKey)
+    defaults.removeObject(forKey: receivedDeliveryStorageKey)
   }
 
   func serializedSnapshot() -> String {
+    Self.persistenceLock.lock()
     lock.lock()
-    defer { lock.unlock() }
+    defer {
+      lock.unlock()
+      Self.persistenceLock.unlock()
+    }
+    reloadLocked()
     persistLocked()
     return store.serializedSnapshot()
   }
 
   private func persistLocked() {
     defaults.set(store.serializedSnapshot(), forKey: storageKey)
+    if let data = try? JSONEncoder().encode(store.receivedDeliverySnapshot()) {
+      defaults.set(data, forKey: receivedDeliveryStorageKey)
+    }
+  }
+
+  private func reloadLocked() {
+    store = AgentConnectorResponseStore(
+      serialized: defaults.string(forKey: storageKey) ?? "[]",
+      receivedDeliveries: Self.loadReceivedDeliveries(
+        defaults: defaults,
+        key: receivedDeliveryStorageKey
+      ),
+      nowMillis: nowMillis
+    )
+  }
+
+  private static func loadReceivedDeliveries(
+    defaults: UserDefaults,
+    key: String
+  ) -> [AgentReceivedDeliveryProof] {
+    guard let data = defaults.data(forKey: key) else { return [] }
+    return (try? JSONDecoder().decode([AgentReceivedDeliveryProof].self, from: data)) ?? []
   }
 }
