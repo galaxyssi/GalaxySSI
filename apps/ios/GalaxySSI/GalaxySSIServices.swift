@@ -1855,23 +1855,31 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   private func requestConnectorStatuses(
     forceCapabilityManifest: Bool = false,
+    targetDesktopId: String? = nil,
+    bypassThrottle: Bool = false,
     now: Date = Date()
   ) -> Bool {
     guard mqttClient.isConnected else {
       return false
     }
-    let links = store.serverLinks.filter { $0.paired }
+    let links = store.serverLinks.filter { link in
+      link.paired &&
+        (targetDesktopId == nil || link.desktopId == targetDesktopId) &&
+        (!GalaxySSISignalEngine.isAvailable || signalEngine.hasSession(remoteName: link.desktopId))
+    }
     guard !links.isEmpty else {
       return false
     }
     let nowMillis = Int64(now.timeIntervalSince1970 * 1000)
     if forceCapabilityManifest {
-      guard nowMillis - lastCapabilityManifestRequestAtMillis >= Self.capabilityManifestRequestThrottleMillis else {
+      guard bypassThrottle ||
+        nowMillis - lastCapabilityManifestRequestAtMillis >= Self.capabilityManifestRequestThrottleMillis else {
         return false
       }
       lastCapabilityManifestRequestAtMillis = nowMillis
     } else {
-      guard nowMillis - lastConnectorStatusRequestAtMillis >= Self.connectorStatusRequestThrottleMillis else {
+      guard bypassThrottle ||
+        nowMillis - lastConnectorStatusRequestAtMillis >= Self.connectorStatusRequestThrottleMillis else {
         return false
       }
       lastConnectorStatusRequestAtMillis = nowMillis
@@ -8541,19 +8549,47 @@ final class MessageCoordinator: ObservableObject {
   ) {
     let link = serverLink(for: topic, payload: object)
     if object.string("type") == "pairing_confirmed" {
-      let access = GalaxySSILinkProtocol.pairingAccess(from: object.dictionary("pairing_access"))
-      store.markServerPaired(desktopId: object.string("desktop_id"), access: access)
-      if let bundle = object.dictionary("signal_bundle") {
-        _ = signalEngine.processBundle(
-          bundle,
-          remoteName: object.string("desktop_id")
-        )
+      let desktopId = object.string("desktop_id").ifBlank(link?.desktopId ?? "")
+      guard !desktopId.isEmpty,
+            let pairingLink = store.serverLinks.first(where: { $0.desktopId == desktopId }),
+            object.string("desktop_fingerprint")
+              .caseInsensitiveCompare(pairingLink.desktopFingerprint) == .orderedSame else {
+        return
       }
-      _ = store.updatePairedDesktopDevice(from: object, link: serverLink(for: topic, payload: object) ?? link)
-      _ = store.updateDesktopAgentContacts(from: object, link: serverLink(for: topic, payload: object) ?? link)
+      let hasExistingSession = !GalaxySSISignalEngine.isAvailable ||
+        signalEngine.hasSession(remoteName: desktopId)
+      if GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(
+        hasExistingSession: hasExistingSession
+      ) {
+        guard let bundle = object.dictionary("signal_bundle"),
+              let bundleFingerprint = GalaxySSISignalEngine.bundleIdentityFingerprint(bundle),
+              bundleFingerprint.caseInsensitiveCompare(pairingLink.desktopFingerprint) == .orderedSame,
+              signalEngine.processBundle(bundle, remoteName: desktopId, replaceExisting: false) else {
+          return
+        }
+      }
+      let access = GalaxySSILinkProtocol.pairingAccess(from: object.dictionary("pairing_access"))
+      store.markServerPaired(desktopId: desktopId, access: access)
+      let updatedLink = serverLink(for: topic, payload: object) ?? pairingLink
+      _ = store.updatePairedDesktopDevice(from: object, link: updatedLink)
+      _ = store.updateDesktopAgentContacts(from: object, link: updatedLink)
+      let messageId = GalaxySSIPairingConfirmationDeliveryPolicy.messageId(
+        suppliedId: object.string("message_id"),
+        desktopId: desktopId,
+        clientRouteId: pairingLink.routes.clientRouteId
+      )
+      if allowStage {
+        let stage = deliveryStore.stageIncoming(messageId: messageId, payload: originalPayload)
+        guard GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(stage) else { return }
+      }
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
-      requestCapabilityManifestRefresh(force: true)
+      _ = requestConnectorStatuses(
+        forceCapabilityManifest: true,
+        targetDesktopId: desktopId,
+        bypassThrottle: true
+      )
+      deliveryStore.completeIncoming(messageId: messageId)
       return
     }
     var appPayload: [String: Any]
@@ -9750,7 +9786,11 @@ final class MessageCoordinator: ObservableObject {
       }
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
-      requestCapabilityManifestRefresh(force: true)
+      _ = requestConnectorStatuses(
+        forceCapabilityManifest: true,
+        targetDesktopId: desktopId,
+        bypassThrottle: true
+      )
     }
 
     // Android refreshes the persisted Desktop device contact from every

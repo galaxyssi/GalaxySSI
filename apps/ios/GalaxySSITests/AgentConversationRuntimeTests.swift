@@ -1958,8 +1958,36 @@ extension GalaxySSIStoreTests {
 
   func testConnectorStatusControlPacketsAreAlwaysSilent() {
     XCTAssertTrue(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "connector_status"))
+    XCTAssertTrue(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "desktop_control_authorizations"))
+    XCTAssertTrue(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "desktop_control_authorization_changed"))
+    XCTAssertTrue(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "desktop_executor_event"))
+    XCTAssertTrue(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "desktop_action_receipt"))
     XCTAssertFalse(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "pairing_confirmed"))
     XCTAssertFalse(GalaxySSIConnectorControlMessagePolicy.isSilentStatus(type: "agent_task_event"))
+  }
+
+  func testPairingConfirmationDeliveryPolicyMatchesAndroidSessionBootstrapAndDedupe() {
+    XCTAssertEqual(
+      GalaxySSIPairingConfirmationDeliveryPolicy.messageId(
+        suppliedId: " ",
+        desktopId: "desktop-1",
+        clientRouteId: "route-1"
+      ),
+      "pairing-confirmed:desktop-1:route-1"
+    )
+    XCTAssertEqual(
+      GalaxySSIPairingConfirmationDeliveryPolicy.messageId(
+        suppliedId: "confirmation-1",
+        desktopId: "desktop-1",
+        clientRouteId: "route-1"
+      ),
+      "confirmation-1"
+    )
+    XCTAssertTrue(GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(hasExistingSession: false))
+    XCTAssertFalse(GalaxySSIPairingConfirmationDeliveryPolicy.needsSessionBootstrap(hasExistingSession: true))
+    XCTAssertTrue(GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(.staged))
+    XCTAssertFalse(GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(.pending))
+    XCTAssertFalse(GalaxySSIPairingConfirmationDeliveryPolicy.isFirstDelivery(.completed))
   }
 
   func testAgentConnectorAvailabilityMatchesAndroidCloudModelReadiness() {
