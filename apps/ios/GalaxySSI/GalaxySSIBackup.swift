@@ -254,7 +254,7 @@ struct GalaxySSIBackupAgentData: Codable, Equatable {
     self.memoryDeletionIndex = memoryDeletionIndex.map {
       AgentMemoryCausalDeletionPolicy.merge(current: [], incoming: $0)
     }
-    self.knowledge = knowledge.map { Array($0.suffix(500)) }
+    self.knowledge = knowledge
     self.knowledgeAccessAudit = knowledgeAccessAudit.map { Array($0.suffix(100)) }
     self.taskHistory = taskHistory.map { Array($0.suffix(200)) }
     self.transcript = transcript.map { Array($0.suffix(500)) }
@@ -322,9 +322,7 @@ struct GalaxySSIBackupAgentData: Codable, Equatable {
     ).map {
       AgentMemoryCausalDeletionPolicy.merge(current: [], incoming: $0)
     }
-    knowledge = try container.decodeIfPresent([AgentKnowledgeItem].self, forKey: .knowledge).map {
-      Array($0.suffix(500))
-    }
+    knowledge = try container.decodeIfPresent([AgentKnowledgeItem].self, forKey: .knowledge)
     knowledgeAccessAudit = try container.decodeIfPresent(
       [AgentKnowledgeAccessAuditEntry].self,
       forKey: .knowledgeAccessAudit
