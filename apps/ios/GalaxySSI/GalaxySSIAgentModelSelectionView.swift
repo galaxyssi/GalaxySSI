@@ -21,7 +21,7 @@ struct AgentModelSelection: Codable, Equatable {
   ) {
     self.mode = mode
     self.targetId = targetId
-    self.modelId = modelId
+    self.modelId = RetiredAgentModelPolicy.availableOrDefault(modelId)
     self.displayName = displayName
     self.reasoningEffort = reasoningEffort
   }

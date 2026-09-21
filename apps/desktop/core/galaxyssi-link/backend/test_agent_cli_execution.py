@@ -227,6 +227,26 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertEqual(1, command.count("--model"))
         self.assertEqual("gpt-6-astra", command[command.index("--model") + 1])
 
+    def test_retired_default_is_replaced_even_without_phone_or_watch_model_selection(self):
+        for arguments in (["--model", "gpt-5.3-codex-spark"],
+                          ["-m", "gpt-5.3-codex-spark"],
+                          ["--model=GPT-5.3-CODEX-SPARK"]):
+            with self.subTest(arguments=arguments):
+                original = ["codex", "exec", *arguments, "-"]
+                command = agent_gateway._apply_selected_agent_model(
+                    agent_gateway.BASE_AGENTS["codex"], original, "")
+                self.assertFalse(any("spark" in value.lower() for value in command))
+                self.assertTrue(any("gpt-5.6-sol" in value for value in command))
+                self.assertEqual("-", command[-1])
+                self.assertEqual(arguments, original[2:-1])
+
+    def test_retired_explicit_selection_uses_available_configured_default(self):
+        command = agent_gateway._apply_selected_agent_model(
+            agent_gateway.BASE_AGENTS["codex"],
+            ["codex", "exec", "--model=gpt-6-astra", "-"],
+            "gpt-5.3-codex-spark")
+        self.assertEqual(["codex", "exec", "--model=gpt-6-astra", "-"], command)
+
     def test_persistent_jsonl_agent_reuses_keepalive_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
