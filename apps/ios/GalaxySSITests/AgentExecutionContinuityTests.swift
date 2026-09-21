@@ -374,4 +374,156 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(plan.checkpoints.first?.id, "checkpoint-12")
     XCTAssertEqual(plan.checkpoints.last?.id, "checkpoint-139")
   }
+
+  func testAgentPlanNodeJournalPersistsIndependentObservationBeforeBatchCompletion() throws {
+    let suite = "AgentPlanNodeJournalTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let secrets = InMemorySecretStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let action = AgentAction(
+      id: "node-a",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .running,
+      description: "Read a file"
+    ).withPlanRevision(2)
+    var plan = lifecyclePlan(action)
+    plan.revision = 2
+    plan = plan.addCheckpoint(AgentExecutionCheckpoint(
+      id: "checkpoint-a",
+      actionId: action.id,
+      planRevision: 2,
+      status: .active,
+      createdAtMillis: 100
+    ))
+    let key = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: action,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+    let journal = EncryptedAgentPlanNodeJournal(
+      defaults: defaults,
+      secrets: secrets,
+      nowMillis: { 200 }
+    )
+    let observation = AgentPlanNodeObservation(
+      result: AgentActionResult(actionId: action.id, success: true, message: "read complete"),
+      verified: true,
+      evidence: "native_receipt"
+    )
+
+    XCTAssertEqual(try journal.claim(key), .acquired)
+    XCTAssertEqual(try journal.claim(key), .pending)
+    try journal.record(key, observation: observation)
+
+    let restored = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(try restored.claim(key), .observed(observation))
+    XCTAssertEqual(try restored.read(key), observation)
+    XCTAssertFalse(defaults.dictionaryRepresentation().values.contains {
+      String(describing: $0).contains("read complete")
+    })
+  }
+
+  func testAgentPlanNodeJournalBindsConversationCheckpointAndSpecification() throws {
+    let action = AgentAction(
+      id: "node-a",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .running,
+      description: "Read a file",
+      parameters: ["input_json": #"{"path":"a.txt"}"#]
+    ).withPlanRevision(1)
+    var plan = lifecyclePlan(action)
+    plan = plan.addCheckpoint(AgentExecutionCheckpoint(
+      id: "checkpoint-a",
+      actionId: action.id,
+      planRevision: 1,
+      status: .active,
+      createdAtMillis: 100
+    ))
+    let original = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: action,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+    var changedAction = action
+    changedAction.parameters["input_json"] = #"{"path":"b.txt"}"#
+    let changedSpecification = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: changedAction,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+    var changedPlan = plan
+    changedPlan.checkpoints[changedPlan.checkpoints.count - 1].id = "checkpoint-b"
+    let changedCheckpoint = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: changedPlan,
+      action: action,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+    let changedConversation = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: action,
+      conversationId: "other",
+      turnId: "turn"
+    ))
+
+    XCTAssertNotEqual(original.journalId, changedSpecification.journalId)
+    XCTAssertNotEqual(original.journalId, changedCheckpoint.journalId)
+    XCTAssertNotEqual(original.journalId, changedConversation.journalId)
+  }
+
+  func testAgentPlanNodeJournalRejectsObservationForAnotherAction() throws {
+    let suite = "AgentPlanNodeJournalMismatchTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let action = AgentAction(
+      id: "node-a",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .running,
+      description: "Read"
+    )
+    var plan = lifecyclePlan(action)
+    plan = plan.addCheckpoint(AgentExecutionCheckpoint(
+      id: "checkpoint-a",
+      actionId: action.id,
+      planRevision: 1,
+      status: .active,
+      createdAtMillis: 100
+    ))
+    let key = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: action,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+    let journal = EncryptedAgentPlanNodeJournal(
+      defaults: defaults,
+      secrets: InMemorySecretStore()
+    )
+    XCTAssertEqual(try journal.claim(key), .acquired)
+
+    XCTAssertThrowsError(try journal.record(
+      key,
+      observation: AgentPlanNodeObservation(
+        result: AgentActionResult(actionId: "node-b", success: true, message: "wrong"),
+        verified: true
+      )
+    )) { error in
+      XCTAssertEqual(error as? AgentPlanNodeJournalError, .identityMismatch)
+    }
+  }
 }

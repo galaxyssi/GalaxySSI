@@ -585,6 +585,7 @@
     A10000000000000000000425 /* AgentExecutionLoopTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000425 /* AgentExecutionLoopTimeline.swift */; };
     A10000000000000000000426 /* AgentExecutionLoopTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */; };
     A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000427 /* AgentExecutionContinuity.swift */; };
+    A10000000000000000000550 /* AgentPlanNodeJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000550 /* AgentPlanNodeJournal.swift */; };
     A10000000000000000000428 /* AgentExecutionContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000428 /* AgentExecutionContinuityTests.swift */; };
     A10000000000000000000429 /* AgentInlineMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000429 /* AgentInlineMarkdown.swift */; };
     A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000430 /* AgentInlineMarkdownTests.swift */; };
@@ -1493,6 +1494,7 @@
     A20000000000000000000425 /* AgentExecutionLoopTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionLoopTimeline.swift; sourceTree = "<group>"; };
     A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionLoopTimelineTests.swift; sourceTree = "<group>"; };
     A20000000000000000000427 /* AgentExecutionContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionContinuity.swift; sourceTree = "<group>"; };
+    A20000000000000000000550 /* AgentPlanNodeJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanNodeJournal.swift; sourceTree = "<group>"; };
     A20000000000000000000428 /* AgentExecutionContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionContinuityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000429 /* AgentInlineMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInlineMarkdown.swift; sourceTree = "<group>"; };
     A20000000000000000000430 /* AgentInlineMarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInlineMarkdownTests.swift; sourceTree = "<group>"; };
@@ -2138,6 +2140,7 @@
         F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */,
         A20000000000000000000311 /* AgentNativeToolAuditStore.swift */,
         A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */,
+        A20000000000000000000550 /* AgentPlanNodeJournal.swift */,
         A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */,
         A20000000000000000000314 /* AgentPhoneNativeToolCatalogDefaults.swift */,
         A20000000000000000000315 /* AgentPhoneNativeToolCatalog.swift */,
@@ -3200,6 +3203,7 @@
         F12698000000000000000001 /* AgentNativeToolResourceLocks.swift in Sources */,
         A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */,
         A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */,
+        A10000000000000000000550 /* AgentPlanNodeJournal.swift in Sources */,
         A10000000000000000000313 /* AgentNativeToolDefaultStores.swift in Sources */,
         A10000000000000000000314 /* AgentPhoneNativeToolCatalogDefaults.swift in Sources */,
         A10000000000000000000315 /* AgentPhoneNativeToolCatalog.swift in Sources */,

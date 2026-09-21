@@ -155,6 +155,7 @@ final class MessageCoordinator: ObservableObject {
       AgentEvalOpsService.observeRunCompleted(run)
     }
   }
+  private lazy var localPlanNodeJournal = EncryptedAgentPlanNodeJournal()
   private lazy var localSkillRuntime = AgentSkillRuntime(
     store: UserDefaultsAgentSkillStore(),
     availableNativeToolIds: Array(AgentPhoneNativeToolCatalog.defaultToolIds)
@@ -395,6 +396,7 @@ final class MessageCoordinator: ObservableObject {
   func start() {
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
+    recoverInterruptedLocalPlanNodes()
     AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
       guard let settings = self?.store.globalAgentSettings else { return false }
       return settings.enabled && settings.autonomousResearchEnabled
@@ -421,6 +423,74 @@ final class MessageCoordinator: ObservableObject {
     backgroundCognitionScheduler.start()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
       self?.refreshAgentHomeState()
+    }
+  }
+
+  private func recoverInterruptedLocalPlanNodes() {
+    for var task in store.recentAgentTasks(limit: 500) where task.phase == .executing {
+      guard var plan = task.activePlan,
+            let outgoing = localOutgoingMessage(for: task) else { continue }
+      var recoveredActions: [AgentAction] = []
+      var foundJournaledNode = false
+      var journalRecoveryFailed = false
+      for index in plan.actions.indices where plan.actions[index].status == .running {
+        let action = plan.actions[index]
+        guard let key = AgentPlanNodeKey.make(
+          sessionId: task.sessionId.ifBlank(outgoing.conversationId),
+          plan: plan,
+          action: action,
+          conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        ) else { continue }
+        let claim: AgentPlanNodeClaim
+        do {
+          guard let observed = try localPlanNodeJournal.observe(key) else { continue }
+          claim = observed
+        } catch {
+          journalRecoveryFailed = true
+          task.phase = .paused
+          task.blocked = true
+          task.verification = "The durable plan-node journal could not be recovered"
+          task.executionLog.append(
+            "Native tools: plan-node recovery stopped because the encrypted journal is unavailable"
+          )
+          task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+          store.upsertAgentTask(task)
+          break
+        }
+        foundJournaledNode = true
+        var recovered = action
+        recovered.status = .proposed
+        switch claim {
+        case .observed(let observation):
+          recovered.result = observation.result.message
+          recovered.evidence = agentPlanNodeObservationPendingEvidence
+        case .pending:
+          recovered.result = "The prior plan node dispatch has no durable observation."
+          recovered.evidence = "agent_interrupted_execution"
+        case .acquired:
+          continue
+        }
+        plan.actions[index] = recovered
+        recoveredActions.append(recovered)
+      }
+      guard !journalRecoveryFailed else { continue }
+      guard foundJournaledNode else { continue }
+      task.activePlan = plan
+      task.planContext = AgentTaskPlanContext(plan: plan)
+      let recoveredIds = Set(recoveredActions.map(\.id))
+      task.pendingActions = recoveredActions + task.pendingActions.filter {
+        !recoveredIds.contains($0.id)
+      }
+      task.pendingAction = recoveredActions.first
+      task.phase = .paused
+      task.result = ""
+      task.verification = "Recovered durable plan-node observations after interruption"
+      task.executionLog.append(
+        "Native tools: recovered \(recoveredActions.count) interrupted plan node(s) without redispatch"
+      )
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
     }
   }
 
@@ -3391,6 +3461,15 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       return false
     }
+    if let plan = task.activePlan {
+      return applyLocalNativeActions(
+        actions: task.pendingActions,
+        outgoing: outgoing,
+        task: &task,
+        plan: plan,
+        resetResults: false
+      )
+    }
     return advanceLocalNativeActions(outgoing: outgoing, task: &task)
   }
 
@@ -5891,21 +5970,116 @@ final class MessageCoordinator: ObservableObject {
     task.pendingActions.removeAll { selectedIds.contains($0.id) }
     task.pendingAction = nil
     let screen = currentAgentScreenContext
+    var journaledPlan: AgentPlan
+    if let activePlan = task.activePlan, activePlan.planId == plan.planId {
+      journaledPlan = activePlan
+    } else {
+      journaledPlan = plan
+    }
+    for action in actions {
+      if !journaledPlan.checkpoints.contains(where: {
+        $0.actionId == action.id && $0.status == .active
+      }) {
+        journaledPlan = journaledPlan.addCheckpoint(
+          AgentExecutionContinuity.checkpointBefore(
+            action: action,
+            screen: screen,
+            planRevision: plan.revision
+          )
+        )
+      }
+      if let index = journaledPlan.actions.firstIndex(where: { $0.id == action.id }) {
+        journaledPlan.actions[index].status = .running
+      }
+    }
+    task.activePlan = journaledPlan
+    task.planContext = AgentTaskPlanContext(plan: journaledPlan)
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
     let executionActions = actions.map { action in
       preparedLocalNativeAction(action, outgoing: outgoing, task: task)
     }
+    let nodeKeys = actions.map { action in
+      AgentPlanNodeKey.make(
+        sessionId: task.sessionId.ifBlank(outgoing.conversationId),
+        plan: journaledPlan,
+        action: action,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      )
+    }
     let executor = runtime.actionExecutor
+    let nodeJournal = localPlanNodeJournal
     let results = await Task.detached(priority: .userInitiated) {
       PhoneExecutionAuthority.authorizeParallel(actions: executionActions)
       defer { PhoneExecutionAuthority.revokeParallel(actions: executionActions) }
       AgentNativeToolBatchExecutor.executeOrdered(
-        actions: executionActions,
+        inputs: Array(executionActions.indices),
         limitProvider: {
           AgentAdaptiveConcurrencyRuntime.currentLimit(
             parallelMode == .resourceScopedMutation ? .nativeMutation : .nativeReadIO
           )
         },
-        operation: { executor.execute(action: $0, screen: screen) }
+        operation: { index in
+          let action = actions[index]
+          guard let key = nodeKeys[index] else {
+            return AgentActionResult(
+              actionId: action.id,
+              success: false,
+              message: "The plan node checkpoint identity is unavailable.",
+              metadata: ["plan_node_journal_error": "missing_checkpoint"]
+            )
+          }
+          do {
+            switch try nodeJournal.claim(key) {
+            case .observed(let observation):
+              return observation.result
+            case .pending:
+              return AgentActionResult(
+                actionId: action.id,
+                success: false,
+                message: "This plan node was dispatched before interruption, but no durable result is available.",
+                metadata: [
+                  "plan_node_outcome_unknown": "true",
+                  "evidence": agentPlanNodeObservationPendingEvidence
+                ]
+              )
+            case .acquired:
+              let result = executor.execute(action: executionActions[index], screen: screen)
+              let evidence = result.metadata["evidence"]
+                ?? result.metadata["receipt"]
+                ?? (result.success ? "durable_plan_node_observation" : "durable_plan_node_failure")
+              do {
+                try nodeJournal.record(
+                  key,
+                  observation: AgentPlanNodeObservation(
+                    result: result,
+                    verified: true,
+                    evidence: evidence
+                  )
+                )
+                return result
+              } catch {
+                return AgentActionResult(
+                  actionId: action.id,
+                  success: false,
+                  message: "The plan node returned, but its observation could not be committed durably.",
+                  metadata: [
+                    "plan_node_outcome_unknown": "true",
+                    "plan_node_journal_error": "observation_commit_failed"
+                  ]
+                )
+              }
+            }
+          } catch {
+            return AgentActionResult(
+              actionId: action.id,
+              success: false,
+              message: "The plan node could not acquire durable execution ownership.",
+              metadata: ["plan_node_journal_error": "dispatch_claim_failed"]
+            )
+          }
+        }
       )
     }.value
     guard results.count == actions.count,
@@ -5913,7 +6087,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
 
-    var updatedPlan = plan
+    var updatedPlan = journaledPlan
     var failedActions: [AgentAction] = []
     for index in actions.indices {
       let action = actions[index]
