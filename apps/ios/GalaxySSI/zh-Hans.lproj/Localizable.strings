@@ -902,6 +902,9 @@
 "galaxyssi.agent_knowledge.search" = "搜索知识";
 "galaxyssi.agent_knowledge.search_subtitle" = "结合短语、关键词和语义相似度进行检索";
 "galaxyssi.agent_knowledge.search_action" = "搜索";
+"galaxyssi.agent_knowledge.previous_sources" = "上一页来源";
+"galaxyssi.agent_knowledge.next_sources" = "下一页来源";
+"galaxyssi.agent_knowledge.source_page" = "%d-%d / %d";
 "galaxyssi.agent_knowledge.section_results" = "检索结果 / %d";
 "galaxyssi.agent_knowledge.no_results" = "没有匹配的知识";
 "galaxyssi.agent_knowledge.score" = "相关度 %.1f";

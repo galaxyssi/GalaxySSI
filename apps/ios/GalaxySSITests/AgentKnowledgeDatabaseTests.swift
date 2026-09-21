@@ -34,6 +34,61 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertFalse(raw.contains("item-1200"))
   }
 
+  func testEncryptedSourcePagesTraverseBeyondFiveHundredAndFenceStaleCursors() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeSourcePageTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(
+      fileURL: directory.appendingPathComponent("knowledge.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    let items = (0..<601).map { index in
+      AgentKnowledgeItem(
+        id: "item-\(index)",
+        kind: .document,
+        title: "Source \(index)",
+        content: "Private body \(index)",
+        source: "source-\(index)",
+        updatedAtMillis: Int64(index)
+      )
+    }
+    XCTAssertTrue(database.replaceAll(items))
+
+    var cursor: AgentKnowledgeSourceCursor?
+    var firstCursor: AgentKnowledgeSourceCursor?
+    var sources: [String] = []
+    repeat {
+      let page = try database.sourcePage(cursor: cursor)
+      XCTAssertEqual(page.total, 601)
+      XCTAssertLessThanOrEqual(page.groups.count, 50)
+      XCTAssertTrue(page.groups.allSatisfy { $0.itemIds.isEmpty })
+      sources += page.groups.map(\.source)
+      cursor = page.next
+      if firstCursor == nil { firstCursor = cursor }
+    } while cursor != nil
+    XCTAssertEqual(Set(sources).count, 601)
+
+    var changed = items
+    changed[0].title = "Changed"
+    changed[0].updatedAtMillis = 10_000
+    XCTAssertTrue(database.replaceAll(changed))
+    XCTAssertThrowsError(try database.sourcePage(cursor: try XCTUnwrap(firstCursor))) { error in
+      XCTAssertEqual(error as? AgentKnowledgeDatabaseError, .staleCursor)
+    }
+
+    let oneSource = (0..<601).map { index in
+      AgentKnowledgeItem(
+        id: "member-\(index)",
+        kind: .document,
+        title: "Large source [\(index + 1)/601]",
+        content: "Chunk \(index)",
+        source: "large-source"
+      )
+    }
+    XCTAssertTrue(database.replaceAll(oneSource))
+    XCTAssertEqual(try database.sourceItemIds(sourceIdentity: "large-source").count, 601)
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
