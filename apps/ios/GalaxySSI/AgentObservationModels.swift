@@ -1105,12 +1105,14 @@ enum AgentRunControlEventType: String, Codable, CaseIterable, Identifiable {
   case toolStarted = "TOOL_STARTED"
   case toolProgress = "TOOL_PROGRESS"
   case toolCompleted = "TOOL_COMPLETED"
+  case checkpointSaved = "CHECKPOINT_SAVED"
   case waitingForUser = "WAITING_FOR_USER"
   case waitingForDevice = "WAITING_FOR_DEVICE"
   case paused = "PAUSED"
   case retrying = "RETRYING"
   case handoff = "HANDOFF"
   case stepCompleted = "STEP_COMPLETED"
+  case runInterrupted = "RUN_INTERRUPTED"
   case runCompleted = "RUN_COMPLETED"
   case runFailed = "RUN_FAILED"
   case runCancelled = "RUN_CANCELLED"
@@ -1199,11 +1201,18 @@ enum AgentRunControlPayloadValue: Codable, Equatable {
 typealias AgentRunControlPayload = [String: AgentRunControlPayloadValue]
 
 struct AgentRunControlEvent: Codable, Equatable {
+  var protocolId: String
+  var schemaVersion: Int
   var eventId: String
+  var idempotencyKey: String
+  var clientRouteId: String
   var conversationId: String
+  var goalId: String
   var messageId: String
   var taskId: String
   var runId: String
+  var turnId: String
+  var actionId: String
   var stepId: String
   var toolCallId: String
   var agentId: String
@@ -1226,13 +1235,27 @@ struct AgentRunControlEvent: Codable, Equatable {
     type: AgentRunControlEventType,
     sequence: Int64,
     timestampMillis: Int64 = 0,
-    payload: AgentRunControlPayload = [:]
+    payload: AgentRunControlPayload = [:],
+    protocolId: String = AgentRunKernelContract.protocolId,
+    schemaVersion: Int = AgentRunKernelContract.schemaVersion,
+    idempotencyKey: String = "",
+    clientRouteId: String = "",
+    goalId: String = "",
+    turnId: String = "",
+    actionId: String = ""
   ) {
+    self.protocolId = protocolId
+    self.schemaVersion = schemaVersion
     self.eventId = eventId
+    self.idempotencyKey = idempotencyKey
+    self.clientRouteId = clientRouteId
     self.conversationId = conversationId
+    self.goalId = goalId
     self.messageId = messageId
     self.taskId = taskId
     self.runId = runId
+    self.turnId = turnId
+    self.actionId = actionId
     self.stepId = stepId
     self.toolCallId = toolCallId
     self.agentId = agentId
@@ -1244,11 +1267,18 @@ struct AgentRunControlEvent: Codable, Equatable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case protocolId = "protocol"
+    case schemaVersion = "schema_version"
     case eventId = "event_id"
+    case idempotencyKey = "idempotency_key"
+    case clientRouteId = "client_route_id"
     case conversationId = "conversation_id"
+    case goalId = "goal_id"
     case messageId = "message_id"
     case taskId = "task_id"
     case runId = "run_id"
+    case turnId = "turn_id"
+    case actionId = "action_id"
     case stepId = "step_id"
     case toolCallId = "tool_call_id"
     case agentId = "agent_id"
@@ -1261,11 +1291,20 @@ struct AgentRunControlEvent: Codable, Equatable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    protocolId = try container.decodeIfPresent(String.self, forKey: .protocolId)
+      ?? AgentRunKernelContract.protocolId
+    schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+      ?? AgentRunKernelContract.schemaVersion
     eventId = try container.decodeIfPresent(String.self, forKey: .eventId) ?? UUID().uuidString
+    idempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey) ?? ""
+    clientRouteId = try container.decodeIfPresent(String.self, forKey: .clientRouteId) ?? ""
     conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId) ?? ""
+    goalId = try container.decodeIfPresent(String.self, forKey: .goalId) ?? ""
     messageId = try container.decodeIfPresent(String.self, forKey: .messageId) ?? ""
     taskId = try container.decodeIfPresent(String.self, forKey: .taskId) ?? ""
     runId = try container.decodeIfPresent(String.self, forKey: .runId) ?? ""
+    turnId = try container.decodeIfPresent(String.self, forKey: .turnId) ?? ""
+    actionId = try container.decodeIfPresent(String.self, forKey: .actionId) ?? ""
     stepId = try container.decodeIfPresent(String.self, forKey: .stepId) ?? ""
     toolCallId = try container.decodeIfPresent(String.self, forKey: .toolCallId) ?? ""
     agentId = try container.decodeIfPresent(String.self, forKey: .agentId) ?? ""

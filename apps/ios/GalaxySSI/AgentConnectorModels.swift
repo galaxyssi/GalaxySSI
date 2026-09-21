@@ -1,5 +1,16 @@
 import Foundation
 
+enum RetiredAgentModelPolicy {
+  static func isRetired(_ modelId: String) -> Bool {
+    modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+      .caseInsensitiveCompare("gpt-5.3-codex-spark") == .orderedSame
+  }
+
+  static func availableOrDefault(_ modelId: String) -> String {
+    isRetired(modelId) ? "" : modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+}
+
 enum AgentModelReasoningEffort: String, Codable, CaseIterable, Identifiable {
   case automatic = "auto"
   case low
@@ -61,11 +72,14 @@ struct AgentInvocationProfile: Codable, Equatable {
     models: [AgentModelOption] = [],
     reasoningEfforts: [AgentModelReasoningEffort] = []
   ) {
-    self.defaultModelId = defaultModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-    self.models = models.reduce(into: []) { result, option in
-      guard !option.id.isEmpty, !result.contains(where: { $0.id == option.id }) else { return }
+    let availableModels = models.reduce(into: [AgentModelOption]()) { result, option in
+      guard !option.id.isEmpty, !RetiredAgentModelPolicy.isRetired(option.id),
+            !result.contains(where: { $0.id == option.id }) else { return }
       result.append(option)
     }
+    self.models = availableModels
+    self.defaultModelId = RetiredAgentModelPolicy.availableOrDefault(defaultModelId)
+      .ifBlank(availableModels.first?.id ?? "")
     self.reasoningEfforts = reasoningEfforts.reduce(into: []) { result, effort in
       guard effort != .automatic, !result.contains(effort) else { return }
       result.append(effort)
@@ -113,7 +127,7 @@ enum AgentInvocationRequestJsonCodec {
     modelId: String,
     reasoningEffort: AgentModelReasoningEffort
   ) -> [String: String]? {
-    let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanModelId = RetiredAgentModelPolicy.availableOrDefault(modelId)
     guard !cleanModelId.isEmpty || reasoningEffort != .automatic else { return nil }
     return [
       "model_id": cleanModelId,

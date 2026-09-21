@@ -1673,7 +1673,7 @@ const requiredSourceSnippets = [
   [tests, "testAgentConnectorResponseBusInterceptsManagedResponsesOnce"],
   [tests, "testAgentConnectorResponseBusCompletesManagedLedgerBeforeStore"],
   [tests, "testAgentConnectorResponseBusFallbacksRichOutputAndNotifiesListeners"],
-  [tests, "testAgentConnectorResponseStoreBoundsDedupeExpiryAndAndroidWireNames"],
+  [tests, "testAgentConnectorResponseStoreRetainsPendingBodiesAndUsesFullIdentity"],
   [tests, "testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations"],
   [tests, "testAgentExecutionPresentationPolicyDecodesAndroidWireNames"],
   [tests, "testAgentRemoteTaskStatusPolicyMatchesAndroidTerminalSemantics"],

@@ -1775,18 +1775,21 @@ def _apply_selected_agent_model(
     model_id: str,
 ) -> list[str]:
     clean_model_id = str(model_id or "").strip()
-    if not clean_model_id:
-        return list(command)
     from agent_invocation_profiles import requested_agent_invocation
 
     selected = requested_agent_invocation(
         spec.id,
-        {"model_id": clean_model_id},
+        {"model_id": clean_model_id} if clean_model_id else None,
         command,
     ).model_id
+    if not selected:
+        return list(command)
     result = list(command)
-    for index, value in enumerate(result[:-1]):
-        if value in {"--model", "-m"}:
+    for index, value in enumerate(result):
+        if value.startswith("--model="):
+            result[index] = f"--model={selected}"
+            return result
+        if value in {"--model", "-m"} and index + 1 < len(result):
             result[index + 1] = selected
             return result
     if spec.id not in {"codex", "claude"}:

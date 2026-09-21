@@ -2,6 +2,34 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRunRecoveryCoordinatorTests: XCTestCase {
+  func testObservationOnlyProviderAttemptIsNotRecoveredAsUserTask() async throws {
+    let event = AgentRunControlEvent(
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      taskId: "task-1",
+      runId: "provider-attempts:1",
+      agentId: "cloud-provider-observer",
+      deviceId: "ios",
+      type: .runStarted,
+      sequence: 1,
+      payload: [
+        "recovery_mode": .string("observation_only"),
+        "observation_only": .bool(true)
+      ]
+    )
+    let eventStore = RecoveryRunControlStore(event: event)
+    let results = try await AgentRunRecoveryCoordinator(
+      runStore: eventStore,
+      workspaceStore: InMemoryAgentWorkspaceStore(),
+      recordedRun: { _ in XCTFail("Observation Run must not resolve a user task"); return nil },
+      registration: { _, _ in XCTFail("Observation Run must not resolve an Agent"); return nil },
+      adapterResolver: { _ in XCTFail("Observation Run must not reconnect"); return nil }
+    ).recover()
+
+    XCTAssertTrue(results.isEmpty)
+    XCTAssertTrue(eventStore.appended.isEmpty)
+  }
+
   func testProcessRecreationReconnectsRemoteCursorCheckpointAndToolState() async throws {
     let workspaceStore = InMemoryAgentWorkspaceStore(clock: { 2_000 })
     _ = try workspaceStore.upsert(AgentWorkspace(
@@ -53,7 +81,15 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
             "cursor": .int(22),
             "permission_wait": .bool(true),
             "active_tool_call_id": .string("shell-1")
-          ]
+          ],
+          observation: AgentRemoteRecoveryObservation(
+            conversationId: "conversation-1",
+            deviceId: "desktop-1",
+            status: "running",
+            remoteTaskId: "turn-1",
+            remoteRunId: "remote-1",
+            statusSequence: 4
+          )
         )
       ]
     )

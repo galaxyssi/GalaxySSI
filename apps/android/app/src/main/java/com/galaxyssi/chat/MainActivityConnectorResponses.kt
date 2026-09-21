@@ -683,11 +683,13 @@ internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnector
     if (update.content.isBlank()) {
         liveAgentConnectorStreams.remove(update.sourceMessageId)
     } else {
+        val previous = liveAgentConnectorStreams[update.sourceMessageId]
+            ?.takeIf { it.conversationId == conversationId && it.turnId == turnId }
         liveAgentConnectorStreams[update.sourceMessageId] = AgentTranscriptEntry(
             id = if (update.previewOnly) "agent-stream-preview-${update.sourceMessageId}" else "agent-stream-${update.sourceMessageId}",
             role = AgentTranscriptRole.ASSISTANT,
             text = update.content,
-            timestampMillis = update.receivedAtMillis,
+            timestampMillis = previous?.timestampMillis ?: update.receivedAtMillis,
             dedupeKey = AgentFinalResponseIdentity.dedupeKey(
                 turnId = turnId,
                 sourceMessageId = update.sourceMessageId,

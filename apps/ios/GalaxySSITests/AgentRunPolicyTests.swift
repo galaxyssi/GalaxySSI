@@ -2,6 +2,49 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testVoiceAgentRunRepositoryMigratesAndIndexesEncryptedSnapshots() throws {
+    let suite = "voice-run-index-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let storageKey = "test.voice.runs"
+    let secrets = InMemorySecretStore()
+    func snapshot(_ suffix: String, updatedAt: Int64) -> VoiceAgentRunSnapshot {
+      VoiceAgentRunSnapshot(
+        runId: "run-\(suffix)",
+        sessionId: "session-\(suffix)",
+        conversationId: "conversation",
+        turnId: "turn-\(suffix)",
+        taskId: "task-\(suffix)",
+        sourceMessageId: "message-\(suffix)",
+        contactId: "codex",
+        agentId: "agent",
+        agentName: "Agent",
+        goal: "Goal \(suffix)",
+        idempotencyKey: "request-\(suffix)",
+        traceId: "trace-\(suffix)",
+        createdAtMillis: updatedAt,
+        updatedAtMillis: updatedAt
+      )
+    }
+    let older = snapshot("older", updatedAt: 10)
+    let newer = snapshot("newer", updatedAt: 20)
+    defaults.set(try JSONEncoder().encode([older, newer]), forKey: storageKey)
+
+    let repository = UserDefaultsVoiceAgentRunRepository(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
+
+    XCTAssertEqual(repository.find(runId: older.runId), older)
+    XCTAssertEqual(repository.find(sessionId: newer.sessionId), newer)
+    XCTAssertEqual(repository.findByTaskId(newer.taskId), newer)
+    XCTAssertEqual(repository.findBySourceMessageId(newer.sourceMessageId), newer)
+    XCTAssertEqual(repository.findByIdempotencyKey(newer.idempotencyKey), newer)
+    XCTAssertEqual(repository.recent(limit: 1).map(\.runId), [newer.runId])
+    XCTAssertNil(defaults.data(forKey: storageKey))
+  }
+
   func testAgentRollingPlanPolicyContinuesOnlyCompletedGuardedModelBatches() {
     let completed = rollingPlan(action: rollingAction(status: .completed))
     let result = AgentActionResult(actionId: "action", success: true, message: "observed")
@@ -634,6 +677,100 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(recovered, .running)
     XCTAssertEqual(waiting, .waitingForUser)
     XCTAssertEqual(paused, .paused)
+  }
+
+  func testAgentReplyRuntimeIndexResolvesNewestActiveTaskWithoutRowScan() throws {
+    func snapshot(id: String, status: String, updatedAt: Int64) -> AgentRemoteTaskStatusSnapshot {
+      AgentRemoteTaskStatusSnapshot(
+        taskId: id,
+        clientRouteId: "route",
+        contactId: "codex",
+        conversationId: "conversation",
+        turnId: "turn",
+        sourceMessageId: 42,
+        status: status,
+        target: "Codex",
+        location: "Desktop",
+        currentStep: "Working",
+        advertisedCancellable: true,
+        detail: "",
+        updatedAtMillis: updatedAt,
+        history: []
+      )
+    }
+    let index = AgentReplyRuntimeIndex(
+      remoteTasks: [
+        snapshot(id: "older", status: "running", updatedAt: 10),
+        snapshot(id: "newer", status: "running", updatedAt: 20),
+        snapshot(id: "terminal", status: "completed", updatedAt: 30)
+      ],
+      voiceRuns: []
+    )
+    let byTurn = ChatMessage(
+      contactId: "hermes",
+      content: "Progress",
+      isMine: false,
+      conversationId: "conversation",
+      turnId: "turn"
+    )
+    let bySource = ChatMessage(
+      contactId: "hermes",
+      content: "Progress",
+      isMine: false,
+      conversationId: "conversation",
+      remoteMessageId: "agent-stream-42"
+    )
+
+    XCTAssertEqual(index.remoteTask(for: byTurn, activeConversationId: "")?.taskId, "newer")
+    XCTAssertEqual(index.remoteTask(for: bySource, activeConversationId: "")?.taskId, "newer")
+  }
+
+  func testAgentRunKernelCanonicalizesPortableIdentityAndWireContract() throws {
+    let canonical = try XCTUnwrap(AgentRunKernelContract.canonical(runKernelEvent()))
+    let encoded = String(decoding: try JSONEncoder().encode(canonical), as: UTF8.self)
+
+    XCTAssertEqual(canonical.protocolId, "galaxyssi.agent-run-event.v1")
+    XCTAssertEqual(canonical.schemaVersion, 1)
+    XCTAssertEqual(canonical.idempotencyKey, "event-1")
+    XCTAssertEqual(canonical.clientRouteId, "phone-1")
+    XCTAssertEqual(canonical.goalId, "task-1")
+    XCTAssertEqual(canonical.turnId, "message-1")
+    XCTAssertEqual(canonical.actionId, "step-1")
+    XCTAssertTrue(encoded.contains(#""protocol":"galaxyssi.agent-run-event.v1""#))
+    XCTAssertTrue(encoded.contains(#""schema_version":1"#))
+    XCTAssertTrue(encoded.contains(#""idempotency_key":"event-1""#))
+    XCTAssertTrue(encoded.contains(#""client_route_id":"phone-1""#))
+  }
+
+  func testAgentRunKernelPreservesCheckpointStateAndPausesInterruptedRun() {
+    for state in AgentRunControlState.allCases {
+      XCTAssertEqual(AgentRunEventStore.reduce(current: state, event: .checkpointSaved), state)
+    }
+    XCTAssertEqual(
+      AgentRunEventStore.reduce(current: .running, event: .runInterrupted),
+      .paused
+    )
+    XCTAssertEqual(
+      AgentRunEventStore.reduce(current: .paused, event: .runRecovered),
+      .running
+    )
+  }
+
+  func testAgentRunEventStoreRejectsCrossRootAndConflictingIdempotencyReplay() throws {
+    let suiteName = "AgentRunKernelTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = UserDefaultsAgentRunEventStore(defaults: defaults, storageKey: "events")
+    let first = store.appendNext(runKernelEvent())
+    var crossRoot = runKernelEvent(eventId: "event-2")
+    crossRoot.conversationId = "conversation-2"
+    var conflictingReplay = runKernelEvent(eventId: "event-3")
+    conflictingReplay.idempotencyKey = first.idempotencyKey
+    conflictingReplay.type = .runCompleted
+
+    XCTAssertEqual(store.appendNext(crossRoot), first)
+    XCTAssertEqual(store.appendNext(conflictingReplay), first)
+    XCTAssertEqual(store.events(runId: "run-1"), [first])
   }
 
   func testAgentRunRecoveryPolicyMatchesAndroidDurableDesktopRules() {
@@ -1347,6 +1484,52 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(stage, .readOnlyStale)
     XCTAssertEqual(resource.location, .trustedDesktop)
     XCTAssertEqual(resource.failureDomain, "desktop-a")
+  }
+
+  func testAgentLatencyTracerUsesMonotonicClockAndDeduplicatesStages() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentLatencyTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var monotonic: Int64 = 1_000_000_000
+    var wallClock: Int64 = 50_000
+    let journal = AgentLatencyJournal(fileURL: root.appendingPathComponent("agent.jsonl"))
+    let tracer = AgentLatencyTracer(
+      journal: journal,
+      monotonicNs: { monotonic },
+      wallClockMs: { wallClock },
+      clockId: "0123456789abcdef0123456789abcdef"
+    )
+
+    tracer.record(taskId: "private task content", stage: .phoneSendStarted)
+    monotonic += 250_000_000
+    wallClock -= 120_000
+    tracer.record(taskId: "private task content", stage: .phoneRequestQueued)
+    tracer.record(taskId: "private task content", stage: .phoneRequestQueued)
+
+    let points = journal.snapshot()
+    XCTAssertEqual(points.count, 2)
+    XCTAssertFalse(String(describing: points).contains("private task content"))
+    XCTAssertEqual(tracer.summary()["phone_send_prepare_ms"]?.p50Ms, 250)
+  }
+
+  func testAgentLatencySummarySeparatesIncompleteAndFailedSamples() {
+    let clock = "0123456789abcdef0123456789abcdef"
+    let success = AgentLatencyContract.opaqueId("success")
+    let incomplete = AgentLatencyContract.opaqueId("incomplete")
+    let failed = AgentLatencyContract.opaqueId("failed")
+    let points = [
+      AgentLatencyPoint(traceId: success, clockId: clock, stage: .phoneRequestQueued, monotonicNs: 0, wallClockMs: 1, outcome: ""),
+      AgentLatencyPoint(traceId: success, clockId: clock, stage: .phoneResponseReceived, monotonicNs: 80_000_000, wallClockMs: 80, outcome: ""),
+      AgentLatencyPoint(traceId: incomplete, clockId: clock, stage: .phoneRequestQueued, monotonicNs: 0, wallClockMs: 1, outcome: ""),
+      AgentLatencyPoint(traceId: failed, clockId: clock, stage: .phoneRequestQueued, monotonicNs: 0, wallClockMs: 1, outcome: ""),
+      AgentLatencyPoint(traceId: failed, clockId: clock, stage: .phoneResponseReceived, monotonicNs: 20_000_000, wallClockMs: 20, outcome: "failed")
+    ]
+
+    let metric = AgentLatencyContract.summarize(points)["phone_response_roundtrip_ms"]
+    XCTAssertEqual(metric?.count, 1)
+    XCTAssertEqual(metric?.incomplete, 1)
+    XCTAssertEqual(metric?.unsuccessful, 1)
+    XCTAssertEqual(metric?.p95Ms, 80)
   }
 
   func testAgentProactiveTaskSchedulerIntervalCatchUpIsBounded() throws {
@@ -2746,5 +2929,20 @@ private func rollingAction(status: AgentActionStatus) -> AgentAction {
     status: status,
     description: "Inspect evidence",
     requiresConfirmation: false
+  )
+}
+
+private func runKernelEvent(eventId: String = "event-1") -> AgentRunControlEvent {
+  AgentRunControlEvent(
+    eventId: eventId,
+    conversationId: "conversation-1",
+    messageId: "message-1",
+    taskId: "task-1",
+    runId: "run-1",
+    stepId: "step-1",
+    agentId: "codex",
+    deviceId: "phone-1",
+    type: .runStarted,
+    sequence: 1
   )
 }

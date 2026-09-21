@@ -199,44 +199,261 @@ struct VoiceAgentRunUpdate: Equatable {
 
 protocol VoiceAgentRunRepository: AnyObject {
   func list() -> [VoiceAgentRunSnapshot]
+  func recent(limit: Int) -> [VoiceAgentRunSnapshot]
+  func find(runId: String) -> VoiceAgentRunSnapshot?
+  func find(sessionId: String) -> VoiceAgentRunSnapshot?
+  func findByTaskId(_ taskId: String) -> VoiceAgentRunSnapshot?
+  func findBySourceMessageId(_ sourceMessageId: String) -> VoiceAgentRunSnapshot?
+  func findByIdempotencyKey(_ idempotencyKey: String) -> VoiceAgentRunSnapshot?
   func save(_ snapshot: VoiceAgentRunSnapshot)
   func clear()
 }
 
+extension VoiceAgentRunRepository {
+  func recent(limit: Int) -> [VoiceAgentRunSnapshot] {
+    Array(list().sorted { $0.updatedAtMillis > $1.updatedAtMillis }.prefix(max(limit, 0)))
+  }
+
+  func find(runId: String) -> VoiceAgentRunSnapshot? { list().first { $0.runId == runId } }
+  func find(sessionId: String) -> VoiceAgentRunSnapshot? { list().first { $0.sessionId == sessionId } }
+  func findByTaskId(_ taskId: String) -> VoiceAgentRunSnapshot? { list().first { $0.taskId == taskId } }
+  func findBySourceMessageId(_ sourceMessageId: String) -> VoiceAgentRunSnapshot? {
+    list().first { $0.sourceMessageId == sourceMessageId }
+  }
+  func findByIdempotencyKey(_ idempotencyKey: String) -> VoiceAgentRunSnapshot? {
+    list().first { $0.idempotencyKey == idempotencyKey }
+  }
+}
+
 final class UserDefaultsVoiceAgentRunRepository: VoiceAgentRunRepository {
+  private struct IndexEntry: Codable, Equatable {
+    var runId: String
+    var sessionId: String
+    var taskId: String
+    var sourceMessageId: String
+    var idempotencyKey: String
+    var createdAtMillis: Int64
+    var updatedAtMillis: Int64
+  }
+
+  private struct SnapshotIndex: Codable {
+    var entries: [IndexEntry] = []
+  }
+
   private let defaults: UserDefaults
   private let key: String
+  private let secrets: GalaxySSISecretStore
+  private let lock = NSRecursiveLock()
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
 
   init(
     defaults: UserDefaults = .standard,
-    key: String = "galaxyssi.voice.agent.runs.v1"
+    key: String = "galaxyssi.voice.agent.runs.v1",
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared
   ) {
     self.defaults = defaults
     self.key = key
+    self.secrets = secrets
   }
 
   func list() -> [VoiceAgentRunSnapshot] {
-    guard let data = defaults.data(forKey: key) else { return [] }
-    return (try? decoder.decode([VoiceAgentRunSnapshot].self, from: data)) ?? []
+    locked {
+      loadIndexLocked().entries.compactMap { loadSnapshotLocked(runId: $0.runId) }
+    }
+  }
+
+  func recent(limit: Int) -> [VoiceAgentRunSnapshot] {
+    guard limit > 0 else { return [] }
+    return locked {
+      loadIndexLocked().entries
+        .sorted { $0.updatedAtMillis > $1.updatedAtMillis }
+        .prefix(limit)
+        .compactMap { loadSnapshotLocked(runId: $0.runId) }
+    }
+  }
+
+  func find(runId: String) -> VoiceAgentRunSnapshot? {
+    locked {
+      let normalized = clean(runId)
+      guard !normalized.isEmpty,
+            loadIndexLocked().entries.contains(where: { $0.runId == normalized }) else {
+        return nil
+      }
+      return loadSnapshotLocked(runId: normalized)
+    }
+  }
+
+  func find(sessionId: String) -> VoiceAgentRunSnapshot? {
+    findIndexed { $0.sessionId == clean(sessionId) }
+  }
+
+  func findByTaskId(_ taskId: String) -> VoiceAgentRunSnapshot? {
+    findIndexed { $0.taskId == clean(taskId) }
+  }
+
+  func findBySourceMessageId(_ sourceMessageId: String) -> VoiceAgentRunSnapshot? {
+    findIndexed { $0.sourceMessageId == clean(sourceMessageId) }
+  }
+
+  func findByIdempotencyKey(_ idempotencyKey: String) -> VoiceAgentRunSnapshot? {
+    findIndexed { $0.idempotencyKey == clean(idempotencyKey) }
   }
 
   func save(_ snapshot: VoiceAgentRunSnapshot) {
-    var snapshots = list().filter { $0.runId != snapshot.runId }
-    snapshots.append(snapshot)
-    snapshots.sort { lhs, rhs in
-      if lhs.updatedAtMillis != rhs.updatedAtMillis {
-        return lhs.updatedAtMillis > rhs.updatedAtMillis
+    locked {
+      let runId = clean(snapshot.runId)
+      guard !runId.isEmpty,
+            let data = try? encoder.encode(snapshot),
+            writeEncryptedLocked(data, storageKey: snapshotKey(runId)) else {
+        return
       }
-      return lhs.runId < rhs.runId
+      var index = loadIndexLocked()
+      index.entries.removeAll { $0.runId == runId }
+      index.entries.append(IndexEntry(
+        runId: runId,
+        sessionId: clean(snapshot.sessionId),
+        taskId: clean(snapshot.taskId),
+        sourceMessageId: clean(snapshot.sourceMessageId),
+        idempotencyKey: clean(snapshot.idempotencyKey),
+        createdAtMillis: snapshot.createdAtMillis,
+        updatedAtMillis: snapshot.updatedAtMillis
+      ))
+      index.entries.sort {
+        $0.updatedAtMillis == $1.updatedAtMillis
+          ? $0.runId < $1.runId
+          : $0.updatedAtMillis > $1.updatedAtMillis
+      }
+      _ = writeIndexLocked(index)
     }
-    guard let data = try? encoder.encode(Array(snapshots.prefix(256))) else { return }
-    defaults.set(data, forKey: key)
   }
 
   func clear() {
-    defaults.removeObject(forKey: key)
+    locked {
+      loadIndexLocked().entries.forEach {
+        defaults.removeObject(forKey: snapshotKey($0.runId))
+      }
+      defaults.removeObject(forKey: indexKey)
+      defaults.removeObject(forKey: key)
+      secrets.delete(account: keychainAccount)
+    }
+  }
+
+  private func findIndexed(_ predicate: (IndexEntry) -> Bool) -> VoiceAgentRunSnapshot? {
+    locked {
+      loadIndexLocked().entries
+        .filter(predicate)
+        .max { $0.updatedAtMillis < $1.updatedAtMillis }
+        .flatMap { loadSnapshotLocked(runId: $0.runId) }
+    }
+  }
+
+  private func loadIndexLocked() -> SnapshotIndex {
+    if let data = readEncryptedLocked(storageKey: indexKey),
+       let index = try? decoder.decode(SnapshotIndex.self, from: data) {
+      return index
+    }
+    return migrateLegacyLocked()
+  }
+
+  private func migrateLegacyLocked() -> SnapshotIndex {
+    guard let legacy = defaults.data(forKey: key),
+          let snapshots = try? decoder.decode([VoiceAgentRunSnapshot].self, from: legacy) else {
+      return SnapshotIndex()
+    }
+    var index = SnapshotIndex()
+    for snapshot in snapshots {
+      guard let data = try? encoder.encode(snapshot),
+            writeEncryptedLocked(data, storageKey: snapshotKey(snapshot.runId)) else {
+        continue
+      }
+      index.entries.append(IndexEntry(
+        runId: clean(snapshot.runId),
+        sessionId: clean(snapshot.sessionId),
+        taskId: clean(snapshot.taskId),
+        sourceMessageId: clean(snapshot.sourceMessageId),
+        idempotencyKey: clean(snapshot.idempotencyKey),
+        createdAtMillis: snapshot.createdAtMillis,
+        updatedAtMillis: snapshot.updatedAtMillis
+      ))
+    }
+    index.entries.sort { $0.updatedAtMillis > $1.updatedAtMillis }
+    if writeIndexLocked(index) {
+      defaults.removeObject(forKey: key)
+    }
+    return index
+  }
+
+  private func loadSnapshotLocked(runId: String) -> VoiceAgentRunSnapshot? {
+    guard !runId.isEmpty,
+          let data = readEncryptedLocked(storageKey: snapshotKey(runId)) else {
+      return nil
+    }
+    return try? decoder.decode(VoiceAgentRunSnapshot.self, from: data)
+  }
+
+  private func writeIndexLocked(_ index: SnapshotIndex) -> Bool {
+    guard let data = try? encoder.encode(index) else { return false }
+    return writeEncryptedLocked(data, storageKey: indexKey)
+  }
+
+  private func readEncryptedLocked(storageKey: String) -> Data? {
+    guard let serialized = defaults.data(forKey: storageKey),
+          let encryptionKey = encryptionKeyLocked(createIfMissing: false),
+          let box = try? AES.GCM.SealedBox(combined: serialized) else {
+      return nil
+    }
+    return try? AES.GCM.open(box, using: encryptionKey, authenticating: Data(storageKey.utf8))
+  }
+
+  private func writeEncryptedLocked(_ plaintext: Data, storageKey: String) -> Bool {
+    guard let encryptionKey = encryptionKeyLocked(createIfMissing: true),
+          let sealed = try? AES.GCM.seal(
+            plaintext,
+            using: encryptionKey,
+            authenticating: Data(storageKey.utf8)
+          ),
+          let serialized = sealed.combined else {
+      return false
+    }
+    defaults.set(serialized, forKey: storageKey)
+    return true
+  }
+
+  private func encryptionKeyLocked(createIfMissing: Bool) -> SymmetricKey? {
+    if let encoded = secrets.string(account: keychainAccount),
+       let data = Data(base64Encoded: encoded), data.count == 32 {
+      return SymmetricKey(data: data)
+    }
+    guard createIfMissing else { return nil }
+    let generated = SymmetricKey(size: .bits256)
+    let data = generated.withUnsafeBytes { Data($0) }
+    guard (try? secrets.setString(data.base64EncodedString(), account: keychainAccount)) != nil else {
+      return nil
+    }
+    return generated
+  }
+
+  private func snapshotKey(_ runId: String) -> String {
+    let digest = SHA256.hash(data: Data(runId.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "\(key).snapshot.v2.\(digest)"
+  }
+
+  private var indexKey: String { "\(key).index.v2" }
+
+  private var keychainAccount: String {
+    let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "voice.agent.runs.v2.\(digest)"
+  }
+
+  private func clean(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func locked<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
   }
 }
 
@@ -275,9 +492,7 @@ final class VoiceAgentRunBridge {
   @discardableResult
   func createRun(_ request: VoiceAgentRunRequest) -> VoiceAgentRunSnapshot {
     let result: (snapshot: VoiceAgentRunSnapshot, update: VoiceAgentRunUpdate?) = locked {
-      if let existing = repository.list().first(where: {
-        $0.idempotencyKey == request.idempotencyKey
-      }) {
+      if let existing = repository.findByIdempotencyKey(clean(request.idempotencyKey)) {
         return (existing, nil)
       }
       let now = request.createdAtMillis > 0 ? request.createdAtMillis : clock()
@@ -328,7 +543,7 @@ final class VoiceAgentRunBridge {
     sourceMessageId: String
   ) -> VoiceAgentRunSnapshot? {
     let result: (snapshot: VoiceAgentRunSnapshot?, update: VoiceAgentRunUpdate?) = locked {
-      guard let current = repository.list().first(where: { $0.sessionId == clean(sessionId) }),
+      guard let current = repository.find(sessionId: clean(sessionId)),
             !current.state.isTerminal else {
         return (nil, nil)
       }
@@ -373,12 +588,11 @@ final class VoiceAgentRunBridge {
       let sourceMessageId = string(normalizedEnvelope, "source_message_id")
         .ifBlank(string(normalizedEnvelope, "message_id"))
       let runId = string(normalizedEnvelope, "run_id")
-      guard let current = repository.list().first(where: { snapshot in
-        (!runId.isEmpty && snapshot.runId == runId) ||
-          (!taskId.isEmpty && snapshot.taskId == taskId) ||
-          (!turnId.isEmpty && snapshot.turnId == turnId) ||
-          (!sourceMessageId.isEmpty && snapshot.sourceMessageId == sourceMessageId)
-      }) else {
+      let current = (!runId.isEmpty ? repository.find(runId: runId) : nil)
+        ?? (!taskId.isEmpty ? repository.findByTaskId(taskId) : nil)
+        ?? (!sourceMessageId.isEmpty ? repository.findBySourceMessageId(sourceMessageId) : nil)
+        ?? repository.recent(limit: 128).first { !turnId.isEmpty && $0.turnId == turnId }
+      guard let current else {
         return nil
       }
       guard !current.state.isTerminal else { return nil }
@@ -484,7 +698,7 @@ final class VoiceAgentRunBridge {
   @discardableResult
   func markCancellationRequested(sessionId: String) -> VoiceAgentRunSnapshot? {
     let result: (snapshot: VoiceAgentRunSnapshot?, update: VoiceAgentRunUpdate?) = locked {
-      guard let current = repository.list().first(where: { $0.sessionId == clean(sessionId) }),
+      guard let current = repository.find(sessionId: clean(sessionId)),
             current.cancellable else {
         return (nil, nil)
       }
@@ -547,7 +761,7 @@ final class VoiceAgentRunBridge {
   @discardableResult
   func markFinalResult(sessionId: String, content: String) -> VoiceAgentRunSnapshot? {
     let result: (snapshot: VoiceAgentRunSnapshot?, update: VoiceAgentRunUpdate?) = locked {
-      guard let current = repository.list().first(where: { $0.sessionId == clean(sessionId) }),
+      guard let current = repository.find(sessionId: clean(sessionId)),
             !current.state.isTerminal else {
         return (nil, nil)
       }
@@ -610,7 +824,7 @@ final class VoiceAgentRunBridge {
   @discardableResult
   func markTimedOut(runId: String, reason: String = "The remote Agent run did not finish before cancellation expired.") -> VoiceAgentRunSnapshot? {
     let result: (snapshot: VoiceAgentRunSnapshot?, update: VoiceAgentRunUpdate?) = locked {
-      guard let current = repository.list().first(where: { $0.runId == clean(runId) }),
+      guard let current = repository.find(runId: clean(runId)),
             !current.state.isTerminal else {
         return (nil, nil)
       }
@@ -677,7 +891,7 @@ final class VoiceAgentRunBridge {
   ) -> [VoiceAgentRunSnapshot] {
     let now = max(nowMillis ?? clock(), 0)
     let staleIds = locked {
-      repository.list()
+      repository.recent(limit: 128)
         .filter {
           $0.state == .cancelling &&
             now >= $0.updatedAtMillis &&
@@ -691,20 +905,20 @@ final class VoiceAgentRunBridge {
   }
 
   func find(runId: String) -> VoiceAgentRunSnapshot? {
-    locked { repository.list().first { $0.runId == clean(runId) } }
+    locked { repository.find(runId: clean(runId)) }
   }
 
   func find(sessionId: String) -> VoiceAgentRunSnapshot? {
-    locked { repository.list().first { $0.sessionId == clean(sessionId) } }
+    locked { repository.find(sessionId: clean(sessionId)) }
   }
 
   func findByTaskId(_ taskId: String) -> VoiceAgentRunSnapshot? {
-    locked { repository.list().first { $0.taskId == clean(taskId) } }
+    locked { repository.findByTaskId(clean(taskId)) }
   }
 
   func snapshots(conversationId: String = "") -> [VoiceAgentRunSnapshot] {
     locked {
-      repository.list()
+      repository.recent(limit: 128)
         .filter { conversationId.isEmpty || $0.conversationId == clean(conversationId) }
         .sorted { $0.createdAtMillis < $1.createdAtMillis }
     }

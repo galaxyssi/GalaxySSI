@@ -1,4 +1,224 @@
+import CryptoKit
 import Foundation
+
+struct AgentProviderAttemptRecord: Codable, Equatable {
+  var ordinal: Int
+  var requestId: String
+  var resourceId: String
+  var providerId: String
+  var modelId: String
+  var startedAtMillis: Int64
+  var elapsedMillis: Int64 = 0
+  var state: String = "started"
+  var failureClass: String = ""
+  var retryable: Bool = false
+  var httpStatus: Int?
+}
+
+struct AgentProviderAttemptReport: Codable, Equatable {
+  var sourceMessageId: String
+  var conversationId: String
+  var turnId: String
+  var taskId: String
+  var actionId: String
+  var attempts: [AgentProviderAttemptRecord] = []
+
+  func matches(_ other: AgentProviderAttemptReport) -> Bool {
+    sourceMessageId == other.sourceMessageId &&
+      conversationId == other.conversationId &&
+      turnId == other.turnId &&
+      taskId == other.taskId &&
+      actionId == other.actionId
+  }
+
+  func mergingMetadata(_ previous: [String: String]) -> [String: String] {
+    guard let last = attempts.last else { return previous }
+    let tried = Set(attempts.map(\.resourceId).filter { !$0.isBlank })
+    let finishedFailures = Set(attempts.filter { $0.state == "failed" }.map(\.resourceId))
+    let attempted = Set(AgentConnectorFallbackTrail.parse(previous["attempted_resource_ids"] ?? ""))
+      .union(AgentConnectorFallbackTrail.parse(previous["deferred_retry_ids"] ?? ""))
+      .union(AgentConnectorFallbackTrail.parse(previous["retried_resource_ids"] ?? ""))
+      .union(tried)
+    var metadata = previous
+    metadata["attempted_resource_ids"] = AgentConnectorFallbackTrail.encode(attempted.sorted())
+    metadata["remaining_fallback_ids"] = AgentConnectorFallbackTrail.encode(
+      AgentConnectorFallbackTrail.parse(previous["remaining_fallback_ids"] ?? "").filter { !tried.contains($0) }
+    )
+    metadata["deferred_retry_ids"] = AgentConnectorFallbackTrail.encode(
+      AgentConnectorFallbackTrail.parse(previous["deferred_retry_ids"] ?? "").filter {
+        !finishedFailures.contains($0)
+      }
+    )
+    metadata["retried_resource_ids"] = AgentConnectorFallbackTrail.encode(
+      Set(AgentConnectorFallbackTrail.parse(previous["retried_resource_ids"] ?? ""))
+        .union(finishedFailures).sorted()
+    )
+    metadata["resource_id"] = last.resourceId
+    metadata["resolved_model_id"] = last.modelId
+    metadata["resolved_provider_id"] = last.providerId
+    metadata["failure_domain"] = "cloud:\(last.providerId.ifBlank(last.resourceId))"
+    metadata["provider_attempt_count"] = String(attempts.count)
+    metadata["provider_attempt_state"] = last.state
+    metadata["provider_failure_class"] = last.failureClass
+    metadata["non_retriable"] = String(last.state == "failed" && !last.retryable)
+    if let encoded = try? JSONEncoder().encode(self) {
+      metadata["provider_attempt_report"] = String(data: encoded, encoding: .utf8)
+    }
+    return metadata
+  }
+}
+
+final class AgentProviderAttemptTracker {
+  private(set) var report: AgentProviderAttemptReport
+  private let checkpoint: (AgentProviderAttemptReport) -> Void
+
+  init(
+    report: AgentProviderAttemptReport,
+    checkpoint: @escaping (AgentProviderAttemptReport) -> Void = { _ in }
+  ) {
+    self.report = report
+    self.checkpoint = checkpoint
+  }
+
+  func start(
+    requestId: String,
+    resourceId: String,
+    providerId: String,
+    modelId: String,
+    nowMillis: Int64
+  ) {
+    guard !Self.activeStates.contains(report.attempts.last?.state ?? "") else { return }
+    report.attempts.append(AgentProviderAttemptRecord(
+      ordinal: report.attempts.count + 1,
+      requestId: requestId,
+      resourceId: resourceId,
+      providerId: providerId,
+      modelId: modelId,
+      startedAtMillis: max(nowMillis, 0)
+    ))
+    checkpoint(report)
+  }
+
+  func progress(_ state: String, elapsedMillis: Int64, httpStatus: Int? = nil) {
+    guard ["connected", "first_output"].contains(state), var last = report.attempts.last,
+          !Self.terminalStates.contains(last.state), last.state != state else { return }
+    last.state = state
+    last.elapsedMillis = max(elapsedMillis, 0)
+    last.httpStatus = httpStatus ?? last.httpStatus
+    report.attempts[report.attempts.count - 1] = last
+    checkpoint(report)
+  }
+
+  func finish(
+    elapsedMillis: Int64,
+    failureClass: String = "",
+    retryable: Bool = false,
+    httpStatus: Int? = nil
+  ) {
+    guard var last = report.attempts.last, !Self.terminalStates.contains(last.state) else { return }
+    last.state = failureClass.isEmpty ? "completed" : "failed"
+    last.elapsedMillis = max(elapsedMillis, 0)
+    last.failureClass = failureClass
+    last.retryable = retryable
+    last.httpStatus = httpStatus ?? last.httpStatus
+    report.attempts[report.attempts.count - 1] = last
+    checkpoint(report)
+  }
+
+  private static let activeStates: Set<String> = ["started", "connected", "first_output"]
+  private static let terminalStates: Set<String> = ["completed", "failed"]
+}
+
+final class AgentProviderAttemptJournal {
+  private let store: AgentRunEventPersistence
+  private let identity: AgentProviderAttemptReport
+  let runId: String
+
+  init(
+    store: AgentRunEventPersistence = UserDefaultsAgentRunEventStore(),
+    identity: AgentProviderAttemptReport
+  ) {
+    self.store = store
+    self.identity = identity
+    self.runId = Self.runId(identity)
+  }
+
+  func checkpoint(_ report: AgentProviderAttemptReport) {
+    append(report, terminal: false)
+  }
+
+  func finish(_ report: AgentProviderAttemptReport) {
+    append(report, terminal: true)
+  }
+
+  func restore() -> AgentProviderAttemptReport? {
+    var attempts: [Int: AgentProviderAttemptRecord] = [:]
+    for event in store.events(runId: runId) {
+      guard event.payload["provider_attempt_identity"]?.stringValue == encoded(identityWithoutAttempts),
+            let raw = event.payload["provider_attempt"]?.stringValue,
+            let data = raw.data(using: .utf8),
+            let attempt = try? JSONDecoder().decode(AgentProviderAttemptRecord.self, from: data) else {
+        continue
+      }
+      if let existing = attempts[attempt.ordinal], existing.requestId != attempt.requestId { return nil }
+      attempts[attempt.ordinal] = attempt
+    }
+    let ordered = attempts.keys.sorted().compactMap { attempts[$0] }
+    guard !ordered.isEmpty, ordered.map(\.ordinal) == Array(1...ordered.count) else { return nil }
+    var restored = identityWithoutAttempts
+    restored.attempts = ordered
+    return restored
+  }
+
+  static func runId(_ identity: AgentProviderAttemptReport) -> String {
+    let stable = [
+      identity.sourceMessageId,
+      identity.conversationId,
+      identity.turnId,
+      identity.taskId,
+      identity.actionId
+    ].joined(separator: "\u{001f}")
+    let digest = SHA256.hash(data: Data(stable.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "provider-attempts:\(digest)"
+  }
+
+  private func append(_ report: AgentProviderAttemptReport, terminal: Bool) {
+    guard report.matches(identity), let last = report.attempts.last else { return }
+    let stage = terminal ? "finished" : "\(last.ordinal):\(last.state)"
+    let eventId = "\(runId):\(stage)"
+    _ = store.appendNext(AgentRunControlEvent(
+      eventId: eventId,
+      conversationId: identity.conversationId,
+      messageId: identity.sourceMessageId,
+      taskId: identity.taskId.ifBlank(identity.turnId).ifBlank(runId),
+      runId: runId,
+      stepId: identity.actionId,
+      agentId: "cloud-provider-observer",
+      deviceId: "ios",
+      type: terminal ? (last.state == "completed" ? .runCompleted : .runFailed) :
+        (last.ordinal == 1 && last.state == "started" ? .runStarted : .toolProgress),
+      sequence: 0,
+      timestampMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()),
+      payload: [
+        "recovery_mode": .string("observation_only"),
+        "observation_only": .bool(true),
+        "provider_attempt_identity": .string(encoded(identityWithoutAttempts)),
+        "provider_attempt": .string(encoded(last))
+      ]
+    ))
+  }
+
+  private var identityWithoutAttempts: AgentProviderAttemptReport {
+    var value = identity
+    value.attempts = []
+    return value
+  }
+
+  private func encoded<T: Encodable>(_ value: T) -> String {
+    guard let data = try? JSONEncoder().encode(value) else { return "" }
+    return String(data: data, encoding: .utf8) ?? ""
+  }
+}
 
 enum AgentProviderFailureKind: String, Codable {
   case timeout
