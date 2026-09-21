@@ -383,7 +383,6 @@ class MainActivity : Activity() {
         button(R.string.recent) { sessionQuery = ""; navigate("sessions") }
         button(R.string.contacts) { navigate("contacts") }
         button(R.string.paste_message) { navigate("paste") }
-        button(R.string.api_provider) { openApiSettings() }
         button(R.string.switch_model) { navigate("switch-model"); repo.refresh() }
         button(R.string.configure_models) {
             startActivity(Intent(this, WatchPhoneSetupActivity::class.java)
