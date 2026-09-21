@@ -294,6 +294,7 @@ struct AgentConnectorResponse: Codable, Equatable {
   var taskStatus: String
   var executionGeneration: Int64
   var statusSequence: Int64
+  var deliveryFailureCode: String
 
   init(
     sourceMessageId: Int64,
@@ -310,7 +311,8 @@ struct AgentConnectorResponse: Codable, Equatable {
     receivedAtMillis: Int64 = 0,
     taskStatus: String = "",
     executionGeneration: Int64 = 1,
-    statusSequence: Int64 = -1
+    statusSequence: Int64 = -1,
+    deliveryFailureCode: String = ""
   ) {
     self.sourceMessageId = max(sourceMessageId, 0)
     self.contactId = contactId
@@ -328,6 +330,9 @@ struct AgentConnectorResponse: Codable, Equatable {
     self.taskStatus = normalizedTaskStatus
     self.executionGeneration = AgentRemoteOutcomePolicy.validGeneration(executionGeneration) ? executionGeneration : 1
     self.statusSequence = max(statusSequence, -1)
+    self.deliveryFailureCode = AgentAttachmentDeliveryFailureContract.isTerminal(deliveryFailureCode)
+      ? deliveryFailureCode
+      : ""
   }
 
   enum CodingKeys: String, CodingKey {
@@ -346,6 +351,7 @@ struct AgentConnectorResponse: Codable, Equatable {
     case taskStatus = "task_status"
     case executionGeneration = "execution_generation"
     case statusSequence = "status_sequence"
+    case deliveryFailureCode = "delivery_failure_code"
   }
 
   init(from decoder: Decoder) throws {
@@ -365,7 +371,8 @@ struct AgentConnectorResponse: Codable, Equatable {
       receivedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .receivedAtMillis) ?? 0,
       taskStatus: try container.decodeIfPresent(String.self, forKey: .taskStatus) ?? "",
       executionGeneration: try container.decodeIfPresent(Int64.self, forKey: .executionGeneration) ?? 1,
-      statusSequence: try container.decodeIfPresent(Int64.self, forKey: .statusSequence) ?? -1
+      statusSequence: try container.decodeIfPresent(Int64.self, forKey: .statusSequence) ?? -1,
+      deliveryFailureCode: try container.decodeIfPresent(String.self, forKey: .deliveryFailureCode) ?? ""
     )
   }
 
@@ -382,12 +389,22 @@ struct AgentConnectorResponse: Codable, Equatable {
     guard payload.string("task_status").isBlank || AgentRemoteOutcomePolicy.isTerminal(taskStatus) else {
       return nil
     }
+    let deliveryFailureCode = payload.string("delivery_failure_code")
+    let suppliedSuccess = payloadBool(payload["success"], defaultValue: true)
+    guard deliveryFailureCode.isEmpty ||
+      (taskStatus.isEmpty && !suppliedSuccess &&
+        AgentAttachmentDeliveryFailureContract.isTerminal(deliveryFailureCode)) else {
+      return nil
+    }
     let content = AgentRemoteOutcomePolicy.isFailure(taskStatus)
       ? payload.string("error").ifBlank(payload.string("content")).ifBlank(payload.string("text"))
       : payload.string("content").ifBlank(payload.string("text"))
     let richOutput = payload.string("rich_output")
       .ifBlank(payload.string("rich_output_json"))
-    guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+    let resolvedContent = content.ifBlank(
+      AgentAttachmentDeliveryFailureContract.observation(deliveryFailureCode)
+    )
+    guard !resolvedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
       !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
       AgentRemoteOutcomePolicy.isFailure(taskStatus) else {
       return nil
@@ -408,12 +425,12 @@ struct AgentConnectorResponse: Codable, Equatable {
     return AgentConnectorResponse(
       sourceMessageId: sourceMessageId,
       contactId: payload.string("contact_id"),
-      content: content,
+      content: resolvedContent,
       conversationId: payload.string("conversation_id"),
       turnId: payload.string("turn_id"),
       taskId: payload.string("task_id"),
       success: taskStatus.isEmpty
-        ? payloadBool(payload["success"], defaultValue: true)
+        ? suppliedSuccess
         : taskStatus == "completed",
       inputTokens: Int64(payload.string("input_tokens")) ?? Int64(payload.int("input_tokens")),
       outputTokens: Int64(payload.string("output_tokens")) ?? Int64(payload.int("output_tokens")),
@@ -422,7 +439,8 @@ struct AgentConnectorResponse: Codable, Equatable {
       receivedAtMillis: receivedAtMillis > 0 ? receivedAtMillis : max(nowMillis, 0),
       taskStatus: taskStatus,
       executionGeneration: executionGeneration,
-      statusSequence: statusSequence
+      statusSequence: statusSequence,
+      deliveryFailureCode: deliveryFailureCode
     )
   }
 
@@ -837,7 +855,8 @@ enum AgentConnectorResponseStoreCodec {
         receivedAtMillis: receivedAt,
         taskStatus: object.string("task_status"),
         executionGeneration: object.int64("execution_generation").positiveOr(1),
-        statusSequence: object.int64("status_sequence").nonnegativeOr(-1)
+        statusSequence: object.int64("status_sequence").nonnegativeOr(-1),
+        deliveryFailureCode: object.string("delivery_failure_code")
       )
       guard receivedAt >= cutoff else {
         return nil
@@ -858,6 +877,7 @@ enum AgentConnectorResponseStoreCodec {
       "task_status": .string(response.taskStatus),
       "execution_generation": .int(response.executionGeneration),
       "status_sequence": .int(response.statusSequence),
+      "delivery_failure_code": .string(response.deliveryFailureCode),
       "input_tokens": .int(response.inputTokens),
       "output_tokens": .int(response.outputTokens),
       "cost_micros": .int(response.costMicros),
@@ -885,6 +905,9 @@ enum AgentConnectorResponseNormalizer {
       return nil
     }
     guard response.taskStatus.isEmpty || AgentRemoteOutcomePolicy.isTerminal(response.taskStatus),
+          response.deliveryFailureCode.isEmpty ||
+            (response.taskStatus.isEmpty && !response.success &&
+              AgentAttachmentDeliveryFailureContract.isTerminal(response.deliveryFailureCode)),
           AgentRemoteOutcomePolicy.validGeneration(response.executionGeneration) else { return nil }
     return AgentConnectorResponse(
       sourceMessageId: response.sourceMessageId,
@@ -901,7 +924,8 @@ enum AgentConnectorResponseNormalizer {
       receivedAtMillis: response.receivedAtMillis > 0 ? response.receivedAtMillis : max(nowMillis, 0),
       taskStatus: response.taskStatus,
       executionGeneration: response.executionGeneration,
-      statusSequence: response.statusSequence
+      statusSequence: response.statusSequence,
+      deliveryFailureCode: response.deliveryFailureCode
     )
   }
 }

@@ -39,7 +39,8 @@ final class MessageCoordinator: ObservableObject {
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
-  private let connectorResponseBus: AgentConnectorResponseBus
+  let connectorResponseBus: AgentConnectorResponseBus
+  let attachmentDeliveryFailureStore = AgentAttachmentDeliveryFailureStore()
   private let richContentMaterializer: AgentRichContentMaterializer
   private let remoteWhisperNodeRegistry = VoiceRemoteWhisperNodeRegistry.shared
   private let remoteWhisperNodeClient = VoiceRemoteWhisperNodeClient.shared

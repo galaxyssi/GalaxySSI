@@ -26,6 +26,20 @@ extension MessageCoordinator {
       }
       return
     }
+    if payload.string("status") == "failed" {
+      Task { [weak self] in
+        guard let self else { return }
+        guard AgentAttachmentDeliveryFailureContract.matches(
+          receipt: payload,
+          attachment: transfer
+        ) else { return }
+        if await blobOutgoingCoordinator.owns(transfer.transferId) {
+          try? await blobOutgoingCoordinator.cancel(Set([transfer.transferId]))
+        }
+        handleFailedAttachmentReceipt(payload, transfer: transfer)
+      }
+      return
+    }
     if payload.string("status") == "missing" {
       Task { [weak self] in
         guard let self else { return }
@@ -82,6 +96,49 @@ extension MessageCoordinator {
       payload: payload,
       deliveryStore: deliveryStore
     ) != nil else { return }
+    scheduleOutboxFlush(after: 0)
+  }
+
+  private func handleFailedAttachmentReceipt(
+    _ payload: [String: Any],
+    transfer: AgentPreparedOutboundAttachment
+  ) {
+    guard let observation = try? attachmentDeliveryFailureStore.record(
+      receipt: payload,
+      attachment: transfer
+    ) else { return }
+    _ = deliveryStore.discardAttachmentTransferMessages(transfer.transferId)
+    attachmentTransferStore.discard([transfer.transferId], deliveryStore: deliveryStore)
+    if let contact = store.visibleContacts.first(where: {
+      $0.isDesktopDeviceContact && $0.desktopId == transfer.scope.desktopId
+    }) {
+      applyPeerAttachmentTransferProgress([
+        "transfer_id": transfer.transferId,
+        "source_message_id": observation.sourceMessageId,
+        "attachment_ordinal": transfer.ordinal,
+        "name": transfer.originalName,
+        "mime_type": transfer.mimeType,
+        "size_bytes": transfer.originalSizeBytes,
+        "progress": 0,
+        "state": GalaxySSIPeerAttachmentTransferProgress.failed,
+        "error_code": observation.errorCode
+      ], contact: contact)
+    }
+    guard let sourceMessageId = Int64(observation.sourceMessageId), sourceMessageId > 0 else {
+      scheduleOutboxFlush(after: 0)
+      return
+    }
+    _ = connectorResponseBus.publish(AgentConnectorResponse(
+      sourceMessageId: sourceMessageId,
+      contactId: observation.contactId,
+      content: AgentAttachmentDeliveryFailureContract.observation(observation.errorCode),
+      conversationId: observation.conversationId,
+      turnId: observation.turnId,
+      taskId: observation.taskId,
+      success: false,
+      receivedAtMillis: observation.observedAtMillis,
+      deliveryFailureCode: observation.errorCode
+    ))
     scheduleOutboxFlush(after: 0)
   }
 
