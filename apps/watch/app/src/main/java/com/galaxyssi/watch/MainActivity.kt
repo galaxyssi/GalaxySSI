@@ -58,6 +58,7 @@ class MainActivity : Activity() {
     private var sessionsScroll: ScrollView? = null
     private var sessionsContent: LinearLayout? = null
     private var sessionQuery = ""
+    private var modelPageProjection: List<Any?>? = null
     private var speech: WatchReplySpeech? = null
     private var wake: WatchForegroundWake? = null
     private var wakePreference = false
@@ -79,10 +80,17 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
     private val handler = Handler(Looper.getMainLooper())
+    private val refreshModelStatus = object : Runnable {
+        override fun run() {
+            if (!resumed) return
+            if (page in setOf("switch-model", "agents")) render(true)
+            handler.postDelayed(this, 30_000)
+        }
+    }
     private val saveDraft = Runnable { repo.saveDraft(draft) }
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
-        else if (page !in setOf("session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
+        else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
 
     }
 
@@ -165,8 +173,10 @@ class MainActivity : Activity() {
     }
     override fun onResume() {
         super.onResume(); resumed = true; updateConversationVisibility(); updated()
+        handler.removeCallbacks(refreshModelStatus); handler.postDelayed(refreshModelStatus, 30_000)
     }
     override fun onPause() {
+        handler.removeCallbacks(refreshModelStatus)
         resumed = false; handler.removeCallbacks(openVoiceEntry); voiceEntryScheduled = false; wake?.setEnabled(false); screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); super.onPause()
     }
     private fun updateScreenAwake() {
@@ -220,6 +230,18 @@ class MainActivity : Activity() {
     private val green = Color.rgb(20, 198, 106)
 
     private fun render(preserveScroll: Boolean = false) {
+        if (page !in setOf("switch-model", "agents")) modelPageProjection = null
+        else {
+            val links = repo.links().filter { it.paired }
+            val profile = repo.store.apiProfile
+            val projection = listOf(page, links.map { it.desktopId to it.desktopName },
+                links.flatMap { repo.store.agents(it.desktopId) },
+                profile?.let { listOf(it.id, it.model, it.endpoint) },
+                selectedTask, repo.store.selectedDesktop, repo.store.selectedAgent,
+                repo.store.apiPreferred, busy, repo.errorResource)
+            if (preserveScroll && modelPageProjection == projection) return
+            modelPageProjection = projection
+        }
         updateScreenAwake()
         updateConversationVisibility()
         if (page == "api-edit" || page == "web-credential") window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -374,7 +396,6 @@ class MainActivity : Activity() {
         button(R.string.recent) { sessionQuery = ""; navigate("sessions") }
         button(R.string.contacts) { navigate("contacts") }
         button(R.string.paste_message) { navigate("paste") }
-        button(R.string.api_provider) { openApiSettings() }
         button(R.string.switch_model) { navigate("switch-model"); repo.refresh() }
         button(R.string.configure_models) {
             startActivity(Intent(this, WatchPhoneSetupActivity::class.java)
@@ -581,7 +602,10 @@ class MainActivity : Activity() {
                 if (targets.isEmpty()) label("${link.desktopName}\n${getString(R.string.no_agents)}", 11)
                 targets.forEach { target ->
                     val selected = !usingApi && desktop == link.desktopId && agent == target.id
-                    row(target.name, link.desktopName + if (target.available) "" else " · ${getString(R.string.model_unavailable)}", selected, target.available) {
+                    row(target.name, "${link.desktopName} · ${getString(target.statusLabel)}", selected, target.available) {
+                        if (repo.store.agents(link.desktopId).none { it.id == target.id && it.available }) {
+                            render(true); repo.refresh(); return@row
+                        }
                         select(false, link.desktopId, target.id, selected)
                     }
                 }
@@ -604,9 +628,12 @@ class MainActivity : Activity() {
         val agents = repo.store.agents(repo.store.selectedDesktop)
         if (agents.isEmpty()) label(getString(R.string.no_agents))
         agents.forEach { agent ->
-            button(if (agent.available) agent.name else getString(R.string.agent_unavailable, agent.name), agent.available) {
+            button("${agent.name}\n${getString(agent.statusLabel)}", agent.available) {
+                if (repo.store.agents(agent.desktopId).none { it.id == agent.id && it.available }) {
+                    render(true); repo.refresh(); return@button
+                }
                 repo.store.selectedAgent = agent.id; repo.store.apiPreferred = false; newConversation()
-            }
+            }.isEnabled = agent.available
         }
         button(R.string.refresh) { repo.refresh() }
     }

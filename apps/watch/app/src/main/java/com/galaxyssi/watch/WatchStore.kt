@@ -102,17 +102,17 @@ class WatchStore(context: Context) {
     var autoSpeech: Boolean
         get() = prefs.readString("auto_speech", "true").toBoolean()
         set(value) = prefs.writeString("auto_speech", value.toString())
-    fun saveAgents(desktop: String, value: JSONArray) = prefs.writeString("agents:$desktop", value.toString())
+    fun saveAgents(desktop: String, value: JSONArray) = prefs.writeString("agents:$desktop", WatchAgentStatus.received(value, System.currentTimeMillis()).toString())
     fun agents(desktop: String): List<WatchAgent> {
         val array = runCatching { JSONArray(prefs.readString("agents:$desktop", "[]")) }.getOrDefault(JSONArray())
+        val now = System.currentTimeMillis()
         return (0 until array.length()).mapNotNull { i ->
             val j = array.optJSONObject(i) ?: return@mapNotNull null
             val id = j.optString("agent_id").ifBlank {
                 j.optString("mobile_contact_id").ifBlank { j.optString("id").substringAfterLast(':') }
             }
             if (id.isBlank() || id == "cloud-model") null else WatchAgent(desktop, id,
-                j.optString("name").ifBlank { id }, j.optBoolean("available", false) ||
-                    j.optString("status") in setOf("ready", "available", "running"))
+                j.optString("name").ifBlank { id }, WatchAgentStatus.available(j, now), WatchAgentStatus.label(j, now))
         }
     }
     fun forgetAgents(desktop: String) = prefs.remove("agents:$desktop")
