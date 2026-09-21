@@ -194,10 +194,30 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
     self.fallbackText = String(fallbackText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumBlockText))
     self.actions = Array(actions.prefix(Self.maximumActions))
     self.fields = Array(fields.prefix(Self.maximumFields))
+    let preferredMetadataKeys = [
+      "transport", "artifact_source_uri", "artifact_id", "transfer_id", "blob_transfer_id",
+      "size", "size_bytes", "sha256", "original_size_bytes", "original_sha256",
+      "blob_client_route_id", "blob_desktop_id", "blob_conversation_id", "blob_task_id",
+      "blob_turn_id", "blob_execution_generation"
+    ]
+    let galleryMetadataKeys = ([self.uri] + self.rows.compactMap(\.first))
+      .prefix(10)
+      .compactMap { uri -> String? in
+        guard uri.hasPrefix("galaxyssi-artifact://blob/"), let suffix = uri.split(separator: "/").last else {
+          return nil
+        }
+        return "blob_item_\(suffix)"
+      }
+    var seenMetadataKeys = Set<String>()
+    let orderedMetadataKeys = (preferredMetadataKeys + galleryMetadataKeys + metadata.keys.sorted())
+      .filter { metadata[$0] != nil && seenMetadataKeys.insert($0).inserted }
     self.metadata = Dictionary(
-      uniqueKeysWithValues: metadata
-        .sorted { $0.key < $1.key }
+      uniqueKeysWithValues: orderedMetadataKeys
         .prefix(Self.maximumMetadataItems)
+        .compactMap { key -> (String, String)? in
+          guard let value = metadata[key] else { return nil }
+          return (key, value)
+        }
         .map { key, value in
           (
             String(key.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)),
@@ -253,7 +273,7 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
   }
 
   var isArtifactBlock: Bool {
-    [.image, .video, .audio, .file].contains(type)
+    [.image, .gallery, .video, .audio, .file].contains(type)
   }
 
   func artifactIdentity() -> String {

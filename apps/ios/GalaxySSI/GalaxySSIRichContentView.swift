@@ -977,9 +977,17 @@ private struct GalaxySSIRichBlockView: View {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 8) {
             ForEach(items) { item in
-              GalaxySSIImageThumbnailView(item: item) {
-                imageViewerItem = item
+              let transferProgress = galleryTransferProgress(for: item)
+              ZStack {
+                GalaxySSIImageThumbnailView(item: item) {
+                  guard transferProgress == nil else { return }
+                  imageViewerItem = item
+                }
+                if let transferProgress {
+                  GalaxySSIPeerImageTransferProgressOverlay(progress: transferProgress)
+                }
               }
+              .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
           }
           .padding(.vertical, 1)
@@ -1972,7 +1980,7 @@ private struct GalaxySSIRichBlockView: View {
 
   private var galleryImageItems: [GalaxySSIImageViewerItem] {
     var items: [GalaxySSIImageViewerItem] = []
-    let primaryData = inlineImageData ?? localImageData
+    let primaryData = inlineImageData ?? localImageData ?? localDesktopArtifactImageData
     let primaryURL = primaryData == nil ? imageURL(for: block.uri) : nil
     if let primary = makeImageViewerItem(
       data: primaryData,
@@ -1981,26 +1989,76 @@ private struct GalaxySSIRichBlockView: View {
       title: block.title
     ) {
       items.append(primary)
+    } else if block.uri.hasPrefix("galaxyssi-artifact://blob/") {
+      items.append(GalaxySSIImageViewerItem(
+        id: "\(block.id)-primary",
+        data: nil,
+        url: nil,
+        title: block.title
+      ))
     }
 
     for (index, row) in block.rows.enumerated() {
-      let title = row.first?.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(
+      let first = row.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let second = row.dropFirst().first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let rawURI = first.hasPrefix("galaxyssi-artifact://") || imageURL(for: first) != nil ? first : second
+      let titleSource = rawURI == first ? second : first
+      let title = titleSource.ifBlank(
         "\(t("rich_output_type_image", "Image")) \(index + 1)"
-      ) ?? "\(t("rich_output_type_image", "Image")) \(index + 1)"
-      let rawURL = row.dropFirst().first ?? ""
-      guard let url = imageURL(for: rawURL) else { continue }
-      let data = url.isFileURL ? try? Data(contentsOf: url) : nil
-      let remote = data == nil && !url.isFileURL ? url : nil
-      if let item = makeImageViewerItem(
+      )
+      let metadata = galleryItemMetadata(uri: rawURI)
+      let artifactBlock = AgentRichBlock(
+        id: "\(block.id)-gallery-artifact-\(index)",
+        type: .image,
+        title: title,
+        uri: rawURI,
+        mimeType: row.dropFirst(2).first ?? "image/*",
+        metadata: metadata
+      )
+      let localArtifactURL = coordinator.desktopArtifactStore.localFile(for: artifactBlock)
+      let url = localArtifactURL ?? imageURL(for: rawURI)
+      let data: Data?
+      if let url, url.isFileURL {
+        data = try? Data(contentsOf: url)
+      } else {
+        data = nil
+      }
+      let remote = data == nil && url?.isFileURL == false ? url : nil
+      items.append(GalaxySSIImageViewerItem(
+        id: "\(block.id)-gallery-\(index)",
         data: data,
         url: remote,
-        id: "\(block.id)-gallery-\(index)",
         title: title
-      ) {
-        items.append(item)
-      }
+      ))
     }
     return Array(items.prefix(Self.visibleGalleryItems))
+  }
+
+  private func galleryTransferProgress(for item: GalaxySSIImageViewerItem) -> Int? {
+    let uri: String
+    if item.id == "\(block.id)-primary" {
+      uri = block.uri
+    } else if let index = Int(item.id.split(separator: "-").last ?? ""), block.rows.indices.contains(index) {
+      let row = block.rows[index]
+      let first = row.first ?? ""
+      uri = first.hasPrefix("galaxyssi-artifact://") || imageURL(for: first) != nil
+        ? first
+        : (row.dropFirst().first ?? "")
+    } else {
+      return nil
+    }
+    return GalaxySSIPeerAttachmentTransferProgress.activeProgress(metadata: galleryItemMetadata(uri: uri))
+  }
+
+  private func galleryItemMetadata(uri: String) -> [String: String] {
+    guard uri.hasPrefix("galaxyssi-artifact://blob/"),
+          let suffix = uri.split(separator: "/").last,
+          let encoded = block.metadata["blob_item_\(suffix)"],
+          let data = encoded.data(using: .utf8),
+          let metadata = try? JSONDecoder().decode([String: String].self, from: data) else {
+      return [:]
+    }
+    return metadata
   }
 
   private func makeImageViewerItem(
