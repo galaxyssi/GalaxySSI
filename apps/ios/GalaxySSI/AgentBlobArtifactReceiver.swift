@@ -273,6 +273,12 @@ actor AgentBlobArtifactReceiver {
     drainTask = Task { await drain() }
   }
 
+  func prepare() throws {
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    _ = try loadJobs()
+    _ = try loadTerminalEvents()
+  }
+
   func terminalPresentations(
     contactIds: Set<String>,
     sourceMessageId: String,
@@ -478,5 +484,127 @@ actor AgentBlobArtifactReceiver {
       "plaintext_hash_mismatch", "invalid_private_descriptor",
       "invalid_artifact_blob_manifest"
     ].contains(code)
+  }
+}
+
+struct AgentBlobArtifactCapabilityPair: Codable, Equatable, Sendable {
+  var desktopId: String
+  var clientRouteId: String
+  var desktopFingerprint: String
+  var localFingerprint: String
+
+  var binding: [String: String] {
+    [
+      "desktop_id": desktopId,
+      "client_route_id": clientRouteId,
+      "desktop_fingerprint": desktopFingerprint,
+      "local_fingerprint": localFingerprint
+    ]
+  }
+}
+
+struct AgentBlobArtifactCapabilityDeclaration: Equatable, Sendable {
+  var revision: Int64
+  var enabled: Bool
+}
+
+actor AgentBlobArtifactCapabilityPublisher {
+  private struct State: Codable, Equatable {
+    var version: Int
+    var binding: [String: String]
+    var revision: Int64
+    var enabled: Bool
+  }
+
+  private struct Acceptance: Equatable {
+    var bindingHash: String
+    var revision: Int64
+  }
+
+  private let rootURL: URL
+  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private var accepted: [String: Acceptance] = [:]
+
+  init(
+    applicationSupportDirectory: URL? = nil,
+    cipher: GalaxySSIAttachmentAtRestCipher = .shared
+  ) {
+    let support = applicationSupportDirectory ?? FileManager.default.urls(
+      for: .applicationSupportDirectory, in: .userDomainMask
+    ).first ?? FileManager.default.temporaryDirectory
+    rootURL = support.appendingPathComponent("blob-artifact-capability-v1", isDirectory: true)
+    self.cipher = cipher
+  }
+
+  func reconnect() {
+    accepted.removeAll()
+  }
+
+  func declaration(
+    pair: AgentBlobArtifactCapabilityPair,
+    enabled: Bool,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) throws -> AgentBlobArtifactCapabilityDeclaration? {
+    let previous = try read(desktopId: pair.desktopId)
+    let state: State
+    if previous?.binding == pair.binding, previous?.enabled == enabled {
+      state = previous!
+    } else {
+      let oldRevision = previous?.revision ?? 0
+      guard oldRevision < 9_007_199_254_740_991 else {
+        throw AgentBlobFailure.invalid("artifact_blob_capability_revision_exhausted")
+      }
+      state = State(
+        version: 1,
+        binding: pair.binding,
+        revision: max(oldRevision + 1, min(9_007_199_254_740_991, max(1, nowMillis))),
+        enabled: enabled
+      )
+      try write(state, desktopId: pair.desktopId)
+    }
+    let bindingData = try JSONSerialization.data(withJSONObject: state.binding, options: [.sortedKeys])
+    let acceptance = Acceptance(
+      bindingHash: AgentBlobProtocol.sha256(bindingData),
+      revision: state.revision
+    )
+    guard accepted[pair.desktopId] != acceptance else { return nil }
+    return AgentBlobArtifactCapabilityDeclaration(
+      revision: state.revision,
+      enabled: state.enabled
+    )
+  }
+
+  func markAccepted(pair: AgentBlobArtifactCapabilityPair, revision: Int64) throws {
+    let bindingData = try JSONSerialization.data(withJSONObject: pair.binding, options: [.sortedKeys])
+    accepted[pair.desktopId] = Acceptance(
+      bindingHash: AgentBlobProtocol.sha256(bindingData),
+      revision: revision
+    )
+  }
+
+  private func read(desktopId: String) throws -> State? {
+    let url = fileURL(desktopId: desktopId)
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return try JSONDecoder().decode(
+      State.self,
+      from: cipher.read(from: url, purpose: purpose(desktopId: desktopId))
+    )
+  }
+
+  private func write(_ state: State, desktopId: String) throws {
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    try cipher.write(
+      JSONEncoder().encode(state),
+      to: fileURL(desktopId: desktopId),
+      purpose: purpose(desktopId: desktopId)
+    )
+  }
+
+  private func fileURL(desktopId: String) -> URL {
+    rootURL.appendingPathComponent("\(AgentBlobProtocol.sha256(Data(desktopId.utf8))).saenc")
+  }
+
+  private func purpose(desktopId: String) -> String {
+    "blob-artifact-capability-v1:\(AgentBlobProtocol.sha256(Data(desktopId.utf8)))"
   }
 }
