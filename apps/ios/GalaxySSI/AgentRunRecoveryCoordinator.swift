@@ -98,6 +98,31 @@ final class AgentRunRecoveryCoordinator {
     return results
   }
 
+  /// Reads authenticated remote recovery facts without mutating local run or workspace state.
+  func inspect() async throws -> [AgentRecoverableRun] {
+    var inspected: [AgentRecoverableRun] = []
+    for snapshot in runStore.recoverableRuns() {
+      try Task.checkCancellation()
+      let run = recordedRun(snapshot.runId)
+      let decision = AgentRunRecoveryPolicy.decide(
+        snapshot: snapshot,
+        recordedRun: run,
+        registration: registration(snapshot.agentId, snapshot.deviceId)
+      )
+      guard decision.disposition == .reconnectDurableRemote,
+            let adapter = try await recoverOrNil({ try await adapterResolver(snapshot.agentId) }) else {
+        continue
+      }
+      let candidates = try await recoverOrNil { try await adapter.inspectRecoverableRuns() } ?? []
+      inspected.append(contentsOf: exactRemoteMatches(
+        candidates,
+        snapshot: snapshot,
+        deviceId: adapter.registration.deviceId
+      ))
+    }
+    return inspected
+  }
+
   private func recover(_ snapshot: AgentRunControlSnapshot) async throws -> AgentRunRecoveryResult {
     let run = recordedRun(snapshot.runId)
     let decision = AgentRunRecoveryPolicy.decide(
@@ -191,18 +216,11 @@ final class AgentRunRecoveryCoordinator {
       recoverable = []
     }
     try Task.checkCancellation()
-    let matches = recoverable.filter { candidate in
-      guard let observation = candidate.observation,
-            observation.workspaceStatus != nil else { return false }
-      return candidate.handle.runId == snapshot.runId &&
-        candidate.handle.taskId == snapshot.taskId &&
-        candidate.handle.agentId == snapshot.agentId &&
-        observation.conversationId == snapshot.lastEvent.conversationId &&
-        observation.deviceId == adapter?.registration.deviceId &&
-        observation.remoteTaskId == candidate.handle.taskId &&
-        observation.remoteRunId == candidate.handle.remoteRunId &&
-        observation.statusSequence >= 0
-    }
+    let matches = exactRemoteMatches(
+      recoverable,
+      snapshot: snapshot,
+      deviceId: adapter?.registration.deviceId ?? ""
+    )
     let remote = matches.count == 1 ? matches[0] : nil
 
     guard let remote else {
@@ -262,6 +280,25 @@ final class AgentRunRecoveryCoordinator {
       lastRemoteEventSequence: remote.lastEventSequence,
       reason: reason
     )
+  }
+
+  private func exactRemoteMatches(
+    _ candidates: [AgentRecoverableRun],
+    snapshot: AgentRunControlSnapshot,
+    deviceId: String
+  ) -> [AgentRecoverableRun] {
+    candidates.filter { candidate in
+      guard let observation = candidate.observation,
+            observation.workspaceStatus != nil else { return false }
+      return candidate.handle.runId == snapshot.runId &&
+        candidate.handle.taskId == snapshot.taskId &&
+        candidate.handle.agentId == snapshot.agentId &&
+        observation.conversationId == snapshot.lastEvent.conversationId &&
+        observation.deviceId == deviceId &&
+        observation.remoteTaskId == candidate.handle.taskId &&
+        observation.remoteRunId == candidate.handle.remoteRunId &&
+        observation.statusSequence >= 0
+    }
   }
 
   private func recoverOrNil<T>(_ operation: () async throws -> T) async throws -> T? {
