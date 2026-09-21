@@ -1,8 +1,8 @@
 import Foundation
 
 enum MqttBrokerAckTimeoutPolicy {
-  static let defaultTimeoutSeconds: TimeInterval = 12
-  static let attachmentTimeoutSeconds: TimeInterval = 30
+  static let defaultTimeoutSeconds: TimeInterval = 30
+  static let attachmentTimeoutSeconds: TimeInterval = 60
 
   static func timeoutSeconds(wirePayloadBytes: Int) -> TimeInterval {
     wirePayloadBytes >= 96 * 1024 ? attachmentTimeoutSeconds : defaultTimeoutSeconds
@@ -13,7 +13,7 @@ enum MqttBrokerAckTimeoutPolicy {
 final class MqttBrokerAckWatchdog {
   private struct PendingPublish {
     var publishedAt: TimeInterval
-    var timeoutSeconds: TimeInterval
+    var deadline: TimeInterval
   }
 
   private let defaultTimeoutSeconds: TimeInterval
@@ -33,10 +33,13 @@ final class MqttBrokerAckWatchdog {
     let timeout = timeoutSeconds ?? defaultTimeoutSeconds
     guard timeout > 0 else { return }
     lock.lock()
-    pendingByPacketId[packetId] = pendingByPacketId[packetId] ?? PendingPublish(
-      publishedAt: now,
-      timeoutSeconds: timeout
-    )
+    if pendingByPacketId[packetId] == nil {
+      let precedingDeadline = pendingByPacketId.values.map(\.deadline).max() ?? 0
+      pendingByPacketId[packetId] = PendingPublish(
+        publishedAt: now,
+        deadline: max(now + timeout, precedingDeadline)
+      )
+    }
     lock.unlock()
   }
 
@@ -49,9 +52,7 @@ final class MqttBrokerAckWatchdog {
   func nextCheckDelay(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval? {
     lock.lock()
     defer { lock.unlock() }
-    return pendingByPacketId.values.map {
-      max(0, $0.timeoutSeconds - max(0, now - $0.publishedAt))
-    }.min()
+    return pendingByPacketId.values.map { max(0, $0.deadline - now) }.min()
   }
 
   func oldestPendingAge(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval? {
@@ -67,7 +68,7 @@ final class MqttBrokerAckWatchdog {
     lock.lock()
     defer { lock.unlock() }
     return pendingByPacketId.values
-      .filter { now - $0.publishedAt >= $0.timeoutSeconds }
+      .filter { now >= $0.deadline }
       .map { max(0, now - $0.publishedAt) }
       .max()
   }

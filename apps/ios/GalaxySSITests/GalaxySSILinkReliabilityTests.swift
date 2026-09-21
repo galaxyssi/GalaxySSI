@@ -74,10 +74,11 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
 
     store.markAttempt(messageId: "m1", now: now)
     XCTAssertTrue(store.pending(now: now).isEmpty)
-    XCTAssertEqual(store.pending(now: now.addingTimeInterval(2)).map(\.messageId), ["m1"])
+    XCTAssertTrue(store.pending(now: now.addingTimeInterval(29)).isEmpty)
+    XCTAssertEqual(store.pending(now: now.addingTimeInterval(30)).map(\.messageId), ["m1"])
 
-    store.markPublished(messageId: "m1", now: now.addingTimeInterval(2))
-    XCTAssertNotNil(store.nextRetryDelay(now: now.addingTimeInterval(2)))
+    store.markPublished(messageId: "m1", now: now.addingTimeInterval(30))
+    XCTAssertNotNil(store.nextRetryDelay(now: now.addingTimeInterval(30)))
 
     store.acknowledge(messageId: "m1")
     XCTAssertTrue(store.pending(now: now.addingTimeInterval(10)).isEmpty)
@@ -177,6 +178,25 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
 
     XCTAssertEqual(exhausted.map(\.attachmentTransferId), [transferId])
     XCTAssertTrue(store.pending(now: now.addingTimeInterval(60)).isEmpty)
+  }
+
+  func testExhaustionDoesNotDiscardMessagesWithOutstandingBrokerTokens() {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 100)
+    store.enqueue(messageId: "active", topic: "topic/up", wirePayload: "{}", now: now)
+    for _ in 0..<6 {
+      store.markAttempt(messageId: "active", now: now)
+    }
+
+    XCTAssertTrue(store.discardExhausted(
+      maxAttempts: 6,
+      now: now.addingTimeInterval(600),
+      activeMessageIds: ["active"]
+    ).isEmpty)
+    XCTAssertEqual(
+      store.discardExhausted(maxAttempts: 6, now: now.addingTimeInterval(600)).map(\.messageId),
+      ["active"]
+    )
   }
 
   func testExhaustedAttachmentDiscardsWholeSourceMessageGroup() throws {
@@ -283,18 +303,18 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertTrue((try? FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).isEmpty) ?? true)
   }
 
-  func testAttachmentBrokerAckTimeoutDoesNotExtendOrdinaryMessages() {
-    let watchdog = MqttBrokerAckWatchdog(timeoutSeconds: 12)
-    watchdog.onPublished(packetId: 7, now: 1, timeoutSeconds: 12)
+  func testAttachmentBrokerAckDeadlineExtendsFollowingControlMessage() {
+    let watchdog = MqttBrokerAckWatchdog(timeoutSeconds: 30)
+    watchdog.onPublished(packetId: 7, now: 1, timeoutSeconds: 60)
     watchdog.onPublished(packetId: 8, now: 1, timeoutSeconds: 30)
 
-    XCTAssertEqual(watchdog.nextCheckDelay(now: 13), 0)
-    XCTAssertEqual(watchdog.oldestTimedOutPendingAge(now: 13), 12)
+    XCTAssertEqual(watchdog.nextCheckDelay(now: 31), 30)
+    XCTAssertNil(watchdog.oldestTimedOutPendingAge(now: 31))
 
     watchdog.onAcknowledged(packetId: 7)
 
-    XCTAssertEqual(watchdog.nextCheckDelay(now: 13), 18)
-    XCTAssertNil(watchdog.oldestTimedOutPendingAge(now: 13))
+    XCTAssertEqual(watchdog.nextCheckDelay(now: 61), 0)
+    XCTAssertEqual(watchdog.oldestTimedOutPendingAge(now: 61), 60)
   }
 
   func testLargeEncryptedWirePayloadUsesAttachmentAckTimeout() {

@@ -479,14 +479,16 @@ final class GalaxySSILinkDeliveryStore {
   func discardExhausted(
     maxAttempts: Int,
     attachmentMaxAttempts: Int? = nil,
-    now: Date = Date()
+    now: Date = Date(),
+    activeMessageIds: Set<String> = []
   ) -> [ExhaustedLinkMessage] {
     guard maxAttempts > 0 else { return [] }
     let attachmentLimit = attachmentMaxAttempts ?? maxAttempts
     guard attachmentLimit >= maxAttempts else { return [] }
     let source = state.outbox
     let candidates = source.filter { item in
-      item.attempts >= attemptLimit(
+      guard !activeMessageIds.contains(item.messageId) else { return false }
+      return item.attempts >= attemptLimit(
         for: item,
         maxAttempts: maxAttempts,
         attachmentMaxAttempts: attachmentLimit
@@ -998,11 +1000,15 @@ enum GalaxySSILinkCiphertextReplayPolicy {
 
 enum GalaxySSILinkRetryPolicy {
   static let initialDelaySeconds: TimeInterval = 2
+  static let minimumPeerReceiptDelaySeconds: TimeInterval = 30
   static let maximumDelaySeconds: TimeInterval = 300
 
   static func delaySeconds(attempt: Int) -> TimeInterval {
     let exponent = min(max(attempt, 1) - 1, 8)
-    return min(initialDelaySeconds * TimeInterval(1 << exponent), maximumDelaySeconds)
+    return min(
+      max(initialDelaySeconds * TimeInterval(1 << exponent), minimumPeerReceiptDelaySeconds),
+      maximumDelaySeconds
+    )
   }
 }
 
