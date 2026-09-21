@@ -702,6 +702,9 @@
     A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */; };
     A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */; };
     A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */; };
+    E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */; };
+    E29320000000000000000002 /* AgentKnowledgeSemanticModelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29320000000000000000012 /* AgentKnowledgeSemanticModelView.swift */; };
+    E29320000000000000000003 /* AgentKnowledgeSemanticModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29320000000000000000013 /* AgentKnowledgeSemanticModelTests.swift */; };
     A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */; };
     A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000537 /* GlobalPersistentContextObservations.swift */; };
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
@@ -1681,6 +1684,9 @@
     A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorModels.swift; sourceTree = "<group>"; };
     A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearch.swift; sourceTree = "<group>"; };
     A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearchTests.swift; sourceTree = "<group>"; };
+    E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSemanticModel.swift; sourceTree = "<group>"; };
+    E29320000000000000000012 /* AgentKnowledgeSemanticModelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSemanticModelView.swift; sourceTree = "<group>"; };
+    E29320000000000000000013 /* AgentKnowledgeSemanticModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSemanticModelTests.swift; sourceTree = "<group>"; };
     A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOfficeDocumentExtractor.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
@@ -2287,6 +2293,7 @@
         A20000000000000000000880 /* AgentKnowledgeDatabase.swift */,
         A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */,
         A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */,
+        E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */,
         A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */,
         A20000000000000000000537 /* GlobalPersistentContextObservations.swift */,
         A20000000000000000000411 /* AgentMemoryCausalDeletion.swift */,
@@ -2679,6 +2686,7 @@
         A20000000000000000000995 /* GalaxySSIAgentMemoryView.swift */,
         A20000000000000000001160 /* GalaxySSIAgentMemoryTelemetryView.swift */,
         A20000000000000000000996 /* GalaxySSIAgentKnowledgeView.swift */,
+        E29320000000000000000012 /* AgentKnowledgeSemanticModelView.swift */,
         A20000000000000000000997 /* GalaxySSIAgentRecentTasksView.swift */,
         A20000000000000000001500 /* GalaxySSIAgentAuditOperationsView.swift */,
         A20000000000000000000998 /* GalaxySSIAgentSessionsView.swift */,
@@ -2826,6 +2834,7 @@
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */,
         A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
+        E29320000000000000000013 /* AgentKnowledgeSemanticModelTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
         A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */,
         A20000000000000000000209 /* GlobalMemoryTests.swift */,
@@ -3358,6 +3367,7 @@
         A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */,
         A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */,
         A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */,
+        E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */,
         A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */,
         A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */,
         A10000000000000000000411 /* AgentMemoryCausalDeletion.swift in Sources */,
@@ -3814,6 +3824,7 @@
         A10000000000000000000995 /* GalaxySSIAgentMemoryView.swift in Sources */,
         A10000000000000000001160 /* GalaxySSIAgentMemoryTelemetryView.swift in Sources */,
         A10000000000000000000996 /* GalaxySSIAgentKnowledgeView.swift in Sources */,
+        E29320000000000000000002 /* AgentKnowledgeSemanticModelView.swift in Sources */,
         A10000000000000000000997 /* GalaxySSIAgentRecentTasksView.swift in Sources */,
         A10000000000000000001500 /* GalaxySSIAgentAuditOperationsView.swift in Sources */,
         A10000000000000000000998 /* GalaxySSIAgentSessionsView.swift in Sources */,
@@ -3952,6 +3963,7 @@
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */,
         A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,
+        E29320000000000000000003 /* AgentKnowledgeSemanticModelTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
         A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */,
         A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */,
