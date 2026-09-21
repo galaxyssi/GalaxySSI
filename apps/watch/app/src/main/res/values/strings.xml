@@ -191,6 +191,13 @@
     <string name="model_cloud_section">Cloud models</string>
     <string name="model_current">Currently selected</string>
     <string name="model_unavailable">Unavailable</string>
+    <string name="agent_status_ready">Available</string>
+    <string name="agent_status_busy">Busy</string>
+    <string name="agent_status_offline">Offline</string>
+    <string name="agent_status_setup">Setup required</string>
+    <string name="agent_status_stale">Status not updated</string>
+    <string name="agent_status_error">Service unavailable</string>
+    <string name="agent_status_updating">Updating</string>
     <string name="model_empty">No models configured. Use Configure models to add one from your phone.</string>
     <string name="model_switch_hint">Switching targets starts a new conversation. Previous chats remain in Recent conversations.</string>
     <string name="configure_models_title">Configure on your phone</string>

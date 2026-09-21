@@ -191,6 +191,13 @@
     <string name="model_cloud_section">云端模型</string>
     <string name="model_current">当前使用</string>
     <string name="model_unavailable">暂不可用</string>
+    <string name="agent_status_ready">可用</string>
+    <string name="agent_status_busy">忙碌</string>
+    <string name="agent_status_offline">离线</string>
+    <string name="agent_status_setup">待配置</string>
+    <string name="agent_status_stale">状态未更新</string>
+    <string name="agent_status_error">服务异常</string>
+    <string name="agent_status_updating">更新中</string>
     <string name="model_empty">暂无已配置模型，请通过“配置模型”在手机上添加。</string>
     <string name="model_switch_hint">切换目标后开启新会话，历史保留在最近会话。</string>
     <string name="configure_models_title">请在手机上配置</string>

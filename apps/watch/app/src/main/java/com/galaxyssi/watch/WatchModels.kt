@@ -105,6 +105,7 @@ data class WatchTask(
     }
 }
 
-data class WatchAgent(val desktopId: String, val id: String, val name: String, val available: Boolean)
+data class WatchAgent(val desktopId: String, val id: String, val name: String, val available: Boolean,
+    val statusLabel: Int = R.string.agent_status_stale)
 
 enum class ConnectionState { DISCONNECTED, CONNECTING, BROKER_CONNECTED, ERROR }

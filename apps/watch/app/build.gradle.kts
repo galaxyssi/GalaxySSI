@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.3.19"
+        versionCode = 52
+        versionName = "0.3.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -161,7 +161,7 @@ val webFiles = listOf(
     "AgentWebReadingWindow.kt", "AgentResearchTrace.kt", "ResearchEvidenceAudit.kt",
     "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
-val webSlices = listOf("AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
+val webSlices = listOf("MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt", "AgentRemoteOutcomeCodec.kt", "AgentResultReceipt.kt")
 val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
 val syncPhoneWebParser by tasks.registering {
@@ -177,6 +177,10 @@ val syncPhoneWebParser by tasks.registering {
             check(start >= 0 && end > start) { "Android web source boundary changed: $from" }
             return source.substring(start, end)
         }
+        // Compile the phone's desktop readiness rules verbatim, including its TTL and clock skew.
+        write("AgentConnectorAvailability.kt", "package com.galaxyssi.chat\nimport org.json.JSONObject\nimport java.util.Locale\n" +
+            slice(phoneWebRoot.resolve("MobileAgentConnectors.kt").readText(),
+                "object AgentConnectorAvailability {", "    fun cloudModelReady(") + "}\n")
         webFiles.forEach { write(it, phoneWebRoot.resolve(it).readText().let { source ->
             if (it == "CloudWebGrounding.kt") source.replace("package com.galaxyssi.chat", "package com.galaxyssi.chat\nimport com.galaxyssi.watch.R") else source
         }) }

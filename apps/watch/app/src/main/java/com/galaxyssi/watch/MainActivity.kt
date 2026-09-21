@@ -79,6 +79,13 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
     private val handler = Handler(Looper.getMainLooper())
+    private val refreshModelStatus = object : Runnable {
+        override fun run() {
+            if (!resumed) return
+            if (page in setOf("switch-model", "agents")) render(true)
+            handler.postDelayed(this, 30_000)
+        }
+    }
     private val saveDraft = Runnable { repo.saveDraft(draft) }
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
@@ -165,8 +172,10 @@ class MainActivity : Activity() {
     }
     override fun onResume() {
         super.onResume(); resumed = true; updateConversationVisibility(); updated()
+        handler.removeCallbacks(refreshModelStatus); handler.postDelayed(refreshModelStatus, 30_000)
     }
     override fun onPause() {
+        handler.removeCallbacks(refreshModelStatus)
         resumed = false; handler.removeCallbacks(openVoiceEntry); voiceEntryScheduled = false; wake?.setEnabled(false); screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); super.onPause()
     }
     private fun updateScreenAwake() {
@@ -581,7 +590,10 @@ class MainActivity : Activity() {
                 if (targets.isEmpty()) label("${link.desktopName}\n${getString(R.string.no_agents)}", 11)
                 targets.forEach { target ->
                     val selected = !usingApi && desktop == link.desktopId && agent == target.id
-                    row(target.name, link.desktopName + if (target.available) "" else " · ${getString(R.string.model_unavailable)}", selected, target.available) {
+                    row(target.name, "${link.desktopName} · ${getString(target.statusLabel)}", selected, target.available) {
+                        if (repo.store.agents(link.desktopId).none { it.id == target.id && it.available }) {
+                            render(true); repo.refresh(); return@row
+                        }
                         select(false, link.desktopId, target.id, selected)
                     }
                 }
@@ -604,9 +616,12 @@ class MainActivity : Activity() {
         val agents = repo.store.agents(repo.store.selectedDesktop)
         if (agents.isEmpty()) label(getString(R.string.no_agents))
         agents.forEach { agent ->
-            button(if (agent.available) agent.name else getString(R.string.agent_unavailable, agent.name), agent.available) {
+            button("${agent.name}\n${getString(agent.statusLabel)}", agent.available) {
+                if (repo.store.agents(agent.desktopId).none { it.id == agent.id && it.available }) {
+                    render(true); repo.refresh(); return@button
+                }
                 repo.store.selectedAgent = agent.id; repo.store.apiPreferred = false; newConversation()
-            }
+            }.isEnabled = agent.available
         }
         button(R.string.refresh) { repo.refresh() }
     }
