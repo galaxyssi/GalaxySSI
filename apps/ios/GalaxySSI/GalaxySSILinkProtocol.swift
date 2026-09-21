@@ -261,6 +261,7 @@ enum GalaxySSILinkProtocol {
       "desktop_id": link.desktopId,
       "capability_manifest_version": link.capabilityManifestVersion,
       "request_capability_manifest": forceCapabilityManifest || needsCapabilityManifest(link),
+      "request_blob_configuration": true,
       "time": Int64(now.timeIntervalSince1970 * 1000)
     ]
   }
