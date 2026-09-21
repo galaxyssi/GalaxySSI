@@ -399,6 +399,7 @@ enum AgentNativeToolReplayDecisionCode: String, Codable {
   case accepted
   case replay
   case conflict
+  case outcomeUnknown = "outcome_unknown"
   case keyRequired = "key_required"
   case unknownTool = "unknown_tool"
 }
@@ -831,19 +832,26 @@ final class AgentNativeToolRegistry {
     }
 
     let descriptor = executable.descriptor
+    var effectiveContext = context
+    if effectiveContext.idempotencyKey == nil,
+       descriptor.requiresEffectClaim,
+       descriptor.idempotency != .idempotencyKeyRequired {
+      effectiveContext.idempotencyKey = effectiveContext.invocationId
+    }
     let startedAt = hooks.nowMillis()
-    let deadline = min(context.deadlineEpochMillis ?? Int64.max, Self.safeAdd(startedAt, descriptor.timeoutMillis))
+    let deadline = min(effectiveContext.deadlineEpochMillis ?? Int64.max, Self.safeAdd(startedAt, descriptor.timeoutMillis))
     let invocation = AgentNativeToolInvocation(
       descriptor: descriptor,
       input: input,
-      context: context,
+      context: effectiveContext,
       startedAtEpochMillis: startedAt,
       deadlineEpochMillis: deadline,
-      hardDeadlineEpochMillis: context.deadlineEpochMillis,
+      hardDeadlineEpochMillis: effectiveContext.deadlineEpochMillis,
       nowMillis: hooks.nowMillis,
       cancellationRequested: hooks.cancellationRequested,
       progressReporter: hooks.onProgress
     )
+    var claimedEffect: AgentNativeToolReplayKey?
     hooks.onStarted(invocation)
 
     func finish(
@@ -860,7 +868,7 @@ final class AgentNativeToolRegistry {
       let result = makeResult(
         id,
         input: input,
-        context: context,
+        context: effectiveContext,
         status: status,
         output: output,
         message: message,
@@ -872,7 +880,34 @@ final class AgentNativeToolRegistry {
         replayed: replayed,
         originalInvocationId: originalInvocationId
       )
-      appendAudit(result, context: context, risk: descriptor.risk)
+      if let effect = claimedEffect {
+        claimedEffect = nil
+        do {
+          try replayStore.complete(
+            effect,
+            invocationId: effectiveContext.invocationId,
+            result: result
+          )
+        } catch {
+          let persistenceFailure = makeResult(
+            id,
+            input: input,
+            context: effectiveContext,
+            status: .failed,
+            error: AgentNativeToolError(
+              code: "tool_invocation_failed",
+              message: "The native effect outcome could not be committed durably",
+              retryable: false
+            ),
+            startedAtEpochMillis: startedAt,
+            finishedAtEpochMillis: hooks.nowMillis()
+          )
+          appendAudit(persistenceFailure, context: effectiveContext, risk: descriptor.risk)
+          hooks.onFinished(persistenceFailure)
+          return persistenceFailure
+        }
+      }
+      appendAudit(result, context: effectiveContext, risk: descriptor.risk)
       hooks.onFinished(result)
       return result
     }
@@ -880,23 +915,77 @@ final class AgentNativeToolRegistry {
     do {
       try invocation.checkpoint()
 
-      if let preflight = preflightRejectionResult(id, input: input, context: context) {
+      if let preflight = preflightRejectionResult(id, input: input, context: effectiveContext) {
         let result = makeResult(
           id,
           input: input,
-          context: context,
+          context: effectiveContext,
           status: preflight.status,
           message: preflight.message,
           error: preflight.error,
           startedAtEpochMillis: startedAt,
           finishedAtEpochMillis: hooks.nowMillis()
         )
-        appendAudit(result, context: context, risk: descriptor.risk)
+        appendAudit(result, context: effectiveContext, risk: descriptor.risk)
         hooks.onFinished(result)
         return result
       }
 
-      let replay = cachedReplayResult(descriptor: descriptor, input: input, context: context)
+      let replayKey = effectiveContext.idempotencyKey.map {
+        AgentNativeToolReplayKey(
+          toolId: descriptor.id,
+          toolVersion: descriptor.version,
+          idempotencyKey: $0,
+          scope: AgentNativeEffectScope(context: effectiveContext)
+        )
+      }
+      if let replayKey, descriptor.requiresEffectClaim {
+        let inputSha256 = AgentMcpJSONCodec.sha256(input)
+        let claim = try replayStore.claim(
+          replayKey,
+          inputSha256: inputSha256,
+          invocationId: effectiveContext.invocationId
+        )
+        if claim.inputSha256 != inputSha256 {
+          return finish(
+            status: .rejected,
+            error: AgentNativeToolError(
+              code: "idempotency_key_conflict",
+              message: "The effect key was already claimed with different input"
+            )
+          )
+        }
+        if claim.acquired {
+          claimedEffect = replayKey
+        } else if let cached = claim.result {
+          return finish(
+            status: cached.status,
+            output: cached.output,
+            message: cached.message,
+            metadata: cached.metadata,
+            error: cached.error,
+            verification: cached.verification,
+            replayed: true,
+            originalInvocationId: cached.receipt.originalInvocationId ?? cached.receipt.invocationId
+          )
+        } else {
+          return finish(
+            status: .failed,
+            error: AgentNativeToolError(
+              code: "effect_outcome_unknown",
+              message: "This effect was already started and has no durable outcome. Reconcile its external state before deciding the next action; it was not executed again.",
+              retryable: false,
+              details: [
+                "original_invocation_id": .string(claim.invocationId),
+                "effect_key": .string(replayKey.idempotencyKey),
+                "input_sha256": .string(claim.inputSha256)
+              ]
+            )
+          )
+        }
+      }
+
+      let replay = cachedReplayResult(descriptor: descriptor, input: input, context: effectiveContext)
       switch replay.0.code {
       case .conflict:
         return finish(
@@ -919,7 +1008,7 @@ final class AgentNativeToolRegistry {
             originalInvocationId: cached.receipt.originalInvocationId ?? cached.receipt.invocationId
           )
         }
-      case .bypassed, .accepted, .keyRequired, .unknownTool:
+      case .bypassed, .accepted, .keyRequired, .outcomeUnknown, .unknownTool:
         break
       }
 
@@ -1006,7 +1095,7 @@ final class AgentNativeToolRegistry {
       )
       recordReplayResult(
         descriptor: descriptor,
-        context: context,
+        context: effectiveContext,
         result: result
       )
       return result
@@ -1091,7 +1180,8 @@ final class AgentNativeToolRegistry {
     let key = AgentNativeToolReplayKey(
       toolId: descriptor.id,
       toolVersion: descriptor.version,
-      idempotencyKey: idempotencyKey
+      idempotencyKey: idempotencyKey,
+      scope: AgentNativeEffectScope(context: context)
     )
     guard let cached = replayStore.get(key) else {
       return AgentNativeToolReplayDecision(
@@ -1124,7 +1214,8 @@ final class AgentNativeToolRegistry {
     let key = AgentNativeToolReplayKey(
       toolId: descriptor.id,
       toolVersion: descriptor.version,
-      idempotencyKey: idempotencyKey
+      idempotencyKey: idempotencyKey,
+      scope: AgentNativeEffectScope(context: context)
     )
     return (decision, replayStore.get(key))
   }
@@ -1135,6 +1226,7 @@ final class AgentNativeToolRegistry {
     result: AgentNativeToolResult
   ) {
     guard descriptor.idempotency != .nonIdempotent,
+          !descriptor.requiresEffectClaim,
           let idempotencyKey = context.idempotencyKey,
           !idempotencyKey.isEmpty,
           result.isSuccess else {
@@ -1143,7 +1235,8 @@ final class AgentNativeToolRegistry {
     let key = AgentNativeToolReplayKey(
       toolId: descriptor.id,
       toolVersion: descriptor.version,
-      idempotencyKey: idempotencyKey
+      idempotencyKey: idempotencyKey,
+      scope: AgentNativeEffectScope(context: context)
     )
     try? replayStore.put(key, result: result)
   }

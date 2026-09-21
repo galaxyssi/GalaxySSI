@@ -1,10 +1,12 @@
 import Foundation
 
 final class FileAgentNativeToolReplayStore: AgentNativeToolReplayStore {
+  private static let globalLock = NSRecursiveLock()
+
   private let fileURL: URL
   private let fileManager: FileManager
   private let nowMillis: () -> Int64
-  private let lock = NSRecursiveLock()
+  private let lock = FileAgentNativeToolReplayStore.globalLock
 
   init(
     fileURL: URL,
@@ -19,13 +21,78 @@ final class FileAgentNativeToolReplayStore: AgentNativeToolReplayStore {
   func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
     lock.lock()
     defer { lock.unlock() }
-    let now = nowMillis()
-    let loaded = loadUnlocked()
-    let retained = retainedEntries(loaded, nowMillis: now)
-    if retained.count != loaded.count {
-      saveUnlocked(retained)
+    return loadUnlocked().last { $0.key == key }?.result
+  }
+
+  func observe(_ key: AgentNativeToolReplayKey) -> AgentNativeEffectClaim? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let entry = loadUnlocked().last(where: { $0.key == key }) else { return nil }
+    return AgentNativeEffectClaim(
+      acquired: false,
+      invocationId: entry.invocationId,
+      inputSha256: entry.inputSha256,
+      result: entry.result
+    )
+  }
+
+  func claim(
+    _ key: AgentNativeToolReplayKey,
+    inputSha256: String,
+    invocationId: String
+  ) throws -> AgentNativeEffectClaim {
+    lock.lock()
+    defer { lock.unlock() }
+    if let observed = observe(key) { return observed }
+    var entries = loadUnlocked()
+    if key.scope != AgentNativeEffectScope(),
+       entries.contains(where: {
+         $0.key.toolId == key.toolId &&
+           $0.key.toolVersion == key.toolVersion &&
+           $0.key.idempotencyKey == key.idempotencyKey &&
+           $0.key.scope == AgentNativeEffectScope()
+       }) {
+      throw AgentNativeToolReplayError.legacyScopeUnverified
     }
-    return retained.last { $0.key == key }?.result
+    entries.append(AgentNativeToolReplayEntry(
+      key: key,
+      invocationId: invocationId,
+      inputSha256: inputSha256,
+      result: nil,
+      savedAtMillis: nowMillis()
+    ))
+    try saveUnlocked(entries)
+    return AgentNativeEffectClaim(
+      acquired: true,
+      invocationId: invocationId,
+      inputSha256: inputSha256,
+      result: nil
+    )
+  }
+
+  func complete(
+    _ key: AgentNativeToolReplayKey,
+    invocationId: String,
+    result: AgentNativeToolResult
+  ) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    var entries = loadUnlocked()
+    guard let index = entries.lastIndex(where: { $0.key == key }) else {
+      throw AgentNativeToolReplayError.missingClaim
+    }
+    let claim = entries[index]
+    guard claim.invocationId == invocationId,
+          result.receipt.invocationId == invocationId,
+          claim.inputSha256 == result.receipt.inputSha256 else {
+      throw AgentNativeToolReplayError.claimBindingChanged
+    }
+    if let previous = claim.result, previous != result {
+      throw AgentNativeToolReplayError.outcomeChanged
+    }
+    entries[index].result = result
+    entries[index].savedAtMillis = nowMillis()
+    try saveUnlocked(entries)
   }
 
   func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
@@ -34,12 +101,9 @@ final class FileAgentNativeToolReplayStore: AgentNativeToolReplayStore {
     }
     lock.lock()
     defer { lock.unlock() }
-    let now = nowMillis()
-    var entries = Array(retainedEntries(loadUnlocked(), nowMillis: now)
-      .filter { $0.key != key }
-      .suffix(AgentNativeToolReplaySnapshotStore.maxEntries - 1))
-    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: now))
-    saveUnlocked(entries)
+    var entries = loadUnlocked().filter { $0.key != key }
+    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: nowMillis()))
+    try saveUnlocked(entries)
   }
 
   func clear() {
@@ -56,21 +120,11 @@ final class FileAgentNativeToolReplayStore: AgentNativeToolReplayStore {
     return AgentNativeToolReplayJsonCodec.decode(raw)
   }
 
-  private func saveUnlocked(_ entries: [AgentNativeToolReplayEntry]) {
-    do {
-      let directory = fileURL.deletingLastPathComponent()
-      try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
-      let raw = AgentNativeToolReplayJsonCodec.stringify(entries)
-      try raw.write(to: fileURL, atomically: true, encoding: .utf8)
-    } catch {
-      // Replay persistence should never fail a successful native tool invocation.
-    }
-  }
-
-  private func retainedEntries(
-    _ entries: [AgentNativeToolReplayEntry],
-    nowMillis: Int64
-  ) -> [AgentNativeToolReplayEntry] {
-    entries.filter { nowMillis - $0.savedAtMillis <= AgentNativeToolReplaySnapshotStore.retentionMillis }
+  private func saveUnlocked(_ entries: [AgentNativeToolReplayEntry]) throws {
+    let directory = fileURL.deletingLastPathComponent()
+    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+    let raw = AgentNativeToolReplayJsonCodec.stringify(entries)
+    try raw.write(to: fileURL, atomically: true, encoding: .utf8)
+    try? fileManager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
   }
 }

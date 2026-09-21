@@ -1363,7 +1363,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(roundTripped, result)
   }
 
-  func testAgentNativeToolReplayStoreEvictsOldestAndClears() throws {
+  func testAgentNativeToolReplayStoreRetainsEffectsUntilExplicitClear() throws {
     let store = InMemoryAgentNativeToolReplayStore()
     let firstKey = AgentNativeToolReplayKey(
       toolId: "galaxyssi.test.first",
@@ -1392,7 +1392,7 @@ final class GalaxySSIStoreTests: XCTestCase {
       idempotencyKey: "key-\(InMemoryAgentNativeToolReplayStore.maxEntries)"
     )
 
-    XCTAssertNil(store.get(firstKey))
+    XCTAssertEqual(store.get(firstKey)?.receipt.invocationId, "first")
     XCTAssertEqual(store.get(retainedKey)?.receipt.invocationId, "invoke-1")
     XCTAssertEqual(store.get(lastKey)?.receipt.invocationId, "invoke-\(InMemoryAgentNativeToolReplayStore.maxEntries)")
 
@@ -1402,7 +1402,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertNil(store.get(lastKey))
   }
 
-  func testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults() throws {
+  func testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulResultsWithoutTTL() throws {
     var now: Int64 = 1_000
     let key = AgentNativeToolReplayKey(
       toolId: "galaxyssi.test.native",
@@ -1436,11 +1436,11 @@ final class GalaxySSIStoreTests: XCTestCase {
 
     now += AgentNativeToolReplaySnapshotStore.retentionMillis + 1
 
-    XCTAssertNil(restored.get(key))
-    XCTAssertEqual(restored.serializedSnapshot(), "[]")
+    XCTAssertEqual(restored.get(key)?.receipt.invocationId, "fresh")
+    XCTAssertFalse(restored.serializedSnapshot().isEmpty)
   }
 
-  func testFileAgentNativeToolReplayStorePersistsPrunesAndClears() throws {
+  func testFileAgentNativeToolReplayStorePersistsWithoutTTLAndClears() throws {
     var now: Int64 = 5_000
     let root = try temporaryDirectory("native-tool-replay-file")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1469,8 +1469,8 @@ final class GalaxySSIStoreTests: XCTestCase {
 
     now += AgentNativeToolReplaySnapshotStore.retentionMillis + 1
 
-    XCTAssertNil(restored.get(key))
-    XCTAssertEqual((try? String(contentsOf: fileURL, encoding: .utf8)) ?? "", "[]")
+    XCTAssertEqual(restored.get(key)?.receipt.invocationId, "stored")
+    XCTAssertFalse(((try? String(contentsOf: fileURL, encoding: .utf8)) ?? "").isEmpty)
 
     try restored.put(key, result: nativeToolResult(invocationId: "fresh", idempotencyKey: "file-replay"))
     XCTAssertNotNil(FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now }).get(key))
@@ -1499,14 +1499,14 @@ final class GalaxySSIStoreTests: XCTestCase {
         "tool_version": .string("1.0.0"),
         "idempotency_key": .string("blank"),
         "saved_at_millis": .int(1_000),
-        "result": valid.result.toJsonValue()
+        "result": try XCTUnwrap(valid.result).toJsonValue()
       ]),
       .object([
         "tool_id": .string(valid.key.toolId),
         "tool_version": .string(valid.key.toolVersion),
         "idempotency_key": .string(valid.key.idempotencyKey),
         "saved_at_millis": .int(valid.savedAtMillis),
-        "result": valid.result.toJsonValue()
+        "result": try XCTUnwrap(valid.result).toJsonValue()
       ])
     ]))
     let decoded = AgentNativeToolReplayJsonCodec.decode(raw)
