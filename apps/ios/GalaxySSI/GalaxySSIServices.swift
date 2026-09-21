@@ -3291,6 +3291,10 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
+    _ = AgentCloudDispatchRegistry.shared.cancel(
+      taskId: task.taskId,
+      conversationId: task.sessionId
+    )
     if task.pendingAction != nil || !task.pendingActions.isEmpty {
       cancelLocalNativeAction(taskId: taskId, emitReply: emitReply)
       return store.agentTask(id: taskId)?.phase == .cancelled
@@ -3355,6 +3359,10 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
+    _ = AgentCloudDispatchRegistry.shared.cancel(
+      taskId: task.taskId,
+      conversationId: task.sessionId
+    )
     let action = task.pendingAction
     task.phase = .cancelled
     task.blocked = false
@@ -6877,6 +6885,25 @@ final class MessageCoordinator: ObservableObject {
   ) async throws {
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let destinationId = displayContactId.ifBlank(contact.id)
+    let dispatchIdentity = AgentCloudDispatchIdentity(
+      sourceMessageId: outgoing.id.uuidString.lowercased(),
+      contactId: contact.id,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(requestId),
+      taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      actionId: "cloud-stream:\(requestId)"
+    )
+    guard let dispatchLease = AgentCloudDispatchRegistry.shared.register(dispatchIdentity) else {
+      throw GalaxySSIError.invalidPayload("A cloud request with the same owner is already active.")
+    }
+    dispatchLease.bindCancellation { [cloudStreamEngine] in
+      Task {
+        await cloudStreamEngine.cancel(requestId: requestId, reason: .userStop)
+      }
+    }
+    defer {
+      AgentCloudDispatchRegistry.shared.release(dispatchIdentity, lease: dispatchLease)
+    }
     var accumulated = ""
     var incoming: ChatMessage?
     var completed = false
@@ -6888,6 +6915,7 @@ final class MessageCoordinator: ObservableObject {
       images: images,
       requestId: requestId
     ) {
+      try dispatchLease.checkActive()
       switch event {
       case .connected, .usage, .toolCallDelta:
         continue
@@ -6922,6 +6950,8 @@ final class MessageCoordinator: ObservableObject {
         guard !clean.isEmpty, let current = incoming else {
           throw GalaxySSIError.unsupportedResponse
         }
+        try dispatchLease.checkActive()
+        guard dispatchLease.claimCompletion() else { throw CancellationError() }
         completed = true
         store.appendDeliveryTrace(
           outgoing.id,
@@ -6941,6 +6971,10 @@ final class MessageCoordinator: ObservableObject {
         onIncomingMessage?(final)
 
       case .failed(let failure):
+        if failure.error.code.uppercased() == "CANCELLED" || dispatchLease.isCancelled {
+          _ = dispatchLease.cancel()
+          throw CancellationError()
+        }
         if let current = incoming {
           store.appendDeliveryTrace(
             current.id,
