@@ -6942,6 +6942,7 @@ final class MessageCoordinator: ObservableObject {
         images: images,
         requestId: requestId
       ) {
+        try dispatchLease.checkActive()
         switch event {
         case .connected(let connected):
           tracker.progress(
@@ -6984,6 +6985,7 @@ final class MessageCoordinator: ObservableObject {
           guard !clean.isEmpty, let current = incoming else {
             throw GalaxySSIError.unsupportedResponse
           }
+          guard dispatchLease.claimCompletion() else { throw CancellationError() }
           completed = true
           tracker.finish(elapsedMillis: elapsedMillis())
           journal.finish(tracker.report)
@@ -7005,6 +7007,10 @@ final class MessageCoordinator: ObservableObject {
           onIncomingMessage?(final)
 
         case .failed(let failure):
+          if failure.error.code.uppercased() == "CANCELLED" || dispatchLease.isCancelled {
+            _ = dispatchLease.cancel()
+            throw CancellationError()
+          }
           let failureKind = AgentProviderFailureClassifier.from(
             error: GalaxySSIError.invalidPayload(failure.error.message)
           )
