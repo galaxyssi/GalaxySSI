@@ -185,6 +185,12 @@
     <string name="web_connection_retry">Connection interrupted · retrying this step once…</string>
     <string name="api_timeout_error">This request timed out. Please retry.</string>
     <string name="api_network_error">Network connection failed. Check the watch connection and retry.</string>
+    <string name="configure_models">Configure models</string>
+    <string name="configure_models_title">Configure on your phone</string>
+    <string name="configure_models_wifi">Connect your phone and watch\nto the same Wi-Fi</string>
+    <string name="configure_models_phone">Open GalaxySSI on your phone</string>
+    <string name="configure_models_path">Settings → General\nDeveloper options → Configure watch</string>
+    <string name="configure_models_description">Set up a cloud API Key\nor connect a remote Agent</string>
     <string name="phone_setup_title">Set up with your phone</string>
     <string name="phone_setup_step_wifi">1  Connect both devices to the same Wi-Fi</string>
     <string name="phone_setup_step_phone">2  Open GalaxySSI on your phone</string>

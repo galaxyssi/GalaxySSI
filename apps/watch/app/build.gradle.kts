@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 49
-        versionName = "0.3.17"
+        versionCode = 50
+        versionName = "0.3.18"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
