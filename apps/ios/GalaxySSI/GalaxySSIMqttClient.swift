@@ -99,6 +99,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     var attemptId: String
     var logicalMessageId: String
     var enqueuedAtMillis: Int64
+    var brokerAcknowledged: (() -> Void)? = nil
   }
   private struct InFlightTiming {
     var attemptId: String
@@ -202,6 +203,28 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
       queue.async {
         guard let secret = self.relationshipSecret(forSendingTopic: topic),
               self.sendWirePayload(topic: topic, payload: payload, secret: secret) else {
+          continuation.resume(returning: .failed)
+          return
+        }
+        continuation.resume(returning: self.connected ? .published : .queued)
+      }
+    }
+  }
+
+  func publishTransportReceipt(
+    topic: String,
+    payload: Data,
+    brokerAcknowledged: @escaping () -> Void
+  ) async -> MqttPublishResult {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        guard let secret = self.relationshipSecret(forSendingTopic: topic),
+              self.sendWirePayload(
+                topic: topic,
+                payload: payload,
+                secret: secret,
+                brokerAcknowledged: brokerAcknowledged
+              ) else {
           continuation.resume(returning: .failed)
           return
         }
@@ -330,7 +353,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     return packetId
   }
 
-  private func sendWirePayload(topic: String, payload: Data, secret: String) -> Bool {
+  private func sendWirePayload(
+    topic: String,
+    payload: Data,
+    secret: String,
+    brokerAcknowledged: (() -> Void)? = nil
+  ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     let logicalMessageId = Self.logicalMessageId(payload)
     let enqueuedAtMillis = Self.nowMillis()
@@ -349,7 +377,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     }) else {
       return false
     }
-    pendingPacketPublishes.append(contentsOf: sealedPackets.map { packet in
+    pendingPacketPublishes.append(contentsOf: sealedPackets.enumerated().map { index, packet in
       PendingPublish(
         topic: topic,
         payload: packet,
@@ -358,7 +386,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
         brokerAckTimeoutSeconds: brokerAckTimeoutSeconds,
         attemptId: UUID().uuidString,
         logicalMessageId: logicalMessageId,
-        enqueuedAtMillis: enqueuedAtMillis
+        enqueuedAtMillis: enqueuedAtMillis,
+        brokerAcknowledged: index == sealedPackets.count - 1 ? brokerAcknowledged : nil
       )
     })
     pumpPendingPublishes()
@@ -492,7 +521,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
           ))
         }
         if mqttInflightPacketIds.remove(packetId) != nil {
-          inFlightPublishes.removeValue(forKey: packetId)
+          let acknowledged = inFlightPublishes.removeValue(forKey: packetId)
+          acknowledged?.brokerAcknowledged?()
           if let transferId = fragmentTransferByPacketId.removeValue(forKey: packetId) {
             fragmentInflight = max(0, fragmentInflight - 1)
             let remaining = max(0, fragmentInflightByTransfer[transferId, default: 0] - 1)
