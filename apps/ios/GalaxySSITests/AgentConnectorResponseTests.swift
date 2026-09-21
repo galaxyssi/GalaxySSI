@@ -1,7 +1,84 @@
+import CryptoKit
 import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testEncryptedResultPageCheckpointResumesOnlyMissingGenerationBoundPages() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("result-pages.sqlite3")
+    let secrets = InMemorySecretStore()
+    let identity = AgentResultCheckpointIdentity(
+      desktopId: "desktop-1",
+      clientRouteId: "route-1",
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      contactId: "agent-1",
+      sourceMessageId: "901",
+      agentId: "agent-1",
+      executionGeneration: 2
+    )
+    let result = Data(repeating: 0x5a, count: AgentResultPageCheckpointStore.maximumPageBytes + 321)
+    let resultDigest = checkpointDigest(result)
+    let first = result.subdata(in: 0..<AgentResultPageCheckpointStore.maximumPageBytes)
+    let second = result.subdata(in: AgentResultPageCheckpointStore.maximumPageBytes..<result.count)
+
+    var store: AgentResultPageCheckpointStore? = AgentResultPageCheckpointStore(
+      fileURL: fileURL,
+      secrets: secrets
+    )
+    XCTAssertTrue(store?.save(AgentResultPageCheckpoint(
+      identity: identity,
+      pageIndex: 0,
+      pageCount: 2,
+      totalBytes: result.count,
+      resultSHA256: resultDigest,
+      pageSHA256: checkpointDigest(first),
+      data: first
+    )) ?? false)
+    store = nil
+
+    let reopened = AgentResultPageCheckpointStore(fileURL: fileURL, secrets: secrets)
+    XCTAssertEqual(reopened.missingPageIndices(
+      identity: identity,
+      resultSHA256: resultDigest,
+      pageCount: 2,
+      totalBytes: result.count
+    ), [1])
+    var retryIdentity = identity
+    retryIdentity.executionGeneration = 3
+    XCTAssertEqual(reopened.missingPageIndices(
+      identity: retryIdentity,
+      resultSHA256: resultDigest,
+      pageCount: 2,
+      totalBytes: result.count
+    ), [0, 1])
+
+    XCTAssertTrue(reopened.save(AgentResultPageCheckpoint(
+      identity: identity,
+      pageIndex: 1,
+      pageCount: 2,
+      totalBytes: result.count,
+      resultSHA256: resultDigest,
+      pageSHA256: checkpointDigest(second),
+      data: second
+    )))
+    XCTAssertEqual(reopened.restoredPages(
+      identity: identity,
+      resultSHA256: resultDigest,
+      pageCount: 2,
+      totalBytes: result.count
+    ).map(\.data), [first, second])
+    reopened.clear(identity: identity, resultSHA256: resultDigest)
+    XCTAssertEqual(reopened.missingPageIndices(
+      identity: identity,
+      resultSHA256: resultDigest,
+      pageCount: 2,
+      totalBytes: result.count
+    ), [0, 1])
+  }
+
   func testTerminalFailureNeverAcceptsLateResult() {
     let messages = [connectorPolicyMessage(isMine: true, turnId: "turn-1")]
 
@@ -381,5 +458,9 @@ extension GalaxySSIStoreTests {
       conversationId: "conversation-1",
       turnId: turnId
     )
+  }
+
+  private func checkpointDigest(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 }
