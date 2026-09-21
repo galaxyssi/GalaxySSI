@@ -1704,17 +1704,8 @@ private fun MainActivity.resolveAgentConversationModelSubtitle(
             }.filter(String::isNotBlank).joinToString(" · ")
         }
     } else {
-        agentConversationSourceLabel(conversation)
-            .takeUnless { source ->
-                source.isBlank() ||
-                    source.equals("Automatic", ignoreCase = true) ||
-                    source.equals("GalaxySSI", ignoreCase = true) ||
-                    source.equals("Agent Knowledge", ignoreCase = true)
-            }
-            ?: AgentConnectorRouteSelector.select(targets, decision = null)
-                ?.target
-                ?.let(::agentModelTargetDisplayName)
-                .orEmpty()
+        AgentStableAutoRouteStore.target(this, conversation.id, targets)
+            ?.let(::agentModelTargetDisplayName).orEmpty()
     }.ifBlank { getString(R.string.agent_model_selection_automatic) }
     return if (manualSelectionAvailable) {
         getString(R.string.agent_header_model_manual, modelName)

@@ -1283,6 +1283,7 @@ internal fun MainActivity.submitAgentGoal(
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
+    AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
     agentVoiceConversation?.session?.registerTurn(voiceTraceId, turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
@@ -1514,7 +1515,7 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 executionGoal,
                 conversation.id,
                 turnId,
-                forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal) else null,
+                forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal, conversation.id) else null,
                 originalGoal = goal
             )
         }
@@ -1530,14 +1531,12 @@ internal fun MainActivity.stageAgentGoalAttachments(
     }
 }
 
-internal fun MainActivity.attachmentConnectorAction(goal: String): AgentAction? {
+internal fun MainActivity.attachmentConnectorAction(goal: String, conversationId: String): AgentAction? {
     val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
-    val target = listOf("codex", "hermes").firstNotNullOfOrNull { preferredId ->
-        targets.firstOrNull { candidate ->
-            candidate.status == AgentConnectorStatus.AVAILABLE &&
-                (candidate.id == preferredId || candidate.id.endsWith(":$preferredId"))
-        }
-    } ?: return null
+    val selection = AgentModelSelectionSettings.selection(this, conversationId)
+    val target = AgentModelSelectionPolicy.selectedTarget(selection, targets)
+        ?: AgentStableAutoRouteStore.target(this, conversationId, targets)
+        ?: return null
     return AgentAction(
         id = "attachment-${target.id}",
         kind = AgentActionKind.CALL_CONNECTOR,
@@ -1545,7 +1544,16 @@ internal fun MainActivity.attachmentConnectorAction(goal: String): AgentAction? 
         risk = AgentRisk.LOW,
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Process the attached input with ${target.title}",
-        parameters = mapOf("connector_id" to target.id, "prompt" to goal),
+        parameters = buildMap {
+            put("connector_id", target.id)
+            put("prompt", goal)
+            if (selection.mode == AgentModelSelectionMode.MANUAL) {
+                put("manual_target_locked", "true")
+                put("manual_model_id", selection.modelId)
+                put("agent_model_id", selection.modelId)
+                put("agent_reasoning_effort", selection.reasoningEffort.wireValue)
+            }
+        },
         requiresConfirmation = false
     )
 }
@@ -1866,6 +1874,9 @@ internal fun MainActivity.continueAgentGoalSubmission(
             .ifBlank { "galaxyssi-mobile" }
         if (selectedRouteAction != null) {
             if (selectedAgentId != "galaxyssi-mobile") {
+                if (selectedRouteAction.parameters[AGENT_TEAM_SPEC_PARAMETER].isNullOrBlank()) {
+                    AgentStableAutoRouteStore.recordDispatch(this, conversationId, turnId, selectedAgentId)
+                }
                 updateAgentExecutionTarget(
                     conversationId = conversationId,
                     connectorId = selectedAgentId,

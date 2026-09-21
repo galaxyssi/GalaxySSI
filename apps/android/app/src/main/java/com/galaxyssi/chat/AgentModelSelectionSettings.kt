@@ -311,6 +311,7 @@ object AgentModelSelectionSettings {
     }
 
     fun clearConversation(context: Context, conversationId: String) {
+        AgentStableAutoRouteStore.clear(context, listOf(conversationId))
         val scope = normalizedConversationId(conversationId)
         if (scope.isBlank()) return
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -327,6 +328,7 @@ object AgentModelSelectionSettings {
     }
 
     fun clearConversations(context: Context, conversationIds: Collection<String>) {
+        AgentStableAutoRouteStore.clear(context, conversationIds)
         val scopes = conversationIds.map(::normalizedConversationId)
             .filter(String::isNotBlank)
             .toSet()

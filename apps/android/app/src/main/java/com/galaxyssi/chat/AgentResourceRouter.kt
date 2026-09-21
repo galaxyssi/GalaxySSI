@@ -759,19 +759,31 @@ class AgentResourceRouter(context: Context) {
     fun route(
         goal: String,
         targets: List<AgentCallableTarget>,
-        registrations: List<AgentRegistration>? = null
+        registrations: List<AgentRegistration>? = null,
+        preferredTargetId: String = ""
     ): AgentRoutingDecision {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val environment = AgentRuntimeEnvironmentProbe.probe(appContext)
         val taskBudget = taskBudgetStore.load()
-        val hasPairedDesktop = GalaxySSILinkProtocol.allServerLinks(appContext).any { it.paired }
-        val preferredTargets = preferredTargetOrder(requirements, hasPairedDesktop)
         val effectiveRegistrations = resolveAgentRoutingRegistrations(registrations) {
             EncryptedAgentRegistry(appContext).list()
         }
         val observedUsage = modelUsageStore.resourceUsageSnapshots()
-        val selfModel = selfModelStore.snapshot()
         val catalog = AgentResourceCatalog.buildTargets(targets)
+        // A healthy displayed primary wins without ranking alternatives or shadow promotion.
+        val preferred = catalog.firstOrNull { it.targetId == preferredTargetId }
+            ?.let { projectRegistration(it, effectiveRegistrations) }
+            ?.let { resource -> score(resource, requirements, environment,
+                observedUsage[resource.targetId] ?: GlobalModelResourceUsageSnapshot(resource.targetId), taskBudget) }
+            ?.let(AgentStableAutoRoutePolicy::usablePrimary)
+        if (preferred != null) {
+            return AgentRoutingDecision(requirements,
+                preferred.copy(reasons = preferred.reasons + "stable_auto_primary"),
+                emptyList(), environment, catalog, taskBudget)
+        }
+        val hasPairedDesktop = GalaxySSILinkProtocol.allServerLinks(appContext).any { it.paired }
+        val preferredTargets = preferredTargetOrder(requirements, hasPairedDesktop)
+        val selfModel = selfModelStore.snapshot()
         val candidates = catalog
             .asSequence()
             .map { resource -> projectRegistration(resource, effectiveRegistrations) }
