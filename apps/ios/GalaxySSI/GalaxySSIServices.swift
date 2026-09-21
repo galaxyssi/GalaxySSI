@@ -31,6 +31,7 @@ final class MessageCoordinator: ObservableObject {
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
   private let blobRelayConfigurationStore = AgentBlobRelayConfigurationStore()
+  private let blobArtifactCapabilityPublisher = AgentBlobArtifactCapabilityPublisher()
   lazy var blobOutgoingCoordinator = AgentBlobOutgoingCoordinator(
     configurationStore: blobRelayConfigurationStore,
     attachmentStore: attachmentTransferStore
@@ -349,6 +350,7 @@ final class MessageCoordinator: ObservableObject {
         if connected {
           self.requestConnectorStatuses()
           Task {
+            await self.blobArtifactCapabilityPublisher.reconnect()
             await self.blobOutgoingCoordinator.wake()
             await self.blobArtifactReceiver.wake()
           }
@@ -373,6 +375,7 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.replayApprovedPhoneContactDecisionsOnce()
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.isConnected)
+        Task { await self.refreshBlobArtifactCapabilities() }
       }
     }
   }
@@ -8986,6 +8989,7 @@ final class MessageCoordinator: ObservableObject {
           try blobRelayConfigurationStore.ingest(appPayload, link: link)
           Task { await blobOutgoingCoordinator.wake() }
           Task { await blobArtifactReceiver.wake() }
+          Task { await refreshBlobArtifactCapabilities() }
         } catch {
           lastError = error.localizedDescription
         }
@@ -9765,6 +9769,48 @@ final class MessageCoordinator: ObservableObject {
     }
     publishDesktopArtifactControl(receipt, link: link)
     return true
+  }
+
+  private func refreshBlobArtifactCapabilities() async {
+    guard mqttClient.isConnected else { return }
+    let receiverReady: Bool
+    do {
+      try await blobArtifactReceiver.prepare()
+      receiverReady = true
+    } catch {
+      receiverReady = false
+      lastError = error.localizedDescription
+    }
+    for link in store.serverLinks where link.paired {
+      let pair = AgentBlobArtifactCapabilityPair(
+        desktopId: link.desktopId,
+        clientRouteId: link.routes.clientRouteId,
+        desktopFingerprint: link.routes.remoteFingerprint,
+        localFingerprint: link.routes.localFingerprint
+      )
+      do {
+        let enabled = receiverReady && blobRelayConfigurationStore.configuration(for: link) != nil
+        guard let declaration = try await blobArtifactCapabilityPublisher.declaration(
+          pair: pair,
+          enabled: enabled
+        ) else { continue }
+        publishDesktopArtifactControl([
+          "type": "artifact_blob_capability",
+          "version": 1,
+          "revision": declaration.revision,
+          "enabled": declaration.enabled,
+          "desktop_id": pair.desktopId,
+          "client_route_id": pair.clientRouteId,
+          "desktop_fingerprint": pair.desktopFingerprint
+        ], link: link)
+        try await blobArtifactCapabilityPublisher.markAccepted(
+          pair: pair,
+          revision: declaration.revision
+        )
+      } catch {
+        lastError = error.localizedDescription
+      }
+    }
   }
 
   private func applyBlobArtifactPresentation(
