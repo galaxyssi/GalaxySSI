@@ -74,6 +74,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var latestAudioLevel: Float = 0
   private var holdToTalkCompletion: ((String) -> Void)?
   private var holdToTalkTimeoutTask: Task<Void, Never>?
+  private var communicationCaptureActive = false
   private var correctionReviewsBySession: [String: VoiceTranscriptCorrectionReview] = [:]
   private(set) var completedPCMSnapshot: PcmSnapshot?
 
@@ -168,7 +169,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   @MainActor
   func start(localeIdentifier: String) throws {
-    try start(localeIdentifier: localeIdentifier, settings: nil, coordinatorConfig: nil)
+    try start(
+      localeIdentifier: localeIdentifier,
+      settings: nil,
+      coordinatorConfig: nil,
+      communicationCapture: false
+    )
   }
 
   @MainActor
@@ -188,7 +194,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     try start(
       localeIdentifier: normalized.preferredLocaleIdentifier,
       settings: normalized,
-      coordinatorConfig: coordinatorConfig
+      coordinatorConfig: coordinatorConfig,
+      communicationCapture: source == "ios_voice_wake_tap"
     )
   }
 
@@ -196,7 +203,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private func start(
     localeIdentifier: String,
     settings: VoiceSettings?,
-    coordinatorConfig: VoiceSessionConfig?
+    coordinatorConfig: VoiceSessionConfig?,
+    communicationCapture: Bool
   ) throws {
     if let coordinatorConfig = coordinatorConfig {
       coordinatorBridge.begin(config: coordinatorConfig)
@@ -372,11 +380,23 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         : useRemoteWhisper ? .remoteWhisperASR : .androidSystemASR
     VoiceRuntimeHealthRegistry.begin(currentRuntimeChannel)
     do {
-      try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
-      try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+      let audioSession = AVAudioSession.sharedInstance()
+      if communicationCapture {
+        try audioSession.setCategory(
+          .playAndRecord,
+          mode: .voiceChat,
+          options: [.defaultToSpeaker, .allowBluetooth]
+        )
+        try input.setVoiceProcessingEnabled(true)
+        communicationCaptureActive = true
+      } else {
+        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+      }
+      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
       audioEngine.prepare()
       try audioEngine.start()
     } catch {
+      releaseCommunicationCapture()
       VoiceRuntimeHealthRegistry.failure(currentRuntimeChannel, reason: error.localizedDescription)
       liveWhisperController.close()
       liveWhisperActive = false
@@ -600,6 +620,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     remoteWhisperActive = false
     remoteWhisperLanguage = ""
     VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+    releaseCommunicationCapture()
 
     // Let a final coordinator command reach the hold-to-talk controller first.
     Task { @MainActor in
@@ -632,6 +653,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     remoteWhisperLanguage = ""
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
+    releaseCommunicationCapture()
     request?.endAudio()
     task?.cancel()
     task = nil
@@ -697,6 +719,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     }
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
+    releaseCommunicationCapture()
     request?.endAudio()
     task?.cancel()
     task = nil
@@ -758,6 +781,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     }
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
+    releaseCommunicationCapture()
     request?.endAudio()
     onlineRealtimeTurnCoordinator?.onPcmBufferIntegrity(complete: pcmTapPipeline != nil)
     pcmTapPipeline = nil
@@ -941,6 +965,16 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     }
     VoiceRuntimeHealthRegistry.idle(.onlineRealtimeASR)
     completeDeferredHoldToTalkStop(with: finalText)
+  }
+
+  @MainActor
+  private func releaseCommunicationCapture() {
+    guard communicationCaptureActive else { return }
+    if audioEngine.isRunning {
+      audioEngine.stop()
+    }
+    try? audioEngine.inputNode.setVoiceProcessingEnabled(false)
+    communicationCaptureActive = false
   }
 
   @MainActor
