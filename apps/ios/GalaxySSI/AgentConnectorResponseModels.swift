@@ -379,7 +379,7 @@ final class AgentConnectorResponseBus {
   init(
     registry: AgentManagedConnectorResponseRegistry = .shared,
     managedLedger: AgentManagedResponseLedger? = UserDefaultsAgentManagedResponseLedger(),
-    store: AgentConnectorResponseSink = UserDefaultsAgentConnectorResponseStore(),
+    store: AgentConnectorResponseSink = SQLiteAgentConnectorResponseStore(),
     terminalStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
     globalRunSlots: AgentGlobalRunSlotStoring = InMemoryAgentGlobalRunSlotStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
