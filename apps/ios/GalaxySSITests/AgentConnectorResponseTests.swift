@@ -302,7 +302,7 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(bus.publish(AgentConnectorResponse(sourceMessageId: 502, content: "", richOutputJson: "{}")))
   }
 
-  func testAgentConnectorResponseStoreBoundsDedupeExpiryAndAndroidWireNames() throws {
+  func testAgentConnectorResponseStoreRetainsPendingBodiesAndUsesFullIdentity() throws {
     let store = AgentConnectorResponseStore(nowMillis: { 100_000 })
     for index in 0..<35 {
       store.append(AgentConnectorResponse(
@@ -312,8 +312,9 @@ extension GalaxySSIStoreTests {
         receivedAtMillis: Int64(index + 1)
       ))
     }
-    XCTAssertEqual(store.pending().count, AgentConnectorResponseStore.maxResponses)
-    XCTAssertEqual(store.pending().first?.sourceMessageId, 6)
+    XCTAssertEqual(store.pending().count, 35)
+    XCTAssertEqual(store.pending().first?.sourceMessageId, 1)
+    XCTAssertEqual(store.pending(limit: 32).count, 32)
 
     store.append(AgentConnectorResponse(
       sourceMessageId: 35,
@@ -324,9 +325,20 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(store.pending().filter { $0.sourceMessageId == 35 && $0.contactId == "codex" }.count, 1)
     XCTAssertEqual(store.pending().last?.content, "replacement")
 
+    store.append(AgentConnectorResponse(
+      sourceMessageId: 35,
+      contactId: "codex",
+      content: "other turn",
+      conversationId: "conversation-2",
+      turnId: "turn-2",
+      taskId: "task-2",
+      receivedAtMillis: 102_000
+    ))
+    XCTAssertEqual(store.pending().filter { $0.sourceMessageId == 35 }.count, 2)
+
     let encoded = store.serializedSnapshot()
     let array = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
-    let object = try XCTUnwrap(array.last)
+    let object = try XCTUnwrap(array.first { ($0["content"] as? String) == "replacement" })
     XCTAssertEqual(object["source_message_id"] as? Int, 35)
     XCTAssertEqual(object["received_at"] as? Int, 101_000)
     XCTAssertNil(object["received_at_millis"])
@@ -337,13 +349,56 @@ extension GalaxySSIStoreTests {
         sourceMessageId: 900,
         contactId: "codex",
         content: "old",
-        receivedAtMillis: 100_000 - AgentConnectorResponseStore.maxResponseAgeMillis - 1
+        receivedAtMillis: 1
       )
     ])
-    XCTAssertTrue(AgentConnectorResponseStore(serialized: stale, nowMillis: { 100_000 }).pending().isEmpty)
+    XCTAssertEqual(
+      AgentConnectorResponseStore(serialized: stale, nowMillis: { 100_000_000 }).pending().map(\.content),
+      ["old"]
+    )
 
     store.remove(AgentConnectorResponse(sourceMessageId: 35, contactId: "codex", content: ""))
-    XCTAssertFalse(store.pending().contains { $0.sourceMessageId == 35 && $0.contactId == "codex" })
+    XCTAssertEqual(store.pending().filter { $0.sourceMessageId == 35 }.map(\.content), ["other turn"])
+  }
+
+  func testUserDefaultsConnectorInboxMigratesPlaintextToEncryptedStorage() throws {
+    let suiteName = "AgentConnectorInboxTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let storageKey = "connector.responses"
+    let legacy = AgentConnectorResponseStoreCodec.encode([
+      AgentConnectorResponse(
+        sourceMessageId: 71,
+        contactId: "codex",
+        resolvedContactId: "desktop-codex",
+        content: "durable reply",
+        conversationId: "conversation",
+        turnId: "turn",
+        taskId: "task",
+        receivedAtMillis: 1
+      )
+    ])
+    defaults.set(legacy, forKey: storageKey)
+    let secrets = InMemorySecretStore()
+
+    let migrated = UserDefaultsAgentConnectorResponseStore(
+      defaults: defaults,
+      storageKey: storageKey,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+
+    XCTAssertEqual(migrated.pending().map(\.content), ["durable reply"])
+    XCTAssertNil(defaults.string(forKey: storageKey))
+    XCTAssertNotNil(defaults.data(forKey: "\(storageKey).encrypted.v1"))
+    let reopened = UserDefaultsAgentConnectorResponseStore(
+      defaults: defaults,
+      storageKey: storageKey,
+      secrets: secrets,
+      nowMillis: { 100_000 }
+    )
+    XCTAssertEqual(reopened.pending().map(\.taskId), ["task"])
+    XCTAssertEqual(reopened.pending().map(\.resolvedContactId), ["desktop-codex"])
   }
 
   func testAgentConnectorFinalResultPersistsBeforeLiveStreamRetires() {
