@@ -30,6 +30,116 @@ struct AgentResultPageCheckpoint: Equatable {
   var data: Data
 }
 
+enum AgentInlineRecoveryPageConsumer {
+  private static let identityFields = [
+    "client_route_id", "conversation_id", "task_id", "turn_id",
+    "contact_id", "source_message_id", "agent_id",
+  ]
+  private static let maximumEncodedPageCharacters =
+    ((AgentResultPageCheckpointStore.maximumPageBytes + 2) / 3) * 4
+
+  static func consume(
+    _ run: AgentRecoverableRun,
+    authenticatedDesktopId: String,
+    checkpoints: AgentResultPageCheckpointStore
+  ) -> AgentRecoverableRun {
+    var clean = discardInlinePage(from: run)
+    guard let page = run.checkpoint["result_page"]?.objectValue,
+          let checkpoint = bind(
+            page,
+            run: run,
+            authenticatedDesktopId: authenticatedDesktopId
+          ), checkpoints.save(checkpoint) else {
+      return clean
+    }
+    clean.checkpoint["result_page_recovery"] = .object([
+      "sha256": .string(checkpoint.resultSHA256),
+      "page_count": .int(Int64(checkpoint.pageCount)),
+      "total_bytes": .int(Int64(checkpoint.totalBytes)),
+      "seeded_page_index": .int(Int64(checkpoint.pageIndex)),
+    ])
+    return clean
+  }
+
+  static func discardInlinePage(from run: AgentRecoverableRun) -> AgentRecoverableRun {
+    var clean = run
+    clean.checkpoint.removeValue(forKey: "result_page")
+    return clean
+  }
+
+  private static func bind(
+    _ page: AgentMcpJSONObject,
+    run: AgentRecoverableRun,
+    authenticatedDesktopId: String
+  ) -> AgentResultPageCheckpoint? {
+    guard let observation = run.observation,
+          AgentRemoteOutcomePolicy.isTerminal(observation.status),
+          !authenticatedDesktopId.isBlank,
+          page["type"]?.strictStringValue == "agent_task_result_page",
+          page["status"]?.strictStringValue == "ready",
+          page["desktop_id"]?.strictStringValue == authenticatedDesktopId,
+          let nonce = page["request_id"]?.strictStringValue,
+          (1...128).contains(nonce.count),
+          page["page_index"]?.integerForSchema == 0,
+          let generation = page["execution_generation"]?.integerForSchema,
+          AgentRemoteOutcomePolicy.validGeneration(Int64(generation)),
+          page["task_id"]?.strictStringValue == run.handle.taskId,
+          page["agent_id"]?.strictStringValue == run.handle.agentId,
+          page["conversation_id"]?.strictStringValue == observation.conversationId,
+          page["task_id"]?.strictStringValue == observation.remoteTaskId,
+          identityFields.allSatisfy({
+            guard let value = page[$0]?.strictStringValue else { return false }
+            return !value.isBlank && value.count <= 200 &&
+              value == run.checkpoint[$0]?.strictStringValue
+          }),
+          run.checkpoint["execution_generation"]?.integerForSchema == generation,
+          let resultDigest = page["sha256"]?.strictStringValue,
+          let pageDigest = page["page_sha256"]?.strictStringValue,
+          validDigest(resultDigest), validDigest(pageDigest),
+          let totalBytes = page["total_bytes"]?.integerForSchema,
+          totalBytes > 0, totalBytes <= AgentResultPageCheckpointStore.maximumResultBytes,
+          let pageCount = page["page_count"]?.integerForSchema,
+          pageCount > 0,
+          pageCount == (totalBytes + AgentResultPageCheckpointStore.maximumPageBytes - 1) /
+            AgentResultPageCheckpointStore.maximumPageBytes,
+          let encoded = page["data_b64"]?.strictStringValue,
+          encoded.count <= maximumEncodedPageCharacters,
+          let data = Data(base64Encoded: encoded),
+          data.count == min(AgentResultPageCheckpointStore.maximumPageBytes, totalBytes),
+          sha256(data) == pageDigest,
+          pageCount != 1 || pageDigest == resultDigest else {
+      return nil
+    }
+    return AgentResultPageCheckpoint(
+      identity: AgentResultCheckpointIdentity(
+        desktopId: authenticatedDesktopId,
+        clientRouteId: page["client_route_id"]!.strictStringValue!,
+        conversationId: page["conversation_id"]!.strictStringValue!,
+        taskId: page["task_id"]!.strictStringValue!,
+        turnId: page["turn_id"]!.strictStringValue!,
+        contactId: page["contact_id"]!.strictStringValue!,
+        sourceMessageId: page["source_message_id"]!.strictStringValue!,
+        agentId: page["agent_id"]!.strictStringValue!,
+        executionGeneration: Int64(generation)
+      ),
+      pageIndex: 0,
+      pageCount: pageCount,
+      totalBytes: totalBytes,
+      resultSHA256: resultDigest,
+      pageSHA256: pageDigest,
+      data: data
+    )
+  }
+
+  private static func validDigest(_ value: String) -> Bool {
+    value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+  }
+
+  private static func sha256(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
 final class AgentResultPageCheckpointStore {
   static let maximumPageBytes = 16 * 1_024
   static let maximumResultBytes = 128 * 1_024

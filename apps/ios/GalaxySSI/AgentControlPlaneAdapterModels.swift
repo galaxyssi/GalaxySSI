@@ -45,6 +45,13 @@ protocol AgentAdapterTransport: AnyObject {
   func cancelRun(runId: String) async throws
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent>
   func recoverRuns() async throws -> [AgentRecoverableRun]
+  func recoverRuns(includeResultPage: Bool) async throws -> [AgentRecoverableRun]
+}
+
+extension AgentAdapterTransport {
+  func recoverRuns(includeResultPage: Bool) async throws -> [AgentRecoverableRun] {
+    try await recoverRuns()
+  }
 }
 
 protocol AgentProviderTransport: AnyObject {
@@ -59,6 +66,7 @@ final class TransportBackedAgentAdapter: AgentAdapter {
   private let transport: AgentAdapterTransport
   private let localProtocol: AgentProtocolRange
   private let runStartReceipts: AgentRunStartReceiptStore
+  private let resultPageCheckpoints: AgentResultPageCheckpointStore
   private var currentRegistration: AgentRegistration
   private var agreement: AgentProtocolAgreement?
 
@@ -68,11 +76,13 @@ final class TransportBackedAgentAdapter: AgentAdapter {
     initialRegistration: AgentRegistration,
     transport: AgentAdapterTransport,
     localProtocol: AgentProtocolRange? = nil,
-    runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore()
+    runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
+    resultPageCheckpoints: AgentResultPageCheckpointStore = AgentResultPageCheckpointStore()
   ) {
     self.transport = transport
     self.localProtocol = localProtocol ?? initialRegistration.`protocol`
     self.runStartReceipts = runStartReceipts
+    self.resultPageCheckpoints = resultPageCheckpoints
     self.currentRegistration = initialRegistration
   }
 
@@ -192,13 +202,21 @@ final class TransportBackedAgentAdapter: AgentAdapter {
     guard negotiated.features.contains("run.recover") else {
       return []
     }
-    return try await transport.recoverRuns()
+    return try await transport.recoverRuns(includeResultPage: true).map {
+      AgentInlineRecoveryPageConsumer.consume(
+        $0,
+        authenticatedDesktopId: currentRegistration.deviceId,
+        checkpoints: resultPageCheckpoints
+      )
+    }
   }
 
   func inspectRecoverableRuns() async throws -> [AgentRecoverableRun] {
     let negotiated = try await ensureConnected()
     guard negotiated.features.contains("run.recover") else { return [] }
-    return try await transport.recoverRuns()
+    return try await transport.recoverRuns(includeResultPage: false).map {
+      AgentInlineRecoveryPageConsumer.discardInlinePage(from: $0)
+    }
   }
 
   private func ensureConnected() async throws -> AgentProtocolAgreement {
