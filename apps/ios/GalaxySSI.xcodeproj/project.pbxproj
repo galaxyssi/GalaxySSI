@@ -296,6 +296,7 @@
     A1B270100000000000000001 /* AgentBlobProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B270100000000000000001 /* AgentBlobProtocol.swift */; };
     A1B270100000000000000002 /* AgentBlobRelayConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B270100000000000000002 /* AgentBlobRelayConfiguration.swift */; };
     A1B270100000000000000003 /* AgentBlobTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B270100000000000000003 /* AgentBlobTransfer.swift */; };
+    A1B283600000000000000001 /* AgentBlobArtifactReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B283600000000000000001 /* AgentBlobArtifactReceiver.swift */; };
     A1F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift */; };
     A1F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift */; };
     A1F249800000000000000001 /* GalaxySSIAttachmentAtRestCipher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F249800000000000000001 /* GalaxySSIAttachmentAtRestCipher.swift */; };
@@ -1283,6 +1284,7 @@
     A2B270100000000000000001 /* AgentBlobProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobProtocol.swift; sourceTree = "<group>"; };
     A2B270100000000000000002 /* AgentBlobRelayConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobRelayConfiguration.swift; sourceTree = "<group>"; };
     A2B270100000000000000003 /* AgentBlobTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobTransfer.swift; sourceTree = "<group>"; };
+    A2B283600000000000000001 /* AgentBlobArtifactReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBlobArtifactReceiver.swift; sourceTree = "<group>"; };
     A2F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIncomingAttachmentTransfer.swift; sourceTree = "<group>"; };
     A2F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerVoiceMessageAudio.swift; sourceTree = "<group>"; };
     A2F249800000000000000001 /* GalaxySSIAttachmentAtRestCipher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAttachmentAtRestCipher.swift; sourceTree = "<group>"; };
@@ -2486,6 +2488,7 @@
         A2B270100000000000000001 /* AgentBlobProtocol.swift */,
         A2B270100000000000000002 /* AgentBlobRelayConfiguration.swift */,
         A2B270100000000000000003 /* AgentBlobTransfer.swift */,
+        A2B283600000000000000001 /* AgentBlobArtifactReceiver.swift */,
         A2F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift */,
         A2F248600000000000000002 /* GalaxySSIVisibleConversationTracker.swift */,
         A2F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift */,
@@ -3611,6 +3614,7 @@
         A1B270100000000000000001 /* AgentBlobProtocol.swift in Sources */,
         A1B270100000000000000002 /* AgentBlobRelayConfiguration.swift in Sources */,
         A1B270100000000000000003 /* AgentBlobTransfer.swift in Sources */,
+        A1B283600000000000000001 /* AgentBlobArtifactReceiver.swift in Sources */,
         A1F248600000000000000001 /* AgentIncomingAttachmentTransfer.swift in Sources */,
         A1F248600000000000000002 /* GalaxySSIVisibleConversationTracker.swift in Sources */,
         A1F248700000000000000001 /* GalaxySSIPeerVoiceMessageAudio.swift in Sources */,

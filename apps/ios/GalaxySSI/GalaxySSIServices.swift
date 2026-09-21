@@ -38,6 +38,33 @@ final class MessageCoordinator: ObservableObject {
     guard let self else { throw GalaxySSIError.transportUnavailable }
     try await self.publishBlobOffer(payload, attachment: attachment)
   }
+  lazy var blobArtifactReceiver = AgentBlobArtifactReceiver(
+    artifactStore: desktopArtifactStore,
+    identityProvider: { [weak self] desktopId in
+      await self?.blobArtifactIdentity(desktopId: desktopId)
+    },
+    progress: { [weak self] manifest, percent in
+      await self?.applyBlobArtifactPresentation(
+        manifest: manifest,
+        state: GalaxySSIPeerAttachmentTransferProgress.downloading,
+        progress: percent,
+        errorCode: ""
+      )
+    },
+    completion: { [weak self] manifest, completed, errorCode in
+      await self?.applyBlobArtifactPresentation(
+        manifest: manifest,
+        state: completed
+          ? GalaxySSIPeerAttachmentTransferProgress.complete
+          : GalaxySSIPeerAttachmentTransferProgress.failed,
+        progress: completed ? 100 : 0,
+        errorCode: errorCode
+      )
+    },
+    publishReceipt: { [weak self] receipt, desktopId in
+      await self?.publishBlobArtifactReceipt(receipt, desktopId: desktopId) ?? false
+    }
+  )
   private let phoneAttachmentQueue = DispatchQueue(
     label: "org.galaxyssi.ios.phone-attachment-receive",
     qos: .utility
@@ -321,6 +348,10 @@ final class MessageCoordinator: ObservableObject {
         self.pendingReplyRecoveryWake.connectionChanged(connected)
         if connected {
           self.requestConnectorStatuses()
+          Task {
+            await self.blobOutgoingCoordinator.wake()
+            await self.blobArtifactReceiver.wake()
+          }
         }
         NotificationCenter.default.post(
           name: .galaxySSIAgentRoutingDidUpdate,
@@ -371,6 +402,10 @@ final class MessageCoordinator: ObservableObject {
     )
     installForegroundRecoveryWake()
     pendingReplyRecoveryWake.request(isConnected: mqttClient.isConnected)
+    Task {
+      await blobOutgoingCoordinator.wake()
+      await blobArtifactReceiver.wake()
+    }
     startAutomationScheduler()
     backgroundCognitionScheduler.start()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -8945,6 +8980,49 @@ final class MessageCoordinator: ObservableObject {
       handlePeerChatPayload(appPayload, link: link, messageId: messageId)
       return
     }
+    if appPayload.string("type") == AgentBlobRelayConfiguration.payloadType {
+      if let link, link.paired {
+        do {
+          try blobRelayConfigurationStore.ingest(appPayload, link: link)
+          Task { await blobOutgoingCoordinator.wake() }
+          Task { await blobArtifactReceiver.wake() }
+        } catch {
+          lastError = error.localizedDescription
+        }
+      }
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
+    if appPayload.string("type") == AgentBlobArtifactContract.offerType {
+      guard let link, link.paired,
+            let configuration = blobRelayConfigurationStore.configuration(for: link),
+            let manifest = appPayload["manifest"] as? [String: Any],
+            manifest["peer_chat"] as? Bool == true || taskIdentityStore.matchesRegistered(payload: manifest) else {
+        if !messageId.isEmpty {
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+        return
+      }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        do {
+          try await blobArtifactReceiver.enqueue(
+            payload: appPayload,
+            link: link,
+            configuration: configuration,
+            conversationId: manifest.string("conversation_id")
+          )
+          if !messageId.isEmpty {
+            deliveryStore.completeIncoming(messageId: messageId)
+          }
+        } catch {
+          lastError = error.localizedDescription
+        }
+      }
+      return
+    }
     if appPayload.string("type") == "artifact_chunk" ||
       appPayload.string("type") == "artifact_redelivery_result" {
       handleDesktopArtifactPayload(appPayload, link: link, messageId: messageId)
@@ -9598,6 +9676,90 @@ final class MessageCoordinator: ObservableObject {
     }
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
+  private func blobArtifactIdentity(desktopId: String) -> AgentBlobArtifactReceiver.Identity? {
+    guard let link = store.serverLinks.first(where: { $0.desktopId == desktopId && $0.paired }),
+          let configuration = blobRelayConfigurationStore.configuration(for: link) else {
+      return nil
+    }
+    return AgentBlobArtifactReceiver.Identity(
+      desktopId: desktopId,
+      clientRouteId: link.routes.clientRouteId,
+      remoteFingerprint: link.routes.remoteFingerprint,
+      origin: configuration.origin
+    )
+  }
+
+  private func publishBlobArtifactReceipt(
+    _ receipt: [String: Any],
+    desktopId: String
+  ) -> Bool {
+    guard let link = store.serverLinks.first(where: { $0.desktopId == desktopId && $0.paired }) else {
+      return false
+    }
+    publishDesktopArtifactControl(receipt, link: link)
+    return true
+  }
+
+  private func applyBlobArtifactPresentation(
+    manifest: [String: Any],
+    state: String,
+    progress: Int,
+    errorCode: String
+  ) {
+    guard !manifest.isEmpty else { return }
+    let desktopId = manifest.string("desktop_id")
+    let declaredContactId = manifest.string("contact_id")
+    let sourceMessageId = manifest.string("source_message_id")
+    let turnId = manifest.string("turn_id")
+    let transferId = manifest.string("transfer_id")
+    let desktopContactId = store.visibleContacts.first {
+      $0.isDesktopDeviceContact && $0.desktopId == desktopId
+    }?.id
+    let candidates = [declaredContactId, desktopContactId ?? "", "hermes"]
+      .filter { !$0.isEmpty }
+    let update = GalaxySSIPeerAttachmentTransferUpdate(payload: [
+      "transfer_id": transferId,
+      "source_message_id": sourceMessageId,
+      "name": manifest.string("name"),
+      "mime_type": manifest.string("mime_type"),
+      "size_bytes": manifest.int64("size_bytes"),
+      "sha256": manifest.string("sha256"),
+      "progress": progress,
+      "state": state,
+      "uri": manifest.string("artifact_uri"),
+      "storage": "attachment_aes_256_gcm"
+    ])
+    guard let update else { return }
+    for contactId in candidates {
+      let match = store.messages(for: contactId).reversed().first { message in
+        message.remoteMessageId == sourceMessageId || message.turnId == turnId ||
+          AgentRichContentCodec.decode(message.richOutputJson).contains {
+            $0.metadata["transfer_id"] == transferId
+          }
+      }
+      guard let match else { continue }
+      let richOutput = GalaxySSIPeerAttachmentTransferProgress.applying(
+        update,
+        to: match.richOutputJson
+      )
+      if let updated = store.updateMessageContent(
+        match.id,
+        contactId: contactId,
+        content: match.content,
+        richOutputJson: richOutput
+      ) {
+        onIncomingMessageDelta?(updated)
+      }
+      if state == GalaxySSIPeerAttachmentTransferProgress.complete {
+        artifactRevision &+= 1
+        artifactDownloadCompletedRevision &+= 1
+      } else if state == GalaxySSIPeerAttachmentTransferProgress.failed {
+        artifactDownloadFailure = errorCode
+      }
+      return
     }
   }
 

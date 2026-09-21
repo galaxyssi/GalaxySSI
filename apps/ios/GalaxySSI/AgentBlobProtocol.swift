@@ -138,6 +138,44 @@ enum AgentBlobProtocol {
     return sealed.ciphertext + sealed.tag
   }
 
+  static func open(
+    _ encrypted: Data,
+    descriptor: AgentBlobPrivateDescriptor,
+    index: Int
+  ) throws -> Data {
+    let keyData = try data(hex: descriptor.key, bytes: 32)
+    let noncePrefix = try data(hex: descriptor.noncePrefix, bytes: 8)
+    guard (0..<maximumChunks).contains(index), encrypted.count >= tagBytes else {
+      throw AgentBlobFailure.invalid("invalid_chunk_size")
+    }
+    let plaintextSize = encrypted.count - tagBytes
+    let expected = min(chunkBytes, Int(descriptor.size) - index * chunkBytes)
+    guard plaintextSize == expected else {
+      throw AgentBlobFailure.invalid("invalid_chunk_size")
+    }
+    var nonceData = noncePrefix
+    nonceData.append(bigEndian: Int32(index))
+    let ciphertext = encrypted.prefix(plaintextSize)
+    let tag = encrypted.suffix(tagBytes)
+    do {
+      return try AES.GCM.open(
+        AES.GCM.SealedBox(
+          nonce: AES.GCM.Nonce(data: nonceData),
+          ciphertext: ciphertext,
+          tag: tag
+        ),
+        using: SymmetricKey(data: keyData),
+        authenticating: try aad(
+          descriptor: descriptor,
+          index: index,
+          plaintextSize: plaintextSize
+        )
+      )
+    } catch {
+      throw AgentBlobFailure.invalid("chunk_authentication_failed")
+    }
+  }
+
   static func missingIndices(bitmap: String, count: Int) throws -> [Int] {
     guard (1...maximumChunks).contains(count) else {
       throw AgentBlobFailure.invalid("invalid_chunk_count")
@@ -263,6 +301,8 @@ enum AgentBlobProtocol {
       return try array.map(canonicalString).joined(separator: ",").wrapped(prefix: "[", suffix: "]")
     case let value as String:
       return quoted(value)
+    case let value as Bool:
+      return value ? "true" : "false"
     case let value as Int:
       return String(value)
     case let value as Int64:
@@ -302,7 +342,7 @@ private extension String {
   func wrapped(prefix: String, suffix: String) -> String { prefix + self + suffix }
 }
 
-private extension Dictionary where Key == String, Value == Any {
+extension Dictionary where Key == String, Value == Any {
   func int64(_ key: String) -> Int64 {
     if let value = self[key] as? Int64 { return value }
     if let value = self[key] as? Int { return Int64(value) }
