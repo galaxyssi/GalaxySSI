@@ -873,7 +873,8 @@ private struct GalaxySSIRichBlockView: View {
             data: data,
             url: nil,
             id: "\(block.id)-image",
-            title: block.title
+            title: block.title,
+            onSave: { onArtifactSave(block) }
           )
         }
         .fullScreenCover(item: $imageViewerItem) { item in
@@ -1986,7 +1987,8 @@ private struct GalaxySSIRichBlockView: View {
       data: primaryData,
       url: primaryURL,
       id: "\(block.id)-primary",
-      title: block.title
+      title: block.title,
+      onSave: isDesktopArtifact ? { onArtifactSave(block) } : nil
     ) {
       items.append(primary)
     } else if block.uri.hasPrefix("galaxyssi-artifact://blob/") {
@@ -2028,7 +2030,8 @@ private struct GalaxySSIRichBlockView: View {
         id: "\(block.id)-gallery-\(index)",
         data: data,
         url: remote,
-        title: title
+        title: title,
+        onSave: localArtifactURL == nil ? nil : { onArtifactSave(artifactBlock) }
       ))
     }
     return Array(items.prefix(Self.visibleGalleryItems))
@@ -2065,14 +2068,16 @@ private struct GalaxySSIRichBlockView: View {
     data: Data?,
     url: URL?,
     id: String,
-    title: String
+    title: String,
+    onSave: (() -> Void)? = nil
   ) -> GalaxySSIImageViewerItem? {
     guard data != nil || url != nil else { return nil }
     return GalaxySSIImageViewerItem(
       id: id,
       data: data,
       url: url,
-      title: title.trimmingCharacters(in: .whitespacesAndNewlines)
+      title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+      onSave: onSave
     )
   }
 

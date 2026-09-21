@@ -149,6 +149,21 @@ struct GalaxySSIImageViewerItem: Identifiable {
   let data: Data?
   let url: URL?
   let title: String
+  let onSave: (() -> Void)?
+
+  init(
+    id: String,
+    data: Data?,
+    url: URL?,
+    title: String,
+    onSave: (() -> Void)? = nil
+  ) {
+    self.id = id
+    self.data = data
+    self.url = url
+    self.title = title
+    self.onSave = onSave
+  }
 }
 
 struct GalaxySSIImageLightboxView: View {
@@ -187,6 +202,20 @@ struct GalaxySSIImageLightboxView: View {
               .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
           }
           Spacer(minLength: 8)
+          if let onSave = item.onSave {
+            Button {
+              dismiss()
+              DispatchQueue.main.async(execute: onSave)
+            } label: {
+              Image(systemName: "square.and.arrow.down")
+                .font(.headline.weight(.semibold))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(Color.white.opacity(0.14))
+                .clipShape(Circle())
+            }
+            .accessibilityLabel(t("rich_output_save", "Save to Files"))
+          }
           Button {
             dismiss()
           } label: {

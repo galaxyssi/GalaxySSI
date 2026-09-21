@@ -64,7 +64,8 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
           "transport": "encrypted-fragmented",
           "category": "outputs",
           "size": "488.3 KB",
-          "size_bytes": "500000"
+          "size_bytes": "500000",
+          "sha256": digest
         ]
       )
     )
@@ -79,6 +80,57 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     let encrypted = root.appendingPathComponent("files/\(artifactId).saenc")
     XCTAssertTrue(cipher.isEncryptedFile(encrypted))
     XCTAssertNotEqual(try Data(contentsOf: encrypted), bytes)
+  }
+
+  func testCompressedArtifactAcceptsCompleteOriginalIdentityAndRejectsMixedVersions() throws {
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let root = temporaryDirectory("compressed-artifact")
+    let store = AgentDesktopArtifactStore(rootURL: root, cipher: cipher)
+    let bytes = Data((0..<128).map(UInt8.init))
+    let deliveredDigest = sha256(bytes)
+    let originalDigest = sha256(Data("original image".utf8))
+    let artifactURI = "galaxyssi-artifact://task/outputs/compressed.jpg"
+    let artifactId = sha256(Data("\(artifactURI)\u{0}\(deliveredDigest)".utf8))
+    _ = try store.ingest(payload(
+      artifactId: artifactId,
+      artifactURI: artifactURI,
+      fullDigest: deliveredDigest,
+      fullSize: bytes.count,
+      index: 0,
+      count: 1,
+      chunk: bytes,
+      originalSize: 500,
+      originalDigest: originalDigest
+    ))
+
+    func block(hash: String, size: String, artifact: String = artifactId) -> AgentRichBlock {
+      AgentRichBlock(
+        id: "compressed",
+        type: .image,
+        title: "compressed.jpg",
+        uri: artifactURI,
+        mimeType: "image/jpeg",
+        metadata: [
+          "artifact_id": artifact,
+          "sha256": hash,
+          "size_bytes": size
+        ]
+      )
+    }
+
+    let original = block(hash: originalDigest, size: "500")
+    XCTAssertNotNil(store.localFile(for: original))
+    XCTAssertEqual(store.resolveBlock(original).metadata["sha256"], deliveredDigest)
+    XCTAssertEqual(store.resolveBlock(original).metadata["original_sha256"], originalDigest)
+    XCTAssertNotNil(store.localFile(for: block(hash: deliveredDigest, size: "128")))
+    XCTAssertNil(store.localFile(for: block(hash: originalDigest, size: "128")))
+    XCTAssertNil(store.localFile(for: block(hash: deliveredDigest, size: "500")))
+    XCTAssertNil(store.localFile(for: block(hash: String(repeating: "f", count: 64), size: "500")))
+    XCTAssertNil(store.localFile(for: block(
+      hash: originalDigest,
+      size: "500",
+      artifact: String(repeating: "e", count: 64)
+    )))
   }
 
   func testRichContentCodecDeduplicatesArtifactsAndFailsClosed() {
@@ -224,7 +276,8 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     index: Int,
     count: Int,
     chunk: Data,
-    originalSize: Int? = nil
+    originalSize: Int? = nil,
+    originalDigest: String? = nil
   ) -> [String: Any] {
     [
       "type": "artifact_chunk",
@@ -236,7 +289,7 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
       "size_bytes": fullSize,
       "sha256": fullDigest,
       "original_size_bytes": originalSize ?? fullSize,
-      "original_sha256": fullDigest,
+      "original_sha256": originalDigest ?? fullDigest,
       "chunk_index": index,
       "chunk_count": count,
       "chunk_size_bytes": chunk.count,

@@ -273,6 +273,7 @@ final class AgentDesktopArtifactStore {
     let sourceURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
     guard Self.isGalaxySSIArtifactURI(sourceURI),
       let record = try? existingRecord(artifactURI: sourceURI),
+      matchesBlock(record: record, block: block),
       let file = try? artifactFile(record: record),
       fileManager.fileExists(atPath: file.path) else {
       return block
@@ -306,6 +307,7 @@ final class AgentDesktopArtifactStore {
         "size_bytes": String(deliveredSize),
         "original_size": Self.humanSize(originalSize),
         "original_size_bytes": String(originalSize),
+        "original_sha256": record.originalSHA256,
         "sha256": record.sha256,
         "transport": "encrypted-fragmented",
         "storage": "app_private_file",
@@ -316,7 +318,8 @@ final class AgentDesktopArtifactStore {
 
   func localFile(for block: AgentRichBlock) -> URL? {
     let resolved = resolveBlock(block)
-    guard let sourceURI = resolved.metadata["artifact_source_uri"],
+    guard resolved.metadata["artifact_reference"] != nil,
+      let sourceURI = resolved.metadata["artifact_source_uri"],
       let record = try? existingRecord(artifactURI: sourceURI),
       let file = try? artifactFile(record: record),
       fileManager.fileExists(atPath: file.path) else {
@@ -450,6 +453,40 @@ final class AgentDesktopArtifactStore {
       return nil
     }
     return try JSONDecoder().decode(AgentDesktopArtifactRecord.self, from: Data(contentsOf: url))
+  }
+
+  private func matchesBlock(
+    record: AgentDesktopArtifactRecord,
+    block: AgentRichBlock
+  ) -> Bool {
+    let metadata = block.metadata
+    let identityPairs: [(String, String)] = [
+      ("artifact_id", record.artifactId),
+      ("blob_task_id", record.taskId),
+      ("task_id", record.taskId)
+    ]
+    guard identityPairs.allSatisfy({ pair in
+      let (key, stored) = pair
+      let requested = metadata[key] ?? ""
+      return requested.isEmpty || requested == stored
+    }) else { return false }
+
+    let requestedHash = metadata["sha256"] ?? ""
+    let requestedSize = metadata["size_bytes"] ?? ""
+    let hasVersion = !requestedHash.isEmpty || !requestedSize.isEmpty
+    let currentMatches = (requestedHash.isEmpty || requestedHash == record.sha256) &&
+      (requestedSize.isEmpty || requestedSize == String(record.sizeBytes))
+    if !hasVersion || currentMatches { return true }
+
+    let isBlob = record.artifactURI.hasPrefix("galaxyssi-artifact://blob/") ||
+      metadata["blob_transfer_id"]?.isEmpty == false ||
+      metadata["transfer_id"]?.isEmpty == false
+    guard !isBlob,
+          requestedHash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+      return false
+    }
+    return requestedHash == record.originalSHA256 &&
+      (requestedSize.isEmpty || requestedSize == String(record.originalSizeBytes))
   }
 
   private func writeRecord(_ record: AgentDesktopArtifactRecord, artifactURI: String) throws {
