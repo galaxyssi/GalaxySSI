@@ -8,7 +8,23 @@ internal fun MobileNativeAgent.executeAction(
     turnIdOverride: String = ""
 ): AgentActionResult = runtimeTiming.measure(runtimeTimingTaskId(action, turnIdOverride), "action_dispatch",
     ::runtimeActionOutcome) {
-    executeActionUntraced(action, screen, userConfirmed, conversationIdOverride, turnIdOverride)
+    val conversationId = conversationIdOverride.ifBlank {
+        action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+    }.ifBlank { activeConversationContext.conversationId }
+    val turnId = turnIdOverride.ifBlank {
+        action.parameters[INTERNAL_TURN_ID].orEmpty()
+    }.ifBlank { activeConversationTurnId }
+    val tracksAuto = action.kind == AgentActionKind.CALL_CONNECTOR &&
+        action.parameters["manual_target_locked"] != "true" &&
+        action.parameters[AGENT_TEAM_SPEC_PARAMETER].isNullOrBlank()
+    if (tracksAuto) AgentStableAutoRouteStore.recordDispatch(
+        appContext, conversationId, turnId, action.parameters["connector_id"].orEmpty()
+    )
+    executeActionUntraced(action, screen, userConfirmed, conversationIdOverride, turnIdOverride).also { result ->
+        if (tracksAuto && result.success) AgentStableAutoRouteStore.recordDispatch(
+            appContext, conversationId, turnId, result.metadata["resource_id"].orEmpty()
+        )
+    }
 }
 
 internal fun MobileNativeAgent.captureVerificationScreen(

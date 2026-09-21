@@ -171,12 +171,18 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             AgentResourceRouter(appContext).route(
                 goal = request.goal,
                 targets = request.targets,
-                registrations = request.registrations
+                registrations = request.registrations,
+                preferredTargetId = AgentStableAutoRouteStore.target(
+                    appContext, request.conversationContext.conversationId, request.targets
+                )?.id.orEmpty()
             )
         } else null
         val routedSelection = if (selected == null) {
-            AgentConnectorRouteSelector.select(request.targets, routing)
+            AgentStableAutoRoutePolicy.select(request.targets, routing)
         } else null
+        if (selected == null && routing != null && routedSelection == null) {
+            return listOf(unavailableReasoningAction(request))
+        }
         val target = selected?.parameters?.get("connector_id")?.let { connectorId ->
             request.targets.firstOrNull { it.id == connectorId }
         } ?: routedSelection?.target ?: request.targets
@@ -686,10 +692,13 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             AgentResourceRouter(appContext).route(
                 goal = request.goal,
                 targets = request.targets,
-                registrations = request.registrations
+                registrations = request.registrations,
+                preferredTargetId = AgentStableAutoRouteStore.target(
+                    appContext, request.conversationContext.conversationId, request.targets
+                )?.id.orEmpty()
             )
         }
-        val selection = AgentConnectorRouteSelector.select(
+        val selection = AgentStableAutoRoutePolicy.select(
             targets = request.targets,
             decision = routing
         ) ?: return null
@@ -980,6 +989,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             description = description,
             parameters = buildMap {
                 put("connector_id", connectorId)
+                put("auto_reroute_on_failure", "true")
                 put("prompt", request.goal)
                 target?.let { callable ->
                     put("connector_kind", callable.kind.name.lowercase(Locale.ROOT))

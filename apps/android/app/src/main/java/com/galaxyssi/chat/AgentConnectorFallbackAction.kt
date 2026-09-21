@@ -80,6 +80,8 @@ internal object AgentConnectorFallbackAction {
         "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty(),
         "deferred_retry_ids" to action.parameters["routing_deferred_retry_ids"].orEmpty(),
         "retried_resource_ids" to action.parameters["routing_retried_resource_ids"].orEmpty(),
+        "auto_reroute_on_failure" to (action.parameters["auto_reroute_on_failure"] == "true" &&
+            action.parameters["manual_target_locked"] != "true").toString(),
         "manual_target_locked" to action.parameters["manual_target_locked"].orEmpty()
     )
 }

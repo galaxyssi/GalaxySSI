@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentConnectorFallbackActionTest {
+    @Test fun deferredAutoScoringSurvivesReceiptButCannotUnlockManualSelection() {
+        val automatic = action(mapOf("connector_id" to "codex", "auto_reroute_on_failure" to "true"))
+        assertEquals("true", AgentConnectorFallbackAction.resultMetadata(automatic)["auto_reroute_on_failure"])
+        val manual = automatic.copy(parameters = automatic.parameters + ("manual_target_locked" to "true"))
+        assertEquals("false", AgentConnectorFallbackAction.resultMetadata(manual)["auto_reroute_on_failure"])
+    }
+
     private fun action(parameters: Map<String, String> = emptyMap()) = AgentAction(
         "action", AgentActionKind.CALL_CONNECTOR, "Old provider", AgentRisk.LOW,
         AgentActionStatus.WAITING_RESPONSE, "Reply", parameters = parameters, requiresConfirmation = false

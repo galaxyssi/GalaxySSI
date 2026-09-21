@@ -720,7 +720,16 @@ class MobileNativeAgent(
         if (pending.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
         val status = pending.metadata["remote_task_status"].orEmpty()
         val liveReadOnly = pending.metadata["routing_requires_live_data"] == "true"
-        val fallbackIds = pending.metadata["remaining_fallback_ids"].orEmpty()
+        val timedOut = recoveryExhausted || AgentFailoverPolicy.shouldFailOver(stage, status, liveReadOnly)
+        if (!timedOut) return null
+        val fallbackIds = if (pending.metadata["auto_reroute_on_failure"] == "true" &&
+            pending.metadata["manual_target_locked"] != "true") {
+            val snapshot = connectorRegistry.planningSnapshot()
+            val decision = AgentResourceRouter(appContext).route(currentGoal, snapshot.targets, snapshot.registrations)
+            AgentStableAutoRoutePolicy.select(snapshot.targets, decision)?.decision?.orderedTargetIds.orEmpty()
+                .filterNot { it == pending.metadata["resource_id"] ||
+                    it in AgentConnectorFallbackAction.attempted(pending.metadata) }
+        } else pending.metadata["remaining_fallback_ids"].orEmpty()
             .split(',')
             .map(String::trim)
             .filter(String::isNotBlank)
@@ -733,8 +742,6 @@ class MobileNativeAgent(
         if (!recoveryExhausted && AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage, status, viableFallbackIds.isNotEmpty())) {
             return null
         }
-        val timedOut = recoveryExhausted || AgentFailoverPolicy.shouldFailOver(stage, status, liveReadOnly)
-        if (!timedOut) return null
         val targetId = pending.metadata["resource_id"].orEmpty()
         if (!recoveryExhausted && stage == AgentConnectorTimeoutStage.READ_ONLY_STALE) {
             val hasDifferentDomainFallback = viableFallbackIds.isNotEmpty()

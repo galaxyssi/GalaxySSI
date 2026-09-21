@@ -29,7 +29,8 @@ internal object AgentConnectorHandoffRecovery {
     fun needsPreTimeoutObservation(metadata: Map<String, String>, stage: AgentConnectorTimeoutStage): Boolean {
         if (stage == AgentConnectorTimeoutStage.READ_ONLY_STALE) return false
         val status = AgentRemoteTaskStatusPolicy.normalize(metadata["remote_task_status"].orEmpty())
-        val hasFallback = metadata["remaining_fallback_ids"].orEmpty().split(',').any { it.isNotBlank() }
+        val hasFallback = metadata["remaining_fallback_ids"].orEmpty().split(',').any { it.isNotBlank() } ||
+            (metadata["auto_reroute_on_failure"] == "true" && metadata["manual_target_locked"] != "true")
         return AgentFailoverPolicy.shouldFailOver(stage, status, liveReadOnly = false) &&
             !AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage, status, hasFallback)
     }

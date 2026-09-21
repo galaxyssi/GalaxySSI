@@ -502,8 +502,9 @@ internal fun MobileNativeAgent.executeParallelActions(
             allowOutputHandoff = autonomySettings.multiAgentCoordination ||
                 action.isSupervisedProjectConnector()
         ) ?: action
-        val executionAction = refreshAutomaticConnectorRoute(materialized).copy(
-            parameters = materialized.parameters + mapOf(
+        val routed = refreshAutomaticConnectorRoute(materialized)
+        val executionAction = routed.copy(
+            parameters = routed.parameters + mapOf(
                 "original_goal" to currentGoal,
                 "_galaxyssi_task_id" to sessionId
             )
@@ -948,6 +949,15 @@ internal fun MobileNativeAgent.executePlannedAction(
         ) {
             return snapshot()
         }
+        val failedConnector = lastActionResult?.takeIf {
+            hardenedAction.kind == AgentActionKind.CALL_CONNECTOR &&
+                it.metadata["resource_id"].orEmpty().isNotBlank() &&
+                it.metadata["awaiting_response"] != "true" &&
+                it.metadata["error_code"] != "effect_outcome_unknown"
+        }
+        if (updatedPlan != null && failedConnector != null) {
+            continueWithConnectorFallback(updatedPlan, failedConnector)?.let { return it }
+        }
     }
     val rollingBatchBoundary = AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     val continuedPlan = if (updatedPlan != null && replanReason.isNotBlank()) {
@@ -1028,12 +1038,16 @@ internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentActio
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
         targets = targets,
-        registrations = connectorSnapshot.registrations
+        registrations = connectorSnapshot.registrations,
+        preferredTargetId = action.parameters["connector_id"].orEmpty()
     )
-    val selection = AgentConnectorRouteSelector.select(
+    val selection = AgentStableAutoRoutePolicy.select(
         targets = targets,
         decision = routing
-    ) ?: return action
+    ) ?: return action.copy(parameters = action.parameters + mapOf(
+        "connector_id" to UNAVAILABLE_REASONING_CONNECTOR_ID,
+        "routing_fallback_ids" to ""
+    ))
     val selected = selection.target
     val fallbackIds = selection.decision?.fallbacks.orEmpty()
         .map { candidate -> candidate.resource.targetId }
@@ -1048,6 +1062,9 @@ internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentActio
         target = selected.title,
         parameters = action.parameters + mapOf(
             "connector_id" to selected.id,
+            "auto_reroute_on_failure" to "true",
+            "routing_score" to selection.decision?.primary?.score?.toString().orEmpty(),
+            "routing_reasons" to selection.decision?.primary?.reasons?.joinToString("|").orEmpty(),
             "connector_kind" to selected.kind.name.lowercase(Locale.ROOT),
             "connector_adapter_type" to selected.adapterType,
             "connector_failure_domain" to selected.failureDomain,
@@ -1080,9 +1097,10 @@ internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
         targets = request.targets,
-        registrations = request.registrations
+        registrations = request.registrations,
+        preferredTargetId = connector.parameters["connector_id"].orEmpty()
     )
-    val routeSelection = AgentConnectorRouteSelector.select(
+    val routeSelection = AgentStableAutoRoutePolicy.select(
         targets = request.targets,
         decision = routing
     )
@@ -1589,15 +1607,13 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         targets = connectorSnapshot.targets,
         registrations = connectorSnapshot.registrations
     )
-    val currentFallbackIds = AgentConnectorRouteSelector.select(
+    val currentFallbackIds = AgentStableAutoRoutePolicy.select(
         targets = connectorSnapshot.targets,
         decision = currentRouting
     )?.decision?.orderedTargetIds.orEmpty()
     val silenceFallback = failedResult.metadata["allow_unavailable_target_fallback"] == "true"
     val fallbackIds = AgentConnectorFallbackTrail.mergeAvailable(
-        rememberedResourceIds = AgentConnectorFallbackTrail.parse(
-            failedResult.metadata["remaining_fallback_ids"].orEmpty()
-        ),
+        rememberedResourceIds = emptyList(),
         currentResourceIds = currentFallbackIds,
         failedResourceId = failedResourceId,
         attemptedResourceIds = attemptedIds

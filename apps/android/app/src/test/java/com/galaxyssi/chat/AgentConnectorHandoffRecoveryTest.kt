@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentConnectorHandoffRecoveryTest {
+    @Test fun deferredAutoScoringStillObservesRemoteStatusBeforeTimeout() {
+        val metadata = mapOf("auto_reroute_on_failure" to "true", "remaining_fallback_ids" to "")
+        assertTrue(AgentConnectorHandoffRecovery.needsPreTimeoutObservation(metadata, AgentConnectorTimeoutStage.NOT_ACCEPTED))
+        assertFalse(AgentConnectorHandoffRecovery.needsPreTimeoutObservation(
+            metadata + ("manual_target_locked" to "true"), AgentConnectorTimeoutStage.NOT_ACCEPTED))
+        assertFalse(AgentConnectorHandoffRecovery.needsPreTimeoutObservation(
+            metadata + ("remote_task_status" to "running"), AgentConnectorTimeoutStage.NOT_ACCEPTED))
+    }
+
     private val action = AgentAction("connector-codex", AgentActionKind.CALL_CONNECTOR, "Codex", AgentRisk.LOW,
         AgentActionStatus.WAITING_RESPONSE, "Test", mapOf("prompt" to "Math", "connector_id" to "codex"), false)
     private val context = AgentNativeToolInvocationContext(sessionId = "session", conversationId = "chat", turnId = "turn")
