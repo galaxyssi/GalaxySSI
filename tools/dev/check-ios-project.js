@@ -1842,6 +1842,8 @@ const requiredSourceSnippets = [
   [tests, "testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys"],
   [tests, "testEmbeddingVectorsNormalizeAndCompareFiniteValues"],
   [tests, "testEmbeddingVectorsRejectEmptyZeroMismatchedAndNonfiniteValues"],
+  [tests, "testEncryptedVectorCheckpointPersistsProvenanceAndInvalidatesChangedSource"],
+  [tests, "testEmbeddingChunkerUsesTokenizerWindowAndPreservesOrder"],
   [tests, "testAgentNativeToolReplayJsonCodecSkipsMalformedEntries"],
   [tests, "testAgentCapabilityCatalogIdsAreStableAndUnique"],
   [tests, "testAgentCapabilityCatalogMarketplaceUnifiesToolsMcpAndAutomationState"],

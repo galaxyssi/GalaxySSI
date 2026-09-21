@@ -49,4 +49,53 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertEqual(try database.all(), [first])
     XCTAssertThrowsError(try AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore()).all())
   }
+
+  func testEncryptedVectorCheckpointPersistsProvenanceAndInvalidatesChangedSource() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let item = AgentKnowledgeItem(id: "item", kind: .note, title: "Title", content: "Body", source: "source")
+    let modelSHA = String(repeating: "a", count: 64)
+    let provenance = AgentKnowledgeVectorProvenance(
+      modelSHA256: modelSHA,
+      dimensions: 2,
+      contextTokens: 512,
+      chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+    )
+    let checkpoint = AgentKnowledgeVectorCheckpoint(
+      itemId: item.id,
+      sourceRevision: AgentKnowledgeVectorCheckpoint.sourceRevision(for: item),
+      chunkIndex: 0,
+      vector: [0.6, 0.8],
+      provenance: provenance,
+      updatedAtMillis: 10
+    )
+
+    XCTAssertTrue(database.replaceAll([item]))
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    XCTAssertFalse(database.storeVectorCheckpoint(checkpoint))
+    XCTAssertEqual(try database.vectorCheckpoints(itemId: item.id, modelSHA256: modelSHA), [checkpoint])
+    XCTAssertTrue(try database.pendingVectorItems(modelSHA256: modelSHA).isEmpty)
+
+    let changed = AgentKnowledgeItem(id: "item", kind: .note, title: "Title", content: "Changed", source: "source")
+    XCTAssertTrue(database.replaceAll([changed]))
+    XCTAssertEqual(try database.pendingVectorItems(modelSHA256: modelSHA).map(\.id), ["item"])
+    let raw = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+    XCTAssertFalse(raw.contains(modelSHA))
+    XCTAssertFalse(raw.contains(checkpoint.sourceRevision))
+  }
+
+  func testEmbeddingChunkerUsesTokenizerWindowAndPreservesOrder() async throws {
+    let chunks = try await AgentKnowledgeEmbeddingChunker.chunks(
+      "abcdefghij",
+      maximumTokens: 3,
+      tokenCount: { $0.count }
+    )
+
+    XCTAssertEqual(chunks, ["abc", "def", "ghi", "j"])
+    XCTAssertTrue(chunks.allSatisfy { $0.count <= 3 })
+  }
 }

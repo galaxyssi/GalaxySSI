@@ -2787,6 +2787,7 @@ final class GalaxySSIStore: ObservableObject {
     agentKnowledgeItems = []
     secrets.delete(account: "agent.knowledge.row.aes256.v1")
     secrets.delete(account: "agent.knowledge.index.hmac256.v1")
+    secrets.delete(account: "agent.knowledge.vector.aes256.v1")
     agentKnowledgeAccessAudit = []
     customDeviceConnectors = []
     homeAssistantSettings = .default

@@ -28,6 +28,11 @@ int32_t galaxyssi_embedding_encode(
     float **output,
     int32_t *dimensions
 );
+int32_t galaxyssi_embedding_token_count(
+    int64_t handle,
+    const char *utf8_text,
+    int32_t utf8_length
+);
 void galaxyssi_embedding_free(float *output, int32_t dimensions);
 void galaxyssi_embedding_close(int64_t handle);
 const char *galaxyssi_embedding_last_error(void);

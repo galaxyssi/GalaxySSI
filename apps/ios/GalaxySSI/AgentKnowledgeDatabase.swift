@@ -11,6 +11,7 @@ final class AgentKnowledgeDatabase {
   private let fileURL: URL
   private let secrets: GalaxySSISecretStore
   private let cipher: GalaxySSIAttachmentAtRestCipher
+  private let vectorCipher: GalaxySSIAttachmentAtRestCipher
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
 
@@ -20,6 +21,10 @@ final class AgentKnowledgeDatabase {
     cipher = GalaxySSIAttachmentAtRestCipher(
       secrets: secrets,
       keyAccount: "agent.knowledge.row.aes256.v1"
+    )
+    vectorCipher = GalaxySSIAttachmentAtRestCipher(
+      secrets: secrets,
+      keyAccount: "agent.knowledge.vector.aes256.v1"
     )
     open()
   }
@@ -77,6 +82,100 @@ final class AgentKnowledgeDatabase {
   }
 
   @discardableResult
+  func storeVectorCheckpoint(_ checkpoint: AgentKnowledgeVectorCheckpoint) -> Bool {
+    locked {
+      guard checkpoint.isValid else { return false }
+      let vectorKey = keyedHash(checkpoint.id)
+      if let existing = vectorCheckpoint(vectorKey: vectorKey),
+         existing.sourceRevision == checkpoint.sourceRevision,
+         existing.updatedAtMillis >= checkpoint.updatedAtMillis {
+        return false
+      }
+      guard let plaintext = try? JSONEncoder.galaxySSI.encode(checkpoint),
+            let encrypted = try? vectorCipher.encrypt(plaintext, purpose: vectorPurpose(vectorKey)),
+            let statement = prepare("""
+              INSERT INTO knowledge_vectors(
+                vector_key, item_hash, model_hash, source_revision_hash, updated_at, encrypted_payload
+              ) VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(vector_key) DO UPDATE SET
+                source_revision_hash = excluded.source_revision_hash,
+                updated_at = excluded.updated_at,
+                encrypted_payload = excluded.encrypted_payload
+              """) else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(vectorKey, at: 1, to: statement)
+      bind(keyedHash(checkpoint.itemId), at: 2, to: statement)
+      bind(keyedHash(checkpoint.provenance.modelSHA256), at: 3, to: statement)
+      bind(keyedHash(checkpoint.sourceRevision), at: 4, to: statement)
+      sqlite3_bind_int64(statement, 5, checkpoint.updatedAtMillis)
+      encrypted.withUnsafeBytes { bytes in
+        sqlite3_bind_blob(statement, 6, bytes.baseAddress, Int32(encrypted.count), Self.transient)
+      }
+      return sqlite3_step(statement) == SQLITE_DONE
+    }
+  }
+
+  func vectorCheckpoints(itemId: String, modelSHA256: String) throws -> [AgentKnowledgeVectorCheckpoint] {
+    try locked {
+      guard let statement = prepare("""
+        SELECT vector_key, encrypted_payload FROM knowledge_vectors
+        WHERE item_hash = ? AND model_hash = ?
+        ORDER BY vector_key ASC
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(keyedHash(itemId), at: 1, to: statement)
+      bind(keyedHash(modelSHA256.lowercased()), at: 2, to: statement)
+      var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let keyText = sqlite3_column_text(statement, 0),
+              let encrypted = blob(statement, column: 1) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let key = String(cString: keyText)
+        guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
+              let checkpoint = try? JSONDecoder.galaxySSI.decode(
+                AgentKnowledgeVectorCheckpoint.self,
+                from: plaintext
+              ), checkpoint.isValid else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        checkpoints.append(checkpoint)
+      }
+      return checkpoints.sorted { $0.chunkIndex < $1.chunkIndex }
+    }
+  }
+
+  @discardableResult
+  func clearVectorCheckpoints(itemId: String, modelSHA256: String) -> Bool {
+    locked {
+      guard let statement = prepare(
+        "DELETE FROM knowledge_vectors WHERE item_hash = ? AND model_hash = ?"
+      ) else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(keyedHash(itemId), at: 1, to: statement)
+      bind(keyedHash(modelSHA256.lowercased()), at: 2, to: statement)
+      return sqlite3_step(statement) == SQLITE_DONE
+    }
+  }
+
+  func pendingVectorItems(modelSHA256: String, limit: Int = 32) throws -> [AgentKnowledgeItem] {
+    let items = try all()
+    var pending: [AgentKnowledgeItem] = []
+    for item in items {
+      let revision = AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)
+      let checkpoints = try vectorCheckpoints(itemId: item.id, modelSHA256: modelSHA256)
+      let expectedCount = checkpoints.first?.chunkCount ?? 0
+      let completeIndices = Set(checkpoints.map(\.chunkIndex)) == Set(0..<expectedCount)
+      if checkpoints.isEmpty || checkpoints.contains(where: { $0.sourceRevision != revision }) ||
+         checkpoints.count != expectedCount || !completeIndices {
+        pending.append(item)
+        if pending.count >= min(max(limit, 1), 64) { break }
+      }
+    }
+    return pending
+  }
+
+  @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
       guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
@@ -85,6 +184,10 @@ final class AgentKnowledgeDatabase {
         return false
       }
       for item in items where !insert(item) {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      guard execute("DELETE FROM knowledge_vectors WHERE item_hash NOT IN (SELECT item_hash FROM knowledge_items)") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -164,6 +267,17 @@ final class AgentKnowledgeDatabase {
         tokenize = 'unicode61'
       )
       """)
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vectors (
+        vector_key TEXT PRIMARY KEY NOT NULL,
+        item_hash TEXT NOT NULL,
+        model_hash TEXT NOT NULL,
+        source_revision_hash TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        encrypted_payload BLOB NOT NULL
+      )
+      """)
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_lookup ON knowledge_vectors(item_hash, model_hash)")
     rebuildIndexIfNeeded()
   }
 
@@ -226,6 +340,22 @@ final class AgentKnowledgeDatabase {
   }
 
   private func purpose(_ itemHash: String) -> String { "agent-knowledge:\(itemHash)" }
+
+  private func vectorPurpose(_ vectorKey: String) -> String { "agent-knowledge-vector:\(vectorKey)" }
+
+  private func vectorCheckpoint(vectorKey: String) -> AgentKnowledgeVectorCheckpoint? {
+    guard let statement = prepare(
+      "SELECT encrypted_payload FROM knowledge_vectors WHERE vector_key = ?"
+    ) else { return nil }
+    defer { sqlite3_finalize(statement) }
+    bind(vectorKey, at: 1, to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW,
+          let encrypted = blob(statement, column: 0),
+          let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(vectorKey)) else {
+      return nil
+    }
+    return try? JSONDecoder.galaxySSI.decode(AgentKnowledgeVectorCheckpoint.self, from: plaintext)
+  }
 
   private func decode(
     _ statement: OpaquePointer?,
