@@ -263,6 +263,9 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentRemoteTaskStatusPolicy.settlesWithoutResponse("completed"))
     XCTAssertFalse(AgentRemoteTaskStatusPolicy.isTerminal("running"))
     XCTAssertEqual(AgentRemoteTaskStatusPolicy.normalize(" TIMED_OUT "), "timed_out")
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.finalResponseSuccess("completed"), true)
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.finalResponseSuccess("not_found"), false)
+    XCTAssertNil(AgentRemoteTaskStatusPolicy.finalResponseSuccess("running"))
   }
 
   func testAgentRemoteTaskStatusPolicyAssignsTerminalCompletionTimestamp() {

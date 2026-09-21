@@ -73,6 +73,14 @@ enum AgentRemoteTaskStatusPolicy {
     terminalStatuses.contains(normalize(status))
   }
 
+  static func finalResponseSuccess(_ status: String) -> Bool? {
+    switch normalize(status) {
+    case "completed": return true
+    case "failed", "cancelled", "timed_out", "not_found": return false
+    default: return nil
+    }
+  }
+
   static func settlesWithoutResponse(_ status: String) -> Bool {
     terminalStatusesWithoutResponse.contains(normalize(status))
   }
