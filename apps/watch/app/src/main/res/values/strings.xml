@@ -186,6 +186,13 @@
     <string name="api_timeout_error">This request timed out. Please retry.</string>
     <string name="api_network_error">Network connection failed. Check the watch connection and retry.</string>
     <string name="configure_models">Configure models</string>
+    <string name="switch_model">Switch model</string>
+    <string name="model_remote_section">Remote Agents</string>
+    <string name="model_cloud_section">Cloud models</string>
+    <string name="model_current">Currently selected</string>
+    <string name="model_unavailable">Unavailable</string>
+    <string name="model_empty">No models configured. Use Configure models to add one from your phone.</string>
+    <string name="model_switch_hint">Switching targets starts a new conversation. Previous chats remain in Recent conversations.</string>
     <string name="configure_models_title">Configure on your phone</string>
     <string name="configure_models_wifi">Connect your phone and watch\nto the same Wi-Fi</string>
     <string name="configure_models_phone">Open GalaxySSI on your phone</string>

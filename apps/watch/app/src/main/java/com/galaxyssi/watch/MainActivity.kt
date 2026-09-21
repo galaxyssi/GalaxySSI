@@ -285,6 +285,7 @@ class MainActivity : Activity() {
             "devices" -> devices()
             "device" -> device()
             "agents" -> agents()
+            "switch-model" -> modelSelection()
             "sessions" -> sessions()
             "contacts" -> contacts()
             "paste" -> pasteMenu()
@@ -374,6 +375,7 @@ class MainActivity : Activity() {
         button(R.string.contacts) { navigate("contacts") }
         button(R.string.paste_message) { navigate("paste") }
         button(R.string.api_provider) { openApiSettings() }
+        button(R.string.switch_model) { navigate("switch-model"); repo.refresh() }
         button(R.string.configure_models) {
             startActivity(Intent(this, WatchPhoneSetupActivity::class.java)
                 .putExtra(WatchPhoneSetupActivity.EXTRA_CONFIGURE_MODELS, true))
@@ -525,6 +527,77 @@ class MainActivity : Activity() {
         if (link.paired) button(R.string.choose_agent, true) { repo.store.apiPreferred = false; repo.store.selectedDesktop = link.desktopId; navigate("agents") }
         button(R.string.refresh) { repo.refresh() }
         button(R.string.forget) { navigate("forget") }
+    }
+    private fun modelSelection() {
+        title(R.string.switch_model)
+        val previous = repo.store.cachedTask(selectedTask)
+        val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
+        val desktop = previous?.desktopId ?: repo.store.selectedDesktop
+        val agent = previous?.agentId ?: repo.store.selectedAgent
+        fun select(cloud: Boolean, desktopId: String = "", agentId: String = "", selected: Boolean) {
+            if (busy) return
+            repo.store.apiPreferred = cloud
+            if (!cloud) {
+                repo.store.selectedDesktop = desktopId
+                repo.store.selectedAgent = agentId
+            }
+            if (!selected) {
+                // A remote conversation belongs to its original target. Keep it in history,
+                // and preserve the composer draft while starting on the newly selected target.
+                speech?.stop()
+                selectedTask = ""; repo.saveActiveTask(""); followUpId = ""
+            }
+            page = "home"; history.clear(); render()
+        }
+        fun row(name: String, source: String, selected: Boolean, available: Boolean, action: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                background = background(Color.rgb(25, 33, 29))
+                isEnabled = available && !busy; alpha = if (isEnabled) 1f else 0.5f
+                contentDescription = "$name, $source" + if (selected) ", ${getString(R.string.model_current)}" else ""
+                setOnClickListener { action() }
+            }
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@MainActivity).apply {
+                    text = name; textSize = 14f; setTextColor(Color.WHITE)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = source; textSize = 10f; setTextColor(Color.LTGRAY)
+                })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(TextView(this).apply {
+                text = if (selected) "✓" else "○"; textSize = 19f
+                setTextColor(if (selected) green else Color.GRAY); gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(24), -2))
+            content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+        }
+        val links = repo.links().filter { it.paired }
+        if (links.isNotEmpty()) {
+            label(getString(R.string.model_remote_section), 12)
+            links.forEach { link ->
+                val targets = repo.store.agents(link.desktopId)
+                if (targets.isEmpty()) label("${link.desktopName}\n${getString(R.string.no_agents)}", 11)
+                targets.forEach { target ->
+                    val selected = !usingApi && desktop == link.desktopId && agent == target.id
+                    row(target.name, link.desktopName + if (target.available) "" else " · ${getString(R.string.model_unavailable)}", selected, target.available) {
+                        select(false, link.desktopId, target.id, selected)
+                    }
+                }
+            }
+        }
+        val profile = repo.store.apiProfile
+        if (profile != null) {
+            label(getString(R.string.model_cloud_section), 12)
+            val selected = usingApi && (previous == null || previous.routeId == profile.id)
+            row(profile.model, android.net.Uri.parse(profile.endpoint).host.orEmpty(), selected, true) {
+                select(true, selected = selected)
+            }
+        }
+        if (profile == null && links.isEmpty()) label(getString(R.string.model_empty), 12)
+        label(getString(R.string.model_switch_hint), 10)
+        button(R.string.refresh) { repo.refresh() }
     }
     private fun agents() {
         title(R.string.choose_agent)
