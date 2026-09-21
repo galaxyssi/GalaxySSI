@@ -89,6 +89,10 @@ final class AgentRunRecoveryCoordinator {
   func recover() async throws -> [AgentRunRecoveryResult] {
     var results: [AgentRunRecoveryResult] = []
     for snapshot in runStore.recoverableRuns() {
+      if snapshot.lastEvent.payload["recovery_mode"]?.stringValue == "observation_only" ||
+          snapshot.lastEvent.payload["observation_only"]?.boolValue == true {
+        continue
+      }
       results.append(try await recover(snapshot))
     }
     return results

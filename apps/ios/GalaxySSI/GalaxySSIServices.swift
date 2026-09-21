@@ -6880,78 +6880,127 @@ final class MessageCoordinator: ObservableObject {
     var accumulated = ""
     var incoming: ChatMessage?
     var completed = false
+    let identity = AgentProviderAttemptReport(
+      sourceMessageId: outgoing.id.uuidString.lowercased(),
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(requestId),
+      taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      actionId: "cloud-stream:\(requestId)"
+    )
+    let journal = AgentProviderAttemptJournal(identity: identity)
+    let tracker = AgentProviderAttemptTracker(report: identity) { journal.checkpoint($0) }
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    let elapsedMillis = {
+      Int64((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000)
+    }
+    tracker.start(
+      requestId: requestId,
+      resourceId: contact.id,
+      providerId: contact.cloudProvider.ifBlank(contact.id),
+      modelId: contact.selectedCloudModel?.modelId ?? modelDetail,
+      nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    )
 
-    for try await event in cloudStreamEngine.streamConversation(
-      contact: contact,
-      store: store,
-      turns: turns,
-      images: images,
-      requestId: requestId
-    ) {
-      switch event {
-      case .connected, .usage, .toolCallDelta:
-        continue
-
-      case .textDelta(let delta):
-        accumulated += delta.text
-        let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(accumulated)
-        if let current = incoming {
-          incoming = store.updateMessageContent(
-            current.id,
-            contactId: destinationId,
-            content: content,
-            status: .sent
-          ) ?? current
-        } else {
-          incoming = store.appendIncoming(
-            content,
-            from: destinationId,
-            remoteMessageId: event.requestId,
-            status: .sent,
-            traceStage: "cloud_reply",
-            conversationId: outgoing.conversationId,
-            turnId: outgoing.turnId
+    do {
+      for try await event in cloudStreamEngine.streamConversation(
+        contact: contact,
+        store: store,
+        turns: turns,
+        images: images,
+        requestId: requestId
+      ) {
+        switch event {
+        case .connected(let connected):
+          tracker.progress(
+            "connected",
+            elapsedMillis: elapsedMillis(),
+            httpStatus: connected.httpStatus
           )
-        }
-        if let partial = incoming {
-          onIncomingMessageDelta?(partial)
-        }
 
-      case .completed:
-        let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, let current = incoming else {
-          throw GalaxySSIError.unsupportedResponse
-        }
-        completed = true
-        store.appendDeliveryTrace(
-          outgoing.id,
-          contactId: destinationId,
-          stage: "cloud_reply",
-          detail: modelDetail,
-          status: .delivered
-        )
-        let final = store.updateMessageContent(
-          current.id,
-          contactId: destinationId,
-          content: clean,
-          status: .delivered,
-          traceStage: "cloud_reply_received",
-          detail: modelDetail
-        ) ?? current
-        onIncomingMessage?(final)
+        case .usage, .toolCallDelta:
+          continue
 
-      case .failed(let failure):
-        if let current = incoming {
+        case .textDelta(let delta):
+          tracker.progress("first_output", elapsedMillis: elapsedMillis())
+          accumulated += delta.text
+          let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(accumulated)
+          if let current = incoming {
+            incoming = store.updateMessageContent(
+              current.id,
+              contactId: destinationId,
+              content: content,
+              status: .sent
+            ) ?? current
+          } else {
+            incoming = store.appendIncoming(
+              content,
+              from: destinationId,
+              remoteMessageId: event.requestId,
+              status: .sent,
+              traceStage: "cloud_reply",
+              conversationId: outgoing.conversationId,
+              turnId: outgoing.turnId
+            )
+          }
+          if let partial = incoming {
+            onIncomingMessageDelta?(partial)
+          }
+
+        case .completed:
+          let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !clean.isEmpty, let current = incoming else {
+            throw GalaxySSIError.unsupportedResponse
+          }
+          completed = true
+          tracker.finish(elapsedMillis: elapsedMillis())
+          journal.finish(tracker.report)
           store.appendDeliveryTrace(
+            outgoing.id,
+            contactId: destinationId,
+            stage: "cloud_reply",
+            detail: modelDetail,
+            status: .delivered
+          )
+          let final = store.updateMessageContent(
             current.id,
             contactId: destinationId,
-            stage: "cloud_error",
-            detail: failure.error.message,
-            status: .failed
+            content: clean,
+            status: .delivered,
+            traceStage: "cloud_reply_received",
+            detail: modelDetail
+          ) ?? current
+          onIncomingMessage?(final)
+
+        case .failed(let failure):
+          let failureKind = AgentProviderFailureClassifier.from(
+            error: GalaxySSIError.invalidPayload(failure.error.message)
           )
+          tracker.finish(
+            elapsedMillis: elapsedMillis(),
+            failureClass: failureKind.rawValue,
+            retryable: failure.error.retryable,
+            httpStatus: failure.error.httpStatus
+          )
+          journal.finish(tracker.report)
+          if let current = incoming {
+            store.appendDeliveryTrace(
+              current.id,
+              contactId: destinationId,
+              stage: "cloud_error",
+              detail: failure.error.message,
+              status: .failed
+            )
+          }
+          throw GalaxySSIError.invalidPayload(failure.error.message)
         }
-        throw GalaxySSIError.invalidPayload(failure.error.message)
       }
+    } catch {
+      tracker.finish(
+        elapsedMillis: elapsedMillis(),
+        failureClass: AgentProviderFailureClassifier.from(error: error).rawValue
+      )
+      journal.finish(tracker.report)
+      throw error
     }
 
     guard completed else {
