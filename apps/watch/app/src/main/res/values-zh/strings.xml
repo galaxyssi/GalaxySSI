@@ -186,6 +186,13 @@
     <string name="api_timeout_error">本次请求超时，请重试。</string>
     <string name="api_network_error">网络连接失败，请检查手表联网后重试。</string>
     <string name="configure_models">配置模型</string>
+    <string name="switch_model">切换模型</string>
+    <string name="model_remote_section">远端 Agent</string>
+    <string name="model_cloud_section">云端模型</string>
+    <string name="model_current">当前使用</string>
+    <string name="model_unavailable">暂不可用</string>
+    <string name="model_empty">暂无已配置模型，请通过“配置模型”在手机上添加。</string>
+    <string name="model_switch_hint">切换目标后开启新会话，历史保留在最近会话。</string>
     <string name="configure_models_title">请在手机上配置</string>
     <string name="configure_models_wifi">手机和手表\n请连接同一个 Wi-Fi</string>
     <string name="configure_models_phone">打开手机 GalaxySSI</string>
