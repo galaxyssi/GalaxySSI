@@ -51,6 +51,15 @@ struct GalaxySSIAdvancedOptionsView: View {
     VStack(alignment: .leading, spacing: 8) {
       GalaxySSISecuritySectionTitle(title: t("advanced_section_diagnostics", "Diagnostics"))
       GalaxySSISecurityNavigationRow(
+        title: t("agent_latency_title", "Agent Performance"),
+        subtitle: t("agent_latency_subtitle", "Stage latency from send through visible output"),
+        systemImage: "timer",
+        tint: .galaxySSIAccent,
+        badge: t("common_view", "View")
+      ) {
+        GalaxySSIAgentLatencyDashboardView()
+      }
+      GalaxySSISecurityNavigationRow(
         title: t("voice_performance_title", "Voice Performance"),
         subtitle: t("voice_performance_subtitle", "Latency, reliability, thermal state, and automatic fallback"),
         systemImage: "waveform",
@@ -204,6 +213,103 @@ struct GalaxySSIAdvancedOptionsView: View {
 
   private func formatBytes(_ bytes: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+struct GalaxySSIAgentLatencyDashboardView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @State private var summary: [String: AgentLatencyMetric] = [:]
+
+  private var metrics: [(String, AgentLatencyMetric)] {
+    AgentLatencyContract.metricPairs.compactMap { pair in
+      summary[pair.name].map { (pair.name, $0) }
+    }
+  }
+
+  private var sampleCount: Int {
+    metrics.reduce(0) { $0 + $1.1.count }
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      GalaxySSITopBar(
+        title: t("agent_latency_title", "Agent Performance"),
+        leading: { GalaxySSIBackButton() },
+        trailing: { Color.clear }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          GalaxySSISecurityHeroView(
+            title: t("agent_latency_hero_title", "Agent response pipeline"),
+            subtitle: t("agent_latency_hero_subtitle", "Content-free measurements using the device monotonic clock"),
+            systemImage: "timer",
+            tint: sampleCount == 0 ? .orange : .galaxySSIAccent,
+            badge: sampleCount == 0
+              ? t("agent_latency_no_data", "No data")
+              : String(format: t("agent_latency_samples", "%d samples"), sampleCount)
+          )
+          VStack(alignment: .leading, spacing: 8) {
+            GalaxySSISecuritySectionTitle(title: t("agent_latency_percentiles", "P50 / P95 / P99 LATENCY"))
+            ForEach(metrics.indices, id: \.self) { index in
+              let metric = metrics[index]
+              GalaxySSISecurityStatusRow(
+                title: metricTitle(metric.0),
+                subtitle: String(
+                  format: t("agent_latency_counts", "%d measured, %d incomplete, %d unsuccessful"),
+                  metric.1.count,
+                  metric.1.incomplete,
+                  metric.1.unsuccessful
+                ),
+                systemImage: "timer",
+                tint: metric.1.unsuccessful == 0 ? .blue : .orange,
+                badge: percentileText(metric.1)
+              )
+            }
+            if sampleCount == 0 {
+              GalaxySSISecurityStatusRow(
+                title: t("agent_latency_empty_title", "No Agent latency samples yet"),
+                subtitle: t("agent_latency_empty_subtitle", "Complete an Agent request to populate this dashboard"),
+                systemImage: "timer",
+                tint: .orange,
+                badge: t("agent_latency_no_data", "No data")
+              )
+            }
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+    .onAppear {
+      summary = AgentLatencyTelemetry.shared.summary()
+    }
+  }
+
+  private func metricTitle(_ key: String) -> String {
+    switch key {
+    case "phone_context_route_ms": return t("agent_latency_context", "Context and route")
+    case "phone_send_prepare_ms": return t("agent_latency_send_prepare", "Total send preparation")
+    case "phone_send_first_visible_ms": return t("agent_latency_user_first", "Send to first visible output")
+    case "phone_publish_prepare_ms": return t("agent_latency_publish_prepare", "Publish preparation")
+    case "phone_response_roundtrip_ms": return t("agent_latency_roundtrip", "Connector round trip")
+    case "phone_connector_first_visible_ms": return t("agent_latency_first_visible", "Publish to first visible output")
+    case "phone_connector_complete_visible_ms": return t("agent_latency_final_visible", "Publish to final visible output")
+    case "phone_render_ms": return t("agent_latency_render", "Response rendering")
+    default: return key
+    }
+  }
+
+  private func percentileText(_ metric: AgentLatencyMetric) -> String {
+    [metric.p50Ms, metric.p95Ms, metric.p99Ms]
+      .map { value in value.map { String(format: "%.1f", $0) } ?? "-" }
+      .joined(separator: " / ") + " ms"
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

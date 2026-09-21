@@ -1397,6 +1397,52 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(resource.failureDomain, "desktop-a")
   }
 
+  func testAgentLatencyTracerUsesMonotonicClockAndDeduplicatesStages() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentLatencyTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var monotonic: Int64 = 1_000_000_000
+    var wallClock: Int64 = 50_000
+    let journal = AgentLatencyJournal(fileURL: root.appendingPathComponent("agent.jsonl"))
+    let tracer = AgentLatencyTracer(
+      journal: journal,
+      monotonicNs: { monotonic },
+      wallClockMs: { wallClock },
+      clockId: "0123456789abcdef0123456789abcdef"
+    )
+
+    tracer.record(taskId: "private task content", stage: .phoneSendStarted)
+    monotonic += 250_000_000
+    wallClock -= 120_000
+    tracer.record(taskId: "private task content", stage: .phoneRequestQueued)
+    tracer.record(taskId: "private task content", stage: .phoneRequestQueued)
+
+    let points = journal.snapshot()
+    XCTAssertEqual(points.count, 2)
+    XCTAssertFalse(String(describing: points).contains("private task content"))
+    XCTAssertEqual(tracer.summary()["phone_send_prepare_ms"]?.p50Ms, 250)
+  }
+
+  func testAgentLatencySummarySeparatesIncompleteAndFailedSamples() {
+    let clock = "0123456789abcdef0123456789abcdef"
+    let success = AgentLatencyContract.opaqueId("success")
+    let incomplete = AgentLatencyContract.opaqueId("incomplete")
+    let failed = AgentLatencyContract.opaqueId("failed")
+    let points = [
+      AgentLatencyPoint(traceId: success, clockId: clock, stage: .phoneRequestQueued, monotonicNs: 0, wallClockMs: 1, outcome: ""),
+      AgentLatencyPoint(traceId: success, clockId: clock, stage: .phoneResponseReceived, monotonicNs: 80_000_000, wallClockMs: 80, outcome: ""),
+      AgentLatencyPoint(traceId: incomplete, clockId: clock, stage: .phoneRequestQueued, monotonicNs: 0, wallClockMs: 1, outcome: ""),
+      AgentLatencyPoint(traceId: failed, clockId: clock, stage: .phoneRequestQueued, monotonicNs: 0, wallClockMs: 1, outcome: ""),
+      AgentLatencyPoint(traceId: failed, clockId: clock, stage: .phoneResponseReceived, monotonicNs: 20_000_000, wallClockMs: 20, outcome: "failed")
+    ]
+
+    let metric = AgentLatencyContract.summarize(points)["phone_response_roundtrip_ms"]
+    XCTAssertEqual(metric?.count, 1)
+    XCTAssertEqual(metric?.incomplete, 1)
+    XCTAssertEqual(metric?.unsuccessful, 1)
+    XCTAssertEqual(metric?.p95Ms, 80)
+  }
+
   func testAgentProactiveTaskSchedulerIntervalCatchUpIsBounded() throws {
     let now: Int64 = 1_800_000_000_000
     let task = try proactiveIntervalTask(
