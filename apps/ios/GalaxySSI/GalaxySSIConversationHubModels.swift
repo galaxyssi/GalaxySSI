@@ -263,7 +263,30 @@ enum GalaxySSIFriendRequestUnreadPolicy {
 }
 
 enum GalaxySSIConnectorControlMessagePolicy {
+  private static let silentControlTypes: Set<String> = [
+    "connector_status",
+    "desktop_control_authorizations",
+    "desktop_control_authorization_changed",
+    "desktop_executor_event",
+    "desktop_action_receipt"
+  ]
+
   static func isSilentStatus(type: String) -> Bool {
-    type == "connector_status"
+    silentControlTypes.contains(type)
+  }
+}
+
+enum GalaxySSIPairingConfirmationDeliveryPolicy {
+  static func messageId(suppliedId: String, desktopId: String, clientRouteId: String) -> String {
+    suppliedId.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank("pairing-confirmed:\(desktopId):\(clientRouteId)")
+  }
+
+  static func needsSessionBootstrap(hasExistingSession: Bool) -> Bool {
+    !hasExistingSession
+  }
+
+  static func isFirstDelivery(_ stage: IncomingStageResult) -> Bool {
+    stage == .staged
   }
 }
