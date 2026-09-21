@@ -1898,6 +1898,7 @@ const requiredSourceSnippets = [
   [tests, "testAgentRunEventStoreReducerPreservesTerminalStateUntilExplicitRecovery"],
   [tests, "testAgentRunRecoveryPolicyMatchesAndroidDurableDesktopRules"],
   [tests, "testAgentStartupRecoveryReconcilesBeforeDispatchAndFailsClosed"],
+  [tests, "testReadyDagResumeSelectsProposedNodesWithCompletedDependencies"],
   [tests, "testAgentRunRecoveryModelsUseAndroidWireNames"],
   [tests, "testAgentRunStartReceiptStoreReservesAndReplaysIdempotentRequests"],
   [tests, "testAgentRunStartReceiptStoreAcceptsPersistsAndRejectsMismatchedHandles"],

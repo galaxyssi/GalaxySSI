@@ -3456,12 +3456,19 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func resumeLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
-          task.phase == .paused,
-          let action = task.pendingAction ?? task.pendingActions.first else {
+          task.phase == .paused else {
       return false
     }
-    if task.pendingActions.isEmpty {
-      task.pendingActions = [action]
+    let action: AgentAction
+    if let plan = task.activePlan {
+      let runnable = AgentToolCoordination.runnableActions(plan)
+      guard let ready = runnable.first else { return false }
+      task.pendingActions = runnable
+      action = ready
+    } else {
+      guard let pending = task.pendingActions.first ?? task.pendingAction else { return false }
+      if task.pendingActions.isEmpty { task.pendingActions = [pending] }
+      action = pending
     }
     task.pendingAction = action
     task.phase = .executing
