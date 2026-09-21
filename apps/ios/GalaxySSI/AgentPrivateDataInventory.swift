@@ -274,7 +274,7 @@ enum AgentPrivateDataInventory {
     localOnly("run_events", "Run event ledger", "user_defaults:galaxyssi_agent_runs", .ephemeral),
     localOnly("data_disclosure_ledger", "Model and Agent data-flow metadata and destination blocks", "files:AgentDataDisclosure/agent-data-disclosure-ledger.json", .secret),
     localOnly("connector_responses", "Pending connector responses", "user_defaults:galaxyssi_agent_connector_responses", .ephemeral),
-    localOnly("result_page_checkpoints", "Pending reply page checkpoints", "files:GalaxySSI/AgentRecovery/result-pages.sqlite3", .ephemeral),
+    localOnly("result_receipts", "Pending result receipt confirmations", "files:GalaxySSI/AgentRecovery/result-receipts.sqlite3", .ephemeral),
     localOnly("observation_context", "Recently observed Agent context", "user_defaults:galaxyssi_agent_observation_context_v1", .ephemeral),
     localOnly("mcp_credentials", "MCP connections and credentials", "user_defaults:galaxyssi_mcp_connections", .secret),
     localOnly("mcp_tool_audit", "Redacted MCP permission decisions and tool receipts", "user_defaults:galaxyssi_mcp_tool_audit", .ephemeral),
