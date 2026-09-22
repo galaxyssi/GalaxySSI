@@ -157,7 +157,7 @@ final class AgentToolCoordinationTests: XCTestCase {
     }
 
     XCTAssertEqual(AgentPlanExecutionBatchPolicy.minimumModelBatchActions, 3)
-    XCTAssertEqual(AgentPlanExecutionBatchPolicy.maximumModelBatchActions, 12)
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.maximumModelBatchActions, 64)
     XCTAssertEqual(AgentPlanExecutionBatchPolicy.maximumParallelActions, 64)
     XCTAssertTrue(
       AgentPlanExecutionBatchPolicy.accepts(
@@ -173,7 +173,7 @@ final class AgentToolCoordinationTests: XCTestCase {
     )
   }
 
-  func testSupervisedBatchRejectsDuplicateAndDependentReads() throws {
+  func testSupervisedBatchRejectsDuplicateButAcceptsOrderedDependentReads() throws {
     let descriptor = try descriptor(id: "galaxyssi.test.capacity.read", concurrency: .parallelReadOnly)
     let first = action(
       "first",
@@ -200,7 +200,7 @@ final class AgentToolCoordinationTests: XCTestCase {
         descriptorFor: { _ in descriptor }
       )
     )
-    XCTAssertFalse(
+    XCTAssertTrue(
       AgentPlanExecutionBatchPolicy.accepts(
         actions: [first, dependent],
         descriptorFor: { _ in descriptor }
@@ -231,6 +231,51 @@ final class AgentToolCoordinationTests: XCTestCase {
       actions: actions,
       descriptorFor: { descriptors[$0] }
     ))
+  }
+
+  func testSupervisedGraphRejectsTransitiveSiblingResourceConflict() throws {
+    let descriptor = try descriptor(
+      id: "galaxyssi.test.workspace.write",
+      concurrency: .serial,
+      capabilities: ["workspace.file.write"]
+    )
+    let first = action(
+      "first",
+      kind: .callNativeTool,
+      target: descriptor.id,
+      parameters: [
+        "tool_id": descriptor.id,
+        "input_json": #"{"workspace_id":"current","path":"Sources/App.swift"}"#
+      ]
+    )
+    let sibling = action(
+      "sibling",
+      kind: .callNativeTool,
+      target: descriptor.id,
+      parameters: [
+        "tool_id": descriptor.id,
+        "input_json": #"{"workspace_id":"current","path":"Tests/AppTests.swift"}"#
+      ]
+    )
+    let descendant = action(
+      "descendant",
+      kind: .callNativeTool,
+      target: descriptor.id,
+      parameters: [
+        "tool_id": descriptor.id,
+        "input_json": #"{"workspace_id":"current","path":"Sources/App.swift"}"#,
+        "depends_on": sibling.id
+      ]
+    )
+
+    XCTAssertEqual(
+      AgentPlanExecutionBatchPolicy.rejectionReason(
+        actions: [first, sibling, descendant],
+        workspaceId: "conversation-one",
+        descriptorFor: { _ in descriptor }
+      ),
+      "unordered_resource_conflict"
+    )
   }
 
   func testAdaptiveConcurrencyPolicyRespondsToDevicePressure() {
