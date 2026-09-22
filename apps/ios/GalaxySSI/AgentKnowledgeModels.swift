@@ -442,8 +442,11 @@ struct AgentKnowledgeSourcePage: Equatable {
   var groups: [AgentKnowledgeSourceGroup]
   var total: Int
   var next: AgentKnowledgeSourceCursor?
+  var positions: [AgentKnowledgeSourceCursor] = []
+  var preparing = false
+  var preparationError = ""
 
-  static let empty = AgentKnowledgeSourcePage(groups: [], total: 0, next: nil)
+  static let empty = AgentKnowledgeSourcePage(groups: [], total: 0, next: nil, positions: [])
 }
 
 struct AgentKnowledgeAccessAuditEntry: Codable, Equatable, Identifiable {

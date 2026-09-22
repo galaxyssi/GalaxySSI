@@ -306,9 +306,10 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeSourcePageTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let secrets = InMemorySecretStore()
     let database = AgentKnowledgeDatabase(
       fileURL: directory.appendingPathComponent("knowledge.sqlite"),
-      secrets: InMemorySecretStore()
+      secrets: secrets
     )
     let items = (0..<601).map { index in
       AgentKnowledgeItem(
@@ -335,6 +336,11 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
       if firstCursor == nil { firstCursor = cursor }
     } while cursor != nil
     XCTAssertEqual(Set(sources).count, 601)
+    let reopened = AgentKnowledgeDatabase(
+      fileURL: directory.appendingPathComponent("knowledge.sqlite"),
+      secrets: secrets
+    )
+    XCTAssertEqual(try reopened.sourcePage().total, 601)
 
     var changed = items
     changed[0].title = "Changed"
