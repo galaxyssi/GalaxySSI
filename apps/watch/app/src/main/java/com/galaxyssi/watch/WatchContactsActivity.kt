@@ -234,20 +234,21 @@ class WatchContactsActivity : Activity() {
         }
     }
     private fun contactRow(person: WatchPerson, click: () -> Unit) {
+        val desktop = repo.contacts.isDesktop(person.id)
         val latest = repo.contacts.messages(person.id).lastOrNull()
         val last = (if (latest?.audioId?.isNotEmpty() == true) getString(R.string.peer_voice_message) else latest?.text.orEmpty()).take(22)
         val row = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48); setPadding(dp(4), dp(5), dp(4), dp(5))
             setOnClickListener { click() }
-            if (person.status == "approved") setOnLongClickListener {
+            if (person.status == "approved" && !desktop) setOnLongClickListener {
                 if (!busy) android.app.AlertDialog.Builder(this@WatchContactsActivity)
                     .setItems(arrayOf(getString(R.string.peer_delete))) { _, _ -> confirmDelete(person) }
                     .show()
                 true
             }
         }
-        row.addView(avatar(person.fingerprint.ifBlank { person.id }), LinearLayout.LayoutParams(dp(32), dp(32)))
-        row.addView(text(person.name + if (last.isNotEmpty()) "\n$last" else "", 14).apply {
+        row.addView(if (desktop) ImageView(this).apply { setImageResource(R.drawable.ic_desktop_contact); contentDescription = getString(R.string.desktop_contact) } else avatar(person.fingerprint.ifBlank { person.id }), LinearLayout.LayoutParams(dp(32), dp(32)))
+        row.addView(text(person.name + if (!desktop && last.isNotEmpty()) "\n$last" else "", 14).apply {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(dp(9), 0, dp(3), 0)
             maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, -2, 1f))

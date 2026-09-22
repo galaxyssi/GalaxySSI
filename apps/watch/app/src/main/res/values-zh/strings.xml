@@ -165,7 +165,7 @@
     <string name="background_enabled">后台持续运行</string>
     <string name="follow_speech">跟随朗读</string>
     <string name="foreground_wake">Hello Hello 语音唤醒</string>
-    <string name="foreground_wake_help">仅在首页前台离线监听。说 Hello Hello，轻震后再用三星语音输入提问。输入、回复或朗读期间暂停监听。会增加耗电；息屏和后台不监听。</string>
+    <string name="foreground_wake_help">默认仅在首页离线监听。说 Hello Hello，轻震后进入三星语音输入。输入、回复或朗读期间暂停。需要息屏监听时，请开启下方选项。</string>
     <string name="wake_listening">Hello Hello · 待唤醒</string>
     <string name="wake_loading">唤醒准备中</string>
     <string name="wake_paused">唤醒已暂停</string>
@@ -179,7 +179,7 @@
     <string name="samsung_confirm_toggle">三星语音 1.5 秒后自动确认</string>
     <string name="samsung_confirm_settings">开启语音确认辅助服务</string>
     <string name="samsung_confirm_enabled">语音确认辅助服务已开启</string>
-    <string name="samsung_confirm_description">开启此辅助服务后，仅对 GalaxySSI 发起的三星语音输入生效。麦克风关闭且识别文字稳定 1.5 秒后，点击一次“完成”并发送到当前聊天。返回、息屏、离开语音页面，以及检测到的按钮点击或滚动会取消。可在此关闭自动确认。服务仅在内存中检查文字，不保存或上传识别页面内容。</string>
+    <string name="samsung_confirm_description">开启此辅助服务后，仅对 GalaxySSI 发起的三星语音输入生效。麦克风关闭且识别文字稳定 1.5 秒后，点击一次“完成”并发送到当前聊天。返回、息屏、离开语音页面，以及检测到的按钮点击或滚动会取消。可在此关闭自动确认。服务仅在内存中检查文字，不保存或上传识别页面内容。开启息屏与后台监听后，还可在识别到 Hello Hello 时打开 GalaxySSI 语音。</string>
     <string name="voice_touch_cancel">触屏即取消本次自动发送</string>
     <string name="voice_auto_send_cancelled">已取消自动确认，手动点击三星“完成”即可发送。</string>
     <string name="web_connection_retry">连接中断，正在重试当前步骤一次…</string>
@@ -255,4 +255,10 @@
     <string name="peer_voice_recording">%1$d秒 · 松开发送\n上滑取消</string>
     <string name="peer_voice_cancel">%1$d秒 · 松开取消</string>
     <string name="peer_voice_loading">语音正在接收，请稍后重试</string>
+    <string name="desktop_contact">电脑</string>
+    <string name="background_wake">息屏与后台监听</string>
+    <string name="background_wake_help">通过麦克风常驻通知持续监听 Hello Hello，会增加耗电。后台唤醒后轻震；开启语音辅助服务可自动打开语音，未开启时点击通知进入。重启后需打开应用恢复。</string>
+    <string name="background_wake_running">正在监听 Hello Hello</string>
+    <string name="background_wake_detected">已听到唤醒词，点击开始说话</string>
+    <string name="background_wake_stop">停止监听</string>
 </resources>

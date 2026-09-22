@@ -24,8 +24,8 @@ class WatchApplication : com.galaxyssi.chat.GalaxySSIApplication() {
     override fun onCreate() {
         super.onCreate()
         registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
-            override fun onActivityResumed(activity: android.app.Activity) { foregroundActivity = activity }
-            override fun onActivityPaused(activity: android.app.Activity) { if (foregroundActivity === activity) foregroundActivity = null }
+            override fun onActivityResumed(activity: android.app.Activity) { foregroundActivity = activity; WatchBackgroundWakeService.visibility(true) }
+            override fun onActivityPaused(activity: android.app.Activity) { if (foregroundActivity === activity) { foregroundActivity = null; WatchBackgroundWakeService.visibility(false) } }
             override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) = Unit
             override fun onActivityStarted(a: android.app.Activity) = Unit
             override fun onActivityStopped(a: android.app.Activity) = Unit
@@ -214,10 +214,13 @@ class WatchRepository(private val context: Context) {
             } },
             onControl = { desktop, payload -> worker.submit { pairingControl(desktop, payload) }.get() },
             onPayload = { desktop, payload -> worker.submit {
-                if (contacts.isPeer(desktop)) contacts.accept(desktop, payload) else applyPayload(desktop, payload)
+                if (contacts.isPeer(desktop) || (contacts.isDesktop(desktop) && payload.optString("type") in setOf(
+                    "peer_message", "input_attachment_manifest", "input_attachment_chunk", "input_attachment_receipt")))
+                    contacts.accept(desktop, payload) else applyPayload(desktop, payload)
             }.get() },
             onStored = { desktop, id, hash -> worker.execute {
-                if (contacts.isPeer(desktop)) contacts.stored(desktop, id, hash) else received(desktop, id, hash)
+                contacts.stored(desktop, id, hash)
+                if (!contacts.isPeer(desktop)) received(desktop, id, hash)
             } },
             onReady = { worker.execute { runCatching { tick() }; changed() } }, contacts = contacts,
             onContactControl = { topic, payload -> worker.submit {
@@ -259,12 +262,26 @@ class WatchRepository(private val context: Context) {
         val result = runCatching {
             Crypto.initialize(context)
                 contacts.load()
-            require(Link.validatePairingQr(qr) && Crypto.verifyPcIdentityFromQr(qr.toString()))
-            val existing = Link.serverLink(context, qr.getString("desktop_id"))
-            Link.ensureServerLink(context, qr, rotateClientRoute = Link.shouldRotateClientRoute(existing, qr))
-            pendingPairing = JSONObject(qr.toString()); lastPairing = 0
-            errorResource = 0
-            tick()
+            require(Link.validatePairingQr(qr))
+            val desktop = qr.getString("desktop_id")
+            val existing = Link.serverLink(context, desktop)
+            val keyFingerprint = MessageDigest.getInstance("SHA-256")
+                .digest(android.util.Base64.decode(qr.getString("identity_key"), android.util.Base64.DEFAULT))
+                .joinToString("") { "%02x".format(it) }
+            require(keyFingerprint.equals(qr.getString("identity_key_sha256"), ignoreCase = true))
+            // Reconfiguring models must not rotate a working relationship or reset its ratchet.
+            // In particular, do not call verifyPcIdentityFromQr on this path: it replaces sessions.
+            if (WatchPairingSession.canReuse(existing?.paired == true,
+                    Crypto.hasDesktopSession(context, desktop), existing?.desktopFingerprint.orEmpty(),
+                    Crypto.verifiedDesktopFingerprint(desktop), keyFingerprint)) {
+                contacts.syncDesktops()
+                errorResource = 0; lastStatus = 0; tick()
+            } else {
+                require(Crypto.verifyPcIdentityFromQr(qr.toString()))
+                Link.ensureServerLink(context, qr, rotateClientRoute = Link.shouldRotateClientRoute(existing, qr))
+                pendingPairing = JSONObject(qr.toString()); lastPairing = 0
+                errorResource = 0; tick()
+            }
             true
         }.getOrElse { errorResource = R.string.pairing_invalid; false }
         changed(); main.post { done(result) }
@@ -473,6 +490,7 @@ class WatchRepository(private val context: Context) {
 
     fun forget(desktop: String) { worker.execute {
         Link.removeServer(context, desktop); Crypto.clearDesktopTrust(context, desktop)
+        contacts.syncDesktops()
         store.forgetAgents(desktop); seen.remove(desktop)
         if (store.selectedDesktop == desktop) { store.selectedDesktop = ""; store.selectedAgent = "" }
         store.tasks().filter { it.desktopId == desktop && !it.state.terminal }.forEach { store.save(it.copy(state = TaskState.FAILED)) }
@@ -487,10 +505,12 @@ class WatchRepository(private val context: Context) {
             require(raw.optString("desktop_fingerprint") == link.desktopFingerprint)
             require(Crypto.verifiedDesktopFingerprint(link.desktopId) == link.desktopFingerprint)
             // A repeated confirmation must never reset a live ratchet.
-            if (!link.paired || !Crypto.hasDesktopSession(context, link.desktopId)) {
-                require(Crypto.processPcBundleForDesktop(link.desktopId, raw.getJSONObject("signal_bundle"), link.desktopFingerprint))
-                Link.markPaired(context, link.desktopId, raw.optJSONObject("pairing_access"))
-            }
+            require(WatchPairingSession.confirm(link.paired, Crypto.hasDesktopSession(context, link.desktopId)) { replace ->
+                Crypto.processPcBundleForDesktop(link.desktopId, raw.getJSONObject("signal_bundle"),
+                    link.desktopFingerprint, replaceExisting = replace)
+            })
+            Link.markPaired(context, link.desktopId, raw.optJSONObject("pairing_access"))
+            contacts.syncDesktops()
             pendingPairing = null
             seen[link.desktopId] = System.currentTimeMillis()
             raw.optJSONArray("connector_agents")?.let { store.saveAgents(link.desktopId, it) }

@@ -50,6 +50,9 @@ class WatchStore(context: Context) {
         get() = prefs.readString("voice_on_open", "false").toBoolean()
         set(value) = prefs.writeString("voice_on_open", value.toString())
     val historyLoaded: Boolean get() = taskSnapshot != null
+    var backgroundWake: Boolean
+        get() = prefs.readString("background_wake", "false").toBoolean()
+        set(value) = prefs.writeString("background_wake", value.toString())
     var foregroundWake: Boolean
         get() = prefs.readString("foreground_wake", "false").toBoolean()
         set(value) = prefs.writeString("foreground_wake", value.toString())
