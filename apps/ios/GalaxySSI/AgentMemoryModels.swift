@@ -686,13 +686,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   }
 
   private func trimHistory(_ items: [AgentMemoryItem]) -> [AgentMemoryItem] {
-    let unresolved = items.filter { $0.status != .superseded }
-    let historySlots = max(AgentMemoryPolicy.maxItems - unresolved.count, 0)
-    let history = items
-      .filter { $0.status == .superseded }
-      .sorted { $0.timestampMillis > $1.timestampMillis }
-      .prefix(historySlots)
-    return (unresolved + history).sorted { $0.timestampMillis < $1.timestampMillis }
+    items.sorted { $0.timestampMillis < $1.timestampMillis }
   }
 }
 

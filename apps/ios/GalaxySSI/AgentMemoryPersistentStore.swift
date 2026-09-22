@@ -272,7 +272,6 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
     }
     return Array(byId.values)
       .sorted { $0.timestampMillis < $1.timestampMillis }
-      .suffix(AgentMemoryPolicy.maxItems)
       .map { $0 }
   }
 
@@ -437,6 +436,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
           items.allSatisfy({ !$0.id.isEmpty && !$0.value.agentMemoryTrimmed.isEmpty }) else { return false }
     let previousIds = read()?.map(\.id) ?? []
     for item in items {
+      if find(id: item.id) == item { continue }
       guard let data = try? JSONEncoder().encode(item),
             GalaxySSIEncryptedUserDefaultsStore.write(
               data,
