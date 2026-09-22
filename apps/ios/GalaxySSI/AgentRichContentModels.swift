@@ -325,6 +325,42 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
   private static let maximumMetadataValue = 2_000
 }
 
+enum AgentRichContentUpdatePolicy {
+  static func supports(_ blocks: [AgentRichBlock]) -> Bool {
+    blocks.allSatisfy { block in
+      AgentRichSelectableParagraphs.supports(block) ||
+        [.image, .table, .code, .json, .keyValue].contains(block.type)
+    }
+  }
+
+  static func groups(_ blocks: [AgentRichBlock]) -> [[AgentRichBlock]] {
+    var result: [[AgentRichBlock]] = []
+    var index = 0
+    while index < blocks.count {
+      let start = index
+      index += 1
+      if AgentRichSelectableParagraphs.supports(blocks[start]) {
+        while index < blocks.count, AgentRichSelectableParagraphs.supports(blocks[index]) {
+          index += 1
+        }
+      }
+      result.append(Array(blocks[start..<index]))
+    }
+    return result
+  }
+
+  static func sameContent(_ previous: [AgentRichBlock], _ current: [AgentRichBlock]) -> Bool {
+    guard previous.count == current.count else { return false }
+    return zip(previous, current).allSatisfy { left, right in
+      var normalizedLeft = left
+      var normalizedRight = right
+      normalizedLeft.id = ""
+      normalizedRight.id = ""
+      return normalizedLeft == normalizedRight
+    }
+  }
+}
+
 enum AgentRichContentCodec {
   static let version = 1
   static let maximumSerializedSize = 640 * 1_024

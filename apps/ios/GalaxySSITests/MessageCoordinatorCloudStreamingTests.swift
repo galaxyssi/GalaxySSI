@@ -3,6 +3,42 @@ import XCTest
 
 final class MessageCoordinatorCloudStreamingTests: XCTestCase {
   @MainActor
+  func testCitationPreviewIsReplacedInTheSameSilentAssistantRow() async throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [
+      .citationPreview(ModelStreamCitationPreview(
+        requestId: "turn",
+        text: "Preview [source](https://example.com)",
+        receivedAtElapsedMs: 1
+      )),
+      .textDelta(ModelStreamTextDelta(
+        requestId: "turn",
+        sequence: 1,
+        text: "Final answer [source](https://example.com)",
+        receivedAtElapsedMs: 2
+      )),
+      .completed(ModelStreamCompleted(requestId: "turn", finishReason: "stop", completedAtElapsedMs: 3))
+    ])
+    let coordinator = MessageCoordinator(
+      store: fixture.store,
+      cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore()
+    )
+    var deltas: [ChatMessage] = []
+    coordinator.onIncomingMessageDelta = { deltas.append($0) }
+
+    await coordinator.send("hello", to: fixture.contact)
+
+    let messages = fixture.store.messages(for: fixture.contact.id)
+    XCTAssertEqual(messages.count, 2)
+    XCTAssertEqual(deltas.count, 2)
+    XCTAssertEqual(deltas[0].id, deltas[1].id)
+    XCTAssertNil(AgentReplySpeechPresentationPolicy.target(deltas[0]))
+    XCTAssertNotNil(AgentReplySpeechPresentationPolicy.target(deltas[1]))
+    XCTAssertEqual(messages.last?.content, "Final answer [source](https://example.com)")
+  }
+
+  @MainActor
   func testCloudAPISendBuildsSingleStreamingIncomingMessage() async throws {
     let fixture = try makeFixture()
     let stream = RecordingCloudConversationStream(events: [

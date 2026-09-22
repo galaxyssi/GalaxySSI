@@ -2,6 +2,32 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelStreamingTests: XCTestCase {
+  func testStreamTimingTracksObservableMilestonesWithoutInventingProviderSpans() {
+    var now: Int64 = 100
+    let tracker = ModelStreamTimingTracker(requestId: "timing", now: { now })
+    now = 105
+    tracker.mark("reader_started")
+    tracker.mark("request_write_start")
+    now = 110
+    tracker.mark("request_write_end")
+    now = 125
+    tracker.mark("response_headers")
+    now = 140
+    tracker.mark("first_frame")
+    tracker.mark("first_text")
+    now = 170
+    let timing = tracker.snapshot()
+
+    XCTAssertEqual(timing.requestId, "timing")
+    XCTAssertEqual(timing.milliseconds["local_queue_ms"], 5)
+    XCTAssertEqual(timing.milliseconds["request_write_ms"], 5)
+    XCTAssertEqual(timing.milliseconds["response_headers_wait_ms"], 15)
+    XCTAssertEqual(timing.milliseconds["headers_to_first_text_ms"], 15)
+    XCTAssertEqual(timing.milliseconds["stream_tail_ms"], 30)
+    XCTAssertEqual(timing.milliseconds["first_tool_ms"], -1)
+    XCTAssertEqual(timing.milliseconds["total_ms"], 70)
+  }
+
   func testModelStreamRequestAllowsHttpsAndLoopbackOnly() {
     let request = ModelStreamRequest(
       requestId: "request-1",

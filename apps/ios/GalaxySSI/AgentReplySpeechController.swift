@@ -67,6 +67,7 @@ enum AgentReplySpeechPresentationPolicy {
     "approval:",
     "remote-approval:",
     "agent-recovery:",
+    "agent-stream-preview-",
     "stale-connector:",
   ]
 }

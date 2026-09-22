@@ -255,6 +255,12 @@ struct ModelStreamTextDelta: Codable, Equatable {
   var receivedAtElapsedMs: Int64
 }
 
+struct ModelStreamCitationPreview: Codable, Equatable {
+  var requestId: String
+  var text: String
+  var receivedAtElapsedMs: Int64
+}
+
 struct ModelStreamToolCallDelta: Codable, Equatable {
   var requestId: String
   var sequence: Int64
@@ -280,6 +286,7 @@ struct ModelStreamFailed: Codable, Equatable {
 enum ModelStreamEvent: Equatable {
   case connected(ModelStreamConnected)
   case textDelta(ModelStreamTextDelta)
+  case citationPreview(ModelStreamCitationPreview)
   case toolCallDelta(ModelStreamToolCallDelta)
   case usage(ModelStreamUsage)
   case completed(ModelStreamCompleted)
@@ -291,6 +298,8 @@ enum ModelStreamEvent: Equatable {
       return event.requestId
     case .textDelta(let event):
       return event.requestId
+    case .citationPreview(let event):
+      return event.requestId
     case .toolCallDelta(let event):
       return event.requestId
     case .usage(let event):
@@ -300,6 +309,49 @@ enum ModelStreamEvent: Equatable {
     case .failed(let event):
       return event.requestId
     }
+  }
+}
+
+struct ModelStreamTiming: Equatable {
+  var requestId: String
+  var milliseconds: [String: Int64]
+}
+
+final class ModelStreamTimingTracker {
+  private let requestId: String
+  private let startedAt: Int64
+  private let now: () -> Int64
+  private var marks: [String: Int64] = [:]
+
+  init(requestId: String, now: @escaping () -> Int64) {
+    self.requestId = requestId
+    self.now = now
+    self.startedAt = now()
+  }
+
+  func mark(_ name: String) {
+    if marks[name] == nil { marks[name] = now() }
+  }
+
+  func snapshot() -> ModelStreamTiming {
+    func since(_ name: String) -> Int64 {
+      marks[name].map { max(0, $0 - startedAt) } ?? -1
+    }
+    func between(_ start: String, _ end: String) -> Int64 {
+      guard let from = marks[start], let to = marks[end] else { return -1 }
+      return max(0, to - from)
+    }
+    return ModelStreamTiming(requestId: requestId, milliseconds: [
+      "local_queue_ms": since("reader_started"),
+      "request_write_ms": between("request_write_start", "request_write_end"),
+      "response_headers_wait_ms": between("request_write_end", "response_headers"),
+      "headers_to_first_text_ms": between("response_headers", "first_text"),
+      "first_frame_ms": since("first_frame"),
+      "first_text_ms": since("first_text"),
+      "first_tool_ms": since("first_tool"),
+      "stream_tail_ms": marks["first_text"].map { max(0, now() - $0) } ?? -1,
+      "total_ms": max(0, now() - startedAt)
+    ])
   }
 }
 

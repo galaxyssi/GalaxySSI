@@ -6,6 +6,7 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
   private let lock = NSLock()
   private var activeTasks: [String: Task<Void, Never>] = [:]
   private var cancelReasons: [String: ModelStreamCancelReason] = [:]
+  private var timings: [String: ModelStreamTiming] = [:]
 
   init(
     session: URLSession = .shared,
@@ -63,15 +64,29 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
     locked { Set(activeTasks.keys) }
   }
 
+  func latestTiming(requestId: String) -> ModelStreamTiming? {
+    locked { timings[requestId] }
+  }
+
   private func run(
     _ request: ModelStreamRequest,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     let state = ModelStreamEmissionState()
+    let timing = ModelStreamTimingTracker(requestId: request.requestId, now: elapsedMillis)
+    defer {
+      locked { timings[request.requestId] = timing.snapshot() }
+      removeActive(request.requestId)
+      continuation.finish()
+    }
     do {
       let urlRequest = try Self.urlRequest(for: request)
       let adapter = ModelStreamProviderAdapters.create(provider: request.provider)
+      timing.mark("reader_started")
+      timing.mark("request_write_start")
       let (bytes, response) = try await session.bytes(for: urlRequest)
+      timing.mark("request_write_end")
+      timing.mark("response_headers")
       try throwIfCancelled(request.requestId)
       guard let http = response as? HTTPURLResponse else {
         yieldFailed(
@@ -107,10 +122,12 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
 
       if request.transport == .completeJSON {
         let body = try await collectBody(bytes)
+        timing.mark("first_frame")
         _ = emitParsedFrame(
           requestId: request.requestId,
           frame: adapter.parseCompleteJSON(data: body),
           state: state,
+          timing: timing,
           continuation: continuation
         )
       } else {
@@ -118,10 +135,12 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
         for try await line in bytes.lines {
           try throwIfCancelled(request.requestId)
           for frame in accumulator.accept(line: line) {
+            timing.mark("first_frame")
             if emitParsedFrame(
               requestId: request.requestId,
               frame: adapter.parse(data: frame.data, eventName: frame.eventName),
               state: state,
+              timing: timing,
               continuation: continuation
             ) {
               break
@@ -130,10 +149,12 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
           if state.sawTerminal { break }
         }
         if !state.sawTerminal, let finalFrame = accumulator.finish() {
+          timing.mark("first_frame")
           _ = emitParsedFrame(
             requestId: request.requestId,
             frame: adapter.parse(data: finalFrame.data, eventName: finalFrame.eventName),
             state: state,
+            timing: timing,
             continuation: continuation
           )
         }
@@ -176,14 +197,13 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
         continuation: continuation
       )
     }
-    removeActive(request.requestId)
-    continuation.finish()
   }
 
   private func emitParsedFrame(
     requestId: String,
     frame: ParsedModelStreamFrame,
     state: ModelStreamEmissionState,
+    timing: ModelStreamTimingTracker,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) -> Bool {
     if let providerSequence = frame.providerSequence {
@@ -211,6 +231,7 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       return true
     }
     for delta in frame.textDeltas where !delta.isEmpty {
+      timing.mark("first_text")
       state.emittedPayload = true
       continuation.yield(
         .textDelta(
@@ -224,6 +245,7 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       )
     }
     for payload in frame.toolDeltas {
+      timing.mark("first_tool")
       state.emittedPayload = true
       continuation.yield(
         .toolCallDelta(

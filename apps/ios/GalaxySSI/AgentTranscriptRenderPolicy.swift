@@ -7,6 +7,44 @@ struct AgentTranscriptRenderDiff: Codable, Equatable {
   var appendFromIndex: Int
 }
 
+enum AgentProcessClockPolicy {
+  static func sameTurn(_ process: AgentTranscriptEntry, _ candidate: AgentTranscriptEntry) -> Bool {
+    guard process.conversationId == candidate.conversationId else { return false }
+    if !process.turnId.isBlank { return process.turnId == candidate.turnId }
+    if !process.taskId.isBlank { return process.taskId == candidate.taskId }
+    return false
+  }
+
+  static func finalReplyTimestamp(
+    for process: AgentTranscriptEntry,
+    in entries: [AgentTranscriptEntry]
+  ) -> Int64? {
+    entries
+      .filter { $0.role == .assistant && !AgentTranscriptRenderPolicy.isLiveStream($0) && sameTurn(process, $0) }
+      .map(\.timestampMillis)
+      .max()
+  }
+}
+
+final class AgentProcessClock {
+  let startedAtMillis: Int64
+  private(set) var completedAtMillis: Int64?
+
+  init(startedAtMillis: Int64, completedAtMillis: Int64? = nil) {
+    self.startedAtMillis = startedAtMillis
+    self.completedAtMillis = completedAtMillis.map { max($0, startedAtMillis) }
+  }
+
+  func observe(completedAtMillis: Int64?) {
+    guard self.completedAtMillis == nil, let completedAtMillis else { return }
+    self.completedAtMillis = max(completedAtMillis, startedAtMillis)
+  }
+
+  func elapsed(at nowMillis: Int64) -> Int64 {
+    max(0, (completedAtMillis ?? nowMillis) - startedAtMillis)
+  }
+}
+
 enum AgentTranscriptRenderPolicy {
   static func identity(_ entry: AgentTranscriptEntry) -> String {
     entry.dedupeKey.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(entry.id)
@@ -15,6 +53,7 @@ enum AgentTranscriptRenderPolicy {
   static func signature(_ entry: AgentTranscriptEntry) -> Int {
     var fields = [
       entry.role.rawValue,
+      String(entry.id.hasPrefix("agent-stream-preview-")),
       entry.turnId,
       entry.taskId,
       entry.textSha256.ifBlank(entry.text),
@@ -40,7 +79,12 @@ enum AgentTranscriptRenderPolicy {
   }
 
   static func processGroupSignatures(_ entries: [AgentTranscriptEntry]) -> [String: Int] {
-    Dictionary(uniqueKeysWithValues: Dictionary(grouping: entries.filter { $0.role == .process }) {
+    let finalReplies = Dictionary(grouping: entries.filter {
+      $0.role == .assistant && !isLiveStream($0)
+    }) {
+      AgentTranscriptPresentationPolicy.processGroupKey($0)
+    }
+    return Dictionary(uniqueKeysWithValues: Dictionary(grouping: entries.filter { $0.role == .process }) {
       AgentTranscriptPresentationPolicy.processGroupKey($0)
     }.map { key, groupEntries in
       let visibleNarration = AgentTranscriptPresentationPolicy.narrationSegments(
@@ -48,8 +92,11 @@ enum AgentTranscriptRenderPolicy {
           .sorted { $0.timestampMillis < $1.timestampMillis }
           .uniquedByProcessNarrationIdentity()
       ).flatMap(\.entries)
-      let signature = visibleNarration.reduce(1) { result, entry in
+      let narrationSignature = visibleNarration.reduce(1) { result, entry in
         31 &* result &+ sourceProcessSignature(entry)
+      }
+      let signature = (finalReplies[key] ?? []).reduce(narrationSignature) { result, entry in
+        31 &* result &+ stableSignature([identity(entry), String(entry.timestampMillis)])
       }
       return (key, signature)
     })
