@@ -75,7 +75,7 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   func recall(query: String) -> [AgentMemoryItem] {
     locked {
       let result = base.recall(query: query)
-      persistUnlocked()
+      _ = rows.refreshAccess(result)
       return result
     }
   }
@@ -402,6 +402,33 @@ final class UserDefaultsAgentPersonalMemoryRows {
       refreshMetadataRevision()
     }
     return (before, after)
+  }
+
+  @discardableResult
+  func refreshAccess(_ recalled: [AgentMemoryItem]) -> Int {
+    guard !recalled.isEmpty,
+          Set(recalled.map(\.id)).count == recalled.count,
+          recalled.allSatisfy({ !$0.id.isEmpty }) else { return 0 }
+    var changed = 0
+    for candidate in recalled {
+      guard let before = find(id: candidate.id),
+            before.status == .active,
+            !before.privateMemory,
+            candidate.lastAccessedAtMillis > before.lastAccessedAtMillis else { continue }
+      let after = before.copy(lastAccessedAtMillis: candidate.lastAccessedAtMillis)
+      guard let data = try? JSONEncoder().encode(after),
+            GalaxySSIEncryptedUserDefaultsStore.write(
+              data,
+              defaults: defaults,
+              key: rowKey(candidate.id),
+              secrets: secrets
+            ) else { continue }
+      changed += 1
+    }
+    if changed > 0 {
+      refreshMetadataRevision()
+    }
+    return changed
   }
 
   func read() -> [AgentMemoryItem]? {

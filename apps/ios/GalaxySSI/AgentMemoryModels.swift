@@ -474,6 +474,8 @@ extension AgentMemoryStore {
 }
 
 final class InMemoryAgentMemoryStore: AgentMemoryStore {
+  static let accessRefreshIntervalMillis: Int64 = 5 * 60 * 1_000
+
   private var allItems: [AgentMemoryItem]
   private let nowMillis: () -> Int64
 
@@ -562,7 +564,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     let cleanQuery = query.agentMemoryTrimmed
     if cleanQuery.isEmpty { return [] }
     let now = nowMillis()
-    let recalled = allItems
+    let selected = Array(allItems
       .filter { $0.status == .active && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
       .filter { lexicalScore($0, query: cleanQuery) > 0 }
       .map { ($0, score($0, query: cleanQuery, nowMillis: now)) }
@@ -572,15 +574,19 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
         return $0.0.timestampMillis > $1.0.timestampMillis
       }
       .map(\.0)
-      .prefix(AgentMemoryPolicy.maxRecallItems)
+      .prefix(AgentMemoryPolicy.maxRecallItems))
 
-    let recalledIds = Set(recalled.map(\.id))
+    let recalledIds = Set(selected.map(\.id))
     if !recalledIds.isEmpty {
       allItems = allItems.map { item in
-        recalledIds.contains(item.id) ? item.copy(lastAccessedAtMillis: now) : item
+        guard recalledIds.contains(item.id),
+              item.lastAccessedAtMillis == 0 ||
+                now - item.lastAccessedAtMillis >= Self.accessRefreshIntervalMillis else { return item }
+        return item.copy(lastAccessedAtMillis: now)
       }
     }
-    return Array(recalled)
+    let refreshedById = Dictionary(uniqueKeysWithValues: allItems.map { ($0.id, $0) })
+    return selected.compactMap { refreshedById[$0.id] }
   }
 
   func recent(limit: Int = 10) -> [AgentMemoryItem] {
