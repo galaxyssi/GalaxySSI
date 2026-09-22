@@ -4,6 +4,28 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentDesktopArtifactHandoffTests: XCTestCase {
+  func testArtifactRetryGateCoalescesThenAllowsMonotonicRetry() {
+    var now: Int64 = 1_000
+    var gate = AgentArtifactRequestRetryGate(retryAfterMillis: 30_000, nowMillis: { now })
+
+    XCTAssertTrue(gate.add("artifact"))
+    now += 29_999
+    XCTAssertFalse(gate.add("artifact"))
+    now += 1
+    XCTAssertTrue(gate.add("artifact"))
+    XCTAssertTrue(gate.remove("artifact"))
+    XCTAssertTrue(gate.add("artifact"))
+  }
+
+  func testArtifactRetryGateDoesNotLetClockRollbackStarveRequests() {
+    var now: Int64 = 50_000
+    var gate = AgentArtifactRequestRetryGate(retryAfterMillis: 30_000, nowMillis: { now })
+
+    XCTAssertTrue(gate.add("artifact"))
+    now = 100
+    XCTAssertTrue(gate.add("artifact"))
+  }
+
   private var temporaryRoots: [URL] = []
 
   override func tearDownWithError() throws {
