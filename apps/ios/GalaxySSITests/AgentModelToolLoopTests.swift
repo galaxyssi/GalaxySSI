@@ -28,6 +28,38 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(second.messages.contains { $0.toolResult?.nativeResult?.receipt.replayed == true })
   }
 
+  func testDistinctPlannerLoopIdsScopeDerivedEffectKeysAndEvents() async throws {
+    var capturedKeys: [String?] = []
+    var capturedLoopIds: [String?] = []
+    let registry = try registry(idempotency: .nonIdempotent) { invocation in
+      capturedKeys.append(invocation.context.idempotencyKey)
+      capturedLoopIds.append(invocation.context.attributes["model_loop_id"])
+      return .success()
+    }
+    let first = await loop(
+      adapter: ScriptedModelAdapter(
+        AgentModelResponse(toolCalls: [call("same-call")]),
+        AgentModelResponse(assistantText: "Done.")
+      ),
+      registry: registry
+    ).run(request(loopId: "loop-a"))
+    let second = await loop(
+      adapter: ScriptedModelAdapter(
+        AgentModelResponse(toolCalls: [call("same-call")]),
+        AgentModelResponse(assistantText: "Done.")
+      ),
+      registry: registry
+    ).run(request(loopId: "loop-b"))
+
+    XCTAssertEqual(first.status, .completed)
+    XCTAssertEqual(second.status, .completed)
+    XCTAssertEqual(capturedKeys.count, 2)
+    XCTAssertNotEqual(capturedKeys[0], capturedKeys[1])
+    XCTAssertEqual(capturedLoopIds, ["loop-a", "loop-b"])
+    XCTAssertTrue(first.events.allSatisfy { $0.details["model_loop_id"] == .string("loop-a") })
+    XCTAssertTrue(second.events.allSatisfy { $0.details["model_loop_id"] == .string("loop-b") })
+  }
+
   func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() async throws {
     var capturedContexts: [AgentNativeToolInvocationContext] = []
     let registry = try registry(idempotency: .idempotent) { invocation in
@@ -405,15 +437,17 @@ final class AgentModelToolLoopTests: XCTestCase {
   private func request(
     budget: AgentModelToolLoopBudget = AgentModelToolLoopBudget(),
     cancellationToken: AgentModelToolLoopCancellationToken = .none,
-    eventSink: AgentModelToolLoopEventSink = .none
+    eventSink: AgentModelToolLoopEventSink = .none,
+    loopId: String = ""
   ) -> AgentModelToolLoopRequest {
-    .forUserMessage(
+    AgentModelToolLoopRequest(
       sessionId: "session-1",
       conversationId: "conversation-1",
       turnId: "turn-1",
       taskId: "task-1",
       workspaceId: "workspace-1",
-      userMessage: "Use the phone tool.",
+      loopId: loopId,
+      messages: [.user("Use the phone tool.")],
       budget: budget,
       cancellationToken: cancellationToken,
       eventSink: eventSink

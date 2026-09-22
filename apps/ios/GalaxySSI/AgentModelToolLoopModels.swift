@@ -135,6 +135,7 @@ struct AgentModelToolLoopRequest {
   var turnId: String
   var taskId: String
   var workspaceId: String
+  var loopId: String
   var goalId: String
   var clientRouteId: String
   var responseLanguage: String
@@ -152,6 +153,7 @@ struct AgentModelToolLoopRequest {
     turnId: String,
     taskId: String,
     workspaceId: String,
+    loopId: String = "",
     goalId: String = "",
     clientRouteId: String = "local",
     messages: [AgentModelMessage],
@@ -168,6 +170,9 @@ struct AgentModelToolLoopRequest {
     AgentModelToolLoopValidation.validateBoundId("Turn", turnId)
     AgentModelToolLoopValidation.validateBoundId("Task", taskId)
     AgentModelToolLoopValidation.validateBoundId("Workspace", workspaceId)
+    if !loopId.isEmpty {
+      AgentModelToolLoopValidation.validateBoundId("Loop", loopId)
+    }
     AgentModelToolLoopValidation.validateBoundId("Goal", goalId.ifBlank(taskId))
     AgentModelToolLoopValidation.validateBoundId("Client route", clientRouteId.ifBlank("local"))
     precondition(!messages.isEmpty)
@@ -179,6 +184,7 @@ struct AgentModelToolLoopRequest {
     self.turnId = turnId
     self.taskId = taskId
     self.workspaceId = workspaceId
+    self.loopId = loopId
     self.goalId = goalId.ifBlank(taskId)
     self.clientRouteId = clientRouteId.ifBlank("local")
     self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
