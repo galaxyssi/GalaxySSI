@@ -35,6 +35,9 @@ class WatchBackgroundWakeService : Service() {
             else {
                 detectedUntil = SystemClock.elapsedRealtime() + 8000
                 getSystemService(NotificationManager::class.java).notify(WAKE_ID, notification(R.string.background_wake_detected, true))
+                // A user-enabled system-bound accessibility service can request voice entry.
+                // Keep the notification if the OEM declines the background launch.
+                WatchSamsungConfirmService.openAfterWake()
                 handler.postDelayed(reconcile, 8100)
             }
             refresh()
@@ -96,6 +99,7 @@ class WatchBackgroundWakeService : Service() {
         private var foregroundWake: (() -> Unit)? = null
         fun visibility(value: Boolean) {
             visible = value
+            if (value) instance?.getSystemService(NotificationManager::class.java)?.cancel(WAKE_ID)
             if (!value) { foregroundWake = null; foregroundAllowed = false }
             instance?.handler?.removeCallbacks(instance!!.reconcile)
             // Allow activity transitions and microphone handoffs to finish first.

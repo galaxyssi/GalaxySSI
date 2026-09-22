@@ -19,7 +19,7 @@ import android.view.accessibility.AccessibilityManager
 import java.io.FileDescriptor
 import java.io.PrintWriter
 
-/** Only confirms a Samsung speech window opened by this app in this process. */
+/** User-enabled voice assistance: explicit wake entry and scoped Samsung confirmation. */
 class WatchSamsungConfirmService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private val gate = WatchConfirmGate()
@@ -157,6 +157,18 @@ class WatchSamsungConfirmService : AccessibilityService() {
         fun startSession(context: Context) {
             val enabled = (context.applicationContext as WatchApplication).repository.store.samsungAutoConfirm
             if (enabled && enabled(context)) current?.takeIf { it.connected }?.arm()
+        }
+        /** Called only after local Hello Hello detection, never by a network message. */
+        fun openAfterWake(): Boolean {
+            val service = current?.takeIf { it.connected } ?: return false
+            val store = (service.application as WatchApplication).repository.store
+            if (!store.foregroundWake || !store.backgroundWake || !enabled(service)) return false
+            return runCatching {
+                service.startActivity(Intent(service, MainActivity::class.java)
+                    .setAction(Intent.ACTION_VOICE_COMMAND)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                true
+            }.getOrDefault(false)
         }
         fun cancelSession() { current?.cancel() }
         fun enabled(context: Context): Boolean = context.getSystemService(AccessibilityManager::class.java)
