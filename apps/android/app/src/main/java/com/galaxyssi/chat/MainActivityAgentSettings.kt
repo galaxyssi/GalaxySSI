@@ -1314,11 +1314,22 @@ internal fun MainActivity.showFeaturePage(title: String, preserveDesktopControlI
     wakePage.visibility = View.GONE
     mainPage.visibility = View.GONE
     chatPage.visibility = View.GONE
+    val resetSettingsScroll = myAgentSurfaceActive() &&
+        (featurePage.visibility != View.VISIBLE || featureTitle.text.toString() != title)
     featurePage.visibility = View.VISIBLE
     agentVoiceConversation?.onNavigationChanged()
     featureTitle.text = title
     featureContent.removeAllViews()
     featureContent.gravity = Gravity.NO_GRAVITY
+    featureContent.setPadding(
+        if (myAgentSurfaceActive()) 0 else dp(24), 0,
+        if (myAgentSurfaceActive()) 0 else dp(24), dp(24)
+    )
+    if (resetSettingsScroll) {
+        (featureContent.parent as? ScrollView)?.let { scroll ->
+            scroll.post { if (featureTitle.text.toString() == title) scroll.scrollTo(0, 0) }
+        }
+    }
     setFeatureBackAction()
 }
 

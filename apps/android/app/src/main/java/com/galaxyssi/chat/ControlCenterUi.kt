@@ -29,6 +29,17 @@ enum class ControlCenterRoute(
     val wireValue: String,
     val isAvailable: Boolean = true
 ) {
+    MODEL_HUB("model_hub"),
+    DEVICE_HUB("device_hub"),
+    MEMORY_HUB("memory_hub"),
+    SKILLS_HUB("skills_hub"),
+    SAFETY_HUB("safety_hub"),
+    PROACTIVE_HUB("proactive_hub"),
+    OBSIDIAN_HUB("obsidian_hub"),
+    STORAGE_HUB("storage_hub"),
+    NOTIFICATIONS_HUB("notifications_hub"),
+    DIAGNOSTICS_HUB("diagnostics_hub"),
+    PERMISSIONS_HUB("permissions_hub"),
     SYSTEM_STATUS("system_status", isAvailable = false),
     GLOBAL_AGENT("global_agent"),
     AGENT_CORE("agent_core"),
@@ -61,50 +72,21 @@ enum class ControlCenterRoute(
     }
 }
 
-enum class ControlCenterHomeGroup {
-    CONNECTED_DEVICES,
-    MODELS,
-    VOICE_INTERACTION,
-    MEMORY_KNOWLEDGE,
-    SKILLS_TASKS,
-    SECURITY_DATA
-}
+enum class ControlCenterHomeGroup { COMMON, SETTINGS }
 
 object ControlCenterHomeGrouping {
-    val orderedGroups: List<ControlCenterHomeGroup> = ControlCenterHomeGroup.entries
-
+    val orderedGroups = ControlCenterHomeGroup.entries.toList()
     private val routesByGroup = linkedMapOf(
-        ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
-            ControlCenterRoute.PHONE_CAPABILITIES,
-            ControlCenterRoute.SMART_SPACES
+        ControlCenterHomeGroup.COMMON to listOf(
+            ControlCenterRoute.MODEL_HUB, ControlCenterRoute.DEVICE_HUB,
+            ControlCenterRoute.VOICE, ControlCenterRoute.MEMORY_HUB,
+            ControlCenterRoute.PROACTIVE_HUB, ControlCenterRoute.SKILLS_HUB
         ),
-        ControlCenterHomeGroup.MODELS to listOf(
-            ControlCenterRoute.RESOURCE_ROUTING,
-            ControlCenterRoute.ON_DEVICE_RUNTIME
-        ),
-        ControlCenterHomeGroup.VOICE_INTERACTION to listOf(
-            ControlCenterRoute.VOICE
-        ),
-        ControlCenterHomeGroup.MEMORY_KNOWLEDGE to listOf(
-            ControlCenterRoute.GLOBAL_AGENT,
-            ControlCenterRoute.MEMORY,
-            ControlCenterRoute.KNOWLEDGE,
-            ControlCenterRoute.LEARNING
-        ),
-        ControlCenterHomeGroup.SKILLS_TASKS to listOf(
-            ControlCenterRoute.MCP,
-            ControlCenterRoute.SELF_EVOLUTION
-        ),
-        ControlCenterHomeGroup.SECURITY_DATA to listOf(
-            ControlCenterRoute.AGENT_CORE,
-            ControlCenterRoute.DATA_BACKUP,
-            ControlCenterRoute.GENERAL
+        ControlCenterHomeGroup.SETTINGS to listOf(
+            ControlCenterRoute.SAFETY_HUB, ControlCenterRoute.GENERAL, ControlCenterRoute.ADVANCED
         )
     )
-
-    fun routes(group: ControlCenterHomeGroup): List<ControlCenterRoute> =
-        routesByGroup[group].orEmpty()
-
+    fun routes(group: ControlCenterHomeGroup): List<ControlCenterRoute> = routesByGroup[group].orEmpty()
     fun groupFor(route: ControlCenterRoute): ControlCenterHomeGroup? =
         routesByGroup.entries.firstOrNull { route in it.value }?.key
 }
@@ -157,7 +139,8 @@ data class ControlCenterRowSpec(
 
 data class ControlCenterSectionSpec(
     val title: String,
-    val rows: List<ControlCenterRowSpec>
+    val rows: List<ControlCenterRowSpec>,
+    val collapsed: Boolean = false
 )
 
 data class ControlCenterPageSpec(
@@ -202,7 +185,10 @@ internal class ControlCenterHomeRefreshPolicy(private val maxAgeMillis: Long) {
 internal fun controlCenterStatusViewTag(actionId: String): String =
     "control-center-status:$actionId"
 
-class ControlCenterRenderer(private val context: Context) {
+class ControlCenterRenderer(
+    private val context: Context,
+    private val expandedSections: MutableSet<String> = mutableSetOf()
+) {
     fun render(
         content: LinearLayout,
         page: ControlCenterPageSpec,
@@ -211,14 +197,41 @@ class ControlCenterRenderer(private val context: Context) {
         content.removeAllViews()
         content.orientation = LinearLayout.VERTICAL
         content.gravity = Gravity.NO_GRAVITY
-        content.setPadding(dp(14), dp(12), dp(14), dp(28))
+        content.setPadding(0, 0, 0, dp(28))
 
         page.banner?.let { content.addView(banner(it, onAction)) }
-        page.hero?.let { content.addView(hero(it, onAction)) }
+        page.hero?.let {
+            if (it.preserveIconColor) {
+                content.addView(hero(it.copy(badges = emptyList(), metrics = emptyList()), onAction))
+            } else if (it.actionId.isNotBlank()) {
+                content.addView(banner(ControlCenterBannerSpec(it.title, it.subtitle, it.iconRes,
+                    ControlCenterTone.NEUTRAL, it.actionId), onAction))
+            }
+        }
         page.sections.forEach { section ->
             if (section.rows.isEmpty()) return@forEach
-            content.addView(sectionTitle(section.title))
-            content.addView(sectionCard(section.rows, onAction))
+            val rows = sectionCard(section.rows, onAction)
+            if (section.title.isNotBlank()) {
+                content.addView(sectionTitle(section.title).apply {
+                    if (section.collapsed) {
+                        val key = section.title + section.rows.joinToString { it.actionId }
+                        rows.visibility = if (key in expandedSections) View.VISIBLE else View.GONE
+                        minimumHeight = dp(48)
+                        setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, R.drawable.ic_arrow_right, 0)
+                        compoundDrawableTintList = ColorStateList.valueOf(color(R.color.icon_gray))
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener {
+                            val expanded = rows.visibility != View.VISIBLE
+                            if (expanded) expandedSections.add(key) else expandedSections.remove(key)
+                            rows.visibility = if (expanded) View.VISIBLE else View.GONE
+                            isSelected = expanded
+                            contentDescription = section.title + if (expanded) " -" else " +"
+                        }
+                    }
+                })
+            }
+            content.addView(rows)
         }
         if (page.footer.isNotBlank()) {
             content.addView(TextView(context).apply {
@@ -234,8 +247,8 @@ class ControlCenterRenderer(private val context: Context) {
     private fun hero(spec: ControlCenterHeroSpec, onAction: (String) -> Unit): View =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(14))
-            background = cardBackground(dp(14), color(R.color.surface_bg), dividerColor())
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setBackgroundColor(color(R.color.surface_bg))
             isClickable = spec.actionId.isNotBlank()
             isFocusable = isClickable
             if (isClickable) setOnClickListener { onAction(spec.actionId) }
@@ -271,7 +284,7 @@ class ControlCenterRenderer(private val context: Context) {
                     ))
                     addView(TextView(context).apply {
                         text = spec.subtitle
-                        textSize = 11.5f
+                        textSize = 12f
                         maxLines = 2
                         ellipsize = TextUtils.TruncateAt.END
                         setTextColor(color(R.color.text_secondary))
@@ -330,7 +343,7 @@ class ControlCenterRenderer(private val context: Context) {
                             })
                             addView(TextView(context).apply {
                                 text = metric.label
-                                textSize = 9.5f
+                                textSize = 12f
                                 gravity = Gravity.CENTER
                                 maxLines = 2
                                 ellipsize = TextUtils.TruncateAt.END
@@ -356,9 +369,9 @@ class ControlCenterRenderer(private val context: Context) {
         LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(13), dp(12), dp(13), dp(12))
+            setPadding(dp(20), dp(14), dp(20), dp(14))
             val palette = palette(spec.tone)
-            background = cardBackground(dp(12), palette.soft, palette.border)
+            setBackgroundColor(color(R.color.surface_bg))
             isClickable = spec.actionId.isNotBlank()
             isFocusable = isClickable
             if (isClickable) setOnClickListener { onAction(spec.actionId) }
@@ -374,7 +387,7 @@ class ControlCenterRenderer(private val context: Context) {
                 })
                 addView(TextView(context).apply {
                     text = spec.subtitle
-                    textSize = 10.5f
+                    textSize = 12f
                     maxLines = 2
                     ellipsize = TextUtils.TruncateAt.END
                     setTextColor(color(R.color.text_secondary))
@@ -391,22 +404,23 @@ class ControlCenterRenderer(private val context: Context) {
 
     private fun sectionTitle(title: String): TextView = TextView(context).apply {
         text = title
-        textSize = 12.5f
+        textSize = 12f
         setTextColor(color(R.color.text_secondary))
-        setTypeface(typeface, Typeface.BOLD)
-        setPadding(dp(4), dp(14), 0, dp(7))
+        setTypeface(typeface, Typeface.NORMAL)
+        setPadding(dp(20), dp(12), dp(20), dp(8))
     }
 
     private fun sectionCard(rows: List<ControlCenterRowSpec>, onAction: (String) -> Unit): View =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = cardBackground(dp(12), color(R.color.surface_bg), dividerColor())
+            setBackgroundColor(color(R.color.surface_bg))
             rows.forEachIndexed { index, spec ->
                 addView(row(spec, onAction))
                 if (index < rows.lastIndex) {
                     addView(View(context).apply { setBackgroundColor(dividerColor()) },
                         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
-                            marginStart = dp(58)
+                            marginStart = dp(20)
+                            marginEnd = dp(20)
                         })
                 }
             }
@@ -416,14 +430,14 @@ class ControlCenterRenderer(private val context: Context) {
         LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(66)
-            setPadding(dp(12), dp(9), dp(12), dp(9))
+            minimumHeight = dp(56)
+            setPadding(dp(20), dp(13), dp(20), dp(13))
             alpha = if (spec.enabled) 1f else 0.48f
             isEnabled = spec.enabled
             isClickable = spec.enabled && spec.actionId.isNotBlank()
             isFocusable = isClickable
             if (isClickable) setOnClickListener { onAction(spec.actionId) }
-            addView(iconView(spec.iconRes, spec.tone, 32, spec.preserveIconColor))
+            addView(iconView(spec.iconRes, spec.tone, 22, spec.preserveIconColor))
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, dp(8), 0)
@@ -432,13 +446,13 @@ class ControlCenterRenderer(private val context: Context) {
                     textSize = 15f
                     setTextColor(color(R.color.text_primary))
                     setTypeface(typeface, Typeface.NORMAL)
-                    maxLines = 1
+                    maxLines = 2
                     ellipsize = TextUtils.TruncateAt.END
                 })
                 if (spec.subtitle.isNotBlank()) {
                     addView(TextView(context).apply {
                         text = spec.subtitle
-                        textSize = 11f
+                        textSize = 12f
                         setTextColor(color(R.color.text_secondary))
                         maxLines = 2
                         ellipsize = TextUtils.TruncateAt.END
@@ -473,12 +487,13 @@ class ControlCenterRenderer(private val context: Context) {
                 addView(TextView(context).apply {
                     if (spec.actionId.isNotBlank()) tag = controlCenterStatusViewTag(spec.actionId)
                     text = spec.status
-                    textSize = 10.5f
+                    textSize = 12f
                     gravity = Gravity.END or Gravity.CENTER_VERTICAL
                     maxLines = 2
+                    maxWidth = dp(108)
                     setTextColor(palette(spec.tone).strong)
                     setPadding(dp(4), 0, dp(3), 0)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
             if (spec.switchValue != null) {
                 addView(switchPill(spec.switchValue))
@@ -500,10 +515,9 @@ class ControlCenterRenderer(private val context: Context) {
             setPadding(0, 0, 0, 0)
             imageTintList = null
         } else {
-            val palette = palette(tone)
-            background = cardBackground(if (sizeDp >= 48) dp(14) else dp(9), palette.soft, Color.TRANSPARENT)
-            setPadding(dp(if (sizeDp >= 48) 11 else 7), dp(if (sizeDp >= 48) 11 else 7), dp(if (sizeDp >= 48) 11 else 7), dp(if (sizeDp >= 48) 11 else 7))
-            imageTintList = ColorStateList.valueOf(palette.strong)
+            background = null
+            setPadding(0, 0, 0, 0)
+            imageTintList = ColorStateList.valueOf(color(R.color.text_primary))
         }
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
@@ -544,7 +558,7 @@ class ControlCenterRenderer(private val context: Context) {
         setImageResource(R.drawable.ic_arrow_right)
         imageTintList = ColorStateList.valueOf(color(R.color.icon_gray))
         scaleType = ImageView.ScaleType.CENTER
-        layoutParams = LinearLayout.LayoutParams(dp(20), dp(36))
+        layoutParams = LinearLayout.LayoutParams(dp(20), dp(24))
     }
 
     private fun selectableBorderlessBackground() = context.obtainStyledAttributes(

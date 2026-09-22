@@ -927,6 +927,11 @@ internal fun MainActivity.showAsrProviderPage() {
         textSize = 12f
         setPadding(dp(4), dp(4), dp(4), dp(18))
     })
+    arrangeMyAgentResourceSections(
+        listOf(R.string.voice_asr_recognition_mode_section, R.string.voice_asr_qnn_section, R.string.voice_asr_model_section),
+        setOf(R.string.voice_provider_device_capabilities, R.string.voice_asr_runtime_mode_section,
+            R.string.voice_asr_online_privacy_section, R.string.voice_asr_remote_section)
+    )
     if (hasActiveDownload) handler.postDelayed(asrModelDownloadPoll, 1_000L)
 }
 

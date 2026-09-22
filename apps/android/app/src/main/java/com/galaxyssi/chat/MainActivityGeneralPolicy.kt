@@ -226,135 +226,47 @@ import kotlin.math.sin
 
 internal fun MainActivity.renderControlCenterVoicePage() {
     val config = VoiceAssistantSettings.get(this)
-    val selectedModel = WhisperModelManager.model(config.asrModel)
-    val capabilities = voiceProviderCapabilities(config)
-    val asrCapability = capabilities[VoiceProviderCapabilityId.WHISPER_CPP]
-    val ttsCapability = activeTtsCapability(config, capabilities)
-    showControlCenterFeature(
-        getString(R.string.cc_voice_title),
-        ControlCenterPageSpec(
-            hero = ControlCenterHeroSpec(
-                title = getString(R.string.voice_low_power_title),
-                subtitle = getString(R.string.voice_low_power_subtitle),
-                iconRes = R.drawable.ic_settings_voice,
-                actionId = "voice.settings",
-                badges = listOf(
-                    ControlCenterBadgeSpec(getString(if (config.enabled) R.string.status_enabled else R.string.common_off), if (config.enabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL),
-                    ControlCenterBadgeSpec(
-                        voiceCapabilityStatus(asrCapability),
-                        voiceCapabilityTone(asrCapability)
-                    ),
-                    ControlCenterBadgeSpec("TTS", ControlCenterTone.VIOLET)
-                )
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.voice_section_listening),
-                    listOf(
-                        ControlCenterRowSpec("voice.settings", getString(R.string.voice_wake_words), WakeWordPolicy.WAKE_WORD, R.drawable.ic_input_voice, "", ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("voice.settings", getString(R.string.voice_wake_engine), wakeProviderLabel(config.wakeProvider), R.drawable.ic_agent_node, getString(if (config.enabled) R.string.status_enabled else R.string.common_off), if (config.enabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("voice.toggle_enabled", getString(R.string.voice_low_power_monitor), getString(R.string.voice_low_power_monitor_subtitle), R.drawable.ic_voice_settings, switchValue = config.enabled, showChevron = false)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.voice_section_asr),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "voice.asr",
-                            getString(R.string.voice_asr_provider),
-                            selectedModel.displayName,
-                            R.drawable.ic_settings_voice,
-                            voiceCapabilityStatus(asrCapability),
-                            voiceCapabilityTone(asrCapability)
-                        ),
-                        ControlCenterRowSpec(
-                            "voice.tts",
-                            getString(R.string.voice_tts_provider),
-                            ttsProviderLabel(config.ttsProvider),
-                            R.drawable.ic_send_plane,
-                            voiceCapabilityStatus(ttsCapability),
-                            voiceCapabilityTone(ttsCapability)
-                        ),
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.voice_section_target),
-                    listOf(ControlCenterRowSpec("voice.settings", getString(R.string.voice_routing_mode), getString(R.string.voice_routing_mode_subtitle), R.drawable.ic_agent_node, voiceRoutingModeLabel(config.routingMode), ControlCenterTone.BLUE))
-                )
-            )
-        )
-    )
+    showControlCenterFeature(getString(R.string.my_agent_voice), ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec(getString(R.string.my_agent_voice_dialogue), listOf(
+            myAgentRow("voice.asr", R.string.my_agent_asr, R.drawable.ic_input_voice, WhisperModelManager.model(config.asrModel).displayName),
+            myAgentRow("voice.tts", R.string.my_agent_tts, R.drawable.ic_settings_voice, ttsProviderLabel(config.ttsProvider)),
+            myAgentRow("voice.settings", R.string.my_agent_voice_target, R.drawable.ic_agent_node, voiceRoutingModeLabel(config.routingMode))
+        )),
+        ControlCenterSectionSpec(getString(R.string.my_agent_wake), listOf(
+            myAgentRow("voice.toggle_enabled", R.string.my_agent_wake, R.drawable.ic_input_voice)
+                .copy(switchValue = config.enabled, showChevron = false),
+            myAgentRow("voice.settings", R.string.voice_wake_words, R.drawable.ic_settings_voice, WakeWordPolicy.WAKE_WORD)
+        )),
+        ControlCenterSectionSpec(getString(R.string.my_agent_voice_advanced), listOf(
+            myAgentRow("voice.settings", R.string.my_agent_voice_advanced, R.drawable.ic_voice_settings),
+            myAgentRow("advanced.voice_performance", R.string.my_agent_voice_health, R.drawable.ic_settings_diagnostics)
+        ), collapsed = true)
+    )))
 }
 
 internal fun MainActivity.renderControlCenterDataPage() {
-    val device = mobileNativeAgent.snapshot().currentScreen.deviceStatus
-    val cacheBytes = directorySize(cacheDir)
-    val storageSubtitle = if (device.totalStorageMb > 0L) {
-        getString(R.string.cc_storage_subtitle) + " · ${formatMegabytes(device.freeStorageMb)}"
-    } else {
-        getString(R.string.cc_storage_subtitle)
-    }
-    showControlCenterFeature(
-        getString(R.string.cc_data_title),
-        ControlCenterPageSpec(
-            banner = ControlCenterBannerSpec(
-                title = getString(R.string.cc_data_private_title),
-                subtitle = getString(R.string.cc_data_private_subtitle),
-                iconRes = R.drawable.ic_security_shield,
-                tone = ControlCenterTone.GREEN
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_backup),
-                    listOf(
-                        ControlCenterRowSpec("data.export", getString(R.string.cc_create_backup_title), getString(R.string.cc_create_backup_subtitle), R.drawable.ic_settings_upload, getString(R.string.common_export), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("data.import", getString(R.string.cc_import_backup_title), getString(R.string.cc_import_backup_subtitle), R.drawable.ic_settings_download, getString(R.string.common_import), ControlCenterTone.GREEN)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_storage),
-                    listOf(
-                        ControlCenterRowSpec("", getString(R.string.cc_storage_title), storageSubtitle, R.drawable.ic_device_node, if (device.freeStorageMb > 0L) formatMegabytes(device.freeStorageMb) else "", ControlCenterTone.VIOLET, showChevron = false),
-                        ControlCenterRowSpec("data.cache", getString(R.string.cc_clear_cache_title), getString(R.string.cc_clear_cache_subtitle), R.drawable.ic_delete, formatBytes(cacheBytes), ControlCenterTone.AMBER)
-                    )
-                )
-            )
-        )
-    )
+    showControlCenterFeature(getString(R.string.my_agent_backup), ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec(getString(R.string.cc_section_backup), listOf(
+            myAgentRow("data.export", R.string.cc_create_backup_title, R.drawable.ic_settings_upload,
+                subtitle = getString(R.string.cc_create_backup_subtitle)),
+            myAgentRow("data.import", R.string.cc_import_backup_title, R.drawable.ic_settings_download,
+                subtitle = getString(R.string.cc_import_backup_subtitle))
+        ))
+    ), footer = getString(R.string.cc_data_private_subtitle)))
 }
 
 internal fun MainActivity.renderControlCenterGeneralPage() {
-    val textScale = AppDisplaySettings.textScale(this)
-    val notificationsEnabled = appNotificationsEnabled()
-    showControlCenterFeature(
-        getString(R.string.cc_general_page_title),
-        ControlCenterPageSpec(
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.settings_control_general),
-                    listOf(
-                        ControlCenterRowSpec("general.language", getString(R.string.language_policy_title), languagePolicySummary(), R.drawable.ic_settings_language, "", ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("general.appearance", getString(R.string.cc_appearance_title), getString(R.string.cc_appearance_subtitle), R.drawable.ic_tab_discover, getString(R.string.cc_managed_by_android), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("general.text_size", getString(R.string.cc_text_size_title), appTextScaleLabel(textScale), R.drawable.ic_info_outline, "", ControlCenterTone.NEUTRAL)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_notifications_title),
-                    listOf(ControlCenterRowSpec("general.notifications", getString(R.string.cc_notifications_title), getString(R.string.cc_notifications_subtitle), R.drawable.ic_settings_notification, getString(if (notificationsEnabled) R.string.status_enabled else R.string.status_needs_setup), if (notificationsEnabled) ControlCenterTone.GREEN else ControlCenterTone.AMBER))
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.advanced_options_title),
-                    listOf(
-                        ControlCenterRowSpec("general.advanced", getString(R.string.cc_developer_title), getString(R.string.cc_developer_subtitle), R.drawable.ic_settings_diagnostics, "", ControlCenterTone.NEUTRAL)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.settings_reset_short),
-                    listOf(ControlCenterRowSpec(routeAction(ControlCenterRoute.RESET), getString(R.string.cc_reset_title), getString(R.string.cc_reset_subtitle), R.drawable.ic_reset_data, "", ControlCenterTone.RED))
-                )
-            )
-        )
-    )
+    showControlCenterFeature(getString(R.string.my_agent_general), ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec("", listOf(
+            myAgentRow("general.language", R.string.language_policy_title, R.drawable.ic_settings_language, languagePolicySummary()),
+            myAgentRow("general.appearance", R.string.cc_appearance_title, R.drawable.ic_tab_discover, getString(R.string.cc_managed_by_android)),
+            myAgentRow("general.text_size", R.string.cc_text_size_title, R.drawable.ic_info_outline, appTextScaleLabel(AppDisplaySettings.textScale(this)))
+        )),
+        ControlCenterSectionSpec("", listOf(
+            myAgentRow(routeAction(ControlCenterRoute.NOTIFICATIONS_HUB), R.string.my_agent_notifications, R.drawable.ic_settings_notification),
+            myAgentRow("general.about", R.string.settings_about_galaxyssi, R.drawable.ic_info_outline)
+        ))
+    )))
 }
 
 internal fun MainActivity.showTextSizeSettingsPage() {
@@ -438,37 +350,18 @@ internal fun MainActivity.reopenRequestedControlCenterChild(sourceIntent: Intent
 }
 
 internal fun MainActivity.renderControlCenterAdvancedPage() {
-    showControlCenterFeature(
-        getString(R.string.cc_developer_title),
-        ControlCenterPageSpec(
-            banner = ControlCenterBannerSpec(
-                title = getString(R.string.cc_advanced_diagnostics_title),
-                subtitle = getString(R.string.cc_advanced_diagnostics_subtitle),
-                iconRes = R.drawable.ic_settings_diagnostics,
-                tone = ControlCenterTone.NEUTRAL
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.advanced_section_diagnostics),
-                    listOf(
-                        ControlCenterRowSpec("advanced.watch_setup", getString(R.string.watch_setup_title), getString(R.string.watch_setup_subtitle), R.drawable.ic_protocol_link, "", ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("advanced.agent_lab", getString(R.string.cc_agent_lab_title), getString(R.string.cc_agent_lab_subtitle), R.drawable.ic_settings_diagnostics, getString(R.string.common_view), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("advanced.voice_performance", getString(R.string.voice_performance_title), getString(R.string.voice_performance_subtitle), R.drawable.ic_settings_diagnostics, getString(R.string.common_view), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("advanced.web_sources", getString(R.string.web_sources_title), getString(R.string.web_sources_subtitle), R.drawable.ic_process_network, getString(R.string.web_sources_count, AgentWebIntelligenceEngineCatalog.entries.size), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("advanced.protocol", getString(R.string.advanced_protocol_logs), getString(R.string.advanced_protocol_logs_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_view), ControlCenterTone.BLUE)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_advanced_maintenance_section),
-                    listOf(
-                        ControlCenterRowSpec("advanced.app_details", getString(R.string.cc_advanced_app_details_title), getString(R.string.cc_advanced_app_details_subtitle), R.drawable.ic_info_outline, "", ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("advanced.cache", getString(R.string.cc_clear_cache_title), getString(R.string.cc_clear_cache_subtitle), R.drawable.ic_delete, formatBytes(directorySize(cacheDir)), ControlCenterTone.AMBER)
-                    )
-                )
-            ),
-            footer = getString(R.string.cc_advanced_footer)
-        )
-    )
+    showControlCenterFeature(getString(R.string.my_agent_advanced), ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec(getString(R.string.my_agent_execution), listOf(
+            myAgentRow(routeAction(ControlCenterRoute.EXECUTION_POLICY), R.string.my_agent_execution, R.drawable.ic_agent_control),
+            myAgentRow(routeAction(ControlCenterRoute.ON_DEVICE_RUNTIME), R.string.my_agent_environment, R.drawable.ic_process_terminal),
+            myAgentRow(routeAction(ControlCenterRoute.SELF_EVOLUTION), R.string.my_agent_evolution, R.drawable.ic_agent_skill)
+        )),
+        ControlCenterSectionSpec(getString(R.string.my_agent_maintenance), listOf(
+            myAgentRow(routeAction(ControlCenterRoute.DIAGNOSTICS_HUB), R.string.my_agent_diagnostics, R.drawable.ic_settings_diagnostics),
+            myAgentRow(routeAction(ControlCenterRoute.GLOBAL_AGENT), R.string.my_agent_cognition_advanced, R.drawable.ic_agent_node),
+            myAgentRow("advanced.app_details", R.string.cc_advanced_app_details_title, R.drawable.ic_info_outline)
+        ))
+    )))
 }
 
 internal fun MainActivity.showVoicePerformanceDashboardPage() {

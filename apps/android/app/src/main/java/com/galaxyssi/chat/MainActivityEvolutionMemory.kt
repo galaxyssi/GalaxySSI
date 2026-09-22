@@ -228,200 +228,23 @@ internal fun MainActivity.renderControlCenterMemoryPage() {
     showMemoryControlCenterAsync()
 }
 
-internal fun MainActivity.buildControlCenterMemoryPage(): ControlCenterPageSpec {
-    val byKind = mobileNativeAgent.memoryStore.browseKindCounts()
-    val globalMemory = GlobalSuperAgentRuntime.get(this)
-    val memoryInbox = globalMemory.memoryInboxSnapshot()
-    val pendingCandidates = memoryInbox.pending()
-    val evolutionRecords = globalMemory.memoryEvolutionRecordsSnapshot()
-    val entityGraph = globalMemory.entityMemoryGraphSnapshot()
-    val memoryAudit = globalMemory.memoryAuditSnapshot()
-    val world = globalMemory.worldSnapshot()
-    val temporal = GlobalMemoryTemporalPolicy.snapshot(world, memoryInbox)
-    val currentCount = temporal.count(GlobalMemoryTemporalState.CURRENT)
-    val plannedCount = temporal.count(GlobalMemoryTemporalState.PLANNED)
-    val historicalCount = temporal.count(GlobalMemoryTemporalState.HISTORICAL)
-    val deprecatedCount = temporal.count(GlobalMemoryTemporalState.DEPRECATED)
-    val pendingCount = temporal.count(GlobalMemoryTemporalState.PENDING)
-    val conflictedCount = temporal.count(GlobalMemoryTemporalState.CONFLICTED)
-    val captureEnabled = mobileNativeAgent.safetySettings().memoryCapture
-    val countFor: (Set<AgentMemoryKind>) -> Long = { kinds ->
-        kinds.sumOf { byKind[it] ?: 0L }
-    }
-    return ControlCenterPageSpec(
-            hero = ControlCenterHeroSpec(
-                title = getString(R.string.cc_memory_overview_title),
-                subtitle = getString(R.string.cc_memory_overview_subtitle),
-                iconRes = R.drawable.ic_agent_memory,
-                badges = listOf(
-                    ControlCenterBadgeSpec(
-                        getString(if (captureEnabled) R.string.cc_memory_capture_on else R.string.cc_memory_capture_off),
-                        if (captureEnabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
-                    ),
-                    ControlCenterBadgeSpec(
-                        getString(R.string.cc_memory_conflict_badge, conflictedCount),
-                        if (conflictedCount == 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER
-                    )
-                ),
-                metrics = listOf(
-                    ControlCenterMetricSpec(currentCount.toString(), getString(R.string.cc_memory_metric_current)),
-                    ControlCenterMetricSpec(plannedCount.toString(), getString(R.string.cc_memory_metric_planned)),
-                    ControlCenterMetricSpec(pendingCount.toString(), getString(R.string.cc_memory_metric_pending))
-                ),
-                actionId = "memory.manage"
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_memory_section_categories),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "memory.group:identity",
-                            getString(R.string.cc_memory_identity_preferences_title),
-                            getString(R.string.cc_memory_identity_preferences_subtitle),
-                            R.drawable.ic_avatar_profile,
-                            countFor(setOf(AgentMemoryKind.IDENTITY, AgentMemoryKind.PREFERENCE)).toString(),
-                            ControlCenterTone.BLUE
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.group:people",
-                            getString(R.string.cc_memory_people_title),
-                            getString(R.string.cc_memory_people_subtitle),
-                            R.drawable.ic_tab_contacts_outline,
-                            countFor(setOf(AgentMemoryKind.CONTACT)).toString(),
-                            ControlCenterTone.GREEN
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.group:work",
-                            getString(R.string.cc_memory_work_title),
-                            getString(R.string.cc_memory_work_subtitle),
-                            R.drawable.ic_agent_history,
-                            countFor(setOf(AgentMemoryKind.TASK, AgentMemoryKind.WORKFLOW)).toString(),
-                            ControlCenterTone.VIOLET
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.group:knowledge",
-                            getString(R.string.cc_memory_knowledge_title),
-                            getString(R.string.cc_memory_knowledge_subtitle),
-                            R.drawable.ic_agent_knowledge,
-                            countFor(setOf(AgentMemoryKind.KNOWLEDGE, AgentMemoryKind.SAFETY)).toString(),
-                            ControlCenterTone.AMBER
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_memory_section_controls),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "memory.toggle_capture",
-                            getString(R.string.cc_memory_capture_title),
-                            getString(R.string.cc_memory_capture_subtitle),
-                            R.drawable.ic_security_shield,
-                            switchValue = captureEnabled,
-                            showChevron = false
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.manage",
-                            getString(R.string.cc_memory_manage_title),
-                            getString(R.string.cc_memory_manage_subtitle),
-                            R.drawable.ic_agent_memory,
-                            getString(R.string.common_view),
-                            ControlCenterTone.BLUE
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_memory_section_lifecycle),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "memory.temporal.current",
-                            getString(R.string.cc_memory_state_current_title),
-                            getString(R.string.cc_memory_state_current_subtitle),
-                            R.drawable.ic_agent_memory,
-                            currentCount.toString(),
-                            ControlCenterTone.GREEN
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.temporal.planned",
-                            getString(R.string.cc_memory_state_planned_title),
-                            getString(R.string.cc_memory_state_planned_subtitle),
-                            R.drawable.ic_agent_history,
-                            plannedCount.toString(),
-                            ControlCenterTone.BLUE
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.temporal.historical",
-                            getString(R.string.cc_memory_state_historical_title),
-                            getString(R.string.cc_memory_state_historical_subtitle),
-                            R.drawable.ic_agent_history,
-                            historicalCount.toString(),
-                            ControlCenterTone.NEUTRAL
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.temporal.deprecated",
-                            getString(R.string.cc_memory_state_deprecated_title),
-                            getString(R.string.cc_memory_state_deprecated_subtitle),
-                            R.drawable.ic_agent_history,
-                            deprecatedCount.toString(),
-                            ControlCenterTone.NEUTRAL
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.temporal.pending",
-                            getString(R.string.cc_memory_state_review_title),
-                            getString(R.string.cc_memory_state_pending_subtitle),
-                            R.drawable.ic_security_shield,
-                            pendingCount.toString(),
-                            if (pendingCount == 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.temporal.conflicted",
-                            getString(R.string.cc_memory_state_conflicted_title),
-                            getString(R.string.cc_memory_state_conflicted_subtitle),
-                            R.drawable.ic_security_shield,
-                            conflictedCount.toString(),
-                            if (conflictedCount == 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_memory_section_evolution),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "memory.inbox",
-                            getString(R.string.cc_memory_inbox_title),
-                            getString(R.string.cc_memory_inbox_subtitle),
-                            R.drawable.ic_agent_memory,
-                            pendingCandidates.size.toString(),
-                            if (pendingCandidates.isEmpty()) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.evolution_history",
-                            getString(R.string.cc_memory_evolution_history_title),
-                            getString(R.string.cc_memory_evolution_history_subtitle),
-                            R.drawable.ic_agent_history,
-                            evolutionRecords.size.toString(),
-                            ControlCenterTone.VIOLET
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.graph",
-                            getString(R.string.cc_memory_graph_title),
-                            getString(R.string.cc_memory_graph_subtitle),
-                            R.drawable.ic_protocol_link,
-                            getString(R.string.cc_memory_graph_status, entityGraph.nodes.size, entityGraph.relations.size),
-                            ControlCenterTone.BLUE
-                        ),
-                        ControlCenterRowSpec(
-                            "memory.audit",
-                            getString(R.string.cc_memory_audit_title),
-                            getString(R.string.cc_memory_audit_subtitle),
-                            R.drawable.ic_security_shield,
-                            memoryAudit.findings.size.toString(),
-                            if (memoryAudit.findings.isEmpty()) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-                        )
-                    )
-                )
-            )
-        )
-}
+internal fun MainActivity.buildControlCenterMemoryPage(): ControlCenterPageSpec =
+    ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec(getString(R.string.my_agent_memory_items), listOf(
+            myAgentRow("memory.manage", R.string.cc_memory_manage_title, R.drawable.ic_agent_memory),
+            myAgentRow("memory.temporal.current", R.string.cc_memory_state_current_title, R.drawable.ic_agent_memory),
+            myAgentRow("memory.temporal.historical", R.string.cc_memory_state_historical_title, R.drawable.ic_agent_history),
+            myAgentRow("memory.temporal.conflicted", R.string.cc_memory_state_conflicted_title, R.drawable.ic_info_outline),
+            myAgentRow("memory.inbox", R.string.my_agent_review, R.drawable.ic_info_outline)
+        )),
+        ControlCenterSectionSpec(getString(R.string.my_agent_more), listOf(
+            myAgentRow("memory.temporal.planned", R.string.cc_memory_state_planned_title, R.drawable.ic_agent_history),
+            myAgentRow("memory.temporal.deprecated", R.string.cc_memory_state_deprecated_title, R.drawable.ic_agent_history),
+            myAgentRow("memory.evolution_history", R.string.cc_memory_evolution_history_title, R.drawable.ic_agent_history),
+            myAgentRow("memory.graph", R.string.cc_memory_graph_title, R.drawable.ic_protocol_link),
+            myAgentRow("memory.audit", R.string.cc_memory_audit_title, R.drawable.ic_settings_diagnostics)
+        ), collapsed = true)
+    ))
 
 internal fun MainActivity.showGlobalMemoryInboxPage(statusFilter: GlobalMemoryCandidateStatus? = null) {
     val runtime = GlobalSuperAgentRuntime.get(this)
@@ -876,7 +699,6 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
     val catalogEntries = catalogManager.cachedCompatible()
     val catalogById = catalogEntries.associateBy(AgentRuntimePackCatalogEntry::packId)
     val receipts = AgentRuntimeExecutionReceiptStore(this).list(limit = 5)
-    val readyPacks = status.packs.count { it.state == AgentRuntimePackState.READY }
     val environmentPackIds = setOf("linux-base", "python-uv")
     val environmentPacks = status.packs.filter { it.id in environmentPackIds }
     val softwarePacks = status.packs.filterNot { it.id in environmentPackIds }
@@ -902,7 +724,9 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
                 runtimePackTitle(pack.id),
                 pack.manifest?.version.takeIf { pack.state == AgentRuntimePackState.READY }
             ),
-            subtitle = catalogEntry?.let { entry ->
+            subtitle = if (pack.state == AgentRuntimePackState.READY) {
+                pack.manifest?.let { formatBytes(it.installedSizeBytes) }.orEmpty()
+            } else catalogEntry?.let { entry ->
                 getString(
                     R.string.cc_runtime_catalog_pack_subtitle,
                     entry.version,
@@ -965,27 +789,8 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
     showControlCenterFeature(
         getString(R.string.cc_runtime_title),
         ControlCenterPageSpec(
-            banner = ControlCenterBannerSpec(
-                title = getString(if (status.backendReady) R.string.cc_runtime_ready_title else R.string.cc_runtime_setup_title),
-                subtitle = status.reason,
-                iconRes = R.drawable.ic_settings_diagnostics,
-                tone = if (status.backendReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-            ),
-            hero = ControlCenterHeroSpec(
-                title = getString(R.string.cc_runtime_overview_title),
-                subtitle = getString(R.string.cc_runtime_overview_subtitle),
-                iconRes = R.drawable.ic_settings_diagnostics,
-                badges = listOf(
-                    ControlCenterBadgeSpec(status.architecture.ifBlank { "unknown" }, ControlCenterTone.BLUE),
-                    ControlCenterBadgeSpec(status.backend.wireValue, if (status.backendReady) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL)
-                ),
-                metrics = listOf(
-                    ControlCenterMetricSpec(readyPacks.toString(), getString(R.string.cc_runtime_metric_ready)),
-                    ControlCenterMetricSpec(status.packs.size.toString(), getString(R.string.cc_runtime_metric_total)),
-                    ControlCenterMetricSpec(AgentRuntimeLanguage.entries.count(status::languageReady).toString(), getString(R.string.cc_runtime_metric_languages))
-                )
-            ),
             sections = listOf(
+                ControlCenterSectionSpec(getString(R.string.cc_runtime_section_environment), environmentRows),
                 ControlCenterSectionSpec(
                     getString(R.string.cc_runtime_section_management),
                     listOf(
@@ -995,9 +800,7 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
                                     AgentRuntimeLifecyclePhase.STOPPING
                                 )) "" else "runtime.lifecycle",
                             title = getString(R.string.cc_runtime_lifecycle_title),
-                            subtitle = status.lifecycleReason.ifBlank {
-                                getString(R.string.cc_runtime_lifecycle_subtitle)
-                            },
+                            subtitle = "",
                             iconRes = R.drawable.ic_protocol_link,
                             status = runtimeLifecycleLabel(status.lifecyclePhase),
                             tone = when (status.lifecyclePhase) {
@@ -1017,7 +820,7 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
                         ControlCenterRowSpec(
                             actionId = routeAction(ControlCenterRoute.SOFTWARE_CENTER),
                             title = getString(R.string.cc_runtime_software_center_title),
-                            subtitle = getString(R.string.cc_runtime_software_center_subtitle),
+                            subtitle = "",
                             iconRes = R.drawable.ic_local_model,
                             status = getString(
                                 R.string.cc_runtime_software_center_status,
@@ -1049,15 +852,7 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
                         )
                     )
                 ),
-                ControlCenterSectionSpec(getString(R.string.cc_runtime_section_environment), environmentRows),
-                ControlCenterSectionSpec(getString(R.string.cc_runtime_section_receipts), receiptRows),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_runtime_section_security),
-                    listOf(
-                        ControlCenterRowSpec("", getString(R.string.cc_runtime_isolation_title), getString(R.string.cc_runtime_isolation_subtitle), R.drawable.ic_security_shield, getString(R.string.cc_status_ready), ControlCenterTone.GREEN, showChevron = false),
-                        ControlCenterRowSpec("", getString(R.string.cc_runtime_network_title), getString(R.string.cc_runtime_network_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_off), ControlCenterTone.NEUTRAL, showChevron = false)
-                    )
-                )
+                ControlCenterSectionSpec(getString(R.string.cc_runtime_section_receipts), receiptRows, collapsed = true)
             )
         )
     )
