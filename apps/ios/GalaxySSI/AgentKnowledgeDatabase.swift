@@ -687,12 +687,44 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  func knowledgeStats() throws -> AgentKnowledgeStats {
+    try locked {
+      guard let statement = prepare("""
+        SELECT i.items, d.groups, i.complete,
+          COALESCE((SELECT updated_at FROM knowledge_items ORDER BY updated_at DESC, item_hash ASC LIMIT 1), 0)
+        FROM knowledge_item_count_state i
+        JOIN knowledge_source_directory_state d ON d.id = i.id
+        WHERE i.id = 1 LIMIT 1
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      let items = sqlite3_column_int64(statement, 0)
+      let sources = sqlite3_column_int64(statement, 1)
+      let itemComplete = sqlite3_column_int(statement, 2)
+      let updatedAt = sqlite3_column_int64(statement, 3)
+      let directory = try sourceDirectoryState()
+      guard items >= 0, sources >= 0, (0...1).contains(itemComplete), updatedAt >= 0 else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      return AgentKnowledgeStats(
+        itemCount: Int(clamping: items),
+        sourceCount: Int(clamping: sources),
+        lastUpdatedAtMillis: updatedAt,
+        countsComplete: itemComplete == 1 && directory.complete
+      )
+    }
+  }
+
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
       guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
       guard execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items"),
             execute("DELETE FROM knowledge_source_headers") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      guard execute("UPDATE knowledge_item_count_state SET items = 0, complete = 1 WHERE id = 1") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -918,6 +950,7 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_idx ON knowledge_items(source_hash, updated_at)")
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_item_recent ON knowledge_items(updated_at DESC, item_hash ASC)")
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_source_headers (
         source_hash TEXT PRIMARY KEY NOT NULL,
@@ -932,6 +965,7 @@ final class AgentKnowledgeDatabase {
     _ = execute("INSERT OR IGNORE INTO knowledge_metadata(key, value) VALUES ('source_header_schema', 0)")
     setupSourceDirectoryState()
     setupSourcePreviews()
+    setupKnowledgeItemCounts()
     _ = execute("""
       CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
         item_hash UNINDEXED,
@@ -1059,6 +1093,38 @@ final class AgentKnowledgeDatabase {
       AFTER DELETE ON knowledge_source_headers
       BEGIN
         DELETE FROM knowledge_source_previews WHERE source_hash = OLD.source_hash;
+      END
+      """)
+  }
+
+  private func setupKnowledgeItemCounts() {
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_item_count_state (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        items INTEGER NOT NULL DEFAULT 0 CHECK(typeof(items) = 'integer' AND items >= 0),
+        complete INTEGER NOT NULL CHECK(complete IN (0, 1))
+      )
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_item_count_state(id, items, complete)
+      SELECT 1, 0, CASE WHEN EXISTS(SELECT 1 FROM knowledge_items LIMIT 1) THEN 0 ELSE 1 END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_item_count_insert
+      AFTER INSERT ON knowledge_items
+      WHEN (SELECT complete FROM knowledge_item_count_state WHERE id = 1) = 1
+      BEGIN
+        UPDATE knowledge_item_count_state SET items = items + 1 WHERE id = 1;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Knowledge item count state is missing') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_item_count_delete
+      AFTER DELETE ON knowledge_items
+      WHEN (SELECT complete FROM knowledge_item_count_state WHERE id = 1) = 1
+      BEGIN
+        UPDATE knowledge_item_count_state SET items = items - 1 WHERE id = 1;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Knowledge item count state is missing') END;
       END
       """)
   }
