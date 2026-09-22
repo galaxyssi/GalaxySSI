@@ -537,7 +537,6 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(scope.owns(bound))
     XCTAssertFalse(scope.owns(second))
   }
-
   func testAgentPlanNodeIdentityIgnoresRevisionAddedAfterCheckpoint() throws {
     let originalAction = AgentAction(
       id: "node-a",
@@ -574,6 +573,41 @@ extension GalaxySSIStoreTests {
     ))
 
     XCTAssertEqual(original.journalId, restored.journalId)
+  }
+  func testAgentPlanContinuationScopeKeepsPersistedTurnAcrossControlMessage() throws {
+    let action = AgentAction(
+      id: "first",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .completed,
+      description: "Read first",
+      parameters: [
+        AgentPlanContinuationScope.conversationIdKey: "conversation",
+        AgentPlanContinuationScope.turnIdKey: "execution-turn"
+      ]
+    )
+    let plan = lifecyclePlan(action)
+    let scope = try XCTUnwrap(AgentPlanContinuationScope.resolve(
+      plan: plan,
+      activeConversationId: "conversation",
+      activeTurnId: "control-message-turn",
+      sessionId: "session"
+    ))
+
+    XCTAssertEqual(scope.turnId, "execution-turn")
+
+    var conflicting = plan
+    var second = action
+    second.id = "second"
+    second.parameters[AgentPlanContinuationScope.turnIdKey] = "other-execution-turn"
+    conflicting.actions.append(second)
+    XCTAssertNil(AgentPlanContinuationScope.resolve(
+      plan: conflicting,
+      activeConversationId: "conversation",
+      activeTurnId: "control-message-turn",
+      sessionId: "session"
+    ))
   }
   func testAgentPlanNodeJournalRejectsObservationForAnotherAction() throws {
     let suite = "AgentPlanNodeJournalMismatchTests.\(UUID().uuidString)"

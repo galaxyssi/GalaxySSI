@@ -490,11 +490,12 @@ struct AgentPlanContinuationScope: Equatable {
         .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
     let conversations = identifiers(Self.conversationIdKey, active: activeConversationId)
-    let turns = identifiers(Self.turnIdKey, active: activeTurnId)
+    // A continuation message has its own turn and does not own the running task.
+    let turns = identifiers(Self.turnIdKey, active: "")
     guard conversations.count <= 1, turns.count <= 1 else { return nil }
     return AgentPlanContinuationScope(
       conversationId: conversations.first ?? sessionId,
-      turnId: turns.first ?? ""
+      turnId: turns.first ?? activeTurnId
     )
   }
 }
