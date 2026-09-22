@@ -25,7 +25,7 @@ final class GalaxySSIBackupTests: XCTestCase {
     let root = try GalaxySSIBackupManager.decodeStreamingRoot(from: data)
 
     XCTAssertEqual(GalaxySSIBackupManager.iterations, 600_000)
-    XCTAssertEqual(root.version, 2)
+    XCTAssertEqual(root.version, 3)
     XCTAssertEqual(root.type, "galaxyssi_backup")
     XCTAssertEqual(root.kdf, "pbkdf2-hmac-sha256")
     XCTAssertEqual(root.cipher, "aes-256-gcm")
@@ -36,6 +36,40 @@ final class GalaxySSIBackupTests: XCTestCase {
     XCTAssertEqual(root.chunks.map(\.plaintextByteCount).reduce(0, +), root.plaintextByteCount)
     XCTAssertEqual(Data(base64Encoded: root.chunks[0].nonce)?.count, 12)
     XCTAssertEqual(Data(base64Encoded: root.footer)?.count, 32)
+    XCTAssertEqual(root.knowledgeRowCount, 0)
+    XCTAssertTrue((root.knowledgeRecords ?? []).isEmpty)
+  }
+
+  func testKnowledgeRowsUseIndividuallyAuthenticatedRecords() throws {
+    let store = makeStore()
+    let imported = store.importAgentKnowledge(
+      title: "Private runbook",
+      content: "Rotate the local service key after a recovery.",
+      source: "local:runbook"
+    )
+    XCTAssertEqual(imported.count, 1)
+
+    let encrypted = try GalaxySSIBackupManager.exportBackup(
+      store: store,
+      password: "password123",
+      iterations: 32
+    )
+    var root = try GalaxySSIBackupManager.decodeStreamingRoot(from: encrypted)
+    XCTAssertEqual(root.knowledgeRowCount, 1)
+    XCTAssertEqual(root.knowledgeRecords?.count, 1)
+    XCTAssertEqual(root.knowledgeRecords?.first?.identitySHA256.count, 64)
+    let restored = try GalaxySSIBackupManager.importBackup(data: encrypted, password: "password123")
+    XCTAssertEqual(restored.agentData.knowledge, imported)
+
+    var record = try XCTUnwrap(root.knowledgeRecords?.first)
+    var ciphertext = try XCTUnwrap(Data(base64Encoded: record.ciphertext))
+    ciphertext[0] ^= 0x01
+    record.ciphertext = ciphertext.base64EncodedString()
+    root.knowledgeRecords = [record]
+    XCTAssertThrowsError(try GalaxySSIBackupManager.importBackup(
+      data: JSONEncoder().encode(root),
+      password: "password123"
+    ))
   }
 
   func testBackupRestoresCloudAPISecretsAndLocalState() throws {
@@ -255,6 +289,27 @@ final class GalaxySSIBackupTests: XCTestCase {
     XCTAssertEqual(imported.profile, payload.profile)
     XCTAssertEqual(imported.privacyManifest, payload.privacyManifest)
     XCTAssertEqual(imported.agentData, payload.agentData)
+  }
+
+  func testVersionTwoChunkedBackupRemainsImportable() throws {
+    let store = makeStore()
+    _ = store.importAgentKnowledge(
+      title: "Legacy knowledge",
+      content: "This row remains readable from a version two archive.",
+      source: "local:legacy"
+    )
+    let payload = store.exportBackupPayload()
+    let chunked = try GalaxySSIBackupManager.encryptChunkedPayloadForCompatibility(
+      payload,
+      password: "password123",
+      iterations: 32
+    )
+
+    XCTAssertEqual(try GalaxySSIBackupManager.decodeStreamingRoot(from: chunked).version, 2)
+    XCTAssertEqual(
+      try GalaxySSIBackupManager.importBackup(data: chunked, password: "password123"),
+      payload
+    )
   }
 
   func testBackupRejectsShortPassword() {

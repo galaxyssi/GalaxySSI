@@ -498,6 +498,22 @@ struct GalaxySSIStreamingBackupChunk: Codable, Equatable {
   }
 }
 
+struct GalaxySSIStreamingKnowledgeRecord: Codable, Equatable {
+  var index: Int
+  var identitySHA256: String
+  var plaintextByteCount: Int
+  var nonce: String
+  var ciphertext: String
+
+  enum CodingKeys: String, CodingKey {
+    case index
+    case identitySHA256 = "identity_sha256"
+    case plaintextByteCount = "plaintext_byte_count"
+    case nonce
+    case ciphertext
+  }
+}
+
 struct GalaxySSIStreamingBackupRoot: Codable, Equatable {
   var version: Int
   var type: String
@@ -509,6 +525,8 @@ struct GalaxySSIStreamingBackupRoot: Codable, Equatable {
   var plaintextByteCount: Int
   var chunks: [GalaxySSIStreamingBackupChunk]
   var payloadSHA256: String
+  var knowledgeRowCount: Int? = nil
+  var knowledgeRecords: [GalaxySSIStreamingKnowledgeRecord]? = nil
   var footer: String
   var createdAt: Int64
 
@@ -523,6 +541,8 @@ struct GalaxySSIStreamingBackupRoot: Codable, Equatable {
     case plaintextByteCount = "plaintext_byte_count"
     case chunks
     case payloadSHA256 = "payload_sha256"
+    case knowledgeRowCount = "knowledge_row_count"
+    case knowledgeRecords = "knowledge_records"
     case footer
     case createdAt = "created_at"
   }
@@ -530,7 +550,8 @@ struct GalaxySSIStreamingBackupRoot: Codable, Equatable {
 
 enum GalaxySSIBackupManager {
   static let legacyVersion = 1
-  static let version = 2
+  static let chunkedVersion = 2
+  static let version = 3
   static let type = "galaxyssi_backup"
   static let kdf = "pbkdf2-hmac-sha256"
   static let cipher = "aes-256-gcm"
@@ -564,11 +585,41 @@ enum GalaxySSIBackupManager {
     password: String,
     iterations: Int = GalaxySSIBackupManager.iterations
   ) throws -> Data {
+    try encryptPayload(
+      payload,
+      password: password,
+      iterations: iterations,
+      archiveVersion: version
+    )
+  }
+
+  static func encryptChunkedPayloadForCompatibility(
+    _ payload: GalaxySSIBackupPayload,
+    password: String,
+    iterations: Int = GalaxySSIBackupManager.iterations
+  ) throws -> Data {
+    try encryptPayload(
+      payload,
+      password: password,
+      iterations: iterations,
+      archiveVersion: chunkedVersion
+    )
+  }
+
+  private static func encryptPayload(
+    _ payload: GalaxySSIBackupPayload,
+    password: String,
+    iterations: Int,
+    archiveVersion: Int
+  ) throws -> Data {
     try validatePassword(password)
     guard iterations > 0 else {
       throw GalaxySSIError.invalidPayload("Backup KDF iterations must be positive.")
     }
-    let payloadData = try backupEncoder.encode(payload)
+    var metadataPayload = payload
+    let knowledge = archiveVersion == version ? (metadataPayload.agentData.knowledge ?? []) : []
+    if archiveVersion == version { metadataPayload.agentData.knowledge = nil }
+    let payloadData = try backupEncoder.encode(metadataPayload)
     let salt = try randomData(count: saltByteCount)
     let key = SymmetricKey(data: try pbkdf2SHA256(
       password: password,
@@ -580,10 +631,12 @@ enum GalaxySSIBackupManager {
     var chunks: [GalaxySSIStreamingBackupChunk] = []
     chunks.reserveCapacity(expectedChunkCount)
     var footerInput = streamingHeaderAuthenticationData(
+      archiveVersion: archiveVersion,
       iterations: iterations,
       salt: salt,
       plaintextByteCount: payloadData.count,
-      chunkCount: expectedChunkCount
+      chunkCount: expectedChunkCount,
+      knowledgeRowCount: archiveVersion == version ? knowledge.count : nil
     )
 
     for index in 0..<expectedChunkCount {
@@ -596,6 +649,7 @@ enum GalaxySSIBackupManager {
         using: key,
         nonce: try AES.GCM.Nonce(data: nonceData),
         authenticating: chunkAuthenticationData(
+          archiveVersion: archiveVersion,
           index: index,
           plaintextByteCount: plaintext.count,
           totalPlaintextByteCount: payloadData.count,
@@ -614,9 +668,45 @@ enum GalaxySSIBackupManager {
       ))
     }
 
+    var knowledgeRecords: [GalaxySSIStreamingKnowledgeRecord] = []
+    knowledgeRecords.reserveCapacity(knowledge.count)
+    var identities = Set<String>()
+    for (index, item) in knowledge.enumerated() {
+      try validateKnowledgeRecord(item)
+      let identity = Data(SHA256.hash(data: Data(item.id.utf8))).hexString()
+      guard identities.insert(identity).inserted else {
+        throw GalaxySSIError.invalidPayload("Knowledge backup contains duplicate identities.")
+      }
+      let plaintext = try backupEncoder.encode(item)
+      let nonceData = try randomData(count: nonceByteCount)
+      let sealed = try AES.GCM.seal(
+        plaintext,
+        using: key,
+        nonce: try AES.GCM.Nonce(data: nonceData),
+        authenticating: knowledgeAuthenticationData(
+          index: index,
+          identity: identity,
+          plaintextByteCount: plaintext.count,
+          rowCount: knowledge.count
+        )
+      )
+      var combined = sealed.ciphertext
+      combined.append(sealed.tag)
+      footerInput.append(Data(identity.utf8))
+      footerInput.append(nonceData)
+      footerInput.append(combined)
+      knowledgeRecords.append(GalaxySSIStreamingKnowledgeRecord(
+        index: index,
+        identitySHA256: identity,
+        plaintextByteCount: plaintext.count,
+        nonce: nonceData.base64EncodedString(),
+        ciphertext: combined.base64EncodedString()
+      ))
+    }
+
     let footer = Data(HMAC<SHA256>.authenticationCode(for: footerInput, using: key))
     let root = GalaxySSIStreamingBackupRoot(
-      version: version,
+      version: archiveVersion,
       type: type,
       kdf: kdf,
       iterations: iterations,
@@ -626,6 +716,8 @@ enum GalaxySSIBackupManager {
       plaintextByteCount: payloadData.count,
       chunks: chunks,
       payloadSHA256: Data(SHA256.hash(data: payloadData)).hexString(),
+      knowledgeRowCount: archiveVersion == version ? knowledge.count : nil,
+      knowledgeRecords: archiveVersion == version ? knowledgeRecords : nil,
       footer: footer.base64EncodedString(),
       createdAt: currentTimestampMilliseconds()
     )
@@ -636,15 +728,20 @@ enum GalaxySSIBackupManager {
     try validatePassword(password)
     let envelope = try backupDecoder.decode(BackupEnvelopeVersion.self, from: data)
     let payloadData: Data
+    var knowledge: [AgentKnowledgeItem]?
     switch envelope.version {
     case legacyVersion:
       payloadData = try decryptRoot(decodeRoot(from: data), password: password)
-    case version:
-      payloadData = try decryptStreamingRoot(decodeStreamingRoot(from: data), password: password)
+    case chunkedVersion, version:
+      let archive = try decryptStreamingRoot(decodeStreamingRoot(from: data), password: password)
+      payloadData = archive.payload
+      knowledge = archive.knowledge
     default:
       throw GalaxySSIError.invalidPayload("Backup file format is not supported.")
     }
-    return try backupDecoder.decode(GalaxySSIBackupPayload.self, from: payloadData)
+    var payload = try backupDecoder.decode(GalaxySSIBackupPayload.self, from: payloadData)
+    if let knowledge { payload.agentData.knowledge = knowledge }
+    return payload
   }
 
   static func decodeRoot(from data: Data) throws -> GalaxySSIBackupRoot {
@@ -774,8 +871,8 @@ enum GalaxySSIBackupManager {
   private static func decryptStreamingRoot(
     _ root: GalaxySSIStreamingBackupRoot,
     password: String
-  ) throws -> Data {
-    guard root.version == version,
+  ) throws -> (payload: Data, knowledge: [AgentKnowledgeItem]?) {
+    guard [chunkedVersion, version].contains(root.version),
           root.type == type,
           root.kdf == kdf,
           root.cipher == cipher,
@@ -800,10 +897,12 @@ enum GalaxySSIBackupManager {
       keyByteCount: keyByteCount
     ))
     var footerInput = streamingHeaderAuthenticationData(
+      archiveVersion: root.version,
       iterations: root.iterations,
       salt: salt,
       plaintextByteCount: root.plaintextByteCount,
-      chunkCount: expectedChunkCount
+      chunkCount: expectedChunkCount,
+      knowledgeRowCount: root.version == version ? root.knowledgeRowCount : nil
     )
     var decodedChunks: [(nonce: Data, combined: Data, plaintextByteCount: Int)] = []
     decodedChunks.reserveCapacity(expectedChunkCount)
@@ -823,6 +922,28 @@ enum GalaxySSIBackupManager {
       footerInput.append(nonce)
       footerInput.append(combined)
       decodedChunks.append((nonce, combined, chunk.plaintextByteCount))
+    }
+    let knowledgeRecords = root.knowledgeRecords ?? []
+    let knowledgeRowCount = root.knowledgeRowCount ?? 0
+    if root.version == version {
+      guard knowledgeRowCount >= 0, knowledgeRecords.count == knowledgeRowCount else {
+        throw GalaxySSIError.invalidPayload("Backup archive knowledge section is incomplete.")
+      }
+      for (index, record) in knowledgeRecords.enumerated() {
+        guard record.index == index,
+              record.identitySHA256.count == 64,
+              record.plaintextByteCount > 0,
+              let nonce = Data(base64Encoded: record.nonce), nonce.count == nonceByteCount,
+              let combined = Data(base64Encoded: record.ciphertext),
+              combined.count == record.plaintextByteCount + gcmTagByteCount else {
+          throw GalaxySSIError.invalidPayload("Backup archive contains an invalid knowledge record.")
+        }
+        footerInput.append(Data(record.identitySHA256.utf8))
+        footerInput.append(nonce)
+        footerInput.append(combined)
+      }
+    } else if root.knowledgeRowCount != nil || root.knowledgeRecords != nil {
+      throw GalaxySSIError.invalidPayload("Backup archive contains unsupported knowledge records.")
     }
     guard totalByteCount == root.plaintextByteCount else {
       throw GalaxySSIError.invalidPayload("Backup archive byte count does not match its footer.")
@@ -847,6 +968,7 @@ enum GalaxySSIBackupManager {
           sealed,
           using: key,
           authenticating: chunkAuthenticationData(
+            archiveVersion: root.version,
             index: index,
             plaintextByteCount: chunk.plaintextByteCount,
             totalPlaintextByteCount: root.plaintextByteCount,
@@ -861,25 +983,108 @@ enum GalaxySSIBackupManager {
           Data(SHA256.hash(data: plaintext)).hexString() == root.payloadSHA256.lowercased() else {
       throw GalaxySSIError.invalidPayload("Backup archive payload digest does not match.")
     }
-    return plaintext
+    guard root.version == version else { return (plaintext, nil) }
+    var knowledge: [AgentKnowledgeItem] = []
+    knowledge.reserveCapacity(knowledgeRowCount)
+    var identities = Set<String>()
+    do {
+      for record in knowledgeRecords {
+        let nonce = Data(base64Encoded: record.nonce)!
+        let combined = Data(base64Encoded: record.ciphertext)!
+        let sealed = try AES.GCM.SealedBox(
+          nonce: try AES.GCM.Nonce(data: nonce),
+          ciphertext: Data(combined.prefix(combined.count - gcmTagByteCount)),
+          tag: Data(combined.suffix(gcmTagByteCount))
+        )
+        let data = try AES.GCM.open(
+          sealed,
+          using: key,
+          authenticating: knowledgeAuthenticationData(
+            index: record.index,
+            identity: record.identitySHA256,
+            plaintextByteCount: record.plaintextByteCount,
+            rowCount: knowledgeRowCount
+          )
+        )
+        let item = try decodeKnowledgeRecord(data)
+        let identity = Data(SHA256.hash(data: Data(item.id.utf8))).hexString()
+        guard identity == record.identitySHA256.lowercased(), identities.insert(identity).inserted else {
+          throw GalaxySSIError.invalidPayload("Knowledge backup identity validation failed.")
+        }
+        knowledge.append(item)
+      }
+    } catch let error as GalaxySSIError {
+      throw error
+    } catch {
+      throw GalaxySSIError.invalidPayload("Backup password is incorrect or the file is damaged.")
+    }
+    return (plaintext, knowledge)
   }
 
   private static func streamingHeaderAuthenticationData(
+    archiveVersion: Int,
     iterations: Int,
     salt: Data,
     plaintextByteCount: Int,
-    chunkCount: Int
+    chunkCount: Int,
+    knowledgeRowCount: Int? = nil
   ) -> Data {
-    Data("\(type)|\(version)|\(kdf)|\(cipher)|\(iterations)|\(salt.base64EncodedString())|\(chunkByteCount)|\(plaintextByteCount)|\(chunkCount)".utf8)
+    var value = "\(type)|\(archiveVersion)|\(kdf)|\(cipher)|\(iterations)|\(salt.base64EncodedString())|\(chunkByteCount)|\(plaintextByteCount)|\(chunkCount)"
+    if archiveVersion == version { value += "|\(knowledgeRowCount ?? -1)" }
+    return Data(value.utf8)
   }
 
   private static func chunkAuthenticationData(
+    archiveVersion: Int,
     index: Int,
     plaintextByteCount: Int,
     totalPlaintextByteCount: Int,
     chunkCount: Int
   ) -> Data {
-    Data("\(type)|\(version)|\(index)|\(plaintextByteCount)|\(totalPlaintextByteCount)|\(chunkCount)".utf8)
+    Data("\(type)|\(archiveVersion)|\(index)|\(plaintextByteCount)|\(totalPlaintextByteCount)|\(chunkCount)".utf8)
+  }
+
+  private static func knowledgeAuthenticationData(
+    index: Int,
+    identity: String,
+    plaintextByteCount: Int,
+    rowCount: Int
+  ) -> Data {
+    Data("\(type)|\(version)|knowledge|\(index)|\(identity)|\(plaintextByteCount)|\(rowCount)".utf8)
+  }
+
+  private static func validateKnowledgeRecord(_ item: AgentKnowledgeItem) throws {
+    guard !item.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !item.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          item.chunkIndex >= 0,
+          item.chunkCount > 0,
+          item.chunkIndex < item.chunkCount,
+          item.allowedAgentIds.count <= 128 else {
+      throw GalaxySSIError.invalidPayload("Knowledge backup contains an invalid record.")
+    }
+  }
+
+  private static func decodeKnowledgeRecord(_ data: Data) throws -> AgentKnowledgeItem {
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let id = object["id"] as? String, !id.isEmpty,
+          let kind = object["kind"] as? String, AgentKnowledgeKind.allCases.map(\.rawValue).contains(kind),
+          let cloud = object["cloud_access"] as? String,
+          AgentKnowledgeCloudAccess.allCases.map(\.rawValue).contains(cloud),
+          let agent = object["agent_access"] as? String,
+          AgentKnowledgeAgentAccess.allCases.map(\.rawValue).contains(agent),
+          object["chunk_index"] is NSNumber,
+          object["chunk_count"] is NSNumber,
+          object["updated_at_millis"] is NSNumber else {
+      throw GalaxySSIError.invalidPayload("Knowledge backup contains an unsupported policy or record.")
+    }
+    let item = try backupDecoder.decode(AgentKnowledgeItem.self, from: data)
+    try validateKnowledgeRecord(item)
+    guard item.id == id, item.kind.rawValue == kind,
+          item.cloudAccess.rawValue == cloud, item.agentAccess.rawValue == agent else {
+      throw GalaxySSIError.invalidPayload("Knowledge backup record was normalized during validation.")
+    }
+    return item
   }
 
   private static func expectedStreamingChunkCount(for plaintextByteCount: Int) -> Int {
