@@ -6,7 +6,7 @@ struct CloudConversationNonStreamingToolEngine {
 
   init(
     modelClient: CloudModelClient,
-    toolExecutor: CloudConversationToolExecuting = CloudWebGroundingToolExecutor()
+    toolExecutor: CloudConversationToolExecuting = CloudConversationToolExecutor()
   ) {
     self.modelClient = modelClient
     self.toolExecutor = toolExecutor
@@ -19,6 +19,7 @@ struct CloudConversationNonStreamingToolEngine {
     images: [CloudImagePayload],
     requestId: String
   ) async throws -> String {
+    defer { CloudImageAnnotationSession.discard(requestId: requestId) }
     let request = try await modelClient.prepareConversationStreamRequest(
       contact: contact,
       store: store,
@@ -70,9 +71,10 @@ struct CloudConversationNonStreamingToolEngine {
         }
         if !candidate.isBlank,
            !CloudWebGrounding.citationValidation(candidate, results: evidence).requiresRepair {
-          return candidate
+          return candidate + CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
         }
-        return CloudWebGrounding.evidenceFallback(results: evidence)
+        return CloudWebGrounding.evidenceFallback(results: evidence) +
+          CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
       }
 
       if finalRound {
@@ -103,6 +105,7 @@ struct CloudConversationNonStreamingToolEngine {
       var madeProgress = false
       for (call, arguments) in parsedCalls {
         if let output = progress.cached(toolName: call.name, arguments: arguments) {
+          CloudImageAnnotationSession.selectResult(output, requestId: requestId)
           results.append((call, output))
           continue
         }
@@ -111,13 +114,16 @@ struct CloudConversationNonStreamingToolEngine {
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
             conversationId: turns.last?.conversationId ?? "",
-            turnId: turns.last?.turnId ?? requestId
+            turnId: turns.last?.turnId ?? requestId,
+            images: images
           )
         )
         results.append((call, output))
         if progress.record(toolName: call.name, arguments: arguments, output: output) {
           madeProgress = true
-          evidence.append((call.name, output))
+          if call.name.lowercased() != CloudImageAnnotationPlan.toolName {
+            evidence.append((call.name, output))
+          }
         }
       }
       if usesInline {

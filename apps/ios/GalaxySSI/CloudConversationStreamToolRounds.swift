@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UIKit
 
 protocol CloudConversationToolExecuting {
   func executeTool(call: AssembledToolCall, context: CloudConversationToolExecutionContext) throws -> String
@@ -9,6 +10,129 @@ struct CloudConversationToolExecutionContext: Equatable {
   var requestId: String
   var conversationId: String
   var turnId: String
+  var images: [CloudImagePayload] = []
+}
+
+struct CloudConversationToolExecutor: CloudConversationToolExecuting {
+  private let web = CloudWebGroundingToolExecutor()
+
+  func executeTool(call: AssembledToolCall, context: CloudConversationToolExecutionContext) throws -> String {
+    guard call.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ==
+      CloudImageAnnotationPlan.toolName else {
+      return try web.executeTool(call: call, context: context)
+    }
+    let arguments = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+    return try CloudImageAnnotationSession.execute(arguments: arguments, context: context)
+  }
+}
+
+enum CloudImageAnnotationSession {
+  private static let lock = NSLock()
+  private static var blocksByRequest: [String: [Int: AgentRichBlock]] = [:]
+  private static var renderedByRequest: [String: [String: AgentRichBlock]] = [:]
+
+  static func execute(
+    arguments: AgentMcpJSONObject,
+    context: CloudConversationToolExecutionContext
+  ) throws -> String {
+    let plan = try CloudImageAnnotationPlan.parse(arguments, imageCount: context.images.count)
+    let payload = context.images[plan.imageIndex]
+    let original = payload.originalData.flatMap(UIImage.init(data:))
+    let source = original.flatMap { image -> UIImage? in
+      guard let cgImage = image.cgImage,
+            Int64(cgImage.width) * Int64(cgImage.height) <= 8_000_000 else { return nil }
+      return image
+    } ?? UIImage(data: payload.data)
+    guard let source else {
+      throw GalaxySSIError.invalidPayload("Attached image could not be decoded.")
+    }
+    let output = try CloudImageAnnotationRenderer.render(source: source, plan: plan)
+    guard let data = output.pngData(), !data.isEmpty, data.count <= 12 * 1_024 * 1_024 else {
+      throw GalaxySSIError.invalidPayload("Annotated image could not be encoded within the size limit.")
+    }
+    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let directory = try outputDirectory()
+    let url = directory.appendingPathComponent("\(digest).png")
+    if !FileManager.default.fileExists(atPath: url.path) {
+      try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
+    }
+    let block = AgentRichBlock(
+      id: "annotation-\(digest)",
+      type: .image,
+      title: "Annotated image \(plan.imageIndex + 1)",
+      uri: url.absoluteString,
+      mimeType: "image/png",
+      fallbackText: "Annotated copy of \(context.images[plan.imageIndex].displayName)",
+      metadata: [
+        "local_image_annotation": "true",
+        "sha256": digest,
+        "size_bytes": String(data.count)
+      ]
+    )
+    locked {
+      var blocks = blocksByRequest[context.requestId] ?? [:]
+      blocks[plan.imageIndex] = block
+      blocksByRequest[context.requestId] = blocks
+      var rendered = renderedByRequest[context.requestId] ?? [:]
+      rendered["\(plan.imageIndex):\(digest)"] = block
+      renderedByRequest[context.requestId] = rendered
+    }
+    return AgentMcpJSONCodec.stringify([
+      "status": .string("completed"),
+      "tool": .string(CloudImageAnnotationPlan.toolName),
+      "image_index": .int(Int64(plan.imageIndex)),
+      "mark_count": .int(Int64(plan.marks.count)),
+      "image_sha256": .string(digest),
+      "image_saved": .bool(true),
+      "presentation": .string("The app appends the verified image card; do not create image links.")
+    ])
+  }
+
+  static func artifactSuffix(requestId: String) -> String {
+    let blocks = locked { blocksByRequest.removeValue(forKey: requestId) ?? [:] }
+    guard !blocks.isEmpty else { return "" }
+    return "\n\n```galaxyssi-rich\n\(AgentRichContentCodec.encode(blocks.sorted { $0.key < $1.key }.map(\.value)))\n```"
+  }
+
+  static func discard(requestId: String) {
+    locked {
+      blocksByRequest.removeValue(forKey: requestId)
+      renderedByRequest.removeValue(forKey: requestId)
+    }
+  }
+
+  static func selectResult(_ output: String, requestId: String) {
+    guard let data = output.data(using: .utf8),
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          object["tool"]?.stringValue == CloudImageAnnotationPlan.toolName,
+          object["image_saved"]?.boolValue == true,
+          let index = object["image_index"]?.integerForSchema,
+          let digest = object["image_sha256"]?.stringValue else { return }
+    locked {
+      guard let block = renderedByRequest[requestId]?["\(index):\(digest)"] else { return }
+      var blocks = blocksByRequest[requestId] ?? [:]
+      blocks[index] = block
+      blocksByRequest[requestId] = blocks
+    }
+  }
+
+  private static func outputDirectory() throws -> URL {
+    let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.temporaryDirectory
+    let directory = root.appendingPathComponent("GalaxySSI/ImageAnnotations", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: directory,
+      withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+    )
+    return directory
+  }
+
+  private static func locked<T>(_ work: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return work()
+  }
 }
 
 final class CloudWebToolLoopProgress {

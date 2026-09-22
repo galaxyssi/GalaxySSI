@@ -174,13 +174,16 @@ extension CloudModelClient {
     requestId: String
   ) throws -> ModelStreamRequest {
     let endpoint = try Self.validStreamingEndpoint(model.endpoint)
-    var messages = Self.openAIMessages(turns: turns, systemPrompt: systemPrompt)
+    var messages = Self.openAIMessages(
+      turns: turns,
+      systemPrompt: systemPrompt + "\n\n" + CloudImageAnnotationPlan.instruction(imageCount: images.count)
+    )
     CloudVisionPayloadEncoder.attachOpenAI(to: &messages, images: images)
     let body = try Self.bodyJSON([
       "model": model.modelId,
       "messages": messages,
       "stream": true,
-      "tools": CloudModelStreamToolSchemas.openAITools(),
+      "tools": CloudModelStreamToolSchemas.openAITools(includeImageAnnotation: !images.isEmpty),
       "tool_choice": "auto"
     ])
     return ModelStreamRequest(
@@ -206,10 +209,10 @@ extension CloudModelClient {
     CloudVisionPayloadEncoder.attachAnthropic(to: &messages, images: images)
     let body = try Self.bodyJSON([
       "model": model.modelId,
-      "system": systemPrompt,
+      "system": systemPrompt + "\n\n" + CloudImageAnnotationPlan.instruction(imageCount: images.count),
       "max_tokens": 1200,
       "messages": messages,
-      "tools": CloudModelStreamToolSchemas.anthropicTools(),
+      "tools": CloudModelStreamToolSchemas.anthropicTools(includeImageAnnotation: !images.isEmpty),
       "stream": true
     ])
     return ModelStreamRequest(
@@ -238,10 +241,12 @@ extension CloudModelClient {
     var contents = Self.geminiContents(turns: turns)
     CloudVisionPayloadEncoder.attachGemini(to: &contents, images: images)
     let body = try Self.bodyJSON([
-      "system_instruction": ["parts": [["text": systemPrompt]]],
+      "system_instruction": ["parts": [[
+        "text": systemPrompt + "\n\n" + CloudImageAnnotationPlan.instruction(imageCount: images.count)
+      ]]],
       "contents": contents,
       "generationConfig": ["temperature": 0.7, "maxOutputTokens": 1200],
-      "tools": CloudModelStreamToolSchemas.geminiTools()
+      "tools": CloudModelStreamToolSchemas.geminiTools(includeImageAnnotation: !images.isEmpty)
     ])
     return ModelStreamRequest(
       requestId: Self.normalizedStreamRequestId(requestId),

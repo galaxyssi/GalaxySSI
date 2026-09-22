@@ -77,7 +77,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     modelClient: CloudModelClient = CloudModelClient(),
     streamClient: CloudModelStreamClient = URLSessionCloudModelStreamClient(),
     legacySender: CloudConversationLegacySending? = nil,
-    toolExecutor: CloudConversationToolExecuting = CloudWebGroundingToolExecutor(),
+    toolExecutor: CloudConversationToolExecuting = CloudConversationToolExecutor(),
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
@@ -159,6 +159,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     requestId: String,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
+    defer { CloudImageAnnotationSession.discard(requestId: requestId) }
     let ticket = AgentDataDisclosureLedger.beginCloudRequest(
       store: disclosureStore,
       destination: AgentDataDisclosureCloudDestination(contact: contact),
@@ -438,6 +439,17 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               )
             }
           }
+          let artifactSuffix = CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+          if !artifactSuffix.isEmpty {
+            emittedText = true
+            emittedSequence += 1
+            continuation.yield(.textDelta(ModelStreamTextDelta(
+              requestId: requestId,
+              sequence: emittedSequence,
+              text: artifactSuffix,
+              receivedAtElapsedMs: elapsedMillis()
+            )))
+          }
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
           continuation.yield(
             .completed(
@@ -467,6 +479,17 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 )
               )
             )
+          }
+          let artifactSuffix = CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
+          if !artifactSuffix.isEmpty {
+            emittedText = true
+            emittedSequence += 1
+            continuation.yield(.textDelta(ModelStreamTextDelta(
+              requestId: requestId,
+              sequence: emittedSequence,
+              text: artifactSuffix,
+              receivedAtElapsedMs: elapsedMillis()
+            )))
           }
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
           continuation.yield(
@@ -515,7 +538,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
             conversationId: conversationId,
-            turnId: turnId
+            turnId: turnId,
+            images: images
           )
         )
         if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {
@@ -542,12 +566,15 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             madeProgress = true
-            evidenceResults.append((outcome.call.name, output))
+            if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName {
+              evidenceResults.append((outcome.call.name, output))
+            }
           }
         }
         let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
           let (call, arguments) = item
           guard let output = progress.cached(toolName: call.name, arguments: arguments) else { return nil }
+          CloudImageAnnotationSession.selectResult(output, requestId: requestId)
           return (call, output)
         }
 
