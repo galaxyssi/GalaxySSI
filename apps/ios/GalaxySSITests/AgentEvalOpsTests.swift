@@ -280,6 +280,37 @@ final class AgentEvalOpsTests: XCTestCase {
     )
   }
 
+  func testShadowRoutingStoreKeepsIndexedNewestRecordsAcrossInstances() {
+    let suite = "AgentShadowRoutingIndexTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let key = "shadow-routing-test"
+
+    for index in 0..<12 {
+      AgentShadowRoutingStore(defaults: defaults, secrets: secrets, key: key).save(
+        AgentShadowRoutingRecommendation(
+          id: "recommendation-\(index)",
+          scenarioId: "scenario-\(index)",
+          taskClass: .general,
+          actualResourceId: "actual",
+          recommendedResourceId: "recommended",
+          scores: [],
+          shouldAutoSwitch: false,
+          confidence: 0.5,
+          createdAtMillis: Int64(index)
+        )
+      )
+    }
+
+    let reopened = AgentShadowRoutingStore(defaults: defaults, secrets: secrets, key: key)
+    XCTAssertEqual(reopened.recent(limit: 3).map(\.id), [
+      "recommendation-11", "recommendation-10", "recommendation-9"
+    ])
+    XCTAssertFalse(defaults.dictionaryRepresentation().keys.contains(key))
+  }
+
   func testAttentionBudgetSuppressesLowValueInterruptions() {
     let high = AgentAttentionBudgetPolicy.evaluate(
       candidate: AgentAttentionCandidate(
