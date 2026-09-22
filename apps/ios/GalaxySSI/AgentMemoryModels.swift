@@ -337,6 +337,111 @@ enum AgentMemoryIdentity {
   }
 }
 
+enum AgentMemorySection: String, Codable {
+  case active
+  case conflicts
+  case history
+}
+
+struct AgentMemoryBrowseCounts: Equatable {
+  var active: Int
+  var conflicts: Int
+  var history: Int
+}
+
+struct AgentMemoryBrowseCursor: Equatable {
+  var position: Int
+  var itemId: String
+  var revision: String
+  var scope: String
+}
+
+struct AgentMemoryBrowseRequest {
+  var section: AgentMemorySection = .active
+  var kinds: Set<AgentMemoryKind> = []
+  var cursor: AgentMemoryBrowseCursor?
+  var limit: Int = 25
+  var publicOnly: Bool = false
+  var nowMillis: Int64 = 0
+  var backwards: Bool = false
+}
+
+struct AgentMemoryBrowseEntry: Equatable {
+  var item: AgentMemoryItem
+  var conflictSize: Int = 0
+}
+
+struct AgentMemoryBrowsePage: Equatable {
+  var entries: [AgentMemoryBrowseEntry]
+  var counts: AgentMemoryBrowseCounts
+  var next: AgentMemoryBrowseCursor?
+  var previous: AgentMemoryBrowseCursor?
+}
+
+enum AgentMemoryBrowseError: Error, Equatable {
+  case invalidRequest
+  case pageChanged
+}
+
+extension AgentMemorySnapshot {
+  func browse(_ request: AgentMemoryBrowseRequest) throws -> AgentMemoryBrowsePage {
+    guard (1...100).contains(request.limit),
+          !request.publicOnly || request.section == .active,
+          !request.backwards || request.cursor != nil else { throw AgentMemoryBrowseError.invalidRequest }
+    let includes: (AgentMemoryItem) -> Bool = { request.kinds.isEmpty || request.kinds.contains($0.kind) }
+    let active = activeItems.filter(includes)
+    let groups = conflicts.filter { request.kinds.isEmpty || request.kinds.contains($0.kind) }
+    let history = historyItems.filter(includes)
+    let entries: [AgentMemoryBrowseEntry]
+    switch request.section {
+    case .active:
+      entries = active
+        .filter { !request.publicOnly || (!$0.privateMemory && !$0.isExpired(nowMillis: request.nowMillis)) }
+        .sorted {
+          if $0.important != $1.important { return $0.important && !$1.important }
+          if $0.timestampMillis != $1.timestampMillis { return $0.timestampMillis > $1.timestampMillis }
+          return $0.id < $1.id
+        }
+        .map { AgentMemoryBrowseEntry(item: $0) }
+    case .conflicts:
+      entries = groups.compactMap { group in
+        group.candidates.max(by: { $0.timestampMillis < $1.timestampMillis }).map {
+          AgentMemoryBrowseEntry(item: $0, conflictSize: group.candidates.count)
+        }
+      }.sorted { $0.item.timestampMillis > $1.item.timestampMillis }
+    case .history:
+      entries = history.sorted {
+        if $0.timestampMillis != $1.timestampMillis { return $0.timestampMillis > $1.timestampMillis }
+        return $0.id < $1.id
+      }.map { AgentMemoryBrowseEntry(item: $0) }
+    }
+    let revision = (activeItems + historyItems + conflicts.flatMap(\.candidates))
+      .map { "\($0.id):\($0.status.rawValue):\($0.timestampMillis)" }
+      .joined(separator: "|")
+    let scope = "\(request.section.rawValue):\(request.kinds.map(\.rawValue).sorted().joined(separator: ",")):\(request.publicOnly):\(request.nowMillis)"
+    if let cursor = request.cursor {
+      guard cursor.scope == scope else { throw AgentMemoryBrowseError.invalidRequest }
+      guard cursor.revision == revision else { throw AgentMemoryBrowseError.pageChanged }
+    }
+    let start = request.backwards
+      ? max((request.cursor?.position ?? 0) - request.limit, 0)
+      : (request.cursor.map { $0.position + 1 } ?? 0)
+    let shown = Array(entries.dropFirst(start).prefix(request.limit))
+    let makeCursor: (Int, String) -> AgentMemoryBrowseCursor = {
+      AgentMemoryBrowseCursor(position: $0, itemId: $1, revision: revision, scope: scope)
+    }
+    let next = start + shown.count < entries.count && !shown.isEmpty
+      ? makeCursor(start + shown.count - 1, shown.last!.item.id) : nil
+    let previous = start > 0 && !shown.isEmpty ? makeCursor(start, shown[0].item.id) : nil
+    return AgentMemoryBrowsePage(
+      entries: shown,
+      counts: AgentMemoryBrowseCounts(active: active.count, conflicts: groups.count, history: history.count),
+      next: next,
+      previous: previous
+    )
+  }
+}
+
 protocol AgentMemoryStore {
   @discardableResult func remember(_ item: AgentMemoryItem) -> AgentMemoryWriteResult
   func recall(query: String) -> [AgentMemoryItem]
@@ -351,6 +456,21 @@ protocol AgentMemoryStore {
   @discardableResult func setPrivate(itemId: String, privateMemory: Bool) -> Bool
   @discardableResult func deprecate(itemId: String) -> Bool
   @discardableResult func resolveConflict(groupId: String, selectedItemId: String, mergedValue: String?) -> AgentMemoryItem?
+}
+
+extension AgentMemoryStore {
+  func browse(_ request: AgentMemoryBrowseRequest) throws -> AgentMemoryBrowsePage {
+    try snapshot().browse(request)
+  }
+
+  func browseCounts(kinds: Set<AgentMemoryKind> = []) -> AgentMemoryBrowseCounts {
+    (try? browse(AgentMemoryBrowseRequest(kinds: kinds, limit: 1)).counts) ??
+      AgentMemoryBrowseCounts(active: 0, conflicts: 0, history: 0)
+  }
+
+  func browseKindCounts() -> [AgentMemoryKind: Int] {
+    Dictionary(grouping: snapshot().activeItems, by: \.kind).mapValues(\.count)
+  }
 }
 
 final class InMemoryAgentMemoryStore: AgentMemoryStore {
