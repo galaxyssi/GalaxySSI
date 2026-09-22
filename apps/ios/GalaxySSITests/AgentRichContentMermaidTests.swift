@@ -89,6 +89,18 @@ final class AgentRichContentMermaidTests: XCTestCase {
     XCTAssertEqual(image.metadata["markdown_image_source"], image.uri)
   }
 
+  func testLinkedMarkdownImageBecomesImageAndSourceWithoutWrapperResidue() throws {
+    let blocks = AgentRichContentCodec.fromText(
+      "Before [![Mackerel](https://images.example/fish.jpg)](https://source.example/fish) after"
+    )
+
+    XCTAssertEqual(blocks.map(\.type), [.text, .image, .text, .text])
+    XCTAssertEqual(blocks[1].uri, "https://images.example/fish.jpg")
+    XCTAssertEqual(blocks[2].text, "[Mackerel](<https://source.example/fish>)")
+    XCTAssertEqual(blocks[3].text, "after")
+    XCTAssertFalse(blocks.compactMap(\.text).joined().contains("](https://source.example"))
+  }
+
   func testMarkdownImageParserPreservesLiteralAndUnsafeSources() {
     let literalCases = [
       "[Image](https://example.com/fish.jpg)",

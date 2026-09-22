@@ -64,6 +64,50 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertLessThan(ledger.project(source).count, source.count)
   }
 
+  func testEvidencePromptLedgerBalancesQueryFocusedExcerptsAcrossBatch() throws {
+    let body = String(repeating: "Navigation and unrelated background. ", count: 100) +
+      "\nBattery benchmark measured 42 hours; the previous claim was incorrect.\n" +
+      String(repeating: "More unrelated background. ", count: 100)
+    let outputs = (0..<24).map { index in
+      let pack = AgentIOSWebEvidencePack.build(
+        query: "benchmark",
+        status: "completed",
+        documents: [[
+          "url": .string("https://source\(index).example/report"),
+          "title": .string("Battery report"),
+          "content": .string(body)
+        ]],
+        results: [], receipts: [], generatedAtMillis: 1
+      )
+      return AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    }
+    let projected = CloudEvidencePromptLedger(query: "battery benchmark").project(outputs)
+    let excerpts = projected.compactMap { encoded -> String? in
+      decodeObject(encoded)?["evidence_pack"]?.objectValue?["items"]?.arrayValue?.first?.objectValue?["excerpt"]?.stringValue
+    }
+
+    XCTAssertEqual(excerpts.count, 24)
+    XCTAssertLessThanOrEqual(excerpts.reduce(0) { $0 + $1.count }, 16_000)
+    XCTAssertTrue(excerpts.allSatisfy { $0.contains("42 hours") })
+  }
+
+  func testEvidencePromptLedgerDropsOnlyEmptySearchRoutingDiagnostics() throws {
+    let encoded = AgentMcpJSONCodec.stringify([
+      "operation": .string("search"), "status": .string("failed"),
+      "receipts": .array([.object(["error_code": .string("engine_timeout")])]),
+      "metadata": .object([
+        "profile": .string("fast"), "source_health": .array([.string("diagnostic")]),
+        "circuits_skipped": .array([.string("diagnostic")])
+      ])
+    ])
+    let result = try XCTUnwrap(decodeObject(CloudEvidencePromptLedger().project(encoded)))
+
+    XCTAssertEqual(result["receipts"]?.arrayValue?.first?.objectValue?["error_code"], .string("engine_timeout"))
+    XCTAssertEqual(result["metadata"]?.objectValue?["profile"], .string("fast"))
+    XCTAssertNil(result["metadata"]?.objectValue?["source_health"])
+    XCTAssertNil(result["metadata"]?.objectValue?["circuits_skipped"])
+  }
+
   func testExposesAllUnifiedWebIntelligenceOperations() {
     let names = CloudWebGrounding.openAITools().compactMap {
       $0["function"]?.objectValue?["name"]?.stringValue
@@ -72,6 +116,7 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertEqual(
       names,
       [
+        "web_weather",
         "web_search",
         "web_fetch",
         "web_crawl",

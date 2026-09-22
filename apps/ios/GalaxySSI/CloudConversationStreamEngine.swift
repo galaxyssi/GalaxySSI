@@ -212,7 +212,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       var evidenceResults: [(String, String)] = []
-      let evidencePromptLedger = CloudEvidencePromptLedger()
+      let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
       var round = 0
 
@@ -578,8 +578,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return (call, output)
         }
 
+        let rawEvidence = evidenceResults.map(\.1)
+        let projectedEvidence = evidencePromptLedger.project(rawEvidence)
+        var projectionByOriginal: [String: String] = [:]
+        for (original, projection) in zip(rawEvidence, projectedEvidence) {
+          projectionByOriginal[original] = projection
+        }
         let promptResults = results.map { call, output in
-          (call, evidencePromptLedger.project(output))
+          (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
         }
         if usesInlineProtocol {
           prepared.appendInlineToolResults(rawRoundText, results: promptResults)

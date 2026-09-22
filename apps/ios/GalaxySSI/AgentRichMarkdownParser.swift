@@ -374,7 +374,37 @@ extension AgentRichContentCodec {
         search = text.index(after: index)
         continue
       }
-      let leading = String(text[cursor..<marker.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+      let imageEnd = text.index(after: index)
+      var promotedStart = marker.lowerBound
+      var promotedEnd = imageEnd
+      var sourceURL: String?
+      if marker.lowerBound > text.startIndex {
+        let opening = text.index(before: marker.lowerBound)
+        if text[opening] == "[", imageEnd < text.endIndex, text[imageEnd] == "]" {
+          let sourceOpen = text.index(after: imageEnd)
+          if sourceOpen < text.endIndex, text[sourceOpen] == "(" {
+            let sourceStart = text.index(after: sourceOpen)
+            var sourceCursor = sourceStart
+            let sourceAngled = sourceCursor < text.endIndex && text[sourceCursor] == "<"
+            if sourceAngled { sourceCursor = text.index(after: sourceCursor) }
+            let valueStart = sourceCursor
+            while sourceCursor < text.endIndex,
+                  text[sourceCursor] != (sourceAngled ? ">" : ")") {
+              sourceCursor = text.index(after: sourceCursor)
+            }
+            let value = String(text[valueStart..<sourceCursor]).replacingOccurrences(of: "&amp;", with: "&")
+            if sourceCursor < text.endIndex, sourceAngled {
+              sourceCursor = text.index(after: sourceCursor)
+            }
+            if sourceCursor < text.endIndex, text[sourceCursor] == ")", isSafeMarkdownImageURL(value) {
+              promotedStart = opening
+              promotedEnd = text.index(after: sourceCursor)
+              sourceURL = value
+            }
+          }
+        }
+      }
+      let leading = String(text[cursor..<promotedStart]).trimmingCharacters(in: .whitespacesAndNewlines)
       if !leading.isEmpty { result.append(AgentRichBlock(id: markdownID(), type: .text, text: leading)) }
       let alt = String(text[marker.upperBound..<altEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
       result.append(AgentRichBlock(
@@ -384,8 +414,21 @@ extension AgentRichContentCodec {
         uri: destination,
         metadata: ["markdown_image_source": destination]
       ))
+      if let sourceURL {
+        let label = alt.ifBlank("Source")
+          .replacingOccurrences(of: "\\", with: "\\\\")
+          .replacingOccurrences(of: "[", with: "\\[")
+          .replacingOccurrences(of: "]", with: "\\]")
+          .replacingOccurrences(of: "\n", with: " ")
+          .replacingOccurrences(of: "\r", with: " ")
+        result.append(AgentRichBlock(
+          id: markdownID(),
+          type: .text,
+          text: "[\(label)](<\(sourceURL)>)"
+        ))
+      }
       promoted += 1
-      cursor = text.index(after: index)
+      cursor = promotedEnd
       search = cursor
     }
     let trailing = String(text[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)

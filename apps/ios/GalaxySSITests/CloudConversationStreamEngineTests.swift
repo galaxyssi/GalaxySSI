@@ -87,6 +87,36 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertEqual(progress.cached(toolName: "web_search", arguments: reordered), "result")
   }
 
+  func testToolLoopProgressReusesOnlyEquivalentRetrievedPageBodies() {
+    let progress = CloudWebToolLoopProgress()
+    let arguments: AgentMcpJSONObject = ["url": .string("https://example.test/page")]
+    let body = AgentMcpJSONCodec.stringify([
+      "status": .string("completed"),
+      "evidence_pack": .object([
+        "items": .array([.object([
+          "url": .string("https://example.test/page"),
+          "evidence_level": .string("retrieved_body"),
+          "excerpt": .string("The actual page body.")
+        ])])
+      ])
+    ])
+
+    XCTAssertTrue(progress.record(toolName: "web_fetch", arguments: arguments, output: body))
+    XCTAssertEqual(progress.cached(toolName: "web_extract", arguments: arguments), body)
+    XCTAssertNil(progress.cached(
+      toolName: "web_extract",
+      arguments: ["url": .string("https://example.test/page"), "fields": .array([.string("date")])]
+    ))
+    XCTAssertNil(progress.cached(
+      toolName: "web_fetch",
+      arguments: ["url": .string("https://example.test/page"), "force": .bool(true)]
+    ))
+    XCTAssertNil(progress.cached(
+      toolName: "web_fetch",
+      arguments: ["url": .string("https://example.test/page"), "focus": .string("counterexample")]
+    ))
+  }
+
   func testToolLoopProgressAllowsOneRepairAndOneFinalizationRequest() {
     let progress = CloudWebToolLoopProgress()
 
