@@ -1206,42 +1206,7 @@ internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntr
     } else {
         richContent
     }
-    val decoratedContent = decorateAgentReplySpeech(entry, content)
-    val executionLabel = agentAssistantExecutionLabel(entry) ?: return decoratedContent
-    return LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        addView(decoratedContent)
-        addView(executionLabel)
-    }
-}
-
-internal fun MainActivity.agentAssistantExecutionLabel(entry: AgentTranscriptEntry, existing: View? = null): View? {
-    val execution = agentExecutionPresentations[entry.taskId]
-        ?.takeUnless { isAgentApprovalEntry(entry) || entry.dedupeKey.startsWith("agent-recovery:") }
-        ?: return null
-    return ((existing as? TextView) ?: TextView(this)).apply {
-            text = buildString {
-                append(execution.executorLabel)
-                append(" \u00b7 ")
-                append(agentExecutionHostText(execution.locationKind))
-                append(" \u00b7 ")
-                append(agentExecutionRuntimeText(execution))
-                execution.locationLabelHint.takeIf(String::isNotBlank)?.let {
-                    append(" \u00b7 ")
-                    append(it)
-                }
-            }
-            setTextColor(getColorCompat(R.color.text_secondary))
-            textSize = 10f
-            includeFontPadding = false
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(2), dp(5), dp(2), 0)
-    }
+    return decorateAgentReplySpeech(entry, content)
 }
 
 internal fun MainActivity.agentAssistantRichContent(
