@@ -190,7 +190,8 @@ enum AgentIOSHomeAssistantNativeToolCatalog {
       } ?? [noExtraConsent],
       timeoutMillis: 16_000,
       idempotency: idempotency,
-      availability: provider.availability()
+      availability: provider.availability(),
+      effect: idempotency == .idempotent ? .readOnly : .mutation
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,

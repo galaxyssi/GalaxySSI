@@ -96,6 +96,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     var outputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
     var timeoutMillis: Int64 = 15_000
     var idempotency: AgentNativeToolIdempotency = .nonIdempotent
+    var effect: AgentNativeToolEffect? = nil
   }
 
   private static let specifications: [Specification] = [
@@ -194,7 +195,8 @@ enum AgentIOSHardwareNativeToolCatalog {
       requiredConsents: specification.consents,
       timeoutMillis: specification.timeoutMillis,
       idempotency: specification.idempotency,
-      availability: specification.availability
+      availability: specification.availability,
+      effect: specification.effect
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -233,7 +235,8 @@ enum AgentIOSHardwareNativeToolCatalog {
       consents: [noExtraConsent],
       availability: .available,
       inputSchema: inputSchema,
-      outputSchema: outputSchema
+      outputSchema: outputSchema,
+      effect: .readOnly
     )
   }
 
@@ -422,7 +425,8 @@ enum AgentIOSHardwareNativeToolCatalog {
         properties: ["enabled": boolSchema()],
         required: ["enabled"]
       ),
-      idempotency: .idempotent
+      idempotency: .idempotent,
+      effect: .mutation
     )
   }
 

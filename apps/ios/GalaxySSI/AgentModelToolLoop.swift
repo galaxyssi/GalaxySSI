@@ -511,7 +511,7 @@ final class AgentModelToolLoop {
       let descriptor = attempt.prepared.descriptor
       let mayRetry = !result.isSuccess &&
         result.error?.retryable == true &&
-        descriptor.idempotency != .nonIdempotent &&
+        !descriptor.requiresEffectClaim &&
         state.request.budget.maxRetriesPerCall > 0
       if !mayRetry {
         appendToolResult(state, attempt.prepared.call, result: result, retryCount: 0)
@@ -723,7 +723,7 @@ final class AgentModelToolLoop {
 
       let mayRetry = !result.isSuccess &&
         result.error?.retryable == true &&
-        descriptor.idempotency != .nonIdempotent &&
+        !descriptor.requiresEffectClaim &&
         attempt <= state.request.budget.maxRetriesPerCall
       if !mayRetry {
         appendToolResult(state, call, result: result, retryCount: attempt - 1)

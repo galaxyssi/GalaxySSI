@@ -62,7 +62,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     let idempotencyKey = Self.idempotencyKey(for: action, descriptor: descriptor)
     let baseInvocationId = Self.clean(action.parameters["invocation_id"] ?? "").nilIfEmpty ?? action.id
     let deadlineEpochMillis = Self.deadlineEpochMillis(action: action, nowMillis: nowMillis())
-    let maximumAttempts = descriptor.idempotency == .nonIdempotent ? 1 : maxRetries + 1
+    let maximumAttempts = descriptor.requiresEffectClaim ? 1 : maxRetries + 1
     var attempt = 0
     var result: AgentNativeToolResult
 
@@ -156,12 +156,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     if !explicit.isEmpty {
       return explicit
     }
-    switch descriptor.idempotency {
-    case .idempotencyKeyRequired, .nonIdempotent:
-      return action.id
-    case .idempotent:
-      return nil
-    }
+    return descriptor.requiresEffectClaim ? action.id : nil
   }
 
   private static func invocationId(base: String, attempt: Int) -> String {

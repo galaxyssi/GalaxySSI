@@ -199,7 +199,8 @@ enum AgentIOSDesktopRemoteNativeToolCatalog {
       requiredConsents: consentRequirements(kind),
       timeoutMillis: timeoutMillis(kind),
       idempotency: idempotency(kind),
-      availability: provider.availability(kind: kind)
+      availability: provider.availability(kind: kind),
+      effect: effect(kind)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -257,6 +258,15 @@ enum AgentIOSDesktopRemoteNativeToolCatalog {
       return .idempotencyKeyRequired
     case .systemStatus, .processList, .fileList, .fileReadText, .fileSha256, .officeInspect:
       return .idempotent
+    }
+  }
+
+  private static func effect(_ kind: AgentIOSDesktopRemoteToolKind) -> AgentNativeToolEffect {
+    switch kind {
+    case .systemStatus, .processList, .fileList, .fileReadText, .fileSha256, .officeInspect:
+      return .readOnly
+    case .fileWriteText, .archiveCreate, .terminalRun, .officeConvert:
+      return .mutation
     }
   }
 

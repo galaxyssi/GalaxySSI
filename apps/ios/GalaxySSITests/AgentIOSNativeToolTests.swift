@@ -535,6 +535,29 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(conflict.code, .conflict)
   }
 
+  func testAgentNativeToolEffectSeparatesReadRetriesFromMutationClaimsWithoutCatalogDrift() throws {
+    let read = try nativeToolDescriptor(
+      "galaxyssi.test.effect-semantics",
+      idempotency: .idempotent,
+      effect: .readOnly
+    )
+    let mutation = try nativeToolDescriptor(
+      "galaxyssi.test.effect-semantics",
+      idempotency: .idempotent,
+      effect: .mutation
+    )
+    let readRegistry = try AgentNativeToolRegistry().register(
+      AgentPhoneNativeToolDefinition(descriptor: read, executorId: "test.read")
+    )
+    let mutationRegistry = try AgentNativeToolRegistry().register(
+      AgentPhoneNativeToolDefinition(descriptor: mutation, executorId: "test.mutation")
+    )
+
+    XCTAssertFalse(read.requiresEffectClaim)
+    XCTAssertTrue(mutation.requiresEffectClaim)
+    XCTAssertEqual(readRegistry.catalogJson(), mutationRegistry.catalogJson())
+  }
+
   func testAgentNativeToolRegistryAcceptsPhoneCatalogDescriptors() throws {
     let registry = try AgentNativeToolRegistry(definitions: AgentPhoneNativeToolCatalog.definitions(
       capabilityStatuses: readyPhoneCapabilityStatuses()
@@ -1389,7 +1412,8 @@ extension GalaxySSIStoreTests {
   func testAgentNativeEffectJournalDoesNotRerunUnfinishedClaim() throws {
     let descriptor = try nativeToolDescriptor(
       "galaxyssi.test.interrupted.effect",
-      idempotency: .idempotencyKeyRequired
+      idempotency: .idempotent,
+      effect: .mutation
     )
     let context = AgentNativeToolInvocationContext(
       sessionId: "session",

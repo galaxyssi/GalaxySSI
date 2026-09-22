@@ -399,6 +399,25 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(outcome.events.contains { $0.type == .toolRetryScheduled })
   }
 
+  func testAgentModelToolLoopDoesNotRetryIdempotentMutationFailures() async throws {
+    var executions = 0
+    let registry = try registry(idempotency: .idempotent, effect: .mutation) { _ in
+      executions += 1
+      return .failure(code: "write_uncertain", message: "Write outcome is uncertain", retryable: true)
+    }
+    let adapter = ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("mutation-call")]),
+      AgentModelResponse(assistantText: "The write must be reconciled before another attempt.")
+    )
+
+    let outcome = await loop(adapter: adapter, registry: registry).run(request())
+
+    XCTAssertEqual(outcome.status, .completed)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(outcome.usage.retries, 0)
+    XCTAssertFalse(outcome.events.contains { $0.type == .toolRetryScheduled })
+  }
+
   func testAgentModelToolLoopPropagatesCancellationIntoActiveNativeTool() async throws {
     let cancellation = AgentModelToolLoopCancellationSource()
     var executions = 0
@@ -634,6 +653,7 @@ final class AgentModelToolLoopTests: XCTestCase {
 
   private func registry(
     idempotency: AgentNativeToolIdempotency = .nonIdempotent,
+    effect: AgentNativeToolEffect? = nil,
     consents: [AgentNativeConsentRequirement] = [],
     executor: @escaping (AgentNativeToolInvocation) throws -> AgentNativeToolExecutionResult
   ) throws -> AgentNativeToolRegistry {
@@ -649,6 +669,7 @@ final class AgentModelToolLoopTests: XCTestCase {
               "additionalProperties": .bool(false)
             ],
             idempotency: idempotency,
+            effect: effect ?? (idempotency == .idempotent ? .readOnly : nil),
             consents: consents
           ),
           executorId: "test.model_tool_loop"
@@ -662,6 +683,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     id: String,
     inputSchema: AgentMcpJSONObject,
     idempotency: AgentNativeToolIdempotency = .nonIdempotent,
+    effect: AgentNativeToolEffect? = nil,
     consents: [AgentNativeConsentRequirement] = [],
     concurrency: AgentNativeToolConcurrency = .serial,
     capabilities: Set<String> = []
@@ -678,7 +700,8 @@ final class AgentModelToolLoopTests: XCTestCase {
       capabilities: capabilities,
       requiredConsents: consents,
       idempotency: idempotency,
-      concurrency: concurrency
+      concurrency: concurrency,
+      effect: effect
     )
   }
 
