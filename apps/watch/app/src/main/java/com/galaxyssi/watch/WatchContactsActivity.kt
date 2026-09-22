@@ -175,7 +175,6 @@ class WatchContactsActivity : Activity() {
             "list" -> {
                 row(getString(R.string.peer_my_qr)) { openQr() }
                 row(getString(R.string.nearby_ble)) { startActivity(Intent(this, WatchNearbyActivity::class.java)) }
-                row(getString(R.string.nearby_nfc)) { startActivity(Intent(this, WatchNearbyActivity::class.java).putExtra("nfc", true)) }
                 val pending = repo.contacts.people().count { it.status in setOf("pending", "requesting") }
                 row(getString(R.string.peer_requests) + if (pending > 0) "  • $pending" else "") { navigate("requests") }
                 val approved = repo.contacts.people().filter { it.status == "approved" }

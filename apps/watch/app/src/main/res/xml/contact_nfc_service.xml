@@ -1,5 +1,0 @@
-<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android" android:description="@string/nearby_nfc" android:requireDeviceUnlock="true">
-    <aid-group android:category="other" android:description="@string/nearby_nfc">
-        <aid-filter android:name="F0475353490101" />
-    </aid-group>
-</host-apdu-service>

@@ -240,12 +240,8 @@
     <string name="phone_setup_restart">Start again</string>
     <string name="phone_setup_settings">Configure from phone</string>
     <string name="nearby_ble">Nearby watches</string>
-    <string name="nearby_nfc">Phone tap to add</string>
-    <string name="nearby_expired">Session ended. Start again to add a friend.</string>
     <string name="nearby_permission">Allow Nearby devices permission to find watches.</string>
     <string name="nearby_preparing">Preparing invitation…</string>
-    <string name="nearby_nfc_unavailable">Enable NFC in watch settings, then retry.</string>
-    <string name="nearby_nfc_help">On the phone: Add contact → Tap watch with NFC. Bring the phone near this watch.</string>
     <string name="nearby_ble_help">Both watches open this page. Select the other watch below.</string>
     <string name="nearby_device">Nearby watch</string>
     <string name="nearby_error">Connection failed. Check Bluetooth and network, then retry.</string>
