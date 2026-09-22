@@ -185,6 +185,8 @@ final class MessageCoordinator: ObservableObject {
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
   private var pendingArtifactFetches: Set<String> = []
+  private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
+  private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
@@ -1717,9 +1719,11 @@ final class MessageCoordinator: ObservableObject {
     } else {
       pendingArtifactFetches.insert(artifactURI)
     }
-    if alreadyPending {
-      guard forceRedelivery else { return true }
-    }
+    let retryAllowed = saveToDownloads
+      ? artifactDownloadRetryGate.add(artifactURI)
+      : artifactFetchRetryGate.add(artifactURI)
+    if alreadyPending, !retryAllowed { return true }
+    if forceRedelivery, !retryAllowed { return true }
     let artifactId = (block.metadata["artifact_id"] ?? "").ifBlank(
       AgentDesktopArtifactStore.stableID(uri: artifactURI, sha256: digest)
     )
@@ -1758,8 +1762,10 @@ final class MessageCoordinator: ObservableObject {
   private func clearPendingArtifactRequest(_ artifactURI: String, saveToDownloads: Bool) {
     if saveToDownloads {
       pendingArtifactDownloads.remove(artifactURI)
+      artifactDownloadRetryGate.remove(artifactURI)
     } else {
       pendingArtifactFetches.remove(artifactURI)
+      artifactFetchRetryGate.remove(artifactURI)
     }
   }
 
@@ -9934,6 +9940,8 @@ final class MessageCoordinator: ObservableObject {
         if result.completed {
           let saveRequested = pendingArtifactDownloads.remove(result.artifactURI) != nil
           pendingArtifactFetches.remove(result.artifactURI)
+          artifactDownloadRetryGate.remove(result.artifactURI)
+          artifactFetchRetryGate.remove(result.artifactURI)
           artifactRevision &+= 1
           artifactDownloadFailure = ""
           artifactDownloadSavedPath = ""
@@ -9972,6 +9980,8 @@ final class MessageCoordinator: ObservableObject {
       let artifactURI = payload.string("artifact_uri")
       pendingArtifactDownloads.remove(artifactURI)
       pendingArtifactFetches.remove(artifactURI)
+      artifactDownloadRetryGate.remove(artifactURI)
+      artifactFetchRetryGate.remove(artifactURI)
       lastError = payload.string("error_message")
         .ifBlank(payload.string("error"))
         .ifBlank("Artifact redelivery failed")
