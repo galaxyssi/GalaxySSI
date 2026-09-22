@@ -9,6 +9,22 @@ enum AgentLatencyStage: String, Codable, CaseIterable {
   case phoneFirstOutputVisible = "phone_first_output_visible"
   case phoneFinalReceived = "phone_final_received"
   case phoneFinalOutputVisible = "phone_final_output_visible"
+  case phonePlanningTotalStarted = "phone_planning_total_started"
+  case phonePlanningTotalFinished = "phone_planning_total_finished"
+  case phonePlanningProgressStarted = "phone_planning_progress_started"
+  case phonePlanningProgressFinished = "phone_planning_progress_finished"
+  case phonePlanningInventoryStarted = "phone_planning_inventory_started"
+  case phonePlanningInventoryFinished = "phone_planning_inventory_finished"
+  case phonePlanningGoalStarted = "phone_planning_goal_started"
+  case phonePlanningGoalFinished = "phone_planning_goal_finished"
+  case phonePlanningContextStarted = "phone_planning_context_started"
+  case phonePlanningContextFinished = "phone_planning_context_finished"
+  case phonePlanningConversationStarted = "phone_planning_conversation_started"
+  case phonePlanningConversationFinished = "phone_planning_conversation_finished"
+  case phonePlanningPromptStarted = "phone_planning_prompt_started"
+  case phonePlanningPromptFinished = "phone_planning_prompt_finished"
+  case phonePlanningPlanStarted = "phone_planning_plan_started"
+  case phonePlanningPlanFinished = "phone_planning_plan_finished"
 }
 
 struct AgentLatencyPoint: Codable, Equatable {
@@ -18,6 +34,7 @@ struct AgentLatencyPoint: Codable, Equatable {
   var monotonicNs: Int64
   var wallClockMs: Int64
   var outcome: String
+  var operationId: String? = nil
 
   enum CodingKeys: String, CodingKey {
     case traceId = "trace_id"
@@ -26,6 +43,7 @@ struct AgentLatencyPoint: Codable, Equatable {
     case monotonicNs = "monotonic_ns"
     case wallClockMs = "wall_clock_ms"
     case outcome
+    case operationId = "operation_id"
   }
 }
 
@@ -49,7 +67,15 @@ enum AgentLatencyContract {
     ("phone_response_roundtrip_ms", .phoneRequestQueued, .phoneResponseReceived),
     ("phone_connector_first_visible_ms", .phonePublishStarted, .phoneFirstOutputVisible),
     ("phone_connector_complete_visible_ms", .phonePublishStarted, .phoneFinalOutputVisible),
-    ("phone_render_ms", .phoneResponseReceived, .phoneFirstOutputVisible)
+    ("phone_render_ms", .phoneResponseReceived, .phoneFirstOutputVisible),
+    ("phone_planning_total_ms", .phonePlanningTotalStarted, .phonePlanningTotalFinished),
+    ("phone_planning_progress_ms", .phonePlanningProgressStarted, .phonePlanningProgressFinished),
+    ("phone_planning_inventory_ms", .phonePlanningInventoryStarted, .phonePlanningInventoryFinished),
+    ("phone_planning_goal_ms", .phonePlanningGoalStarted, .phonePlanningGoalFinished),
+    ("phone_planning_context_ms", .phonePlanningContextStarted, .phonePlanningContextFinished),
+    ("phone_planning_conversation_ms", .phonePlanningConversationStarted, .phonePlanningConversationFinished),
+    ("phone_planning_prompt_ms", .phonePlanningPromptStarted, .phonePlanningPromptFinished),
+    ("phone_planning_plan_ms", .phonePlanningPlanStarted, .phonePlanningPlanFinished)
   ]
 
   static func opaqueId(_ value: String) -> String {
@@ -61,11 +87,17 @@ enum AgentLatencyContract {
       && point.clockId.range(of: #"^[a-f0-9]{32}$"#, options: .regularExpression) != nil
       && point.monotonicNs >= 0
       && point.wallClockMs >= 0
+      && (point.operationId == nil || point.operationId?.range(
+        of: #"^[a-f0-9]{64}$"#,
+        options: .regularExpression
+      ) != nil)
       && allowedOutcomes.contains(point.outcome)
   }
 
   static func summarize(_ points: [AgentLatencyPoint]) -> [String: AgentLatencyMetric] {
-    let groups = Dictionary(grouping: points.filter(valid), by: { "\($0.traceId):\($0.clockId)" })
+    let groups = Dictionary(grouping: points.filter(valid), by: {
+      "\($0.traceId):\($0.clockId):\($0.operationId ?? "")"
+    })
     return Dictionary(uniqueKeysWithValues: metricPairs.map { pair in
       var incomplete = 0
       var unsuccessful = 0
@@ -169,7 +201,7 @@ final class AgentLatencyJournal {
     var seen: Set<String> = []
     let loaded = [previousURL, fileURL].flatMap(load) + memory
     return Array(loaded.filter { point in
-      let key = "\(point.traceId):\(point.clockId):\(point.stage.rawValue):\(point.monotonicNs)"
+      let key = "\(point.traceId):\(point.clockId):\(point.operationId ?? ""):\(point.stage.rawValue):\(point.monotonicNs)"
       return AgentLatencyContract.valid(point) && seen.insert(key).inserted
     }.suffix(maxEvents))
   }
@@ -240,6 +272,26 @@ final class AgentLatencyTracer {
     ))
   }
 
+  func recordOpaque(
+    taskId: String,
+    stage: AgentLatencyStage,
+    operationId: String,
+    outcome: String = "",
+    monotonicNs: Int64? = nil
+  ) {
+    let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTaskId.isEmpty else { return }
+    journal.append(AgentLatencyPoint(
+      traceId: AgentLatencyContract.opaqueId(cleanTaskId),
+      clockId: clockId,
+      stage: stage,
+      monotonicNs: max(0, monotonicNs ?? self.monotonicNs()),
+      wallClockMs: max(0, wallClockMs()),
+      outcome: normalizedOutcome(outcome, emptyAllowed: true),
+      operationId: AgentLatencyContract.opaqueId(operationId)
+    ))
+  }
+
   func visible(taskId: String, final: Bool) {
     let traceId = AgentLatencyContract.opaqueId(taskId)
     lock.lock()
@@ -263,6 +315,87 @@ final class AgentLatencyTracer {
     if ["failed", "cancelled", "timed_out"].contains(normalized) { return normalized }
     return emptyAllowed && normalized.isEmpty ? "" : "completed"
   }
+}
+
+enum AgentPlanningTiming {
+  private struct Scope {
+    var taskId: String
+    var tracer: AgentLatencyTracer
+  }
+
+  @TaskLocal private static var scope: Scope?
+
+  static func capture<T>(
+    taskId: String,
+    tracer: AgentLatencyTracer = AgentLatencyTelemetry.shared,
+    operation: () async throws -> T
+  ) async rethrows -> T {
+    let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTaskId.isEmpty else { return try await operation() }
+    return try await $scope.withValue(Scope(taskId: cleanTaskId, tracer: tracer)) {
+      try await measureAsync("total", operation: operation)
+    }
+  }
+
+  static func measure<T>(_ phase: String, operation: () throws -> T) rethrows -> T {
+    guard let boundary = boundaries[phase], let scope else { return try operation() }
+    let operationId = UUID().uuidString
+    scope.tracer.recordOpaque(taskId: scope.taskId, stage: boundary.start, operationId: operationId)
+    var outcome = "failed"
+    defer {
+      scope.tracer.recordOpaque(
+        taskId: scope.taskId,
+        stage: boundary.finish,
+        operationId: operationId,
+        outcome: outcome
+      )
+    }
+    do {
+      let result = try operation()
+      outcome = "completed"
+      return result
+    } catch {
+      if error is CancellationError { outcome = "cancelled" }
+      throw error
+    }
+  }
+
+  private static func measureAsync<T>(
+    _ phase: String,
+    operation: () async throws -> T
+  ) async rethrows -> T {
+    guard let boundary = boundaries[phase], let scope else { return try await operation() }
+    let operationId = UUID().uuidString
+    scope.tracer.recordOpaque(taskId: scope.taskId, stage: boundary.start, operationId: operationId)
+    var outcome = "failed"
+    defer {
+      scope.tracer.recordOpaque(
+        taskId: scope.taskId,
+        stage: boundary.finish,
+        operationId: operationId,
+        outcome: outcome
+      )
+    }
+    do {
+      let result = try await operation()
+      outcome = "completed"
+      return result
+    } catch {
+      if error is CancellationError { outcome = "cancelled" }
+      throw error
+    }
+  }
+
+  private static let boundaries: [String: (start: AgentLatencyStage, finish: AgentLatencyStage)] = [
+    "total": (.phonePlanningTotalStarted, .phonePlanningTotalFinished),
+    "progress": (.phonePlanningProgressStarted, .phonePlanningProgressFinished),
+    "inventory": (.phonePlanningInventoryStarted, .phonePlanningInventoryFinished),
+    "goal": (.phonePlanningGoalStarted, .phonePlanningGoalFinished),
+    "context": (.phonePlanningContextStarted, .phonePlanningContextFinished),
+    "conversation": (.phonePlanningConversationStarted, .phonePlanningConversationFinished),
+    "prompt": (.phonePlanningPromptStarted, .phonePlanningPromptFinished),
+    "plan": (.phonePlanningPlanStarted, .phonePlanningPlanFinished)
+  ]
 }
 
 enum AgentLatencyTelemetry {

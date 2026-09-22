@@ -5815,12 +5815,16 @@ final class MessageCoordinator: ObservableObject {
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
-      let result = await planner.planOrRespond(
-        request: planningRequest,
-        settings: store.modelPlannerSettings,
-        safetySettings: store.agentSafetySettings,
-        fallbackPlan: fallbackPlan
-      )
+      let result = await AgentPlanningTiming.capture(
+        taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      ) {
+        await planner.planOrRespond(
+          request: planningRequest,
+          settings: store.modelPlannerSettings,
+          safetySettings: store.agentSafetySettings,
+          fallbackPlan: fallbackPlan
+        )
+      }
       if case .directResponse = result {
         return result
       }

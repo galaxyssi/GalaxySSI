@@ -1535,6 +1535,34 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(metric?.p95Ms, 80)
   }
 
+  func testAgentPlanningTimingKeepsRepeatedPhasesSeparateWithoutPayloads() async {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentPlanningTimingTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var monotonic: Int64 = 1_000_000
+    let journal = AgentLatencyJournal(fileURL: root.appendingPathComponent("agent.jsonl"))
+    let tracer = AgentLatencyTracer(
+      journal: journal,
+      monotonicNs: {
+        defer { monotonic += 1_000_000 }
+        return monotonic
+      },
+      wallClockMs: { 1 },
+      clockId: "0123456789abcdef0123456789abcdef"
+    )
+
+    await AgentPlanningTiming.capture(taskId: "private planner payload", tracer: tracer) {
+      AgentPlanningTiming.measure("progress") { _ = 1 }
+      AgentPlanningTiming.measure("progress") { _ = 2 }
+    }
+
+    let points = journal.snapshot()
+    XCTAssertEqual(tracer.summary()["phone_planning_total_ms"]?.count, 1)
+    XCTAssertEqual(tracer.summary()["phone_planning_progress_ms"]?.count, 2)
+    XCTAssertFalse(String(describing: points).contains("private planner payload"))
+    XCTAssertEqual(Set(points.compactMap(\.operationId)).count, 3)
+  }
+
   func testAgentProactiveTaskSchedulerIntervalCatchUpIsBounded() throws {
     let now: Int64 = 1_800_000_000_000
     let task = try proactiveIntervalTask(

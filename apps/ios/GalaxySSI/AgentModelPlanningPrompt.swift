@@ -9,6 +9,15 @@ enum AgentModelPlanningPrompt {
     request: AgentModelPlanningPromptRequest,
     settings: AgentModelPlannerSettings
   ) -> String {
+    AgentPlanningTiming.measure("prompt") {
+      buildPrompt(request: request, settings: settings)
+    }
+  }
+
+  private static func buildPrompt(
+    request: AgentModelPlanningPromptRequest,
+    settings: AgentModelPlannerSettings
+  ) -> String {
     let normalizedSettings = settings.normalized
     let compact = request.requirements.mode == .fast || request.requirements.mode == .economy
     let screenItemLimit = compact ? 16 : 40
@@ -32,11 +41,19 @@ enum AgentModelPlanningPrompt {
     appendProjectBatchContract(to: &prompt, request: request)
     appendCoordinationRules(to: &prompt, request: request, settings: normalizedSettings)
     appendRequestedMembers(to: &prompt, request: request)
-    append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
+    AgentPlanningTiming.measure("goal") {
+      append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
+    }
     appendReplanContext(to: &prompt, request: request)
-    appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
-    appendConversationContext(to: &prompt, request: request)
-    appendGlobalRealtimeContext(to: &prompt, request: request)
+    AgentPlanningTiming.measure("progress") {
+      appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
+    }
+    AgentPlanningTiming.measure("conversation") {
+      appendConversationContext(to: &prompt, request: request)
+    }
+    AgentPlanningTiming.measure("context") {
+      appendGlobalRealtimeContext(to: &prompt, request: request)
+    }
     appendScreenSummary(to: &prompt, request: request)
     if normalizedSettings.shareScreenText {
       appendScreenInventory(
@@ -48,7 +65,9 @@ enum AgentModelPlanningPrompt {
     }
     appendInstalledApps(to: &prompt, request: request, limit: appItemLimit)
     appendConnectors(to: &prompt, request: request, limit: connectorItemLimit)
-    appendNativeTools(to: &prompt, request: request, compact: compact)
+    AgentPlanningTiming.measure("inventory") {
+      appendNativeTools(to: &prompt, request: request, compact: compact)
+    }
     return prompt.prefixStringForPlanning(promptLimit)
   }
 
