@@ -86,10 +86,7 @@ struct GalaxySSIAgentCoreView: View {
       GalaxySSISecuritySectionTitle(title: t("cc_section_core_capabilities", "Core Capabilities"))
       GalaxySSISecurityNavigationRow(
         title: t("cc_planning_title", "Planning & Replanning"),
-        subtitle: String(
-          format: t("cc_planning_subtitle", "Model-driven planning / up to %d replans"),
-          store.modelPlannerSettings.maxReplans
-        ),
+        subtitle: t("cc_planning_subtitle", "Model-driven planning and recovery"),
         systemImage: "slider.horizontal.3",
         tint: .blue,
         badge: enabledBadge(store.modelPlannerSettings.dynamicReplanning)
