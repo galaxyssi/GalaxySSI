@@ -44,6 +44,7 @@ final class AgentKnowledgeDatabase {
   private let vectorCipher: GalaxySSIAttachmentAtRestCipher
   private let sourcePreviewCipher: GalaxySSIAttachmentAtRestCipher
   private let sourcePreviewNamespace: String
+  private let payloadDirectory: URL
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
 
@@ -65,6 +66,7 @@ final class AgentKnowledgeDatabase {
     sourcePreviewNamespace = SHA256.hash(data: Data(fileURL.standardizedFileURL.path.utf8))
       .map { String(format: "%02x", $0) }
       .joined()
+    payloadDirectory = URL(fileURLWithPath: fileURL.path + ".payloads", isDirectory: true)
     open()
   }
 
@@ -716,6 +718,94 @@ final class AgentKnowledgeDatabase {
   }
 
   @discardableResult
+  func maintainExternalPayloads(pageSize: Int = 4) throws -> Bool {
+    try locked {
+      let limit = min(max(pageSize, 1), 32)
+      guard let state = prepare("""
+        SELECT after_item_hash, all_rows, complete
+        FROM knowledge_external_payload_migration WHERE id = 1 LIMIT 1
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard sqlite3_step(state) == SQLITE_ROW,
+            let cursorText = sqlite3_column_text(state, 0) else {
+        sqlite3_finalize(state)
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      var cursor = String(cString: cursorText)
+      var allRows = sqlite3_column_int(state, 1) == 1
+      let complete = sqlite3_column_int(state, 2) == 1
+      sqlite3_finalize(state)
+      let shouldExternalizeAll = (scalar("SELECT items FROM knowledge_item_count_state WHERE id = 1") ?? 0) >= 16_384
+      if shouldExternalizeAll, !allRows {
+        cursor = ""
+        allRows = true
+      } else if complete {
+        return true
+      }
+      guard execute("BEGIN IMMEDIATE TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard let page = prepare("""
+        SELECT item_hash, encrypted_payload FROM knowledge_items
+        WHERE item_hash > ? ORDER BY item_hash ASC LIMIT ?
+        """) else {
+        _ = execute("ROLLBACK")
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(cursor, at: 1, to: page)
+      sqlite3_bind_int(page, 2, Int32(limit + 1))
+      var rows: [(String, Data)] = []
+      while sqlite3_step(page) == SQLITE_ROW {
+        guard let hashText = sqlite3_column_text(page, 0), let payload = blob(page, column: 1) else {
+          sqlite3_finalize(page)
+          _ = execute("ROLLBACK")
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        rows.append((String(cString: hashText), payload))
+      }
+      sqlite3_finalize(page)
+      for (itemHash, encrypted) in rows.prefix(limit) {
+        if readExternalPayload(itemHash: itemHash, database: database) != nil { continue }
+        guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash)) else {
+          _ = execute("ROLLBACK")
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        if allRows || plaintext.count >= 8 * 1_024 {
+          guard insertExternalPayload(plaintext, itemHash: itemHash),
+                let update = prepare("UPDATE knowledge_items SET encrypted_payload = x'00' WHERE item_hash = ?") else {
+            _ = execute("ROLLBACK")
+            throw AgentKnowledgeDatabaseError.unavailable
+          }
+          bind(itemHash, at: 1, to: update)
+          let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+          sqlite3_finalize(update)
+          guard updated else {
+            _ = execute("ROLLBACK")
+            throw AgentKnowledgeDatabaseError.unavailable
+          }
+        }
+      }
+      let visited = min(rows.count, limit)
+      let next = visited > 0 ? rows[visited - 1].0 : cursor
+      let finished = rows.count <= limit
+      guard let updateState = prepare("""
+        UPDATE knowledge_external_payload_migration
+        SET after_item_hash = ?, all_rows = ?, complete = ? WHERE id = 1
+        """) else {
+        _ = execute("ROLLBACK")
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(next, at: 1, to: updateState)
+      sqlite3_bind_int(updateState, 2, allRows ? 1 : 0)
+      sqlite3_bind_int(updateState, 3, finished ? 1 : 0)
+      let stateUpdated = sqlite3_step(updateState) == SQLITE_DONE && sqlite3_changes(database) == 1
+      sqlite3_finalize(updateState)
+      guard stateUpdated, execute("COMMIT") else {
+        _ = execute("ROLLBACK")
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      return finished
+    }
+  }
+
+  @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
       guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
@@ -725,6 +815,13 @@ final class AgentKnowledgeDatabase {
         return false
       }
       guard execute("UPDATE knowledge_item_count_state SET items = 0, complete = 1 WHERE id = 1") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      guard execute("""
+        UPDATE knowledge_external_payload_migration
+        SET after_item_hash = '', all_rows = 0, complete = 0 WHERE id = 1
+        """) else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -767,9 +864,18 @@ final class AgentKnowledgeDatabase {
 
   private func insert(_ item: AgentKnowledgeItem) -> Bool {
     let itemHash = keyedHash(item.id)
-    guard let plaintext = try? JSONEncoder.galaxySSI.encode(item),
-          let encrypted = try? cipher.encrypt(plaintext, purpose: purpose(itemHash)),
-          let statement = prepare("""
+    guard let plaintext = try? JSONEncoder.galaxySSI.encode(item) else { return false }
+    let external = plaintext.count >= 8 * 1_024 ||
+      (scalar("SELECT items FROM knowledge_item_count_state WHERE id = 1") ?? 0) >= 16_384
+    let encrypted: Data
+    if external {
+      encrypted = Data([0])
+    } else if let inline = try? cipher.encrypt(plaintext, purpose: purpose(itemHash)) {
+      encrypted = inline
+    } else {
+      return false
+    }
+    guard let statement = prepare("""
             INSERT INTO knowledge_items(item_hash, source_hash, updated_at, encrypted_payload)
             VALUES (?, ?, ?, ?)
             """) else { return false }
@@ -781,6 +887,7 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_blob(statement, 4, bytes.baseAddress, Int32(encrypted.count), Self.transient)
     }
     guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+    if external, !insertExternalPayload(plaintext, itemHash: itemHash) { return false }
     guard let indexStatement = prepare(
       "INSERT INTO knowledge_fts(item_hash, tokens) VALUES (?, ?)"
     ) else { return false }
@@ -951,6 +1058,7 @@ final class AgentKnowledgeDatabase {
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_idx ON knowledge_items(source_hash, updated_at)")
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_item_recent ON knowledge_items(updated_at DESC, item_hash ASC)")
+    setupExternalPayloads()
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_source_headers (
         source_hash TEXT PRIMARY KEY NOT NULL,
@@ -1054,6 +1162,40 @@ final class AgentKnowledgeDatabase {
         UPDATE knowledge_source_directory_state SET groups = groups - 1 WHERE id = 1;
         SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Source directory state is missing') END;
       END
+      """)
+  }
+
+  private func setupExternalPayloads() {
+    try? FileManager.default.createDirectory(
+      at: payloadDirectory,
+      withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+    )
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_external_payloads (
+        item_hash TEXT PRIMARY KEY NOT NULL,
+        file_name TEXT NOT NULL UNIQUE,
+        plaintext_bytes INTEGER NOT NULL CHECK(plaintext_bytes > 0),
+        plaintext_sha256 TEXT NOT NULL CHECK(length(plaintext_sha256) = 64)
+      )
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_external_payload_delete
+      AFTER DELETE ON knowledge_items
+      BEGIN
+        DELETE FROM knowledge_external_payloads WHERE item_hash = OLD.item_hash;
+      END
+      """)
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_external_payload_migration (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        after_item_hash TEXT NOT NULL DEFAULT '',
+        all_rows INTEGER NOT NULL DEFAULT 0 CHECK(all_rows IN (0, 1)),
+        complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1))
+      )
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_external_payload_migration(id) VALUES (1)
       """)
   }
 
@@ -1574,6 +1716,10 @@ final class AgentKnowledgeDatabase {
 
   private func purpose(_ itemHash: String) -> String { "agent-knowledge:\(itemHash)" }
 
+  private func externalPayloadPurpose(_ itemHash: String) -> String {
+    "agent-knowledge-external-payload:v1:\(sourcePreviewNamespace):\(itemHash)"
+  }
+
   private func sourceIdentity(_ item: AgentKnowledgeItem) -> String {
     item.source.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("local:\(item.id)")
@@ -1736,12 +1882,66 @@ final class AgentKnowledgeDatabase {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     let itemHash = String(cString: hashText)
-    guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash)),
+    let external = readExternalPayload(itemHash: itemHash, database: sqlite3_db_handle(statement))
+    guard let plaintext = external ?? (try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash))),
           let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
           keyedHash(item.id) == itemHash else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     return item
+  }
+
+  private func insertExternalPayload(_ plaintext: Data, itemHash: String) -> Bool {
+    let digest = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
+    let fileName = "\(itemHash)-\(digest.prefix(16)).saenc"
+    let url = payloadDirectory.appendingPathComponent(fileName)
+    do {
+      try cipher.write(plaintext, to: url, purpose: externalPayloadPurpose(itemHash))
+    } catch {
+      return false
+    }
+    guard let statement = prepare("""
+      INSERT INTO knowledge_external_payloads(item_hash, file_name, plaintext_bytes, plaintext_sha256)
+      VALUES (?, ?, ?, ?)
+      """) else { return false }
+    defer { sqlite3_finalize(statement) }
+    bind(itemHash, at: 1, to: statement)
+    bind(fileName, at: 2, to: statement)
+    sqlite3_bind_int64(statement, 3, Int64(plaintext.count))
+    bind(digest, at: 4, to: statement)
+    return sqlite3_step(statement) == SQLITE_DONE
+  }
+
+  private func readExternalPayload(itemHash: String, database: OpaquePointer?) -> Data? {
+    guard let database else { return nil }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      database,
+      "SELECT file_name, plaintext_bytes, plaintext_sha256 FROM knowledge_external_payloads WHERE item_hash = ? LIMIT 1",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK, let statement else { return nil }
+    defer { sqlite3_finalize(statement) }
+    bind(itemHash, at: 1, to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW,
+          let fileText = sqlite3_column_text(statement, 0),
+          let digestText = sqlite3_column_text(statement, 2) else { return nil }
+    let fileName = String(cString: fileText)
+    let expectedBytes = sqlite3_column_int64(statement, 1)
+    let expectedDigest = String(cString: digestText)
+    guard fileName.range(of: #"^[a-f0-9]{64}-[a-f0-9]{16}\.saenc$"#, options: .regularExpression) != nil,
+          expectedBytes > 0,
+          expectedDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+          let plaintext = try? cipher.read(
+            from: payloadDirectory.appendingPathComponent(fileName),
+            purpose: externalPayloadPurpose(itemHash)
+          ),
+          Int64(plaintext.count) == expectedBytes,
+          SHA256.hash(data: plaintext).map({ String(format: "%02x", $0) }).joined() == expectedDigest else {
+      return nil
+    }
+    return plaintext
   }
 
   private func prepare(_ sql: String) -> OpaquePointer? {

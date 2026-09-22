@@ -476,6 +476,54 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertEqual(partial.lastUpdatedAtMillis, 79)
   }
 
+  func testKnowledgePayloadsExternalizeAndMigrateWithoutChangingLogicalRows() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeExternalPayloadTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    let large = AgentKnowledgeItem(
+      id: "large-external-payload",
+      kind: .document,
+      title: "Large",
+      content: String(repeating: "authenticated payload ", count: 600),
+      source: "external-source",
+      updatedAtMillis: 100
+    )
+    let small = AgentKnowledgeItem(
+      id: "small-migrated-payload",
+      kind: .document,
+      title: "Small",
+      content: "small body",
+      source: "external-source",
+      updatedAtMillis: 99
+    )
+    XCTAssertTrue(database.replaceAll([large, small]))
+    XCTAssertEqual(try database.all(), [small, large])
+
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+    var count: OpaquePointer?
+    XCTAssertEqual(sqlite3_prepare_v2(raw, "SELECT COUNT(*) FROM knowledge_external_payloads", -1, &count, nil), SQLITE_OK)
+    XCTAssertEqual(sqlite3_step(count), SQLITE_ROW)
+    XCTAssertEqual(sqlite3_column_int64(count, 0), 1)
+    sqlite3_finalize(count)
+    XCTAssertEqual(
+      sqlite3_exec(raw, "UPDATE knowledge_external_payload_migration SET all_rows=1,complete=0,after_item_hash=''", nil, nil, nil),
+      SQLITE_OK
+    )
+    sqlite3_close_v2(raw)
+
+    while !(try database.maintainExternalPayloads(pageSize: 1)) {}
+    XCTAssertEqual(Set(try database.all().map(\.id)), Set([large.id, small.id]))
+    XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+    XCTAssertEqual(sqlite3_prepare_v2(raw, "SELECT COUNT(*) FROM knowledge_external_payloads", -1, &count, nil), SQLITE_OK)
+    XCTAssertEqual(sqlite3_step(count), SQLITE_ROW)
+    XCTAssertEqual(sqlite3_column_int64(count, 0), 2)
+    sqlite3_finalize(count)
+    sqlite3_close_v2(raw)
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
