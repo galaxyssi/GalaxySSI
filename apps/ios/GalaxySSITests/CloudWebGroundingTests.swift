@@ -123,6 +123,34 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertNotNil(itemProperties["engines"])
   }
 
+  func testSimpleImageAndUnplannedResearchArgumentsStayBounded() {
+    let image = CloudWebGrounding.normalizeArguments(
+      name: "web_search",
+      arguments: ["query": .string("mackerel"), "verticals": .array([.string("image")])]
+    )
+    XCTAssertEqual(image["limit"], .int(3))
+    XCTAssertEqual(image["profile"], .string("fast"))
+
+    let requested = CloudWebGrounding.normalizeArguments(
+      name: "web_search",
+      arguments: [
+        "query": .string("two mackerel pictures"),
+        "verticals": .array([.string("image")]),
+        "max_results": .int(2)
+      ]
+    )
+    XCTAssertEqual(requested["limit"], .int(2))
+    XCTAssertNil(requested["max_results"])
+
+    let research = CloudWebGrounding.normalizeArguments(
+      name: "web_research",
+      arguments: ["query": .string("today's weather")]
+    )
+    XCTAssertEqual(research["profile"], .string("fast"))
+    XCTAssertEqual(research["evidence_limit"], .int(3))
+    XCTAssertEqual(research["engine_fanout"], .int(3))
+  }
+
   func testParsesDeepSeekDSMLCallsWithoutExposingProtocolText() {
     let content = """
       <\u{ff5c}DSML\u{ff5c}tool_calls>
