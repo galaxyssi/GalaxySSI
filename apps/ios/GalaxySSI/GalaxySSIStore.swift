@@ -161,7 +161,10 @@ final class GalaxySSIStore: ObservableObject {
   }
   @Published internal(set) var agentMemoryItems: [AgentMemoryItem]
   @Published internal(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
-    didSet { save() }
+    didSet {
+      guard agentKnowledgeDatabase.replaceAll(agentKnowledgeItems) else { return }
+      save()
+    }
   }
   @Published internal(set) var agentKnowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry] {
     didSet { save() }
@@ -254,7 +257,7 @@ final class GalaxySSIStore: ObservableObject {
       self.globalAgentFeedback = Array(globalAgentFeedback.suffix(500))
       self.agentConversations = Array(agentConversations.suffix(10_000))
       self.activeAgentConversationId = activeAgentConversationId
-      self.agentKnowledgeItems = Array(agentKnowledgeItems.suffix(500))
+      self.agentKnowledgeItems = agentKnowledgeItems
       self.agentKnowledgeAccessAudit = Array(agentKnowledgeAccessAudit.suffix(100))
       self.agentTaskRecords = Array(agentTaskRecords.suffix(200))
       self.customDeviceConnectors = customDeviceConnectors
@@ -299,10 +302,10 @@ final class GalaxySSIStore: ObservableObject {
           .suffix(10_000)
       )
       activeAgentConversationId = try container.decodeIfPresent(String.self, forKey: .activeAgentConversationId) ?? ""
-      agentKnowledgeItems = Array(
-        (try container.decodeIfPresent([AgentKnowledgeItem].self, forKey: .agentKnowledgeItems) ?? [])
-          .suffix(500)
-      )
+      agentKnowledgeItems = try container.decodeIfPresent(
+        [AgentKnowledgeItem].self,
+        forKey: .agentKnowledgeItems
+      ) ?? []
       agentKnowledgeAccessAudit = Array(
         (try container.decodeIfPresent([AgentKnowledgeAccessAuditEntry].self, forKey: .agentKnowledgeAccessAudit) ?? [])
           .suffix(100)
@@ -322,6 +325,7 @@ final class GalaxySSIStore: ObservableObject {
   private let secrets: GalaxySSISecretStore
   let agentConversationDatabase: AgentConversationDatabase
   let chatHistoryDatabase: GalaxySSIChatHistoryDatabase
+  let agentKnowledgeDatabase: AgentKnowledgeDatabase
   let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
   let agentMemoryStore: UserDefaultsAgentMemoryStore
   let agentWorkspaceStore: AgentWorkspaceStore
@@ -347,6 +351,10 @@ final class GalaxySSIStore: ObservableObject {
     )
     self.chatHistoryDatabase = GalaxySSIChatHistoryDatabase(
       fileURL: Self.chatHistoryDatabaseURL(defaults: defaults),
+      secrets: secrets
+    )
+    self.agentKnowledgeDatabase = AgentKnowledgeDatabase(
+      fileURL: Self.agentKnowledgeDatabaseURL(defaults: defaults),
       secrets: secrets
     )
     let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
@@ -422,7 +430,13 @@ final class GalaxySSIStore: ObservableObject {
         .ifBlank(state.activeAgentConversationId)
       agentConversationDatabase.setActiveConversationId(activeAgentConversationId)
       agentMemoryItems = memoryStore.exportItems()
-      agentKnowledgeItems = state.agentKnowledgeItems
+      let durableKnowledge = (try? agentKnowledgeDatabase.all()) ?? []
+      if durableKnowledge.isEmpty, !state.agentKnowledgeItems.isEmpty,
+         agentKnowledgeDatabase.replaceAll(state.agentKnowledgeItems) {
+        agentKnowledgeItems = state.agentKnowledgeItems
+      } else {
+        agentKnowledgeItems = durableKnowledge
+      }
       agentKnowledgeAccessAudit = state.agentKnowledgeAccessAudit
       customDeviceConnectors = state.customDeviceConnectors.map { connector in
         CustomDeviceConnector(
@@ -1824,7 +1838,7 @@ final class GalaxySSIStore: ObservableObject {
         payload.agentData.memory,
         tombstones: payload.agentData.memoryDeletionIndex
       )
-      agentKnowledgeItems = Array((payload.agentData.knowledge ?? []).suffix(500))
+      agentKnowledgeItems = payload.agentData.knowledge ?? []
       agentKnowledgeAccessAudit = Array((payload.agentData.knowledgeAccessAudit ?? []).suffix(100))
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
       if let transcript = payload.agentData.transcript {
@@ -2771,6 +2785,8 @@ final class GalaxySSIStore: ObservableObject {
     activeAgentConversationId = ""
     agentMemoryItems = []
     agentKnowledgeItems = []
+    secrets.delete(account: "agent.knowledge.row.aes256.v1")
+    secrets.delete(account: "agent.knowledge.index.hmac256.v1")
     agentKnowledgeAccessAudit = []
     customDeviceConnectors = []
     homeAssistantSettings = .default
@@ -2909,6 +2925,14 @@ final class GalaxySSIStore: ObservableObject {
       .appendingPathComponent("chat-history-\(identifier).sqlite", isDirectory: false)
   }
 
+  private static func agentKnowledgeDatabaseURL(defaults: UserDefaults) -> URL {
+    let conversationURL = agentConversationDatabaseURL(defaults: defaults)
+    let identifier = conversationURL.deletingPathExtension().lastPathComponent
+      .replacingOccurrences(of: "agent-conversations-", with: "")
+    return conversationURL.deletingLastPathComponent()
+      .appendingPathComponent("agent-knowledge-\(identifier).sqlite", isDirectory: false)
+  }
+
 
 
 
@@ -2941,7 +2965,7 @@ final class GalaxySSIStore: ObservableObject {
       globalAgentFeedback: globalAgentFeedback,
       agentConversations: [],
       activeAgentConversationId: activeAgentConversationId,
-      agentKnowledgeItems: agentKnowledgeItems,
+      agentKnowledgeItems: [],
       agentKnowledgeAccessAudit: agentKnowledgeAccessAudit,
       agentTaskRecords: taskHistoryTransaction.rootRecords,
       customDeviceConnectors: customDeviceConnectors.map(\.withoutAuthToken),
@@ -3053,7 +3077,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 }
 
-private extension JSONEncoder {
+extension JSONEncoder {
   static var galaxySSI: JSONEncoder {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -3067,7 +3091,7 @@ private extension Array where Element == String {
   }
 }
 
-private extension JSONDecoder {
+extension JSONDecoder {
   static var galaxySSI: JSONDecoder {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601

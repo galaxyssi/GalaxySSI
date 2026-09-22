@@ -694,6 +694,8 @@
     A10000000000000000000534 /* GlobalCapabilityObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000534 /* GlobalCapabilityObservations.swift */; };
     A10000000000000000000125 /* AgentMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000125 /* AgentMemoryModels.swift */; };
     A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000536 /* AgentKnowledgeModels.swift */; };
+    A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000880 /* AgentKnowledgeDatabase.swift */; };
+    A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */; };
     A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */; };
     A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000537 /* GlobalPersistentContextObservations.swift */; };
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
@@ -1666,6 +1668,8 @@
     A20000000000000000000654 /* VoiceMicrosoftEdgeTTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTS.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000880 /* AgentKnowledgeDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabase.swift; sourceTree = "<group>"; };
+    A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabaseTests.swift; sourceTree = "<group>"; };
     A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOfficeDocumentExtractor.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
@@ -2269,6 +2273,7 @@
         A20000000000000000000530 /* GlobalAgentServiceContinuity.swift */,
         A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000536 /* AgentKnowledgeModels.swift */,
+        A20000000000000000000880 /* AgentKnowledgeDatabase.swift */,
         A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */,
         A20000000000000000000537 /* GlobalPersistentContextObservations.swift */,
         A20000000000000000000411 /* AgentMemoryCausalDeletion.swift */,
@@ -2805,6 +2810,7 @@
         A20000000000000000000428 /* AgentExecutionContinuityTests.swift */,
         A20000000000000000000430 /* AgentInlineMarkdownTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
+        A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
         A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */,
         A20000000000000000000209 /* GlobalMemoryTests.swift */,
@@ -3331,6 +3337,7 @@
         A10000000000000000000530 /* GlobalAgentServiceContinuity.swift in Sources */,
         A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */,
+        A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */,
         A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */,
         A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */,
         A10000000000000000000411 /* AgentMemoryCausalDeletion.swift in Sources */,
@@ -3922,6 +3929,7 @@
         A10000000000000000000428 /* AgentExecutionContinuityTests.swift in Sources */,
         A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
+        A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
         A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */,
         A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */,

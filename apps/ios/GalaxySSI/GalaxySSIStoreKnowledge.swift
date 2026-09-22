@@ -62,7 +62,7 @@ extension GalaxySSIStore {
         updatedAtMillis: now
       )
     }
-    agentKnowledgeItems = Array((agentKnowledgeItems + items).suffix(500))
+    agentKnowledgeItems += items
     return items
   }
 
@@ -102,8 +102,12 @@ extension GalaxySSIStore {
 
   @discardableResult
   func upsertAgentKnowledge(_ item: AgentKnowledgeItem) -> AgentKnowledgeItem {
+    if let existing = agentKnowledgeItems.first(where: { $0.id == item.id }),
+       agentKnowledgeSourceKey(existing) != agentKnowledgeSourceKey(item) {
+      return existing
+    }
     agentKnowledgeItems.removeAll { $0.id == item.id }
-    agentKnowledgeItems = Array((agentKnowledgeItems + [item]).suffix(500))
+    agentKnowledgeItems.append(item)
     return item
   }
 
