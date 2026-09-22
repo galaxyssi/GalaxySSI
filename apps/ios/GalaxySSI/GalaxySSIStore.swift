@@ -358,7 +358,7 @@ final class GalaxySSIStore: ObservableObject {
       fileURL: Self.agentKnowledgeDatabaseURL(defaults: defaults),
       secrets: secrets
     )
-    let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
+    let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
     let memoryStore = UserDefaultsAgentMemoryStore(
       defaults: defaults,
       secrets: secrets,
