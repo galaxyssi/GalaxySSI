@@ -12,7 +12,6 @@ internal class AgentStableAssistantRow(
     private val content = activity.agentAssistantRichContent(entry, entry)
     private val footer = LinearLayout(activity).apply { orientation = VERTICAL }
     private var speechFooter: View? = null
-    private var executionFooter: View? = null
 
     init {
         orientation = VERTICAL
@@ -36,12 +35,6 @@ internal class AgentStableAssistantRow(
             speechFooter?.let(footer::removeView)
             speech?.let { footer.addView(it, 0) }
             speechFooter = speech
-        }
-        val execution = activity.agentAssistantExecutionLabel(entry, executionFooter)
-        if (execution !== executionFooter) {
-            executionFooter?.let(footer::removeView)
-            execution?.let(footer::addView)
-            executionFooter = execution
         }
     }
 

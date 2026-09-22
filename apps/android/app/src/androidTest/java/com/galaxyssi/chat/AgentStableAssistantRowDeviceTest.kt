@@ -18,6 +18,99 @@ import java.io.ByteArrayOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class AgentStableAssistantRowDeviceTest {
+    @Test fun executionMetadataIsNotAppendedDuringStreamingOrAfterCompletion() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val initial = entry("Answer remains visible.")
+                val execution = executionFixture()
+                val previousEntries = activity.renderedAgentTranscriptSourceEntries
+                activity.renderedAgentTranscriptSourceEntries = listOf(initial)
+                activity.rememberAgentExecutionPresentation(initial.taskId, execution)
+                try {
+                    val row = AgentStableAssistantRow(activity, initial)
+                    assertNoExecutionFooter(row)
+                    activity.rememberAgentExecutionPresentation(initial.taskId,
+                        execution.copy(phase = AgentPhase.COMPLETED, cancellable = false))
+                    val final = initial.copy(id = "final-777")
+                    activity.renderedAgentTranscriptSourceEntries = listOf(final)
+                    assertTrue(row.bind(final))
+                    assertNoExecutionFooter(row)
+                    assertNotNull(descendants(row).firstOrNull { it.tag == "agent-reply-speech:stable-turn" })
+                    assertEquals(AgentPhase.COMPLETED,
+                        activity.agentExecutionPresentations[initial.taskId]?.phase)
+                } finally {
+                    activity.agentExecutionPresentations.remove(initial.taskId)
+                    activity.renderedAgentTranscriptSourceEntries = previousEntries
+                }
+            }
+        }
+    }
+
+    @Test fun nonStableReplyDoesNotAppendExecutionMetadata() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val reply = entry("Answer remains visible.").copy(sourceConversationId = "history-source")
+                assertFalse(AgentStableAssistantRow.supports(reply))
+                activity.rememberAgentExecutionPresentation(reply.taskId, executionFixture())
+                try {
+                    assertNoExecutionFooter(activity.agentAssistantTranscriptRow(reply))
+                    assertNotNull(activity.agentExecutionPresentations[reply.taskId])
+                } finally {
+                    activity.agentExecutionPresentations.remove(reply.taskId)
+                }
+            }
+        }
+    }
+
+    @Test fun otherDesktopAndCloudAndLocalModelsAlsoOmitExecutionFooter() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val fixtures = listOf(
+                    executionFixture().copy(executorLabel = "Claude Code"),
+                    executionFixture().copy(executorLabel = "Hermes"),
+                    executionFixture().copy(executorLabel = "DeepSeek",
+                        locationKind = AgentExecutionLocationKind.PHONE,
+                        runtimeKind = AgentExecutionRuntimeKind.PHONE_CLOUD_API),
+                    executionFixture().copy(executorLabel = "Cloud model",
+                        locationKind = AgentExecutionLocationKind.CLOUD,
+                        runtimeKind = AgentExecutionRuntimeKind.PHONE_CLOUD_API),
+                    executionFixture().copy(executorLabel = "Local model",
+                        locationKind = AgentExecutionLocationKind.PHONE,
+                        runtimeKind = AgentExecutionRuntimeKind.PHONE_LOCAL_MODEL))
+                val reply = entry("Answer remains visible.")
+                fixtures.forEach { execution ->
+                    activity.rememberAgentExecutionPresentation(reply.taskId, execution)
+                    try {
+                        listOf(reply, reply.copy(sourceConversationId = "history-source")).forEach { variant ->
+                            val row = activity.agentAssistantTranscriptRow(variant)
+                            assertNoExecutionFooter(row)
+                            val text = descendants(row).filterIsInstance<TextView>().joinToString { it.text }
+                            assertFalse("Unexpected footer for ${execution.executorLabel}",
+                                text.contains(execution.executorLabel))
+                        }
+                        assertNotNull(activity.agentExecutionPresentations[reply.taskId])
+                    } finally {
+                        activity.agentExecutionPresentations.remove(reply.taskId)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun executionFixture() = AgentExecutionPresentation(
+        executorId = "codex", executorLabel = "Codex",
+        locationKind = AgentExecutionLocationKind.DESKTOP,
+        locationLabelHint = "desktop_footer_test", runtimeKind = AgentExecutionRuntimeKind.DESKTOP_AGENT,
+        currentStep = "Working", phase = AgentPhase.EXECUTING,
+        cancellable = true, startedAtMillis = System.currentTimeMillis())
+
+    private fun assertNoExecutionFooter(view: View) {
+        val text = descendants(view).filterIsInstance<TextView>().joinToString { it.text }
+        assertTrue(text.contains("Answer remains visible."))
+        assertFalse(text.contains("Codex"))
+        assertFalse(text.contains("desktop_footer_test"))
+    }
+
     @Test fun tableUpdatesPreserveTheContainerUnchangedCellsAndExpansion() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
