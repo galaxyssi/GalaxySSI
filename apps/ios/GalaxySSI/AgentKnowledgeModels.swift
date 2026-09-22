@@ -117,7 +117,7 @@ struct AgentKnowledgeItem: Codable, Equatable, Identifiable {
     chunkCount: Int = 1,
     updatedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) {
-    self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters)).ifBlank(UUID().uuidString)
+    self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
     self.kind = kind
     self.title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTitleCharacters))
     self.content = String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxContentCharacters))
