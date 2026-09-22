@@ -7,6 +7,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   var workspaceIdProvider: (AgentAction, AgentScreenContext) -> String
   var eventSink: AgentNativeToolLifecycleEventSink
   var maxRetries: Int
+  var actionEffectExecutor: AgentActionEffectExecutor?
 
   init(
     registry: AgentNativeToolRegistry,
@@ -18,7 +19,8 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       AgentNativeToolActionExecutor.defaultWorkspaceId(for: action)
     },
     eventSink: AgentNativeToolLifecycleEventSink = .none,
-    maxRetries: Int = 1
+    maxRetries: Int = 1,
+    actionEffectExecutor: AgentActionEffectExecutor? = nil
   ) {
     self.registry = registry
     self.delegate = delegate
@@ -26,10 +28,19 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     self.workspaceIdProvider = workspaceIdProvider
     self.eventSink = eventSink
     self.maxRetries = max(0, maxRetries)
+    self.actionEffectExecutor = actionEffectExecutor
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     guard action.kind == .callNativeTool else {
+      if let actionEffectExecutor {
+        return actionEffectExecutor.execute(
+          action: action,
+          screen: screen,
+          context: Self.legacyActionContext(action),
+          delegate: delegate
+        )
+      }
       return delegate.execute(action: action, screen: screen)
     }
     let toolId = Self.clean(action.parameters["tool_id"] ?? "")
@@ -116,6 +127,25 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     return AgentWorkspaceScope.id(
       conversationId: clean(action.parameters[conversationIdKey] ?? ""),
       sessionId: clean(action.parameters[sessionIdKey] ?? "")
+    )
+  }
+
+  private static func legacyActionContext(_ action: AgentAction) -> AgentNativeToolInvocationContext {
+    let sessionId = clean(action.parameters[sessionIdKey] ?? "")
+    let conversationId = clean(action.parameters[conversationIdKey] ?? "").nilIfEmpty ?? sessionId
+    let turnId = clean(action.parameters[turnIdKey] ?? "").nilIfEmpty ?? action.id
+    let taskId = clean(action.parameters[taskIdKey] ?? "").nilIfEmpty ?? turnId
+    return AgentNativeToolInvocationContext(
+      invocationId: action.id,
+      sessionId: sessionId,
+      conversationId: conversationId,
+      turnId: turnId,
+      callerId: "galaxyssi.mobile_agent.action",
+      attributes: [
+        "client_route_id": "galaxyssi-phone",
+        "task_id": taskId,
+        "goal_id": taskId
+      ]
     )
   }
 
@@ -344,6 +374,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   private static let conversationIdKey = "_galaxyssi_conversation_id"
   private static let turnIdKey = "_galaxyssi_turn_id"
   private static let sessionIdKey = "_galaxyssi_session_id"
+  private static let taskIdKey = "_galaxyssi_task_id"
   private static let workspaceIdKey = "_galaxyssi_workspace_id"
   private static let workspaceToolPrefix = "galaxyssi.workspace."
   private static let maxOutputCharacters = 8_000

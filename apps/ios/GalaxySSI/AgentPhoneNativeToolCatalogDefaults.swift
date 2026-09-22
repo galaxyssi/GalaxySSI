@@ -30,6 +30,7 @@ extension AgentPhoneNativeToolCatalog {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
     guardSideEffects: Bool = true,
+    actionEffectReplayStore: AgentNativeToolReplayStore? = nil,
     actionNotificationPublisher: AgentActionNotificationPublishing? = nil,
     nativeToolEventSink: AgentNativeToolLifecycleEventSink = .none,
     homeAssistantSettingsProvider: @escaping () -> HomeAssistantSettings = { .default },
@@ -68,7 +69,15 @@ extension AgentPhoneNativeToolCatalog {
       registry: registry,
       delegate: actionExecutor,
       nowMillis: nowMillis,
-      eventSink: nativeToolEventSink
+      eventSink: nativeToolEventSink,
+      actionEffectExecutor: AgentActionEffectExecutor(
+        store: actionEffectReplayStore ?? FileAgentNativeToolReplayStore(
+          fileURL: AgentNativeToolDefaultStorePaths(rootURL: storageRootURL).replayFileURL,
+          fileManager: fileManager,
+          nowMillis: nowMillis
+        ),
+        nowMillis: nowMillis
+      )
     )
     let notifyingActionExecutor = NotifyingAgentActionExecutor(
       delegate: nativeActionExecutor,

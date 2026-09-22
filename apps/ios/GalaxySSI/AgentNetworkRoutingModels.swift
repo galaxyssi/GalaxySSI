@@ -443,6 +443,29 @@ enum AgentConnectorFallbackAction {
       !(action.parameters[attemptedParameter] ?? "").isBlank
   }
 
+  static func effectAttemptKey(_ action: AgentAction) -> String {
+    let selected = (action.parameters["connector_id"] ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard action.kind == .callConnector,
+          hasActiveTrail(action),
+          action.parameters["manual_target_locked"] != "true",
+          !selected.isEmpty else {
+      return action.id
+    }
+    let trail = AgentMcpJSONCodec.sha256([
+      "resource_id": .string(selected),
+      "attempted": .array(AgentConnectorFallbackTrail
+        .parse(action.parameters[attemptedParameter] ?? "")
+        .sorted()
+        .map(AgentMcpJSONValue.string)),
+      "retried": .array(AgentConnectorFallbackTrail
+        .parse(action.parameters["routing_retried_resource_ids"] ?? "")
+        .sorted()
+        .map(AgentMcpJSONValue.string))
+    ])
+    return "\(action.id)/fallback/\(trail)"
+  }
+
   static func forDispatch(_ action: AgentAction) -> AgentAction {
     guard let owner = action.parameters[actionIdParameter], owner != action.id else { return action }
     var prepared = action
