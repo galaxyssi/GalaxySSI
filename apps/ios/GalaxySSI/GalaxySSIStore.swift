@@ -163,6 +163,7 @@ final class GalaxySSIStore: ObservableObject {
   @Published internal(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
     didSet {
       guard agentKnowledgeDatabase.replaceAll(agentKnowledgeItems) else { return }
+      AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).startIndexing()
       save()
     }
   }
@@ -500,6 +501,7 @@ final class GalaxySSIStore: ObservableObject {
     if normalizeVerifiedPhoneRelationshipRoutes() {
       save()
     }
+    _ = AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase)
   }
 
   var visibleContacts: [GalaxySSIContact] {
@@ -2785,6 +2787,7 @@ final class GalaxySSIStore: ObservableObject {
     activeAgentConversationId = ""
     agentMemoryItems = []
     agentKnowledgeItems = []
+    AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).destroyPrivateData()
     secrets.delete(account: "agent.knowledge.row.aes256.v1")
     secrets.delete(account: "agent.knowledge.index.hmac256.v1")
     secrets.delete(account: "agent.knowledge.vector.aes256.v1")

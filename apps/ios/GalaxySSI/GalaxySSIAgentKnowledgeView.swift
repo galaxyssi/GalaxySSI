@@ -13,6 +13,7 @@ struct GalaxySSIAgentKnowledgeView: View {
   @State private var showingImporter = false
   @State private var showingWebImporter = false
   @State private var showingSearch = false
+  @State private var showingSemanticModel = false
   @State private var selectedGroup: AgentKnowledgeSourceGroup?
   @State private var statusText = ""
   @State private var searchTask: Task<Void, Never>?
@@ -76,6 +77,18 @@ struct GalaxySSIAgentKnowledgeView: View {
               badge: t("galaxyssi.agent_knowledge.import_web_action", "Web")
             ) {
               showingWebImporter = true
+            }
+            AgentKnowledgeActionRow(
+              title: t("galaxyssi.agent_knowledge.semantic_title", "Semantic model"),
+              subtitle: t(
+                "galaxyssi.agent_knowledge.semantic_entry_subtitle",
+                "Verified local embeddings, private indexing, and hybrid retrieval"
+              ),
+              systemImage: "point.3.connected.trianglepath.dotted",
+              tint: .purple,
+              badge: t("galaxyssi.agent_knowledge.configure", "Configure")
+            ) {
+              showingSemanticModel = true
             }
             AgentKnowledgeActionRow(
               title: t("galaxyssi.agent_knowledge.search", "Search knowledge"),
@@ -247,6 +260,12 @@ struct GalaxySSIAgentKnowledgeView: View {
       AgentKnowledgeWebImportSheet { value in
         importWebPage(value)
       }
+      .environment(\.galaxySSIInterfaceLanguage, interfaceLanguage)
+    }
+    .sheet(isPresented: $showingSemanticModel) {
+      AgentKnowledgeSemanticModelView(
+        controller: AgentKnowledgeSemanticController.shared(database: store.agentKnowledgeDatabase)
+      )
       .environment(\.galaxySSIInterfaceLanguage, interfaceLanguage)
     }
     .sheet(item: $selectedGroup) { group in
@@ -491,8 +510,16 @@ struct GalaxySSIAgentKnowledgeView: View {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     searchText = cleanQuery
     activeQuery = cleanQuery
-    searchHits = store.searchAgentKnowledge(cleanQuery)
-    store.recordAgentKnowledgeSearch(query: cleanQuery, hits: searchHits)
+    let lexicalHits = store.searchAgentKnowledge(cleanQuery)
+    searchHits = lexicalHits
+    searchTask?.cancel()
+    searchTask = Task {
+      let controller = AgentKnowledgeSemanticController.shared(database: store.agentKnowledgeDatabase)
+      let hits = await controller.hybridSearch(query: cleanQuery, lexicalHits: lexicalHits, limit: 24)
+      guard !Task.isCancelled, activeQuery == cleanQuery else { return }
+      searchHits = hits
+      store.recordAgentKnowledgeSearch(query: cleanQuery, hits: hits)
+    }
   }
 
   private func extractText(from url: URL) throws -> String {

@@ -3,6 +3,70 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentKnowledgeDatabaseTests: XCTestCase {
+  @MainActor
+  func testStableIdsKeepSameNamedSourcesAndRejectReassignment() throws {
+    let suite = "AgentKnowledgeIdentityTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.removePersistentDomain(forName: suite)
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let first = AgentKnowledgeItem(id: "first", kind: .note, title: "Shared", content: "One", source: "source-a")
+    let second = AgentKnowledgeItem(id: "second", kind: .note, title: "Shared", content: "Two", source: "source-b")
+
+    store.upsertAgentKnowledge(first)
+    store.upsertAgentKnowledge(second)
+    XCTAssertEqual(Set(store.agentKnowledgeItems.map(\.id)), ["first", "second"])
+
+    let reassigned = AgentKnowledgeItem(id: "first", kind: .note, title: "Moved", content: "Three", source: "source-c")
+    XCTAssertEqual(store.upsertAgentKnowledge(reassigned), first)
+    XCTAssertEqual(store.agentKnowledgeItems.first { $0.id == "first" }?.source, "source-a")
+
+    let blank = AgentKnowledgeItem(id: "", kind: .note, title: "Blank", content: "Body", source: "source-d")
+    store.upsertAgentKnowledge(blank)
+    XCTAssertFalse(store.agentKnowledgeItems.contains { $0.id.isBlank })
+  }
+
+  @MainActor
+  func testExactSourceReplayPreservesIdsAndVectorCheckpoints() throws {
+    let suite = "AgentKnowledgeReplayTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.removePersistentDomain(forName: suite)
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let first = try XCTUnwrap(store.replaceAgentKnowledgeSource(
+      title: "Stable",
+      content: "The same normalized content",
+      source: "file://stable"
+    ).first)
+    let provenance = AgentKnowledgeVectorProvenance(
+      modelSHA256: String(repeating: "b", count: 64),
+      dimensions: 2,
+      contextTokens: 512,
+      chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+    )
+    let checkpoint = AgentKnowledgeVectorCheckpoint(
+      itemId: first.id,
+      sourceRevision: AgentKnowledgeVectorCheckpoint.sourceRevision(for: first),
+      chunkIndex: 0,
+      vector: [0.6, 0.8],
+      provenance: provenance,
+      updatedAtMillis: 10
+    )
+    XCTAssertTrue(store.agentKnowledgeDatabase.storeVectorCheckpoint(checkpoint))
+
+    let replay = try XCTUnwrap(store.replaceAgentKnowledgeSource(
+      title: "Stable",
+      content: "The same normalized content",
+      source: "file://stable"
+    ).first)
+
+    XCTAssertEqual(replay, first)
+    XCTAssertEqual(
+      try store.agentKnowledgeDatabase.vectorCheckpoints(itemId: first.id, modelSHA256: provenance.modelSHA256),
+      [checkpoint]
+    )
+  }
+
   func testEncryptedDatabaseRetainsMoreThanLegacyCapAcrossReopen() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)

@@ -341,6 +341,7 @@ final class AgentKnowledgeDatabase {
   private func validateIdentities(_ items: [AgentKnowledgeItem]) -> Bool {
     var sourcesById: [String: String] = [:]
     for item in items {
+      if item.id.isBlank { return false }
       if let source = sourcesById[item.id], source != item.source { return false }
       if sourcesById[item.id] != nil { return false }
       sourcesById[item.id] = item.source

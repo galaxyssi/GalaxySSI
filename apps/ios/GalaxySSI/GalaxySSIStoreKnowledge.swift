@@ -94,35 +94,57 @@ extension GalaxySSIStore {
     tags: [String] = []
   ) -> [AgentKnowledgeItem] {
     let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
-    let existingItems = sourceKey.isEmpty
-      ? []
-      : agentKnowledgeItems.filter { $0.source == sourceKey }
+    let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    let assessment = AgentKnowledgeImportPolicy.assess(cleanContent)
+    guard !sourceKey.isEmpty, assessment.isAllowed, !assessment.indexedContent.isEmpty else { return [] }
+    let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Private knowledge")
+    let chunks = chunkKnowledgeContent(assessment.indexedContent)
+    let existingItems = agentKnowledgeItems
+      .filter { $0.source == sourceKey }
+      .sorted { $0.chunkIndex < $1.chunkIndex }
     let previousPolicy = existingItems.first.map {
       (cloudAccess: $0.cloudAccess, agentAccess: $0.agentAccess, allowedAgentIds: $0.allowedAgentIds)
     }
-    let imported = importAgentKnowledge(title: title, content: content, source: sourceKey, kind: kind, tags: tags)
-    guard !imported.isEmpty else {
-      return []
-    }
-    let existingIds = existingItems.map(\.id)
-    if !existingIds.isEmpty {
-      _ = deleteAgentKnowledgeSource(itemIds: existingIds)
-    }
-    if let previousPolicy {
-      _ = updateAgentKnowledgeSourceAccess(
-        itemIds: imported.map(\.id),
-        cloudAccess: previousPolicy.cloudAccess,
-        agentAccess: previousPolicy.agentAccess,
-        allowedAgentIds: previousPolicy.allowedAgentIds
+    let now = Int64(Date().timeIntervalSince1970 * 1_000)
+    let imported = chunks.enumerated().map { index, chunk in
+      let existing = existingItems.first { $0.chunkIndex == index }
+      let candidate = AgentKnowledgeItem(
+        id: existing?.id ?? UUID().uuidString,
+        kind: kind,
+        title: chunks.count > 1 ? "\(cleanTitle) [\(index + 1)/\(chunks.count)]" : cleanTitle,
+        content: chunk,
+        source: sourceKey,
+        tags: tags,
+        summary: String(chunk.prefix(700)),
+        cloudAccess: previousPolicy?.cloudAccess ?? .summaryOnly,
+        agentAccess: previousPolicy?.agentAccess ?? .localOnly,
+        allowedAgentIds: previousPolicy?.allowedAgentIds ?? [],
+        chunkIndex: index,
+        chunkCount: chunks.count,
+        updatedAtMillis: now
       )
+      if let existing, knowledgeItemEquivalent(existing, candidate) { return existing }
+      return candidate
     }
+    let incomingIds = Set(imported.map(\.id))
+    guard !agentKnowledgeItems.contains(where: {
+      incomingIds.contains($0.id) && $0.source != sourceKey
+    }) else { return [] }
+    let retained = agentKnowledgeItems.filter { $0.source != sourceKey }
+    let next = retained + imported
+    guard next != agentKnowledgeItems else { return imported }
+    agentKnowledgeItems = next
     return imported
   }
 
   @discardableResult
   func upsertAgentKnowledge(_ item: AgentKnowledgeItem) -> AgentKnowledgeItem {
+    guard !item.id.isBlank, !item.title.isBlank, !item.content.isBlank else { return item }
     if let existing = agentKnowledgeItems.first(where: { $0.id == item.id }),
        agentKnowledgeSourceKey(existing) != agentKnowledgeSourceKey(item) {
+      return existing
+    }
+    if let existing = agentKnowledgeItems.first(where: { $0.id == item.id }), existing == item {
       return existing
     }
     agentKnowledgeItems.removeAll { $0.id == item.id }
@@ -223,6 +245,14 @@ extension GalaxySSIStore {
   private func agentKnowledgeSourceKey(_ item: AgentKnowledgeItem) -> String {
     item.source.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("local:\(item.id)")
+  }
+
+  private func knowledgeItemEquivalent(_ left: AgentKnowledgeItem, _ right: AgentKnowledgeItem) -> Bool {
+    var normalizedLeft = left
+    var normalizedRight = right
+    normalizedLeft.updatedAtMillis = 0
+    normalizedRight.updatedAtMillis = 0
+    return normalizedLeft == normalizedRight
   }
 
   private func chunkKnowledgeContent(_ content: String) -> [String] {
