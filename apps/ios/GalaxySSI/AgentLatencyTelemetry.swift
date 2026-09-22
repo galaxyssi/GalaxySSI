@@ -25,6 +25,32 @@ enum AgentLatencyStage: String, Codable, CaseIterable {
   case phoneRuntimeImageDecodeFinished = "phone_runtime_image_decode_finished"
   case phoneRuntimeImageEncodeStarted = "phone_runtime_image_encode_started"
   case phoneRuntimeImageEncodeFinished = "phone_runtime_image_encode_finished"
+  case phoneModelRequestStarted = "phone_model_request_started"
+  case phoneModelRequestFinished = "phone_model_request_finished"
+  case phoneModelClientLockWaitStarted = "phone_model_client_lock_wait_started"
+  case phoneModelClientLockWaitFinished = "phone_model_client_lock_wait_finished"
+  case phoneModelWorkerLockWaitStarted = "phone_model_worker_lock_wait_started"
+  case phoneModelWorkerLockWaitFinished = "phone_model_worker_lock_wait_finished"
+  case phoneModelServiceBindStarted = "phone_model_service_bind_started"
+  case phoneModelServiceBindFinished = "phone_model_service_bind_finished"
+  case phoneModelProcessRoundtripStarted = "phone_model_process_roundtrip_started"
+  case phoneModelProcessRoundtripFinished = "phone_model_process_roundtrip_finished"
+  case phoneModelServiceQueueStarted = "phone_model_service_queue_started"
+  case phoneModelServiceQueueFinished = "phone_model_service_queue_finished"
+  case phoneModelPreflightStarted = "phone_model_preflight_started"
+  case phoneModelPreflightFinished = "phone_model_preflight_finished"
+  case phoneModelSdkInitStarted = "phone_model_sdk_init_started"
+  case phoneModelSdkInitFinished = "phone_model_sdk_init_finished"
+  case phoneModelLoadStarted = "phone_model_load_started"
+  case phoneModelLoadFinished = "phone_model_load_finished"
+  case phoneModelReuseStarted = "phone_model_reuse_started"
+  case phoneModelReuseFinished = "phone_model_reuse_finished"
+  case phoneModelGenerateStarted = "phone_model_generate_started"
+  case phoneModelGenerateFinished = "phone_model_generate_finished"
+  case phoneModelFirstTokenStarted = "phone_model_first_token_started"
+  case phoneModelFirstTokenFinished = "phone_model_first_token_finished"
+  case phoneModelReleaseStarted = "phone_model_release_started"
+  case phoneModelReleaseFinished = "phone_model_release_finished"
 }
 
 struct AgentLatencyPoint: Codable, Equatable {
@@ -73,7 +99,20 @@ enum AgentLatencyContract {
     ("phone_runtime_image_prepare_ms", .phoneRuntimeImagePrepareStarted, .phoneRuntimeImagePrepareFinished),
     ("phone_runtime_image_original_probe_ms", .phoneRuntimeImageOriginalProbeStarted, .phoneRuntimeImageOriginalProbeFinished),
     ("phone_runtime_image_decode_ms", .phoneRuntimeImageDecodeStarted, .phoneRuntimeImageDecodeFinished),
-    ("phone_runtime_image_encode_ms", .phoneRuntimeImageEncodeStarted, .phoneRuntimeImageEncodeFinished)
+    ("phone_runtime_image_encode_ms", .phoneRuntimeImageEncodeStarted, .phoneRuntimeImageEncodeFinished),
+    ("phone_model_request_ms", .phoneModelRequestStarted, .phoneModelRequestFinished),
+    ("phone_model_client_lock_wait_ms", .phoneModelClientLockWaitStarted, .phoneModelClientLockWaitFinished),
+    ("phone_model_worker_lock_wait_ms", .phoneModelWorkerLockWaitStarted, .phoneModelWorkerLockWaitFinished),
+    ("phone_model_service_bind_ms", .phoneModelServiceBindStarted, .phoneModelServiceBindFinished),
+    ("phone_model_process_roundtrip_ms", .phoneModelProcessRoundtripStarted, .phoneModelProcessRoundtripFinished),
+    ("phone_model_service_queue_ms", .phoneModelServiceQueueStarted, .phoneModelServiceQueueFinished),
+    ("phone_model_preflight_ms", .phoneModelPreflightStarted, .phoneModelPreflightFinished),
+    ("phone_model_sdk_init_ms", .phoneModelSdkInitStarted, .phoneModelSdkInitFinished),
+    ("phone_model_load_ms", .phoneModelLoadStarted, .phoneModelLoadFinished),
+    ("phone_model_reuse_ms", .phoneModelReuseStarted, .phoneModelReuseFinished),
+    ("phone_model_generate_ms", .phoneModelGenerateStarted, .phoneModelGenerateFinished),
+    ("phone_model_first_token_ms", .phoneModelFirstTokenStarted, .phoneModelFirstTokenFinished),
+    ("phone_model_release_ms", .phoneModelReleaseStarted, .phoneModelReleaseFinished)
   ]
 
   static func opaqueId(_ value: String) -> String {
@@ -207,6 +246,121 @@ struct AgentRuntimeTiming {
     return ["completed", "failed", "cancelled", "timed_out"].contains(normalized)
       ? normalized
       : "failed"
+  }
+}
+
+enum AgentModelTimingPhase: String, CaseIterable {
+  case request
+  case clientLockWait = "client_lock_wait"
+  case workerLockWait = "worker_lock_wait"
+  case serviceBind = "service_bind"
+  case processRoundtrip = "process_roundtrip"
+  case serviceQueue = "service_queue"
+  case preflight
+  case sdkInit = "sdk_init"
+  case load
+  case reuse
+  case generate
+  case firstToken = "first_token"
+  case release
+
+  var boundaries: (AgentLatencyStage, AgentLatencyStage) {
+    switch self {
+    case .request: return (.phoneModelRequestStarted, .phoneModelRequestFinished)
+    case .clientLockWait: return (.phoneModelClientLockWaitStarted, .phoneModelClientLockWaitFinished)
+    case .workerLockWait: return (.phoneModelWorkerLockWaitStarted, .phoneModelWorkerLockWaitFinished)
+    case .serviceBind: return (.phoneModelServiceBindStarted, .phoneModelServiceBindFinished)
+    case .processRoundtrip: return (.phoneModelProcessRoundtripStarted, .phoneModelProcessRoundtripFinished)
+    case .serviceQueue: return (.phoneModelServiceQueueStarted, .phoneModelServiceQueueFinished)
+    case .preflight: return (.phoneModelPreflightStarted, .phoneModelPreflightFinished)
+    case .sdkInit: return (.phoneModelSdkInitStarted, .phoneModelSdkInitFinished)
+    case .load: return (.phoneModelLoadStarted, .phoneModelLoadFinished)
+    case .reuse: return (.phoneModelReuseStarted, .phoneModelReuseFinished)
+    case .generate: return (.phoneModelGenerateStarted, .phoneModelGenerateFinished)
+    case .firstToken: return (.phoneModelFirstTokenStarted, .phoneModelFirstTokenFinished)
+    case .release: return (.phoneModelReleaseStarted, .phoneModelReleaseFinished)
+    }
+  }
+}
+
+final class AgentModelTiming {
+  private let taskId: String
+  private let tracer: AgentLatencyTracer?
+
+  var taskIdentity: String { taskId }
+
+  init(taskId: String, tracer: AgentLatencyTracer? = AgentLatencyTelemetry.shared) {
+    self.taskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.tracer = self.taskId.isEmpty ? nil : tracer
+  }
+
+  func begin(_ phase: AgentModelTimingPhase) -> Span {
+    guard let tracer else { return Span(finish: nil) }
+    let operationId = UUID().uuidString
+    let boundaries = phase.boundaries
+    tracer.recordOpaque(taskId: taskId, stage: boundaries.0, operationId: operationId)
+    return Span { outcome in
+      tracer.recordOpaque(
+        taskId: self.taskId,
+        stage: boundaries.1,
+        operationId: operationId,
+        outcome: outcome
+      )
+    }
+  }
+
+  func measure<T>(_ phase: AgentModelTimingPhase, operation: () throws -> T) rethrows -> T {
+    let span = begin(phase)
+    defer { span.close() }
+    do {
+      let result = try operation()
+      span.completed()
+      return result
+    } catch {
+      span.failed(error)
+      throw error
+    }
+  }
+
+  func measureAsync<T>(
+    _ phase: AgentModelTimingPhase,
+    operation: () async throws -> T
+  ) async rethrows -> T {
+    let span = begin(phase)
+    defer { span.close() }
+    do {
+      let result = try await operation()
+      span.completed()
+      return result
+    } catch {
+      span.failed(error)
+      throw error
+    }
+  }
+
+  final class Span {
+    private let lock = NSLock()
+    private var finish: ((String) -> Void)?
+
+    fileprivate init(finish: ((String) -> Void)?) {
+      self.finish = finish
+    }
+
+    func completed() { end("completed") }
+
+    func failed(_ error: Error) {
+      end(error is CancellationError ? "cancelled" : "failed")
+    }
+
+    func close() { end("failed") }
+
+    private func end(_ outcome: String) {
+      lock.lock()
+      let completion = finish
+      finish = nil
+      lock.unlock()
+      completion?(outcome)
+    }
   }
 }
 

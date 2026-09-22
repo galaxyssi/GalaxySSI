@@ -1233,7 +1233,8 @@ final class MessageCoordinator: ObservableObject {
         temperature: 0.2,
         executionProfile: AgentExecutionProfile.forGoal(prompt, hasAttachments: false),
         workClass: .background,
-        preferredProfileId: ""
+        preferredProfileId: "",
+        taskId: taskId
       )
       _ = connectorResponseBus.publish(AgentConnectorResponse(
         sourceMessageId: sourceMessageId,
