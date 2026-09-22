@@ -935,7 +935,7 @@ internal fun MainActivity.featureIcon(iconRes: Int, color: Int): ImageView {
     if (myAgentSurfaceActive()) return ImageView(this).apply {
         setImageResource(iconRes)
         scaleType = ImageView.ScaleType.CENTER_INSIDE
-        if (!isFullColorFeatureIcon(iconRes)) imageTintList = android.content.res.ColorStateList.valueOf(getColorCompat(R.color.text_primary))
+        if (!isFullColorFeatureIcon(iconRes)) imageTintList = android.content.res.ColorStateList.valueOf(color)
         layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
     }
     if (isFullColorFeatureIcon(iconRes)) {
@@ -995,6 +995,14 @@ internal fun MainActivity.statusPill(textValue: String, color: Int): TextView {
 }
 
 internal fun MainActivity.featureIconColor(iconRes: Int): Int {
+    if (myAgentSurfaceActive()) return when (controlCenterIconTone(iconRes)) {
+        ControlCenterTone.GREEN -> Color.parseColor("#14875A")
+        ControlCenterTone.BLUE -> Color.parseColor("#286FD6")
+        ControlCenterTone.AMBER -> Color.parseColor("#B26B00")
+        ControlCenterTone.RED -> Color.parseColor("#C7372F")
+        ControlCenterTone.VIOLET -> Color.parseColor("#7052CC")
+        ControlCenterTone.NEUTRAL -> getColorCompat(R.color.icon_gray)
+    }
     return when (iconRes) {
         R.drawable.ic_local_model -> Color.parseColor("#00A7A7")
         R.drawable.ic_agent_node -> Color.parseColor("#5B6CFF")

@@ -408,21 +408,19 @@ internal fun MainActivity.controlCenterTargetRow(
     registration: AgentRegistration? = null
 ): ControlCenterRowSpec {
     val presentation = registration?.let(AgentIdentityPresenter::present)
+    val cloudModel = target.id.startsWith("cloud:") || target.providerProfile?.kind == ProviderProfileKind.CLOUD_MODEL
+    val icon = if (cloudModel) controlCenterTargetIcon(target)
+        else presentation?.let { controlCenterAgentAvatar(it.avatarStyle) } ?: controlCenterTargetIcon(target)
     return ControlCenterRowSpec(
         actionId = "routing.target:${target.id}",
         title = presentation?.displayName ?: target.title,
         subtitle = if (presentation == null) controlCenterTargetSubtitle(target) else "",
-        iconRes = presentation?.let { controlCenterAgentAvatar(it.avatarStyle) }
-            ?: controlCenterTargetIcon(target),
+        iconRes = icon,
         status = presentation?.let { controlCenterAgentStatus(it.status) }
             ?: controlCenterTargetStatus(target.status),
         tone = presentation?.let { controlCenterAgentTone(it.status) }
             ?: controlCenterTargetTone(target.status),
-        preserveIconColor = presentation?.avatarStyle in setOf(
-            AgentAvatarStyle.CODEX,
-            AgentAvatarStyle.CLAUDE,
-            AgentAvatarStyle.HERMES
-        ),
+        preserveIconColor = isFullColorFeatureIcon(icon),
         badges = emptyList()
     )
 }

@@ -1403,6 +1403,14 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
     })
     if (!isCloudModel) {
         featureContent.addView(featureRow(getString(R.string.settings_galaxyssi_id), id, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
+    } else {
+        val provider = raw?.optString("cloud_provider").orEmpty().ifBlank { contact.id.removePrefix("cloud:") }
+        featureContent.addView(featureRow(getString(R.string.cloud_config_title), "", providerIcon(provider), getString(R.string.common_edit)).apply {
+            setOnClickListener {
+                showCloudModelPage(provider)
+                setFeatureBackAction { showContactDetail(contact) }
+            }
+        })
     }
     if (raw?.optString("type") == "device") {
         addSectionTitle(getString(R.string.contact_device_details))

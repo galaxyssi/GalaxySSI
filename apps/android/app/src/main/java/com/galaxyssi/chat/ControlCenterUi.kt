@@ -260,36 +260,39 @@ class ControlCenterRenderer(
                 addView(LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(14), 0, dp(8), 0)
-                    addView(TextView(context).apply {
-                        text = spec.title
-                        textSize = 18f
-                        setTextColor(color(R.color.text_primary))
-                        setTypeface(typeface, Typeface.BOLD)
-                        if (spec.titleActionId.isNotBlank()) {
-                            setCompoundDrawablesRelativeWithIntrinsicBounds(
-                                0,
-                                0,
-                                R.drawable.ic_arrow_right,
-                                0
-                            )
-                            compoundDrawablePadding = dp(2)
-                            compoundDrawableTintList = ColorStateList.valueOf(color(R.color.icon_gray))
-                            isClickable = true
-                            isFocusable = true
-                            setOnClickListener { onAction(spec.titleActionId) }
-                        }
-                    }, LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ))
-                    addView(TextView(context).apply {
-                        text = spec.subtitle
-                        textSize = 12f
-                        maxLines = 2
-                        ellipsize = TextUtils.TruncateAt.END
-                        setTextColor(color(R.color.text_secondary))
-                        setPadding(0, dp(4), 0, 0)
-                    })
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(TextView(context).apply {
+                            text = spec.title
+                            textSize = 18f
+                            setTextColor(color(R.color.text_primary))
+                            setTypeface(typeface, Typeface.BOLD)
+                            if (spec.titleActionId.isNotBlank()) {
+                                setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, R.drawable.ic_arrow_right, 0)
+                                compoundDrawablePadding = dp(2)
+                                compoundDrawableTintList = ColorStateList.valueOf(color(R.color.icon_gray))
+                                isClickable = true
+                                isFocusable = true
+                                setOnClickListener { onAction(spec.titleActionId) }
+                            }
+                        }, LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ))
+                        addView(TextView(context).apply {
+                            text = spec.subtitle
+                            textSize = 12f
+                            maxLines = 2
+                            ellipsize = TextUtils.TruncateAt.END
+                            setTextColor(color(R.color.text_secondary))
+                            gravity = Gravity.CENTER_HORIZONTAL
+                            // Center below the title text, excluding its action chevron.
+                            val arrowWidth = if (spec.titleActionId.isNotBlank()) {
+                                (ContextCompat.getDrawable(context, R.drawable.ic_arrow_right)?.intrinsicWidth ?: 0) + dp(2)
+                            } else 0
+                            setPaddingRelative(0, dp(4), arrowWidth, 0)
+                        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 if (spec.trailingActionId.isNotBlank() && spec.trailingIconRes != 0) {
                     addView(ImageView(context).apply {
@@ -517,7 +520,8 @@ class ControlCenterRenderer(
         } else {
             background = null
             setPadding(0, 0, 0, 0)
-            imageTintList = ColorStateList.valueOf(color(R.color.text_primary))
+            val iconTone = if (tone == ControlCenterTone.NEUTRAL) controlCenterIconTone(iconRes) else tone
+            imageTintList = ColorStateList.valueOf(palette(iconTone).strong)
         }
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
