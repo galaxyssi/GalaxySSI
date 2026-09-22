@@ -6273,12 +6273,22 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
-    guard let action = task.pendingActions.first else {
-      task.pendingAction = nil
-      return false
+    var handledAny = false
+    while let action = task.pendingActions.first {
+      task.pendingAction = action
+      guard applyLocalNativeAction(action: action, outgoing: outgoing, task: &task) else {
+        return handledAny
+      }
+      handledAny = true
+      guard task.phase == .completed, !task.pendingActions.isEmpty else {
+        return true
+      }
+      task.phase = .executing
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
     }
-    task.pendingAction = action
-    return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    task.pendingAction = nil
+    return handledAny
   }
 
   private func applyLocalNativeAction(
@@ -6357,24 +6367,18 @@ final class MessageCoordinator: ObservableObject {
     task.pendingActions.removeAll { $0.id == action.id }
     task.pendingAction = task.pendingActions.first
     let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
-    guard handled, task.phase == .completed, !task.pendingActions.isEmpty else {
-      if task.phase == .failed {
-        var retryableAction = action
-        retryableAction.status = .failed
-        retryableAction.result = task.result
-        retryableAction.evidence = task.verification
-        task.pendingActions.insert(retryableAction, at: 0)
-        task.pendingAction = retryableAction
-        task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
-        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-        store.upsertAgentTask(task)
-      }
-      return handled
+    if task.phase == .failed {
+      var retryableAction = action
+      retryableAction.status = .failed
+      retryableAction.result = task.result
+      retryableAction.evidence = task.verification
+      task.pendingActions.insert(retryableAction, at: 0)
+      task.pendingAction = retryableAction
+      task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
     }
-    task.phase = .executing
-    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
-    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+    return handled
   }
 
   private func executeLocalNativeAction(
