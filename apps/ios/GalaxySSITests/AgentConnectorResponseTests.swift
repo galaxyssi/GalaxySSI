@@ -365,6 +365,31 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(bus.publish(AgentConnectorResponse(sourceMessageId: 502, content: "", richOutputJson: "{}")))
   }
 
+  func testUnmanagedAgentResponseIsDurablyRecordedWithoutManagedConsumption() {
+    let store = AgentConnectorResponseStore(nowMillis: { 10_000 })
+    let bus = AgentConnectorResponseBus(
+      registry: AgentManagedConnectorResponseRegistry(),
+      managedLedger: nil,
+      store: store,
+      nowMillis: { 10_000 }
+    )
+    let response = AgentConnectorResponse(
+      sourceMessageId: 503,
+      contactId: "codex",
+      content: "Background result",
+      conversationId: "conversation-a",
+      turnId: "turn-a",
+      taskId: "task-a",
+      receivedAtMillis: 9_000
+    )
+
+    XCTAssertFalse(bus.publish(response))
+    XCTAssertTrue(bus.wasRecorded(response))
+    XCTAssertEqual(store.pending(), [response])
+    bus.remove(response)
+    XCTAssertTrue(bus.wasRecorded(response))
+  }
+
   func testAgentConnectorResponseStoreBoundsDedupeExpiryAndAndroidWireNames() throws {
     let store = AgentConnectorResponseStore(nowMillis: { 100_000 })
     for index in 0..<35 {

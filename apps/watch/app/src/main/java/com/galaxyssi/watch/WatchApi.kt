@@ -42,8 +42,7 @@ class WatchApi(private val client: OkHttpClient = OkHttpClient.Builder()
         systemInstructions: String? = null, webTools: JSONArray? = null, toolMessages: JSONArray? = null): Call {
         require(task.desktopId == "api" && task.routeId == profile.id)
         val messages = JSONArray()
-        history.filter { it.conversationId == task.conversationId && it.desktopId == "api" &&
-            it.routeId == profile.id && it.state == TaskState.COMPLETED && it.id != task.id }
+        history.filter { it.sessionId == task.sessionId && it.state == TaskState.COMPLETED && it.id != task.id }
             .sortedBy { it.sourceId }.takeLast(6).forEach {
                 messages.put(JSONObject().put("role", "user").put("content", it.prompt))
                 messages.put(JSONObject().put("role", "assistant").put("content", it.reply.take(6000)))

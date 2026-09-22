@@ -1530,7 +1530,7 @@ private struct GalaxySSIRichBlockView: View {
         )
         return
       }
-      try? await Task.sleep(nanoseconds: 20_000_000_000)
+      try? await Task.sleep(nanoseconds: 30_000_000_000)
       guard artifactDownloadRequestID == requestID,
             artifactDownloadRequested,
             localArtifactFile == nil else {

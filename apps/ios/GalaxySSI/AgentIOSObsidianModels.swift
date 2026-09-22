@@ -43,11 +43,19 @@ struct AgentIOSObsidianProjectionIndexEntry: Codable, Equatable {
   var userModified = false
 }
 
+struct AgentIOSObsidianProjectionCheckpoint: Codable, Equatable {
+  var namespace: String
+  var catalogRevision: String
+  var nextOffset: Int
+  var visited: Int
+}
+
 private struct AgentIOSObsidianState: Codable {
   var settings = AgentIOSObsidianSettings()
   var index: [AgentIOSObsidianProjectionIndexEntry] = []
   var candidates: [AgentIOSObsidianEditCandidate] = []
   var editScanCursor = 0
+  var projectionCheckpoint: AgentIOSObsidianProjectionCheckpoint?
 }
 
 final class AgentIOSObsidianStateStore {
@@ -87,7 +95,16 @@ final class AgentIOSObsidianStateStore {
       var state = load()
       state.index.removeAll { $0.sourceKey == entry.sourceKey }
       state.index.append(entry)
-      state.index = Array(state.index.suffix(1_500))
+      save(state)
+    }
+  }
+
+  func saveIndexes(_ entries: [AgentIOSObsidianProjectionIndexEntry]) {
+    locked {
+      var state = load()
+      let incoming = Set(entries.map(\.sourceKey))
+      state.index.removeAll { incoming.contains($0.sourceKey) }
+      state.index.append(contentsOf: entries)
       save(state)
     }
   }
@@ -124,6 +141,18 @@ final class AgentIOSObsidianStateStore {
     locked {
       var state = load()
       state.editScanCursor = max(value, 0)
+      save(state)
+    }
+  }
+
+  func projectionCheckpoint() -> AgentIOSObsidianProjectionCheckpoint? {
+    locked { load().projectionCheckpoint }
+  }
+
+  func saveProjectionCheckpoint(_ value: AgentIOSObsidianProjectionCheckpoint?) {
+    locked {
+      var state = load()
+      state.projectionCheckpoint = value
       save(state)
     }
   }

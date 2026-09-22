@@ -375,6 +375,30 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(plan.checkpoints.last?.id, "checkpoint-139")
   }
 
+  func testAgentExecutionCheckpointPersistsOriginalRevisionParameterPresence() throws {
+    let action = AgentAction(
+      id: "node-a",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .running,
+      description: "Read a file"
+    )
+    let checkpoint = AgentExecutionContinuity.checkpointBefore(
+      action: action,
+      screen: AgentScreenContext(foregroundApp: "Test"),
+      planRevision: 2,
+      nowMillis: 100
+    )
+
+    XCTAssertEqual(checkpoint.revisionParameterPresent, false)
+    let restored = try JSONDecoder().decode(
+      AgentExecutionCheckpoint.self,
+      from: JSONEncoder().encode(checkpoint)
+    )
+    XCTAssertEqual(restored.revisionParameterPresent, false)
+  }
+
   func testAgentPlanNodeJournalPersistsIndependentObservationBeforeBatchCompletion() throws {
     let suite = "AgentPlanNodeJournalTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -512,6 +536,44 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(bound.parameters[AgentPlanContinuationScope.turnIdKey], "turn-a")
     XCTAssertTrue(scope.owns(bound))
     XCTAssertFalse(scope.owns(second))
+  }
+
+  func testAgentPlanNodeIdentityIgnoresRevisionAddedAfterCheckpoint() throws {
+    let originalAction = AgentAction(
+      id: "node-a",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .running,
+      description: "Read a file",
+      parameters: ["input_json": #"{"path":"a.txt"}"#]
+    )
+    var plan = lifecyclePlan(originalAction)
+    plan.revision = 2
+    plan = plan.addCheckpoint(AgentExecutionContinuity.checkpointBefore(
+      action: originalAction,
+      screen: AgentScreenContext(foregroundApp: "Test"),
+      planRevision: 2,
+      id: "checkpoint-a",
+      nowMillis: 100
+    ))
+    let original = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: originalAction,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+    let historyAction = originalAction.withPlanRevision(2)
+    let restored = try XCTUnwrap(AgentPlanNodeKey.make(
+      sessionId: "session",
+      plan: plan,
+      action: historyAction,
+      conversationId: "conversation",
+      turnId: "turn"
+    ))
+
+    XCTAssertEqual(original.journalId, restored.journalId)
   }
   func testAgentPlanNodeJournalRejectsObservationForAnotherAction() throws {
     let suite = "AgentPlanNodeJournalMismatchTests.\(UUID().uuidString)"

@@ -703,6 +703,7 @@ struct AgentExecutionCheckpoint: Codable, Equatable {
   var rollbackAction: AgentAction?
   var status: AgentCheckpointStatus
   var createdAtMillis: Int64
+  var revisionParameterPresent: Bool?
   var summary: String
   var timestampMillis: Int64
 
@@ -717,6 +718,7 @@ struct AgentExecutionCheckpoint: Codable, Equatable {
     rollbackAction: AgentAction? = nil,
     status: AgentCheckpointStatus = .active,
     createdAtMillis: Int64 = 0,
+    revisionParameterPresent: Bool? = nil,
     summary: String = "",
     timestampMillis: Int64? = nil
   ) {
@@ -730,6 +732,7 @@ struct AgentExecutionCheckpoint: Codable, Equatable {
     self.rollbackAction = rollbackAction
     self.status = status
     self.createdAtMillis = max(createdAtMillis, 0)
+    self.revisionParameterPresent = revisionParameterPresent
     self.summary = summary
     self.timestampMillis = max(timestampMillis ?? createdAtMillis, 0)
   }
@@ -745,6 +748,7 @@ struct AgentExecutionCheckpoint: Codable, Equatable {
     case rollbackAction = "rollback_action"
     case status
     case createdAtMillis = "created_at_millis"
+    case revisionParameterPresent = "revision_parameter_present"
     case summary
     case timestampMillis = "timestamp_millis"
   }
@@ -766,6 +770,7 @@ struct AgentExecutionCheckpoint: Codable, Equatable {
       rollbackAction: try container.decodeIfPresent(AgentAction.self, forKey: .rollbackAction),
       status: try container.decodeIfPresent(AgentCheckpointStatus.self, forKey: .status) ?? .active,
       createdAtMillis: createdAtMillis,
+      revisionParameterPresent: try container.decodeIfPresent(Bool.self, forKey: .revisionParameterPresent),
       summary: try container.decodeIfPresent(String.self, forKey: .summary) ?? "",
       timestampMillis: try container.decodeIfPresent(Int64.self, forKey: .timestampMillis)
     )
@@ -795,7 +800,8 @@ enum AgentExecutionContinuity {
       screenDigest: screenDigest(screen),
       rollbackAction: rollbackAction(for: action),
       status: .active,
-      createdAtMillis: nowMillis
+      createdAtMillis: nowMillis,
+      revisionParameterPresent: action.parameters[AgentDurablePlanHistoryPolicy.revisionParameter] != nil
     )
   }
 

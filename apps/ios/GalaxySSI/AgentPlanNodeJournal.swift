@@ -22,10 +22,15 @@ struct AgentPlanNodeKey: Codable, Equatable, Hashable {
     guard let checkpoint = plan.checkpoints.last(where: {
       $0.actionId == action.id && $0.status == .active
     }) else { return nil }
+    var parameters = action.parameters
+    if checkpoint.revisionParameterPresent == false,
+       parameters[AgentDurablePlanHistoryPolicy.revisionParameter] == String(checkpoint.planRevision) {
+      parameters.removeValue(forKey: AgentDurablePlanHistoryPolicy.revisionParameter)
+    }
     let specification: [String: Any] = [
       "kind": action.kind.rawValue,
       "target": action.target,
-      "parameters": action.parameters,
+      "parameters": parameters,
       "revision": checkpoint.planRevision
     ]
     guard JSONSerialization.isValidJSONObject(specification),
