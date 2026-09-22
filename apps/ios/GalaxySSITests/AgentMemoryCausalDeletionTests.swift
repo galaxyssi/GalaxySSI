@@ -286,6 +286,47 @@ final class AgentMemoryCausalDeletionTests: XCTestCase {
     XCTAssertNotNil(defaults.data(forKey: "\(UserDefaultsAgentMemoryDeletionIndex.encryptedKey).encrypted.v1"))
   }
 
+  func testRetractionOutboxSurvivesReloadUntilAcknowledged() throws {
+    let suiteName = "AgentMemoryRetractionOutbox-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    let index = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
+    let tombstone = try XCTUnwrap(index.record(
+      deletedItems: [memory(id: "memory-a", value: "Private value", key: "key", timestampMillis: 1_000)],
+      deletedAtMillis: 2_000
+    ))
+    let expected = AgentMemoryCausalDeletionPolicy.retractionEvents(tombstone)
+
+    XCTAssertEqual(index.pendingRetractions(limit: 100), expected)
+    let reloaded = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(reloaded.pendingRetractions(limit: 100), expected)
+    XCTAssertTrue(reloaded.pendingRetractions(limit: 100).allSatisfy { $0.content.isEmpty })
+
+    reloaded.acknowledgeRetractions(eventIds: Set(expected.map(\.id)))
+    XCTAssertEqual(reloaded.pendingRetractionCount(), 0)
+    XCTAssertEqual(UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets).pendingRetractionCount(), 0)
+  }
+
+  func testRetractionOutboxRequeuesLedgerWithoutDuplicates() throws {
+    let suiteName = "AgentMemoryRetractionRequeue-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    let index = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
+    let tombstone = try XCTUnwrap(index.record(
+      deletedItems: [memory(id: "memory-a", value: "Private value", key: "key", timestampMillis: 1_000)],
+      deletedAtMillis: 2_000
+    ))
+    let eventIds = Set(AgentMemoryCausalDeletionPolicy.retractionEvents(tombstone).map(\.id))
+    index.acknowledgeRetractions(eventIds: eventIds)
+
+    XCTAssertEqual(index.pendingRetractionCount(), 0)
+    XCTAssertEqual(index.requeueAllRetractions(), eventIds.count)
+    XCTAssertEqual(Set(index.pendingRetractions(limit: 250).map(\.id)), eventIds)
+    XCTAssertEqual(index.requeueAllRetractions(), eventIds.count)
+  }
+
   private func memory(
     _ id: String,
     _ value: String,
