@@ -78,6 +78,7 @@ enum AgentModelPlanningPrompt {
     }
     append(&prompt, "ActionPlan JSON schema:\n")
     append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
+    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\"},")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")
     append(&prompt, "\"use_outputs_from\":[\"earlier_ref\"],\"parameters\":{\"key\":\"value\"}}]}\n\n")
@@ -105,6 +106,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "For galaxyssi.runtime.execute phone-development manifests, include language=python and put the complete manifest under phone_development_manifest; the manifest must name an entry_file present in files. ")
     append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
     append(&prompt, "Plan only the next bounded execution batch, never the entire long-running goal. ")
+    append(&prompt, "Declare root completion_requirements by interpreting the user's actual requested outcome, including exclusions. There is no default publication requirement. publication is none, commit, push, or pull_request; phone_linux is true only when successful execution in the phone Linux guest is part of the requested outcome. These fields are completion obligations, not permissions. Preserve an existing declaration unless correcting it, and explain every outcome-changing correction in reason. ")
     if maxBatchActions >= 3 {
       append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
     }
@@ -213,6 +215,11 @@ enum AgentModelPlanningPrompt {
       return
     }
     append(&prompt, "Replan reason: \(reason.prefixStringForPlanning(500))\n")
+    if let requirements = request.planRequest.completionRequirements,
+       let data = try? JSONEncoder().encode(requirements),
+       let encoded = String(data: data, encoding: .utf8) {
+      append(&prompt, "Current model-declared completion_requirements: \(encoded)\n")
+    }
     append(&prompt, "Continue from the current state. Do not repeat completed actions unless the screen proves they were undone.\n")
     if AgentRollingPlanPolicy.isBatchBoundaryReason(reason) {
       append(&prompt, "The previous execution batch finished. Reassess the whole goal from verified observations. ")

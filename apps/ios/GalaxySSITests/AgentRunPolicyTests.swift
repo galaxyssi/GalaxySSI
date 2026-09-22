@@ -103,6 +103,62 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(reason.contains("completed=1"))
     XCTAssertTrue(reason.contains("last_action=action"))
   }
+
+  func testAgentCompletionEvidencePolicyUsesDeclaredVerifiedOutcomes() {
+    func completed(_ toolId: String, evidence: String) -> AgentAction {
+      AgentAction(
+        id: toolId,
+        kind: .callNativeTool,
+        target: toolId,
+        risk: .low,
+        status: .completed,
+        description: toolId,
+        parameters: ["tool_id": toolId],
+        requiresConfirmation: false,
+        result: evidence,
+        evidence: evidence
+      )
+    }
+    let local = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    let linux = AgentCompletionRequirements(publication: .none, phoneLinux: true)
+    let commit = AgentCompletionRequirements(publication: .commit, phoneLinux: false)
+    let runtimeReceipt = completed(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+      evidence: #"{"exit_code":0}"#
+    )
+    let commitReceipt = completed(
+      AgentIOSProjectRepositoryMutationToolCatalog.commit,
+      evidence: #"{"commit":"1234abc"}"#
+    )
+
+    XCTAssertEqual(
+      AgentCompletionEvidencePolicy.missingEvidence(requirements: nil, history: []),
+      ["model-declared completion_requirements (publication and phone_linux)"]
+    )
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: local,
+      history: []
+    ).isEmpty)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: linux,
+      history: []
+    ).isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: linux,
+      history: [runtimeReceipt]
+    ).isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: commit,
+      history: [commitReceipt]
+    ).isEmpty)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: commit,
+      history: [completed(
+        AgentIOSProjectRepositoryMutationToolCatalog.commit,
+        evidence: #"{"status":"ok"}"#
+      )]
+    ).isEmpty)
+  }
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,

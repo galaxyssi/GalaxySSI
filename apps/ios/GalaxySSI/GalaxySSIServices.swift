@@ -3330,7 +3330,8 @@ final class MessageCoordinator: ObservableObject {
       goal: task.goal,
       screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
-      responseLanguage: store.languagePolicy.responseLanguage
+      responseLanguage: store.languagePolicy.responseLanguage,
+      completionRequirements: previousPlan?.completionRequirements
     )
     let fallbackPlan = AgentDirectNativeToolPlanner.plan(request: planRequest)
     let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
@@ -3344,7 +3345,8 @@ final class MessageCoordinator: ObservableObject {
       executionMode: taskExecutionMode,
       allowsDirectResponse: false,
       replanReason: "User requested a revised plan from the current phone state",
-      executionHistory: plannerHistory
+      executionHistory: plannerHistory,
+      completionRequirements: previousPlan?.completionRequirements
     )
     let plan = modelOutcome?.actionPlan ?? fallbackPlan
     guard var resolvedPlan = plan else {
@@ -5732,7 +5734,8 @@ final class MessageCoordinator: ObservableObject {
     executionMode: AgentTaskExecutionMode,
     allowsDirectResponse: Bool,
     replanReason: String = "",
-    executionHistory: [AgentAction] = []
+    executionHistory: [AgentAction] = [],
+    completionRequirements: AgentCompletionRequirements? = nil
   ) async -> GuardedModelAgentPlanningResult? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
@@ -5768,7 +5771,8 @@ final class MessageCoordinator: ObservableObject {
       screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
       responseLanguage: store.languagePolicy.responseLanguage,
-      executionMode: executionMode
+      executionMode: executionMode,
+      completionRequirements: completionRequirements
     )
     let session = store.agentSession(id: outgoing.conversationId)
     let conversation = AgentConversationContext(
@@ -5829,7 +5833,26 @@ final class MessageCoordinator: ObservableObject {
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
          AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-        return .plan(plan)
+        let missing = AgentCompletionEvidencePolicy.missingEvidence(
+          requirements: plan.completionRequirements,
+          history: executionHistory
+        )
+        if missing.isEmpty {
+          return .plan(plan)
+        }
+        guard repairAttempt == 0 else { return nil }
+        planningRequest.planRequest.completionRequirements = plan.completionRequirements
+        let priorReason = planningRequest.parsingContext.replanReason
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        planningRequest.parsingContext.replanReason = String([
+          priorReason,
+          "Completion rejected. Declare or correct completion_requirements from the user's actual intent, including exclusions, and perform only genuinely missing work. Missing evidence: \(missing.joined(separator: "; "))."
+        ]
+          .filter { !$0.isEmpty }
+          .joined(separator: " ")
+          .prefix(500))
+        planningRequest.allowsDirectResponse = false
+        continue
       }
       let actions = plan.actions.filter { $0.kind == .callNativeTool }
       guard !actions.isEmpty, actions.count == plan.actions.count else { return nil }
@@ -6184,7 +6207,8 @@ final class MessageCoordinator: ObservableObject {
         var completed = updatedPlan.actions[planIndex]
         completed.status = result.success ? .completed : .failed
         completed.result = result.message
-        completed.evidence = result.metadata["evidence"]
+        completed.evidence = result.metadata["native_tool_output"]
+          ?? result.metadata["evidence"]
           ?? result.metadata["receipt"]
           ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
         updatedPlan.actions[planIndex] = completed
@@ -6571,7 +6595,8 @@ final class MessageCoordinator: ObservableObject {
     var completed = plan.actions[index]
     completed.status = result.success ? .completed : .failed
     completed.result = result.message
-    completed.evidence = result.metadata["evidence"]
+    completed.evidence = result.metadata["native_tool_output"]
+      ?? result.metadata["evidence"]
       ?? result.metadata["receipt"]
       ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
     plan.actions[index] = completed
@@ -6607,7 +6632,8 @@ final class MessageCoordinator: ObservableObject {
       executionMode: previousPlan.executionMode,
       allowsDirectResponse: false,
       replanReason: reason,
-      executionHistory: plannerHistory
+      executionHistory: plannerHistory,
+      completionRequirements: previousPlan.completionRequirements
     )
     guard store.agentTask(id: taskId)?.phase == .waitingResponse else { return }
     guard let outcome else {
@@ -6644,6 +6670,8 @@ final class MessageCoordinator: ObservableObject {
     continuedPlan.actions = nextPlan.actions.map { $0.withPlanRevision(nextRevision) }
     continuedPlan.revision = nextRevision
     continuedPlan.replanCount = max(nextPlan.replanCount, previousPlan.replanCount + 1)
+    continuedPlan.completionRequirements = nextPlan.completionRequirements
+      ?? previousPlan.completionRequirements
     continuedPlan.actionHistory = previousPlan.historyForNextRevision(nextRevision)
     continuedPlan.checkpoints = previousPlan.checkpoints
     continuedPlan.verificationResults = previousPlan.verificationResults
@@ -6685,6 +6713,8 @@ final class MessageCoordinator: ObservableObject {
     completedPlan.actions = [completedMarker]
     completedPlan.revision = nextRevision
     completedPlan.replanCount += 1
+    completedPlan.completionRequirements = finalPlan.completionRequirements
+      ?? previousPlan.completionRequirements
     completedPlan.expectedResult = finalPlan.expectedResult
       .ifBlank(finalAction.result)
       .ifBlank(finalAction.description)
