@@ -165,7 +165,9 @@ enum AgentModelPlanningPrompt {
       &prompt,
       "Independent reads and disjoint mutations may run concurrently. Order resource conflicts, runtime work, and publication. Native use_outputs_from must stay empty. Only finish after all required evidence exists. "
     )
-    append(&prompt, "Stop the graph when later choices require interpreting a receipt. Use next_cursor for lists and keep same or nested paths ordered.\n\n")
+    append(&prompt, "Generic native receipts are observations, not final answers. Stop the graph when later choices require interpreting a receipt. ")
+    append(&prompt, "After verified evidence proves completion, return one DRAFT_PLAN with target=task-complete and a concise final answer in the user's language; do not repeat tools merely to produce an answer. ")
+    append(&prompt, "Use next_cursor for lists and keep same or nested paths ordered.\n\n")
   }
 
   private static func appendCoordinationRules(
