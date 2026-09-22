@@ -165,7 +165,7 @@ final class MessageCoordinator: ObservableObject {
     coordinator: self
   )
   private lazy var pendingReplyRecoveryWake = AgentRecoveryWakeCoordinator(
-    recover: { [weak self] in
+    recover: { [weak self] _ in
       await self?.resumePendingAgentDelivery()
     },
     failed: { [weak self] error in
