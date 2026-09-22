@@ -19,7 +19,7 @@
     <string name="peer_clear">Clear chat history</string>
     <string name="peer_delete">Delete contact</string>
     <string name="peer_clear_confirm">Clear this conversation and pending messages?</string>
-    <string name="peer_delete_confirm">Delete this contact and chat history? A new request will require approval.</string>
+    <string name="peer_delete_confirm">Delete %1$s? Chat history and voice messages on this watch will also be removed.</string>
     <string name="peer_error">Could not complete this action. Please retry.</string>
     <string name="peer_delivered">Delivered</string>
     <string name="peer_failed">Expired · send again</string>

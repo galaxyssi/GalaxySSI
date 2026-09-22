@@ -240,6 +240,12 @@ class WatchContactsActivity : Activity() {
         val row = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48); setPadding(dp(4), dp(5), dp(4), dp(5))
             setOnClickListener { click() }
+            if (person.status == "approved") setOnLongClickListener {
+                if (!busy) android.app.AlertDialog.Builder(this@WatchContactsActivity)
+                    .setItems(arrayOf(getString(R.string.peer_delete))) { _, _ -> confirmDelete(person) }
+                    .show()
+                true
+            }
         }
         row.addView(avatar(person.fingerprint.ifBlank { person.id }), LinearLayout.LayoutParams(dp(32), dp(32)))
         row.addView(text(person.name + if (last.isNotEmpty()) "\n$last" else "", 14).apply {
@@ -250,6 +256,27 @@ class WatchContactsActivity : Activity() {
             background = background(green)
         }, LinearLayout.LayoutParams(dp(22), dp(22)))
         body.addView(row, LinearLayout.LayoutParams(-1, -2))
+    }
+    private fun confirmDelete(person: WatchPerson) {
+        if (busy || isFinishing || isDestroyed) return
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.peer_delete)
+            .setMessage(getString(R.string.peer_delete_confirm, person.name))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                if (!busy) {
+                    busy = true
+                    repo.contactAction({ delete(person.id) }) { ok ->
+                        busy = false
+                        if (!isFinishing && !isDestroyed) {
+                            if (ok) {
+                                if (peer == person.id) { peer = ""; draft = "" }
+                                navigate("list")
+                            } else error()
+                        }
+                    }
+                }
+            }.show()
     }
     private fun updateMessages(initial: Boolean = false) {
         val rows = chatRows ?: return
