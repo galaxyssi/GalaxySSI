@@ -479,7 +479,8 @@ final class AgentOutboundAttachmentTransferStore {
     let preparedPayload = transportPayload(
       for: attachment,
       mediaProfile: mediaProfile,
-      preserveOriginalBytes: preserveOriginalBytes
+      preserveOriginalBytes: preserveOriginalBytes,
+      taskId: scope.taskId
     )
     let data = preparedPayload.data
     let transportSize = Int64(data.count)
@@ -549,14 +550,16 @@ final class AgentOutboundAttachmentTransferStore {
   private func transportPayload(
     for attachment: GalaxySSIDraftAttachment,
     mediaProfile: AgentMediaDeliveryProfile,
-    preserveOriginalBytes: Bool
+    preserveOriginalBytes: Bool,
+    taskId: String
   ) -> (data: Data, mimeType: String, name: String) {
     if attachment.isImage,
        !preserveOriginalBytes,
        let encoded = AgentMediaAttachmentTransportEncoder.inlinePayload(
         for: attachment,
         profile: mediaProfile,
-        remainingBytes: mediaProfile.imageTargetBytes
+        remainingBytes: mediaProfile.imageTargetBytes,
+        taskId: taskId
        ) {
       return (
         encoded.data,

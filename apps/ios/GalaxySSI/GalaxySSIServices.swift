@@ -2811,7 +2811,10 @@ final class MessageCoordinator: ObservableObject {
           contactId: cloudContact.id,
           runtimeTarget: cloudModelLabel.ifBlank(cloudContact.displayName)
         )
-        let cloudImages = try CloudImagePayloadFactory.prepare(effectiveAttachments)
+        let cloudImages = try CloudImagePayloadFactory.prepare(
+          effectiveAttachments,
+          taskId: outgoing.id.uuidString
+        )
         let cloudText = cloudPrompt(text: requestText, attachments: effectiveAttachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
@@ -2934,7 +2937,10 @@ final class MessageCoordinator: ObservableObject {
       }
       switch contact.deliveryMode {
       case .cloudAPI:
-        let cloudImages = try CloudImagePayloadFactory.prepare(effectiveAttachments)
+        let cloudImages = try CloudImagePayloadFactory.prepare(
+          effectiveAttachments,
+          taskId: outgoing.id.uuidString
+        )
         let cloudContact = CloudModelRequestRoutingPolicy.resolve(
           contact: contact,
           requestedModelId: contact.selectedCloudModelId,
@@ -5825,7 +5831,10 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage
   ) async throws {
-    let images = try CloudImagePayloadFactory.prepare(attachments)
+    let images = try CloudImagePayloadFactory.prepare(
+      attachments,
+      taskId: outgoing.id.uuidString
+    )
     let cloudContact = CloudModelRequestRoutingPolicy.resolve(
       contact: contact,
       requestedModelId: contact.selectedCloudModelId,
@@ -5854,7 +5863,10 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     requestId: String
   ) async throws -> String {
-    let images = try CloudImagePayloadFactory.prepare(attachments)
+    let images = try CloudImagePayloadFactory.prepare(
+      attachments,
+      taskId: outgoing.id.uuidString
+    )
     let cloudContact = CloudModelRequestRoutingPolicy.resolve(
       contact: contact,
       requestedModelId: contact.selectedCloudModelId,
@@ -8516,7 +8528,8 @@ final class MessageCoordinator: ObservableObject {
     if outboundAttachments.isEmpty {
       let attachmentDescriptors = GalaxySSIAttachmentPayloadBuilder.descriptors(
         for: attachments,
-        mediaProfile: attachments.isEmpty ? nil : mediaProfile
+        mediaProfile: attachments.isEmpty ? nil : mediaProfile,
+        taskId: taskIdentity.taskId
       )
       if !attachmentDescriptors.isEmpty {
         payload["attachments"] = attachmentDescriptors

@@ -661,6 +661,8 @@
     D12979000000000000000001 /* AgentActionEffectExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22979000000000000000001 /* AgentActionEffectExecutor.swift */; };
     D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */; };
     D12980000000000000000001 /* AgentRuntimeTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22980000000000000000001 /* AgentRuntimeTimingTests.swift */; };
+    D12981000000000000000001 /* AgentImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22981000000000000000001 /* AgentImagePipeline.swift */; };
+    D12981000000000000000002 /* AgentImagePipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22981000000000000000002 /* AgentImagePipelineTests.swift */; };
     A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */; };
     A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */; };
     A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */; };
@@ -1587,6 +1589,8 @@
     D22979000000000000000001 /* AgentActionEffectExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionEffectExecutor.swift; sourceTree = "<group>"; };
     D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionEffectExecutorTests.swift; sourceTree = "<group>"; };
     D22980000000000000000001 /* AgentRuntimeTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimeTimingTests.swift; sourceTree = "<group>"; };
+    D22981000000000000000001 /* AgentImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentImagePipeline.swift; sourceTree = "<group>"; };
+    D22981000000000000000002 /* AgentImagePipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentImagePipelineTests.swift; sourceTree = "<group>"; };
     A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolLifecycleEvents.swift; sourceTree = "<group>"; };
     A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolRunControlAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolWorkspaceProgressBridge.swift; sourceTree = "<group>"; };
@@ -2225,6 +2229,7 @@
         A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */,
         A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */,
         D22979000000000000000001 /* AgentActionEffectExecutor.swift */,
+        D22981000000000000000001 /* AgentImagePipeline.swift */,
         A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */,
         A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */,
         A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */,
@@ -2793,6 +2798,7 @@
       children = (
         D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */,
         D22980000000000000000001 /* AgentRuntimeTimingTests.swift */,
+        D22981000000000000000002 /* AgentImagePipelineTests.swift */,
         D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */,
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
@@ -3307,6 +3313,7 @@
         A10000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift in Sources */,
         A10000000000000000000322 /* AgentNativeToolActionExecutor.swift in Sources */,
         D12979000000000000000001 /* AgentActionEffectExecutor.swift in Sources */,
+        D12981000000000000000001 /* AgentImagePipeline.swift in Sources */,
         A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */,
         A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */,
         A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */,
@@ -3938,6 +3945,7 @@
       files = (
         D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */,
         D12980000000000000000001 /* AgentRuntimeTimingTests.swift in Sources */,
+        D12981000000000000000002 /* AgentImagePipelineTests.swift in Sources */,
         D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */,
         F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */,
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,

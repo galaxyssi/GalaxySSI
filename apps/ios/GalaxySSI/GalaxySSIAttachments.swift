@@ -543,7 +543,8 @@ enum GalaxySSIAttachmentPayloadBuilder {
 
   static func descriptors(
     for attachments: [GalaxySSIDraftAttachment],
-    mediaProfile: AgentMediaDeliveryProfile? = nil
+    mediaProfile: AgentMediaDeliveryProfile? = nil,
+    taskId: String = ""
   ) -> [[String: Any]] {
     var remaining = maximumInlineBytes
     return attachments.prefix(maximumAttachmentCount).map { attachment in
@@ -560,7 +561,8 @@ enum GalaxySSIAttachmentPayloadBuilder {
       if let inline = AgentMediaAttachmentTransportEncoder.inlinePayload(
         for: attachment,
         profile: mediaProfile,
-        remainingBytes: remaining
+        remainingBytes: remaining,
+        taskId: taskId
       ) {
         item["data_b64"] = inline.data.base64EncodedString()
         item["transport_size"] = inline.data.count

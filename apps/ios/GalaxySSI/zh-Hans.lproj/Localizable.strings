@@ -2902,6 +2902,10 @@
 "agent_latency_screen_observe" = "执行后屏幕观察";
 "agent_latency_receipt_observe" = "工具回执观察";
 "agent_latency_result_verify" = "验证结果应用";
+"agent_latency_image_prepare" = "图片准备";
+"agent_latency_image_original_probe" = "原图探测";
+"agent_latency_image_decode" = "图片解码与方向处理";
+"agent_latency_image_encode" = "图片压缩与编码";
 "voice_performance_subtitle" = "延迟、可靠性、温度状态与自动回退";
 "voice_performance_hero_title" = "语音链路健康度";
 "voice_performance_hero_subtitle" = "来自本机且不包含内容的性能数据";
