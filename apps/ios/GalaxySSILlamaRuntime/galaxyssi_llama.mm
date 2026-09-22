@@ -499,6 +499,27 @@ extern "C" int32_t galaxyssi_embedding_encode(
     }
 }
 
+extern "C" int32_t galaxyssi_embedding_token_count(
+    int64_t handle,
+    const char *utf8_text,
+    int32_t utf8_length
+) {
+    std::lock_guard<std::mutex> guard(embedding_mutex);
+    try {
+        const auto found = embedding_encoders.find(handle);
+        if (found == embedding_encoders.end()) throw std::runtime_error("Embedding runtime is closed");
+        if (utf8_text == nullptr || utf8_length <= 0) throw std::runtime_error("Embedding input is empty");
+        const llama_vocab *vocab = llama_model_get_vocab(found->second->model);
+        int32_t count = llama_tokenize(vocab, utf8_text, utf8_length, nullptr, 0, true, false);
+        if (count == INT32_MIN) throw std::runtime_error("Embedding token count overflow");
+        embedding_last_error.clear();
+        return count < 0 ? -count : count;
+    } catch (const std::exception &error) {
+        embedding_last_error = error.what();
+        return -1;
+    }
+}
+
 extern "C" void galaxyssi_embedding_free(float *output, int32_t dimensions) {
     if (output == nullptr) return;
     if (dimensions > 0) wipe(output, static_cast<size_t>(dimensions) * sizeof(float));

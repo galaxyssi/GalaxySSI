@@ -101,6 +101,30 @@ final class GalaxySSIEmbeddingRuntime {
     }
   }
 
+  func tokenCount(_ text: String) async throws -> Int {
+    try await withCheckedThrowingContinuation { continuation in
+      queue.async { [self] in
+        guard handle != 0 else {
+          continuation.resume(throwing: GalaxySSIEmbeddingRuntimeError.closed)
+          return
+        }
+        let input = Data(text.utf8)
+        let count = input.withUnsafeBytes { bytes in
+          galaxyssi_embedding_token_count(
+            handle,
+            bytes.bindMemory(to: CChar.self).baseAddress,
+            Int32(input.count)
+          )
+        }
+        guard count >= 0 else {
+          continuation.resume(throwing: GalaxySSIEmbeddingRuntimeError.inferenceFailed(Self.lastEmbeddingError()))
+          return
+        }
+        continuation.resume(returning: Int(count))
+      }
+    }
+  }
+
   func close() async {
     await withCheckedContinuation { continuation in
       queue.async { [self] in
@@ -134,6 +158,13 @@ private func galaxyssi_embedding_encode(
   _ dimensions: UnsafeMutablePointer<Int32>
 ) -> Int32
 
+@_silgen_name("galaxyssi_embedding_token_count")
+private func galaxyssi_embedding_token_count(
+  _ handle: Int64,
+  _ utf8Text: UnsafePointer<CChar>?,
+  _ utf8Length: Int32
+) -> Int32
+
 @_silgen_name("galaxyssi_embedding_free")
 private func galaxyssi_embedding_free(_ output: UnsafeMutablePointer<Float>?, _ dimensions: Int32)
 
@@ -149,6 +180,10 @@ final class GalaxySSIEmbeddingRuntime {
   }
 
   func embed(_ text: String) async throws -> [Float] {
+    throw GalaxySSIEmbeddingRuntimeError.unavailable
+  }
+
+  func tokenCount(_ text: String) async throws -> Int {
     throw GalaxySSIEmbeddingRuntimeError.unavailable
   }
 
