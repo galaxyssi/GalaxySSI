@@ -240,12 +240,8 @@
     <string name="phone_setup_restart">重新开始</string>
     <string name="phone_setup_settings">通过手机配置</string>
     <string name="nearby_ble">附近手表</string>
-    <string name="nearby_nfc">手机碰手表</string>
-    <string name="nearby_expired">本次添加已结束，请重新开始</string>
     <string name="nearby_permission">请允许“附近设备”权限后重试</string>
     <string name="nearby_preparing">正在准备好友邀请…</string>
-    <string name="nearby_nfc_unavailable">请在手表设置中开启 NFC 后重试</string>
-    <string name="nearby_nfc_help">手机打开“添加好友 → NFC 碰手表”，将手机靠近手表</string>
     <string name="nearby_ble_help">两块手表都打开此页，选择附近的手表</string>
     <string name="nearby_device">附近手表</string>
     <string name="nearby_error">连接失败，请检查蓝牙和网络后重试</string>
