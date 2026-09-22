@@ -3077,7 +3077,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 }
 
-private extension JSONEncoder {
+extension JSONEncoder {
   static var galaxySSI: JSONEncoder {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -3091,7 +3091,7 @@ private extension Array where Element == String {
   }
 }
 
-private extension JSONDecoder {
+extension JSONDecoder {
   static var galaxySSI: JSONDecoder {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
