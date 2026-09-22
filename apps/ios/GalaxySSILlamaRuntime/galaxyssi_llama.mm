@@ -2,14 +2,17 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 #include <mutex>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "ggml-backend.h"
@@ -24,6 +27,47 @@ llama_context *loaded_context = nullptr;
 std::string loaded_model_path;
 std::string last_error;
 bool backend_initialized = false;
+
+struct EmbeddingEncoder {
+    llama_model *model = nullptr;
+    llama_context *context = nullptr;
+    ~EmbeddingEncoder() {
+        if (context != nullptr) llama_free(context);
+        if (model != nullptr) llama_model_free(model);
+    }
+};
+
+std::mutex embedding_mutex;
+std::unordered_map<int64_t, std::unique_ptr<EmbeddingEncoder>> embedding_encoders;
+int64_t next_embedding_handle = 1;
+std::string embedding_last_error;
+
+void wipe(void *data, size_t size) {
+    auto *bytes = static_cast<volatile unsigned char *>(data);
+    while (size-- > 0) *bytes++ = 0;
+}
+
+template <typename T> struct SensitiveVector : std::vector<T> {
+    using std::vector<T>::vector;
+    ~SensitiveVector() { wipe(this->data(), this->size() * sizeof(T)); }
+};
+
+struct EmbeddingBatch {
+    llama_batch value;
+    explicit EmbeddingBatch(int32_t count) : value(llama_batch_init(count, 0, 1)) {}
+    ~EmbeddingBatch() {
+        if (value.token != nullptr) wipe(value.token, value.n_tokens * sizeof(llama_token));
+        llama_batch_free(value);
+    }
+};
+
+struct EmbeddingMemoryClear {
+    llama_context *context;
+    ~EmbeddingMemoryClear() {
+        llama_memory_t memory = llama_get_memory(context);
+        if (memory != nullptr) llama_memory_clear(memory, true);
+    }
+};
 
 void set_error(const std::string &message) {
     last_error = message;
@@ -326,4 +370,147 @@ extern "C" int32_t galaxyssi_llama_os_exposes_sme(void) {
 #else
     return 0;
 #endif
+}
+
+extern "C" int64_t galaxyssi_embedding_open(
+    const char *model_path_value,
+    int32_t context_tokens,
+    int32_t threads
+) {
+    if (galaxyssi_llama_initialize() != 0) return 0;
+    std::lock_guard<std::mutex> guard(embedding_mutex);
+    try {
+        if (context_tokens < 32 || context_tokens > 8192 || threads < 1 || threads > 64) {
+            throw std::runtime_error("Invalid embedding runtime configuration");
+        }
+        const std::string model_path = c_string(model_path_value);
+        if (model_path.empty()) throw std::runtime_error("Embedding model path is empty");
+        auto encoder = std::make_unique<EmbeddingEncoder>();
+        llama_model_params model_params = llama_model_default_params();
+        model_params.n_gpu_layers = 0;
+        model_params.load_mode = LLAMA_LOAD_MODE_MMAP;
+        encoder->model = llama_model_load_from_file(model_path.c_str(), model_params);
+        if (encoder->model == nullptr) throw std::runtime_error("Could not load embedding GGUF");
+        if (context_tokens > llama_model_n_ctx_train(encoder->model)) {
+            throw std::runtime_error("Embedding context exceeds the model training window");
+        }
+        if (llama_model_has_encoder(encoder->model) && llama_model_has_decoder(encoder->model)) {
+            throw std::runtime_error("Encoder-decoder embedding models are unsupported");
+        }
+        llama_context_params params = llama_context_default_params();
+        params.n_ctx = static_cast<uint32_t>(context_tokens);
+        params.n_batch = static_cast<uint32_t>(context_tokens);
+        params.n_ubatch = static_cast<uint32_t>(context_tokens);
+        params.n_seq_max = 1;
+        params.n_threads = threads;
+        params.n_threads_batch = threads;
+        params.embeddings = true;
+        params.pooling_type = LLAMA_POOLING_TYPE_UNSPECIFIED;
+        params.no_perf = true;
+        encoder->context = llama_init_from_model(encoder->model, params);
+        if (encoder->context == nullptr) throw std::runtime_error("Could not create embedding context");
+        const llama_pooling_type pooling = llama_pooling_type(encoder->context);
+        if (pooling != LLAMA_POOLING_TYPE_CLS && pooling != LLAMA_POOLING_TYPE_MEAN &&
+            pooling != LLAMA_POOLING_TYPE_LAST) {
+            throw std::runtime_error("Model must provide sequence embedding pooling");
+        }
+        const int64_t handle = next_embedding_handle++;
+        embedding_encoders.emplace(handle, std::move(encoder));
+        embedding_last_error.clear();
+        return handle;
+    } catch (const std::exception &error) {
+        embedding_last_error = error.what();
+        return 0;
+    }
+}
+
+extern "C" int32_t galaxyssi_embedding_encode(
+    int64_t handle,
+    const char *utf8_text,
+    int32_t utf8_length,
+    float **output,
+    int32_t *dimensions
+) {
+    std::lock_guard<std::mutex> guard(embedding_mutex);
+    if (output != nullptr) *output = nullptr;
+    if (dimensions != nullptr) *dimensions = 0;
+    try {
+        const auto found = embedding_encoders.find(handle);
+        if (found == embedding_encoders.end()) throw std::runtime_error("Embedding runtime is closed");
+        if (utf8_text == nullptr || utf8_length <= 0 || output == nullptr || dimensions == nullptr) {
+            throw std::runtime_error("Embedding input is empty");
+        }
+        EmbeddingEncoder &encoder = *found->second;
+        EmbeddingMemoryClear clear_memory{encoder.context};
+        const llama_vocab *vocab = llama_model_get_vocab(encoder.model);
+        int32_t count = llama_tokenize(vocab, utf8_text, utf8_length, nullptr, 0, true, false);
+        if (count == INT32_MIN) throw std::runtime_error("Embedding token count overflow");
+        if (count < 0) count = -count;
+        if (count <= 0 || static_cast<uint32_t>(count) > llama_n_ctx(encoder.context)) {
+            throw std::runtime_error("Embedding input exceeds the model token window; split it into chunks");
+        }
+        SensitiveVector<llama_token> tokens(static_cast<size_t>(count));
+        count = llama_tokenize(vocab, utf8_text, utf8_length, tokens.data(), count, true, false);
+        if (count <= 0) throw std::runtime_error("Embedding tokenization failed");
+        llama_memory_t memory = llama_get_memory(encoder.context);
+        if (memory != nullptr) llama_memory_clear(memory, true);
+        EmbeddingBatch batch(count);
+        if (batch.value.token == nullptr || batch.value.pos == nullptr ||
+            batch.value.n_seq_id == nullptr || batch.value.seq_id == nullptr ||
+            batch.value.logits == nullptr) {
+            throw std::runtime_error("Embedding batch allocation failed");
+        }
+        batch.value.n_tokens = count;
+        for (int32_t index = 0; index < count; ++index) {
+            batch.value.token[index] = tokens[index];
+            batch.value.pos[index] = index;
+            batch.value.n_seq_id[index] = 1;
+            batch.value.seq_id[index][0] = 0;
+            batch.value.logits[index] = true;
+        }
+        if (llama_decode(encoder.context, batch.value) != 0) {
+            throw std::runtime_error("Embedding inference failed");
+        }
+        float *embedding = llama_get_embeddings_seq(encoder.context, 0);
+        const int32_t count_dimensions = llama_model_n_embd_out(encoder.model);
+        if (embedding == nullptr || count_dimensions <= 0) {
+            throw std::runtime_error("Model produced no sequence embedding");
+        }
+        double norm = 0;
+        for (int32_t index = 0; index < count_dimensions; ++index) {
+            norm += static_cast<double>(embedding[index]) * embedding[index];
+        }
+        if (!std::isfinite(norm) || norm <= 0) throw std::runtime_error("Model produced an invalid embedding");
+        norm = std::sqrt(norm);
+        float *result = static_cast<float *>(std::malloc(count_dimensions * sizeof(float)));
+        if (result == nullptr) throw std::runtime_error("Could not allocate embedding output");
+        for (int32_t index = 0; index < count_dimensions; ++index) {
+            result[index] = static_cast<float>(embedding[index] / norm);
+        }
+        wipe(embedding, count_dimensions * sizeof(float));
+        if (memory != nullptr) llama_memory_clear(memory, true);
+        *output = result;
+        *dimensions = count_dimensions;
+        embedding_last_error.clear();
+        return 0;
+    } catch (const std::exception &error) {
+        embedding_last_error = error.what();
+        return 1;
+    }
+}
+
+extern "C" void galaxyssi_embedding_free(float *output, int32_t dimensions) {
+    if (output == nullptr) return;
+    if (dimensions > 0) wipe(output, static_cast<size_t>(dimensions) * sizeof(float));
+    std::free(output);
+}
+
+extern "C" void galaxyssi_embedding_close(int64_t handle) {
+    std::lock_guard<std::mutex> guard(embedding_mutex);
+    embedding_encoders.erase(handle);
+}
+
+extern "C" const char *galaxyssi_embedding_last_error(void) {
+    std::lock_guard<std::mutex> guard(embedding_mutex);
+    return embedding_last_error.c_str();
 }
