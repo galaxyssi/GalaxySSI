@@ -6,6 +6,7 @@ struct GalaxySSIAgentComposerUiState: Equatable {
   let showSendButton: Bool
   let showPendingActionButton: Bool
   let showActionTray: Bool
+  let showVoiceButton: Bool
 }
 
 enum GalaxySSIAgentComposerUiPolicy {
@@ -13,18 +14,21 @@ enum GalaxySSIAgentComposerUiPolicy {
     hasInput: Bool,
     hasPendingPrimaryAction: Bool,
     textModeActive: Bool,
-    actionTrayRequested: Bool
+    actionTrayRequested: Bool,
+    voiceEntryAvailable: Bool = false
   ) -> GalaxySSIAgentComposerUiState {
     let showSend = hasInput
     let showPending = !hasInput && hasPendingPrimaryAction
     let showTray = actionTrayRequested && !showSend && !showPending
     let showMore = !showSend && !showPending && (textModeActive || showTray)
+    let showVoice = voiceEntryAvailable && !showSend && !showPending && !showMore
     return GalaxySSIAgentComposerUiState(
-      showPrimaryActionSlot: showSend || showPending || showMore,
+      showPrimaryActionSlot: showSend || showPending || showMore || showVoice,
       showMoreButton: showMore,
       showSendButton: showSend,
       showPendingActionButton: showPending,
-      showActionTray: showTray
+      showActionTray: showTray,
+      showVoiceButton: showVoice
     )
   }
 }

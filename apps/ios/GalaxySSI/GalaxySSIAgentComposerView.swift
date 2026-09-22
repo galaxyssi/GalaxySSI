@@ -40,7 +40,8 @@ struct GalaxySSIAgentComposerView: View {
       hasInput: canSend,
       hasPendingPrimaryAction: hasPendingPrimaryAction,
       textModeActive: inputFocused,
-      actionTrayRequested: actionTrayPresented
+      actionTrayRequested: actionTrayPresented,
+      voiceEntryAvailable: true
     )
   }
 
@@ -444,6 +445,15 @@ struct GalaxySSIAgentComposerView: View {
               ? t("galaxyssi.agent.high_risk_confirmation.execute", "Confirm high-risk action")
               : t("galaxyssi.agent.cancel_task", "Cancel task")))
       .accessibilityIdentifier("ios.agent.composer-primary-action")
+    } else if uiState.showVoiceButton {
+      GalaxySSIComposerVoiceButtonIcon()
+        .frame(width: 54, height: 54)
+        .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)
+        .contentShape(Rectangle())
+        .gesture(holdToTalkGesture)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
+        .accessibilityIdentifier("ios.agent.composer-voice-action")
     } else {
       Button {
         if actionTrayPresented {
