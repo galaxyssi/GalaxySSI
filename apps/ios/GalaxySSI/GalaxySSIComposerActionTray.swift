@@ -126,6 +126,25 @@ struct GalaxySSIComposerMoreButtonIcon: View {
   }
 }
 
+struct GalaxySSIComposerVoiceButtonIcon: View {
+  var body: some View {
+    HStack(alignment: .center, spacing: 3) {
+      Circle()
+        .frame(width: 4, height: 4)
+      Capsule()
+        .frame(width: 4, height: 12)
+      Capsule()
+        .frame(width: 4, height: 22)
+      Capsule()
+        .frame(width: 4, height: 12)
+      Circle()
+        .frame(width: 4, height: 4)
+    }
+    .foregroundColor(.galaxySSITextPrimary)
+    .frame(width: 46, height: 46)
+  }
+}
+
 private struct GalaxySSIComposerTextHeightKey: PreferenceKey {
   static var defaultValue: CGFloat = 54
 

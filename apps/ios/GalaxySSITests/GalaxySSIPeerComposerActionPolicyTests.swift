@@ -49,6 +49,50 @@ final class GalaxySSIPeerComposerActionPolicyTests: XCTestCase {
     XCTAssertTrue(state.showPrimaryActionSlot)
   }
 
+  func testAgentIdleComposerShowsVoiceAsTheOnlyPrimaryAction() {
+    let state = GalaxySSIAgentComposerUiPolicy.resolve(
+      hasInput: false,
+      hasPendingPrimaryAction: false,
+      textModeActive: false,
+      actionTrayRequested: false,
+      voiceEntryAvailable: true
+    )
+
+    XCTAssertTrue(state.showVoiceButton)
+    XCTAssertFalse(state.showMoreButton)
+    XCTAssertFalse(state.showSendButton)
+    XCTAssertTrue(state.showPrimaryActionSlot)
+  }
+
+  func testAgentTextModeReplacesVoiceWithMore() {
+    let state = GalaxySSIAgentComposerUiPolicy.resolve(
+      hasInput: false,
+      hasPendingPrimaryAction: false,
+      textModeActive: true,
+      actionTrayRequested: false,
+      voiceEntryAvailable: true
+    )
+
+    XCTAssertFalse(state.showVoiceButton)
+    XCTAssertTrue(state.showMoreButton)
+    XCTAssertFalse(state.showSendButton)
+  }
+
+  func testAgentInputReplacesVoiceAndMoreWithSend() {
+    let state = GalaxySSIAgentComposerUiPolicy.resolve(
+      hasInput: true,
+      hasPendingPrimaryAction: false,
+      textModeActive: true,
+      actionTrayRequested: true,
+      voiceEntryAvailable: true
+    )
+
+    XCTAssertFalse(state.showVoiceButton)
+    XCTAssertFalse(state.showMoreButton)
+    XCTAssertTrue(state.showSendButton)
+    XCTAssertFalse(state.showActionTray)
+  }
+
   func testBackConsumesExpandedTrayBeforeNavigation() {
     XCTAssertTrue(
       GalaxySSIPeerComposerActionPolicy.consumesBackAction(actionTrayPresented: true)
