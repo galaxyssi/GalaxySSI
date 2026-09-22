@@ -311,7 +311,8 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
     if [.code, .diff, .json, .html, .mermaid].contains(type) {
       return limited.trimmingCharacters(in: CharacterSet(charactersIn: "\r\n"))
     }
-    return limited.trimmingCharacters(in: .whitespacesAndNewlines)
+    return AgentMarkdownArtifactReferences.removingInternalLinks(limited)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static let hex64 = "^[0-9a-f]{64}$"

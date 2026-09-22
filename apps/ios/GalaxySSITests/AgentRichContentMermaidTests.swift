@@ -2,6 +2,62 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  func testInternalArtifactMarkdownReferencesAreHiddenButCodeAndWebLinksRemain() {
+    let internalImage = "![Generated image](galaxyssi-artifact://task/outputs/generated-image.png)"
+    XCTAssertEqual(AgentRichContentCodec.fromText("Done.\n\n\(internalImage)").map(\.text), ["Done."])
+    XCTAssertTrue(AgentRichContentCodec.fromText(internalImage).isEmpty)
+    for value in [
+      "`\(internalImage)`",
+      "```markdown\n\(internalImage)\n```",
+      "~~~\n\(internalImage)\n~~~",
+      "[Source](https://example.com/page)",
+      "![Image](https://example.com/image.png)"
+    ] {
+      XCTAssertEqual(AgentMarkdownArtifactReferences.removingInternalLinks(value), value)
+    }
+  }
+
+  func testInternalArtifactLinksHandleTitlesParenthesesAndHistoryReload() throws {
+    let target = "galaxyssi-artifact://task/outputs/image_(1).png"
+    for reference in [
+      "[Download](<\(target)>)",
+      "![Image](\n<\(target)>\n)",
+      "![Image](<\(target)> \"Title\")"
+    ] {
+      XCTAssertEqual(
+        AgentMarkdownArtifactReferences.removingInternalLinks("Before \(reference) after"),
+        "Before  after"
+      )
+    }
+    let attachment = AgentRichBlock(
+      id: "image",
+      type: .image,
+      title: "Image",
+      uri: "galaxyssi-artifact://blob/transfer/image",
+      mimeType: "image/png",
+      metadata: ["sha256": String(repeating: "a", count: 64)]
+    )
+    let encoded = String(decoding: try JSONSerialization.data(withJSONObject: [
+      "version": 1,
+      "blocks": [
+        ["id": "text", "type": "text", "text": "Done.\n\n![Image](\(target))"],
+        [
+          "id": attachment.id,
+          "type": attachment.type.rawValue,
+          "title": attachment.title,
+          "uri": attachment.uri,
+          "mime_type": attachment.mimeType,
+          "metadata": attachment.metadata
+        ]
+      ]
+    ], options: [.sortedKeys]), as: UTF8.self)
+    let decoded = AgentRichContentCodec.decode(encoded)
+    XCTAssertEqual(decoded.map(\.type), [.text, .image])
+    XCTAssertEqual(decoded.first?.text, "Done.")
+    XCTAssertEqual(decoded.last?.uri, attachment.uri)
+    XCTAssertEqual(AgentRichContentCodec.decode(AgentRichContentCodec.normalize(encoded)), decoded)
+  }
+
   func testRichContentUpdatePolicyIgnoresGeneratedIdsAndKeepsPassiveGroupsStable() {
     let first = [
       AgentRichBlock(id: "one", type: .text, text: "First"),

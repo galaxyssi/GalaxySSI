@@ -1,5 +1,173 @@
 import Foundation
 
+enum AgentMarkdownArtifactReferences {
+  static func removingInternalLinks(_ text: String) -> String {
+    guard text.range(of: "galaxyssi-artifact://", options: .caseInsensitive) != nil else { return text }
+    let characters = Array(text)
+    var output = ""
+    var index = 0
+    var fence: (character: Character, count: Int)?
+    while index < characters.count {
+      let lineStart = index == 0 || characters[index - 1] == "\n"
+      if lineStart, let marker = fenceMarker(characters, at: index) {
+        if let fence, marker.character == fence.character, marker.count >= fence.count {
+          self.appendLine(from: index, characters: characters, to: &output, next: &index)
+          fence = nil
+          continue
+        }
+        if fence == nil {
+          fence = marker
+          self.appendLine(from: index, characters: characters, to: &output, next: &index)
+          continue
+        }
+      }
+      if fence != nil {
+        output.append(characters[index])
+        index += 1
+        continue
+      }
+      if characters[index] == "`", let end = inlineCodeEnd(characters, at: index) {
+        output.append(contentsOf: characters[index..<end])
+        index = end
+        continue
+      }
+      if characters[index] == "\\", index + 1 < characters.count {
+        output.append(characters[index])
+        output.append(characters[index + 1])
+        index += 2
+        continue
+      }
+      if let link = markdownLink(characters, at: index),
+         link.destination.lowercased().hasPrefix("galaxyssi-artifact://") {
+        index = link.end
+        continue
+      }
+      output.append(characters[index])
+      index += 1
+    }
+    return output
+  }
+
+  private static func fenceMarker(_ value: [Character], at lineStart: Int) -> (Character, Int)? {
+    var index = lineStart
+    var spaces = 0
+    while index < value.count, value[index] == " ", spaces < 4 {
+      spaces += 1
+      index += 1
+    }
+    guard spaces <= 3, index < value.count, value[index] == "`" || value[index] == "~" else { return nil }
+    let character = value[index]
+    var end = index
+    while end < value.count, value[end] == character { end += 1 }
+    let count = end - index
+    return count >= 3 ? (character, count) : nil
+  }
+
+  private static func appendLine(
+    from start: Int,
+    characters: [Character],
+    to output: inout String,
+    next: inout Int
+  ) {
+    var end = start
+    while end < characters.count {
+      let character = characters[end]
+      end += 1
+      if character == "\n" { break }
+    }
+    output.append(contentsOf: characters[start..<end])
+    next = end
+  }
+
+  private static func inlineCodeEnd(_ value: [Character], at start: Int) -> Int? {
+    var openingEnd = start
+    while openingEnd < value.count, value[openingEnd] == "`" { openingEnd += 1 }
+    let count = openingEnd - start
+    var index = openingEnd
+    while index < value.count {
+      guard value[index] == "`" else {
+        index += 1
+        continue
+      }
+      var end = index
+      while end < value.count, value[end] == "`" { end += 1 }
+      if end - index == count { return end }
+      index = end
+    }
+    return nil
+  }
+
+  private static func markdownLink(
+    _ value: [Character],
+    at start: Int
+  ) -> (destination: String, end: Int)? {
+    var labelStart = start
+    if value[start] == "!" {
+      guard start + 1 < value.count, value[start + 1] == "[" else { return nil }
+      labelStart += 1
+    } else if value[start] != "[" {
+      return nil
+    }
+    var labelEnd = labelStart + 1
+    while labelEnd < value.count {
+      if value[labelEnd] == "\\" { labelEnd += 2; continue }
+      if value[labelEnd] == "]" { break }
+      labelEnd += 1
+    }
+    guard labelEnd < value.count else { return nil }
+    var index = labelEnd + 1
+    while index < value.count, value[index].isWhitespace { index += 1 }
+    guard index < value.count, value[index] == "(" else { return nil }
+    index += 1
+    while index < value.count, value[index].isWhitespace { index += 1 }
+    let destination: String
+    if index < value.count, value[index] == "<" {
+      index += 1
+      let destinationStart = index
+      while index < value.count, value[index] != ">" { index += 1 }
+      guard index < value.count else { return nil }
+      destination = String(value[destinationStart..<index])
+      index += 1
+    } else {
+      let destinationStart = index
+      var depth = 0
+      while index < value.count {
+        if value[index] == "\\" {
+          guard index + 1 < value.count else { return nil }
+          index += 2
+          continue
+        }
+        if value[index] == "(" { depth += 1 }
+        if value[index] == ")" {
+          if depth == 0 { break }
+          depth -= 1
+        }
+        if value[index].isWhitespace, depth == 0 { break }
+        index += 1
+      }
+      destination = String(value[destinationStart..<index])
+    }
+    var quote: Character?
+    while index < value.count {
+      let character = value[index]
+      if character == "\\" {
+        guard index + 1 < value.count else { return nil }
+        index += 2
+        continue
+      }
+      if let activeQuote = quote {
+        if character == activeQuote { quote = nil }
+      } else if character == "\"" || character == "'" {
+        quote = character
+      } else if character == ")" {
+        return (destination, index + 1)
+      }
+      index += 1
+    }
+    return nil
+  }
+}
+
 extension AgentRichContentCodec {
   static func fromText(_ text: String) -> [AgentRichBlock] {
     let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7,10 +175,13 @@ extension AgentRichContentCodec {
     if let pretty = prettyJSON(clean) {
       return [AgentRichBlock(id: markdownID(), type: .json, text: pretty, language: "json")]
     }
+    let visible = AgentMarkdownArtifactReferences.removingInternalLinks(clean)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !visible.isEmpty else { return [] }
 
     var blocks: [AgentRichBlock] = []
     var paragraph: [String] = []
-    let lines = clean.components(separatedBy: .newlines)
+    let lines = visible.components(separatedBy: .newlines)
     var index = 0
 
     func flushParagraph() {
