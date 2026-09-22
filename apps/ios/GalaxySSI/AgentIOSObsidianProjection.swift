@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SQLite3
 
 private struct AgentIOSObsidianProjectionSpec {
   var sourceKey: String
@@ -8,6 +9,7 @@ private struct AgentIOSObsidianProjectionSpec {
   var legacySourceKey = ""
   var exactSource = ""
   var content: () throws -> String
+  var writeContent: ((URL) throws -> String?)?
 }
 
 private enum AgentIOSObsidianProjectionStep: Equatable {
@@ -217,6 +219,26 @@ enum AgentIOSObsidianBridge {
     body: String
   ) -> String {
     let cleanBody = AgentIOSObsidianProjectionPrivacyPolicy.transcriptText(body)
+    return noteHeader(
+      sourceKey: sourceKey,
+      type: type,
+      title: title,
+      source: source,
+      updatedAtMillis: updatedAtMillis,
+      tags: tags,
+      contentHash: sha256(cleanBody)
+    ) + cleanBody + "\n"
+  }
+
+  private static func noteHeader(
+    sourceKey: String,
+    type: String,
+    title: String,
+    source: String,
+    updatedAtMillis: Int64,
+    tags: [String],
+    contentHash: String
+  ) -> String {
     let cleanTitle = AgentIOSObsidianProjectionPrivacyPolicy.safeMetadata(title) ? title.trimmingCharacters(in: .whitespacesAndNewlines) : ""
     let resolvedTitle = cleanTitle.ifBlank("GalaxySSI")
     let cleanSource = AgentIOSObsidianProjectionPrivacyPolicy.safeMetadata(source) ? source.trimmingCharacters(in: .whitespacesAndNewlines) : ""
@@ -230,12 +252,12 @@ enum AgentIOSObsidianBridge {
     ]
     if !cleanSource.isEmpty { lines.append("source: \"\(yaml(cleanSource))\"") }
     lines.append("updated_at: \"\(isoDate(updatedAtMillis))\"")
-    lines.append("content_hash: \"\(sha256(cleanBody))\"")
+    lines.append("content_hash: \"\(contentHash)\"")
     lines.append("managed_by: galaxyssi")
     if !cleanTags.isEmpty {
       lines.append("tags: [\(cleanTags.map { "\"\(yaml($0))\"" }.joined(separator: ", "))]")
     }
-    lines.append(contentsOf: ["---", "", "# \(resolvedTitle)", "", cleanBody, ""])
+    lines.append(contentsOf: ["---", "", "# \(resolvedTitle)", ""])
     return lines.joined(separator: "\n")
   }
 
@@ -252,25 +274,216 @@ enum AgentIOSObsidianBridge {
       relativePath: "\(reading ? "60 Reading" : "10 Knowledge")/\(fileName(title, sourceKey: sourceKey))",
       sourceRevision: group.sourceRevision,
       legacySourceKey: "knowledge:\(GlobalAgentText.stableKey(source))",
-      exactSource: source
-    ) {
-      let ordered = try appStore.agentKnowledgeDatabase.sourceSnapshotItems(group)
-      let safe = ordered.filter { AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge($0.content) }
-      guard let first = safe.first else { return "" }
-      return note(
-        sourceKey: sourceKey,
-        type: reading ? "reading" : "knowledge",
-        title: first.title.replacingOccurrences(
-          of: #"\s+\[[0-9]+/[0-9]+\]$"#,
-          with: "",
-          options: .regularExpression
-        ).ifBlank(title),
-        source: source,
-        updatedAtMillis: safe.map(\.updatedAtMillis).max() ?? 0,
-        tags: Array(Set(safe.flatMap(\.tags))).sorted().prefixArray(16),
-        body: safe.map(\.content).joined(separator: "\n\n")
-      )
+      exactSource: source,
+      content: { "" },
+      writeContent: { destination in
+        try writeKnowledgeProjection(
+          database: appStore.agentKnowledgeDatabase,
+          group: group,
+          sourceKey: sourceKey,
+          type: reading ? "reading" : "knowledge",
+          fallbackTitle: title,
+          source: source,
+          destination: destination
+        )
+      }
+    )
+  }
+
+  static func writeKnowledgeProjection(
+    database: AgentKnowledgeDatabase,
+    group: AgentKnowledgeSourceGroup,
+    sourceKey: String,
+    type: String,
+    fallbackTitle: String,
+    source: String,
+    destination: URL,
+    scratchCipher suppliedScratchCipher: GalaxySSIAttachmentAtRestCipher? = nil
+  ) throws -> String? {
+    let fileManager = FileManager.default
+    let jobId = UUID().uuidString.lowercased()
+    let scratchURL = fileManager.temporaryDirectory
+      .appendingPathComponent("galaxyssi-obsidian-order-\(jobId).sqlite")
+    defer {
+      for suffix in ["", "-wal", "-shm"] { try? fileManager.removeItem(atPath: scratchURL.path + suffix) }
     }
+    var scratch: OpaquePointer?
+    guard sqlite3_open_v2(
+      scratchURL.path,
+      &scratch,
+      SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+      nil
+    ) == SQLITE_OK, let scratch else { throw AgentKnowledgeDatabaseError.unavailable }
+    defer { sqlite3_close_v2(scratch) }
+    _ = sqlite3_exec(scratch, "PRAGMA journal_mode = DELETE", nil, nil, nil)
+    _ = sqlite3_exec(scratch, "PRAGMA synchronous = FULL", nil, nil, nil)
+    guard sqlite3_exec(scratch, """
+      CREATE TABLE ordered_parts(
+        chunk_index INTEGER NOT NULL,
+        id_hash TEXT NOT NULL,
+        encrypted_item BLOB NOT NULL,
+        PRIMARY KEY(chunk_index, id_hash)
+      )
+      """, nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
+    try? fileManager.setAttributes(
+      [.protectionKey: FileProtectionType.complete],
+      ofItemAtPath: scratchURL.path
+    )
+    let scratchCipher = suppliedScratchCipher ?? GalaxySSIAttachmentAtRestCipher(
+      keyAccount: "agent.obsidian.order.aes256.v1"
+    )
+    guard sqlite3_exec(scratch, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    do {
+      try database.enumerateSourceSnapshotItems(group) { item in
+        guard AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge(item.content) else { return }
+        let idHash = sha256(item.id)
+        let plaintext = try JSONEncoder.galaxySSI.encode(item)
+        let encrypted = try scratchCipher.encrypt(
+          plaintext,
+          purpose: "obsidian-order:v1:\(jobId):\(idHash)"
+        )
+        var insert: OpaquePointer?
+        guard sqlite3_prepare_v2(
+          scratch,
+          "INSERT INTO ordered_parts(chunk_index, id_hash, encrypted_item) VALUES (?, ?, ?)",
+          -1,
+          &insert,
+          nil
+        ) == SQLITE_OK, let insert else { throw AgentKnowledgeDatabaseError.unavailable }
+        defer { sqlite3_finalize(insert) }
+        sqlite3_bind_int64(insert, 1, Int64(item.chunkIndex))
+        idHash.withCString {
+          sqlite3_bind_text(insert, 2, $0, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        }
+        encrypted.withUnsafeBytes { bytes in
+          sqlite3_bind_blob(insert, 3, bytes.baseAddress, Int32(encrypted.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        }
+        guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      }
+      guard sqlite3_exec(scratch, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+    } catch {
+      _ = sqlite3_exec(scratch, "ROLLBACK", nil, nil, nil)
+      throw error
+    }
+
+    var bodyHasher = SHA256()
+    var title = fallbackTitle
+    var updatedAt: Int64 = 0
+    var tags: [String] = []
+    var seenTags = Set<String>()
+    var count = 0
+    var previousTail = ""
+    var redacted = false
+    func scanOrdered(_ consume: (String) throws -> Void) throws {
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        scratch,
+        "SELECT id_hash, encrypted_item FROM ordered_parts ORDER BY chunk_index ASC, id_hash ASC",
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK, let statement else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let hashText = sqlite3_column_text(statement, 0),
+              let bytes = sqlite3_column_blob(statement, 1) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let idHash = String(cString: hashText)
+        let encrypted = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 1)))
+        guard let plaintext = try? scratchCipher.decrypt(
+                encrypted,
+                expectedPurpose: "obsidian-order:v1:\(jobId):\(idHash)"
+              ),
+              let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
+              sha256(item.id) == idHash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        try consume(AgentIOSObsidianProjectionPrivacyPolicy.transcriptText(item.content)
+          .trimmingCharacters(in: .whitespacesAndNewlines))
+        if count == 0 {
+          title = item.title.replacingOccurrences(
+            of: #"\s+\[[0-9]+/[0-9]+\]$"#,
+            with: "",
+            options: .regularExpression
+          ).ifBlank(fallbackTitle)
+        }
+        updatedAt = max(updatedAt, item.updatedAtMillis)
+        for tag in item.tags where tags.count < 16 && seenTags.insert(tag).inserted { tags.append(tag) }
+        count += 1
+      }
+    }
+    try scanOrdered { part in
+      if count > 0 {
+        let separator = Data("\n\n".utf8)
+        bodyHasher.update(data: separator)
+        redacted = redacted || !AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge(
+          previousTail + "\n\n" + String(part.prefix(64))
+        )
+      }
+      bodyHasher.update(data: Data(part.utf8))
+      previousTail = String(part.suffix(64))
+    }
+    guard count > 0 else { return nil }
+    if redacted {
+      let content = note(
+        sourceKey: sourceKey,
+        type: type,
+        title: title,
+        source: source,
+        updatedAtMillis: updatedAt,
+        tags: tags,
+        body: "Sensitive content omitted by GalaxySSI"
+      )
+      try content.write(to: destination, atomically: true, encoding: .utf8)
+      return sha256(content)
+    }
+
+    let bodyHash = bodyHasher.finalize().map { String(format: "%02x", $0) }.joined()
+    let header = noteHeader(
+      sourceKey: sourceKey,
+      type: type,
+      title: title,
+      source: source,
+      updatedAtMillis: updatedAt,
+      tags: tags,
+      contentHash: bodyHash
+    )
+    let temporary = destination.deletingLastPathComponent()
+      .appendingPathComponent(".\(destination.lastPathComponent).\(jobId).tmp")
+    fileManager.createFile(atPath: temporary.path, contents: nil)
+    defer { try? fileManager.removeItem(at: temporary) }
+    let output = try FileHandle(forWritingTo: temporary)
+    var outputHasher = SHA256()
+    func write(_ data: Data) throws {
+      try output.write(contentsOf: data)
+      outputHasher.update(data: data)
+    }
+    do {
+      try write(Data(header.utf8))
+      var written = 0
+      count = 0
+      try scanOrdered { part in
+        if written > 0 { try write(Data("\n\n".utf8)) }
+        try write(Data(part.utf8))
+        written += 1
+      }
+      try write(Data("\n".utf8))
+      try output.synchronize()
+      try output.close()
+    } catch {
+      try? output.close()
+      throw error
+    }
+    try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: temporary.path)
+    if fileManager.fileExists(atPath: destination.path) {
+      _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
+    } else {
+      try fileManager.moveItem(at: temporary, to: destination)
+    }
+    return outputHasher.finalize().map { String(format: "%02x", $0) }.joined()
   }
 
   private static func project(
@@ -288,8 +501,6 @@ enum AgentIOSObsidianBridge {
       return .unchanged
     }
     guard canWrite else { return .deferred }
-    let content = try spec.content()
-    guard !content.isEmpty else { return .unchanged }
     let relativePath = indexed?.relativePath.ifBlank(spec.relativePath) ?? spec.relativePath
     let fileURL = root.appendingPathComponent(relativePath)
     try FileManager.default.createDirectory(
@@ -297,12 +508,21 @@ enum AgentIOSObsidianBridge {
       withIntermediateDirectories: true,
       attributes: nil
     )
-    try content.write(to: fileURL, atomically: true, encoding: .utf8)
+    let generatedHash: String
+    if let writeContent = spec.writeContent {
+      guard let hash = try writeContent(fileURL) else { return .unchanged }
+      generatedHash = hash
+    } else {
+      let content = try spec.content()
+      guard !content.isEmpty else { return .unchanged }
+      try content.write(to: fileURL, atomically: true, encoding: .utf8)
+      generatedHash = sha256(content)
+    }
     stateStore.saveIndex(.init(
       sourceKey: spec.sourceKey,
       relativePath: relativePath,
       sourceRevision: spec.sourceRevision,
-      generatedHash: sha256(content),
+      generatedHash: generatedHash,
       lastModifiedMillis: modifiedMillis(fileURL),
       userModified: false
     ))

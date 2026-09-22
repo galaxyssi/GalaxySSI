@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import GalaxySSI
 
@@ -67,6 +68,55 @@ final class AgentIOSObsidianProjectionTests: XCTestCase {
       AgentKnowledgeSourceRevision.digest([first]),
       AgentKnowledgeSourceRevision.digest([changed])
     )
+  }
+
+  @MainActor
+  func testKnowledgeProjectionStreamsEncryptedExternalOrderToFile() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentIOSObsidianStreamingTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(
+      fileURL: directory.appendingPathComponent("knowledge.sqlite"),
+      secrets: secrets
+    )
+    let items = (0..<130).reversed().map { index in
+      AgentKnowledgeItem(
+        id: "stream-member-\(index)",
+        kind: .document,
+        title: "Streaming source [\(index + 1)/130]",
+        content: "Body \(index)",
+        source: "streaming-source",
+        tags: ["streaming"],
+        chunkIndex: index,
+        chunkCount: 130,
+        updatedAtMillis: Int64(index + 1)
+      )
+    }
+    XCTAssertTrue(database.replaceAll(items))
+    let group = try XCTUnwrap(try database.sourcePage().groups.first)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let destination = directory.appendingPathComponent("projection.md")
+    let hash = try XCTUnwrap(AgentIOSObsidianBridge.writeKnowledgeProjection(
+      database: database,
+      group: group,
+      sourceKey: "knowledge:test",
+      type: "knowledge",
+      fallbackTitle: "Streaming source",
+      source: "streaming-source",
+      destination: destination,
+      scratchCipher: GalaxySSIAttachmentAtRestCipher(
+        secrets: secrets,
+        keyAccount: "obsidian-streaming-test"
+      )
+    ))
+    let data = try Data(contentsOf: destination)
+    let output = try XCTUnwrap(String(data: data, encoding: .utf8))
+    XCTAssertEqual(hash, SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+    XCTAssertLessThan(try XCTUnwrap(output.range(of: "\nBody 0\n\n")?.lowerBound),
+                  try XCTUnwrap(output.range(of: "\nBody 129\n")?.lowerBound))
+    XCTAssertTrue(output.contains("content_hash:"))
+    XCTAssertTrue(output.contains("managed_by: galaxyssi"))
   }
 
   func testPrivacyPolicyBlocksCredentialsAndAllowsOrdinaryKnowledge() {
