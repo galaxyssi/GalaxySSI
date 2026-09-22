@@ -357,9 +357,10 @@ enum AgentRichContentCodec {
     var expanded: [AgentRichBlock] = []
     for block in document.blocks.prefix(maximumBlocks) where expanded.count < maximumBlocks {
       if block.type == .text,
-         block.text.range(of: Self.mermaidFencePattern, options: .regularExpression) != nil {
+         (block.text.contains("![") ||
+          block.text.range(of: Self.mermaidFencePattern, options: .regularExpression) != nil) {
         let parsed = fromText(block.text)
-        if parsed.contains(where: { $0.type == .mermaid }) {
+        if parsed.contains(where: { $0.type == .mermaid || $0.type == .image }) {
           expanded.append(contentsOf: parsed.prefix(maximumBlocks - expanded.count).map { value in
             var value = value
             value.metadata.merge(block.metadata) { current, _ in current }

@@ -16,7 +16,7 @@ extension AgentRichContentCodec {
     func flushParagraph() {
       let value = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
       if !value.isEmpty {
-        blocks.append(AgentRichBlock(id: markdownID(), type: .text, text: value))
+        blocks.append(contentsOf: markdownImageBlocks(value))
       }
       paragraph.removeAll()
     }
@@ -148,6 +148,88 @@ extension AgentRichContentCodec {
     }
     guard let encoded = try? JSONSerialization.data(withJSONObject: document) else { return [] }
     return decode(String(decoding: encoded, as: UTF8.self))
+  }
+
+  private static func markdownImageBlocks(_ text: String) -> [AgentRichBlock] {
+    var result: [AgentRichBlock] = []
+    var cursor = text.startIndex
+    var search = cursor
+    var promoted = 0
+    while promoted < 32,
+          let marker = text.range(of: "![", range: search..<text.endIndex) {
+      if marker.lowerBound > text.startIndex,
+         text[text.index(before: marker.lowerBound)] == "\\" {
+        search = marker.upperBound
+        continue
+      }
+      let prefix = text[cursor..<marker.lowerBound]
+      if prefix.filter({ $0 == "`" }).count % 2 == 1 {
+        search = marker.upperBound
+        continue
+      }
+      guard let altEnd = text[marker.upperBound...].firstIndex(of: "]"),
+            text.index(after: altEnd) < text.endIndex,
+            text[text.index(after: altEnd)] == "(" else { break }
+      let bodyStart = text.index(altEnd, offsetBy: 2)
+      var index = bodyStart
+      var depth = 0
+      var destinationEnd: String.Index?
+      let angled = index < text.endIndex && text[index] == "<"
+      if angled { index = text.index(after: index) }
+      let destinationStart = index
+      while index < text.endIndex {
+        let character = text[index]
+        if angled, character == ">" {
+          destinationEnd = index
+          index = text.index(after: index)
+          break
+        }
+        if !angled {
+          if character == "(" { depth += 1 }
+          if character == ")" {
+            if depth == 0 { destinationEnd = index; break }
+            depth -= 1
+          }
+          if character.isWhitespace && depth == 0 { destinationEnd = index; break }
+        }
+        index = text.index(after: index)
+      }
+      guard let destinationEnd else { break }
+      while index < text.endIndex, text[index] != ")" { index = text.index(after: index) }
+      guard index < text.endIndex else { break }
+      let destination = String(text[destinationStart..<destinationEnd])
+        .replacingOccurrences(of: "&amp;", with: "&")
+      guard isSafeMarkdownImageURL(destination) else {
+        search = text.index(after: index)
+        continue
+      }
+      let leading = String(text[cursor..<marker.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+      if !leading.isEmpty { result.append(AgentRichBlock(id: markdownID(), type: .text, text: leading)) }
+      let alt = String(text[marker.upperBound..<altEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+      result.append(AgentRichBlock(
+        id: markdownID(),
+        type: .image,
+        title: String(alt.prefix(500)),
+        uri: destination,
+        metadata: ["markdown_image_source": destination]
+      ))
+      promoted += 1
+      cursor = text.index(after: index)
+      search = cursor
+    }
+    let trailing = String(text[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trailing.isEmpty { result.append(AgentRichBlock(id: markdownID(), type: .text, text: trailing)) }
+    return result.isEmpty ? [AgentRichBlock(id: markdownID(), type: .text, text: text)] : result
+  }
+
+  private static func isSafeMarkdownImageURL(_ value: String) -> Bool {
+    guard value.utf8.count <= 4_096,
+          let components = URLComponents(string: value),
+          ["https", "http"].contains(components.scheme?.lowercased() ?? ""),
+          !(components.host ?? "").isEmpty,
+          components.user == nil,
+          components.password == nil else { return false }
+    return true
   }
 
   private struct ParsedListItem {
