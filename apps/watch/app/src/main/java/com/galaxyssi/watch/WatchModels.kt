@@ -25,8 +25,16 @@ data class WatchTask(
     val localOperation: String = "",
     val location: String = "",
     val remoteTaskId: String = "",
-    val executionGeneration: Long = 1
+    val executionGeneration: Long = 1,
+    val localConversationId: String = "",
+    val modelId: String = "",
+    val reasoningEffort: String = "auto"
 ) {
+    /** Local transcript identity is independent of the authenticated remote conversation. */
+    val sessionId: String get() = localConversationId.ifBlank {
+        UUID.nameUUIDFromBytes(org.json.JSONArray(listOf(desktopId, routeId, agentId, conversationId))
+            .toString().toByteArray(Charsets.UTF_8)).toString()
+    }
     val contactId: String get() = "$desktopId:$agentId"
     fun json(): JSONObject = JSONObject().put("id", id).put("desktop", desktopId)
         .put("route", routeId).put("agent", agentId).put("conversation", conversationId)
@@ -35,6 +43,7 @@ data class WatchTask(
         .put("sequence", sequence).put("progress", progress).put("local_operation", localOperation).put("location", location)
         .put("remote_task_id", remoteTaskId)
         .put("execution_generation", executionGeneration)
+        .put("local_conversation", localConversationId).put("model_id", modelId).put("reasoning_effort", reasoningEffort)
 
     fun request(language: String): JSONObject = JSONObject().put("type", "text")
         .put("message_id", messageId).put("content", prompt).put("contact_id", contactId)
@@ -42,6 +51,10 @@ data class WatchTask(
         .put("task_id", id).put("conversation_id", conversationId).put("turn_id", turnId)
         .put("client_message_id", sourceId).put("source_message_id", sourceId)
         .put("response_language", language).put("time", sourceId)
+        .apply {
+            com.galaxyssi.chat.AgentInvocationRequestJsonCodec.encode(modelId,
+                com.galaxyssi.chat.AgentModelReasoningEffort.fromWireValue(reasoningEffort))?.let { put("agent_invocation", it) }
+        }
 
     /** A desktop may allocate its task ID; source/turn/route remain the client's identity. */
     fun matches(endpoint: String, payload: JSONObject): Boolean {
@@ -101,11 +114,13 @@ data class WatchTask(
         fun fromJson(j: JSONObject) = WatchTask(j.getString("id"), j.getString("desktop"),
             j.getString("route"), j.getString("agent"), j.getString("conversation"),
             j.getString("turn"), j.getString("message"), j.getLong("source"), j.getString("prompt"),
-            j.optString("reply"), TaskState.valueOf(j.getString("state")), j.optLong("sequence", -1), j.optString("progress"), j.optString("local_operation"), j.optString("location"), j.optString("remote_task_id"), j.optLong("execution_generation", 1))
+            j.optString("reply"), TaskState.valueOf(j.getString("state")), j.optLong("sequence", -1), j.optString("progress"), j.optString("local_operation"), j.optString("location"), j.optString("remote_task_id"), j.optLong("execution_generation", 1),
+            j.optString("local_conversation"), j.optString("model_id"), j.optString("reasoning_effort", "auto"))
     }
 }
 
 data class WatchAgent(val desktopId: String, val id: String, val name: String, val available: Boolean,
-    val statusLabel: Int = R.string.agent_status_stale)
+    val statusLabel: Int = R.string.agent_status_stale,
+    val invocationProfile: com.galaxyssi.chat.AgentInvocationProfile = com.galaxyssi.chat.AgentInvocationProfile())
 
 enum class ConnectionState { DISCONNECTED, CONNECTING, BROKER_CONNECTED, ERROR }

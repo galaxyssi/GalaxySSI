@@ -7,10 +7,18 @@ import java.util.Locale
 
 /** The same received timestamp normalization as Android AppStore.applyConnectorAgentStatus. */
 internal object WatchAgentStatus {
-    fun received(agents: JSONArray, now: Long): JSONArray = JSONArray().apply {
+    fun received(agents: JSONArray, now: Long, previous: JSONArray = JSONArray()): JSONArray = JSONArray().apply {
+        fun identity(j: JSONObject) = j.optString("agent_id").ifBlank {
+            j.optString("mobile_contact_id").ifBlank { j.optString("id").substringAfterLast(':') }
+        }
+        val profiles = (0 until previous.length()).mapNotNull { previous.optJSONObject(it) }
+            .associate { identity(it) to it.optJSONObject("invocation_profile") }
         for (i in 0 until agents.length()) {
             val raw = agents.optJSONObject(i) ?: continue
             val item = JSONObject(raw.toString())
+            if (!item.has("invocation_profile")) profiles[identity(item)]?.let {
+                item.put("invocation_profile", JSONObject(it.toString()))
+            }
             val updated = item.optLong("updated_at", now)
             item.put("setup_updated_at", if (updated in 1L..9_999_999_999L) updated * 1000L else updated)
             item.put("setup_status", item.optString("status", "needs_setup"))

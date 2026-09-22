@@ -140,6 +140,33 @@ class WatchRepository(private val context: Context) {
     fun online(desktop: String): Boolean = connection == ConnectionState.BROKER_CONNECTED &&
         System.currentTimeMillis() - (seen[desktop] ?: 0) < 90_000
     fun refresh() = worker.execute { lastStatus = 0; errorResource = 0; tick(); changed() }
+    fun modelTargets(): List<WatchModelTarget> = buildList {
+        links().filter { it.paired }.forEach { link -> store.agents(link.desktopId).forEach { agent ->
+            add(WatchModelTarget("remote:${link.desktopId}:${agent.id}", link.desktopId, link.routes.clientRouteId,
+                agent.id, agent.name, "${link.desktopName} · ${context.getString(agent.statusLabel)}",
+                agent.available, agent.invocationProfile))
+        } }
+        store.apiProfiles().forEach { api ->
+            // Reuse credentials only at their exact configured endpoint/protocol, never another provider.
+            val options = WATCH_MODEL_PRESETS.filter { it.endpoint == api.endpoint && it.style == api.style }
+                .map { com.galaxyssi.chat.AgentModelOption(it.model, it.name) }
+                .plus(com.galaxyssi.chat.AgentModelOption(api.model)).distinctBy { it.id }
+                .filterNot { com.galaxyssi.chat.RetiredAgentModelPolicy.isRetired(it.id) }
+            add(WatchModelTarget("cloud:${api.id}", "api", api.id, api.model, api.model,
+                java.net.URI(api.endpoint).host, true, com.galaxyssi.chat.AgentInvocationProfile(api.model, options), api))
+        }
+    }
+    fun modelScope(previous: WatchTask?) = previous?.sessionId ?: store.draftConversationId
+    fun selectedModel(previous: WatchTask?, targets: List<WatchModelTarget> = modelTargets()): Pair<WatchModelTarget, WatchModelSelection>? {
+        val selection = store.selection(modelScope(previous))
+        val preferred = targets.firstOrNull { previous != null && it.matches(previous) }
+            ?: targets.firstOrNull { if (store.apiPreferred) it.api?.id == store.apiProfile?.id
+                else it.desktop == store.selectedDesktop && it.agent == store.selectedAgent }
+        val target = if (selection != null && !selection.automatic) targets.firstOrNull { it.id == selection.target }
+            else if (selection?.automatic == true) preferred?.takeIf { it.available } ?: targets.firstOrNull { it.available }
+            else preferred ?: targets.firstOrNull { it.available }
+        return target?.let { it to it.normalize(selection?.takeIf { !it.automatic } ?: store.targetSelection(modelScope(previous), it.id)) }
+    }
     fun activeTasks(): Boolean = store.tasks().any { !it.state.terminal }
     internal fun transportDiagnostics() = mqtt?.diagnostics().orEmpty()
 
@@ -263,25 +290,29 @@ class WatchRepository(private val context: Context) {
 
     fun send(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
         if (WatchLocationIntent.matches(prompt)) { sendLocation(prompt, previous, done); return }
-        if (previous?.desktopId == "watch-location") { send(prompt, null, done); return }
-        if (previous?.desktopId == "api" || (previous == null && store.apiPreferred)) {
-            sendApi(prompt, previous, done); return
-        }
+        // Snapshot on submit. Subsequent UI selections must not alter an in-flight request.
+        val chosen = selectedModel(previous)
+        if (chosen == null) { errorResource = R.string.model_empty; changed(); done(null); return }
+        val (target, selection) = chosen
+        val scope = modelScope(previous)
+        if (target.api != null) { sendApi(prompt, scope, target, selection, done); return }
         worker.execute {
         var stagedTask: WatchTask? = null
         val result = runCatching {
-            val desktop = previous?.desktopId ?: store.selectedDesktop
+            val desktop = target.desktop
             val link = Link.serverLink(context, desktop) ?: error("No route")
             require(link.paired && Link.isCryptographicallyReady(context, link))
-            val agent = previous?.agentId ?: store.selectedAgent
-            require(store.agents(desktop).any { it.id == agent })
+            val agent = target.agent
+            require(store.agents(desktop).any { it.id == agent && it.available })
             require(store.tasks().count { !it.state.terminal } < 20)
-            val task = WatchTask.create(desktop, link.routes.clientRouteId, agent, prompt,
-                previous?.conversationId ?: UUID.randomUUID().toString())
+            require(link.routes.clientRouteId == target.route)
+            val history = store.tasks()
+            val task = WatchConversationRouting.create(scope, target, selection, prompt, history)
             // Persist the stable identity before any network side effect.
             store.save(task)
             stagedTask = task
-            queue(link, task.request(Locale.getDefault().toLanguageTag()), task.id)
+            queue(link, task.request(Locale.getDefault().toLanguageTag())
+                .put("content", WatchConversationRouting.remoteContent(task, history)), task.id)
             store.draft = ""
             runCatching { tick() }
             task
@@ -300,7 +331,8 @@ class WatchRepository(private val context: Context) {
             val desktop = previous?.desktopId ?: if (store.apiPreferred && profile != null) "api" else "watch-location"
             val task = WatchTask.create(desktop, previous?.routeId ?: profile?.id ?: "local",
                 previous?.agentId ?: profile?.model ?: "Location", prompt, previous?.conversationId ?: UUID.randomUUID().toString())
-                .copy(state = TaskState.RUNNING, localOperation = "location", progress = context.getString(R.string.location_locating))
+                .copy(state = TaskState.RUNNING, localOperation = "location", localConversationId = modelScope(previous),
+                    progress = context.getString(R.string.location_locating))
             val operation = WatchApiOperation()
             apiCalls[task.id] = operation; store.save(task); saveDraft(""); main.post { done(task) }; changed()
             apiWorker.execute {
@@ -321,14 +353,13 @@ class WatchRepository(private val context: Context) {
         }
     }
 
-    private fun sendApi(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
+    private fun sendApi(prompt: String, scope: String, target: WatchModelTarget, selection: WatchModelSelection, done: (WatchTask?) -> Unit) {
+        val saved = requireNotNull(target.api)
+        val profile = ApiProfile(saved.endpoint, selection.model, saved.key, saved.id, saved.style)
         apiState.execute {
             val started = runCatching {
-                val profile = store.apiProfile ?: error("Missing API settings")
-                require(previous == null || previous.routeId == profile.id)
                 require(apiCalls.size < 2)
-                val task = WatchTask.create("api", profile.id, profile.model, prompt,
-                    previous?.conversationId ?: UUID.randomUUID().toString()).copy(state = TaskState.RUNNING)
+                val task = WatchConversationRouting.create(scope, target, selection, prompt, store.tasks()).copy(state = TaskState.RUNNING)
                 val useWeb = store.webSearch
                 val history = store.tasks()
                 val call = WatchApiOperation()
