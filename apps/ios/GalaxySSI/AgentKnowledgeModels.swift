@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum AgentKnowledgeKind: String, Codable, CaseIterable, Identifiable {
@@ -117,7 +118,7 @@ struct AgentKnowledgeItem: Codable, Equatable, Identifiable {
     chunkCount: Int = 1,
     updatedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) {
-    self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters)).ifBlank(UUID().uuidString)
+    self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
     self.kind = kind
     self.title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTitleCharacters))
     self.content = String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxContentCharacters))
@@ -386,6 +387,8 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
   var agentAccess: AgentKnowledgeAgentAccess
   var allowedAgentIds: [String]
   var updatedAtMillis: Int64
+  var sourceRevision: String
+  var localItemId: String
 
   var id: String { source }
 
@@ -397,7 +400,9 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
     cloudAccess: AgentKnowledgeCloudAccess,
     agentAccess: AgentKnowledgeAgentAccess,
     allowedAgentIds: [String] = [],
-    updatedAtMillis: Int64
+    updatedAtMillis: Int64,
+    sourceRevision: String = "",
+    localItemId: String = ""
   ) {
     self.source = source
     self.title = title.ifBlank("Private knowledge")
@@ -407,7 +412,38 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
     self.agentAccess = agentAccess
     self.allowedAgentIds = allowedAgentIds.stableDistinct()
     self.updatedAtMillis = max(updatedAtMillis, 0)
+    self.sourceRevision = sourceRevision
+    self.localItemId = localItemId
   }
+}
+
+enum AgentKnowledgeSourceRevision {
+  static func digest(_ items: [AgentKnowledgeItem]) -> String {
+    var hasher = SHA256()
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    for item in items.sorted(by: { $0.id < $1.id }) {
+      guard let data = try? encoder.encode(item) else { continue }
+      var length = UInt64(data.count).bigEndian
+      withUnsafeBytes(of: &length) { hasher.update(data: Data($0)) }
+      hasher.update(data: data)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+  }
+}
+
+struct AgentKnowledgeSourceCursor: Equatable {
+  var updatedAtMillis: Int64
+  var sourceHash: String
+  var revision: Int64
+}
+
+struct AgentKnowledgeSourcePage: Equatable {
+  var groups: [AgentKnowledgeSourceGroup]
+  var total: Int
+  var next: AgentKnowledgeSourceCursor?
+
+  static let empty = AgentKnowledgeSourcePage(groups: [], total: 0, next: nil)
 }
 
 struct AgentKnowledgeAccessAuditEntry: Codable, Equatable, Identifiable {

@@ -83,7 +83,7 @@ class MainActivity : Activity() {
     private val refreshModelStatus = object : Runnable {
         override fun run() {
             if (!resumed) return
-            if (page in setOf("switch-model", "agents")) render(true)
+            if (page in setOf("switch-model", "model-config", "model-options", "model-effort", "agents")) render(true)
             handler.postDelayed(this, 30_000)
         }
     }
@@ -230,13 +230,14 @@ class MainActivity : Activity() {
     private val green = Color.rgb(20, 198, 106)
 
     private fun render(preserveScroll: Boolean = false) {
-        if (page !in setOf("switch-model", "agents")) modelPageProjection = null
+        if (page !in setOf("switch-model", "model-config", "model-options", "model-effort", "agents")) modelPageProjection = null
         else {
             val links = repo.links().filter { it.paired }
             val profile = repo.store.apiProfile
             val projection = listOf(page, links.map { it.desktopId to it.desktopName },
                 links.flatMap { repo.store.agents(it.desktopId) },
                 profile?.let { listOf(it.id, it.model, it.endpoint) },
+                repo.modelTargets().map { listOf(it.id, it.name, it.source, it.available, it.profile) }, repo.store.selection(currentModelScope()),
                 selectedTask, repo.store.selectedDesktop, repo.store.selectedAgent,
                 repo.store.apiPreferred, busy, repo.errorResource)
             if (preserveScroll && modelPageProjection == projection) return
@@ -249,7 +250,7 @@ class MainActivity : Activity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
         if (page == "home") {
-            if (repo.store.apiProfile == null && repo.links().none { it.paired }) {
+            if (repo.store.apiProfiles().isEmpty() && repo.links().none { it.paired }) {
                 voiceEntryPending = false
                 startActivity(Intent(this, WatchPhoneSetupActivity::class.java))
                 finish(); return
@@ -308,6 +309,7 @@ class MainActivity : Activity() {
             "device" -> device()
             "agents" -> agents()
             "switch-model" -> modelSelection()
+            "model-config", "model-options", "model-effort" -> modelConfiguration()
             "sessions" -> sessions()
             "contacts" -> contacts()
             "paste" -> pasteMenu()
@@ -388,6 +390,7 @@ class MainActivity : Activity() {
     }
 
     private fun newConversation() {
+        repo.store.draftConversationId = java.util.UUID.randomUUID().toString()
         selectedTask = ""; repo.saveActiveTask(""); followUpId = ""; draft = ""; repo.saveDraft("")
         page = "home"; history.clear(); render()
     }
@@ -460,7 +463,7 @@ class MainActivity : Activity() {
             onDraft = { draft = it; handler.removeCallbacks(saveDraft); handler.postDelayed(saveDraft, 350); refreshWake() },
             onSend = { sendFromHome() }, onVoice = { followUpId = selectedTask; startVoice() },
             onMenu = { navigate("home-menu") }, onSessions = { sessionQuery = ""; navigate("sessions") },
-            onModel = { openApiSettings() },
+            onModel = { navigate("switch-model"); repo.refresh() },
             onStop = { selectedTask = it.id; navigate("stop") }, onRead = { speak(it) },
             onConnect = { navigate("devices") }, onStopReading = { speech?.stopIfActive() == true },
             onReadFrom = { id, text, start ->
@@ -478,15 +481,13 @@ class MainActivity : Activity() {
     private fun refreshConversation(reset: Boolean = false) {
         val previous = repo.store.cachedTask(selectedTask)
         val turns = repo.store.cachedTasks().filter { previous != null && it.conversationKey() == previous.conversationKey() }.sortedBy { it.sourceId }
-        val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
-        val api = repo.store.apiProfile
-        val desktop = previous?.desktopId ?: repo.store.selectedDesktop
-        val agent = previous?.agentId ?: repo.store.selectedAgent
-        val ready = if (usingApi) api != null && (previous == null || previous.routeId == api.id)
-            else repo.links().any { it.desktopId == desktop && it.paired } && agent.isNotBlank()
+        val chosen = repo.selectedModel(previous)
+        val usingApi = chosen?.first?.api != null
+        val ready = chosen != null
         conversationReady = ready
         conversationUsesApi = usingApi
-        val name = if (usingApi) api?.model.orEmpty() else agent
+        val name = chosen?.let { (target, selection) -> target.profile.models.firstOrNull { it.id == selection.model }?.displayName
+            ?: selection.model.ifBlank { target.name } }.orEmpty()
         val key = previous?.conversationKey()
         conversationView?.update(turns, name.ifBlank { getString(R.string.connect_service) }, ready, reset || key != renderedConversation)
         renderedConversation = key
@@ -506,9 +507,7 @@ class MainActivity : Activity() {
             return
         }
         val previous = repo.store.cachedTask(selectedTask)
-        if (!locationRequest && (previous == null || previous.desktopId == "watch-location") && !repo.store.apiPreferred && (repo.store.selectedDesktop.isBlank() || repo.store.selectedAgent.isBlank())) {
-            navigate("devices"); return
-        }
+        if (!locationRequest && repo.selectedModel(previous) == null) { navigate("switch-model"); return }
         busy = true; conversationView?.sending(true); updateScreenAwake()
         val composer = conversationView?.input
         composer?.clearFocus()
@@ -549,80 +548,113 @@ class MainActivity : Activity() {
         button(R.string.refresh) { repo.refresh() }
         button(R.string.forget) { navigate("forget") }
     }
+    private fun modelTitle(resource: Int) {
+        val header = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(24), 0, dp(24), dp(4)) }
+        header.addView(TextView(this).apply {
+            text = "‹"; textSize = 27f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            contentDescription = getString(R.string.back); setOnClickListener { back() }
+        }, LinearLayout.LayoutParams(dp(40), dp(44)))
+        header.addView(TextView(this).apply {
+            text = getString(resource); textSize = 16f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER_VERTICAL
+        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        content.addView(header, LinearLayout.LayoutParams(-1, -2))
+    }
+    private fun modelRow(name: String, subtitle: String, selected: Boolean = false, enabled: Boolean = true, action: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = background(if (selected) Color.rgb(31, 45, 30) else Color.rgb(23, 28, 25))
+            isEnabled = enabled; alpha = if (enabled) 1f else .55f
+            contentDescription = "$name, $subtitle" + if (selected) ", ${getString(R.string.model_current)}" else ""
+            setOnClickListener { action() }
+        }
+        row.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@MainActivity).apply { text = name; textSize = 14f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
+            if (subtitle.isNotBlank()) addView(TextView(this@MainActivity).apply { text = subtitle; textSize = 11f; setTextColor(Color.LTGRAY) })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(TextView(this).apply {
+            text = if (selected) "✓" else "›"; textSize = 20f; setTextColor(if (selected) green else Color.GRAY)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(dp(24), -2))
+        content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+    }
+    private fun currentModelScope() = repo.modelScope(repo.store.cachedTask(selectedTask))
+    private fun returnToConversation() { page = "home"; history.clear(); render() }
     private fun modelSelection() {
-        title(R.string.switch_model)
-        val previous = repo.store.cachedTask(selectedTask)
-        val usingApi = previous?.desktopId == "api" || (previous == null && repo.store.apiPreferred)
-        val desktop = previous?.desktopId ?: repo.store.selectedDesktop
-        val agent = previous?.agentId ?: repo.store.selectedAgent
-        fun select(cloud: Boolean, desktopId: String = "", agentId: String = "", selected: Boolean) {
-            if (busy) return
-            repo.store.apiPreferred = cloud
-            if (!cloud) {
-                repo.store.selectedDesktop = desktopId
-                repo.store.selectedAgent = agentId
-            }
-            if (!selected) {
-                // A remote conversation belongs to its original target. Keep it in history,
-                // and preserve the composer draft while starting on the newly selected target.
-                speech?.stop()
-                selectedTask = ""; repo.saveActiveTask(""); followUpId = ""
-            }
-            page = "home"; history.clear(); render()
+        modelTitle(R.string.switch_model)
+        val scope = currentModelScope()
+        val targets = repo.modelTargets()
+        val chosen = repo.selectedModel(repo.store.cachedTask(selectedTask), targets)
+        val automatic = repo.store.selection(scope)?.automatic == true
+        modelRow(getString(R.string.model_auto), getString(R.string.model_auto_help), automatic) {
+            repo.store.select(scope, WatchModelSelection(automatic = true)); render(true)
         }
-        fun row(name: String, source: String, selected: Boolean, available: Boolean, action: () -> Unit) {
-            val row = LinearLayout(this).apply {
-                gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48)
-                setPadding(dp(12), dp(8), dp(12), dp(8))
-                background = background(Color.rgb(25, 33, 29))
-                isEnabled = available && !busy; alpha = if (isEnabled) 1f else 0.5f
-                contentDescription = "$name, $source" + if (selected) ", ${getString(R.string.model_current)}" else ""
-                setOnClickListener { action() }
-            }
-            row.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(this@MainActivity).apply {
-                    text = name; textSize = 14f; setTextColor(Color.WHITE)
-                })
-                addView(TextView(this@MainActivity).apply {
-                    text = source; textSize = 10f; setTextColor(Color.LTGRAY)
-                })
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            row.addView(TextView(this).apply {
-                text = if (selected) "✓" else "○"; textSize = 19f
-                setTextColor(if (selected) green else Color.GRAY); gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(dp(24), -2))
-            content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
-        }
-        val links = repo.links().filter { it.paired }
-        if (links.isNotEmpty()) {
-            label(getString(R.string.model_remote_section), 12)
-            links.forEach { link ->
-                val targets = repo.store.agents(link.desktopId)
-                if (targets.isEmpty()) label("${link.desktopName}\n${getString(R.string.no_agents)}", 11)
-                targets.forEach { target ->
-                    val selected = !usingApi && desktop == link.desktopId && agent == target.id
-                    row(target.name, "${link.desktopName} · ${getString(target.statusLabel)}", selected, target.available) {
-                        if (repo.store.agents(link.desktopId).none { it.id == target.id && it.available }) {
-                            render(true); repo.refresh(); return@row
-                        }
-                        select(false, link.desktopId, target.id, selected)
+        listOf(false, true).forEach { cloud ->
+            val group = targets.filter { (it.api != null) == cloud }
+            if (group.isNotEmpty()) label(getString(if (cloud) R.string.model_cloud_section else R.string.model_remote_section), 12)
+            group.forEach { target ->
+                val selected = !automatic && chosen?.first?.id == target.id
+                modelRow(target.name, target.source, selected, target.available) {
+                    val fresh = repo.modelTargets().firstOrNull { it.id == target.id && it.available }
+                    if (fresh == null) { render(true); repo.refresh() }
+                    else {
+                        repo.store.select(scope, fresh.normalize(repo.store.targetSelection(scope, fresh.id)))
+                        navigate("model-config")
                     }
                 }
             }
         }
-        val profile = repo.store.apiProfile
-        if (profile != null) {
-            label(getString(R.string.model_cloud_section), 12)
-            val selected = usingApi && (previous == null || previous.routeId == profile.id)
-            row(profile.model, android.net.Uri.parse(profile.endpoint).host.orEmpty(), selected, true) {
-                select(true, selected = selected)
-            }
-        }
-        if (profile == null && links.isEmpty()) label(getString(R.string.model_empty), 12)
-        label(getString(R.string.model_switch_hint), 10)
+        if (targets.isEmpty()) label(getString(R.string.model_empty), 12)
+        label(getString(R.string.model_switch_hint), 11)
+        button(R.string.model_return, true) { returnToConversation() }
         button(R.string.refresh) { repo.refresh() }
     }
+    private fun modelConfiguration() {
+        val scope = currentModelScope()
+        val chosen = repo.selectedModel(repo.store.cachedTask(selectedTask))
+        modelTitle(if (page == "model-options") R.string.model_options else if (page == "model-effort") R.string.model_effort else R.string.switch_model)
+        if (chosen == null) { label(getString(R.string.model_empty)); return }
+        val (target, selection) = chosen
+        label(target.name, 13, green)
+        val profile = target.profile
+        when (page) {
+            "model-options" -> profile.models.forEach { model ->
+                modelRow(model.displayName, model.description, model.id == selection.model, target.available) {
+                    val fresh = repo.modelTargets().firstOrNull { it.id == target.id && it.available }
+                    if (fresh?.profile?.models?.any { it.id == model.id } == true) {
+                        repo.store.select(scope, fresh.normalize(selection.copy(model = model.id)))
+                        back()
+                    } else { render(true); repo.refresh() }
+                }
+            }
+            "model-effort" -> profile.reasoningEfforts.forEach { effort ->
+                modelRow(modelEffortName(effort.wireValue), "", effort.wireValue == selection.effort, target.available) {
+                    val fresh = repo.modelTargets().firstOrNull { it.id == target.id && it.available }
+                    if (fresh != null && effort in fresh.profile.reasoningEfforts) {
+                        repo.store.select(scope, fresh.normalize(selection.copy(effort = effort.wireValue)))
+                        back()
+                    } else { render(true); repo.refresh() }
+                }
+            }
+            else -> {
+                if (profile.models.isNotEmpty()) modelRow(getString(R.string.model_options),
+                    profile.models.firstOrNull { it.id == selection.model }?.displayName ?: selection.model) { navigate("model-options") }
+                else label(getString(R.string.model_desktop_default), 12)
+                if (profile.reasoningEfforts.isNotEmpty()) modelRow(getString(R.string.model_effort), modelEffortName(selection.effort)) { navigate("model-effort") }
+                label(getString(R.string.model_switch_hint), 11)
+                button(R.string.model_return, true) { returnToConversation() }
+            }
+        }
+    }
+    private fun modelEffortName(value: String) = getString(when (value) {
+        "low" -> R.string.model_effort_low
+        "medium" -> R.string.model_effort_medium
+        "high" -> R.string.model_effort_high
+        "xhigh" -> R.string.model_effort_xhigh
+        else -> R.string.model_auto
+    })
     private fun agents() {
         title(R.string.choose_agent)
         val agents = repo.store.agents(repo.store.selectedDesktop)

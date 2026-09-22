@@ -18,7 +18,31 @@ class WatchStore(context: Context) {
     var apiProfile: ApiProfile?
         get() = prefs.readString("api_profile", "").takeIf { it.isNotBlank() }
             ?.let { runCatching { ApiProfile.fromJson(JSONObject(it)) }.getOrNull() }
-        set(value) { if (value == null) prefs.remove("api_profile") else prefs.writeString("api_profile", value.json().toString()) }
+        set(value) {
+            val profiles = apiProfiles().filterNot { it.id == (value?.id ?: apiProfile?.id) ||
+                (value != null && it.endpoint == value.endpoint && it.model == value.model) }
+            prefs.writeString("api_profiles", JSONArray((profiles + listOfNotNull(value)).map { it.json() }).toString())
+            if (value == null) prefs.remove("api_profile") else prefs.writeString("api_profile", value.json().toString())
+        }
+    fun apiProfiles(): List<ApiProfile> {
+        val values = runCatching { JSONArray(prefs.readString("api_profiles", "[]")) }.getOrDefault(JSONArray())
+        return ((0 until values.length()).mapNotNull { i -> runCatching { ApiProfile.fromJson(values.getJSONObject(i)) }.getOrNull() } +
+            listOfNotNull(apiProfile)).distinctBy { it.id }
+    }
+    var draftConversationId: String
+        get() = prefs.readString("draft_conversation", "").ifBlank {
+            java.util.UUID.randomUUID().toString().also { prefs.writeString("draft_conversation", it) }
+        }
+        set(value) = prefs.writeString("draft_conversation", value)
+    fun selection(scope: String): WatchModelSelection? = prefs.readString("model_selection:$scope", "")
+        .takeIf(String::isNotBlank)?.let { runCatching { WatchModelSelection.decode(JSONObject(it)) }.getOrNull() }
+    fun select(scope: String, value: WatchModelSelection) {
+        prefs.writeString("model_selection:$scope", value.json().toString())
+        if (!value.automatic) prefs.writeString("model_target:$scope:${value.target}", value.json().toString())
+    }
+    fun targetSelection(scope: String, id: String): WatchModelSelection = prefs.readString("model_target:$scope:$id", "")
+        .takeIf(String::isNotBlank)?.let { runCatching { WatchModelSelection.decode(JSONObject(it)) }.getOrNull() }
+        ?: WatchModelSelection(target = id)
     var samsungAutoConfirm: Boolean
         get() = prefs.readString("samsung_auto_confirm", "true").toBoolean()
         set(value) = prefs.writeString("samsung_auto_confirm", value.toString())
@@ -102,7 +126,10 @@ class WatchStore(context: Context) {
     var autoSpeech: Boolean
         get() = prefs.readString("auto_speech", "true").toBoolean()
         set(value) = prefs.writeString("auto_speech", value.toString())
-    fun saveAgents(desktop: String, value: JSONArray) = prefs.writeString("agents:$desktop", WatchAgentStatus.received(value, System.currentTimeMillis()).toString())
+    fun saveAgents(desktop: String, value: JSONArray) {
+        val previous = runCatching { JSONArray(prefs.readString("agents:$desktop", "[]")) }.getOrDefault(JSONArray())
+        prefs.writeString("agents:$desktop", WatchAgentStatus.received(value, System.currentTimeMillis(), previous).toString())
+    }
     fun agents(desktop: String): List<WatchAgent> {
         val array = runCatching { JSONArray(prefs.readString("agents:$desktop", "[]")) }.getOrDefault(JSONArray())
         val now = System.currentTimeMillis()
@@ -112,7 +139,8 @@ class WatchStore(context: Context) {
                 j.optString("mobile_contact_id").ifBlank { j.optString("id").substringAfterLast(':') }
             }
             if (id.isBlank() || id == "cloud-model") null else WatchAgent(desktop, id,
-                j.optString("name").ifBlank { id }, WatchAgentStatus.available(j, now), WatchAgentStatus.label(j, now))
+                j.optString("name").ifBlank { id }, WatchAgentStatus.available(j, now), WatchAgentStatus.label(j, now),
+                com.galaxyssi.chat.AgentInvocationProfileJsonCodec.decode(j.optJSONObject("invocation_profile")))
         }
     }
     fun forgetAgents(desktop: String) = prefs.remove("agents:$desktop")

@@ -13,8 +13,12 @@ struct GalaxySSIAgentKnowledgeView: View {
   @State private var showingImporter = false
   @State private var showingWebImporter = false
   @State private var showingSearch = false
+  @State private var showingSemanticModel = false
   @State private var selectedGroup: AgentKnowledgeSourceGroup?
   @State private var statusText = ""
+  @State private var searchTask: Task<Void, Never>?
+  @State private var sourceCursor: AgentKnowledgeSourceCursor?
+  @State private var sourceBackStack: [AgentKnowledgeSourceCursor?] = []
 
   var body: some View {
     VStack(spacing: 0) {
@@ -75,6 +79,18 @@ struct GalaxySSIAgentKnowledgeView: View {
               showingWebImporter = true
             }
             AgentKnowledgeActionRow(
+              title: t("galaxyssi.agent_knowledge.semantic_title", "Semantic model"),
+              subtitle: t(
+                "galaxyssi.agent_knowledge.semantic_entry_subtitle",
+                "Verified local embeddings, private indexing, and hybrid retrieval"
+              ),
+              systemImage: "point.3.connected.trianglepath.dotted",
+              tint: .purple,
+              badge: t("galaxyssi.agent_knowledge.configure", "Configure")
+            ) {
+              showingSemanticModel = true
+            }
+            AgentKnowledgeActionRow(
               title: t("galaxyssi.agent_knowledge.search", "Search knowledge"),
               subtitle: activeQuery.ifBlank(t(
                 "galaxyssi.agent_knowledge.search_subtitle",
@@ -127,10 +143,11 @@ struct GalaxySSIAgentKnowledgeView: View {
             }
           }
 
-          let groups = store.agentKnowledgeSourceGroups()
+          let sourcePage = store.agentKnowledgeSourcePage(cursor: sourceCursor)
+          let groups = sourcePage.groups
           sectionTitle(String(
             format: t("galaxyssi.agent_knowledge.section_sources", "SOURCES / %d"),
-            groups.count
+            sourcePage.total
           ))
           if groups.isEmpty {
             AgentKnowledgeInfoRow(
@@ -162,6 +179,41 @@ struct GalaxySSIAgentKnowledgeView: View {
                 }
               }
             }
+          }
+          if !sourceBackStack.isEmpty || sourcePage.next != nil {
+            HStack {
+              Button {
+                sourceCursor = sourceBackStack.removeLast()
+              } label: {
+                Image(systemName: "chevron.left")
+                  .frame(width: 40, height: 40)
+              }
+              .buttonStyle(.plain)
+              .disabled(sourceBackStack.isEmpty)
+              .accessibilityLabel(t("galaxyssi.agent_knowledge.previous_sources", "Previous sources"))
+              Spacer()
+              Text(String(
+                format: t("galaxyssi.agent_knowledge.source_page", "%d-%d / %d"),
+                sourceBackStack.count * 50 + (groups.isEmpty ? 0 : 1),
+                sourceBackStack.count * 50 + groups.count,
+                sourcePage.total
+              ))
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundColor(.galaxySSITextSecondary)
+              Spacer()
+              Button {
+                guard let next = sourcePage.next else { return }
+                sourceBackStack.append(sourceCursor)
+                sourceCursor = next
+              } label: {
+                Image(systemName: "chevron.right")
+                  .frame(width: 40, height: 40)
+              }
+              .buttonStyle(.plain)
+              .disabled(sourcePage.next == nil)
+              .accessibilityLabel(t("galaxyssi.agent_knowledge.next_sources", "Next sources"))
+            }
+            .foregroundColor(.galaxySSIAccent)
           }
 
           let audit = Array(store.agentKnowledgeAccessAudit.suffix(8).reversed())
@@ -210,11 +262,21 @@ struct GalaxySSIAgentKnowledgeView: View {
       }
       .environment(\.galaxySSIInterfaceLanguage, interfaceLanguage)
     }
+    .sheet(isPresented: $showingSemanticModel) {
+      AgentKnowledgeSemanticModelView(
+        controller: AgentKnowledgeSemanticController.shared(database: store.agentKnowledgeDatabase)
+      )
+      .environment(\.galaxySSIInterfaceLanguage, interfaceLanguage)
+    }
     .sheet(item: $selectedGroup) { group in
       AgentKnowledgeSourceAccessSheet(group: group) { message in
         statusText = message
       }
       .environmentObject(store)
+    }
+    .onChange(of: store.agentKnowledgeItems) { _ in
+      sourceCursor = nil
+      sourceBackStack = []
     }
   }
 
@@ -448,8 +510,16 @@ struct GalaxySSIAgentKnowledgeView: View {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     searchText = cleanQuery
     activeQuery = cleanQuery
-    searchHits = store.searchAgentKnowledge(cleanQuery)
-    store.recordAgentKnowledgeSearch(query: cleanQuery, hits: searchHits)
+    let lexicalHits = store.searchAgentKnowledge(cleanQuery)
+    searchHits = lexicalHits
+    searchTask?.cancel()
+    searchTask = Task {
+      let controller = AgentKnowledgeSemanticController.shared(database: store.agentKnowledgeDatabase)
+      let hits = await controller.hybridSearch(query: cleanQuery, lexicalHits: lexicalHits, limit: 24)
+      guard !Task.isCancelled, activeQuery == cleanQuery else { return }
+      searchHits = hits
+      store.recordAgentKnowledgeSearch(query: cleanQuery, hits: hits)
+    }
   }
 
   private func extractText(from url: URL) throws -> String {
@@ -803,7 +873,7 @@ private struct AgentKnowledgeSourceAccessSheet: View {
         }
         Section {
           Button(role: .destructive) {
-            let deleted = store.deleteAgentKnowledgeSource(itemIds: group.itemIds)
+            let deleted = store.deleteAgentKnowledgeSource(itemIds: store.agentKnowledgeSourceItemIds(group))
             onStatus(String(format: t("galaxyssi.agent_knowledge.source_deleted", "Deleted %d chunks"), deleted))
             dismiss()
           } label: {
@@ -833,7 +903,7 @@ private struct AgentKnowledgeSourceAccessSheet: View {
       ? allowedAgentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
       : []
     let updated = store.updateAgentKnowledgeSourceAccess(
-      itemIds: group.itemIds,
+      itemIds: store.agentKnowledgeSourceItemIds(group),
       cloudAccess: cloudAccess,
       agentAccess: agentAccess,
       allowedAgentIds: ids
