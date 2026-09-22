@@ -13,7 +13,7 @@ internal object WatchContactProfile {
 
 data class WatchPerson(val id: String, val name: String, val status: String, val muted: Boolean, val unread: Int, val fingerprint: String = "")
 data class WatchPeerMessage(val id: String, val peer: String, val text: String, val outgoing: Boolean,
-                            val time: Long, val state: String)
+                            val time: Long, val state: String, val audioId: String = "", val duration: Long = 0)
 
 /** UI snapshots are memory-only reads. All mutations run on WatchRepository's serial worker. */
 class WatchContacts(private val context: Context, private val changed: () -> Unit,
@@ -22,6 +22,8 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
     private val history = AgentEncryptedDatabase(context, "watch_peer_messages")
     private val outbox = AgentEncryptedDatabase(context, "watch_peer_outbox")
     private val controls = AgentEncryptedDatabase(context, "watch_peer_controls")
+    private val audio = WatchPeerAudio(context, ::queuePayload)
+    fun audioBytes(peer: String, id: String) = audio.read(peer, id)
     @Volatile private var people = emptyMap<String, JSONObject>()
     @Volatile private var messages = emptyList<WatchPeerMessage>()
     @Volatile var visiblePeer = ""
@@ -37,12 +39,12 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
         outbox.entries().forEach { (id, raw) ->
             if (messages.none { it.id == id }) {
                 val entry = JSONObject(raw); val payload = entry.getJSONObject("envelope").getJSONObject("payload")
-                saveMessage(WatchPeerMessage(id, entry.getString("peer"), payload.getString("content"), true, payload.getLong("time"), "queued"))
+                if (payload.optString("type") == "peer_message") saveMessage(fromPayload(entry.getString("peer"), payload, true, "queued"))
             }
         }
         notifyChanged()
     }
-    fun people(): List<WatchPerson> = people.values.filter { it.optString("status") in setOf("pending", "approved") }
+    fun people(): List<WatchPerson> = people.values.filter { it.optString("status") in setOf("pending", "requesting", "approved") }
         .map(::person).sortedWith(compareByDescending<WatchPerson> { it.unread > 0 }.thenBy { it.name })
     fun person(id: String): WatchPerson? = people[id]?.let(::person)
     fun messages(id: String) = messages.filter { it.peer == id }
@@ -68,6 +70,30 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
             ?: PhoneContactCard.createQr(context, WatchContactProfile.current(context)).also { qr = it }
         return PhoneContactCard.compactQr(card).toString()
     }
+
+    fun requestFriend(contents: String) {
+        val card = PhoneContactCard.normalizeQr(JSONObject(contents)) ?: error("Invalid invitation")
+        require(PhoneContactCard.isQrOfferValid(card))
+        val id = card.getString("galaxyssi_id")
+        require(id != GalaxySSICrypto.localGalaxySSIId())
+        val routes = GalaxySSICrypto.derivePhoneRelationshipRoutes(card.getString("identity_public_key"),
+            card.getString("identity_fingerprint")) ?: error("Invalid identity")
+        val existing = people[id]
+        require(existing == null || existing.getJSONObject("card").getString("identity_fingerprint") == routes.remoteFingerprint)
+        if (existing?.optString("status") == "approved") return
+        savePerson(id, JSONObject().put("card", card).put("route", routes.clientRouteId)
+            .put("secret", routes.linkSecret).put("status", "requesting").put("unread", 0).put("muted", false))
+        val payload = PhoneContactCard.controlPayload(PhoneContactCard.REQUEST_TYPE, id,
+            PhoneContactCard.identityCard(context), card.getString("pairing_token"))
+        controls.writeString("$id:${PhoneContactCard.REQUEST_TYPE}", JSONObject().put("peer", id).put("payload", payload)
+            .put("pairing_topic", card.getString("pairing_topic")).put("pairing_secret", card.getString("pairing_secret")).toString())
+        lastControl = 0
+    }
+    fun inspectInvitation(contents: String): WatchPerson? = runCatching {
+        val card = PhoneContactCard.normalizeQr(JSONObject(contents)) ?: return null
+        require(PhoneContactCard.isQrOfferValid(card) && card.getString("galaxyssi_id") != GalaxySSICrypto.localGalaxySSIId())
+        WatchPerson(card.getString("galaxyssi_id"), card.getString("name"), "invitation", false, 0, card.getString("identity_fingerprint"))
+    }.getOrNull()
 
     fun control(topic: String, payload: JSONObject) {
         val type = payload.optString("type")
@@ -107,12 +133,18 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
             .put("status", "pending").put("unread", 0).put("muted", false)
         record.put("card", card).put("route", routes.clientRouteId).put("secret", routes.linkSecret)
         // Only the local user's approval may authorize an incoming request.
-        if (type == PhoneContactCard.REQUEST_TYPE && record.optString("status") in setOf("deleted", "rejected"))
+        if (type == PhoneContactCard.REQUEST_TYPE && record.optString("status") in setOf("deleted", "rejected", "requesting"))
             record.put("status", "pending")
         savePerson(id, record)
         if (refresh) reencrypt(id)
         when (type) {
-            PhoneContactCard.REQUEST_TYPE -> { replyToClaim(id); if (existing == null) incoming(person(record), "", true) }
+            PhoneContactCard.APPROVAL_TYPE, PhoneContactCard.REJECTION_TYPE -> {
+                if (record.optString("status") == "requesting") {
+                    controls.remove("$id:${PhoneContactCard.REQUEST_TYPE}")
+                    savePerson(id, record.put("status", if (type == PhoneContactCard.APPROVAL_TYPE) "approved" else "rejected"))
+                }
+            }
+            PhoneContactCard.REQUEST_TYPE -> { replyToClaim(id); if (record.optString("status") == "pending" && existing?.optString("status") != "pending") incoming(person(record), "", true) }
             PhoneContactCard.BUNDLE_REFRESH_TYPE -> queueControl(id, PhoneContactCard.BUNDLE_RESPONSE_TYPE)
         }
     }
@@ -162,15 +194,32 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
         require(content.isNotEmpty() && content.length <= 24_000)
         val routes = checkNotNull(link(id)).routes
         val payload = WatchPeerProtocol.outgoing(GalaxySSICrypto.localGalaxySSIId(), id, routes.clientRouteId, content)
+        queuePayload(id, payload)
+        saveMessage(fromPayload(id, payload, true, "queued"))
+    }
+    fun sendVoice(id: String, bytes: ByteArray, duration: Long) {
+        require(approved(id))
+        val payload = WatchPeerProtocol.outgoing(GalaxySSICrypto.localGalaxySSIId(), id, checkNotNull(link(id)).routes.clientRouteId, "")
+            .put("message_kind", "voice").put("duration_ms", duration)
+        val descriptor = audio.prepare(id, payload, bytes, duration)
+        payload.put("attachments", org.json.JSONArray().put(descriptor))
+        queuePayload(id, payload)
+        saveMessage(fromPayload(id, payload, true, "queued"))
+    }
+    private fun queuePayload(id: String, source: JSONObject) {
+        val payload = JSONObject(source.toString())
+        if (payload.optString("type") != "peer_message") payload.put("message_id", UUID.randomUUID().toString())
         val envelope = GalaxySSILinkProtocol.makeEnvelope(payload, GalaxySSICrypto.localGalaxySSIId(), id)
         val wire = GalaxySSICrypto.encryptPayloadForContact(id, envelope) ?: error("Contact session unavailable")
         val key = payload.getString("message_id")
         outbox.writeString(key, JSONObject().put("peer", id).put("envelope", envelope).put("wire", wire.toString()).toString())
-        saveMessage(WatchPeerMessage(key, id, content, true, payload.getLong("time"), "queued"))
         lastSend = 0
     }
     fun accept(id: String, payload: JSONObject) {
         require(approved(id))
+        if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk", "input_attachment_receipt")) {
+            audio.accept(id, checkNotNull(link(id)).routes.clientRouteId, payload); notifyChanged(); return
+        }
         if (payload.optString("type") != "peer_message") return
         require(WatchPeerProtocol.validIncoming(payload, id, GalaxySSICrypto.localGalaxySSIId(), checkNotNull(link(id)).routes.clientRouteId))
         val key = payload.getString("message_id")
@@ -180,7 +229,7 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
         // Attachments are represented explicitly until the phone media viewer is ported.
         val display = if (payload.optJSONArray("attachments")?.length()?.let { it > 0 } == true)
             text + if (text.isBlank()) "[attachment]" else "\n[attachment]" else text
-        saveMessage(WatchPeerMessage(key, id, display, false, System.currentTimeMillis(), "received"))
+        saveMessage(fromPayload(id, payload, false, "received"))
         val record = JSONObject(people.getValue(id).toString())
         if (visiblePeer != id) record.put("unread", record.optInt("unread") + 1)
         savePerson(id, record)
@@ -209,7 +258,9 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
                     return@forEach
                 }
                 val link = link(entry.getString("peer")) ?: return@forEach
-                transport.bootstrap(link.routes.up, GalaxySSILinkProtocol.sealWirePacket(payload.toString(), link.routes.linkSecret), link.routes.receiveWindow.toSet())
+                val request = payload.optString("type") == PhoneContactCard.REQUEST_TYPE
+                transport.bootstrap(if (request) entry.getString("pairing_topic") else link.routes.up,
+                    GalaxySSILinkProtocol.sealWirePacket(payload.toString(), if (request) entry.getString("pairing_secret") else link.routes.linkSecret), link.routes.receiveWindow.toSet())
             }
         }
         if (now - lastSend >= 10_000) {
@@ -230,7 +281,7 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
     fun mute(id: String, value: Boolean) { people[id]?.let { savePerson(id, JSONObject(it.toString()).put("muted", value)) } }
     fun clear(id: String) {
         val keys = messages.filter { it.peer == id }.map { it.id }
-        history.removeAll(keys); outbox.removeAll(keys)
+        history.removeAll(keys); outbox.removeAll(outbox.entries().filter { JSONObject(it.second).optString("peer") == id }.map { it.first }); audio.clear(id)
         messages = messages.filterNot { it.peer == id }; markRead(id); notifyChanged()
     }
     fun delete(id: String) {
@@ -244,13 +295,23 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
     }
     private fun saveMessage(value: WatchPeerMessage) {
         history.writeString(value.id, JSONObject().put("id", value.id).put("peer", value.peer).put("text", value.text)
-            .put("outgoing", value.outgoing).put("time", value.time).put("state", value.state).toString())
+            .put("outgoing", value.outgoing).put("time", value.time).put("state", value.state)
+            .put("audio", value.audioId).put("duration", value.duration).toString())
         messages = (messages.filterNot { it.id == value.id } + value).sortedBy { it.time }; notifyChanged()
     }
     private fun person(record: JSONObject) = WatchPerson(record.getJSONObject("card").getString("galaxyssi_id"),
         record.getJSONObject("card").getString("name"), record.getString("status"), record.optBoolean("muted"), record.optInt("unread"), record.getJSONObject("card").optString("identity_fingerprint"))
     private fun message(value: JSONObject) = WatchPeerMessage(value.getString("id"), value.getString("peer"),
-        value.getString("text"), value.getBoolean("outgoing"), value.getLong("time"), value.getString("state"))
+        value.getString("text"), value.getBoolean("outgoing"), value.getLong("time"), value.getString("state"), value.optString("audio"), value.optLong("duration"))
+    private fun fromPayload(peer: String, payload: JSONObject, outgoing: Boolean, state: String): WatchPeerMessage {
+        val attachments = payload.optJSONArray("attachments")
+        val voice = (0 until (attachments?.length() ?: 0)).mapNotNull { attachments?.optJSONObject(it) }
+            .firstOrNull { it.optString("mime_type").startsWith("audio/") && it.optString("transfer_id").matches(Regex("[a-f0-9]{64}")) }
+        return WatchPeerMessage(payload.getString("message_id"), peer,
+            payload.optString("content").ifBlank { if (voice == null && (attachments?.length() ?: 0) > 0) "[attachment]" else "" },
+            outgoing, if (outgoing) payload.getLong("time") else System.currentTimeMillis(), state,
+            voice?.optString("transfer_id").orEmpty(), payload.optLong("duration_ms", voice?.optLong("duration_ms") ?: 0).coerceIn(0, 3_600_000))
+    }
     private fun notifyChanged() { revision++; changed() }
 }
 

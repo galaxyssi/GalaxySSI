@@ -846,6 +846,9 @@ internal fun MainActivity.showAddContactMenu() {
         getString(R.string.common_select)
     ))
     addSectionTitle(getString(R.string.add_contact_section_methods))
+    featureContent.addView(featureRow(getString(R.string.nearby_nfc_title), getString(R.string.nearby_nfc_phone_help), R.drawable.ic_scan, getString(R.string.add_contact_title)).apply {
+        setOnClickListener { startActivity(android.content.Intent(this@showAddContactMenu, NfcWatchContactActivity::class.java)) }
+    })
     featureContent.addView(featureRow(getString(R.string.add_contact_scan_title), getString(R.string.add_contact_scan_subtitle), R.drawable.ic_scan, getString(R.string.security_scan)).apply {
         setOnClickListener {
             scanMode = "contact"

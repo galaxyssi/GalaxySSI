@@ -20,6 +20,26 @@ import java.util.concurrent.TimeUnit
 
 class WatchApplication : com.galaxyssi.chat.GalaxySSIApplication() {
     val repository by lazy { WatchRepository(this) }
+    private var foregroundActivity: android.app.Activity? = null
+    override fun onCreate() {
+        super.onCreate()
+        registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: android.app.Activity) { foregroundActivity = activity }
+            override fun onActivityPaused(activity: android.app.Activity) { if (foregroundActivity === activity) foregroundActivity = null }
+            override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) = Unit
+            override fun onActivityStarted(a: android.app.Activity) = Unit
+            override fun onActivityStopped(a: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(a: android.app.Activity, b: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(a: android.app.Activity) = Unit
+        })
+    }
+    fun openContactRequest(id: String): Boolean {
+        val activity = foregroundActivity ?: return false
+        activity.startActivity(android.content.Intent(activity, WatchContactsActivity::class.java)
+            .putExtra("peer", id).putExtra("request", true)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        return true
+    }
 }
 
 /** A single serial worker owns Signal session mutations and transport state. */
@@ -35,7 +55,10 @@ class WatchRepository(private val context: Context) {
     private val apiCalls = java.util.concurrent.ConcurrentHashMap<String, WatchApiOperation>()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     val contacts = com.galaxyssi.chat.WatchContacts(context, ::changed) { person, text, request ->
-        WatchContactNotifications.show(context, person, text, request)
+        main.post {
+            if (!request || !(context.applicationContext as WatchApplication).openContactRequest(person.id))
+                WatchContactNotifications.show(context, person, text, request)
+        }
     }
     fun contactAction(action: com.galaxyssi.chat.WatchContacts.() -> Unit, done: (Boolean) -> Unit = {}) {
         worker.execute {

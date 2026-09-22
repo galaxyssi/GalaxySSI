@@ -52,7 +52,7 @@ class MainActivity : Activity() {
     private var conversationFrame: SwipeDismissFrameLayout? = null
     private var renderedConversation: WatchConversationKey? = null
     private var lastReadProjection = emptyList<Pair<String, String>>()
-    private data class SessionsKey(val tasks: List<WatchTask>, val query: String, val readRevision: Long, val error: Int)
+    private data class SessionsKey(val tasks: List<WatchTask>, val query: String, val readRevision: Long, val error: Int, val contactsRevision: Long)
     private var sessionsKey: SessionsKey? = null
     private var sessionsFrame: SwipeDismissFrameLayout? = null
     private var sessionsScroll: ScrollView? = null
@@ -256,7 +256,7 @@ class MainActivity : Activity() {
             }
             showConversation(); return
         }
-        val listKey = if (page == "sessions") SessionsKey(repo.store.cachedTasks(), sessionQuery, repo.store.cachedReadRevision, repo.errorResource) else null
+        val listKey = if (page == "sessions") SessionsKey(repo.store.cachedTasks(), sessionQuery, repo.store.cachedReadRevision, repo.errorResource, repo.contacts.revision) else null
         if (listKey != null && listKey == sessionsKey && sessionsFrame != null) {
             val frame = requireNotNull(sessionsFrame)
             scroll = requireNotNull(sessionsScroll)
@@ -637,11 +637,14 @@ class MainActivity : Activity() {
         }
         button(R.string.refresh) { repo.refresh() }
     }
-    private fun directoryRow(name: String, subtitle: String, count: Int = 0, action: () -> Unit) {
+    private fun directoryRow(name: String, subtitle: String, count: Int = 0, fingerprint: String = "", action: () -> Unit) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(62)
             setPadding(dp(2), dp(7), dp(2), dp(7)); setOnClickListener { action() }
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(28), dp(28)))
+            addView(ImageView(this@MainActivity).apply {
+                if (fingerprint.isBlank()) setImageResource(R.mipmap.ic_launcher)
+                else setImageDrawable(com.galaxyssi.chat.GalaxySSIIdenticonDrawable(fingerprint))
+            }, LinearLayout.LayoutParams(dp(28), dp(28)))
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, dp(2), 0)
                 addView(TextView(this@MainActivity).apply { text = name.take(80).replace('\n', ' ').replace('\r', ' '); textSize = 14f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
@@ -663,13 +666,27 @@ class MainActivity : Activity() {
         val groups = repo.store.cachedTasks().groupBy { it.conversationKey() }.values.filter { turns ->
             sessionQuery.isBlank() || turns.any { it.prompt.contains(sessionQuery, true) || it.reply.contains(sessionQuery, true) }
         }
-        if (groups.isEmpty()) label(getString(R.string.empty_sessions))
-        groups.take(30).forEach { turns ->
+        val entries = mutableListOf<Pair<Long, () -> Unit>>()
+        groups.forEach { turns ->
             val current = turns.first()
+            entries += current.sourceId to {
             directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::cachedUnread)) {
                 selectedTask = current.id; repo.saveActiveTask(current.id); followUpId = ""; navigate("home")
             }
+            }
         }
+        repo.contacts.people().filter { it.status == "approved" }.forEach { person ->
+            val messages = repo.contacts.messages(person.id)
+            val last = messages.lastOrNull() ?: return@forEach
+            if (sessionQuery.isNotBlank() && !person.name.contains(sessionQuery, true) && messages.none { it.text.contains(sessionQuery, true) }) return@forEach
+            entries += last.time to {
+                directoryRow(person.name, if (last.audioId.isNotEmpty()) getString(R.string.peer_voice_message) else last.text, person.unread, person.fingerprint.ifBlank { person.id }) {
+                    startActivity(Intent(this, WatchContactsActivity::class.java).putExtra("peer", person.id))
+                }
+            }
+        }
+        if (entries.isEmpty()) label(getString(R.string.empty_sessions))
+        entries.sortedByDescending { it.first }.take(30).forEach { it.second() }
     }
     private fun contacts() {
         title(R.string.contacts)

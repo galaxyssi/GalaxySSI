@@ -16,12 +16,17 @@ class WatchMessageComposer(
     private val onDraft: (String) -> Unit,
     private val onSend: () -> Unit,
     private val onVoice: () -> Unit,
-    private val onMenu: () -> Unit
+    private val onMenu: () -> Unit,
+    private val onVoiceRelease: ((Boolean) -> Unit)? = null,
+    private val onVoiceMove: ((Boolean) -> Unit)? = null
 ) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val secondary = Color.rgb(165, 171, 182)
     private var keyboardVisible = false
     private var keyboardVisibleAtTouchDown = false
+    private var holdingVoice = false
+    private var downY = 0f
+    private var cancelVoice = false
     val input = object : EditText(context) {
         override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
             val connection = super.onCreateInputConnection(outAttrs)
@@ -38,13 +43,28 @@ class WatchMessageComposer(
         inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         setOnTouchListener { _, event ->
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                downY = event.rawY; cancelVoice = false
                 keyboardVisibleAtTouchDown = rootWindowInsets?.isVisible(WindowInsets.Type.ime()) ?: keyboardVisible
+            }
+            if (holdingVoice) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_MOVE -> { cancelVoice = downY - event.rawY > dp(35); onVoiceMove?.invoke(cancelVoice) }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        holdingVoice = false; parent?.requestDisallowInterceptTouchEvent(false)
+                        onVoiceRelease?.invoke(cancelVoice || event.actionMasked == MotionEvent.ACTION_CANCEL)
+                    }
+                }
+                return@setOnTouchListener true
             }
             false
         }
         setOnLongClickListener {
             if (keyboardVisibleAtTouchDown || keyboardVisible) false
-            else { onVoice(); true }
+            else {
+                holdingVoice = onVoiceRelease != null
+                if (holdingVoice) parent?.requestDisallowInterceptTouchEvent(true)
+                onVoice(); true
+            }
         }
     }
     // Android keeps send and more as separate controls, even when they share a layout slot.

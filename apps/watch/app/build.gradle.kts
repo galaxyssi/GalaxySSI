@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 54
-        versionName = "0.3.22"
+        versionCode = 56
+        versionName = "0.3.24"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -136,6 +136,16 @@ val syncPhoneBrand by tasks.registering(Sync::class) {
 }
 android.sourceSets.getByName("main").res.srcDir(phoneBrandOutput)
 tasks.named("preBuild").configure { dependsOn(syncPhoneBrand) }
+
+val syncPhonePeerVoice by tasks.registering(Sync::class) {
+    from("../../android/app/src/main/java") {
+        include("com/galaxyssi/chat/voice/audio/PeerVoiceOpusRecorder.kt",
+            "com/galaxyssi/chat/voice/audio/PeerVoiceMessageAudio.kt")
+    }
+    into(layout.buildDirectory.dir("generated/phonePeerVoice"))
+}
+android.sourceSets.getByName("main").java.srcDir(syncPhonePeerVoice.map { it.destinationDir })
+tasks.named("preBuild").configure { dependsOn(syncPhonePeerVoice) }
 
 // Compile Android's complete Web Intelligence engine from an explicit source allowlist.
 val phoneWebRoot = file("../../android/app/src/main/java/com/galaxyssi/chat")

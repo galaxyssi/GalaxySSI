@@ -229,4 +229,24 @@
     <string name="phone_setup_pairing">Waiting for desktop authorization…</string>
     <string name="phone_setup_restart">Start again</string>
     <string name="phone_setup_settings">Configure from phone</string>
+    <string name="nearby_ble">Nearby watches</string>
+    <string name="nearby_nfc">Phone tap to add</string>
+    <string name="nearby_expired">Session ended. Start again to add a friend.</string>
+    <string name="nearby_permission">Allow Nearby devices permission to find watches.</string>
+    <string name="nearby_preparing">Preparing invitation…</string>
+    <string name="nearby_nfc_unavailable">Enable NFC in watch settings, then retry.</string>
+    <string name="nearby_nfc_help">On the phone: Add contact → Tap watch with NFC. Bring the phone near this watch.</string>
+    <string name="nearby_ble_help">Both watches open this page. Select the other watch below.</string>
+    <string name="nearby_device">Nearby watch</string>
+    <string name="nearby_error">Connection failed. Check Bluetooth and network, then retry.</string>
+    <string name="nearby_my_code">Your verification code</string>
+    <string name="nearby_compare">Compare with the other watch</string>
+    <string name="nearby_send_request">Codes match · Add friend</string>
+    <string name="nearby_wait_approval">Request sent. Waiting for approval.</string>
+    <string name="nearby_connecting">Reading invitation…</string>
+    <string name="nearby_declined">Request declined</string>
+    <string name="peer_voice_message">[Voice]</string>
+    <string name="peer_voice_recording">%1$d s · Release to send\nSlide up to cancel</string>
+    <string name="peer_voice_cancel">%1$d s · Release to cancel</string>
+    <string name="peer_voice_loading">Voice is still downloading. Try again shortly.</string>
 </resources>

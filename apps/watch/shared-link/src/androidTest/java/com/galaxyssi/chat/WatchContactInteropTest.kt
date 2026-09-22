@@ -14,6 +14,50 @@ import java.util.UUID
 
 /** Runs in the library's independent test APK, never the installed watch application's data. */
 class WatchContactInteropTest {
+    @Test fun outgoingNearbyRequestWaitsForSignedApproval() {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        assertTrue(context.packageName.endsWith(".test"))
+        GalaxySSICrypto.initialize(context)
+        val contacts = WatchContacts(context, {}, { _, _, _ -> }); contacts.load()
+        val remote = AndroidPersistentSignalStore(context, AgentEncryptedDatabase(context, "nearby_${UUID.randomUUID()}"))
+        fun b64(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(remote.getIdentityKeyPair().publicKey.serialize())
+            .joinToString("") { "%02x".format(it) }
+        val id = "galaxyssi:${fingerprint.take(16)}"
+        val secret = GalaxySSILinkProtocol.newLinkSecret()
+        val card = JSONObject().put("type", PhoneContactCard.TYPE).put("version", 2)
+            .put("galaxyssi_id", id).put("name", "Nearby test")
+            .put("signal_bundle", remote.currentBundleJson(id, 1))
+            .put("identity_public_key", b64(remote.getIdentityKeyPair().publicKey.serialize()))
+            .put("identity_fingerprint", fingerprint).put("bundle_identity_fingerprint", fingerprint)
+            .put("pairing_token", GalaxySSILinkProtocol.newLinkSecret()).put("pairing_secret", secret)
+            .put("pairing_topic", GalaxySSILinkProtocol.pairingTopic(secret))
+            .put("device_id", "test-device").put("created_at", System.currentTimeMillis())
+        card.put("signature", b64(remote.getIdentityKeyPair().privateKey.calculateSignature(PhoneContactCard.canonicalBytes(card))))
+        contacts.requestFriend(PhoneContactCard.compactQr(card).toString())
+        assertEquals("requesting", contacts.person(id)?.status)
+        assertTrue(runCatching { contacts.send(id, "blocked before approval") }.isFailure)
+        val identity = JSONObject(card.toString()).put("type", PhoneContactCard.IDENTITY_TYPE)
+            .put("signal_bundle", remote.currentBundleJson(id, 1))
+            .put("pairing_token", "").put("pairing_secret", "").put("pairing_topic", "")
+        identity.put("signature", b64(remote.getIdentityKeyPair().privateKey.calculateSignature(PhoneContactCard.canonicalBytes(identity))))
+        val route = checkNotNull(contacts.link(id)).routes.down
+        val local = GalaxySSICrypto.localGalaxySSIId()
+        contacts.control(route, PhoneContactCard.controlPayload(PhoneContactCard.BUNDLE_RESPONSE_TYPE, local, identity))
+        assertEquals("requesting", contacts.person(id)?.status)
+        contacts.control(route, PhoneContactCard.controlPayload(PhoneContactCard.APPROVAL_TYPE, local, identity))
+        assertEquals("approved", contacts.person(id)?.status)
+        contacts.send(id, "allowed after approval")
+        assertEquals("queued", contacts.messages(id).single().state)
+        contacts.delete(id)
+        val forged = PhoneContactCard.compactQr(card).put("n", "Tampered identity")
+        assertTrue(runCatching { contacts.requestFriend(forged.toString()) }.isFailure)
+        contacts.requestFriend(PhoneContactCard.compactQr(card).toString())
+        contacts.control(route, PhoneContactCard.controlPayload(PhoneContactCard.REJECTION_TYPE, local, identity))
+        assertEquals("rejected", contacts.person(id)?.status)
+        contacts.control(route, PhoneContactCard.controlPayload(PhoneContactCard.APPROVAL_TYPE, local, identity))
+        assertEquals("Late approval must not undo rejection", "rejected", contacts.person(id)?.status)
+    }
     @Test fun signedQrApprovalAndBidirectionalSignalMessages() {
         val context = InstrumentationRegistry.getInstrumentation().context
         assertTrue(context.packageName.endsWith(".test"))

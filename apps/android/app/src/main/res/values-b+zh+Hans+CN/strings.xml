@@ -1583,4 +1583,11 @@
     <string name="agent_memory_make_private">设为私密</string>
     <string name="agent_memory_make_shareable">允许 Agent 检索</string>
     <string name="agent_memory_deprecate">标记为历史状态</string>
+    <string name="nearby_nfc_title">NFC 碰手表</string>
+    <string name="nearby_nfc_phone_help">手表打开“联系人 → 手机碰手表”，将手机靠近手表。发送好友申请需要双方联网。</string>
+    <string name="nearby_nfc_enable">请在手机设置开启 NFC，再重新打开此页</string>
+    <string name="nearby_nfc_compare">请先核对手表显示的数字是否一致</string>
+    <string name="nearby_nfc_failed">未能完成申请，请重新打开手表添加页面后重试</string>
+    <string name="nearby_nfc_send">一致，发送好友申请</string>
+    <string name="nearby_nfc_sent">申请已发送，请在手表上批准</string>
 </resources>

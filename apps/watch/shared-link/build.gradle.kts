@@ -9,6 +9,7 @@ val syncPhoneSources by tasks.registering(Sync::class) {
     from("../../android/app/src/main/java") {
         include(
             "com/galaxyssi/chat/AgentEncryptedStorage.kt",
+            "com/galaxyssi/chat/NearbyContactProtocol.kt",
             "com/galaxyssi/chat/AndroidPersistentSignalStore.kt",
             "com/galaxyssi/chat/GalaxySSICrypto.kt",
             "com/galaxyssi/chat/PhoneRelationshipIdentityBinding.kt",
