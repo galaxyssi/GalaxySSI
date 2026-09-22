@@ -42,7 +42,28 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
                 if (payload.optString("type") == "peer_message") saveMessage(fromPayload(entry.getString("peer"), payload, true, "queued"))
             }
         }
-        notifyChanged()
+        syncDesktops(); notifyChanged()
+    }
+    fun isDesktop(id: String) = people[id]?.optBoolean("desktop") == true
+    fun syncDesktops() {
+        val links = GalaxySSILinkProtocol.allServerLinks(context).filter { it.paired }
+        people.filterValues { it.optBoolean("desktop") }.forEach { (id, record) ->
+            if (links.none { it.desktopId == id } && record.optString("status") != "deleted") {
+                outbox.removeAll(outbox.entries().filter { JSONObject(it.second).optString("peer") == id }.map { it.first })
+                messages.filter { it.peer == id && it.outgoing && it.state == "queued" }.forEach { saveMessage(it.copy(state = "failed")) }
+                savePerson(id, JSONObject(record.toString()).put("status", "deleted").put("unread", 0))
+            }
+        }
+        links.forEach { link ->
+            val old = people[link.desktopId]
+            if (old?.optBoolean("desktop") == true && old.optString("status") == "approved" &&
+                old.getJSONObject("card").optString("name") == link.desktopName &&
+                old.getJSONObject("card").optString("identity_fingerprint") == link.desktopFingerprint) return@forEach
+            val record = old?.let { JSONObject(it.toString()) } ?: JSONObject().put("unread", 0).put("muted", false)
+            savePerson(link.desktopId, record.put("desktop", true).put("status", "approved")
+                .put("card", JSONObject().put("galaxyssi_id", link.desktopId).put("name", link.desktopName)
+                    .put("identity_fingerprint", link.desktopFingerprint)))
+        }
     }
     fun people(): List<WatchPerson> = people.values.filter { it.optString("status") in setOf("pending", "requesting", "approved") }
         .map(::person).sortedWith(compareByDescending<WatchPerson> { it.unread > 0 }.thenBy { it.name })
@@ -51,9 +72,10 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
     fun hasRoutes() = people.values.any { it.optString("status") != "deleted" } || rendezvousTopics().isNotEmpty()
     internal fun rendezvousTopics() = PhoneContactCard.activeRendezvousTopics(context)
     internal fun session(topic: String) = PhoneContactCard.sessionForTopic(context, topic)
-    fun isPeer(id: String) = people.containsKey(id)
-    internal fun approved(id: String) = people[id]?.optString("status") == "approved"
-    internal fun links(): List<GalaxySSILinkProtocol.ServerLink> = people.values.filter { it.optString("status") != "deleted" }.mapNotNull { record ->
+    fun isPeer(id: String) = people.containsKey(id) && !isDesktop(id)
+    internal fun approved(id: String) = people[id]?.optString("status") == "approved" &&
+        (!isDesktop(id) || GalaxySSILinkProtocol.serverLink(context, id)?.paired == true)
+    internal fun links(): List<GalaxySSILinkProtocol.ServerLink> = people.values.filter { !it.optBoolean("desktop") && it.optString("status") != "deleted" }.mapNotNull { record ->
         runCatching {
             val card = record.getJSONObject("card")
             val routes = GalaxySSILinkProtocol.Routes(record.getString("route"), record.getString("secret"),
@@ -62,7 +84,8 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
             GalaxySSILinkProtocol.ServerLink(id, card.getString("name"), routes.remoteFingerprint, id, routes, true)
         }.getOrNull()
     }
-    internal fun link(id: String) = links().firstOrNull { it.desktopId == id }
+    internal fun link(id: String) = if (isDesktop(id)) GalaxySSILinkProtocol.serverLink(context, id)?.takeIf { it.paired }
+        else links().firstOrNull { it.desktopId == id }
     fun createQr(force: Boolean = false): String {
         if (force) qr = null
         val card = qr?.takeIf { PhoneContactCard.isQrOfferValid(it) &&
@@ -193,24 +216,28 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
         val content = text.trim()
         require(content.isNotEmpty() && content.length <= 24_000)
         val routes = checkNotNull(link(id)).routes
-        val payload = WatchPeerProtocol.outgoing(GalaxySSICrypto.localGalaxySSIId(), id, routes.clientRouteId, content)
+        val payload = outgoing(id, routes.clientRouteId, content)
         queuePayload(id, payload)
         saveMessage(fromPayload(id, payload, true, "queued"))
     }
     fun sendVoice(id: String, bytes: ByteArray, duration: Long) {
         require(approved(id))
-        val payload = WatchPeerProtocol.outgoing(GalaxySSICrypto.localGalaxySSIId(), id, checkNotNull(link(id)).routes.clientRouteId, "")
+        val payload = outgoing(id, checkNotNull(link(id)).routes.clientRouteId, "")
             .put("message_kind", "voice").put("duration_ms", duration)
         val descriptor = audio.prepare(id, payload, bytes, duration)
         payload.put("attachments", org.json.JSONArray().put(descriptor))
         queuePayload(id, payload)
         saveMessage(fromPayload(id, payload, true, "queued"))
     }
+    private fun outgoing(id: String, route: String, content: String) = if (isDesktop(id))
+        WatchPeerProtocol.outgoingDesktop(GalaxySSICrypto.localGalaxySSIId(), id, route, content)
+        else WatchPeerProtocol.outgoing(GalaxySSICrypto.localGalaxySSIId(), id, route, content)
     private fun queuePayload(id: String, source: JSONObject) {
         val payload = JSONObject(source.toString())
         if (payload.optString("type") != "peer_message") payload.put("message_id", UUID.randomUUID().toString())
         val envelope = GalaxySSILinkProtocol.makeEnvelope(payload, GalaxySSICrypto.localGalaxySSIId(), id)
-        val wire = GalaxySSICrypto.encryptPayloadForContact(id, envelope) ?: error("Contact session unavailable")
+        val wire = (if (isDesktop(id)) GalaxySSICrypto.encryptPayloadForDesktop(id, envelope)
+            else GalaxySSICrypto.encryptPayloadForContact(id, envelope)) ?: error("Contact session unavailable")
         val key = payload.getString("message_id")
         outbox.writeString(key, JSONObject().put("peer", id).put("envelope", envelope).put("wire", wire.toString()).toString())
         lastSend = 0
@@ -218,10 +245,12 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
     fun accept(id: String, payload: JSONObject) {
         require(approved(id))
         if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk", "input_attachment_receipt")) {
-            audio.accept(id, checkNotNull(link(id)).routes.clientRouteId, payload); notifyChanged(); return
+            audio.accept(id, checkNotNull(link(id)).routes.clientRouteId, payload, isDesktop(id)); notifyChanged(); return
         }
         if (payload.optString("type") != "peer_message") return
-        require(WatchPeerProtocol.validIncoming(payload, id, GalaxySSICrypto.localGalaxySSIId(), checkNotNull(link(id)).routes.clientRouteId))
+        val route = checkNotNull(link(id)).routes.clientRouteId
+        require(if (isDesktop(id)) WatchPeerProtocol.validDesktopIncoming(payload, id, route)
+            else WatchPeerProtocol.validIncoming(payload, id, GalaxySSICrypto.localGalaxySSIId(), route))
         val key = payload.getString("message_id")
         controls.remove("$id:${PhoneContactCard.APPROVAL_TYPE}")
         if (messages.any { it.id == key && it.peer == id }) return
@@ -268,7 +297,10 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
             outbox.entries().forEach { (key, raw) ->
                 val entry = JSONObject(raw); val id = entry.getString("peer")
                 if (!approved(id)) return@forEach
-                if (entry.getJSONObject("envelope").optLong("expires_at") < now) {
+                val envelope = entry.getJSONObject("envelope")
+                val wrongRoute = isDesktop(id) && !WatchPeerProtocol.matchesDesktopRoute(
+                    envelope.getJSONObject("payload"), checkNotNull(link(id)).routes.clientRouteId)
+                if (wrongRoute || envelope.optLong("expires_at") < now) {
                     outbox.remove(key)
                     messages.firstOrNull { it.id == key }?.let { saveMessage(it.copy(state = "failed")) }
                 } else link(id)?.let { transport.publish(it, key, entry.getString("wire"), "peer_message") }
@@ -327,6 +359,17 @@ object WatchPeerProtocol {
             .put("task_id", "peer:$now").put("turn_id", "peer-turn:$now").put("sender", local)
             .put("peer_chat", true).put("time", now)
     }
+    fun matchesDesktopRoute(payload: JSONObject, route: String) =
+        payload.optString("client_route_id") == route && payload.optString("conversation_id") == "peer:$route"
+    fun outgoingDesktop(local: String, desktop: String, route: String, content: String) =
+        outgoing(local, desktop, route, content).put("contact_id", desktop).put("desktop_id", desktop)
+            .put("sender", "self").put("conversation_id", "peer:$route")
+    fun validDesktopIncoming(payload: JSONObject, desktop: String, route: String) =
+        payload.optString("type") == "peer_message" && payload.optString("sender") == "other" &&
+            payload.optString("contact_id") == desktop && payload.optString("desktop_id") == desktop &&
+            payload.optString("client_route_id") == route && payload.optString("conversation_id") == "peer:$route" &&
+            runCatching { UUID.fromString(payload.optString("message_id")) }.isSuccess &&
+            payload.optString("content").length <= 24_000
     fun validIncoming(payload: JSONObject, remote: String, local: String, route: String) =
         payload.optString("type") == "peer_message" && payload.optString("sender") == remote &&
             payload.optString("contact_id") == remote && payload.optString("client_route_id") == route &&

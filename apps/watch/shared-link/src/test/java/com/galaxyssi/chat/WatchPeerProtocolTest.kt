@@ -38,4 +38,29 @@ class WatchPeerProtocolTest {
         assertNotEquals(WatchPeerProtocol.outgoing(alice, bob, route, "a").getString("message_id"),
             WatchPeerProtocol.outgoing(alice, bob, route, "a").getString("message_id"))
     }
+    @Test fun desktopOutgoingMatchesAndroidDirectChatRatherThanAgentTask() {
+        val payload = WatchPeerProtocol.outgoingDesktop(alice, "desktop_t14", route, "Hello")
+        assertEquals("peer_message", payload.getString("type"))
+        assertEquals("self", payload.getString("sender"))
+        assertEquals("desktop_t14", payload.getString("contact_id"))
+        assertEquals("desktop_t14", payload.getString("desktop_id"))
+        assertEquals("peer:$route", payload.getString("conversation_id"))
+        assertFalse(payload.has("agent_id"))
+    }
+    @Test fun desktopReplyRejectsWrongComputerRouteOrConversation() {
+        val payload = WatchPeerProtocol.outgoingDesktop(alice, "desktop_t14", route, "Hello").put("sender", "other")
+        assertTrue(WatchPeerProtocol.validDesktopIncoming(payload, "desktop_t14", route))
+        assertFalse(WatchPeerProtocol.validDesktopIncoming(payload, "desktop_other", route))
+        assertFalse(WatchPeerProtocol.validDesktopIncoming(payload, "desktop_t14", "other-route"))
+        listOf("sender", "contact_id", "desktop_id", "conversation_id", "message_id", "type").forEach { key ->
+            assertFalse(key, WatchPeerProtocol.validDesktopIncoming(JSONObject(payload.toString()).put(key, "forged"), "desktop_t14", route))
+        }
+        assertFalse(WatchPeerProtocol.validIncoming(payload, "desktop_t14", alice, route))
+    }
+    @Test fun rePairingCannotSendQueuedCiphertextOnAnotherDesktopRoute() {
+        val payload = WatchPeerProtocol.outgoingDesktop(alice, "desktop_t14", route, "hello")
+        assertTrue(WatchPeerProtocol.matchesDesktopRoute(payload, route))
+        assertFalse(WatchPeerProtocol.matchesDesktopRoute(payload, "new-pairing-route"))
+        assertFalse(WatchPeerProtocol.matchesDesktopRoute(JSONObject(payload.toString()).put("conversation_id", "peer:old"), route))
+    }
 }

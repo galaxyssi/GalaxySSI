@@ -12,7 +12,7 @@ import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.StorageService
 
-/** Opt-in foreground-only local recognition. No captured audio or transcript is saved or sent. */
+/** Opt-in local recognition, owned by the activity or microphone foreground service. No captured audio or transcript is saved or sent. */
 internal class WatchForegroundWake(context: Context,
     private val onState: (State) -> Unit,
     private val onWake: () -> Unit) {

@@ -165,7 +165,7 @@
     <string name="background_enabled">后台持续运行</string>
     <string name="follow_speech">跟随朗读</string>
     <string name="foreground_wake">Hello Hello 语音唤醒</string>
-    <string name="foreground_wake_help">仅在首页前台离线监听。说 Hello Hello，轻震后再用三星语音输入提问。输入、回复或朗读期间暂停监听。会增加耗电；息屏和后台不监听。</string>
+    <string name="foreground_wake_help">默认仅在首页离线监听。说 Hello Hello，轻震后进入三星语音输入。输入、回复或朗读期间暂停。需要息屏监听时，请开启下方选项。</string>
     <string name="wake_listening">Hello Hello · 待唤醒</string>
     <string name="wake_loading">唤醒准备中</string>
     <string name="wake_paused">唤醒已暂停</string>
@@ -255,4 +255,10 @@
     <string name="peer_voice_recording">%1$d秒 · 松开发送\n上滑取消</string>
     <string name="peer_voice_cancel">%1$d秒 · 松开取消</string>
     <string name="peer_voice_loading">语音正在接收，请稍后重试</string>
+    <string name="desktop_contact">电脑</string>
+    <string name="background_wake">息屏与后台监听</string>
+    <string name="background_wake_help">通过麦克风常驻通知持续监听 Hello Hello，会增加耗电。后台唤醒后轻震，点击通知进入语音。重启后需打开应用恢复。</string>
+    <string name="background_wake_running">正在监听 Hello Hello</string>
+    <string name="background_wake_detected">已听到唤醒词，点击开始说话</string>
+    <string name="background_wake_stop">停止监听</string>
 </resources>

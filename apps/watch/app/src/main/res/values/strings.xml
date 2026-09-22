@@ -165,7 +165,7 @@
     <string name="background_enabled">Keep running in background</string>
     <string name="follow_speech">Follow speech</string>
     <string name="foreground_wake">Hello Hello wake-up</string>
-    <string name="foreground_wake_help">Offline, foreground only. Say Hello Hello, wait for a vibration, then ask your question using Samsung voice input. Pauses while typing, replying or speaking. Uses additional battery; screen-off and background wake-up are not supported.</string>
+    <string name="foreground_wake_help">Listens offline on the home screen by default. Say Hello Hello, then speak after the vibration. Pauses while typing, replying or speaking. Enable the option below to listen with the screen off.</string>
     <string name="wake_listening">Hello Hello · ready</string>
     <string name="wake_loading">Preparing wake-up</string>
     <string name="wake_paused">Wake-up paused</string>
@@ -255,4 +255,10 @@
     <string name="peer_voice_recording">%1$d s · Release to send\nSlide up to cancel</string>
     <string name="peer_voice_cancel">%1$d s · Release to cancel</string>
     <string name="peer_voice_loading">Voice is still downloading. Try again shortly.</string>
+    <string name="desktop_contact">Desktop</string>
+    <string name="background_wake">Screen-off and background listening</string>
+    <string name="background_wake_help">Keep Hello Hello listening with a microphone notification. Uses more battery. After a background wake, tap the notification to speak. Open the app to resume after a restart.</string>
+    <string name="background_wake_running">Listening for Hello Hello</string>
+    <string name="background_wake_detected">Tap to start voice input</string>
+    <string name="background_wake_stop">Stop listening</string>
 </resources>

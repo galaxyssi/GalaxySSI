@@ -48,10 +48,10 @@ internal class WatchPeerAudio(context: Context, private val queue: (String, JSON
                 .put("data_b64", Base64.encodeToString(part, Base64.NO_WRAP))) } finally { part.fill(0) }
         } finally { bytes.fill(0) }
     }
-    fun accept(peer: String, route: String, payload: JSONObject) {
+    fun accept(peer: String, route: String, payload: JSONObject, desktop: Boolean = false) {
         val id = payload.getString("transfer_id")
         require(id.matches(digest) && payload.optString("client_route_id") == route)
-        require(payload.optString("conversation_id") == WatchPeerProtocol.conversation(peer, GalaxySSICrypto.localGalaxySSIId()))
+        require(payload.optString("conversation_id") == if (desktop) "peer:$route" else WatchPeerProtocol.conversation(peer, GalaxySSICrypto.localGalaxySSIId()))
         if (payload.optString("type") == "input_attachment_receipt") {
             val raw = outgoing.readString(id, "").takeIf { it.isNotBlank() } ?: return
             val record = JSONObject(raw); val m = record.getJSONObject("manifest")
