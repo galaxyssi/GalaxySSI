@@ -257,264 +257,25 @@ internal fun MainActivity.renderControlCenterHome() {
     renderControlCenterHomePage(buildControlCenterHomePage(), content)
 }
 
-internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
-    val state = mobileNativeAgent.snapshot()
-    val tools = mobileNativeAgent.nativeToolCatalog()
-    val availableTools = tools.count { it.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE }
-    val toolsNeedingAttention = tools.size - availableTools
-    val availableResources = controlCenterResourceTargets(state.callableTargets)
-        .count { it.status == AgentConnectorStatus.AVAILABLE }
-    val trustedDeviceCount = desktopSecuritySummaries(activePcConnectorContacts()).size
-    val memoryCount = mobileNativeAgent.memoryStore.count()
-    val (knowledgeCount, knowledgeCountLabel) = knowledgeSourceCountState()
-    val recentTasks = state.recentTasks.size
-    val safety = mobileNativeAgent.safetySettings()
-    val planner = mobileNativeAgent.modelPlannerSettings()
-    val privacyProtected = !planner.shareScreenText && !planner.shareAgentOutputsWithPlanner
-    val secure = GalaxySSIMqttClient.isConnected() && GalaxySSIMqttClient.isSecureReady()
-    val homeAssistant = HomeAssistantSettingsStore.load(this)
-    val homeAssistantReady = homeAssistant.configured
-    val onDeviceRuntime = AgentOnDeviceRuntimeManager(this).status()
-    val localModelInstalled = LocalModelInferenceRuntime.ready(this)
-    val globalRuntime = if (isGlobalSuperAgentRuntimeInitialized()) {
-        globalSuperAgentRuntime
-    } else GlobalSuperAgentRuntime.get(this)
-    val globalDashboard = globalRuntime.cachedDashboard()
-    val globalSettings = globalRuntime.cachedSettings()
-    val remoteControlDevices = desktopControlDevices()
-    val remoteControlSnapshots = remoteControlDevices.map { device ->
-        DesktopRemoteControl.snapshot(this, device.id)
-    }
-    val remoteControlStatus = when {
-        remoteControlDevices.isEmpty() -> getString(R.string.status_needs_setup)
-        remoteControlSnapshots.any { it.authorized } -> getString(R.string.status_enabled)
-        remoteControlSnapshots.any { it.pending } -> getString(R.string.desktop_control_pending)
-        remoteControlSnapshots.any { it.enabled } -> getString(R.string.desktop_control_not_authorized)
-        else -> getString(R.string.desktop_control_executor_off)
-    }
-    val remoteControlTone = when {
-        remoteControlSnapshots.any { it.authorized } -> ControlCenterTone.GREEN
-        remoteControlSnapshots.any { it.pending } -> ControlCenterTone.AMBER
-        remoteControlDevices.isEmpty() -> ControlCenterTone.NEUTRAL
-        else -> ControlCenterTone.BLUE
-    }
-    val homeRows = linkedMapOf(
-        ControlCenterRoute.GLOBAL_AGENT to ccRouteRow(
-            ControlCenterRoute.GLOBAL_AGENT,
-            getString(R.string.cc_global_agent_title),
-            getString(
-                R.string.cc_global_agent_home_subtitle,
-                globalDashboard.topicCount,
-                globalDashboard.activeGoalCount,
-                globalDashboard.pendingInsightCount
-            ),
-            R.drawable.ic_agent_node,
-            getString(if (globalSettings.enabled) R.string.cc_status_online else R.string.on_device_agent_status_paused),
-            if (globalSettings.enabled) ControlCenterTone.VIOLET else ControlCenterTone.AMBER
+internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec =
+    ControlCenterPageSpec(
+        hero = ControlCenterHeroSpec(
+            title = getString(R.string.settings_my_galaxyssi),
+            subtitle = getString(R.string.my_agent_personal_subtitle),
+            iconRes = R.drawable.galaxyssi_mark_large,
+            preserveIconColor = true,
+            titleActionId = "profile.nickname",
+            trailingActionId = "profile.qr",
+            trailingIconRes = R.drawable.ic_qr,
+            trailingContentDescription = getString(R.string.contact_my_qr_title)
         ),
-        ControlCenterRoute.PHONE_CAPABILITIES to ccRouteRow(
-            ControlCenterRoute.PHONE_CAPABILITIES,
-            getString(R.string.cc_phone_title),
-            getString(R.string.cc_phone_subtitle, availableTools, toolsNeedingAttention),
-            R.drawable.ic_agent_control,
-            "$availableTools/${tools.size}",
-            if (availableTools > 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.SMART_SPACES to ccRouteRow(
-            ControlCenterRoute.SMART_SPACES,
-            R.string.cc_spaces_title,
-            R.string.cc_spaces_subtitle,
-            R.drawable.ic_device_node,
-            getString(
-                when {
-                    !homeAssistant.credentialsConfigured -> R.string.cc_status_not_configured
-                    homeAssistantReady -> R.string.status_enabled
-                    else -> R.string.common_off
-                }
-            ),
-            if (homeAssistantReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.RESOURCE_ROUTING to ccRouteRow(
-            ControlCenterRoute.RESOURCE_ROUTING,
-            R.string.cc_resource_routing_title,
-            R.string.cc_resource_routing_subtitle,
-            R.drawable.ic_settings_model,
-            getString(if (availableResources > 0) R.string.cc_status_available else R.string.status_needs_setup),
-            if (availableResources > 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.ON_DEVICE_RUNTIME to ccRouteRow(
-            ControlCenterRoute.ON_DEVICE_RUNTIME,
-            R.string.cc_runtime_title,
-            R.string.cc_runtime_subtitle,
-            R.drawable.ic_settings_diagnostics,
-            getString(if (onDeviceRuntime.backendReady) R.string.cc_status_ready else R.string.status_needs_setup),
-            if (onDeviceRuntime.backendReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.VOICE to ccRouteRow(
-            ControlCenterRoute.VOICE,
-            R.string.cc_voice_title,
-            R.string.cc_voice_subtitle,
-            R.drawable.ic_settings_voice,
-            getString(if (VoiceAssistantSettings.get(this).enabled) R.string.status_enabled else R.string.common_off),
-            ControlCenterTone.BLUE
-        ),
-        ControlCenterRoute.MEMORY to ccRouteRow(
-            ControlCenterRoute.MEMORY,
-            getString(R.string.cc_memory_title),
-            getString(R.string.cc_memory_subtitle, memoryCount),
-            R.drawable.ic_agent_memory,
-            getString(if (safety.memoryCapture) R.string.status_enabled else R.string.common_off),
-            if (safety.memoryCapture) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
-        ),
-        ControlCenterRoute.KNOWLEDGE to ccRouteRow(
-            ControlCenterRoute.KNOWLEDGE,
-            getString(R.string.cc_knowledge_title),
-            knowledgeCount?.let { getString(R.string.cc_knowledge_subtitle, it) } ?: knowledgeCountLabel,
-            R.drawable.ic_agent_knowledge,
-            knowledgeCountLabel,
-            ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.LEARNING to ccRouteRow(
-            ControlCenterRoute.LEARNING,
-            R.string.cc_learning_title,
-            R.string.cc_learning_subtitle,
-            R.drawable.ic_agent_skill,
-            agentLearningEngine.proposals(AgentLearningProposalStatus.PENDING).size.toString(),
-            ControlCenterTone.VIOLET
-        ),
-        ControlCenterRoute.AGENT_CORE to ccRouteRow(
-            ControlCenterRoute.AGENT_CORE,
-            R.string.cc_agent_identity_title,
-            R.string.cc_agent_identity_subtitle,
-            R.drawable.ic_agent_node,
-            getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_status_online),
-            if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN
-        ),
-        ControlCenterRoute.MCP to ccRouteRow(
-            ControlCenterRoute.MCP,
-            R.string.agent_capability_library_title,
-            R.string.agent_capability_library_subtitle,
-            R.drawable.ic_agent_skill,
-            AgentDefaultCapabilityCatalog.marketplaceItems(
-                mobileNativeAgent.nativeToolCatalog(),
-                agentMcpRegistry.list(),
-                agentSkillRuntime.list()
-            ).count {
-                it.installState in setOf(
-                    AgentMarketplaceInstallState.BUILT_IN,
-                    AgentMarketplaceInstallState.INSTALLED
-                )
-            }.toString(),
-            ControlCenterTone.VIOLET
-        ),
-        ControlCenterRoute.SELF_EVOLUTION to ccRouteRow(
-            ControlCenterRoute.SELF_EVOLUTION,
-            R.string.cc_evolution_title,
-            R.string.cc_evolution_subtitle,
-            R.drawable.ic_reset_data,
-            getString(
-                R.string.cc_evolution_candidate_count,
-                AgentSelfEvolutionService.manager(this).list(500)
-                    .count { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL }
-            ),
-            ControlCenterTone.VIOLET
-        ),
-        ControlCenterRoute.DATA_BACKUP to ccRouteRow(
-            ControlCenterRoute.DATA_BACKUP,
-            R.string.cc_identity_recovery_title,
-            R.string.cc_identity_recovery_subtitle,
-            R.drawable.ic_settings_upload,
-            "",
-            ControlCenterTone.VIOLET
-        ),
-        ControlCenterRoute.GENERAL to ccRouteRow(
-            ControlCenterRoute.GENERAL,
-            R.string.cc_general_title,
-            R.string.cc_general_subtitle,
-            R.drawable.ic_tab_settings,
-            "",
-            ControlCenterTone.NEUTRAL
-        )
-    )
-    val homeLeadingRows = mapOf(
-        ControlCenterHomeGroup.MODELS to listOf(
-            ControlCenterRowSpec(
-                actionId = "local_model.open",
-                title = getString(R.string.local_model_title),
-                subtitle = getString(R.string.local_model_search_subtitle),
-                iconRes = R.drawable.ic_local_model,
-                status = getString(
-                    if (localModelInstalled) {
-                        R.string.local_model_download_ready
-                    } else {
-                        R.string.status_needs_setup
-                    }
-                ),
-                tone = if (localModelInstalled) ControlCenterTone.GREEN else ControlCenterTone.BLUE
+        sections = ControlCenterHomeGrouping.orderedGroups.map { group ->
+            ControlCenterSectionSpec(
+                controlCenterHomeGroupTitle(group),
+                ControlCenterHomeGrouping.routes(group).map { myAgentHomeRow(it) }
             )
-        )
+        }
     )
-    val homeTrailingRows = mapOf(
-        ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
-            ControlCenterRowSpec(
-                actionId = "desktop.remote_control",
-                title = getString(R.string.desktop_control_title),
-                subtitle = getString(R.string.desktop_control_home_subtitle),
-                iconRes = R.drawable.ic_device_node,
-                status = remoteControlStatus,
-                tone = remoteControlTone
-            )
-        ),
-        ControlCenterHomeGroup.SECURITY_DATA to listOf(
-            ControlCenterRowSpec(
-                actionId = "general.about",
-                title = getString(R.string.cc_about_title),
-                subtitle = getString(R.string.cc_about_subtitle),
-                iconRes = R.drawable.ic_info_outline,
-                status = "v${installedVersionName()}",
-                tone = ControlCenterTone.NEUTRAL
-            )
-        )
-    )
-
-    return ControlCenterPageSpec(
-            hero = ControlCenterHeroSpec(
-                title = getString(R.string.settings_my_galaxyssi),
-                subtitle = getString(R.string.cc_product_subtitle),
-                iconRes = R.drawable.galaxyssi_mark_large,
-                preserveIconColor = true,
-                titleActionId = "profile.nickname",
-                trailingActionId = "profile.qr",
-                trailingIconRes = R.drawable.ic_qr,
-                trailingContentDescription = getString(R.string.contact_my_qr_title),
-                badges = listOf(
-                    ControlCenterBadgeSpec(
-                        getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_core_ready),
-                        if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN
-                    ),
-                    ControlCenterBadgeSpec(getString(R.string.cc_trusted_devices_badge, trustedDeviceCount), ControlCenterTone.BLUE),
-                    ControlCenterBadgeSpec(
-                        getString(if (privacyProtected) R.string.cc_privacy_badge else R.string.cc_status_review),
-                        if (privacyProtected) ControlCenterTone.NEUTRAL else ControlCenterTone.AMBER
-                    )
-                ),
-                metrics = listOf(
-                    ControlCenterMetricSpec(availableResources.toString(), getString(R.string.cc_metric_resources)),
-                    ControlCenterMetricSpec(recentTasks.toString(), getString(R.string.cc_metric_today_tasks)),
-                    ControlCenterMetricSpec(getString(if (secure) R.string.cc_status_secure else R.string.cc_status_normal), getString(R.string.cc_metric_security))
-                )
-            ),
-            sections = ControlCenterHomeGrouping.orderedGroups.map { group ->
-                ControlCenterSectionSpec(
-                    controlCenterHomeGroupTitle(group),
-                    homeLeadingRows[group].orEmpty() +
-                        ControlCenterHomeGrouping.routes(group)
-                            .mapNotNull { route -> homeRows[route] } +
-                        homeTrailingRows[group].orEmpty()
-                )
-            }
-    )
-}
 
 internal fun MainActivity.renderControlCenterHomePage(
     page: ControlCenterPageSpec,
@@ -527,16 +288,7 @@ internal fun MainActivity.renderControlCenterHomePage(
 }
 
 internal fun MainActivity.controlCenterHomeGroupTitle(group: ControlCenterHomeGroup): String =
-    getString(
-        when (group) {
-            ControlCenterHomeGroup.CONNECTED_DEVICES -> R.string.cc_section_connected_devices
-            ControlCenterHomeGroup.MODELS -> R.string.cc_section_models_runtime
-            ControlCenterHomeGroup.VOICE_INTERACTION -> R.string.cc_section_voice_interaction
-            ControlCenterHomeGroup.MEMORY_KNOWLEDGE -> R.string.cc_section_memory_knowledge
-            ControlCenterHomeGroup.SKILLS_TASKS -> R.string.cc_section_skills_tasks
-            ControlCenterHomeGroup.SECURITY_DATA -> R.string.cc_section_security_data
-        }
-    )
+    getString(if (group == ControlCenterHomeGroup.COMMON) R.string.my_agent_common else R.string.my_agent_settings)
 
 internal fun MainActivity.ccRouteRow(
     route: ControlCenterRoute,
@@ -573,6 +325,7 @@ internal fun MainActivity.ccRouteRow(
 internal fun MainActivity.routeAction(route: ControlCenterRoute): String = "route:${route.wireValue}"
 
 internal fun MainActivity.handleControlCenterAction(actionId: String) {
+    if (handleMyAgentDesignAction(actionId)) return
     if (actionId.startsWith("route:")) {
         ControlCenterRoute.fromWireValue(actionId.substringAfter("route:"))?.let {
             openControlCenterDestination(ControlCenterDestination(it))
@@ -966,6 +719,17 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
     renderingControlCenterDestination = true
     try {
         when (destination.route) {
+            ControlCenterRoute.MODEL_HUB -> renderMyAgentModelsPage()
+            ControlCenterRoute.DEVICE_HUB -> renderMyAgentDevicesPage()
+            ControlCenterRoute.MEMORY_HUB -> renderMyAgentMemoryHub()
+            ControlCenterRoute.SKILLS_HUB -> renderMyAgentSkillsPage()
+            ControlCenterRoute.SAFETY_HUB -> renderMyAgentSafetyPage()
+            ControlCenterRoute.PROACTIVE_HUB -> renderMyAgentProactivePage()
+            ControlCenterRoute.OBSIDIAN_HUB -> renderMyAgentObsidianPage()
+            ControlCenterRoute.STORAGE_HUB -> renderMyAgentStoragePage()
+            ControlCenterRoute.NOTIFICATIONS_HUB -> renderMyAgentNotificationsPage()
+            ControlCenterRoute.DIAGNOSTICS_HUB -> renderMyAgentDiagnosticsPage()
+            ControlCenterRoute.PERMISSIONS_HUB -> renderControlCenterPermissionsPage()
             ControlCenterRoute.SYSTEM_STATUS -> renderControlCenterSystemStatusPage()
             ControlCenterRoute.GLOBAL_AGENT -> renderControlCenterGlobalAgentPage()
             ControlCenterRoute.AGENT_CORE -> renderControlCenterAgentCorePage()

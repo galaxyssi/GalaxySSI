@@ -360,6 +360,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val controlCenterHomeRefreshPolicy =
         ControlCenterHomeRefreshPolicy(CONTROL_CENTER_HOME_CACHE_MILLIS)
     internal val controlCenterBackStack = ArrayDeque<ControlCenterDestination>()
+    internal val myAgentExpandedSections = mutableSetOf<String>()
     internal var controlCenterDestination: ControlCenterDestination? = null
     internal var renderingControlCenterDestination = false
     internal var featureBackAction: (() -> Unit)? = null
@@ -1065,7 +1066,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         featureTitle = findViewById(R.id.featureTitle)
         featureContent = findViewById(R.id.featureContent)
         featureBackButton = findViewById(R.id.featureBackButton)
-        controlCenterRenderer = ControlCenterRenderer(this)
+        controlCenterRenderer = ControlCenterRenderer(this, myAgentExpandedSections)
         mainTitle = findViewById(R.id.mainTitle)
         mainBackButton = findViewById(R.id.mainBackButton)
         mainActionButton = findViewById(R.id.mainActionButton)

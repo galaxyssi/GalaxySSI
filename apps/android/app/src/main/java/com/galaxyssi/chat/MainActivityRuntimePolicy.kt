@@ -682,30 +682,16 @@ internal fun MainActivity.showAgentPlannerSettingsPage() {
 
 internal fun MainActivity.renderControlCenterExecutionPolicyPage() {
     val safety = mobileNativeAgent.safetySettings()
-    val taskBudget = AgentTaskBudgetStore(this).load()
-    val planner = mobileNativeAgent.modelPlannerSettings()
-    val privacyProtected = !planner.shareScreenText && !planner.shareAgentOutputsWithPlanner
-    val notificationsEnabled = appNotificationsEnabled()
-    showControlCenterFeature(
-        getString(R.string.cc_execution_policy_title),
-        ControlCenterPageSpec(
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_task_control),
-                    listOf(
-                        ControlCenterRowSpec("agent.task_execution_mode", getString(R.string.cc_task_execution_mode_title), getString(R.string.cc_task_execution_mode_subtitle), R.drawable.ic_agent_control, taskExecutionModeLabel(safety.taskExecutionMode), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("", getString(R.string.cc_max_concurrency_title), getString(R.string.cc_max_concurrency_subtitle), R.drawable.ic_agent_history, "3 + 1", ControlCenterTone.BLUE, showChevron = false),
-                        ControlCenterRowSpec("agent.planner", getString(R.string.cc_tool_budget_title), getString(R.string.cc_tool_budget_subtitle), R.drawable.ic_agent_control, planner.maxToolCalls.toString(), ControlCenterTone.VIOLET),
-                        ControlCenterRowSpec("general.notifications", getString(R.string.cc_long_task_notifications_title), getString(R.string.cc_long_task_notifications_subtitle), R.drawable.ic_settings_notification, getString(if (notificationsEnabled) R.string.status_enabled else R.string.status_needs_setup), if (notificationsEnabled) ControlCenterTone.GREEN else ControlCenterTone.AMBER)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_privacy_boundary),
-                    listOf(ControlCenterRowSpec("agent.planner", getString(R.string.cc_sensitive_local_title), getString(R.string.cc_sensitive_local_subtitle), R.drawable.ic_security_shield, getString(if (privacyProtected) R.string.status_enabled else R.string.cc_status_review), if (privacyProtected) ControlCenterTone.GREEN else ControlCenterTone.AMBER))
-                )
-            )
-        )
-    )
+    showControlCenterFeature(getString(R.string.my_agent_execution), ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec("", listOf(
+            myAgentRow("agent.task_execution_mode", R.string.cc_task_execution_mode_title, R.drawable.ic_security_shield,
+                taskExecutionModeLabel(safety.taskExecutionMode)),
+            myAgentRow("agent.planner", R.string.cc_planner_settings_title, R.drawable.ic_agent_control),
+            myAgentRow("agent.task_budget", R.string.cc_task_budget_title, R.drawable.ic_agent_history),
+            myAgentRow("agent.toggle_pause", R.string.cc_pause_all_title, R.drawable.ic_agent_history)
+                .copy(switchValue = safety.executionPaused, showChevron = false)
+        ))
+    )))
 }
 
 internal fun MainActivity.renderControlCenterRoutingPage() {

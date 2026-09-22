@@ -416,6 +416,10 @@ internal fun MainActivity.localModelStatusCard(
     profile: LocalModelRuntimeProfile,
     estimate: LocalModelRuntimeEstimate
 ): View {
+    if (myAgentSurfaceActive()) return featureValueRow(
+        profile.displayName, localModelPreflightSummary(estimate), R.drawable.ic_local_model,
+        localModelReadinessLabel(estimate.readiness)
+    )
     val readinessColor = when (estimate.readiness) {
         LocalModelRuntimeReadiness.READY -> getColorCompat(R.color.galaxyssi_green)
         LocalModelRuntimeReadiness.CAUTION -> Color.parseColor("#D48B18")
@@ -616,8 +620,8 @@ internal fun MainActivity.featureValueRow(
     return LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = getDrawable(R.drawable.glass_card_background)
+        setPadding(dp(if (myAgentSurfaceActive()) 20 else 14), dp(13), dp(if (myAgentSurfaceActive()) 20 else 14), dp(13))
+        background = if (myAgentSurfaceActive()) android.graphics.drawable.ColorDrawable(getColorCompat(R.color.surface_bg)) else getDrawable(R.drawable.glass_card_background)
         addView(featureIcon(iconRes, featureIconColor(iconRes)))
         addView(LinearLayout(this@featureValueRow).apply {
             orientation = LinearLayout.VERTICAL
@@ -636,17 +640,17 @@ internal fun MainActivity.featureValueRow(
             }
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(TextView(this@featureValueRow).apply {
-            text = value.ifBlank { "?" }
+            text = value.ifBlank { if (myAgentSurfaceActive()) "" else "?" }
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = if (value.isBlank()) 22f else 12.5f
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
             maxLines = valueMaxLines
         }, LinearLayout.LayoutParams(dp(120), LinearLayout.LayoutParams.WRAP_CONTENT))
-        minimumHeight = dp(64)
+        minimumHeight = dp(if (myAgentSurfaceActive()) 56 else 64)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(8) }
+        ).apply { bottomMargin = if (myAgentSurfaceActive()) 1 else dp(8) }
     }
 }
 
@@ -654,8 +658,8 @@ internal fun MainActivity.featureSwitchRow(title: String, subtitle: String, icon
     return LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = getDrawable(R.drawable.glass_card_background)
+        setPadding(dp(if (myAgentSurfaceActive()) 20 else 14), dp(13), dp(if (myAgentSurfaceActive()) 20 else 14), dp(13))
+        background = if (myAgentSurfaceActive()) android.graphics.drawable.ColorDrawable(getColorCompat(R.color.surface_bg)) else getDrawable(R.drawable.glass_card_background)
         addView(featureIcon(iconRes, featureIconColor(iconRes)))
         addView(LinearLayout(this@featureSwitchRow).apply {
             orientation = LinearLayout.VERTICAL
@@ -672,11 +676,11 @@ internal fun MainActivity.featureSwitchRow(title: String, subtitle: String, icon
             })
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(switchPill(checked), LinearLayout.LayoutParams(dp(46), dp(26)))
-        minimumHeight = dp(64)
+        minimumHeight = dp(if (myAgentSurfaceActive()) 56 else 64)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(8) }
+        ).apply { bottomMargin = if (myAgentSurfaceActive()) 1 else dp(8) }
     }
 }
 
@@ -713,7 +717,7 @@ internal fun MainActivity.featureStorageRow(): View {
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = getDrawable(R.drawable.glass_card_background)
+        background = if (myAgentSurfaceActive()) android.graphics.drawable.ColorDrawable(getColorCompat(R.color.surface_bg)) else getDrawable(R.drawable.glass_card_background)
         addView(LinearLayout(this@featureStorageRow).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -744,16 +748,17 @@ internal fun MainActivity.featureStorageRow(): View {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(8) }
+        ).apply { bottomMargin = if (myAgentSurfaceActive()) 1 else dp(8) }
     }
 }
 
 internal fun MainActivity.addSectionTitle(title: String) {
     featureContent.addView(TextView(this).apply {
+        tag = "my-agent-section:$title"
         text = title
         setTextColor(getColorCompat(R.color.text_secondary))
         textSize = 12f
-        setPadding(dp(4), dp(4), 0, dp(7))
+        setPadding(dp(if (myAgentSurfaceActive()) 20 else 4), dp(16), dp(20), dp(9))
     }, LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT
@@ -761,12 +766,13 @@ internal fun MainActivity.addSectionTitle(title: String) {
 }
 
 internal fun MainActivity.featureHeroCard(title: String, subtitle: String, iconRes: Int, colorHex: String, badge: String): View {
+    if (myAgentSurfaceActive()) return featureValueRow(title, subtitle, iconRes, badge, valueMaxLines = 3)
     val color = Color.parseColor(colorHex)
     return LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = getDrawable(R.drawable.glass_card_background)
+        background = if (myAgentSurfaceActive()) android.graphics.drawable.ColorDrawable(getColorCompat(R.color.surface_bg)) else getDrawable(R.drawable.glass_card_background)
         addView(featureIcon(iconRes, color), LinearLayout.LayoutParams(dp(48), dp(48)))
         addView(LinearLayout(this@featureHeroCard).apply {
             orientation = LinearLayout.VERTICAL
@@ -798,8 +804,8 @@ internal fun MainActivity.featureRow(title: String, subtitle: String, iconRes: I
         gravity = Gravity.CENTER_VERTICAL
         isClickable = action.isNotBlank()
         isFocusable = action.isNotBlank()
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = getDrawable(R.drawable.glass_card_background)
+        setPadding(dp(if (myAgentSurfaceActive()) 20 else 14), dp(13), dp(if (myAgentSurfaceActive()) 20 else 14), dp(13))
+        background = if (myAgentSurfaceActive()) android.graphics.drawable.ColorDrawable(getColorCompat(R.color.surface_bg)) else getDrawable(R.drawable.glass_card_background)
         addView(featureIcon(iconRes, featureIconColor(iconRes)))
         addView(LinearLayout(this@featureRow).apply {
             orientation = LinearLayout.VERTICAL
@@ -807,8 +813,8 @@ internal fun MainActivity.featureRow(title: String, subtitle: String, iconRes: I
             addView(TextView(this@featureRow).apply {
                 text = title
                 setTextColor(getColorCompat(R.color.text_primary))
-                textSize = 15.5f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                textSize = 15f
+                setTypeface(typeface, if (myAgentSurfaceActive()) android.graphics.Typeface.NORMAL else android.graphics.Typeface.BOLD)
             })
             if (subtitle.isNotBlank()) {
                 addView(TextView(this@featureRow).apply {
@@ -825,11 +831,11 @@ internal fun MainActivity.featureRow(title: String, subtitle: String, iconRes: I
             gravity = Gravity.CENTER
             maxLines = 1
         }, LinearLayout.LayoutParams(dp(58), dp(34)))
-        minimumHeight = dp(72)
+        minimumHeight = dp(if (myAgentSurfaceActive()) 56 else 72)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(9) }
+        ).apply { bottomMargin = if (myAgentSurfaceActive()) 1 else dp(9) }
         if (action.isNotBlank()) {
             setOnClickListener {
                 if (action == getString(R.string.common_copy)) {
@@ -851,7 +857,7 @@ internal fun MainActivity.modelSwitchRow(title: String, action: String, isSelect
         isClickable = true
         isFocusable = true
         setPadding(dp(14), dp(9), dp(14), dp(9))
-        background = getDrawable(R.drawable.glass_card_background)
+        background = if (myAgentSurfaceActive()) android.graphics.drawable.ColorDrawable(getColorCompat(R.color.surface_bg)) else getDrawable(R.drawable.glass_card_background)
         addView(featureIcon(R.drawable.ic_protocol_link, featureIconColor(R.drawable.ic_protocol_link)), LinearLayout.LayoutParams(dp(44), dp(44)))
         addView(LinearLayout(this@modelSwitchRow).apply {
             orientation = LinearLayout.VERTICAL
@@ -876,7 +882,7 @@ internal fun MainActivity.modelSwitchRow(title: String, action: String, isSelect
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(8) }
+        ).apply { bottomMargin = if (myAgentSurfaceActive()) 1 else dp(8) }
     }
 }
 
@@ -926,6 +932,12 @@ internal fun MainActivity.itemManagementFor(action: String): String {
 }
 
 internal fun MainActivity.featureIcon(iconRes: Int, color: Int): ImageView {
+    if (myAgentSurfaceActive()) return ImageView(this).apply {
+        setImageResource(iconRes)
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
+        if (!isFullColorFeatureIcon(iconRes)) imageTintList = android.content.res.ColorStateList.valueOf(getColorCompat(R.color.text_primary))
+        layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+    }
     if (isFullColorFeatureIcon(iconRes)) {
         return ImageView(this).apply {
             setImageResource(iconRes)

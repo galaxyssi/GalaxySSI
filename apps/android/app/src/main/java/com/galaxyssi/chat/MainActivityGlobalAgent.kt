@@ -225,339 +225,45 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal fun MainActivity.renderControlCenterGlobalAgentPage() {
-    val runtime = if (isGlobalSuperAgentRuntimeInitialized()) {
-        globalSuperAgentRuntime
-    } else GlobalSuperAgentRuntime.get(this)
-    val settings = runtime.settings()
-    val modelBudget = runtime.modelCallBudgetSnapshot()
-    val dashboard = runtime.dashboard()
-    val continuity = runtime.continuitySnapshot()
-    val cognition = runtime.cognitionTasks()
-    val research = runtime.researchTasks()
-    val runs = runtime.autonomousRuns()
-    val discovery = runtime.proactiveDiscoveryState()
-    val reasoningResources = GlobalAgentResourceResolver(this).route(
-        "Perform background reasoning and research for the user's authorized personal goals.",
-        settings.allowPairedAgentCognition,
-        settings.allowCloudCognition
-    )
-    val activeResearch = research.count {
-        it.status in setOf(
-            GlobalResearchTaskStatus.QUEUED,
-            GlobalResearchTaskStatus.RUNNING,
-            GlobalResearchTaskStatus.SCHEDULED,
-            GlobalResearchTaskStatus.WAITING_FOR_RESOURCE
-        )
-    }
-    val activeCognition = dashboard.queuedCognitionCount
-    val activeRuns = dashboard.activeAutonomousRunCount
-    val runningResearch = research.count { it.status == GlobalResearchTaskStatus.RUNNING }
-    val waitingResearch = research.count { it.status == GlobalResearchTaskStatus.WAITING_FOR_RESOURCE }
-    val verifiedResearch = research.count {
-        it.status == GlobalResearchTaskStatus.COMPLETED && it.evidenceLedger.verified
-    }
-    val completedRuns = runs.count {
-        it.status in setOf(GlobalAutonomousRunStatus.COMPLETED, GlobalAutonomousRunStatus.PARTIAL)
-    }
-    val obsidianSettings = ObsidianAndroidBridge.settings(this)
-    val obsidianCandidateCount = ObsidianAndroidBridge.pendingCandidates(this).size
-    showControlCenterFeature(
-        getString(R.string.cc_global_agent_title),
-        ControlCenterPageSpec(
-            banner = when {
-                dashboard.unresolvedConflictCount > 0 -> ControlCenterBannerSpec(
-                    title = getString(R.string.cc_global_conflicts_banner, dashboard.unresolvedConflictCount),
-                    subtitle = getString(R.string.cc_global_conflicts_banner_subtitle),
-                    iconRes = R.drawable.ic_info_outline,
-                    tone = ControlCenterTone.AMBER,
-                    actionId = "global.world.conflicts"
-                )
-                reasoningResources.isEmpty() && (activeCognition > 0 || activeResearch > 0) ->
-                    ControlCenterBannerSpec(
-                        title = getString(R.string.cc_global_resource_needed_title),
-                        subtitle = getString(R.string.cc_global_resource_needed_subtitle),
-                        iconRes = R.drawable.ic_settings_model,
-                        tone = ControlCenterTone.AMBER
-                    )
-                else -> null
-            },
-            hero = ControlCenterHeroSpec(
-                title = getString(R.string.cc_global_agent_title),
-                subtitle = getString(R.string.cc_global_agent_subtitle),
-                iconRes = R.drawable.galaxyssi_mark_large,
-                preserveIconColor = true,
-                badges = listOf(
-                    ControlCenterBadgeSpec(
-                        getString(if (settings.enabled) R.string.cc_global_understanding_active else R.string.on_device_agent_status_paused),
-                        if (settings.enabled) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-                    ),
-                    ControlCenterBadgeSpec(
-                        getString(if (settings.autonomousResearchEnabled) R.string.cc_global_research_active else R.string.common_off),
-                        if (settings.autonomousResearchEnabled) ControlCenterTone.BLUE else ControlCenterTone.NEUTRAL
-                    )
-                ),
-                metrics = listOf(
-                    ControlCenterMetricSpec(dashboard.topicCount.toString(), getString(R.string.cc_global_metric_topics)),
-                    ControlCenterMetricSpec(dashboard.crossConversationLinkCount.toString(), getString(R.string.cc_global_metric_links)),
-                    ControlCenterMetricSpec(dashboard.pendingInsightCount.toString(), getString(R.string.cc_global_metric_insights))
-                )
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_global_section_loop),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "global.world.links",
-                            getString(R.string.cc_global_loop_observe_title),
-                            getString(R.string.cc_global_loop_observe_subtitle),
-                            R.drawable.ic_agent_memory,
-                            getString(if (dashboard.pendingEventCount > 0) R.string.cc_global_status_running else R.string.cc_global_status_completed),
-                            if (dashboard.pendingEventCount > 0) ControlCenterTone.BLUE else ControlCenterTone.GREEN
-                        ),
-                        ControlCenterRowSpec(
-                            "global.cognition",
-                            getString(R.string.cc_global_loop_curiosity_title),
-                            getString(R.string.cc_global_loop_curiosity_subtitle),
-                            R.drawable.ic_tab_discover,
-                            getString(
-                                if (discovery.scanLeaseExpiresAtMillis > System.currentTimeMillis()) {
-                                    R.string.cc_global_status_running
-                                } else if (discovery.lastCompletedAtMillis > 0L) {
-                                    R.string.cc_global_status_completed
-                                } else R.string.cc_global_status_queued
-                            ),
-                            if (discovery.lastCompletedAtMillis > 0L) ControlCenterTone.GREEN else ControlCenterTone.BLUE
-                        ),
-                        ControlCenterRowSpec(
-                            "global.research",
-                            getString(R.string.cc_global_loop_research_title),
-                            getString(R.string.cc_global_loop_research_subtitle),
-                            R.drawable.ic_agent_knowledge,
-                            getString(
-                                when {
-                                    runningResearch > 0 -> R.string.cc_global_status_running
-                                    waitingResearch > 0 && reasoningResources.isEmpty() -> R.string.cc_global_status_waiting
-                                    activeResearch > 0 -> R.string.cc_global_status_queued
-                                    else -> R.string.cc_global_status_completed
-                                }
-                            ),
-                            when {
-                                runningResearch > 0 -> ControlCenterTone.BLUE
-                                waitingResearch > 0 && reasoningResources.isEmpty() -> ControlCenterTone.AMBER
-                                else -> ControlCenterTone.GREEN
-                            }
-                        ),
-                        ControlCenterRowSpec(
-                            "global.research",
-                            getString(R.string.cc_global_loop_verify_title),
-                            getString(R.string.cc_global_loop_verify_subtitle),
-                            R.drawable.ic_security_shield,
-                            verifiedResearch.toString(),
-                            if (verifiedResearch > 0) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
-                        ),
-                        ControlCenterRowSpec(
-                            "global.runs",
-                            getString(R.string.cc_global_loop_plan_title),
-                            getString(R.string.cc_global_loop_plan_subtitle),
-                            R.drawable.ic_agent_history,
-                            getString(
-                                when {
-                                    activeRuns > 0 -> R.string.cc_global_status_running
-                                    completedRuns > 0 -> R.string.cc_global_status_completed
-                                    else -> R.string.cc_global_status_queued
-                                }
-                            ),
-                            if (activeRuns > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL
-                        ),
-                        ControlCenterRowSpec(
-                            "global.insights",
-                            getString(R.string.cc_global_loop_notify_title),
-                            getString(R.string.cc_global_loop_notify_subtitle),
-                            R.drawable.ic_settings_notification,
-                            dashboard.pendingInsightCount.toString(),
-                            if (dashboard.pendingInsightCount > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_global_section_autonomy),
-                    listOf(
-                        ControlCenterRowSpec("global.toggle_enabled", getString(R.string.cc_global_master_title), getString(R.string.cc_global_master_subtitle), R.drawable.ic_agent_node, switchValue = settings.enabled, showChevron = false),
-                        ControlCenterRowSpec("global.toggle_model_understanding", getString(R.string.cc_global_model_understanding_title), getString(R.string.cc_global_model_understanding_subtitle), R.drawable.ic_settings_model, switchValue = settings.modelUnderstandingEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_autonomous_preparation", getString(R.string.cc_global_autonomous_preparation_title), getString(R.string.cc_global_autonomous_preparation_subtitle), R.drawable.ic_agent_control, switchValue = settings.autonomousPreparationEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_autonomous_tools", getString(R.string.cc_global_autonomous_tools_title), getString(R.string.cc_global_autonomous_tools_subtitle), R.drawable.ic_agent_control, switchValue = settings.autonomousToolExecutionEnabled, showChevron = false, enabled = settings.enabled && settings.autonomousPreparationEnabled),
-                        ControlCenterRowSpec("global.toggle_dynamic_replanning", getString(R.string.cc_global_dynamic_replanning_title), getString(R.string.cc_global_dynamic_replanning_subtitle), R.drawable.ic_reset_data, switchValue = settings.dynamicAutonomousReplanningEnabled, showChevron = false, enabled = settings.enabled && settings.autonomousPreparationEnabled),
-                        ControlCenterRowSpec("global.toggle_long_horizon", getString(R.string.cc_global_long_horizon_toggle_title), getString(R.string.cc_global_long_horizon_toggle_subtitle), R.drawable.ic_agent_history, switchValue = settings.longHorizonPlanningEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_discovery", getString(R.string.cc_global_discovery_title), getString(R.string.cc_global_discovery_subtitle), R.drawable.ic_tab_discover, switchValue = settings.proactiveDiscoveryEnabled, showChevron = false, enabled = settings.enabled && settings.modelUnderstandingEnabled),
-                        ControlCenterRowSpec("global.toggle_proactive", getString(R.string.cc_global_proactive_title), getString(R.string.cc_global_proactive_subtitle), R.drawable.ic_agent_memory, switchValue = settings.proactiveInsightsEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_learning", getString(R.string.cc_global_learning_toggle_title), getString(R.string.cc_global_learning_toggle_subtitle), R.drawable.ic_agent_skill, switchValue = settings.adaptiveLearningEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_research", getString(R.string.cc_global_research_title), getString(R.string.cc_global_research_subtitle), R.drawable.ic_agent_knowledge, switchValue = settings.autonomousResearchEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_auto_conversations", getString(R.string.cc_global_topics_title), getString(R.string.cc_global_topics_subtitle), R.drawable.ic_agent_history, switchValue = settings.autoCreateConversationsEnabled, showChevron = false, enabled = settings.enabled),
-                        ControlCenterRowSpec("global.toggle_notifications", getString(R.string.cc_global_notifications_title), getString(R.string.cc_global_notifications_subtitle), R.drawable.ic_settings_notification, switchValue = settings.notificationsEnabled, showChevron = false, enabled = settings.enabled)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_global_section_world),
-                    listOf(
-                        ControlCenterRowSpec("global.world.goals", getString(R.string.cc_global_goals_title), getString(R.string.cc_global_goals_subtitle), R.drawable.ic_agent_node, dashboard.activeGoalCount.toString(), ControlCenterTone.VIOLET),
-                        ControlCenterRowSpec("global.world.tasks", getString(R.string.cc_global_tasks_title), getString(R.string.cc_global_tasks_subtitle), R.drawable.ic_agent_history, dashboard.activeTaskCount.toString(), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("global.world.conflicts", getString(R.string.cc_global_conflicts_title), getString(R.string.cc_global_conflicts_subtitle), R.drawable.ic_info_outline, dashboard.unresolvedConflictCount.toString(), if (dashboard.unresolvedConflictCount > 0) ControlCenterTone.AMBER else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("global.world.links", getString(R.string.cc_global_links_title), getString(R.string.cc_global_links_subtitle), R.drawable.ic_protocol_link, dashboard.crossConversationLinkCount.toString(), ControlCenterTone.GREEN)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_global_section_intelligence),
-                    listOf(
-                        ControlCenterRowSpec("global.cognition", getString(R.string.cc_global_cognition_queue_title), getString(R.string.cc_global_cognition_queue_subtitle), R.drawable.ic_settings_model, activeCognition.toString(), if (activeCognition > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("global.runs", getString(R.string.cc_global_runs_title), getString(R.string.cc_global_runs_subtitle), R.drawable.ic_agent_control, (activeRuns + dashboard.waitingConfirmationCount).toString(), if (activeRuns > 0) ControlCenterTone.GREEN else if (dashboard.waitingConfirmationCount > 0) ControlCenterTone.AMBER else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("global.long_horizon", getString(R.string.cc_global_long_horizon_title), getString(R.string.cc_global_long_horizon_subtitle), R.drawable.ic_agent_history, dashboard.longHorizonGoalCount.toString(), if (dashboard.blockedLongHorizonGoalCount > 0) ControlCenterTone.AMBER else if (dashboard.longHorizonGoalCount > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("global.research", getString(R.string.cc_global_research_queue_title), getString(R.string.cc_global_research_queue_subtitle), R.drawable.ic_agent_knowledge, activeResearch.toString(), if (activeResearch > 0) ControlCenterTone.BLUE else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("global.insights", getString(R.string.cc_global_pending_insights_title), getString(R.string.cc_global_pending_insights_subtitle), R.drawable.ic_agent_memory, dashboard.pendingInsightCount.toString(), if (dashboard.pendingInsightCount > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec("global.learning", getString(R.string.cc_global_learning_title), getString(R.string.cc_global_learning_subtitle), R.drawable.ic_agent_skill, getString(R.string.cc_global_learning_status, dashboard.feedbackCount, dashboard.learnedTopicCount), if (dashboard.feedbackCount > 0) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL),
-                        ControlCenterRowSpec(
-                            "global.continuity",
-                            getString(R.string.cc_global_continuity_title),
-                            getString(
-                                R.string.cc_global_continuity_subtitle,
-                                continuity.pendingEventCount,
-                                continuity.retryingEvents.size,
-                                continuity.quarantinedEvents.size
-                            ),
-                            R.drawable.ic_security_shield,
-                            getString(
-                                when {
-                                    continuity.quarantinedEvents.isNotEmpty() -> R.string.cc_global_continuity_attention
-                                    continuity.retryingEvents.isNotEmpty() || continuity.pendingEventCount > 0 -> R.string.cc_global_continuity_recovering
-                                    else -> R.string.cc_global_continuity_healthy
-                                }
-                            ),
-                            when {
-                                continuity.quarantinedEvents.isNotEmpty() -> ControlCenterTone.AMBER
-                                continuity.retryingEvents.isNotEmpty() || continuity.pendingEventCount > 0 -> ControlCenterTone.BLUE
-                                else -> ControlCenterTone.GREEN
-                            }
-                        ),
-                        ControlCenterRowSpec("global.process_now", getString(R.string.cc_global_process_now_title), getString(R.string.cc_global_process_now_subtitle), R.drawable.ic_reset_data, getString(R.string.cc_global_process_now_action), ControlCenterTone.GREEN, showChevron = false, enabled = settings.enabled)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_global_section_resources),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "global.daily_model_calls",
-                            getString(R.string.cc_global_daily_model_calls_title),
-                            getString(R.string.cc_global_daily_model_calls_subtitle),
-                            R.drawable.ic_settings_model,
-                            getString(
-                                R.string.cc_global_daily_model_calls_status,
-                                modelBudget.dispatchesInWindow,
-                                modelBudget.dailyLimit
-                            ),
-                            if (modelBudget.dispatchesInWindow >= modelBudget.dailyLimit) ControlCenterTone.AMBER else ControlCenterTone.BLUE
-                        ),
-                        ControlCenterRowSpec(
-                            "global.concurrent_model_calls",
-                            getString(R.string.cc_global_concurrent_model_calls_title),
-                            getString(R.string.cc_global_concurrent_model_calls_subtitle),
-                            R.drawable.ic_agent_history,
-                            getString(
-                                R.string.cc_global_concurrent_model_calls_status,
-                                modelBudget.activeCalls,
-                                modelBudget.concurrencyLimit
-                            ),
-                            if (modelBudget.activeCalls >= modelBudget.concurrencyLimit) ControlCenterTone.AMBER else ControlCenterTone.GREEN
-                        ),
-                        ControlCenterRowSpec(
-                            "global.daily_model_tokens",
-                            getString(R.string.cc_global_daily_model_tokens_title),
-                            getString(R.string.cc_global_daily_model_tokens_subtitle),
-                            R.drawable.ic_protocol_link,
-                            getString(
-                                R.string.cc_global_daily_model_tokens_status,
-                                formatCompactCount(modelBudget.totalTokensInWindow),
-                                formatCompactCount(modelBudget.dailyTokenLimit)
-                            ),
-                            if (modelBudget.totalTokensInWindow >= modelBudget.dailyTokenLimit) ControlCenterTone.AMBER else ControlCenterTone.VIOLET
-                        ),
-                        ControlCenterRowSpec(
-                            "global.daily_reported_cost",
-                            getString(R.string.cc_global_daily_reported_cost_title),
-                            getString(
-                                R.string.cc_global_daily_reported_cost_subtitle,
-                                modelBudget.unpricedDispatches
-                            ),
-                            R.drawable.ic_security_shield,
-                            getString(
-                                R.string.cc_global_daily_reported_cost_status,
-                                formatUsdMicros(modelBudget.reportedCostMicrosInWindow),
-                                formatUsdMicros(modelBudget.dailyReportedCostLimitMicros)
-                            ),
-                            if (modelBudget.dailyReportedCostLimitMicros > 0L &&
-                                modelBudget.reportedCostMicrosInWindow >= modelBudget.dailyReportedCostLimitMicros
-                            ) ControlCenterTone.AMBER else ControlCenterTone.BLUE
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_obsidian_section),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "obsidian.configure",
-                            getString(R.string.cc_obsidian_vault_title),
-                            getString(R.string.cc_obsidian_vault_subtitle),
-                            R.drawable.ic_agent_knowledge,
-                            obsidianSettings.vaultName.ifBlank { getString(R.string.cc_obsidian_not_configured) },
-                            if (obsidianSettings.enabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
-                        ),
-                        ControlCenterRowSpec(
-                            "obsidian.sync",
-                            getString(R.string.cc_obsidian_sync_title),
-                            getString(R.string.cc_obsidian_sync_subtitle),
-                            R.drawable.ic_reset_data,
-                            getString(R.string.cc_obsidian_sync_action),
-                            ControlCenterTone.BLUE,
-                            showChevron = false,
-                            enabled = obsidianSettings.enabled
-                        ),
-                        ControlCenterRowSpec(
-                            "obsidian.candidates",
-                            getString(R.string.cc_obsidian_candidates_title),
-                            getString(R.string.cc_obsidian_candidates_subtitle),
-                            R.drawable.ic_info_outline,
-                            obsidianCandidateCount.toString(),
-                            if (obsidianCandidateCount > 0) ControlCenterTone.AMBER else ControlCenterTone.NEUTRAL,
-                            enabled = obsidianSettings.enabled
-                        ),
-                        ControlCenterRowSpec(
-                            "obsidian.disconnect",
-                            getString(R.string.cc_obsidian_disconnect_title),
-                            getString(R.string.cc_obsidian_disconnect_subtitle),
-                            R.drawable.ic_delete,
-                            getString(R.string.cc_obsidian_disconnect_action),
-                            ControlCenterTone.NEUTRAL,
-                            showChevron = false,
-                            enabled = obsidianSettings.enabled
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_global_section_privacy),
-                    listOf(
-                        ControlCenterRowSpec("global.toggle_paired_cognition", getString(R.string.cc_global_paired_cognition_title), getString(R.string.cc_global_paired_cognition_subtitle), R.drawable.ic_device_node, switchValue = settings.allowPairedAgentCognition, showChevron = false, enabled = settings.enabled && settings.modelUnderstandingEnabled),
-                        ControlCenterRowSpec("global.toggle_cloud_cognition", getString(R.string.cc_global_cloud_cognition_title), getString(R.string.cc_global_cloud_cognition_subtitle), R.drawable.ic_security_shield, switchValue = settings.allowCloudCognition, showChevron = false, enabled = settings.enabled && settings.modelUnderstandingEnabled),
-                        ControlCenterRowSpec("apps.chat_history", getString(R.string.cc_global_sessions_title), getString(R.string.cc_global_sessions_subtitle), R.drawable.ic_agent_history, "", ControlCenterTone.NEUTRAL)
-                    )
-                )
-            ),
-            footer = getString(R.string.cc_global_footer)
-        )
-    )
+    val s = GlobalSuperAgentRuntime.get(this).cachedSettings()
+    fun toggle(action: String, title: Int, value: Boolean, enabled: Boolean = s.enabled) =
+        myAgentRow(action, title, R.drawable.ic_agent_control)
+            .copy(switchValue = value, showChevron = false, enabled = enabled)
+    showControlCenterFeature(getString(R.string.my_agent_cognition_advanced), ControlCenterPageSpec(sections = listOf(
+        ControlCenterSectionSpec(getString(R.string.my_agent_cognition), listOf(
+            toggle("global.toggle_enabled", R.string.cc_global_master_title, s.enabled, true),
+            toggle("global.toggle_model_understanding", R.string.cc_global_model_understanding_title, s.modelUnderstandingEnabled),
+            toggle("global.toggle_autonomous_preparation", R.string.cc_global_autonomous_preparation_title, s.autonomousPreparationEnabled),
+            toggle("global.toggle_autonomous_tools", R.string.cc_global_autonomous_tools_title, s.autonomousToolExecutionEnabled, s.enabled && s.autonomousPreparationEnabled)
+        )),
+        ControlCenterSectionSpec(getString(R.string.my_agent_advanced_controls), listOf(
+            toggle("global.toggle_dynamic_replanning", R.string.cc_global_dynamic_replanning_title, s.dynamicAutonomousReplanningEnabled, s.enabled && s.autonomousPreparationEnabled),
+            toggle("global.toggle_long_horizon", R.string.cc_global_long_horizon_toggle_title, s.longHorizonPlanningEnabled),
+            toggle("global.toggle_discovery", R.string.cc_global_discovery_title, s.proactiveDiscoveryEnabled, s.enabled && s.modelUnderstandingEnabled),
+            toggle("global.toggle_learning", R.string.cc_global_learning_toggle_title, s.adaptiveLearningEnabled),
+            toggle("global.toggle_research", R.string.cc_global_research_title, s.autonomousResearchEnabled),
+            toggle("global.toggle_auto_conversations", R.string.cc_global_topics_title, s.autoCreateConversationsEnabled),
+            toggle("global.toggle_notifications", R.string.cc_global_notifications_title, s.notificationsEnabled)
+        ), collapsed = true),
+        ControlCenterSectionSpec(getString(R.string.cc_task_budget_title), listOf(
+            myAgentRow("global.daily_model_calls", R.string.cc_global_daily_model_calls_title, R.drawable.ic_agent_history),
+            myAgentRow("global.concurrent_model_calls", R.string.cc_global_concurrent_model_calls_title, R.drawable.ic_agent_history),
+            myAgentRow("global.daily_model_tokens", R.string.cc_global_daily_model_tokens_title, R.drawable.ic_agent_history),
+            myAgentRow("global.daily_reported_cost", R.string.cc_global_daily_reported_cost_title, R.drawable.ic_agent_history),
+            toggle("global.toggle_metered_research", R.string.cc_global_metered_research_title, s.allowMeteredBackgroundResearch)
+        ), collapsed = true),
+        ControlCenterSectionSpec(getString(R.string.my_agent_permissions), listOf(
+            toggle("global.toggle_paired_cognition", R.string.cc_global_paired_cognition_title, s.allowPairedAgentCognition),
+            toggle("global.toggle_cloud_cognition", R.string.cc_global_cloud_cognition_title, s.allowCloudCognition)
+        ), collapsed = true)
+    )))
 }
 
 internal fun MainActivity.updateGlobalAgentSettings(transform: (GlobalAgentSettings) -> GlobalAgentSettings) {
     val runtime = if (isGlobalSuperAgentRuntimeInitialized()) globalSuperAgentRuntime else GlobalSuperAgentRuntime.get(this)
     runtime.updateSettings(transform)
-    renderControlCenterGlobalAgentPage()
+    if (controlCenterDestination != null) renderCurrentControlCenterDestination()
+    else renderControlCenterGlobalAgentPage()
 }
 
 internal fun MainActivity.openObsidianVaultPicker() {
@@ -575,9 +281,8 @@ internal fun MainActivity.configureObsidianVault(uri: android.net.Uri) {
     runCatching { ObsidianAndroidBridge.configure(this, uri) }
         .onSuccess {
             Toast.makeText(this, R.string.cc_obsidian_connected, Toast.LENGTH_SHORT).show()
-            if (controlCenterDestination?.route == ControlCenterRoute.GLOBAL_AGENT) {
-                renderControlCenterGlobalAgentPage()
-            }
+            if (controlCenterDestination?.route in setOf(ControlCenterRoute.GLOBAL_AGENT, ControlCenterRoute.OBSIDIAN_HUB))
+                renderCurrentControlCenterDestination()
         }
         .onFailure { error ->
             Toast.makeText(
@@ -612,13 +317,13 @@ internal fun MainActivity.showObsidianEditCandidate(candidate: ObsidianEditCandi
             if (ObsidianAndroidBridge.approveCandidate(this, candidate.id)) {
                 Toast.makeText(this, R.string.cc_obsidian_candidate_approved, Toast.LENGTH_SHORT).show()
             }
-            renderControlCenterGlobalAgentPage()
+            renderCurrentControlCenterDestination()
         }
         .setNegativeButton(R.string.cc_obsidian_reject) { _, _ ->
             if (ObsidianAndroidBridge.rejectCandidate(this, candidate.id)) {
                 Toast.makeText(this, R.string.cc_obsidian_candidate_rejected, Toast.LENGTH_SHORT).show()
             }
-            renderControlCenterGlobalAgentPage()
+            renderCurrentControlCenterDestination()
         }
         .setNeutralButton(android.R.string.cancel, null)
         .show()
