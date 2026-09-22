@@ -185,6 +185,47 @@ final class AgentMemoryCausalDeletionTests: XCTestCase {
     XCTAssertTrue(restored.agentMemoryDeletionTombstones().isEmpty == false)
   }
 
+  func testDeletionFingerprintPreservesCaseSensitiveScopeIdentity() throws {
+    let deleted = memory(id: "upper", value: "Use Beijing", key: "city", timestampMillis: 1_000, scopeId: "Case")
+    let other = memory(id: "lower", value: "Use Beijing", key: "city", timestampMillis: 1_000, scopeId: "case")
+    let tombstone = try XCTUnwrap(
+      AgentMemoryCausalDeletionPolicy.tombstone(deletedItems: [deleted], deletedAtMillis: 2_000)
+    )
+
+    XCTAssertTrue(tombstone.semanticFingerprints.single?.hasPrefix("scope-v2:") == true)
+    XCTAssertEqual(
+      AgentMemoryCausalDeletionPolicy.filterRestoredItems([deleted, other], tombstones: [tombstone]),
+      [other]
+    )
+  }
+
+  func testLegacyDeletionFingerprintRemainsRecognized() {
+    let item = memory(id: "legacy-item", value: "Use Beijing", key: "city", timestampMillis: 1_000, scopeId: "Case")
+    let legacyFingerprint = AgentMemoryCausalDeletionPolicy.semanticFingerprint(
+      kind: item.kind.rawValue,
+      key: item.key,
+      value: item.value,
+      scope: item.scope.rawValue,
+      scopeId: item.scopeId,
+      legacyScope: true
+    )
+    let deletedAtMillis: Int64 = 2_000
+    let tombstone = AgentMemoryDeletionTombstone(
+      id: AgentMemoryCausalDeletionPolicy.tombstoneId(
+        memoryIds: [],
+        semanticFingerprints: [legacyFingerprint],
+        retractedEventIds: [],
+        deletedAtMillis: deletedAtMillis
+      ),
+      memoryIds: [],
+      semanticFingerprints: [legacyFingerprint],
+      retractedEventIds: [],
+      deletedAtMillis: deletedAtMillis
+    )
+
+    XCTAssertTrue(AgentMemoryCausalDeletionPolicy.filterRestoredItems([item], tombstones: [tombstone]).isEmpty)
+  }
+
   private func memory(
     _ id: String,
     _ value: String,
@@ -200,7 +241,8 @@ final class AgentMemoryCausalDeletionTests: XCTestCase {
     key: String,
     timestampMillis: Int64,
     version: Int = 1,
-    supersedesId: String = ""
+    supersedesId: String = "",
+    scopeId: String = ""
   ) -> AgentMemoryItem {
     AgentMemoryItem(
       kind: .preference,
@@ -209,7 +251,9 @@ final class AgentMemoryCausalDeletionTests: XCTestCase {
       id: id,
       key: key,
       version: version,
-      supersedesId: supersedesId
+      supersedesId: supersedesId,
+      scope: scopeId.isEmpty ? .global : .conversation,
+      scopeId: scopeId
     )
   }
 

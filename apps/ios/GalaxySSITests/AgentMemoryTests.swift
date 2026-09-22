@@ -249,4 +249,100 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(restored.conflicts.first?.candidates.map(\.id), ["tone-a", "tone-b"])
     XCTAssertEqual(restored.historyCount, 1)
   }
+
+  func testScopedMemoryIdentityKeepsExactNamespacesIndependent() {
+    let store = InMemoryAgentMemoryStore()
+    let scopeIds = ["Scope", "scope", "scope "]
+    for (index, scopeId) in scopeIds.enumerated() {
+      let result = store.remember(AgentMemoryItem(
+        kind: .preference,
+        value: "city=Beijing",
+        id: "city-\(index)",
+        key: "city",
+        scope: .conversation,
+        scopeId: scopeId
+      ))
+      XCTAssertFalse(result.duplicate)
+      XCTAssertNil(result.conflict)
+    }
+    XCTAssertEqual(store.count(), scopeIds.count)
+  }
+
+  func testScopedMemoryEditAndDeleteDoNotMutateAnotherConversation() throws {
+    let store = InMemoryAgentMemoryStore(items: [
+      AgentMemoryItem(kind: .preference, value: "city=Beijing", id: "a", key: "city", scope: .conversation, scopeId: "a"),
+      AgentMemoryItem(kind: .preference, value: "city=Beijing", id: "b", key: "city", scope: .conversation, scopeId: "b")
+    ])
+
+    let edited = try XCTUnwrap(store.update(itemId: "a", value: "city=Zhuhai", key: "")?.item)
+    XCTAssertTrue(store.deleteById(edited.id))
+    XCTAssertEqual(store.snapshot().activeItems.map(\.id), ["b"])
+    XCTAssertTrue(store.snapshot().historyItems.isEmpty)
+  }
+
+  func testLineageNeverCrossesMemoryNamespace() {
+    let target = AgentMemoryItem(
+      kind: .preference,
+      value: "old",
+      id: "old",
+      key: "city",
+      status: .superseded,
+      scope: .conversation,
+      scopeId: "a"
+    )
+    let child = AgentMemoryItem(
+      kind: .preference,
+      value: "new",
+      id: "new",
+      key: "renamed",
+      supersedesId: "old",
+      scope: .conversation,
+      scopeId: "a"
+    )
+    let foreign = AgentMemoryItem(
+      kind: .preference,
+      value: "foreign",
+      id: "foreign",
+      key: "city",
+      supersedesId: "old",
+      scope: .conversation,
+      scopeId: "b"
+    )
+    let store = InMemoryAgentMemoryStore(items: [target, child, foreign])
+
+    XCTAssertEqual(AgentMemoryIdentity.lineageIds(in: [target, child, foreign], target: target), ["old", "new"])
+    XCTAssertTrue(store.deleteById("old"))
+    XCTAssertEqual(store.snapshot().activeItems.map(\.id), ["foreign"])
+  }
+
+  func testLegacyMixedConflictGroupsArePartitionedByExactNamespace() throws {
+    let legacyGroup = "legacy-mixed"
+    let items = [
+      AgentMemoryItem(kind: .preference, value: "city=Beijing", id: "a1", key: "city", status: .conflicted, conflictGroupId: legacyGroup, scope: .conversation, scopeId: "a"),
+      AgentMemoryItem(kind: .preference, value: "city=Zhuhai", id: "a2", key: "city", status: .conflicted, conflictGroupId: legacyGroup, scope: .conversation, scopeId: "a"),
+      AgentMemoryItem(kind: .preference, value: "city=Shanghai", id: "b1", key: "city", status: .conflicted, conflictGroupId: legacyGroup, scope: .conversation, scopeId: "b"),
+      AgentMemoryItem(kind: .preference, value: "city=Shenzhen", id: "b2", key: "city", status: .conflicted, conflictGroupId: legacyGroup, scope: .conversation, scopeId: "b")
+    ]
+    let store = InMemoryAgentMemoryStore(items: items)
+    let conflicts = store.snapshot().conflicts
+
+    XCTAssertEqual(conflicts.count, 2)
+    XCTAssertEqual(Set(conflicts.map(\.groupId)).count, 2)
+    let first = try XCTUnwrap(conflicts.first { $0.candidates.contains { $0.id == "a1" } })
+    XCTAssertNil(store.resolveConflict(groupId: first.groupId, selectedItemId: "b1", mergedValue: nil))
+    XCTAssertNotNil(store.resolveConflict(groupId: first.groupId, selectedItemId: "a2", mergedValue: nil))
+    let remaining = try XCTUnwrap(store.snapshot().conflicts.first)
+    XCTAssertEqual(Set(remaining.candidates.map(\.id)), ["b1", "b2"])
+  }
+
+  func testRecallAndQueryDeletionRequireLexicalRelevance() {
+    let store = InMemoryAgentMemoryStore(items: [
+      AgentMemoryItem(kind: .knowledge, value: "Release train leaves Friday", id: "matching"),
+      AgentMemoryItem(kind: .preference, value: "Always answer carefully", id: "important", important: true, evidenceCount: 10_000)
+    ])
+
+    XCTAssertEqual(store.recall(query: "release").map(\.id), ["matching"])
+    XCTAssertEqual(store.delete(query: "unrelated search"), 0)
+    XCTAssertEqual(store.count(), 2)
+  }
 }

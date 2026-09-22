@@ -268,6 +268,75 @@ struct AgentMemorySnapshot: Codable, Equatable {
   var historyCount: Int { historyItems.count }
 }
 
+enum AgentMemoryIdentity {
+  private struct Key: Hashable {
+    var kind: AgentMemoryKind
+    var scope: AgentMemoryScope
+    var scopeId: String
+    var key: String
+  }
+
+  static func sameNamespace(_ first: AgentMemoryItem, _ second: AgentMemoryItem) -> Bool {
+    first.kind == second.kind && first.scope == second.scope && first.scopeId == second.scopeId
+  }
+
+  static func sameKey(_ first: AgentMemoryItem, _ second: AgentMemoryItem) -> Bool {
+    sameNamespace(first, second) && first.key == second.key
+  }
+
+  static func normalizeConflicts(_ items: [AgentMemoryItem]) -> [AgentMemoryItem] {
+    var replacements: [String: AgentMemoryItem] = [:]
+    let groups = Dictionary(grouping: items.filter { $0.status == .conflicted }, by: \.conflictGroupId)
+    for (groupId, group) in groups {
+      let partitions = Dictionary(grouping: group) {
+        Key(kind: $0.kind, scope: $0.scope, scopeId: $0.scopeId, key: $0.key)
+      }
+      for candidates in partitions.values {
+        if candidates.count == 1, let item = candidates.first {
+          replacements[item.id] = item.copy(status: .active, conflictGroupId: "")
+        } else if partitions.count > 1 || groupId.isEmpty {
+          let scopedGroupId = UUID().uuidString
+          for item in candidates {
+            replacements[item.id] = item.copy(conflictGroupId: scopedGroupId)
+          }
+        }
+      }
+    }
+    guard !replacements.isEmpty else { return items }
+    return items.map { replacements[$0.id] ?? $0 }
+  }
+
+  static func conflictCandidates(
+    in items: [AgentMemoryItem],
+    groupId: String,
+    selectedItemId: String
+  ) -> [AgentMemoryItem] {
+    guard let selected = items.first(where: {
+      $0.id == selectedItemId && $0.conflictGroupId == groupId && $0.status == .conflicted
+    }) else { return [] }
+    return items.filter {
+      $0.conflictGroupId == groupId && $0.status == .conflicted && sameKey($0, selected)
+    }
+  }
+
+  static func lineageIds(in items: [AgentMemoryItem], target: AgentMemoryItem) -> Set<String> {
+    let scoped = items
+      .filter { sameNamespace($0, target) }
+      .reduce(into: [String: AgentMemoryItem]()) { $0[$1.id] = $1 }
+    let children = Dictionary(grouping: scoped.values, by: \.supersedesId)
+    var pending = [target.id]
+    var visited = Set<String>()
+    while let id = pending.popLast() {
+      guard visited.insert(id).inserted, let item = scoped[id] else { continue }
+      if scoped[item.supersedesId] != nil {
+        pending.append(item.supersedesId)
+      }
+      pending.append(contentsOf: (children[id] ?? []).map(\.id))
+    }
+    return visited
+  }
+}
+
 protocol AgentMemoryStore {
   @discardableResult func remember(_ item: AgentMemoryItem) -> AgentMemoryWriteResult
   func recall(query: String) -> [AgentMemoryItem]
@@ -289,12 +358,17 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   private let nowMillis: () -> Int64
 
   init(items: [AgentMemoryItem] = [], nowMillis: @escaping () -> Int64 = AgentMemoryClock.nowMillis) {
-    self.allItems = items
+    self.allItems = AgentMemoryIdentity.normalizeConflicts(items)
     self.nowMillis = nowMillis
+  }
+
+  private func normalizeConflicts() {
+    allItems = AgentMemoryIdentity.normalizeConflicts(allItems)
   }
 
   @discardableResult
   func remember(_ item: AgentMemoryItem) -> AgentMemoryWriteResult {
+    normalizeConflicts()
     let cleanValue = item.value.agentMemoryTrimmed
     if cleanValue.isEmpty {
       return AgentMemoryWriteResult(item: nil)
@@ -313,8 +387,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
     if let duplicateIndex = allItems.firstIndex(where: {
       $0.status != .superseded &&
-        $0.kind == nextItem.kind &&
-        $0.key == nextItem.key &&
+        AgentMemoryIdentity.sameKey($0, nextItem) &&
         $0.value.agentMemoryEquals(nextItem.value)
     }) {
       let existing = allItems[duplicateIndex]
@@ -335,8 +408,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     }
 
     let competing = allItems.filter {
-      $0.kind == nextItem.kind &&
-        $0.key == normalizedKey &&
+      AgentMemoryIdentity.sameKey($0, nextItem) &&
         $0.status != .superseded
     }
     if competing.isEmpty {
@@ -366,12 +438,13 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   }
 
   func recall(query: String) -> [AgentMemoryItem] {
+    normalizeConflicts()
     let cleanQuery = query.agentMemoryTrimmed
     if cleanQuery.isEmpty { return [] }
     let now = nowMillis()
     let recalled = allItems
       .filter { $0.status == .active && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
-      .filter { matches($0, query: cleanQuery) }
+      .filter { lexicalScore($0, query: cleanQuery) > 0 }
       .map { ($0, score($0, query: cleanQuery, nowMillis: now)) }
       .sorted {
         if $0.1 != $1.1 { return $0.1 > $1.1 }
@@ -391,6 +464,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   }
 
   func recent(limit: Int = 10) -> [AgentMemoryItem] {
+    normalizeConflicts()
     let now = nowMillis()
     return allItems
       .filter { $0.status == .active && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
@@ -403,6 +477,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   }
 
   func count() -> Int {
+    normalizeConflicts()
     allItems.filter { $0.status == .active }.count
   }
 
@@ -425,14 +500,16 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   @discardableResult
   func delete(query: String) -> Int {
+    normalizeConflicts()
     let cleanQuery = query.agentMemoryTrimmed
     if cleanQuery.isEmpty { return 0 }
     let before = allItems.count
-    allItems.removeAll { matches($0, query: cleanQuery) }
+    allItems.removeAll { lexicalScore($0, query: cleanQuery) > 0 }
     return before - allItems.count
   }
 
   func snapshot() -> AgentMemorySnapshot {
+    normalizeConflicts()
     let active = allItems
       .filter { $0.status == .active }
       .sorted {
@@ -464,6 +541,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   @discardableResult
   func update(itemId: String, value: String, key: String = "") -> AgentMemoryWriteResult? {
+    normalizeConflicts()
     let cleanValue = value.agentMemoryTrimmed
     if cleanValue.isEmpty { return nil }
     guard let index = allItems.firstIndex(where: { $0.id == itemId && $0.status == .active }) else {
@@ -486,15 +564,17 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   @discardableResult
   func deleteById(_ itemId: String) -> Bool {
+    normalizeConflicts()
     guard let target = allItems.first(where: { $0.id == itemId }) else { return false }
-    let relatedIds = memoryLineageIds(in: allItems, target: target)
+    let relatedIds = AgentMemoryIdentity.lineageIds(in: allItems, target: target)
     allItems.removeAll { candidate in
       relatedIds.contains(candidate.id) ||
-        (!target.key.isEmpty && candidate.kind == target.kind && candidate.key == target.key)
+        (!target.key.isEmpty && AgentMemoryIdentity.sameKey(candidate, target))
     }
     if !target.conflictGroupId.isEmpty {
       let remaining = allItems.filter {
-        $0.conflictGroupId == target.conflictGroupId && $0.status == .conflicted
+        $0.conflictGroupId == target.conflictGroupId && $0.status == .conflicted &&
+          AgentMemoryIdentity.sameKey($0, target)
       }
       if remaining.count == 1, let index = allItems.firstIndex(where: { $0.id == remaining[0].id }) {
         allItems[index] = remaining[0].copy(status: .active, conflictGroupId: "")
@@ -537,9 +617,12 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     selectedItemId: String,
     mergedValue: String? = nil
   ) -> AgentMemoryItem? {
-    let candidates = allItems.filter {
-      $0.conflictGroupId == groupId && $0.status == .conflicted
-    }
+    normalizeConflicts()
+    let candidates = AgentMemoryIdentity.conflictCandidates(
+      in: allItems,
+      groupId: groupId,
+      selectedItemId: selectedItemId
+    )
     guard candidates.count >= 2, let selected = candidates.first(where: { $0.id == selectedItemId }) else {
       return nil
     }
@@ -565,16 +648,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   }
 
   private func score(_ item: AgentMemoryItem, query: String, nowMillis: Int64) -> Double {
-    let value = item.value.lowercased()
-    let cleanQuery = query.lowercased()
-    var lexicalScore = 0.0
-    if value == cleanQuery { lexicalScore += 12.0 }
-    if value.agentMemoryContains(cleanQuery) || cleanQuery.agentMemoryContains(value) {
-      lexicalScore += 8.0
-    }
-    for token in AgentMemoryKeyPolicy.queryTokens(cleanQuery) {
-      if value.agentMemoryContains(token) { lexicalScore += 1.0 }
-    }
+    let lexicalScore = lexicalScore(item, query: query)
     let ageDays = Double(max(nowMillis - item.timestampMillis, 0)) / Double(AgentMemoryPolicy.dayMillis)
     let recency = 1.0 / (1.0 + ageDays / 30.0)
     let evidence = log(1.0 + Double(max(item.evidenceCount, 1)))
@@ -582,15 +656,20 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       recency + evidence + (item.important ? 2.0 : 0.0)
   }
 
-  private func matches(_ item: AgentMemoryItem, query: String) -> Bool {
-    if item.value.agentMemoryContains(query) || query.agentMemoryContains(item.value) {
-      return true
-    }
-    if !item.key.isEmpty && item.key.agentMemoryContains(query) {
-      return true
-    }
+  private func lexicalScore(_ item: AgentMemoryItem, query: String) -> Double {
     let value = item.value.lowercased()
-    return AgentMemoryKeyPolicy.queryTokens(query.lowercased()).contains { value.agentMemoryContains($0) }
+    let searchable = "\(item.key) \(value)".lowercased()
+    let cleanQuery = query.lowercased()
+    if cleanQuery.agentMemoryTrimmed.isEmpty { return 0 }
+    var lexicalScore = 0.0
+    if value == cleanQuery { lexicalScore += 12.0 }
+    if value.agentMemoryContains(cleanQuery) || cleanQuery.agentMemoryContains(value) {
+      lexicalScore += 8.0
+    }
+    for token in AgentMemoryKeyPolicy.queryTokens(cleanQuery) {
+      if searchable.agentMemoryContains(token) { lexicalScore += 1.0 }
+    }
+    return lexicalScore
   }
 
   private func buildConflict(groupId: String, items: [AgentMemoryItem]) -> AgentMemoryConflict? {
@@ -604,23 +683,6 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       key: candidates[0].key,
       candidates: candidates
     )
-  }
-
-  private func memoryLineageIds(in items: [AgentMemoryItem], target: AgentMemoryItem) -> Set<String> {
-    var relatedIds = Set([target.id])
-    var changed = true
-    while changed {
-      changed = false
-      for item in items {
-        if relatedIds.contains(item.id) && !item.supersedesId.isEmpty {
-          changed = relatedIds.insert(item.supersedesId).inserted || changed
-        }
-        if relatedIds.contains(item.supersedesId) {
-          changed = relatedIds.insert(item.id).inserted || changed
-        }
-      }
-    }
-    return relatedIds
   }
 
   private func trimHistory(_ items: [AgentMemoryItem]) -> [AgentMemoryItem] {
