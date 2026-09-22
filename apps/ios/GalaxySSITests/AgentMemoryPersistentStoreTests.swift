@@ -121,6 +121,27 @@ final class AgentMemoryPersistentStoreTests: XCTestCase {
     ).isEmpty)
   }
 
+  func testPersonalMemoryPointFlagsUpdateOnlyTargetRow() throws {
+    let suiteName = "AgentPersonalMemoryPointFlags-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    let rows = UserDefaultsAgentPersonalMemoryRows(defaults: defaults, secrets: secrets)
+    let target = memory(id: "target", value: "Chinese", key: "language", timestampMillis: 1_000)
+    let unrelated = memory(id: "unrelated", value: "English", key: "language", timestampMillis: 2_000)
+    XCTAssertTrue(rows.replace([target, unrelated]))
+
+    let important = try XCTUnwrap(rows.updateFlags(id: target.id, important: true))
+    XCTAssertEqual(important.before, target)
+    XCTAssertTrue(important.after.important)
+    XCTAssertEqual(rows.find(id: unrelated.id), unrelated)
+
+    let privateChange = try XCTUnwrap(rows.updateFlags(id: target.id, privateMemory: true))
+    XCTAssertTrue(privateChange.after.privateMemory)
+    XCTAssertTrue(rows.find(id: target.id)?.important == true)
+    XCTAssertNil(rows.find(id: "missing"))
+  }
+
   private func memory(id: String, value: String, key: String, timestampMillis: Int64) -> AgentMemoryItem {
     AgentMemoryItem(
       kind: .preference,
