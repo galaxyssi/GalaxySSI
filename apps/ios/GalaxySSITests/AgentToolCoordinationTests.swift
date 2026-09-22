@@ -2,6 +2,21 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentToolCoordinationTests: XCTestCase {
+  func testReadyDagResumeSelectsProposedNodesWithCompletedDependencies() throws {
+    let completed = action("completed", status: .completed)
+    let ready = action("ready", status: .proposed, parameters: ["depends_on": "completed"])
+    let blocked = action("blocked", status: .proposed, parameters: ["depends_on": "future"])
+    let future = action("future", status: .proposed, parameters: ["depends_on": "ready"])
+    let plan = AgentPlan(
+      goal: "Resume the ready DAG node",
+      screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [],
+      actions: [completed, ready, blocked, future]
+    )
+
+    XCTAssertEqual(AgentToolCoordination.runnableActions(plan).map(\.id), ["ready"])
+  }
+
   func testDependencyParsingAndRemapMatchAndroidDistinctMappedOnlySemantics() {
     let original = action(
       "old",
