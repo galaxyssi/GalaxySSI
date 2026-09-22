@@ -509,9 +509,8 @@ struct GalaxySSIControlCenterView: View {
     let settings = store.modelPlannerSettings
     guard settings.enabled else { return t("galaxyssi.settings.local_planner", "Local deterministic planner") }
     return String(
-      format: t("galaxyssi.settings.model_planner.summary", "Model planning / %d actions / %d replans"),
-      settings.maxActions,
-      settings.maxReplans
+      format: t("galaxyssi.settings.model_planner.summary", "Model planning / %d actions / continuous recovery"),
+      settings.maxActions
     )
   }
 
