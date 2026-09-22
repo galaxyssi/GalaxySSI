@@ -360,9 +360,7 @@ final class GlobalAutonomousSkillHost {
       callerId: "galaxyssi.global_super_agent.skill",
       requestedAtEpochMillis: parent.context.requestedAtEpochMillis,
       deadlineEpochMillis: parent.deadlineEpochMillis,
-      idempotencyKey: descriptor.idempotency == .nonIdempotent
-        ? nil
-        : "\(parent.context.idempotencyKey ?? parent.context.invocationId):\(step.id)",
+      idempotencyKey: "\(parent.context.idempotencyKey ?? parent.context.invocationId):\(step.id)",
       grantedPermissions: Set(descriptor.requiredPermissions
         .filter { $0.required && parent.context.grantedPermissions.contains($0.id) }
         .map(\.id)),

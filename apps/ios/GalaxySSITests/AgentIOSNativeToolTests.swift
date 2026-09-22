@@ -1420,6 +1420,38 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.error?.details["original_invocation_id"], .string("interrupted"))
   }
 
+  func testNonIdempotentEffectUsesInvocationFallbackAndReplaysRecordedOutcome() throws {
+    var executions = 0
+    let descriptor = try nativeToolDescriptor(
+      "galaxyssi.test.non-idempotent.effect",
+      idempotency: .nonIdempotent
+    )
+    let registry = try AgentNativeToolRegistry(replayStore: InMemoryAgentNativeToolReplayStore())
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.effect"),
+        executor: { _ in
+          executions += 1
+          return .success(output: ["execution": .int(Int64(executions))])
+        }
+      ))
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "stable-invocation",
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      attributes: ["task_id": "task"]
+    )
+
+    let first = registry.invoke(descriptor.id, input: [:], context: context)
+    let replay = registry.invoke(descriptor.id, input: [:], context: context)
+
+    XCTAssertTrue(first.isSuccess)
+    XCTAssertEqual(replay.output, first.output)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(replay.receipt.idempotencyKey, "stable-invocation")
+    XCTAssertEqual(executions, 1)
+  }
+
   func testAgentNativeEffectJournalReplaysFailuresAndCommitsBeforeFinishedHook() throws {
     var executions = 0
     var durableBeforeHook = false

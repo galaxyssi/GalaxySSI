@@ -516,13 +516,7 @@ final class AgentModelToolLoop {
     prepared: PreparedCall,
     attempt: Int
   ) -> NativeInvocationAttempt {
-    let idempotencyKey: String?
-    switch prepared.descriptor.idempotency {
-    case .nonIdempotent:
-      idempotencyKey = prepared.call.idempotencyKey
-    case .idempotent, .idempotencyKeyRequired:
-      idempotencyKey = prepared.call.idempotencyKey ?? derivedIdempotencyKey(state, call: prepared.call)
-    }
+    let idempotencyKey = prepared.call.idempotencyKey ?? derivedIdempotencyKey(state, call: prepared.call)
     let invocationId = checkedId("invocation")
     emit(
       state,
@@ -631,13 +625,7 @@ final class AgentModelToolLoop {
     confirmationId: String? = nil,
     startingAttempt: Int = 0
   ) -> ProcessResult {
-    let idempotencyKey: String?
-    switch descriptor.idempotency {
-    case .nonIdempotent:
-      idempotencyKey = call.idempotencyKey
-    case .idempotent, .idempotencyKeyRequired:
-      idempotencyKey = call.idempotencyKey ?? derivedIdempotencyKey(state, call: call)
-    }
+    let idempotencyKey = call.idempotencyKey ?? derivedIdempotencyKey(state, call: call)
 
     var attempt = max(startingAttempt, 0)
     while true {

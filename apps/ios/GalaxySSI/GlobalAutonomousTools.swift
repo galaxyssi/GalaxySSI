@@ -368,7 +368,7 @@ final class GlobalAutonomousToolHost {
       conversationId: run.sourceConversationId,
       turnId: action.id,
       callerId: "galaxyssi.global_super_agent",
-      idempotencyKey: descriptor.idempotency == .idempotencyKeyRequired ? "global:\(run.id):\(action.id)" : nil,
+      idempotencyKey: descriptor.idempotency == .idempotent ? nil : "global:\(run.id):\(action.id)",
       grantedPermissions: Set(descriptor.requiredPermissions.filter(\.required).map(\.id)),
       grantedConsents: Set(descriptor.requiredConsents.filter(\.required).map(\.id)),
       attributes: [
