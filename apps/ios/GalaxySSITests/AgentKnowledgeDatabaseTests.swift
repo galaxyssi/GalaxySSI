@@ -207,6 +207,52 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertFalse(raw.contains(checkpoint.sourceRevision))
   }
 
+  func testVectorChangeFeedPublishesReadyAndRemovalWithDurableChain() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeVectorFeed-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let item = AgentKnowledgeItem(id: "feed-item", kind: .note, title: "Title", content: "Body", source: "source")
+    let modelSHA = String(repeating: "b", count: 64)
+    let checkpoint = AgentKnowledgeVectorCheckpoint(
+      itemId: item.id,
+      sourceRevision: AgentKnowledgeVectorCheckpoint.sourceRevision(for: item),
+      chunkIndex: 0,
+      vector: [0.6, 0.8],
+      provenance: AgentKnowledgeVectorProvenance(
+        modelSHA256: modelSHA,
+        dimensions: 2,
+        contextTokens: 512,
+        chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+      ),
+      updatedAtMillis: 10
+    )
+
+    XCTAssertTrue(database.replaceAll([item]))
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let ready = try database.vectorChangePage(modelSHA256: modelSHA)
+    XCTAssertEqual(ready.events.map(\.operation), [.ready])
+    XCTAssertEqual(ready.events[0].previousSequence, 0)
+    XCTAssertNotEqual(ready.events[0].itemHash, item.id)
+    XCTAssertNotEqual(ready.events[0].sourceRevisionHash, checkpoint.sourceRevision)
+
+    XCTAssertTrue(database.clearVectorCheckpoints(itemId: item.id, modelSHA256: modelSHA))
+    let removal = try database.vectorChangePage(
+      modelSHA256: modelSHA,
+      epoch: ready.epoch,
+      afterSequence: ready.events[0].sequence
+    )
+    XCTAssertEqual(removal.events.map(\.operation), [.removal])
+    XCTAssertEqual(removal.events[0].previousSequence, ready.events[0].sequence)
+    XCTAssertEqual(removal.headSequence, removal.events[0].sequence)
+
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    XCTAssertEqual(try reopened.vectorChangePage(modelSHA256: modelSHA).epoch, ready.epoch)
+    XCTAssertThrowsError(try reopened.vectorChangePage(modelSHA256: modelSHA, epoch: "stale"))
+  }
+
   func testEmbeddingChunkerUsesTokenizerWindowAndPreservesOrder() async throws {
     let chunks = try await AgentKnowledgeEmbeddingChunker.chunks(
       "abcdefghij",
