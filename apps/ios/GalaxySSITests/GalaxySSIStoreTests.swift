@@ -675,6 +675,72 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(sections.recent.first?.unreadCount, 3)
   }
 
+  func testConversationHubHidesAgentContactHistoryAndKeepsPeerTypes() {
+    let agentTypes = ["agent", "model", "hermes"]
+    for type in agentTypes {
+      XCTAssertFalse(GalaxySSIConversationHubContactHistoryPolicy.includes(
+        conversationHubContact(id: "\(type)-contact", name: type, type: type)
+      ))
+    }
+
+    for type in ["person", "device", "group", "system"] {
+      XCTAssertTrue(GalaxySSIConversationHubContactHistoryPolicy.includes(
+        conversationHubContact(
+          id: "\(type)-contact",
+          name: "Codex Agent",
+          type: type,
+          agentKind: "stale-metadata"
+        )
+      ))
+    }
+    XCTAssertTrue(GalaxySSIConversationHubContactHistoryPolicy.includes(nil))
+  }
+
+  func testConversationHubContactSummariesExcludeLegacyAgentRows() {
+    let latest = ChatMessage(contactId: "person-contact", content: "latest", isMine: false)
+    let contacts = [
+      conversationHubContact(id: "agent-contact", name: "Agent", type: "agent"),
+      conversationHubContact(id: "person-contact", name: "Person", type: "person")
+    ]
+
+    let summaries = GalaxySSIConversationHubModels.contactSummaries(
+      contacts: contacts,
+      summary: { _ in ContactConversationSummary(lastMessage: latest, unreadCount: 1) },
+      isPinned: { _ in false }
+    )
+
+    XCTAssertEqual(summaries.map(\.contactId), ["person-contact"])
+  }
+
+  private func conversationHubContact(
+    id: String,
+    name: String,
+    type: String,
+    agentKind: String = ""
+  ) -> GalaxySSIContact {
+    GalaxySSIContact(
+      id: id,
+      galaxySSIId: id,
+      name: name,
+      displayName: name,
+      type: type,
+      agentKind: agentKind,
+      deliveryMode: .local,
+      trustState: .verified,
+      desktopId: "",
+      desktopName: "",
+      identityFingerprint: "fingerprint",
+      setupStatus: "ready",
+      setupDetail: "",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: Date(timeIntervalSince1970: 1),
+      updatedAt: Date(timeIntervalSince1970: 1)
+    )
+  }
+
   func testSystemNoticeUsesSameConversationSummaryRuleAsRefreshedHub() throws {
     let store = makeStore()
     store.appendSystem("Background task completed", to: "system")

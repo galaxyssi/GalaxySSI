@@ -19,6 +19,7 @@ struct AgentModelPlannerSettings: Codable, Equatable {
   var maxActions: Int
   var cloudContactId: String
   var dynamicReplanning: Bool
+  // Legacy backup field only. Ordinary planner recovery has no lifetime count limit.
   var maxReplans: Int
   var multiAgentCoordination: Bool
   var shareAgentOutputsWithPlanner: Bool

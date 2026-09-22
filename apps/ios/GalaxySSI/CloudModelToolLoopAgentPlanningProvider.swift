@@ -90,12 +90,12 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       return try await fallbackProvider.rawPlan(invocation: invocation)
     }
 
-    let turnId = Self.boundedIdentifier(requestIdFactory(), fallback: UUID().uuidString)
+    let loopId = Self.boundedIdentifier(requestIdFactory(), fallback: UUID().uuidString)
     let request = Self.toolLoopRequest(
       invocation: invocation,
       catalog: selection.catalog,
       budget: budget,
-      turnId: turnId
+      loopId: loopId
     )
     let runner = try makeToolLoop(selection.catalog, selection.registry)
     memoryTelemetryCapture(Self.telemetryWorkspace(request: request))
@@ -137,12 +137,14 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     invocation: AgentModelPlanningInvocation,
     catalog: [AgentNativeToolDescriptor],
     budget: AgentModelToolLoopBudget,
-    turnId: String
+    loopId: String
   ) -> AgentModelToolLoopRequest {
     let conversationId = boundedIdentifier(
       invocation.request.conversationContext.conversationId,
-      fallback: turnId
+      fallback: loopId
     )
+    let sessionId = conversationId
+    let turnId = boundedIdentifier(invocation.request.executionTurnId, fallback: sessionId)
     let grantedPermissions = Set(catalog.flatMap { descriptor in
       descriptor.requiredPermissions.filter(\.required).map(\.id)
     })
@@ -150,11 +152,12 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       descriptor.requiredConsents.filter(\.required).map(\.id)
     })
     return AgentModelToolLoopRequest(
-      sessionId: conversationId,
+      sessionId: sessionId,
       conversationId: conversationId,
       turnId: turnId,
       taskId: turnId,
-      workspaceId: turnId,
+      workspaceId: AgentWorkspaceScope.id(conversationId: conversationId, sessionId: sessionId),
+      loopId: loopId,
       messages: [
         .system(invocation.systemPrompt),
         .user(invocation.prompt)

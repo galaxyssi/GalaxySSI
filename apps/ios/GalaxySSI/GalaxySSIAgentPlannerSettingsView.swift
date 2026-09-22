@@ -82,15 +82,6 @@ struct AgentModelPlannerSettingsView: View {
         tint: .blue,
         isOn: boolBinding(\.dynamicReplanning)
       )
-      GalaxySSISecurityActionRow(
-        title: t("on_device_agent_max_replans", "Maximum Replans"),
-        subtitle: t("on_device_agent_max_replans_subtitle", "Bound autonomous recovery to 1, 3, or 5 plan revisions per task"),
-        systemImage: "arrow.clockwise.circle.fill",
-        tint: .blue,
-        badge: "\(settings.maxReplans)"
-      ) {
-        cycleInt(\.maxReplans, values: [1, 3, 5])
-      }
       PlannerSwitchRow(
         title: t("on_device_agent_multi_agent_coordination", "Multi-Agent Coordination"),
         subtitle: t("on_device_agent_multi_agent_coordination_subtitle", "Allow validated task graphs to call multiple paired Agents with explicit dependencies"),

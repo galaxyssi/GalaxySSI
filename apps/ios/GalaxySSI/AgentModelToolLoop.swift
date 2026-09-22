@@ -598,6 +598,9 @@ final class AgentModelToolLoop {
       "retry_attempt": String(max(attempt - 1, 0)),
       "response_language": LanguagePolicySettings.resolve(state.request.responseLanguage)
     ]
+    if !state.request.loopId.isEmpty {
+      attributes["model_loop_id"] = state.request.loopId
+    }
     if let confirmationId {
       attributes["confirmation_id"] = confirmationId
       attributes["explicit_user_approval"] = "true"
@@ -653,6 +656,9 @@ final class AgentModelToolLoop {
         "retry_attempt": String(attempt - 1),
         "response_language": LanguagePolicySettings.resolve(state.request.responseLanguage)
       ]
+      if !state.request.loopId.isEmpty {
+        attributes["model_loop_id"] = state.request.loopId
+      }
       if let confirmationId {
         attributes["confirmation_id"] = confirmationId
         attributes["explicit_user_approval"] = "true"
@@ -886,6 +892,10 @@ final class AgentModelToolLoop {
     details: AgentMcpJSONObject = [:]
   ) {
     state.eventSequence += 1
+    var scopedDetails = details
+    if !state.request.loopId.isEmpty {
+      scopedDetails["model_loop_id"] = .string(state.request.loopId)
+    }
     let event = AgentModelToolLoopEvent(
       sequence: state.eventSequence,
       type: type,
@@ -897,7 +907,7 @@ final class AgentModelToolLoop {
       round: state.rounds,
       toolCallId: call?.callId,
       invocationId: invocationId,
-      details: details
+      details: scopedDetails
     )
     state.events.append(event)
     state.request.eventSink.onEvent(event)
@@ -916,13 +926,19 @@ final class AgentModelToolLoop {
   }
 
   private func derivedIdempotencyKey(_ state: LoopState, call: AgentModelToolCall) -> String {
-    AgentModelToolProtocolJSON.sha256([
+    var components = [
       state.request.sessionId,
-      state.request.turnId,
+      state.request.turnId
+    ]
+    if !state.request.loopId.isEmpty {
+      components.append(state.request.loopId)
+    }
+    components.append(contentsOf: [
       call.callId,
       call.toolId,
       AgentMcpJSONCodec.sha256(call.arguments)
-    ].joined(separator: "|"))
+    ])
+    return AgentModelToolProtocolJSON.sha256(components.joined(separator: "|"))
   }
 
   private func responseFingerprint(_ response: AgentModelResponse) -> String {

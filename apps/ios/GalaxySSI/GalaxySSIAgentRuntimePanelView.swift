@@ -791,10 +791,9 @@ struct GalaxySSIAgentRuntimePanelView: View {
         id: "tool-budget",
         title: t("agent_plan_context_tool_budget", "Tool Budget"),
         detail: String(
-          format: t("galaxyssi.agent_runtime.tool_budget_detail", "%d actions / %d tool calls / %d replans"),
+          format: t("galaxyssi.agent_runtime.tool_budget_detail", "%d actions / %d tool calls / continuous recovery"),
           modelPlannerSettings.maxActions,
-          modelPlannerSettings.maxToolCalls,
-          modelPlannerSettings.maxReplans
+          modelPlannerSettings.maxToolCalls
         ),
         badge: t(taskBudget.profile.displayName, taskBudget.profile.displayName),
         systemImage: "timer",

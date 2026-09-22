@@ -185,6 +185,8 @@ final class MessageCoordinator: ObservableObject {
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
   private var pendingArtifactFetches: Set<String> = []
+  private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
+  private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
@@ -241,11 +243,6 @@ final class MessageCoordinator: ObservableObject {
     var goal: String
     var localTask: AgentTaskRecord?
     var remoteTask: AgentRemoteTaskStatusSnapshot?
-  }
-
-  private struct ExactConnectorResponseRoute {
-    var conversationId: String
-    var turnId: String
   }
 
   init(
@@ -1717,9 +1714,11 @@ final class MessageCoordinator: ObservableObject {
     } else {
       pendingArtifactFetches.insert(artifactURI)
     }
-    if alreadyPending {
-      guard forceRedelivery else { return true }
-    }
+    let retryAllowed = saveToDownloads
+      ? artifactDownloadRetryGate.add(artifactURI)
+      : artifactFetchRetryGate.add(artifactURI)
+    if alreadyPending, !retryAllowed { return true }
+    if forceRedelivery, !retryAllowed { return true }
     let artifactId = (block.metadata["artifact_id"] ?? "").ifBlank(
       AgentDesktopArtifactStore.stableID(uri: artifactURI, sha256: digest)
     )
@@ -1758,8 +1757,10 @@ final class MessageCoordinator: ObservableObject {
   private func clearPendingArtifactRequest(_ artifactURI: String, saveToDownloads: Bool) {
     if saveToDownloads {
       pendingArtifactDownloads.remove(artifactURI)
+      artifactDownloadRetryGate.remove(artifactURI)
     } else {
       pendingArtifactFetches.remove(artifactURI)
+      artifactFetchRetryGate.remove(artifactURI)
     }
   }
 
@@ -3308,7 +3309,23 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     let previousPlan = task.activePlan
-    let plannerHistory = previousPlan?.historyForReplan() ?? []
+    let continuationScope = previousPlan.flatMap {
+      AgentPlanContinuationScope.resolve(
+        plan: $0,
+        activeConversationId: outgoing.conversationId,
+        activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+        sessionId: task.sessionId
+      )
+    }
+    guard previousPlan == nil || continuationScope != nil else {
+      task.verification = "The persisted plan contains conflicting conversation scope"
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return false
+    }
+    let plannerHistory = (previousPlan?.historyForReplan() ?? []).filter {
+      continuationScope?.owns($0) ?? true
+    }
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
@@ -5777,7 +5794,13 @@ final class MessageCoordinator: ObservableObject {
         maximumActionsOverride: AgentPlanExecutionBatchPolicy.maximumModelBatchActions
       ),
       conversationContext: conversation,
-      executionHistory: executionHistory,
+      executionTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      executionHistory: executionHistory.filter {
+        AgentPlanContinuationScope(
+          conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        ).owns($0)
+      },
       globalRealtimeContext: globalRealtimeContextProvider.buildNonBlocking(
         query: requestText,
         currentConversationId: outgoing.conversationId,
@@ -5829,6 +5852,11 @@ final class MessageCoordinator: ObservableObject {
         continue
       }
       var resolvedPlan = plan
+      let continuationScope = AgentPlanContinuationScope(
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      )
+      resolvedPlan.actions = resolvedPlan.actions.map(continuationScope.bind)
       resolvedPlan.executionMode = executionMode
       return .plan(resolvedPlan)
     }
@@ -6294,12 +6322,22 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
-    guard let action = task.pendingActions.first else {
-      task.pendingAction = nil
-      return false
+    var handledAny = false
+    while let action = task.pendingActions.first {
+      task.pendingAction = action
+      guard applyLocalNativeAction(action: action, outgoing: outgoing, task: &task) else {
+        return handledAny
+      }
+      handledAny = true
+      guard task.phase == .completed, !task.pendingActions.isEmpty else {
+        return true
+      }
+      task.phase = .executing
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
     }
-    task.pendingAction = action
-    return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    task.pendingAction = nil
+    return handledAny
   }
 
   private func applyLocalNativeAction(
@@ -6378,24 +6416,18 @@ final class MessageCoordinator: ObservableObject {
     task.pendingActions.removeAll { $0.id == action.id }
     task.pendingAction = task.pendingActions.first
     let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
-    guard handled, task.phase == .completed, !task.pendingActions.isEmpty else {
-      if task.phase == .failed {
-        var retryableAction = action
-        retryableAction.status = .failed
-        retryableAction.result = task.result
-        retryableAction.evidence = task.verification
-        task.pendingActions.insert(retryableAction, at: 0)
-        task.pendingAction = retryableAction
-        task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
-        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-        store.upsertAgentTask(task)
-      }
-      return handled
+    if task.phase == .failed {
+      var retryableAction = action
+      retryableAction.status = .failed
+      retryableAction.result = task.result
+      retryableAction.evidence = task.verification
+      task.pendingActions.insert(retryableAction, at: 0)
+      task.pendingAction = retryableAction
+      task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
     }
-    task.phase = .executing
-    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
-    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+    return handled
   }
 
   private func executeLocalNativeAction(
@@ -6555,8 +6587,19 @@ final class MessageCoordinator: ObservableObject {
           let previousResult = task.lastNativeActionResult else {
       return
     }
+    guard let continuationScope = AgentPlanContinuationScope.resolve(
+      plan: previousPlan,
+      activeConversationId: outgoing.conversationId,
+      activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      sessionId: task.sessionId
+    ) else {
+      task.verification = "Rolling plan stopped because the persisted action scope conflicts"
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
-    let plannerHistory = previousPlan.historyForReplan()
+    let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
     let outcome = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],
@@ -9322,43 +9365,26 @@ final class MessageCoordinator: ObservableObject {
         }
         return
       }
-      if connectorResponseBus.publish(response) {
-        let conversationId = store.agentSessionDestination(id: response.conversationId)
-          ?? response.conversationId
-        _ = store.recordAgentSessionUsage(
-          id: conversationId,
-          inputTokens: response.inputTokens,
-          outputTokens: response.outputTokens,
-          costMicros: response.costMicros
-        )
-        updateAgentExecutionTarget(
-          conversationId: conversationId,
-          contactId: response.contactId
-        )
-        if !messageId.isEmpty {
-          deliveryStore.completeIncoming(messageId: messageId)
-        }
+      let consumed = connectorResponseBus.publish(response)
+      guard consumed || connectorResponseBus.wasRecorded(response) else {
         return
       }
-      guard let exactRoute = exactConnectorResponseRoute(response) else {
-        connectorResponseBus.remove(response)
-        if !messageId.isEmpty {
-          deliveryStore.completeIncoming(messageId: messageId)
-        }
-        return
-      }
-      appPayload["conversation_id"] = exactRoute.conversationId
-      appPayload["turn_id"] = exactRoute.turnId
+      let conversationId = store.agentSessionDestination(id: response.conversationId)
+        ?? response.conversationId
       _ = store.recordAgentSessionUsage(
-        id: exactRoute.conversationId,
+        id: conversationId,
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         costMicros: response.costMicros
       )
       updateAgentExecutionTarget(
-        conversationId: exactRoute.conversationId,
+        conversationId: conversationId,
         contactId: response.contactId
       )
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
     let responseTurnId = appPayload.string("turn_id")
@@ -9613,50 +9639,6 @@ final class MessageCoordinator: ObservableObject {
         )
       }
     }
-  }
-
-  private func exactConnectorResponseRoute(
-    _ response: AgentConnectorResponse
-  ) -> ExactConnectorResponseRoute? {
-    let indexedIdentity = taskIdentityStore.identity(
-      contactId: response.contactId,
-      sourceMessageId: String(response.sourceMessageId)
-    )
-    let task = response.taskId.isBlank ? nil : store.agentTask(id: response.taskId)
-    var seenConversationIds = Set<String>()
-    let conversationIds = [
-      store.agentSessionDestination(id: response.conversationId) ?? response.conversationId,
-      indexedIdentity?.conversationId ?? "",
-      task?.sessionId ?? ""
-    ]
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty && seenConversationIds.insert($0).inserted }
-
-    for conversationId in conversationIds {
-      let messages = store.agentSessionMessages(conversationId)
-      let taskTurnId = messages.first { message in
-        message.isMine &&
-          !message.isSystem &&
-          (message.id.uuidString == response.taskId || message.turnId == response.taskId)
-      }?.turnId ?? ""
-      let exactTurnId = AgentLateConnectorResponsePolicy.exactTurnId(
-        explicitTurnId: response.turnId,
-        taskTurnId: taskTurnId,
-        indexedTurnId: indexedIdentity?.turnId ?? "",
-        conversationMessages: messages
-      )
-      if AgentLateConnectorResponsePolicy.canAccept(
-        sourceIsTerminal: connectorResponseBus.isTerminal(response),
-        exactTurnId: exactTurnId,
-        conversationMessages: messages
-      ), let exactTurnId {
-        return ExactConnectorResponseRoute(
-          conversationId: conversationId,
-          turnId: exactTurnId
-        )
-      }
-    }
-    return nil
   }
 
   private func recordRemoteAgentTaskStatus(
@@ -9955,6 +9937,8 @@ final class MessageCoordinator: ObservableObject {
         if result.completed {
           let saveRequested = pendingArtifactDownloads.remove(result.artifactURI) != nil
           pendingArtifactFetches.remove(result.artifactURI)
+          artifactDownloadRetryGate.remove(result.artifactURI)
+          artifactFetchRetryGate.remove(result.artifactURI)
           artifactRevision &+= 1
           artifactDownloadFailure = ""
           artifactDownloadSavedPath = ""
@@ -9993,6 +9977,8 @@ final class MessageCoordinator: ObservableObject {
       let artifactURI = payload.string("artifact_uri")
       pendingArtifactDownloads.remove(artifactURI)
       pendingArtifactFetches.remove(artifactURI)
+      artifactDownloadRetryGate.remove(artifactURI)
+      artifactFetchRetryGate.remove(artifactURI)
       lastError = payload.string("error_message")
         .ifBlank(payload.string("error"))
         .ifBlank("Artifact redelivery failed")

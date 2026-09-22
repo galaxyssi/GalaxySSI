@@ -46,6 +46,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     let raw = try await provider.rawPlan(invocation: invocation(
       nativeTools: [descriptor],
       conversationId: "conversation-1",
+      executionTurnId: "execution-turn-1",
       systemPrompt: "system",
       prompt: "planner prompt"
     ))
@@ -57,9 +58,13 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertNotNil(capturedRegistry?.executable(Self.echoToolId))
     XCTAssertEqual(request.sessionId, "conversation-1")
     XCTAssertEqual(request.conversationId, "conversation-1")
-    XCTAssertEqual(request.turnId, "turn-1")
-    XCTAssertEqual(request.taskId, "turn-1")
-    XCTAssertEqual(request.workspaceId, "turn-1")
+    XCTAssertEqual(request.turnId, "execution-turn-1")
+    XCTAssertEqual(request.taskId, "execution-turn-1")
+    XCTAssertEqual(
+      request.workspaceId,
+      AgentWorkspaceScope.id(conversationId: "conversation-1", sessionId: "conversation-1")
+    )
+    XCTAssertEqual(request.loopId, "turn-1")
     XCTAssertEqual(request.callerId, "galaxyssi.ios_model_planner_tool_loop")
     XCTAssertEqual(request.messages.map(\.role), [.system, .user])
     XCTAssertEqual(request.messages[0].text, "system")
@@ -73,10 +78,10 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(telemetry.count, 2)
     let workspace = try XCTUnwrap(telemetry[0])
     XCTAssertNil(telemetry[1])
-    XCTAssertEqual(workspace.workspaceId, "turn-1")
+    XCTAssertEqual(workspace.workspaceId, request.workspaceId)
     XCTAssertEqual(workspace.sessionId, "conversation-1")
     XCTAssertEqual(workspace.conversationId, "conversation-1")
-    XCTAssertEqual(workspace.taskId, "turn-1")
+    XCTAssertEqual(workspace.taskId, "execution-turn-1")
     XCTAssertEqual(workspace.agentId, "galaxyssi.ios_model_planner_tool_loop")
     XCTAssertEqual(workspace.status, .running)
   }
@@ -105,6 +110,30 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(toolLoopRaw, #"{"actions":[]}"#)
     XCTAssertEqual(fallback.invocations.count, 1)
     XCTAssertEqual(runner.requests.count, 1)
+  }
+
+  func testPlanningAttemptsReuseConversationWorkspaceWithDistinctLoopIdentity() async throws {
+    let descriptor = try nativeToolDescriptor(id: Self.echoToolId)
+    let registry = try executableRegistry(descriptor: descriptor)
+    let runner = RecordingPlanningToolLoopRunner(.completedPlan())
+    var ids = ["loop-a", "loop-b"]
+    let provider = CloudModelToolLoopAgentPlanningProvider(
+      fallbackProvider: RecordingPlanningProvider(raw: "fallback"),
+      toolRegistry: registry,
+      requestIdFactory: { ids.removeFirst() }
+    ) { _, _ in runner }
+    let source = invocation(
+      nativeTools: [descriptor],
+      conversationId: "conversation-1",
+      executionTurnId: "execution-turn"
+    )
+
+    _ = try await provider.rawPlan(invocation: source)
+    _ = try await provider.rawPlan(invocation: source)
+
+    XCTAssertEqual(Set(runner.requests.map(\.workspaceId)).count, 1)
+    XCTAssertEqual(runner.requests.map(\.turnId), ["execution-turn", "execution-turn"])
+    XCTAssertEqual(runner.requests.map(\.loopId), ["loop-a", "loop-b"])
   }
 
   func testToolLoopPlanningProviderThrowsWhenToolLoopDoesNotComplete() async throws {
@@ -164,6 +193,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     nativeTools: [AgentNativeToolDescriptor],
     allowsPhoneRuntimeTools: Bool = false,
     conversationId: String = "",
+    executionTurnId: String = "",
     systemPrompt: String = "system",
     prompt: String = "prompt"
   ) -> AgentModelPlanningInvocation {
@@ -185,6 +215,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
           turns: [],
           privateMode: false
         ),
+        executionTurnId: executionTurnId,
         allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
       )
     )

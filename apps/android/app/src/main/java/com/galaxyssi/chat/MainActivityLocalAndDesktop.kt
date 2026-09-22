@@ -247,12 +247,6 @@ internal fun MainActivity.showLocalModelFeaturePage() {
     showFeaturePage(getString(R.string.local_model_title))
     featureContent.addView(localModelStatusCard(profile, estimate))
     addSectionTitle(getString(R.string.local_model_qnn_section))
-    featureContent.addView(TextView(this).apply {
-        text = getString(R.string.local_model_qnn_catalog_subtitle)
-        setTextColor(getColorCompat(R.color.text_secondary))
-        textSize = 12.5f
-        setPadding(dp(2), 0, dp(2), dp(10))
-    })
     qnnProfiles.forEach { candidate ->
         featureContent.addView(localModelProfileRow(candidate))
     }
@@ -411,11 +405,6 @@ internal fun MainActivity.showLocalModelFeaturePage() {
             localModelAcceleratorStatus(capability.state)
         ))
     }
-    addSectionTitle(getString(R.string.local_model_section_permissions))
-    featureContent.addView(featureValueRow(getString(R.string.on_device_agent_microphone), "", R.drawable.ic_agent_node, getString(R.string.permission_allowed)))
-    featureContent.addView(featureValueRow(getString(R.string.on_device_agent_camera), "", R.drawable.ic_scan, getString(R.string.permission_allowed)))
-    featureContent.addView(featureValueRow(getString(R.string.local_model_location), "", R.drawable.ic_device_node, getString(R.string.permission_while_using_allowed)))
-    featureContent.addView(featureValueRow(getString(R.string.local_model_notification_permission), "", R.drawable.ic_agent_node, getString(R.string.permission_allowed)))
     addSectionTitle(getString(R.string.local_model_section_privacy_storage))
     featureContent.addView(featureValueRow(
         getString(R.string.local_model_offline_mode),
@@ -424,6 +413,11 @@ internal fun MainActivity.showLocalModelFeaturePage() {
         getString(R.string.common_enabled)
     ))
     featureContent.addView(featureStorageRow())
+    arrangeMyAgentResourceSections(
+        listOf(R.string.local_model_qnn_section, R.string.local_model_section_manage),
+        setOf(R.string.local_model_preflight_section, R.string.local_model_acceleration_section,
+            R.string.local_model_section_privacy_storage)
+    )
     localModelDownloadRefresh.run()
 }
 
@@ -463,8 +457,9 @@ internal fun MainActivity.localModelProfileRow(profile: LocalModelRuntimeProfile
         orientation = LinearLayout.VERTICAL
         isClickable = true
         isFocusable = true
-        setPadding(dp(14), dp(10), dp(14), dp(9))
-        background = getDrawable(R.drawable.glass_card_background)
+        setPadding(dp(if (myAgentSurfaceActive()) 20 else 14), dp(13), dp(if (myAgentSurfaceActive()) 20 else 14), dp(13))
+        if (myAgentSurfaceActive()) setBackgroundColor(getColorCompat(R.color.surface_bg))
+        else background = getDrawable(R.drawable.glass_card_background)
         addView(LinearLayout(this@localModelProfileRow).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -476,8 +471,8 @@ internal fun MainActivity.localModelProfileRow(profile: LocalModelRuntimeProfile
                     text = profile.displayName
                     setTextColor(getColorCompat(R.color.text_primary))
                     textSize = 15f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    maxLines = 1
+                    setTypeface(typeface, if (myAgentSurfaceActive()) android.graphics.Typeface.NORMAL else android.graphics.Typeface.BOLD)
+                    maxLines = 2
                     ellipsize = TextUtils.TruncateAt.END
                 })
                 addView(subtitleView)
@@ -502,7 +497,7 @@ internal fun MainActivity.localModelProfileRow(profile: LocalModelRuntimeProfile
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(9) }
+        ).apply { bottomMargin = dp(if (myAgentSurfaceActive()) 1 else 9) }
         setOnClickListener { handleLocalModelRowClick(profile) }
         setOnLongClickListener {
             if (LocalModelManager.isInstalled(this@localModelProfileRow, profile)) {
