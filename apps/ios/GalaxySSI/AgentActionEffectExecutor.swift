@@ -22,7 +22,13 @@ final class AgentActionEffectExecutor {
     delegate: AgentActionExecutor
   ) -> AgentActionResult {
     if action.kind == .readScreen {
-      return delegate.execute(action: action, screen: screen)
+      return AgentLatencyTelemetry.runtime.measure(
+        taskId: Self.taskId(context, action: action),
+        phase: .screenObserve,
+        outcome: Self.runtimeOutcome
+      ) {
+        delegate.execute(action: action, screen: screen)
+      }
     }
     guard action.kind != .callNativeTool else {
       return Self.failure(
@@ -48,7 +54,12 @@ final class AgentActionEffectExecutor {
     let digest = Self.inputDigest(action)
     let startedAt = nowMillis()
 
-    if let observed = store.observe(key) {
+    let observed = AgentLatencyTelemetry.runtime.measure(
+      taskId: Self.taskId(context, action: action),
+      phase: .receiptObserve,
+      operation: { store.observe(key) }
+    )
+    if let observed {
       return Self.observedResult(action: action, digest: digest, claim: observed)
     }
     let claim: AgentNativeEffectClaim
@@ -67,19 +78,24 @@ final class AgentActionEffectExecutor {
 
     let outcome = delegate.execute(action: action, screen: screen)
     do {
-      try store.complete(
-        key,
-        invocationId: context.invocationId,
-        result: Self.pack(
-          action: action,
-          key: key,
+      try AgentLatencyTelemetry.runtime.measure(
+        taskId: Self.taskId(context, action: action),
+        phase: .resultVerify
+      ) {
+        try store.complete(
+          key,
           invocationId: context.invocationId,
-          inputDigest: digest,
-          startedAt: startedAt,
-          finishedAt: nowMillis(),
-          outcome: outcome
+          result: Self.pack(
+            action: action,
+            key: key,
+            invocationId: context.invocationId,
+            inputDigest: digest,
+            startedAt: startedAt,
+            finishedAt: nowMillis(),
+            outcome: outcome
+          )
         )
-      )
+      }
       return outcome
     } catch {
       return Self.failure(
@@ -210,6 +226,19 @@ final class AgentActionEffectExecutor {
         "action_effect_status": code
       ]) { _, status in status }
     )
+  }
+
+  private static func taskId(
+    _ context: AgentNativeToolInvocationContext,
+    action: AgentAction
+  ) -> String {
+    (context.attributes["task_id"] ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty ?? context.turnId.nilIfEmpty ?? action.id
+  }
+
+  private static func runtimeOutcome(_ result: AgentActionResult) -> String {
+    result.success ? "completed" : "failed"
   }
 
   private static let toolId = "galaxyssi.action.dispatch"

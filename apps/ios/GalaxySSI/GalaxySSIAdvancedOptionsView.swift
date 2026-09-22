@@ -302,6 +302,14 @@ struct GalaxySSIAgentLatencyDashboardView: View {
     case "phone_connector_first_visible_ms": return t("agent_latency_first_visible", "Publish to first visible output")
     case "phone_connector_complete_visible_ms": return t("agent_latency_final_visible", "Publish to final visible output")
     case "phone_render_ms": return t("agent_latency_render", "Response rendering")
+    case "phone_runtime_action_dispatch_ms":
+      return t("agent_latency_action_dispatch", "Action dispatch and receipt")
+    case "phone_runtime_screen_observe_ms":
+      return t("agent_latency_screen_observe", "Post-action screen observation")
+    case "phone_runtime_receipt_observe_ms":
+      return t("agent_latency_receipt_observe", "Tool receipt observation")
+    case "phone_runtime_result_verify_ms":
+      return t("agent_latency_result_verify", "Verification result application")
     default: return key
     }
   }

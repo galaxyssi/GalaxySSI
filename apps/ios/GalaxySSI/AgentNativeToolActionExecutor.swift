@@ -32,6 +32,16 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    AgentLatencyTelemetry.runtime.measure(
+      taskId: Self.runtimeTimingTaskId(action),
+      phase: .actionDispatch,
+      outcome: Self.runtimeOutcome
+    ) {
+      executeUntraced(action: action, screen: screen)
+    }
+  }
+
+  private func executeUntraced(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     guard action.kind == .callNativeTool else {
       if let actionEffectExecutor {
         return actionEffectExecutor.execute(
@@ -116,7 +126,13 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       }
     } while true
 
-    return Self.actionResult(action: action, result: result, retryCount: attempt - 1)
+    return AgentLatencyTelemetry.runtime.measure(
+      taskId: Self.runtimeTimingTaskId(action),
+      phase: .resultVerify,
+      outcome: Self.runtimeOutcome
+    ) {
+      Self.actionResult(action: action, result: result, retryCount: attempt - 1)
+    }
   }
 
   static func defaultWorkspaceId(for action: AgentAction) -> String {
@@ -147,6 +163,21 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         "goal_id": taskId
       ]
     )
+  }
+
+  private static func runtimeTimingTaskId(_ action: AgentAction) -> String {
+    clean(action.parameters[taskIdKey] ?? "")
+      .nilIfEmpty ?? clean(action.parameters[turnIdKey] ?? "")
+      .nilIfEmpty ?? action.id
+  }
+
+  private static func runtimeOutcome(_ result: AgentActionResult) -> String {
+    guard !result.success else { return "completed" }
+    switch result.metadata["native_tool_status"] {
+    case "cancelled": return "cancelled"
+    case "timed_out": return "timed_out"
+    default: return "failed"
+    }
   }
 
   private static func parseInput(_ raw: String) -> InputParseResult {
