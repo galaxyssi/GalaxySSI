@@ -41,6 +41,8 @@ final class AgentKnowledgeSemanticModelTests: XCTestCase {
       indexedChunks: 34,
       pendingDocuments: 5,
       enrollmentPending: true,
+      countsPending: true,
+      countsError: "count failure",
       downloadRequestId: "request",
       error: ""
     )
@@ -56,6 +58,8 @@ final class AgentKnowledgeSemanticModelTests: XCTestCase {
     let state = try JSONDecoder().decode(AgentKnowledgeSemanticState.self, from: legacy)
 
     XCTAssertFalse(state.enrollmentPending)
+    XCTAssertFalse(state.countsPending)
+    XCTAssertTrue(state.countsError.isEmpty)
     XCTAssertEqual(state.phase, .indexing)
   }
 }

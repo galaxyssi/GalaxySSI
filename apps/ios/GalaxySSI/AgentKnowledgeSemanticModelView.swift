@@ -70,6 +70,18 @@ struct AgentKnowledgeSemanticModelView: View {
           )
           : "\(controller.state.pendingDocuments)"
       )
+      if controller.state.countsPending {
+        metricRow(
+          t("galaxyssi.agent_knowledge.semantic_count_status", "Count maintenance"),
+          t("galaxyssi.agent_knowledge.semantic_counting", "Updating")
+        )
+      }
+      if !controller.state.countsError.isEmpty {
+        Text(controller.state.countsError)
+          .font(.system(size: 12))
+          .foregroundColor(.red)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
       if controller.state.phase == .downloading {
         ProgressView(
           value: Double(controller.state.downloadedBytes),

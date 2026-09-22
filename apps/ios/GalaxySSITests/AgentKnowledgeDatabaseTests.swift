@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import XCTest
 @testable import GalaxySSI
 
@@ -118,6 +119,10 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertTrue(initial.replaceAll(items))
     let first = try initial.pendingVectorItems(modelSHA256: modelSHA, limit: 64)
     XCTAssertEqual(first.count, 64)
+    XCTAssertEqual(
+      try initial.vectorCountSnapshot(modelSHA256: modelSHA),
+      AgentKnowledgeVectorCountSnapshot(chunks: 0, pending: 64, complete: true)
+    )
     XCTAssertTrue(try initial.vectorEnrollmentPending(modelSHA256: modelSHA))
     finish(first, in: initial)
 
@@ -133,9 +138,73 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertEqual(Set((first + second + third).map(\.id)), Set(items.map(\.id)))
     XCTAssertFalse(try reopened.vectorEnrollmentPending(modelSHA256: modelSHA))
     XCTAssertTrue(try reopened.pendingVectorItems(modelSHA256: modelSHA).isEmpty)
+    XCTAssertEqual(
+      try reopened.vectorCountSnapshot(modelSHA256: modelSHA),
+      AgentKnowledgeVectorCountSnapshot(chunks: 131, pending: 0, complete: true)
+    )
     let raw = String(decoding: try Data(contentsOf: url), as: UTF8.self)
     XCTAssertFalse(raw.contains("enrollment-item-"))
     XCTAssertFalse(raw.contains(modelSHA))
+  }
+
+  func testVectorCountMaintenanceIsRestartableAndBounded() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeCounts-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let modelSHA = String(repeating: "8", count: 64)
+    var legacy: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &legacy), SQLITE_OK)
+    defer { if let legacy { sqlite3_close_v2(legacy) } }
+    func executeLegacy(_ sql: String) {
+      XCTAssertEqual(sqlite3_exec(legacy, sql, nil, nil, nil), SQLITE_OK)
+    }
+    executeLegacy("CREATE TABLE knowledge_metadata(key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+    executeLegacy("INSERT INTO knowledge_metadata VALUES('source_header_schema', 2)")
+    executeLegacy("""
+      CREATE TABLE knowledge_vectors(
+        vector_key TEXT PRIMARY KEY NOT NULL, item_hash TEXT NOT NULL, model_hash TEXT NOT NULL,
+        source_revision_hash TEXT NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL
+      )
+      """)
+    executeLegacy("""
+      CREATE TABLE knowledge_vector_queue(
+        model_hash TEXT NOT NULL, item_hash TEXT NOT NULL, PRIMARY KEY(model_hash, item_hash)
+      )
+      """)
+    for index in 1...70 {
+      let vector = String(format: "%064x", index)
+      let item = String(format: "%064x", index + 1_000)
+      executeLegacy("""
+        INSERT INTO knowledge_vectors VALUES(
+          '\(vector)', '\(item)', '\(modelSHA)', '\(String(repeating: "7", count: 64))', \(index), X'00'
+        )
+        """)
+      executeLegacy("INSERT INTO knowledge_vector_queue VALUES('\(modelSHA)', '\(item)')")
+    }
+    sqlite3_close_v2(legacy)
+    legacy = nil
+
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    XCTAssertEqual(
+      try database.vectorCountSnapshot(modelSHA256: modelSHA),
+      AgentKnowledgeVectorCountSnapshot(chunks: 0, pending: 0, complete: false)
+    )
+    XCTAssertFalse(try database.maintainVectorCounts(pageSize: 16))
+    let partial = try database.vectorCountSnapshot(modelSHA256: modelSHA)
+    XCTAssertEqual(partial.chunks, 16)
+    XCTAssertEqual(partial.pending, 16)
+    XCTAssertFalse(partial.complete)
+
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    while true {
+      if try reopened.maintainVectorCounts(pageSize: 16) { break }
+    }
+    XCTAssertEqual(
+      try reopened.vectorCountSnapshot(modelSHA256: modelSHA),
+      AgentKnowledgeVectorCountSnapshot(chunks: 70, pending: 70, complete: true)
+    )
   }
 
   @MainActor
