@@ -12,7 +12,6 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.speech.RecognizerIntent
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -29,6 +28,7 @@ class WatchContactsActivity : Activity() {
     private var peer = ""
     private var draft = ""
     private var voicePeer = ""
+    private lateinit var peerVoice: WatchPeerVoice
     private var resumed = false
     private var busy = false
     private var qrBitmap: Bitmap? = null
@@ -44,15 +44,19 @@ class WatchContactsActivity : Activity() {
     private val listener: () -> Unit = {
         if (revision != repo.contacts.revision) {
             revision = repo.contacts.revision
-            if (page == "chat") updateMessages() else if (page == "qr") {
-                repo.contacts.people().firstOrNull { it.status == "pending" }?.let {
-                    peer = it.id; qrBitmap = null; navigate("request")
-                }
-            } else render()
+            if (page == "chat") updateMessages() else if (page != "qr") render()
         }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        peerVoice = WatchPeerVoice(this, { bytes, duration ->
+            val target = voicePeer
+            busy = true; composer?.sending(true)
+            repo.contactAction({ try { sendVoice(target, bytes, duration) } finally { bytes.fill(0) } }) { ok ->
+                busy = false; composer?.sending(false)
+                if (ok) updateMessages() else error()
+            }
+        }, ::error)
         page = savedInstanceState?.getString("page") ?: "list"
         peer = savedInstanceState?.getString("peer") ?: intent.getStringExtra("peer").orEmpty()
         draft = savedInstanceState?.getString("draft").orEmpty()
@@ -65,6 +69,11 @@ class WatchContactsActivity : Activity() {
         out.putString("page", page); out.putString("peer", peer); out.putString("draft", draft)
         super.onSaveInstanceState(out)
     }
+    override fun onNewIntent(value: Intent) {
+        super.onNewIntent(value); setIntent(value)
+        peer = value.getStringExtra("peer").orEmpty(); draft = ""
+        navigate(if (value.getBooleanExtra("request", false)) "request" else "chat")
+    }
     override fun onResume() {
         super.onResume(); resumed = true
         repo.listen(listener); repo.foreground(true)
@@ -74,9 +83,11 @@ class WatchContactsActivity : Activity() {
         visibility(); listener()
     }
     override fun onPause() {
+        peerVoice.abort()
         resumed = false; repo.contacts.visiblePeer = ""; repo.unlisten(listener); repo.foreground(false)
         super.onPause()
     }
+    override fun onDestroy() { peerVoice.close(); super.onDestroy() }
     private fun visibility() {
         repo.contacts.visiblePeer = if (resumed && page == "chat") peer else ""
         if (resumed && page == "chat") {
@@ -84,7 +95,7 @@ class WatchContactsActivity : Activity() {
             getSystemService(NotificationManager::class.java).cancel("peer", peer.hashCode())
         }
     }
-    private fun navigate(value: String) { page = value; render(); visibility() }
+    private fun navigate(value: String) { peerVoice.abort(); page = value; render(); visibility() }
     private fun back() {
         when (page) {
             "list" -> finish()
@@ -163,7 +174,9 @@ class WatchContactsActivity : Activity() {
         when (page) {
             "list" -> {
                 row(getString(R.string.peer_my_qr)) { openQr() }
-                val pending = repo.contacts.people().count { it.status == "pending" }
+                row(getString(R.string.nearby_ble)) { startActivity(Intent(this, WatchNearbyActivity::class.java)) }
+                row(getString(R.string.nearby_nfc)) { startActivity(Intent(this, WatchNearbyActivity::class.java).putExtra("nfc", true)) }
+                val pending = repo.contacts.people().count { it.status in setOf("pending", "requesting") }
                 row(getString(R.string.peer_requests) + if (pending > 0) "  • $pending" else "") { navigate("requests") }
                 val approved = repo.contacts.people().filter { it.status == "approved" }
                 if (approved.isEmpty()) body.addView(text(getString(R.string.peer_empty), 12))
@@ -178,7 +191,7 @@ class WatchContactsActivity : Activity() {
                 }
             }
             "requests" -> {
-                val pending = repo.contacts.people().filter { it.status == "pending" }
+                val pending = repo.contacts.people().filter { it.status in setOf("pending", "requesting") }
                 if (pending.isEmpty()) body.addView(text(getString(R.string.peer_no_requests), 14))
                 pending.forEach { person -> contactRow(person) { peer = person.id; navigate("request") } }
             }
@@ -187,13 +200,17 @@ class WatchContactsActivity : Activity() {
                     body.addView(avatar(person.fingerprint.ifBlank { person.id }), LinearLayout.LayoutParams(dp(44), dp(44)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(5) })
                 }
                 body.addView(text(repo.contacts.person(peer)?.name.orEmpty(), 21))
-                body.addView(text(getString(R.string.peer_request_help), 13))
-                row(getString(R.string.peer_approve), green) { decide(true) }
-                row(getString(R.string.peer_reject)) { decide(false) }
+                if (repo.contacts.person(peer)?.status == "requesting") {
+                    body.addView(text(getString(R.string.nearby_wait_approval), 13))
+                } else {
+                    body.addView(text(getString(R.string.peer_request_help), 13))
+                    row(getString(R.string.peer_approve), green) { decide(true) }
+                    row(getString(R.string.peer_reject)) { decide(false) }
+                }
             }
             "chat" -> {
                 chatRows = body; updateMessages(true)
-                composer = WatchMessageComposer(this, draft, { draft = it }, { send(draft) }, ::voice, { navigate("actions") })
+                composer = WatchMessageComposer(this, draft, { draft = it }, { send(draft) }, ::voice, { navigate("actions") }, peerVoice::finish, peerVoice::move)
                 editor = composer?.input
                 root.addView(composer, composer!!.placement(10))
 
@@ -218,7 +235,8 @@ class WatchContactsActivity : Activity() {
         }
     }
     private fun contactRow(person: WatchPerson, click: () -> Unit) {
-        val last = repo.contacts.messages(person.id).lastOrNull()?.text.orEmpty().take(22)
+        val latest = repo.contacts.messages(person.id).lastOrNull()
+        val last = (if (latest?.audioId?.isNotEmpty() == true) getString(R.string.peer_voice_message) else latest?.text.orEmpty()).take(22)
         val row = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48); setPadding(dp(4), dp(5), dp(4), dp(5))
             setOnClickListener { click() }
@@ -240,11 +258,24 @@ class WatchContactsActivity : Activity() {
         val oldY = view?.scrollY ?: 0
         rows.removeAllViews()
         repo.contacts.messages(peer).forEach { message ->
-            val bubble = text(message.text.replace("[attachment]", getString(R.string.peer_attachment)), 15).apply {
+            val voice = message.audioId.isNotEmpty()
+            val bubble = text(if (voice) "▶  ${((message.duration + 999) / 1000).coerceAtLeast(1)}″" else message.text.replace("[attachment]", getString(R.string.peer_attachment)), 15).apply {
                 gravity = Gravity.START; setPadding(dp(10), dp(7), dp(10), dp(7)); setTextIsSelectable(true)
                 setTextColor(if (message.outgoing) Color.BLACK else Color.WHITE)
                 background = background(if (message.outgoing) 0xff95ec69.toInt() else 0xff26282b.toInt())
                 maxWidth = (resources.displayMetrics.widthPixels * .67f).toInt() + 10
+                if (voice) {
+                    setTextIsSelectable(false); minWidth = dp(65); contentDescription = getString(R.string.peer_voice_message)
+                    setOnClickListener {
+                        peerVoice.stopPlayback()
+                        val target = peer; var bytes: ByteArray? = null
+                        repo.contactAction({ bytes = audioBytes(target, message.audioId) }) { ok ->
+                            val audio = bytes
+                            if (ok && audio != null && resumed && page == "chat" && peer == target) peerVoice.play(audio)
+                            else { audio?.fill(0); if (resumed) Toast.makeText(this@WatchContactsActivity, R.string.peer_voice_loading, Toast.LENGTH_SHORT).show() }
+                        }
+                    }
+                }
             }
             val messageRow = LinearLayout(this).apply {
                 gravity = Gravity.TOP or if (message.outgoing) Gravity.END else Gravity.START
@@ -302,20 +333,8 @@ class WatchContactsActivity : Activity() {
         }
     }
     private fun voice() {
-        if (busy || voicePeer.isNotEmpty()) return
-        voicePeer = peer
-        if (!WatchSpeechInput.launch(this) { startActivityForResult(it, 71) }) { voicePeer = ""; error() }
-    }
-    @Deprecated("Platform speech activity result")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != 71) return
-        WatchSamsungConfirmService.cancelSession()
-        val target = voicePeer; voicePeer = ""
-        if (resultCode == RESULT_OK && target == peer && page == "chat") {
-            val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
-            if (result.isNotBlank()) { draft = result.take(4000); editor?.setText(draft); send(draft) }
-        }
+        if (busy || repo.contacts.person(peer)?.status != "approved") return
+        voicePeer = peer; peerVoice.start()
     }
     private fun error() { if (!isDestroyed) Toast.makeText(this, R.string.peer_error, Toast.LENGTH_LONG).show() }
     private fun row(label: String, color: Int = 0xff1d1f21.toInt(), click: () -> Unit) {

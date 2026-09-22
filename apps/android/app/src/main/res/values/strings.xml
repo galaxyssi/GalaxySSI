@@ -2909,4 +2909,11 @@
     <string name="agent_attachment_source_missing">The attachment source file is missing. The Agent did not receive the file.</string>
     <string name="agent_attachment_identity_changed">The attachment destination or task identity changed. The file was not delivered.</string>
     <string name="agent_attachment_integrity_failed">The attachment changed or failed its integrity check. The Agent did not receive a verified file.</string>
+    <string name="nearby_nfc_title">Tap watch with NFC</string>
+    <string name="nearby_nfc_phone_help">On your watch open Contacts → Phone tap to add. Hold this phone near the watch. Both devices need internet for the friend request.</string>
+    <string name="nearby_nfc_enable">Enable NFC in phone settings and reopen this page.</string>
+    <string name="nearby_nfc_compare">Compare this code with the watch before adding.</string>
+    <string name="nearby_nfc_failed">Could not complete the request. Reopen the watch pairing page and try again.</string>
+    <string name="nearby_nfc_send">Codes match · Send friend request</string>
+    <string name="nearby_nfc_sent">Request sent. Approve it on the watch.</string>
 </resources>
