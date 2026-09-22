@@ -14,7 +14,7 @@ final class GalaxySSIBackupTests: XCTestCase {
     XCTAssertEqual(key.hexString(), "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b")
   }
 
-  func testEncryptedBackupRootUsesAndroidCompatibleEnvelope() throws {
+  func testEncryptedBackupRootUsesAuthenticatedChunkEnvelope() throws {
     let data = try GalaxySSIBackupManager.exportBackup(
       store: makeStore(),
       password: "password123",
@@ -22,17 +22,20 @@ final class GalaxySSIBackupTests: XCTestCase {
       includeMessages: true,
       iterations: 32
     )
-    let root = try GalaxySSIBackupManager.decodeRoot(from: data)
+    let root = try GalaxySSIBackupManager.decodeStreamingRoot(from: data)
 
-    XCTAssertEqual(GalaxySSIBackupManager.iterations, 180_000)
-    XCTAssertEqual(root.version, 1)
+    XCTAssertEqual(GalaxySSIBackupManager.iterations, 600_000)
+    XCTAssertEqual(root.version, 2)
     XCTAssertEqual(root.type, "galaxyssi_backup")
     XCTAssertEqual(root.kdf, "pbkdf2-hmac-sha256")
     XCTAssertEqual(root.cipher, "aes-256-gcm")
     XCTAssertEqual(root.iterations, 32)
     XCTAssertEqual(Data(base64Encoded: root.salt)?.count, 16)
-    XCTAssertEqual(Data(base64Encoded: root.iv)?.count, 12)
-    XCTAssertGreaterThan(Data(base64Encoded: root.ciphertext)?.count ?? 0, 16)
+    XCTAssertEqual(root.chunkByteCount, 64 * 1024)
+    XCTAssertFalse(root.chunks.isEmpty)
+    XCTAssertEqual(root.chunks.map(\.plaintextByteCount).reduce(0, +), root.plaintextByteCount)
+    XCTAssertEqual(Data(base64Encoded: root.chunks[0].nonce)?.count, 12)
+    XCTAssertEqual(Data(base64Encoded: root.footer)?.count, 32)
   }
 
   func testBackupRestoresCloudAPISecretsAndLocalState() throws {
@@ -198,6 +201,60 @@ final class GalaxySSIBackupTests: XCTestCase {
     )
 
     XCTAssertThrowsError(try GalaxySSIBackupManager.importBackup(data: encrypted, password: "not-right"))
+  }
+
+  func testBackupRejectsTamperedChunkBeforeReturningPayload() throws {
+    let encrypted = try GalaxySSIBackupManager.exportBackup(
+      store: makeStore(),
+      password: "password123",
+      iterations: 32
+    )
+    var root = try GalaxySSIBackupManager.decodeStreamingRoot(from: encrypted)
+    var chunk = try XCTUnwrap(Data(base64Encoded: root.chunks[0].ciphertext))
+    chunk[0] ^= 0x01
+    root.chunks[0].ciphertext = chunk.base64EncodedString()
+    let tampered = try JSONEncoder().encode(root)
+
+    XCTAssertThrowsError(try GalaxySSIBackupManager.importBackup(
+      data: tampered,
+      password: "password123"
+    ))
+  }
+
+  func testBackupRejectsMissingFinalChunk() throws {
+    let store = makeStore()
+    for offset in 0..<300 {
+      store.appendIncoming(String(repeating: "x", count: 500), from: "peer-\(offset)")
+    }
+    let encrypted = try GalaxySSIBackupManager.exportBackup(
+      store: store,
+      password: "password123",
+      iterations: 32
+    )
+    var root = try GalaxySSIBackupManager.decodeStreamingRoot(from: encrypted)
+    XCTAssertGreaterThan(root.chunks.count, 1)
+    root.chunks.removeLast()
+    let truncated = try JSONEncoder().encode(root)
+
+    XCTAssertThrowsError(try GalaxySSIBackupManager.importBackup(
+      data: truncated,
+      password: "password123"
+    ))
+  }
+
+  func testLegacyVersionOneBackupRemainsImportable() throws {
+    let payload = makeStore().exportBackupPayload()
+    let legacy = try GalaxySSIBackupManager.encryptLegacyPayload(
+      payload,
+      password: "password123",
+      iterations: 32
+    )
+
+    let imported = try GalaxySSIBackupManager.importBackup(data: legacy, password: "password123")
+    XCTAssertEqual(imported.platform, payload.platform)
+    XCTAssertEqual(imported.profile, payload.profile)
+    XCTAssertEqual(imported.privacyManifest, payload.privacyManifest)
+    XCTAssertEqual(imported.agentData, payload.agentData)
   }
 
   func testBackupRejectsShortPassword() {
