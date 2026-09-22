@@ -90,6 +90,12 @@ struct GalaxySSIConversationHubItem: Identifiable, Equatable {
   var unreadCount: Int = 0
 }
 
+enum GalaxySSIConversationHubContactHistoryPolicy {
+  static func includes(_ contact: GalaxySSIContact?) -> Bool {
+    !ScannedAgentConversationPolicy.opensAgentConversation(contact)
+  }
+}
+
 enum GalaxySSIConversationHubModels {
   static func contactSummaries(
     contacts: [GalaxySSIContact],
@@ -97,6 +103,7 @@ enum GalaxySSIConversationHubModels {
     isPinned: (String) -> Bool
   ) -> [GalaxySSIConversationHubContactSummary] {
     contacts.compactMap { contact in
+      guard GalaxySSIConversationHubContactHistoryPolicy.includes(contact) else { return nil }
       let conversation = summary(contact.id)
       guard let latest = conversation.lastMessage else { return nil }
       return GalaxySSIConversationHubContactSummary(

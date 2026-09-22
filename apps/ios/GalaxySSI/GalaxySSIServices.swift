@@ -245,11 +245,6 @@ final class MessageCoordinator: ObservableObject {
     var remoteTask: AgentRemoteTaskStatusSnapshot?
   }
 
-  private struct ExactConnectorResponseRoute {
-    var conversationId: String
-    var turnId: String
-  }
-
   init(
     store: GalaxySSIStore,
     deliveryStore: GalaxySSILinkDeliveryStore? = nil,
@@ -9307,43 +9302,26 @@ final class MessageCoordinator: ObservableObject {
         }
         return
       }
-      if connectorResponseBus.publish(response) {
-        let conversationId = store.agentSessionDestination(id: response.conversationId)
-          ?? response.conversationId
-        _ = store.recordAgentSessionUsage(
-          id: conversationId,
-          inputTokens: response.inputTokens,
-          outputTokens: response.outputTokens,
-          costMicros: response.costMicros
-        )
-        updateAgentExecutionTarget(
-          conversationId: conversationId,
-          contactId: response.contactId
-        )
-        if !messageId.isEmpty {
-          deliveryStore.completeIncoming(messageId: messageId)
-        }
+      let consumed = connectorResponseBus.publish(response)
+      guard consumed || connectorResponseBus.wasRecorded(response) else {
         return
       }
-      guard let exactRoute = exactConnectorResponseRoute(response) else {
-        connectorResponseBus.remove(response)
-        if !messageId.isEmpty {
-          deliveryStore.completeIncoming(messageId: messageId)
-        }
-        return
-      }
-      appPayload["conversation_id"] = exactRoute.conversationId
-      appPayload["turn_id"] = exactRoute.turnId
+      let conversationId = store.agentSessionDestination(id: response.conversationId)
+        ?? response.conversationId
       _ = store.recordAgentSessionUsage(
-        id: exactRoute.conversationId,
+        id: conversationId,
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         costMicros: response.costMicros
       )
       updateAgentExecutionTarget(
-        conversationId: exactRoute.conversationId,
+        conversationId: conversationId,
         contactId: response.contactId
       )
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
     let responseTurnId = appPayload.string("turn_id")
@@ -9598,50 +9576,6 @@ final class MessageCoordinator: ObservableObject {
         )
       }
     }
-  }
-
-  private func exactConnectorResponseRoute(
-    _ response: AgentConnectorResponse
-  ) -> ExactConnectorResponseRoute? {
-    let indexedIdentity = taskIdentityStore.identity(
-      contactId: response.contactId,
-      sourceMessageId: String(response.sourceMessageId)
-    )
-    let task = response.taskId.isBlank ? nil : store.agentTask(id: response.taskId)
-    var seenConversationIds = Set<String>()
-    let conversationIds = [
-      store.agentSessionDestination(id: response.conversationId) ?? response.conversationId,
-      indexedIdentity?.conversationId ?? "",
-      task?.sessionId ?? ""
-    ]
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty && seenConversationIds.insert($0).inserted }
-
-    for conversationId in conversationIds {
-      let messages = store.agentSessionMessages(conversationId)
-      let taskTurnId = messages.first { message in
-        message.isMine &&
-          !message.isSystem &&
-          (message.id.uuidString == response.taskId || message.turnId == response.taskId)
-      }?.turnId ?? ""
-      let exactTurnId = AgentLateConnectorResponsePolicy.exactTurnId(
-        explicitTurnId: response.turnId,
-        taskTurnId: taskTurnId,
-        indexedTurnId: indexedIdentity?.turnId ?? "",
-        conversationMessages: messages
-      )
-      if AgentLateConnectorResponsePolicy.canAccept(
-        sourceIsTerminal: connectorResponseBus.isTerminal(response),
-        exactTurnId: exactTurnId,
-        conversationMessages: messages
-      ), let exactTurnId {
-        return ExactConnectorResponseRoute(
-          conversationId: conversationId,
-          turnId: exactTurnId
-        )
-      }
-    }
-    return nil
   }
 
   private func recordRemoteAgentTaskStatus(
