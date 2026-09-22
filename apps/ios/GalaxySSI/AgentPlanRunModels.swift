@@ -112,6 +112,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var planContext: AgentTaskPlanContext?
   var activePlan: AgentPlan?
   var pendingPlanning: AgentInitialPlanningReference?
+  var plannerSnapshot: AgentPlannerModelSnapshot?
   var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
   var nativeActionResults: [String]
@@ -146,6 +147,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     planContext: AgentTaskPlanContext? = nil,
     activePlan: AgentPlan? = nil,
     pendingPlanning: AgentInitialPlanningReference? = nil,
+    plannerSnapshot: AgentPlannerModelSnapshot? = nil,
     historyManifest: AgentSessionHistoryManifest? = nil,
     lastNativeActionResult: AgentActionResult? = nil,
     nativeActionResults: [String] = [],
@@ -177,6 +179,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     self.planContext = planContext
     self.activePlan = activePlan
     self.pendingPlanning = pendingPlanning
+    self.plannerSnapshot = plannerSnapshot
     self.historyManifest = historyManifest
     self.lastNativeActionResult = lastNativeActionResult
     self.nativeActionResults = nativeActionResults
@@ -210,6 +213,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case planContext = "plan_context"
     case activePlan = "active_plan"
     case pendingPlanning = "pending_planning"
+    case plannerSnapshot = "planner_snapshot"
     case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
     case nativeActionResults = "native_action_results"
@@ -245,6 +249,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       planContext: try container.decodeIfPresent(AgentTaskPlanContext.self, forKey: .planContext),
       activePlan: try container.decodeIfPresent(AgentPlan.self, forKey: .activePlan),
       pendingPlanning: try container.decodeIfPresent(AgentInitialPlanningReference.self, forKey: .pendingPlanning),
+      plannerSnapshot: try container.decodeIfPresent(AgentPlannerModelSnapshot.self, forKey: .plannerSnapshot),
       historyManifest: try container.decodeIfPresent(AgentSessionHistoryManifest.self, forKey: .historyManifest),
       lastNativeActionResult: try container.decodeIfPresent(AgentActionResult.self, forKey: .lastNativeActionResult),
       nativeActionResults: try container.decodeIfPresent([String].self, forKey: .nativeActionResults) ?? [],
