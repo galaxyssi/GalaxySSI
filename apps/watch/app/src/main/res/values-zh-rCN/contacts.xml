@@ -19,7 +19,7 @@
     <string name="peer_clear">清空聊天记录</string>
     <string name="peer_delete">删除联系人</string>
     <string name="peer_clear_confirm">清空此联系人的聊天记录和待发送消息？</string>
-    <string name="peer_delete_confirm">删除联系人和聊天记录？再次添加需要重新批准。</string>
+    <string name="peer_delete_confirm">删除“%1$s”？同时删除此手表上的聊天记录和语音。</string>
     <string name="peer_error">操作未完成，请重试</string>
     <string name="peer_delivered">已送达</string>
     <string name="peer_failed">已过期，请重新发送</string>
