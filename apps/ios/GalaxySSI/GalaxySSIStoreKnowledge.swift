@@ -155,7 +155,8 @@ extension GalaxySSIStore {
     guard !cleanQuery.isEmpty else { return [] }
     let tokens = knowledgeTokens(cleanQuery)
     let queryTrigrams = knowledgeTrigrams(cleanQuery)
-    return agentKnowledgeItems
+    let candidates = (try? agentKnowledgeDatabase.searchCandidates(query: cleanQuery)) ?? agentKnowledgeItems
+    return candidates
       .compactMap { item -> AgentKnowledgeHit? in
         let score = knowledgeScore(
           item,

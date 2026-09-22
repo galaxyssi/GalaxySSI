@@ -53,11 +53,34 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  func searchCandidates(query: String, limit: Int = 256) throws -> [AgentKnowledgeItem] {
+    try locked {
+      let tokens = searchTokens(query).map(keyedHash)
+      guard !tokens.isEmpty else { return [] }
+      guard let statement = prepare("""
+        SELECT k.item_hash, k.encrypted_payload
+        FROM knowledge_fts f
+        JOIN knowledge_items k ON k.item_hash = f.item_hash
+        WHERE knowledge_fts MATCH ?
+        ORDER BY bm25(knowledge_fts), k.updated_at DESC
+        LIMIT ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(tokens.joined(separator: " OR "), at: 1, to: statement)
+      sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 256)))
+      var items: [AgentKnowledgeItem] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        items.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
+      }
+      return items
+    }
+  }
+
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
       guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
-      guard execute("DELETE FROM knowledge_items") else {
+      guard execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -88,7 +111,16 @@ final class AgentKnowledgeDatabase {
     encrypted.withUnsafeBytes { bytes in
       sqlite3_bind_blob(statement, 4, bytes.baseAddress, Int32(encrypted.count), Self.transient)
     }
-    return sqlite3_step(statement) == SQLITE_DONE
+    guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+    guard let indexStatement = prepare(
+      "INSERT INTO knowledge_fts(item_hash, tokens) VALUES (?, ?)"
+    ) else { return false }
+    defer { sqlite3_finalize(indexStatement) }
+    bind(itemHash, at: 1, to: indexStatement)
+    let searchable = [item.title, item.summary, item.content, item.source, item.tags.joined(separator: " ")]
+      .joined(separator: " ")
+    bind(searchTokens(searchable).map(keyedHash).joined(separator: " "), at: 2, to: indexStatement)
+    return sqlite3_step(indexStatement) == SQLITE_DONE
   }
 
   private func validateIdentities(_ items: [AgentKnowledgeItem]) -> Bool {
@@ -125,6 +157,55 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_idx ON knowledge_items(source_hash, updated_at)")
+    _ = execute("""
+      CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+        item_hash UNINDEXED,
+        tokens,
+        tokenize = 'unicode61'
+      )
+      """)
+    rebuildIndexIfNeeded()
+  }
+
+  private func rebuildIndexIfNeeded() {
+    guard scalar("SELECT COUNT(*) FROM knowledge_items") != scalar("SELECT COUNT(*) FROM knowledge_fts"),
+          let items = try? all() else { return }
+    _ = replaceAll(items)
+  }
+
+  private func searchTokens(_ value: String) -> [String] {
+    let normalized = value.lowercased()
+    var seen = Set<String>()
+    var output: [String] = []
+    func append(_ token: String) {
+      let clean = String(token.prefix(64))
+      guard !clean.isEmpty, seen.insert(clean).inserted, output.count < 512 else { return }
+      output.append(clean)
+    }
+    let words = normalized.unicodeScalars.map { scalar -> Character in
+      CharacterSet.alphanumerics.contains(scalar) && !Self.isCJK(scalar) ? Character(String(scalar)) : " "
+    }
+    for word in String(words).split(whereSeparator: \.isWhitespace) { append(String(word)) }
+    var run: [Character] = []
+    func flushRun() {
+      guard !run.isEmpty else { return }
+      if run.count == 1 { append(String(run[0])) }
+      if run.count >= 2 {
+        for index in 0..<(run.count - 1) { append(String(run[index...(index + 1)])) }
+      }
+      run.removeAll(keepingCapacity: true)
+    }
+    for scalar in normalized.unicodeScalars {
+      if Self.isCJK(scalar) { run.append(Character(String(scalar))) } else { flushRun() }
+    }
+    flushRun()
+    return output
+  }
+
+  private static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
+    (0x3400...0x4DBF).contains(scalar.value) ||
+      (0x4E00...0x9FFF).contains(scalar.value) ||
+      (0xF900...0xFAFF).contains(scalar.value)
   }
 
   private func keyedHash(_ value: String) -> String {
@@ -146,6 +227,24 @@ final class AgentKnowledgeDatabase {
 
   private func purpose(_ itemHash: String) -> String { "agent-knowledge:\(itemHash)" }
 
+  private func decode(
+    _ statement: OpaquePointer?,
+    hashColumn: Int32,
+    payloadColumn: Int32
+  ) throws -> AgentKnowledgeItem {
+    guard let hashText = sqlite3_column_text(statement, hashColumn),
+          let encrypted = blob(statement, column: payloadColumn) else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    let itemHash = String(cString: hashText)
+    guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash)),
+          let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
+          keyedHash(item.id) == itemHash else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return item
+  }
+
   private func prepare(_ sql: String) -> OpaquePointer? {
     guard let database else { return nil }
     var statement: OpaquePointer?
@@ -155,6 +254,12 @@ final class AgentKnowledgeDatabase {
   private func execute(_ sql: String) -> Bool {
     guard let database else { return false }
     return sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK
+  }
+
+  private func scalar(_ sql: String) -> Int64? {
+    guard let statement = prepare(sql) else { return nil }
+    defer { sqlite3_finalize(statement) }
+    return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : nil
   }
 
   private func bind(_ value: String, at index: Int32, to statement: OpaquePointer?) {
