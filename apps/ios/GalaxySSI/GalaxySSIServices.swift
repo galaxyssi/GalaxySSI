@@ -3309,7 +3309,23 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     let previousPlan = task.activePlan
-    let plannerHistory = previousPlan?.historyForReplan() ?? []
+    let continuationScope = previousPlan.flatMap {
+      AgentPlanContinuationScope.resolve(
+        plan: $0,
+        activeConversationId: outgoing.conversationId,
+        activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+        sessionId: task.sessionId
+      )
+    }
+    guard previousPlan == nil || continuationScope != nil else {
+      task.verification = "The persisted plan contains conflicting conversation scope"
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return false
+    }
+    let plannerHistory = (previousPlan?.historyForReplan() ?? []).filter {
+      continuationScope?.owns($0) ?? true
+    }
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
@@ -5775,7 +5791,13 @@ final class MessageCoordinator: ObservableObject {
       planRequest: planRequest,
       parsingContext: AgentModelPlanParsingContext(replanReason: replanReason),
       conversationContext: conversation,
-      executionHistory: executionHistory,
+      executionTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      executionHistory: executionHistory.filter {
+        AgentPlanContinuationScope(
+          conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        ).owns($0)
+      },
       globalRealtimeContext: globalRealtimeContextProvider.buildNonBlocking(
         query: requestText,
         currentConversationId: outgoing.conversationId,
@@ -5811,6 +5833,11 @@ final class MessageCoordinator: ObservableObject {
       return nil
     }
     var resolvedPlan = plan
+    let continuationScope = AgentPlanContinuationScope(
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    )
+    resolvedPlan.actions = resolvedPlan.actions.map(continuationScope.bind)
     resolvedPlan.executionMode = executionMode
     return .plan(resolvedPlan)
   }
@@ -6539,8 +6566,19 @@ final class MessageCoordinator: ObservableObject {
           let previousResult = task.lastNativeActionResult else {
       return
     }
+    guard let continuationScope = AgentPlanContinuationScope.resolve(
+      plan: previousPlan,
+      activeConversationId: outgoing.conversationId,
+      activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      sessionId: task.sessionId
+    ) else {
+      task.verification = "Rolling plan stopped because the persisted action scope conflicts"
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
-    let plannerHistory = previousPlan.historyForReplan()
+    let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
     let outcome = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],

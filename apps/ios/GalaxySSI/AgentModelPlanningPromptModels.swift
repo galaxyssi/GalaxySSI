@@ -4,6 +4,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var planRequest: AgentPlanRequest
   var parsingContext: AgentModelPlanParsingContext
   var conversationContext: AgentConversationContext
+  var executionTurnId: String
   var executionHistory: [AgentAction]
   var globalRealtimeContext: String
   var requirements: AgentTaskRequirements
@@ -20,6 +21,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       turns: [],
       privateMode: false
     ),
+    executionTurnId: String = "",
     executionHistory: [AgentAction] = [],
     globalRealtimeContext: String = "",
     requirements: AgentTaskRequirements? = nil,
@@ -32,6 +34,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     self.planRequest = planRequest
     self.parsingContext = parsingContext
     self.conversationContext = conversationContext
+    self.executionTurnId = executionTurnId.trimmingCharacters(in: .whitespacesAndNewlines)
     self.executionHistory = executionHistory
     self.globalRealtimeContext = String(globalRealtimeContext.prefix(8_000))
     self.requirements = resolvedRequirements
@@ -45,6 +48,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     case planRequest = "plan_request"
     case parsingContext = "parsing_context"
     case conversationContext = "conversation_context"
+    case executionTurnId = "execution_turn_id"
     case executionHistory = "execution_history"
     case globalRealtimeContext = "global_realtime_context"
     case requirements
@@ -60,6 +64,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       parsingContext: try container.decodeIfPresent(AgentModelPlanParsingContext.self, forKey: .parsingContext) ?? .empty,
       conversationContext: try container.decodeIfPresent(AgentConversationContext.self, forKey: .conversationContext) ??
         AgentConversationContext(conversationId: "", summary: "", turns: [], privateMode: false),
+      executionTurnId: try container.decodeIfPresent(String.self, forKey: .executionTurnId) ?? "",
       executionHistory: try container.decodeIfPresent([AgentAction].self, forKey: .executionHistory) ?? [],
       globalRealtimeContext: try container.decodeIfPresent(String.self, forKey: .globalRealtimeContext) ?? "",
       requirements: try container.decodeIfPresent(AgentTaskRequirements.self, forKey: .requirements),
