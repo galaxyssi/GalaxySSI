@@ -156,6 +156,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
   private lazy var localPlanNodeJournal = EncryptedAgentPlanNodeJournal()
+  private lazy var localInitialPlanningJournal = AgentInitialPlanningJournal()
   private lazy var localSkillRuntime = AgentSkillRuntime(
     store: UserDefaultsAgentSkillStore(),
     availableNativeToolIds: Array(AgentPhoneNativeToolCatalog.defaultToolIds)
@@ -513,6 +514,72 @@ final class MessageCoordinator: ObservableObject {
       recoveredTaskCount += 1
     }
     return recoveredTaskCount
+  }
+
+  @discardableResult
+  func recoverInterruptedInitialPlanning() async -> Int {
+    var recoveredCount = 0
+    let candidates = store.recentAgentTasks(limit: 500).filter {
+      $0.phase == .planning && $0.activePlan == nil && $0.pendingPlanning != nil && !$0.blocked
+    }
+    for candidate in candidates {
+      guard let reference = candidate.pendingPlanning,
+            let outgoing = localOutgoingMessage(for: candidate) else { continue }
+      do {
+        let outcome = try await localInitialPlanningJournal.restore(reference) { input in
+          guard input.plannerConfigurationSha256 == self.initialPlannerConfigurationSha256(
+            conversationId: input.conversation.conversationId
+          ) else {
+            throw AgentModelLoopRecoveryError(code: "initial_planner_configuration_changed")
+          }
+          guard let result = await self.modelPlannedLocalNativeActions(
+            requestText: input.goal,
+            attachments: [],
+            outgoing: outgoing,
+            executionMode: input.executionMode,
+            allowsDirectResponse: input.allowsDirectResponse,
+            completionRequirements: input.completionRequirements,
+            conversationOverride: input.conversation,
+            hasAttachmentsOverride: input.hasAttachments
+          ) else {
+            throw AgentModelLoopRecoveryError(code: "initial_planning_result_unavailable")
+          }
+          return (result: result, mode: input.executionMode)
+        }
+        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning else { continue }
+        task.pendingPlanning = nil
+        task.phase = .executing
+        task.executionLog.append("Recovered interrupted initial planning from durable input")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        switch outcome.result {
+        case .directResponse(let response):
+          _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+        case .plan(let plan):
+          if outcome.mode == .planOnly {
+            _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
+          } else {
+            _ = applyLocalNativeActions(
+              actions: plan.actions,
+              outgoing: outgoing,
+              task: &task,
+              plan: plan
+            )
+          }
+        }
+        recoveredCount += 1
+      } catch {
+        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning else { continue }
+        task.phase = .paused
+        task.blocked = true
+        task.verification = error.localizedDescription
+        task.executionLog.append("Initial planning recovery stopped: \(error.localizedDescription)")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        recoveredCount += 1
+      }
+    }
+    return recoveredCount
   }
 
   func resumePendingAgentDelivery() {
@@ -3807,14 +3874,46 @@ final class MessageCoordinator: ObservableObject {
           return
         }
       }
-      if let modelOutcome = await modelPlannedLocalNativeActions(
+      let planningConversation = initialPlanningConversation(
         requestText: requestText,
-        attachments: attachments,
-        outgoing: outgoing,
+        outgoing: outgoing
+      )
+      let planningInput = AgentInitialPlanningInput(
+        goal: requestText,
+        conversation: planningConversation,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
         executionMode: executionMode,
-        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty
-      ) {
-        guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
+        hasAttachments: !attachments.isEmpty,
+        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty,
+        completionRequirements: nil,
+        plannerConfigurationSha256: initialPlannerConfigurationSha256(
+          conversationId: outgoing.conversationId
+        )
+      )
+      let modelOutcome = try await localInitialPlanningJournal.begin(
+        sessionId: task.sessionId,
+        input: planningInput
+      ) { reference in
+        task.phase = .planning
+        task.pendingPlanning = reference
+        task.executionLog.append("Initial planning input committed for recovery")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        return await modelPlannedLocalNativeActions(
+          requestText: requestText,
+          attachments: attachments,
+          outgoing: outgoing,
+          executionMode: executionMode,
+          allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty,
+          conversationOverride: planningConversation
+        )
+      }
+      guard store.agentTask(id: task.taskId)?.phase == .planning else { return }
+      task.phase = .executing
+      task.pendingPlanning = nil
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      if let modelOutcome {
         switch modelOutcome {
         case let .directResponse(response):
           _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
@@ -5725,6 +5824,39 @@ final class MessageCoordinator: ObservableObject {
     return applyLocalNativeActions(actions: [action], outgoing: outgoing, task: &task, plan: plan)
   }
 
+  private func initialPlanningConversation(
+    requestText: String,
+    outgoing: ChatMessage
+  ) -> AgentConversationContext {
+    let session = store.agentSession(id: outgoing.conversationId)
+    return AgentConversationContext(
+      conversationId: outgoing.conversationId,
+      summary: recentLocalConversationContext(
+        contactId: outgoing.contactId,
+        excluding: outgoing.id
+      ),
+      turns: [],
+      privateMode: session?.privateMode ?? true,
+      globalContext: GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
+        store: store,
+        query: requestText,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      ),
+      trackingPaused: session?.trackingPaused ?? false
+    )
+  }
+
+  private func initialPlannerConfigurationSha256(conversationId: String) -> String {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    return AgentModelLoopRecoveryIdentity.sha256([
+      "settings": AgentModelLoopRecoveryIdentity.sha256(store.modelPlannerSettings),
+      "selection_mode": selection.mode.rawValue,
+      "selection_target": selection.targetId,
+      "selection_model": selection.modelId
+    ])
+  }
+
   private func modelPlannedLocalNativeActions(
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
@@ -5732,7 +5864,10 @@ final class MessageCoordinator: ObservableObject {
     executionMode: AgentTaskExecutionMode,
     allowsDirectResponse: Bool,
     replanReason: String = "",
-    executionHistory: [AgentAction] = []
+    executionHistory: [AgentAction] = [],
+    completionRequirements: AgentCompletionRequirements? = nil,
+    conversationOverride: AgentConversationContext? = nil,
+    hasAttachmentsOverride: Bool? = nil
   ) async -> GuardedModelAgentPlanningResult? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
@@ -5768,25 +5903,14 @@ final class MessageCoordinator: ObservableObject {
       screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
       responseLanguage: store.languagePolicy.responseLanguage,
-      executionMode: executionMode
+      executionMode: executionMode,
+      completionRequirements: completionRequirements
     )
-    let session = store.agentSession(id: outgoing.conversationId)
-    let conversation = AgentConversationContext(
-      conversationId: outgoing.conversationId,
-      summary: recentLocalConversationContext(
-        contactId: outgoing.contactId,
-        excluding: outgoing.id
-      ),
-      turns: [],
-      privateMode: session?.privateMode ?? true,
-      globalContext: GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
-        store: store,
-        query: requestText,
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId
-      ),
-      trackingPaused: session?.trackingPaused ?? false
+    let conversation = conversationOverride ?? initialPlanningConversation(
+      requestText: requestText,
+      outgoing: outgoing
     )
+    let hasAttachments = hasAttachmentsOverride ?? !attachments.isEmpty
     var planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
       parsingContext: AgentModelPlanParsingContext(
@@ -5801,17 +5925,18 @@ final class MessageCoordinator: ObservableObject {
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
         ).owns($0)
       },
-      globalRealtimeContext: globalRealtimeContextProvider.buildNonBlocking(
-        query: requestText,
-        currentConversationId: outgoing.conversationId,
-        excludedConversationIds: Set(
-          store.agentSessions(includeArchived: true)
-            .filter { $0.privateMode || $0.trackingPaused }
-            .map(\.id)
-        )
-      ),
-      hasAttachments: !attachments.isEmpty,
-      allowsDirectResponse: allowsDirectResponse && attachments.isEmpty && executionMode != .planOnly
+      globalRealtimeContext: conversationOverride?.globalContext ??
+        globalRealtimeContextProvider.buildNonBlocking(
+          query: requestText,
+          currentConversationId: outgoing.conversationId,
+          excludedConversationIds: Set(
+            store.agentSessions(includeArchived: true)
+              .filter { $0.privateMode || $0.trackingPaused }
+              .map(\.id)
+          )
+        ),
+      hasAttachments: hasAttachments,
+      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
@@ -5872,6 +5997,7 @@ final class MessageCoordinator: ObservableObject {
     guard !normalized.isEmpty else { return false }
     task.planContext = nil
     task.activePlan = nil
+    task.pendingPlanning = nil
     task.lastNativeActionResult = nil
     task.pendingAction = nil
     task.pendingActions = []
@@ -5909,6 +6035,7 @@ final class MessageCoordinator: ObservableObject {
   ) -> Bool {
     task.planContext = AgentTaskPlanContext(plan: plan)
     task.activePlan = nil
+    task.pendingPlanning = nil
     task.lastNativeActionResult = nil
     task.pendingAction = nil
     task.pendingActions = []
@@ -5974,6 +6101,7 @@ final class MessageCoordinator: ObservableObject {
       task.planContext = AgentTaskPlanContext(plan: plan)
       task.activePlan = plan
     }
+    task.pendingPlanning = nil
     if resetResults {
       task.nativeActionResults = []
       task.lastNativeActionResult = nil
