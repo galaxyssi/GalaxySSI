@@ -5,7 +5,9 @@ private struct AgentIOSObsidianProjectionSpec {
   var sourceKey: String
   var relativePath: String
   var sourceRevision: String
-  var content: () -> String
+  var legacySourceKey = ""
+  var exactSource = ""
+  var content: () throws -> String
 }
 
 @MainActor
@@ -124,15 +126,20 @@ enum AgentIOSObsidianBridge {
       var written = 0
       var unchanged = 0
       for spec in specs {
-        let indexed = stateStore.index(sourceKey: spec.sourceKey)
+        let indexed = stateStore.index(sourceKey: spec.sourceKey) ?? adoptLegacyIndex(
+          spec: spec,
+          root: root,
+          stateStore: stateStore
+        )
         if indexed?.userModified == true || indexed?.sourceRevision == spec.sourceRevision {
           unchanged += 1
           continue
         }
         if written >= writeLimit { continue }
-        let content = spec.content()
+        let content = try spec.content()
         guard !content.isEmpty else { continue }
-        let fileURL = root.appendingPathComponent(spec.relativePath)
+        let relativePath = indexed?.relativePath.ifBlank(spec.relativePath) ?? spec.relativePath
+        let fileURL = root.appendingPathComponent(relativePath)
         try FileManager.default.createDirectory(
           at: fileURL.deletingLastPathComponent(),
           withIntermediateDirectories: true,
@@ -141,7 +148,7 @@ enum AgentIOSObsidianBridge {
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
         stateStore.saveIndex(.init(
           sourceKey: spec.sourceKey,
-          relativePath: spec.relativePath,
+          relativePath: relativePath,
           sourceRevision: spec.sourceRevision,
           generatedHash: sha256(content),
           lastModifiedMillis: modifiedMillis(fileURL),
@@ -201,36 +208,67 @@ enum AgentIOSObsidianBridge {
 
   private static func projectionSpecs(appStore: GalaxySSIStore) -> [AgentIOSObsidianProjectionSpec] {
     var specs: [AgentIOSObsidianProjectionSpec] = []
-    let knowledge = appStore.agentKnowledgeItems.filter {
-      AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge($0.content)
+    let knowledgeGroups = Dictionary(grouping: appStore.agentKnowledgeItems) { item in
+      item.source.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("local:\(item.id)")
     }
-    for (source, chunks) in Dictionary(grouping: knowledge, by: { $0.source.ifBlank($0.id) }) {
-      let ordered = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
-      guard let first = ordered.first else { continue }
-      let reading = source.lowercased().hasPrefix("http://") || source.lowercased().hasPrefix("https://")
-      let sourceKey = "knowledge:\(GlobalAgentText.stableKey(source))"
-      let revision = GlobalAgentText.stableKey(
-        source,
-        String(ordered.map(\.updatedAtMillis).max() ?? 0),
-        String(ordered.count)
+    for (_, chunks) in knowledgeGroups {
+      let ordered = chunks.sorted { left, right in
+        left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
+      }
+      guard let latest = ordered.max(by: { $0.updatedAtMillis < $1.updatedAtMillis }) else { continue }
+      let group = AgentKnowledgeSourceGroup(
+        source: latest.source,
+        title: latest.title.replacingOccurrences(
+          of: #"\s+\[[0-9]+/[0-9]+\]$"#,
+          with: "",
+          options: .regularExpression
+        ),
+        itemIds: ordered.map(\.id),
+        chunkCount: ordered.count,
+        cloudAccess: latest.cloudAccess,
+        agentAccess: latest.agentAccess,
+        allowedAgentIds: latest.allowedAgentIds,
+        updatedAtMillis: latest.updatedAtMillis,
+        sourceRevision: AgentKnowledgeSourceRevision.digest(ordered),
+        localItemId: latest.source.isBlank ? latest.id : ""
       )
-      let title = first.title.replacingOccurrences(
-        of: #"\s+\[[0-9]+/[0-9]+\]$"#,
-        with: "",
-        options: .regularExpression
-      ).ifBlank("Knowledge")
-      let relativePath = "\(reading ? "60 Reading" : "10 Knowledge")/\(fileName(title, sourceKey: sourceKey))"
-      specs.append(.init(sourceKey: sourceKey, relativePath: relativePath, sourceRevision: revision) {
-        note(
+        let source = group.localItemId.ifBlank(group.source)
+        let reading = source.lowercased().hasPrefix("http://") || source.lowercased().hasPrefix("https://")
+        let sourceKey = knowledgeSourceKey(group)
+        let legacySourceKey = "knowledge:\(GlobalAgentText.stableKey(source))"
+        let title = group.title.ifBlank("Knowledge")
+        let relativePath = "\(reading ? "60 Reading" : "10 Knowledge")/\(fileName(title, sourceKey: sourceKey))"
+        specs.append(.init(
           sourceKey: sourceKey,
-          type: reading ? "reading" : "knowledge",
-          title: title,
-          source: source,
-          updatedAtMillis: ordered.map(\.updatedAtMillis).max() ?? 0,
-          tags: Array(Set(ordered.flatMap(\.tags))).sorted().prefixArray(16),
-          body: ordered.map(\.content).joined(separator: "\n\n")
-        )
-      })
+          relativePath: relativePath,
+          sourceRevision: group.sourceRevision,
+          legacySourceKey: legacySourceKey,
+          exactSource: source
+        ) {
+          let ids = Set(group.itemIds)
+          let ordered = appStore.agentKnowledgeItems.filter { ids.contains($0.id) }.sorted { left, right in
+            left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
+          }
+          guard AgentKnowledgeSourceRevision.digest(ordered) == group.sourceRevision else {
+            throw AgentKnowledgeDatabaseError.staleCursor
+          }
+          let safe = ordered.filter { AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge($0.content) }
+          guard let first = safe.first else { return "" }
+          return note(
+            sourceKey: sourceKey,
+            type: reading ? "reading" : "knowledge",
+            title: first.title.replacingOccurrences(
+              of: #"\s+\[[0-9]+/[0-9]+\]$"#,
+              with: "",
+              options: .regularExpression
+            ).ifBlank(title),
+            source: source,
+            updatedAtMillis: safe.map(\.updatedAtMillis).max() ?? 0,
+            tags: Array(Set(safe.flatMap(\.tags))).sorted().prefixArray(16),
+            body: safe.map(\.content).joined(separator: "\n\n")
+          )
+        })
     }
 
     for installation in UserDefaultsAgentSkillStore().list() {
@@ -358,6 +396,53 @@ enum AgentIOSObsidianBridge {
     }
     stateStore.saveEditScanCursor((start + selected.count) % index.count)
     return found
+  }
+
+  static func knowledgeSourceKey(_ group: AgentKnowledgeSourceGroup) -> String {
+    let identity = group.localItemId.isEmpty
+      ? "source\0\(group.source)"
+      : "item\0\(group.localItemId)"
+    return "knowledge:v2:\(sha256(identity))"
+  }
+
+  private static func adoptLegacyIndex(
+    spec: AgentIOSObsidianProjectionSpec,
+    root: URL,
+    stateStore: AgentIOSObsidianStateStore
+  ) -> AgentIOSObsidianProjectionIndexEntry? {
+    guard !spec.legacySourceKey.isEmpty, !spec.exactSource.isEmpty,
+          var legacy = stateStore.index(sourceKey: spec.legacySourceKey),
+          !legacy.relativePath.isEmpty else { return nil }
+    let segments = legacy.relativePath.split(separator: "/").map(String.init)
+    guard !segments.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return nil }
+    let url = root.appendingPathComponent(legacy.relativePath)
+    guard let content = try? String(contentsOf: url, encoding: .utf8),
+          frontMatterValue("galaxyssi_id", in: content) == spec.legacySourceKey,
+          frontMatterValue("source", in: content) == spec.exactSource,
+          content.contains("managed_by: galaxyssi") else { return nil }
+    let actualHash = sha256(content)
+    if !legacy.userModified && actualHash != legacy.generatedHash { legacy.userModified = true }
+    legacy.sourceKey = spec.sourceKey
+    legacy.sourceRevision = legacy.userModified ? legacy.sourceRevision : spec.sourceRevision
+    stateStore.saveIndex(legacy)
+    stateStore.removeIndex(sourceKey: spec.legacySourceKey)
+    return legacy
+  }
+
+  private static func frontMatterValue(_ name: String, in content: String) -> String? {
+    guard content.hasPrefix("---\n"), let end = content.range(of: "\n---\n", range: content.index(content.startIndex, offsetBy: 4)..<content.endIndex) else {
+      return nil
+    }
+    let prefix = String(content[content.index(content.startIndex, offsetBy: 4)..<end.lowerBound])
+    let marker = "\(name):"
+    guard let line = prefix.split(separator: "\n").map(String.init).first(where: { $0.hasPrefix(marker) }) else {
+      return nil
+    }
+    let value = line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)
+    guard value.count >= 2, value.first == "\"", value.last == "\"" else { return nil }
+    return String(value.dropFirst().dropLast())
+      .replacingOccurrences(of: "\\\"", with: "\"")
+      .replacingOccurrences(of: "\\\\", with: "\\")
   }
 
   private static func fileName(_ title: String, sourceKey: String) -> String {

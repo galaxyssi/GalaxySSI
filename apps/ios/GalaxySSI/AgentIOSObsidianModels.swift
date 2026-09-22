@@ -87,7 +87,16 @@ final class AgentIOSObsidianStateStore {
       var state = load()
       state.index.removeAll { $0.sourceKey == entry.sourceKey }
       state.index.append(entry)
-      state.index = Array(state.index.suffix(1_500))
+      save(state)
+    }
+  }
+
+  func saveIndexes(_ entries: [AgentIOSObsidianProjectionIndexEntry]) {
+    locked {
+      var state = load()
+      let incoming = Set(entries.map(\.sourceKey))
+      state.index.removeAll { incoming.contains($0.sourceKey) }
+      state.index.append(contentsOf: entries)
       save(state)
     }
   }
