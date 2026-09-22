@@ -83,17 +83,7 @@ final class AgentKnowledgeDatabase {
       defer { sqlite3_finalize(statement) }
       var items: [AgentKnowledgeItem] = []
       while sqlite3_step(statement) == SQLITE_ROW {
-        guard let hashText = sqlite3_column_text(statement, 0),
-              let encrypted = blob(statement, column: 1) else {
-          throw AgentKnowledgeDatabaseError.corruptRecord
-        }
-        let itemHash = String(cString: hashText)
-        guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash)),
-              let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
-              keyedHash(item.id) == itemHash else {
-          throw AgentKnowledgeDatabaseError.corruptRecord
-        }
-        items.append(item)
+        items.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
       }
       return items
     }
@@ -805,6 +795,73 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  struct ExternalPayloadReclamation: Equatable {
+    var removedFiles: Int
+    var removedBytes: Int64
+    var complete: Bool
+  }
+
+  @discardableResult
+  func reclaimExternalPayloadFiles(
+    pageSize: Int = 32,
+    minimumAge: TimeInterval = 3_600
+  ) throws -> ExternalPayloadReclamation {
+    try locked {
+      let limit = min(max(pageSize, 1), 128)
+      guard let state = prepare(
+        "SELECT after_file_name FROM knowledge_external_payload_reclamation WHERE id = 1 LIMIT 1"
+      ), sqlite3_step(state) == SQLITE_ROW, let cursorText = sqlite3_column_text(state, 0) else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      let cursor = String(cString: cursorText)
+      sqlite3_finalize(state)
+      let names = try FileManager.default.contentsOfDirectory(
+        at: payloadDirectory,
+        includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+        options: [.skipsHiddenFiles]
+      )
+        .filter { $0.lastPathComponent > cursor && $0.pathExtension == "saenc" }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        .prefix(limit + 1)
+      let page = Array(names.prefix(limit))
+      var removedFiles = 0
+      var removedBytes: Int64 = 0
+      let cutoff = Date().addingTimeInterval(-max(0, minimumAge))
+      for url in page {
+        let fileName = url.lastPathComponent
+        guard fileName.range(of: #"^[a-f0-9]{64}-[a-f0-9]{16}\.saenc$"#, options: .regularExpression) != nil,
+              let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+              (values.contentModificationDate ?? .distantFuture) <= cutoff,
+              externalPayloadReferenceCount(fileName: fileName) == 0 else { continue }
+        do {
+          try FileManager.default.removeItem(at: url)
+          removedFiles += 1
+          removedBytes += Int64(values.fileSize ?? 0)
+        } catch {
+          if (error as NSError).domain == NSCocoaErrorDomain,
+             (error as NSError).code == NSFileNoSuchFileError {
+            continue
+          }
+          throw error
+        }
+      }
+      let finished = names.count <= limit
+      let next = finished ? "" : (page.last?.lastPathComponent ?? cursor)
+      guard let update = prepare(
+        "UPDATE knowledge_external_payload_reclamation SET after_file_name = ? WHERE id = 1"
+      ) else { throw AgentKnowledgeDatabaseError.unavailable }
+      bind(next, at: 1, to: update)
+      let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+      sqlite3_finalize(update)
+      guard updated else { throw AgentKnowledgeDatabaseError.unavailable }
+      return ExternalPayloadReclamation(
+        removedFiles: removedFiles,
+        removedBytes: removedBytes,
+        complete: finished
+      )
+    }
+  }
+
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
@@ -1130,6 +1187,8 @@ final class AgentKnowledgeDatabase {
     _ = execute("INSERT OR IGNORE INTO knowledge_vector_enrollment(model_hash, complete) SELECT DISTINCT model_hash, 1 FROM knowledge_vectors")
     setupVectorCounts()
     rebuildIndexIfNeeded()
+    _ = try? maintainExternalPayloads(pageSize: 4)
+    _ = try? reclaimExternalPayloadFiles(pageSize: 16)
   }
 
   private func setupSourceDirectoryState() {
@@ -1197,6 +1256,13 @@ final class AgentKnowledgeDatabase {
     _ = execute("""
       INSERT OR IGNORE INTO knowledge_external_payload_migration(id) VALUES (1)
       """)
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_external_payload_reclamation (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        after_file_name TEXT NOT NULL DEFAULT ''
+      )
+      """)
+    _ = execute("INSERT OR IGNORE INTO knowledge_external_payload_reclamation(id) VALUES (1)")
   }
 
   private func sourceDirectoryState() throws -> (complete: Bool, groups: Int64) {
@@ -1942,6 +2008,15 @@ final class AgentKnowledgeDatabase {
       return nil
     }
     return plaintext
+  }
+
+  private func externalPayloadReferenceCount(fileName: String) -> Int64 {
+    guard let statement = prepare(
+      "SELECT COUNT(*) FROM knowledge_external_payloads WHERE file_name = ?"
+    ) else { return -1 }
+    defer { sqlite3_finalize(statement) }
+    bind(fileName, at: 1, to: statement)
+    return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : -1
   }
 
   private func prepare(_ sql: String) -> OpaquePointer? {
