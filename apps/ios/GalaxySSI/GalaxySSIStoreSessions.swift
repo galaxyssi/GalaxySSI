@@ -73,6 +73,49 @@ final class AgentConversationDatabase {
       payload.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 6, bytes.baseAddress, Int32(payload.count), Self.transient)
       }
+      guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+      _ = deleteDraft(conversation.id)
+      return true
+    }
+  }
+
+  @discardableResult
+  func saveDraft(_ conversation: AgentConversation) -> Bool {
+    locked {
+      guard read(conversation.id) == nil,
+            let payload = encryptedPayload(conversation),
+            let statement = prepare("INSERT OR REPLACE INTO agent_conversation_drafts (conversation_id, encrypted_payload) VALUES (?, ?)") else {
+        return false
+      }
+      defer { sqlite3_finalize(statement) }
+      bind(conversation.id, at: 1, to: statement)
+      payload.withUnsafeBytes { bytes in
+        sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(payload.count), Self.transient)
+      }
+      return sqlite3_step(statement) == SQLITE_DONE
+    }
+  }
+
+  func readDraft(_ conversationId: String) -> AgentConversation? {
+    locked {
+      guard let statement = prepare("SELECT encrypted_payload FROM agent_conversation_drafts WHERE conversation_id = ? LIMIT 1") else {
+        return nil
+      }
+      defer { sqlite3_finalize(statement) }
+      bind(conversationId, at: 1, to: statement)
+      guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+      return decode(statement, payloadColumn: 0, conversationId: conversationId)
+    }
+  }
+
+  @discardableResult
+  func deleteDraft(_ conversationId: String) -> Bool {
+    locked {
+      guard let statement = prepare("DELETE FROM agent_conversation_drafts WHERE conversation_id = ?") else {
+        return false
+      }
+      defer { sqlite3_finalize(statement) }
+      bind(conversationId, at: 1, to: statement)
       return sqlite3_step(statement) == SQLITE_DONE
     }
   }
@@ -164,13 +207,15 @@ final class AgentConversationDatabase {
   @discardableResult
   func delete(_ conversationId: String) -> AgentConversation? {
     locked {
-      guard let current = read(conversationId),
+      guard let current = read(conversationId) ?? readDraft(conversationId),
             let statement = prepare("DELETE FROM agent_conversations WHERE conversation_id = ?") else {
         return nil
       }
       defer { sqlite3_finalize(statement) }
       bind(conversationId, at: 1, to: statement)
-      return sqlite3_step(statement) == SQLITE_DONE ? current : nil
+      guard sqlite3_step(statement) == SQLITE_DONE else { return nil }
+      _ = deleteDraft(conversationId)
+      return current
     }
   }
 
@@ -200,6 +245,20 @@ final class AgentConversationDatabase {
           return 0
         }
         deleted += Int(sqlite3_changes(database))
+        guard let draftStatement = prepare("DELETE FROM agent_conversation_drafts WHERE conversation_id IN (\(placeholders))") else {
+          _ = execute("ROLLBACK")
+          return 0
+        }
+        for (offset, id) in batch.enumerated() {
+          bind(id, at: Int32(offset + 1), to: draftStatement)
+        }
+        let draftSucceeded = sqlite3_step(draftStatement) == SQLITE_DONE
+        deleted += Int(sqlite3_changes(database))
+        sqlite3_finalize(draftStatement)
+        guard draftSucceeded else {
+          _ = execute("ROLLBACK")
+          return 0
+        }
       }
       guard execute("COMMIT") else {
         _ = execute("ROLLBACK")
@@ -215,7 +274,9 @@ final class AgentConversationDatabase {
   @discardableResult
   func replaceAll(_ conversations: [AgentConversation]) -> Bool {
     locked {
-      guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM agent_conversations") else {
+      guard execute("BEGIN IMMEDIATE TRANSACTION"),
+            execute("DELETE FROM agent_conversations"),
+            execute("DELETE FROM agent_conversation_drafts") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -260,6 +321,7 @@ final class AgentConversationDatabase {
   func clear() {
     locked {
       _ = execute("DELETE FROM agent_conversations")
+      _ = execute("DELETE FROM agent_conversation_drafts")
       _ = execute("DELETE FROM agent_conversation_state")
     }
   }
@@ -291,6 +353,7 @@ final class AgentConversationDatabase {
     _ = execute("PRAGMA synchronous = NORMAL")
     _ = execute("PRAGMA foreign_keys = ON")
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)")
+    _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_drafts (conversation_id TEXT PRIMARY KEY NOT NULL, encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE INDEX IF NOT EXISTS agent_conversations_order ON agent_conversations(status, pinned DESC, updated_at DESC, conversation_id DESC)")
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_state (state_key TEXT PRIMARY KEY NOT NULL, state_value TEXT NOT NULL)")
   }
@@ -415,6 +478,9 @@ extension GalaxySSIStore {
     if let stored = agentConversationDatabase.read(clean) {
       return stored
     }
+    if let draft = agentConversationDatabase.readDraft(clean) {
+      return draft
+    }
     return mergedAgentConversations().first { $0.id == clean }
   }
 
@@ -488,7 +554,12 @@ extension GalaxySSIStore {
       parentConversationId: parentConversationId.trimmingCharacters(in: .whitespacesAndNewlines),
       globalTopicKey: globalTopicKey.trimmingCharacters(in: .whitespacesAndNewlines)
     )
-    persistAgentConversation(session)
+    if createdByAgent {
+      persistAgentConversation(session, promoteDraft: true)
+    } else {
+      _ = agentConversationDatabase.saveDraft(session)
+      cacheAgentConversation(session)
+    }
     if !createdByAgent {
       activeAgentConversationId = session.id
     }
@@ -793,7 +864,7 @@ extension GalaxySSIStore {
     guard var conversation = agentSession(id: clean) else { return false }
     mutate(&conversation)
     conversation.updatedAt = Self.nowMillis()
-    persistAgentConversation(conversation)
+    persistAgentConversation(conversation, promoteDraft: false)
     return true
   }
 
@@ -810,12 +881,28 @@ extension GalaxySSIStore {
     return overflow ? Int64.max : value
   }
 
-  private func persistAgentConversation(_ conversation: AgentConversation) {
+  private func persistAgentConversation(
+    _ conversation: AgentConversation,
+    promoteDraft: Bool = true
+  ) {
     let clean = conversation.id.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return }
     var updated = conversation
     updated.id = clean
-    guard agentConversationDatabase.upsert(updated) else { return }
+    let persisted: Bool
+    if !promoteDraft,
+       agentConversationDatabase.read(clean) == nil,
+       agentConversationDatabase.readDraft(clean) != nil {
+      persisted = agentConversationDatabase.saveDraft(updated)
+    } else {
+      persisted = agentConversationDatabase.upsert(updated)
+    }
+    guard persisted else { return }
+    cacheAgentConversation(updated)
+  }
+
+  private func cacheAgentConversation(_ updated: AgentConversation) {
+    let clean = updated.id.trimmingCharacters(in: .whitespacesAndNewlines)
     let items = agentConversations.filter { $0.id != clean } + [updated]
     agentConversations = Array(
       Self.sortedAgentConversations(items).prefix(AgentConversationDatabase.maximumPageSize)

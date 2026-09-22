@@ -208,6 +208,32 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
 }
 
 final class AgentConversationDatabaseTests: XCTestCase {
+  func testDraftIsExcludedFromHistoryUntilFirstFormalUpsert() {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentConversationDraftTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = AgentConversationDatabase(
+      fileURL: root.appendingPathComponent("conversations.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    let draft = AgentConversation(id: "draft", title: "Unsent", createdAt: 1, updatedAt: 1)
+
+    XCTAssertTrue(database.saveDraft(draft))
+    XCTAssertEqual(database.readDraft(draft.id), draft)
+    XCTAssertNil(database.read(draft.id))
+    XCTAssertEqual(database.count(), 0)
+    XCTAssertTrue(database.page(status: .active, cursor: nil).items.isEmpty)
+
+    var renamed = draft
+    renamed.title = "Renamed draft"
+    XCTAssertTrue(database.saveDraft(renamed))
+    XCTAssertEqual(database.readDraft(draft.id)?.title, "Renamed draft")
+    XCTAssertTrue(database.upsert(renamed))
+    XCTAssertNil(database.readDraft(draft.id))
+    XCTAssertEqual(database.read(draft.id), renamed)
+    XCTAssertEqual(database.count(), 1)
+  }
+
   func testStoresAndKeysetPagesMoreThanTenThousandEncryptedConversations() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentConversationDatabaseTests-\(UUID().uuidString)", isDirectory: true)
