@@ -119,37 +119,71 @@ enum AgentIOSObsidianBridge {
       }
 
       let candidateCount = scanUserEdits(root: root, stateStore: stateStore)
-      let specs = projectionSpecs(appStore: appStore)
+      let specs = projectionSpecs(appStore: appStore).sorted { $0.sourceKey < $1.sourceKey }
       let writeLimit = max(1, min(maximumWrites, 32))
+      let scanLimit = max(writeLimit, 64)
+      let namespace = sha256(settings.bookmarkData.base64EncodedString())
+      let catalogRevision = sha256(
+        specs.map { "\($0.sourceKey)\u{0}\($0.sourceRevision)" }.joined(separator: "\u{1e}")
+      )
+      let savedCheckpoint = stateStore.projectionCheckpoint()
+      let checkpoint = savedCheckpoint?.namespace == namespace &&
+        savedCheckpoint?.catalogRevision == catalogRevision &&
+        (savedCheckpoint?.nextOffset ?? -1) >= 0 &&
+        (savedCheckpoint?.nextOffset ?? 0) <= specs.count
+        ? savedCheckpoint
+        : nil
+      if savedCheckpoint != nil && checkpoint == nil {
+        stateStore.saveProjectionCheckpoint(nil)
+      }
       var written = 0
       var unchanged = 0
-      for spec in specs {
+      var offset = checkpoint?.nextOffset ?? 0
+      var visited = checkpoint?.visited ?? 0
+      var scanned = 0
+      while offset < specs.count && scanned < scanLimit {
+        let spec = specs[offset]
         let indexed = stateStore.index(sourceKey: spec.sourceKey)
         if indexed?.userModified == true || indexed?.sourceRevision == spec.sourceRevision {
           unchanged += 1
-          continue
+        } else {
+          guard written < writeLimit else { break }
+          let content = spec.content()
+          if content.isEmpty {
+            unchanged += 1
+          } else {
+            let fileURL = root.appendingPathComponent(spec.relativePath)
+            try FileManager.default.createDirectory(
+              at: fileURL.deletingLastPathComponent(),
+              withIntermediateDirectories: true,
+              attributes: nil
+            )
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            stateStore.saveIndex(.init(
+              sourceKey: spec.sourceKey,
+              relativePath: spec.relativePath,
+              sourceRevision: spec.sourceRevision,
+              generatedHash: sha256(content),
+              lastModifiedMillis: modifiedMillis(fileURL),
+              userModified: false
+            ))
+            written += 1
+          }
         }
-        if written >= writeLimit { continue }
-        let content = spec.content()
-        guard !content.isEmpty else { continue }
-        let fileURL = root.appendingPathComponent(spec.relativePath)
-        try FileManager.default.createDirectory(
-          at: fileURL.deletingLastPathComponent(),
-          withIntermediateDirectories: true,
-          attributes: nil
-        )
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        stateStore.saveIndex(.init(
-          sourceKey: spec.sourceKey,
-          relativePath: spec.relativePath,
-          sourceRevision: spec.sourceRevision,
-          generatedHash: sha256(content),
-          lastModifiedMillis: modifiedMillis(fileURL),
-          userModified: false
+        offset += 1
+        visited += 1
+        scanned += 1
+        stateStore.saveProjectionCheckpoint(.init(
+          namespace: namespace,
+          catalogRevision: catalogRevision,
+          nextOffset: offset,
+          visited: visited
         ))
-        written += 1
       }
-      let remaining = max(specs.count - written - unchanged, 0)
+      if offset >= specs.count {
+        stateStore.saveProjectionCheckpoint(nil)
+      }
+      let remaining = max(specs.count - offset, 0)
       settings.lastProjectionAtMillis = AgentMemoryClock.nowMillis()
       settings.lastError = ""
       stateStore.saveSettings(settings)

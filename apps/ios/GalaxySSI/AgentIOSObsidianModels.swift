@@ -43,11 +43,19 @@ struct AgentIOSObsidianProjectionIndexEntry: Codable, Equatable {
   var userModified = false
 }
 
+struct AgentIOSObsidianProjectionCheckpoint: Codable, Equatable {
+  var namespace: String
+  var catalogRevision: String
+  var nextOffset: Int
+  var visited: Int
+}
+
 private struct AgentIOSObsidianState: Codable {
   var settings = AgentIOSObsidianSettings()
   var index: [AgentIOSObsidianProjectionIndexEntry] = []
   var candidates: [AgentIOSObsidianEditCandidate] = []
   var editScanCursor = 0
+  var projectionCheckpoint: AgentIOSObsidianProjectionCheckpoint?
 }
 
 final class AgentIOSObsidianStateStore {
@@ -124,6 +132,18 @@ final class AgentIOSObsidianStateStore {
     locked {
       var state = load()
       state.editScanCursor = max(value, 0)
+      save(state)
+    }
+  }
+
+  func projectionCheckpoint() -> AgentIOSObsidianProjectionCheckpoint? {
+    locked { load().projectionCheckpoint }
+  }
+
+  func saveProjectionCheckpoint(_ value: AgentIOSObsidianProjectionCheckpoint?) {
+    locked {
+      var state = load()
+      state.projectionCheckpoint = value
       save(state)
     }
   }
