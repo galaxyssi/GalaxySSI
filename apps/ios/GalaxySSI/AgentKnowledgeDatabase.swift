@@ -175,6 +175,42 @@ final class AgentKnowledgeDatabase {
     return pending
   }
 
+  func vectorCatalog(
+    modelSHA256: String,
+    offset: Int = 0,
+    limit: Int = 256
+  ) throws -> [AgentKnowledgeVectorCheckpoint] {
+    try locked {
+      guard let statement = prepare("""
+        SELECT vector_key, encrypted_payload FROM knowledge_vectors
+        WHERE model_hash = ?
+        ORDER BY vector_key ASC
+        LIMIT ? OFFSET ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
+      sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 512)))
+      sqlite3_bind_int(statement, 3, Int32(max(offset, 0)))
+      var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let keyText = sqlite3_column_text(statement, 0),
+              let encrypted = blob(statement, column: 1) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let key = String(cString: keyText)
+        guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
+              let checkpoint = try? JSONDecoder.galaxySSI.decode(
+                AgentKnowledgeVectorCheckpoint.self,
+                from: plaintext
+              ), checkpoint.isValid else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        checkpoints.append(checkpoint)
+      }
+      return checkpoints
+    }
+  }
+
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {

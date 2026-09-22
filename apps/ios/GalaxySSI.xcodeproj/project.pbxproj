@@ -39,6 +39,7 @@
     E10000000000000000002402 /* GalaxySSIOpenWakeWordDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002402 /* GalaxySSIOpenWakeWordDetector.swift */; };
     E10000000000000000002403 /* GalaxySSIOpenWakeWordListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002403 /* GalaxySSIOpenWakeWordListener.swift */; };
     E50000000000000000002401 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000002401 /* onnxruntime */; };
+    E50000000000000000002402 /* USearch in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000002402 /* USearch */; };
     A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
     A1000000000000000000F002 /* GalaxySSIConversationHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */; };
     D12900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */; };
@@ -699,6 +700,8 @@
     A10000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */; };
     A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */; };
     A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */; };
+    A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */; };
+    A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */; };
     A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */; };
     A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000537 /* GlobalPersistentContextObservations.swift */; };
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
@@ -1676,6 +1679,8 @@
     A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearch.swift; sourceTree = "<group>"; };
+    A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearchTests.swift; sourceTree = "<group>"; };
     A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOfficeDocumentExtractor.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
@@ -1996,7 +2001,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E50000000000000000002401 /* onnxruntime in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
+    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E50000000000000000002401 /* onnxruntime in Frameworks */, E50000000000000000002402 /* USearch in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
     A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
@@ -2281,6 +2286,7 @@
         A20000000000000000000536 /* AgentKnowledgeModels.swift */,
         A20000000000000000000880 /* AgentKnowledgeDatabase.swift */,
         A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */,
+        A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */,
         A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */,
         A20000000000000000000537 /* GlobalPersistentContextObservations.swift */,
         A20000000000000000000411 /* AgentMemoryCausalDeletion.swift */,
@@ -2819,6 +2825,7 @@
         A20000000000000000000430 /* AgentInlineMarkdownTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */,
+        A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
         A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */,
         A20000000000000000000209 /* GlobalMemoryTests.swift */,
@@ -3053,6 +3060,7 @@
       name = GalaxySSI;
       packageProductDependencies = (
         E40000000000000000002401 /* onnxruntime */,
+        E40000000000000000002402 /* USearch */,
       );
       productName = GalaxySSI;
       productReference = A20000000000000000000008 /* GalaxySSI.app */;
@@ -3106,6 +3114,7 @@
       mainGroup = A40000000000000000000001;
       packageReferences = (
         E30000000000000000002401 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
+        E30000000000000000002402 /* XCRemoteSwiftPackageReference "USearch" */,
       );
       productRefGroup = A40000000000000000000004 /* Products */;
       projectDirPath = "";
@@ -3348,6 +3357,7 @@
         A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */,
         A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */,
         A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */,
+        A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */,
         A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */,
         A10000000000000000000537 /* GlobalPersistentContextObservations.swift in Sources */,
         A10000000000000000000411 /* AgentMemoryCausalDeletion.swift in Sources */,
@@ -3941,6 +3951,7 @@
         A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */,
+        A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
         A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */,
         A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */,
@@ -4164,6 +4175,14 @@
         version = 1.24.2;
       };
     };
+    E30000000000000000002402 /* XCRemoteSwiftPackageReference "USearch" */ = {
+      isa = XCRemoteSwiftPackageReference;
+      repositoryURL = "https://github.com/unum-cloud/USearch";
+      requirement = {
+        kind = exactVersion;
+        version = 2.25.2;
+      };
+    };
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -4171,6 +4190,11 @@
       isa = XCSwiftPackageProductDependency;
       package = E30000000000000000002401 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
       productName = onnxruntime;
+    };
+    E40000000000000000002402 /* USearch */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = E30000000000000000002402 /* XCRemoteSwiftPackageReference "USearch" */;
+      productName = USearch;
     };
 /* End XCSwiftPackageProductDependency section */
 
