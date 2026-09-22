@@ -478,6 +478,9 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   private var allItems: [AgentMemoryItem]
   private let nowMillis: () -> Int64
+  private var recallIndex = AgentMemoryRecallCandidateIndex()
+  private var recallIndexDirty = true
+  private(set) var lastRecallCandidateCount = 0
 
   init(items: [AgentMemoryItem] = [], nowMillis: @escaping () -> Int64 = AgentMemoryClock.nowMillis) {
     self.allItems = AgentMemoryIdentity.normalizeConflicts(items)
@@ -485,12 +488,17 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   }
 
   private func normalizeConflicts() {
-    allItems = AgentMemoryIdentity.normalizeConflicts(allItems)
+    let normalized = AgentMemoryIdentity.normalizeConflicts(allItems)
+    if normalized != allItems {
+      allItems = normalized
+      recallIndexDirty = true
+    }
   }
 
   @discardableResult
   func remember(_ item: AgentMemoryItem) -> AgentMemoryWriteResult {
     normalizeConflicts()
+    defer { recallIndexDirty = true }
     let cleanValue = item.value.agentMemoryTrimmed
     if cleanValue.isEmpty {
       return AgentMemoryWriteResult(item: nil)
@@ -564,7 +572,13 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     let cleanQuery = query.agentMemoryTrimmed
     if cleanQuery.isEmpty { return [] }
     let now = nowMillis()
-    let selected = Array(allItems
+    if recallIndexDirty {
+      recallIndex.rebuild(allItems)
+      recallIndexDirty = false
+    }
+    let candidates = recallIndex.candidates(query: cleanQuery)
+    lastRecallCandidateCount = candidates.count
+    let selected = Array(candidates
       .filter { $0.status == .active && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
       .filter { lexicalScore($0, query: cleanQuery) > 0 }
       .map { ($0, score($0, query: cleanQuery, nowMillis: now)) }
@@ -631,6 +645,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     if cleanQuery.isEmpty { return 0 }
     let before = allItems.count
     allItems.removeAll { lexicalScore($0, query: cleanQuery) > 0 }
+    if allItems.count != before { recallIndexDirty = true }
     return before - allItems.count
   }
 
@@ -707,6 +722,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       }
     }
     allItems = trimHistory(allItems)
+    recallIndexDirty = true
     return true
   }
 
@@ -716,6 +732,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       return false
     }
     allItems[index] = allItems[index].copy(important: important)
+    recallIndexDirty = true
     return true
   }
 
@@ -725,6 +742,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       return false
     }
     allItems[index] = allItems[index].copy(privateMemory: privateMemory)
+    recallIndexDirty = true
     return true
   }
 
@@ -734,6 +752,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       return false
     }
     allItems[index] = allItems[index].copy(status: .superseded)
+    recallIndexDirty = true
     return true
   }
 
@@ -770,6 +789,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     )
     allItems.append(resolved)
     allItems = trimHistory(allItems)
+    recallIndexDirty = true
     return resolved
   }
 
@@ -813,6 +833,79 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   private func trimHistory(_ items: [AgentMemoryItem]) -> [AgentMemoryItem] {
     items.sorted { $0.timestampMillis < $1.timestampMillis }
+  }
+}
+
+private struct AgentMemoryRecallCandidateIndex {
+  private var postings: [String: Set<String>] = [:]
+  private var itemsById: [String: AgentMemoryItem] = [:]
+  private var orderById: [String: Int] = [:]
+
+  mutating func rebuild(_ items: [AgentMemoryItem]) {
+    postings.removeAll(keepingCapacity: true)
+    itemsById = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+    orderById = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
+    for item in items where item.status == .active && !item.privateMemory {
+      for term in documentTerms(item) {
+        postings[term, default: []].insert(item.id)
+      }
+    }
+  }
+
+  func candidates(query: String) -> [AgentMemoryItem] {
+    let clean = query.lowercased().agentMemoryTrimmed
+    guard !clean.isEmpty else { return [] }
+    var ids = Set<String>()
+    for term in queryTerms(clean) {
+      ids.formUnion(postings[term] ?? [])
+    }
+    return ids
+      .sorted { (orderById[$0] ?? .max) < (orderById[$1] ?? .max) }
+      .compactMap { itemsById[$0] }
+  }
+
+  private func documentTerms(_ item: AgentMemoryItem) -> Set<String> {
+    let value = item.value.lowercased()
+    let searchable = "\(item.key) \(value)".lowercased()
+    var terms: Set<String> = ["v:\(value)"]
+    value.forEach { terms.insert("c:\($0)") }
+    characterWindows(searchable, size: 2).forEach { terms.insert("g:\($0)") }
+    return terms
+  }
+
+  private func queryTerms(_ query: String) -> Set<String> {
+    let characters = Array(query)
+    var terms = Set<String>()
+    if characters.count == 1 {
+      terms.insert("c:\(query)")
+    } else if let gram = characterWindows(query, size: 2).first {
+      terms.insert("g:\(gram)")
+    }
+    for token in AgentMemoryKeyPolicy.queryTokens(query) {
+      if let gram = characterWindows(token, size: 2).first {
+        terms.insert("g:\(gram)")
+      } else {
+        terms.insert("c:\(token)")
+      }
+    }
+    if characters.count <= 90 {
+      for start in characters.indices {
+        for end in (start + 1)...characters.count {
+          terms.insert("v:\(String(characters[start..<end]))")
+        }
+      }
+    } else {
+      characters.forEach { terms.insert("c:\($0)") }
+    }
+    return terms
+  }
+
+  private func characterWindows(_ value: String, size: Int) -> [String] {
+    let characters = Array(value)
+    guard size > 0, characters.count >= size else { return [] }
+    return (0...(characters.count - size)).map { offset in
+      String(characters[offset..<(offset + size)])
+    }
   }
 }
 
