@@ -326,7 +326,7 @@ final class AgentAdaptiveBlockingPermitGate {
 
 enum AgentPlanExecutionBatchPolicy {
   static let minimumModelBatchActions = 3
-  static let maximumModelBatchActions = AgentModelPlannerSettings.maximumActions
+  static let maximumModelBatchActions = AgentAdaptiveConcurrencyPolicy.maximumConcurrency
   static let maximumParallelActions = AgentAdaptiveConcurrencyPolicy.maximumConcurrency
 
   static func accepts(
@@ -334,27 +334,75 @@ enum AgentPlanExecutionBatchPolicy {
     workspaceId: String = "",
     descriptorFor: (String) -> AgentNativeToolDescriptor?
   ) -> Bool {
-    if actions.count == 1 { return true }
-    guard (2...maximumParallelActions).contains(actions.count),
-          actions.allSatisfy({
-            AgentToolCoordination.dependencyIds($0).isEmpty &&
-              AgentToolCoordination.outputSourceIds($0).isEmpty
-          }) else {
-      return false
-    }
-    let batch = select(
-      plan: AgentPlan(
-        goal: "Validate independent native tool batch",
-        screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
-        steps: [],
-        actions: actions
-      ),
-      maximumParallelReads: maximumParallelActions,
-      maximumParallelMutations: maximumParallelActions,
+    rejectionReason(
+      actions: actions,
       workspaceId: workspaceId,
       descriptorFor: descriptorFor
-    )
-    return batch.parallel && batch.actions.count == actions.count
+    ) == nil
+  }
+
+  static func rejectionReason(
+    actions: [AgentAction],
+    workspaceId: String = "",
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> String? {
+    guard (1...maximumParallelActions).contains(actions.count) else { return "batch_size" }
+    var ancestors: [String: Set<String>] = [:]
+    for action in actions {
+      guard !action.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            ancestors[action.id] == nil else {
+        return "duplicate_or_blank_action_id"
+      }
+      let dependencies = AgentToolCoordination.dependencyIds(action)
+      guard dependencies.allSatisfy({ ancestors[$0] != nil }) else {
+        return "missing_or_forward_dependency"
+      }
+      if actions.count > 1, action.kind != .callNativeTool { return "non_native_batch" }
+      if action.kind == .callNativeTool,
+         !AgentToolCoordination.outputSourceIds(action).isEmpty {
+        return "native_output_handoff"
+      }
+      ancestors[action.id] = dependencies.reduce(into: Set<String>()) { result, dependency in
+        result.formUnion(ancestors[dependency] ?? [])
+        result.insert(dependency)
+      }
+    }
+    if actions.count == 1 { return nil }
+
+    var descriptors: [String: AgentNativeToolDescriptor] = [:]
+    for action in actions {
+      guard let descriptor = descriptorFor(toolId(action)) else { return "unknown_batch_tool" }
+      descriptors[action.id] = descriptor
+    }
+    var resourcePlans: [String: AgentNativeResourceLockPlan] = [:]
+    for action in actions {
+      guard let descriptor = descriptors[action.id] else { continue }
+      resourcePlans[action.id] = AgentNativeToolResourcePolicy.resolveAction(
+        descriptor: descriptor,
+        action: action,
+        fallbackWorkspaceId: workspaceId
+      )
+    }
+    for (index, action) in actions.enumerated() {
+      for earlier in actions.prefix(index) {
+        if ancestors[action.id]?.contains(earlier.id) == true { continue }
+        if observationIdentity(earlier) == observationIdentity(action) {
+          return "duplicate_unordered_action"
+        }
+        if isParallelReadOnly(earlier, descriptorFor: descriptorFor),
+           isParallelReadOnly(action, descriptorFor: descriptorFor) {
+          continue
+        }
+        guard let left = resourcePlans[earlier.id],
+              let right = resourcePlans[action.id],
+              left.resourceScoped,
+              right.resourceScoped,
+              !left.conflicts(with: right) else {
+          return "unordered_resource_conflict"
+        }
+      }
+    }
+    return nil
   }
 
   static func select(

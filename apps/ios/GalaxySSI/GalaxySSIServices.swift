@@ -5787,9 +5787,12 @@ final class MessageCoordinator: ObservableObject {
       ),
       trackingPaused: session?.trackingPaused ?? false
     )
-    let planningRequest = AgentModelPlanningPromptRequest(
+    var planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
-      parsingContext: AgentModelPlanParsingContext(replanReason: replanReason),
+      parsingContext: AgentModelPlanParsingContext(
+        replanReason: replanReason,
+        maximumActionsOverride: AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+      ),
       conversationContext: conversation,
       executionTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
       executionHistory: executionHistory.filter {
@@ -5811,35 +5814,53 @@ final class MessageCoordinator: ObservableObject {
       allowsDirectResponse: allowsDirectResponse && attachments.isEmpty && executionMode != .planOnly
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
-    let result = await planner.planOrRespond(
-      request: planningRequest,
-      settings: store.modelPlannerSettings,
-      safetySettings: store.agentSafetySettings,
-      fallbackPlan: fallbackPlan
-    )
-    if case .directResponse = result {
-      return result
+    for repairAttempt in 0...1 {
+      let result = await planner.planOrRespond(
+        request: planningRequest,
+        settings: store.modelPlannerSettings,
+        safetySettings: store.agentSafetySettings,
+        fallbackPlan: fallbackPlan
+      )
+      if case .directResponse = result {
+        return result
+      }
+      guard case let .plan(plan) = result, plan.validation.valid else { return nil }
+      if plan.actions.count == 1,
+         let action = plan.actions.first,
+         AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
+         AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
+        return .plan(plan)
+      }
+      let actions = plan.actions.filter { $0.kind == .callNativeTool }
+      guard !actions.isEmpty, actions.count == plan.actions.count else { return nil }
+      if let rejection = AgentPlanExecutionBatchPolicy.rejectionReason(
+        actions: actions,
+        workspaceId: outgoing.conversationId,
+        descriptorFor: { runtime.registry.lookup($0)?.descriptor }
+      ) {
+        guard repairAttempt == 0 else { return nil }
+        let priorReason = planningRequest.parsingContext.replanReason
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        planningRequest.parsingContext.replanReason = String([
+          priorReason,
+          "Runtime rejection: action_batch:\(rejection). Native actions must leave use_outputs_from empty; depends_on must reference earlier successful actions. Order conflicting resources and do not repeat the rejected graph."
+        ]
+          .filter { !$0.isEmpty }
+          .joined(separator: " ")
+          .prefix(500))
+        planningRequest.allowsDirectResponse = false
+        continue
+      }
+      var resolvedPlan = plan
+      let continuationScope = AgentPlanContinuationScope(
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      )
+      resolvedPlan.actions = resolvedPlan.actions.map(continuationScope.bind)
+      resolvedPlan.executionMode = executionMode
+      return .plan(resolvedPlan)
     }
-    guard case let .plan(plan) = result else { return nil }
-    guard plan.validation.valid else { return nil }
-    if plan.actions.count == 1,
-       let action = plan.actions.first,
-       AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
-       AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-      return .plan(plan)
-    }
-    let actions = plan.actions.filter { $0.kind == .callNativeTool }
-    guard !actions.isEmpty, actions.count == plan.actions.count else {
-      return nil
-    }
-    var resolvedPlan = plan
-    let continuationScope = AgentPlanContinuationScope(
-      conversationId: outgoing.conversationId,
-      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
-    )
-    resolvedPlan.actions = resolvedPlan.actions.map(continuationScope.bind)
-    resolvedPlan.executionMode = executionMode
-    return .plan(resolvedPlan)
+    return nil
   }
 
   private func completeModelDirectResponse(

@@ -106,6 +106,26 @@ final class AgentModelPlanParserTests: XCTestCase {
     ))
   }
 
+  func testAgentModelPlanParserAllowsPhoneRuntimeBatchOverride() {
+    let actions = (1...13).map { index in
+      actionJson(ref: "read_\(index)", kind: "READ_SCREEN")
+    }
+    let raw = #"{"actions":["# + actions.joined(separator: ",") + #"]}"#
+
+    XCTAssertNil(AgentModelPlanParser.parse(
+      request: request(),
+      raw: raw,
+      settings: AgentModelPlannerSettings(maxActions: 12),
+      context: context()
+    ))
+    XCTAssertEqual(AgentModelPlanParser.parse(
+      request: request(),
+      raw: raw,
+      settings: AgentModelPlannerSettings(maxActions: 12),
+      context: AgentModelPlanParsingContext(maximumActionsOverride: 64)
+    )?.actions.count, 13)
+  }
+
   func testAgentModelPlanParserEnforcesDependencyAndOutputGraphPolicy() throws {
     let dependencyPlan = planJson(
       actionJson(ref: "first", kind: "READ_SCREEN"),

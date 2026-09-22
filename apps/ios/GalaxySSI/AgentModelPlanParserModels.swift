@@ -23,19 +23,24 @@ struct AgentModelPlanParsingContext: Codable, Equatable {
   var inputFields: [AgentScreenElement]
   var focusedInputField: AgentScreenElement?
   var installedApps: [AgentModelPlanInstalledApp]
+  var maximumActionsOverride: Int?
 
   init(
     replanReason: String = "",
     clickableElements: [AgentScreenElement] = [],
     inputFields: [AgentScreenElement] = [],
     focusedInputField: AgentScreenElement? = nil,
-    installedApps: [AgentModelPlanInstalledApp] = []
+    installedApps: [AgentModelPlanInstalledApp] = [],
+    maximumActionsOverride: Int? = nil
   ) {
     self.replanReason = String(replanReason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
     self.clickableElements = clickableElements
     self.inputFields = inputFields
     self.focusedInputField = focusedInputField
     self.installedApps = installedApps
+    self.maximumActionsOverride = maximumActionsOverride.map {
+      min(max($0, 1), AgentAdaptiveConcurrencyPolicy.maximumConcurrency)
+    }
   }
 
   static let empty = AgentModelPlanParsingContext()
@@ -46,5 +51,6 @@ struct AgentModelPlanParsingContext: Codable, Equatable {
     case inputFields = "input_fields"
     case focusedInputField = "focused_input_field"
     case installedApps = "installed_apps"
+    case maximumActionsOverride = "maximum_actions_override"
   }
 }

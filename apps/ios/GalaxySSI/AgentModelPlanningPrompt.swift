@@ -26,11 +26,11 @@ enum AgentModelPlanningPrompt {
     append(&prompt, executionProfile.contract)
     append(&prompt, "\n\n")
     appendSchema(to: &prompt, request: request)
-    appendActionRules(to: &prompt, settings: normalizedSettings)
+    appendActionRules(to: &prompt, request: request, settings: normalizedSettings)
     appendResponseLanguageRule(to: &prompt, request: request)
     appendRuntimeRules(to: &prompt, request: request)
-    appendProjectBatchContract(to: &prompt, request: request, settings: normalizedSettings)
-    appendCoordinationRules(to: &prompt, settings: normalizedSettings)
+    appendProjectBatchContract(to: &prompt, request: request)
+    appendCoordinationRules(to: &prompt, request: request, settings: normalizedSettings)
     appendRequestedMembers(to: &prompt, request: request)
     append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
     appendReplanContext(to: &prompt, request: request)
@@ -85,12 +85,12 @@ enum AgentModelPlanningPrompt {
 
   private static func appendActionRules(
     to prompt: inout String,
+    request: AgentModelPlanningPromptRequest,
     settings: AgentModelPlannerSettings
   ) {
-    let maxBatchActions = min(
-      max(settings.maxActions, 1),
-      AgentPlanExecutionBatchPolicy.maximumModelBatchActions
-    )
+    let maxBatchActions = request.allowsPhoneRuntimeTools
+      ? AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+      : min(max(settings.maxActions, 1), AgentModelPlannerSettings.maximumActions)
     let allowed = AgentModelPlanParser.allowedKinds
       .map(\.rawValue)
       .sorted()
@@ -153,35 +153,34 @@ enum AgentModelPlanningPrompt {
 
   private static func appendProjectBatchContract(
     to prompt: inout String,
-    request: AgentModelPlanningPromptRequest,
-    settings: AgentModelPlannerSettings
+    request: AgentModelPlanningPromptRequest
   ) {
     guard allowsPhoneRuntimeTools(for: request) else { return }
-    let modelMaximum = min(
-      max(settings.maxActions, 1),
-      AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+    let modelMaximum = AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+    append(
+      &prompt,
+      "Use up to \(modelMaximum) actions per response, not across the task lifetime. Native depends_on must reference earlier actions and waits for successful receipts; failed dependencies block their dependents. "
     )
     append(
       &prompt,
-      "Use 1-2 actions when dependent; otherwise prefer \(AgentPlanExecutionBatchPolicy.minimumModelBatchActions)-\(modelMaximum) independent reads or disjoint workspace mutations. "
+      "Independent reads and disjoint mutations may run concurrently. Order resource conflicts, runtime work, and publication. Native use_outputs_from must stay empty. Only finish after all required evidence exists. "
     )
-    append(
-      &prompt,
-      "The runtime can supervise up to \(AgentPlanExecutionBatchPolicy.maximumParallelActions) independent actions across rolling batches. "
-    )
-    append(&prompt, "Use next_cursor for lists. Never batch runtime, installation, build, test, publication, connector, or completion actions. ")
-    append(&prompt, "Keep same and nested paths ordered. Batch exact multi-file edits atomically and wait for the receipt.\n\n")
+    append(&prompt, "Stop the graph when later choices require interpreting a receipt. Use next_cursor for lists and keep same or nested paths ordered.\n\n")
   }
 
   private static func appendCoordinationRules(
     to prompt: inout String,
+    request: AgentModelPlanningPromptRequest,
     settings: AgentModelPlannerSettings
   ) {
     if settings.multiAgentCoordination {
       append(&prompt, "You may create a directed task graph using ref and depends_on. Dependencies must refer only to earlier refs. ")
       append(&prompt, "CALL_CONNECTOR may use_outputs_from dependencies to pass their confirmed outputs to another Agent. ")
       append(&prompt, "When using multiple Agent connectors, use distinct Agent IDs and create exactly one final CALL_CONNECTOR node that depends on every specialist branch and produces the user-facing synthesis. ")
-      append(&prompt, "Keep graph depth at most \(settings.maxAgentHops).\n")
+      let maximumGraphDepth = request.allowsPhoneRuntimeTools
+        ? AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+        : settings.maxAgentHops
+      append(&prompt, "Keep graph depth at most \(maximumGraphDepth).\n")
     } else {
       append(&prompt, "Do not use depends_on or use_outputs_from.\n")
     }

@@ -38,7 +38,8 @@ enum AgentModelPlanParser {
       return nil
     }
     let normalizedSettings = settings.normalized
-    guard actionValues.count <= normalizedSettings.maxActions else {
+    let maximumActions = context.maximumActionsOverride ?? normalizedSettings.maxActions
+    guard actionValues.count <= maximumActions else {
       return nil
     }
 
@@ -95,7 +96,8 @@ enum AgentModelPlanParser {
       plan.rollbackStrategy = "Stop execution and restore the last safe checkpoint."
     }
     plan.validation = AgentPlanValidator.validate(plan)
-    return plan.validation.valid && toolGraphDepth(actions: plan.actions) <= normalizedSettings.maxAgentHops ? plan : nil
+    let maximumGraphDepth = context.maximumActionsOverride ?? normalizedSettings.maxAgentHops
+    return plan.validation.valid && toolGraphDepth(actions: plan.actions) <= maximumGraphDepth ? plan : nil
   }
 
   private static func parseAction(
