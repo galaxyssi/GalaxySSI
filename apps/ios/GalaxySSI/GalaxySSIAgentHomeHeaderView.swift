@@ -7,13 +7,13 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   var modelStatusLabel: String
   var modelLogoLabel: String
   var brandSubtitle: String
-  var voiceNavigationLabel: String
+  var newConversationLabel: String
   var settingsNavigationLabel: String
   var openWindowLabel: String
   var modelSelectionDestination: ModelSelectionDestination
   var onOpenSettings: () -> Void
   var onOpenWindow: (() -> Void)?
-  var onOpenVoice: () -> Void
+  var onNewConversation: () -> Void
 
   var body: some View {
     GeometryReader { proxy in
@@ -53,9 +53,17 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   }
 
   private func brandButton(compact: Bool) -> some View {
-    Button(action: onOpenVoice) {
-      HStack(spacing: compact ? 5 : 8) {
+    HStack(spacing: compact ? 5 : 8) {
+      Button(action: { onOpenWindow?() }) {
         GalaxySSILogoView(size: headerLogoSize, cornerRadius: 8)
+          .frame(minWidth: 44, minHeight: 44)
+      }
+      .buttonStyle(.plain)
+      .disabled(onOpenWindow == nil)
+      .accessibilityLabel(Text(openWindowLabel))
+      .accessibilityIdentifier("ios.agent.header.open-window")
+
+      Button(action: onNewConversation) {
         VStack(alignment: .center, spacing: 2) {
           Text("GalaxySSI")
             .font(.system(size: compact ? 13.5 : 14.5, weight: .bold))
@@ -69,10 +77,11 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         }
         .frame(minWidth: 0)
       }
+      .buttonStyle(.plain)
       .frame(minHeight: 44)
+      .accessibilityLabel(Text(newConversationLabel))
+      .accessibilityIdentifier("ios.agent.header.new-conversation")
     }
-    .buttonStyle(.plain)
-    .accessibilityLabel(Text(voiceNavigationLabel))
   }
 
   private var sessionNavigation: some View {
