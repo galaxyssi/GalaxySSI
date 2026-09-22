@@ -30,9 +30,29 @@ class WatchNearbyActivity : Activity() {
     private var waitingId = ""
     private var busy = false
     private var status = ""
-    private var initialPending = emptySet<String>()
-    private val devices = linkedMapOf<String, Pair<BluetoothDevice, String>>()
+    private val devices = WatchNearbyDirectory<BluetoothDevice>()
+    private val prune = object : Runnable {
+        override fun run() {
+            if (!active) return
+            if (devices.prune(android.os.SystemClock.elapsedRealtime()) && remote.isBlank() && !busy) render(true)
+            handler.postDelayed(this, 5_000)
+        }
+    }
     private val stop = Runnable { end(); status = getString(R.string.nearby_expired); render() }
+    private val renew: Runnable = Runnable { renewOffer() }
+    private fun renewOffer() {
+        if (!active || nfc) return
+        val owner = generation
+        var value = ""
+        repo.contactAction({ value = createQr(true) }) { ok ->
+            if (!active || owner != generation) return@contactAction
+            if (ok) {
+                offer = value; ble?.updateOffer(value)
+                if (remote.isBlank() && !busy && waitingId.isBlank()) render(true)
+                handler.postDelayed(renew, 8 * 60_000L)
+            } else failure()
+        }
+    }
     private val changed: () -> Unit = {
         if (active) {
             if (waitingId.isNotBlank()) {
@@ -59,12 +79,11 @@ class WatchNearbyActivity : Activity() {
     }
     override fun onPause() { end(); repo.unlisten(changed); repo.foreground(false); super.onPause() }
     private fun end() {
-        active = false; generation++; handler.removeCallbacks(stop); ble?.close(); ble = null
+        active = false; generation++; handler.removeCallbacks(stop); handler.removeCallbacks(prune); handler.removeCallbacks(renew); ble?.close(); ble = null
         WatchNearbyOffer.close(); window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     private fun begin() {
-        end(); active = true; val owner = generation; remote = ""; waitingId = ""; busy = false; devices.clear()
-        initialPending = repo.contacts.people().filter { it.status == "pending" }.map { it.id }.toSet()
+        end(); active = true; val owner = generation; offer = ""; remote = ""; waitingId = ""; busy = false; devices.clear()
         status = getString(R.string.nearby_preparing); render()
         if (nfc && (NfcAdapter.getDefaultAdapter(this)?.isEnabled != true ||
                 !packageManager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION))) {
@@ -75,25 +94,30 @@ class WatchNearbyActivity : Activity() {
         repo.contactAction({ invitation = createQr() }) { ok ->
             if (!active || generation != owner) return@contactAction
             if (!ok) { failure(); return@contactAction }
-            offer = invitation; handler.postDelayed(stop, 120_000)
+            offer = invitation
             if (nfc) {
+                handler.postDelayed(stop, 120_000)
                 WatchNearbyOffer.open(offer); status = getString(R.string.nearby_nfc_help); render()
             } else {
-                ble = WatchNearbyBle(this, offer, { device, name ->
-                    if (!devices.containsKey(device.address) && devices.size < 20 && remote.isEmpty() && !busy) {
-                        devices[device.address] = device to name.ifBlank { getString(R.string.nearby_device) + " · " + device.address.takeLast(5) }; render()
-                    }
+                ble = WatchNearbyBle(this, offer, { device, name, identity ->
+                    val updated = devices.update(identity, device.address,
+                        name.ifBlank { getString(R.string.nearby_device) + " · " + device.address.takeLast(5) },
+                        device, android.os.SystemClock.elapsedRealtime())
+                    if (updated && remote.isEmpty() && !busy) render(true)
                 }, { raw ->
                     val valid = repo.contacts.inspectInvitation(raw)
                     if (valid == null) failure() else { busy = false; remote = raw; status = valid.name; render() }
                 }, ::failure)
                 runCatching { ble?.start(); status = getString(R.string.nearby_ble_help); render() }.onFailure { failure() }
+                handler.postDelayed(prune, 5_000)
+                handler.postDelayed(renew, 8 * 60_000L)
             }
         }
     }
     private fun failure() { end(); busy = false; status = getString(R.string.nearby_error); render() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun render() {
+    private fun render(keepScroll: Boolean = false) {
+        val oldScroll = if (keepScroll) (findViewById<android.view.ViewGroup>(android.R.id.content)?.getChildAt(0) as? ScrollView)?.scrollY ?: 0 else 0
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(14), dp(20), dp(14), dp(24)); setBackgroundColor(Color.BLACK)
@@ -124,12 +148,15 @@ class WatchNearbyActivity : Activity() {
                     } else failure()
                 }
             }
-        } else if (active && !nfc && waitingId.isBlank()) devices.values.forEach { (device, name) ->
-            button(name) { busy = true; status = getString(R.string.nearby_connecting); render(); ble?.connect(device) }
+        } else if (active && !nfc && waitingId.isBlank()) devices.values().forEach { entry ->
+            button(entry.name) {
+                val latest = devices.get(entry.key)
+                if (latest != null) { busy = true; status = getString(R.string.nearby_connecting); render(); ble?.connect(latest.device) }
+            }
         }
         if (!active) button(getString(R.string.phone_setup_restart)) { begin() }
         button(getString(R.string.back)) { finish() }
-        setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(box) })
+        setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(box); if (keepScroll) post { scrollTo(0, oldScroll) } })
         window.insetsController?.hide(WindowInsets.Type.systemBars())
     }
 }
