@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum AgentKnowledgeKind: String, Codable, CaseIterable, Identifiable {
@@ -386,6 +387,8 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
   var agentAccess: AgentKnowledgeAgentAccess
   var allowedAgentIds: [String]
   var updatedAtMillis: Int64
+  var sourceRevision: String
+  var localItemId: String
 
   var id: String { source }
 
@@ -397,7 +400,9 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
     cloudAccess: AgentKnowledgeCloudAccess,
     agentAccess: AgentKnowledgeAgentAccess,
     allowedAgentIds: [String] = [],
-    updatedAtMillis: Int64
+    updatedAtMillis: Int64,
+    sourceRevision: String = "",
+    localItemId: String = ""
   ) {
     self.source = source
     self.title = title.ifBlank("Private knowledge")
@@ -407,6 +412,23 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
     self.agentAccess = agentAccess
     self.allowedAgentIds = allowedAgentIds.stableDistinct()
     self.updatedAtMillis = max(updatedAtMillis, 0)
+    self.sourceRevision = sourceRevision
+    self.localItemId = localItemId
+  }
+}
+
+enum AgentKnowledgeSourceRevision {
+  static func digest(_ items: [AgentKnowledgeItem]) -> String {
+    var hasher = SHA256()
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    for item in items.sorted(by: { $0.id < $1.id }) {
+      guard let data = try? encoder.encode(item) else { continue }
+      var length = UInt64(data.count).bigEndian
+      withUnsafeBytes(of: &length) { hasher.update(data: Data($0)) }
+      hasher.update(data: data)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
   }
 }
 
