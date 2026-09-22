@@ -97,7 +97,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   ) {
     self.coordinatorBridge = coordinatorBridge
     self.liveWhisperScheduler = liveWhisperScheduler ??
-      VoiceWhisperRuntimeDecodeSchedulerAdapter(runtime: DefaultVoiceLocalWhisperRuntime()).makeScheduler()
+      VoiceWhisperRuntimeDecodeSchedulerAdapter(runtime: VoiceSharedWhisperRuntime.shared).makeScheduler()
     self.liveWhisperController = liveWhisperController ??
       VoiceLiveWhisperCaptureController(
         coordinatorBridge: VoiceLiveWhisperCoordinatorBridge(coordinatorBridge: coordinatorBridge)

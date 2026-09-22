@@ -1,5 +1,9 @@
 import Foundation
 
+enum VoiceSharedWhisperRuntime {
+  static let shared = DefaultVoiceLocalWhisperRuntime()
+}
+
 final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStatefulLocalWhisperRuntime {
   private struct RuntimeLease {
     var handle: Int64

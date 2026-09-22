@@ -2,6 +2,10 @@ import XCTest
 @testable import GalaxySSI
 
 final class DefaultVoiceLocalWhisperRuntimeTests: XCTestCase {
+  func testAppVoiceEntryPointsShareOneWhisperRuntime() {
+    XCTAssertTrue(VoiceSharedWhisperRuntime.shared === VoiceSharedWhisperRuntime.shared)
+  }
+
   func testRuntimeOwnsSessionLifecycleAndStructuredDecode() async throws {
     let env = try Environment()
     let native = FakeNativeAPI()
