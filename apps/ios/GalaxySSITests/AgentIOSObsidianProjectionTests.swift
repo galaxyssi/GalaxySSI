@@ -118,8 +118,16 @@ final class AgentIOSObsidianProjectionTests: XCTestCase {
       key: "obsidian-test"
     )
     stateStore.saveSettings(.init(enabled: true, bookmarkData: Data([1, 2, 3]), vaultName: "Vault"))
+    let checkpoint = AgentIOSObsidianProjectionCheckpoint(
+      namespace: "vault",
+      catalogRevision: "revision",
+      nextOffset: 50,
+      visited: 50
+    )
+    stateStore.saveProjectionCheckpoint(checkpoint)
 
     XCTAssertEqual(stateStore.settings().vaultName, "Vault")
+    XCTAssertEqual(stateStore.projectionCheckpoint(), checkpoint)
     XCTAssertNil(defaults.data(forKey: "obsidian-test"))
     XCTAssertNotNil(defaults.data(forKey: "obsidian-test.encrypted.v1"))
   }
