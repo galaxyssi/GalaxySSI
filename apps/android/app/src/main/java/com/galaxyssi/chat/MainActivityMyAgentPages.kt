@@ -6,7 +6,8 @@ internal fun MainActivity.myAgentSurfaceActive(): Boolean =
 /** Navigation-only presentation. Existing stores remain the source of truth. */
 internal fun MainActivity.myAgentRow(
     action: String, title: Int, icon: Int, status: String = "", subtitle: String = ""
-) = ControlCenterRowSpec(action, getString(title), subtitle, icon, status)
+) = ControlCenterRowSpec(action, getString(title), subtitle, icon, status,
+    tone = controlCenterIconTone(icon), preserveIconColor = isFullColorFeatureIcon(icon))
 
 internal fun MainActivity.myAgentHomeRow(route: ControlCenterRoute): ControlCenterRowSpec {
     val (title, icon) = when (route) {
@@ -38,14 +39,15 @@ internal fun MainActivity.renderMyAgentModelsPage() {
                 contact != null && !contact.optBoolean("deleted", false)
         }.distinctBy { it.id }
     showControlCenterFeature(getString(R.string.my_agent_models), ControlCenterPageSpec(sections = listOf(
-        ControlCenterSectionSpec(getString(R.string.my_agent_installed),
-            targets.map { controlCenterTargetRow(it, findAgentRegistration(registry, it.id)).copy(subtitle = "") } +
-                myAgentRow("local_model.open", R.string.my_agent_downloaded_models, R.drawable.ic_local_model)),
         myAgentSection(R.string.my_agent_add,
             myAgentRow("routing.add_cloud", R.string.cc_add_cloud_provider_title, R.drawable.ic_avatar_cloud_model),
             myAgentRow("my_agent.scan", R.string.conversation_hub_scan_add, R.drawable.ic_scan)),
-        myAgentSection(R.string.my_agent_strategy,
-            myAgentRow("routing.policy", R.string.my_agent_routing, R.drawable.ic_agent_control))
+        ControlCenterSectionSpec(getString(R.string.my_agent_installed),
+            targets.map {
+                val row = controlCenterTargetRow(it, findAgentRegistration(registry, it.id))
+                row.copy(subtitle = "", preserveIconColor = row.preserveIconColor || isFullColorFeatureIcon(row.iconRes))
+            } +
+                myAgentRow("local_model.open", R.string.my_agent_downloaded_models, R.drawable.ic_local_model))
     )))
 }
 

@@ -260,7 +260,7 @@ internal fun MainActivity.renderControlCenterHome() {
 internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec =
     ControlCenterPageSpec(
         hero = ControlCenterHeroSpec(
-            title = getString(R.string.settings_my_galaxyssi),
+            title = getString(R.string.app_name),
             subtitle = getString(R.string.my_agent_personal_subtitle),
             iconRes = R.drawable.galaxyssi_mark_large,
             preserveIconColor = true,

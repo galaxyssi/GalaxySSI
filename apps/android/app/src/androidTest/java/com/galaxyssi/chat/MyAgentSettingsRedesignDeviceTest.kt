@@ -5,6 +5,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.ImageView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -17,6 +18,52 @@ import org.junit.runner.RunWith
 class MyAgentSettingsRedesignDeviceTest {
     private fun descendants(view: View): List<View> = listOf(view) +
         if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+
+    @Test fun profileBrandAndSubtitleAreCenteredWithoutTintingTheBrand() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.showMainTab(PAGE_SETTINGS)
+                val page = activity.buildControlCenterHomePage()
+                assertEquals("GalaxySSI", page.hero?.title)
+                val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+                ControlCenterRenderer(activity).render(content, page) {}
+                content.measure(View.MeasureSpec.makeMeasureSpec(activity.resources.displayMetrics.widthPixels,
+                    View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                content.layout(0, 0, content.measuredWidth, content.measuredHeight)
+                val title = descendants(content).filterIsInstance<TextView>().first { it.text == "GalaxySSI" }
+                val subtitle = descendants(content).filterIsInstance<TextView>()
+                    .first { it.text == activity.getString(R.string.my_agent_personal_subtitle) }
+                val titleCenter = title.left + title.compoundPaddingLeft +
+                    (title.width - title.compoundPaddingLeft - title.compoundPaddingRight) / 2f
+                val subtitleCenter = subtitle.left + subtitle.paddingLeft +
+                    (subtitle.width - subtitle.paddingLeft - subtitle.paddingRight) / 2f
+                assertEquals(titleCenter, subtitleCenter, 1f)
+                assertTrue(title.isClickable)
+                val icons = descendants(content).filterIsInstance<ImageView>()
+                assertNull(icons.first().imageTintList)
+                assertTrue(icons.mapNotNull { it.imageTintList?.defaultColor }.distinct().size >= 4)
+            }
+        }
+    }
+
+    @Test fun subpagesAndLegacyResourceRowsRetainColoredIcons() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.showMainTab(PAGE_SETTINGS)
+                activity.openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.MEMORY_HUB))
+                val icons = descendants(activity.featureContent).filterIsInstance<ImageView>()
+                assertTrue(icons.any { it.imageTintList?.defaultColor == android.graphics.Color.parseColor("#7052CC") })
+                val voice = activity.featureIcon(R.drawable.ic_settings_voice,
+                    activity.featureIconColor(R.drawable.ic_settings_voice))
+                assertEquals(android.graphics.Color.parseColor("#14875A"), voice.imageTintList?.defaultColor)
+                val brand = activity.featureIcon(R.drawable.logo_provider_deepseek, android.graphics.Color.RED)
+                assertNull(brand.imageTintList)
+                assertTrue(activity.myAgentRow("test", R.string.my_agent_models,
+                    R.drawable.ic_avatar_cloud_model).preserveIconColor)
+                activity.featureBackButton.performClick()
+            }
+        }
+    }
 
     @Test fun advancedSectionKeepsExpansionAcrossRefresh() {
         val context = ApplicationProvider.getApplicationContext<Context>()

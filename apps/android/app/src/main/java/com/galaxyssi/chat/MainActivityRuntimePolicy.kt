@@ -911,16 +911,22 @@ internal fun MainActivity.findAgentRegistration(
     }
 
 internal fun MainActivity.controlCenterTargetIcon(target: AgentCallableTarget): Int = when {
+    target.id.startsWith("cloud:") || target.providerProfile?.kind == ProviderProfileKind.CLOUD_MODEL ->
+        providerIcon(target.providerProfile?.providerId.orEmpty().ifBlank { target.id.removePrefix("cloud:") })
     target.id.contains("codex", true) -> R.drawable.logo_codex_product
     target.id.contains("claude", true) -> R.drawable.logo_claude_code
     target.id.contains("hermes", true) -> R.drawable.hermes_logo
-    target.kind == AgentConnectorKind.MODEL && target.id.startsWith("cloud:") -> R.drawable.ic_avatar_cloud_model
     target.kind == AgentConnectorKind.MODEL -> R.drawable.ic_local_model
     target.kind == AgentConnectorKind.DEVICE -> R.drawable.ic_device_node
     else -> R.drawable.ic_agent_node
 }
 
 internal fun MainActivity.showControlCenterTarget(targetId: String) {
+    val contact = AppStore.contactById(this, targetId)?.takeUnless { it.optBoolean("deleted", false) }
+    if (contact != null) {
+        openExistingControlCenterPage { showContactDetail(contactById(targetId)) }
+        return
+    }
     val target = mobileNativeAgent.snapshot().callableTargets.firstOrNull { it.id == targetId }
     if (target == null) {
         openExistingControlCenterPage { showAgentFeaturePage() }
@@ -929,9 +935,6 @@ internal fun MainActivity.showControlCenterTarget(targetId: String) {
     when {
         target.id.startsWith("cloud:") -> openExistingControlCenterPage {
             showCloudModelPage(target.id.substringAfter("cloud:"))
-        }
-        AppStore.contactById(this, target.id) != null -> openExistingControlCenterPage {
-            showContactDetail(contactById(target.id))
         }
         else -> openExistingControlCenterPage {
             showFeatureItemPage(
