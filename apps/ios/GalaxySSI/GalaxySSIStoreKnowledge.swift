@@ -30,6 +30,25 @@ extension GalaxySSIStore {
       .sorted { $0.updatedAtMillis > $1.updatedAtMillis }
   }
 
+  func agentKnowledgeSourcePage(
+    cursor: AgentKnowledgeSourceCursor? = nil,
+    limit: Int = 50
+  ) -> AgentKnowledgeSourcePage {
+    if let page = try? agentKnowledgeDatabase.sourcePage(cursor: cursor, limit: limit) { return page }
+    if cursor != nil, let first = try? agentKnowledgeDatabase.sourcePage(limit: limit) { return first }
+    let groups = agentKnowledgeSourceGroups()
+    return AgentKnowledgeSourcePage(
+      groups: Array(groups.prefix(min(max(limit, 1), 50))),
+      total: groups.count,
+      next: nil
+    )
+  }
+
+  func agentKnowledgeSourceItemIds(_ group: AgentKnowledgeSourceGroup) -> [String] {
+    if !group.itemIds.isEmpty { return group.itemIds }
+    return (try? agentKnowledgeDatabase.sourceItemIds(sourceIdentity: group.source)) ?? []
+  }
+
   @discardableResult
   func importAgentKnowledge(
     title: String,
@@ -225,7 +244,7 @@ extension GalaxySSIStore {
 
   private func agentKnowledgeSourceKey(_ item: AgentKnowledgeItem) -> String {
     item.source.trimmingCharacters(in: .whitespacesAndNewlines)
-      .ifBlank("local:\(item.kind.rawValue.lowercased()):\(item.title)")
+      .ifBlank("local:\(item.id)")
   }
 
   private func knowledgeItemEquivalent(_ left: AgentKnowledgeItem, _ right: AgentKnowledgeItem) -> Bool {

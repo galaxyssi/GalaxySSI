@@ -902,6 +902,9 @@
 "galaxyssi.agent_knowledge.search" = "搜索知识";
 "galaxyssi.agent_knowledge.search_subtitle" = "结合短语、关键词和语义相似度进行检索";
 "galaxyssi.agent_knowledge.search_action" = "搜索";
+"galaxyssi.agent_knowledge.previous_sources" = "上一页来源";
+"galaxyssi.agent_knowledge.next_sources" = "下一页来源";
+"galaxyssi.agent_knowledge.source_page" = "%d-%d / %d";
 "galaxyssi.agent_knowledge.semantic_title" = "语义模型";
 "galaxyssi.agent_knowledge.semantic_entry_subtitle" = "可信本地向量、私有索引与混合检索";
 "galaxyssi.agent_knowledge.configure" = "配置";

@@ -5,6 +5,7 @@ import SQLite3
 enum AgentKnowledgeDatabaseError: Error, Equatable {
   case unavailable
   case corruptRecord
+  case staleCursor
 }
 
 final class AgentKnowledgeDatabase {
@@ -211,11 +212,81 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  func sourcePage(cursor: AgentKnowledgeSourceCursor? = nil, limit: Int = 50) throws -> AgentKnowledgeSourcePage {
+    try locked {
+      let pageSize = min(max(limit, 1), 50)
+      guard let revision = scalar("SELECT revision FROM knowledge_browse_revision WHERE id = 1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      if let cursor, cursor.revision != revision { throw AgentKnowledgeDatabaseError.staleCursor }
+      let predicate = cursor == nil ? "" : "WHERE updated_at < ? OR (updated_at = ? AND source_hash > ?)"
+      guard let statement = prepare("""
+        SELECT source_hash, updated_at, encrypted_header FROM knowledge_source_headers
+        \(predicate)
+        ORDER BY updated_at DESC, source_hash ASC
+        LIMIT ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      var bindIndex: Int32 = 1
+      if let cursor {
+        sqlite3_bind_int64(statement, bindIndex, cursor.updatedAtMillis)
+        sqlite3_bind_int64(statement, bindIndex + 1, cursor.updatedAtMillis)
+        bind(cursor.sourceHash, at: bindIndex + 2, to: statement)
+        bindIndex += 3
+      }
+      sqlite3_bind_int(statement, bindIndex, Int32(pageSize + 1))
+      var rows: [(String, AgentKnowledgeSourceGroup)] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let hashText = sqlite3_column_text(statement, 0),
+              let encrypted = blob(statement, column: 2) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let sourceHash = String(cString: hashText)
+        guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: sourceHeaderPurpose(sourceHash)),
+              let group = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        rows.append((sourceHash, group))
+      }
+      let shown = Array(rows.prefix(pageSize))
+      let next = rows.count > pageSize ? shown.last.map {
+        AgentKnowledgeSourceCursor(
+          updatedAtMillis: $0.1.updatedAtMillis,
+          sourceHash: $0.0,
+          revision: revision
+        )
+      } : nil
+      return AgentKnowledgeSourcePage(
+        groups: shown.map { $0.1 },
+        total: Int(scalar("SELECT COUNT(*) FROM knowledge_source_headers") ?? 0),
+        next: next
+      )
+    }
+  }
+
+  func sourceItemIds(sourceIdentity: String) throws -> [String] {
+    try locked {
+      guard !sourceIdentity.isBlank,
+            let statement = prepare("""
+              SELECT item_hash, encrypted_payload FROM knowledge_items
+              WHERE source_hash = ? ORDER BY item_hash ASC
+              """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(keyedHash(sourceIdentity), at: 1, to: statement)
+      var ids: [String] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        ids.append(try decode(statement, hashColumn: 0, payloadColumn: 1).id)
+      }
+      return ids
+    }
+  }
+
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
       guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
-      guard execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items") else {
+      guard execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items"),
+            execute("DELETE FROM knowledge_source_headers") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -223,11 +294,16 @@ final class AgentKnowledgeDatabase {
         _ = execute("ROLLBACK")
         return false
       }
+      for group in sourceGroups(items) where !insertSourceHeader(group) {
+        _ = execute("ROLLBACK")
+        return false
+      }
       guard execute("DELETE FROM knowledge_vectors WHERE item_hash NOT IN (SELECT item_hash FROM knowledge_items)") else {
         _ = execute("ROLLBACK")
         return false
       }
-      guard execute("COMMIT") else {
+      guard execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1"),
+            execute("COMMIT") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -245,7 +321,7 @@ final class AgentKnowledgeDatabase {
             """) else { return false }
     defer { sqlite3_finalize(statement) }
     bind(itemHash, at: 1, to: statement)
-    bind(keyedHash(item.source), at: 2, to: statement)
+    bind(keyedHash(sourceIdentity(item)), at: 2, to: statement)
     sqlite3_bind_int64(statement, 3, item.updatedAtMillis)
     encrypted.withUnsafeBytes { bytes in
       sqlite3_bind_blob(statement, 4, bytes.baseAddress, Int32(encrypted.count), Self.transient)
@@ -273,6 +349,45 @@ final class AgentKnowledgeDatabase {
     return true
   }
 
+  private func sourceGroups(_ items: [AgentKnowledgeItem]) -> [AgentKnowledgeSourceGroup] {
+    Dictionary(grouping: items, by: sourceIdentity)
+      .map { source, members in
+        let sorted = members.sorted { $0.updatedAtMillis > $1.updatedAtMillis }
+        let latest = sorted[0]
+        return AgentKnowledgeSourceGroup(
+          source: source,
+          title: latest.title.replacingOccurrences(
+            of: "\\s+\\[[0-9]+/[0-9]+\\]$",
+            with: "",
+            options: .regularExpression
+          ),
+          itemIds: [],
+          chunkCount: members.count,
+          cloudAccess: latest.cloudAccess,
+          agentAccess: latest.agentAccess,
+          allowedAgentIds: latest.allowedAgentIds,
+          updatedAtMillis: latest.updatedAtMillis
+        )
+      }
+  }
+
+  private func insertSourceHeader(_ group: AgentKnowledgeSourceGroup) -> Bool {
+    let sourceHash = keyedHash(group.source)
+    guard let plaintext = try? JSONEncoder.galaxySSI.encode(group),
+          let encrypted = try? cipher.encrypt(plaintext, purpose: sourceHeaderPurpose(sourceHash)),
+          let statement = prepare("""
+            INSERT INTO knowledge_source_headers(source_hash, updated_at, encrypted_header)
+            VALUES (?, ?, ?)
+            """) else { return false }
+    defer { sqlite3_finalize(statement) }
+    bind(sourceHash, at: 1, to: statement)
+    sqlite3_bind_int64(statement, 2, group.updatedAtMillis)
+    encrypted.withUnsafeBytes { bytes in
+      sqlite3_bind_blob(statement, 3, bytes.baseAddress, Int32(encrypted.count), Self.transient)
+    }
+    return sqlite3_step(statement) == SQLITE_DONE
+  }
+
   private func open() {
     try? FileManager.default.createDirectory(
       at: fileURL.deletingLastPathComponent(),
@@ -298,6 +413,16 @@ final class AgentKnowledgeDatabase {
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_idx ON knowledge_items(source_hash, updated_at)")
     _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_source_headers (
+        source_hash TEXT PRIMARY KEY NOT NULL,
+        updated_at INTEGER NOT NULL,
+        encrypted_header BLOB NOT NULL
+      )
+      """)
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_header_recent ON knowledge_source_headers(updated_at DESC, source_hash ASC)")
+    _ = execute("CREATE TABLE IF NOT EXISTS knowledge_browse_revision (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL)")
+    _ = execute("INSERT OR IGNORE INTO knowledge_browse_revision(id, revision) VALUES (1, 0)")
+    _ = execute("""
       CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
         item_hash UNINDEXED,
         tokens,
@@ -319,7 +444,10 @@ final class AgentKnowledgeDatabase {
   }
 
   private func rebuildIndexIfNeeded() {
-    guard scalar("SELECT COUNT(*) FROM knowledge_items") != scalar("SELECT COUNT(*) FROM knowledge_fts"),
+    let itemCount = scalar("SELECT COUNT(*) FROM knowledge_items") ?? 0
+    let indexCount = scalar("SELECT COUNT(*) FROM knowledge_fts") ?? 0
+    let headerCount = scalar("SELECT COUNT(*) FROM knowledge_source_headers") ?? 0
+    guard itemCount != indexCount || (itemCount > 0 && headerCount == 0),
           let items = try? all() else { return }
     _ = replaceAll(items)
   }
@@ -377,6 +505,15 @@ final class AgentKnowledgeDatabase {
   }
 
   private func purpose(_ itemHash: String) -> String { "agent-knowledge:\(itemHash)" }
+
+  private func sourceIdentity(_ item: AgentKnowledgeItem) -> String {
+    item.source.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank("local:\(item.id)")
+  }
+
+  private func sourceHeaderPurpose(_ sourceHash: String) -> String {
+    "agent-knowledge-source:\(sourceHash)"
+  }
 
   private func vectorPurpose(_ vectorKey: String) -> String { "agent-knowledge-vector:\(vectorKey)" }
 

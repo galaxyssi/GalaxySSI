@@ -410,6 +410,20 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
   }
 }
 
+struct AgentKnowledgeSourceCursor: Equatable {
+  var updatedAtMillis: Int64
+  var sourceHash: String
+  var revision: Int64
+}
+
+struct AgentKnowledgeSourcePage: Equatable {
+  var groups: [AgentKnowledgeSourceGroup]
+  var total: Int
+  var next: AgentKnowledgeSourceCursor?
+
+  static let empty = AgentKnowledgeSourcePage(groups: [], total: 0, next: nil)
+}
+
 struct AgentKnowledgeAccessAuditEntry: Codable, Equatable, Identifiable {
   var queryHash: Int
   var targetId: String
