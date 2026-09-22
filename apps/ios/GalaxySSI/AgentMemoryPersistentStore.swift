@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
@@ -11,6 +12,7 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   private let nowMillis: () -> Int64
   private let retractionSink: ([GlobalConversationEvent]) -> Void
   private let lock = NSLock()
+  private let rows: UserDefaultsAgentPersonalMemoryRows
   private var base: InMemoryAgentMemoryStore
 
   init(
@@ -28,12 +30,14 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
     self.deletionIndex = deletionIndex ?? UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
     self.nowMillis = nowMillis
     self.retractionSink = retractionSink
+    let rows = UserDefaultsAgentPersonalMemoryRows(defaults: defaults, secrets: secrets)
+    self.rows = rows
     let encrypted = GalaxySSIEncryptedUserDefaultsStore.load(
       defaults: defaults,
       key: encryptedKey,
       secrets: secrets
     )
-    let restoredItems = Self.decodeItems(encrypted ?? defaults.data(forKey: key))
+    let restoredItems = rows.read() ?? Self.decodeItems(encrypted ?? defaults.data(forKey: key))
     let filtered = AgentMemoryCausalDeletionPolicy.filterRestoredItems(
       restoredItems,
       tombstones: self.deletionIndex.snapshot()
@@ -51,6 +55,7 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
     secrets: GalaxySSISecretStore = KeychainSecretStore.shared
   ) {
     defaults.removeObject(forKey: key)
+    UserDefaultsAgentPersonalMemoryRows(defaults: defaults, secrets: secrets).destroy()
     GalaxySSIEncryptedUserDefaultsStore.destroy(
       defaults: defaults,
       key: "\(key)-encrypted-v3",
@@ -260,6 +265,7 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
         secrets: secrets
       )
       defaults.removeObject(forKey: key)
+      rows.destroy()
     }
   }
 
@@ -313,15 +319,13 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   }
 
   private func persistUnlocked() {
-    guard let data = try? AgentMemoryJSONCodec.encodeItems(Self.normalizedItems(currentItemsUnlocked())) else {
-      return
-    }
-    if GalaxySSIEncryptedUserDefaultsStore.write(
-      data,
-      defaults: defaults,
-      key: encryptedKey,
-      secrets: secrets
-    ) {
+    let items = Self.normalizedItems(currentItemsUnlocked())
+    if rows.replace(items) {
+      GalaxySSIEncryptedUserDefaultsStore.destroy(
+        defaults: defaults,
+        key: encryptedKey,
+        secrets: secrets
+      )
       defaults.removeObject(forKey: key)
     }
   }
@@ -336,5 +340,106 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
     lock.lock()
     defer { lock.unlock() }
     return operation()
+  }
+}
+
+final class UserDefaultsAgentPersonalMemoryRows {
+  private struct Metadata: Codable {
+    var schema: Int
+    var orderedIds: [String]
+    var activeCount: Int
+    var revision: String
+  }
+
+  private let defaults: UserDefaults
+  private let secrets: GalaxySSISecretStore
+  private let prefix: String
+  private let metadataKey: String
+
+  init(
+    defaults: UserDefaults,
+    secrets: GalaxySSISecretStore,
+    prefix: String = "galaxyssi_agent_memory_rows_v3"
+  ) {
+    self.defaults = defaults
+    self.secrets = secrets
+    self.prefix = prefix
+    self.metadataKey = "\(prefix)-metadata"
+  }
+
+  var exists: Bool {
+    GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: metadataKey, secrets: secrets) != nil
+  }
+
+  func read() -> [AgentMemoryItem]? {
+    guard let metadataData = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: metadataKey,
+      secrets: secrets
+    ), let metadata = try? JSONDecoder().decode(Metadata.self, from: metadataData),
+    metadata.schema == 3,
+    metadata.activeCount >= 0,
+    metadata.activeCount <= metadata.orderedIds.count,
+    Set(metadata.orderedIds).count == metadata.orderedIds.count,
+    !metadata.revision.isEmpty else { return nil }
+    var items: [AgentMemoryItem] = []
+    for id in metadata.orderedIds {
+      guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+        defaults: defaults,
+        key: rowKey(id),
+        secrets: secrets
+      ), let item = try? JSONDecoder().decode(AgentMemoryItem.self, from: data),
+      item.id == id,
+      !item.value.agentMemoryTrimmed.isEmpty else { return nil }
+      items.append(item)
+    }
+    guard items.filter({ $0.status == .active }).count == metadata.activeCount else { return nil }
+    return items
+  }
+
+  @discardableResult
+  func replace(_ items: [AgentMemoryItem]) -> Bool {
+    guard Set(items.map(\.id)).count == items.count,
+          items.allSatisfy({ !$0.id.isEmpty && !$0.value.agentMemoryTrimmed.isEmpty }) else { return false }
+    let previousIds = read()?.map(\.id) ?? []
+    for item in items {
+      guard let data = try? JSONEncoder().encode(item),
+            GalaxySSIEncryptedUserDefaultsStore.write(
+              data,
+              defaults: defaults,
+              key: rowKey(item.id),
+              secrets: secrets
+            ) else { return false }
+    }
+    let metadata = Metadata(
+      schema: 3,
+      orderedIds: items.map(\.id),
+      activeCount: items.filter { $0.status == .active }.count,
+      revision: UUID().uuidString
+    )
+    guard let data = try? JSONEncoder().encode(metadata),
+          GalaxySSIEncryptedUserDefaultsStore.write(
+            data,
+            defaults: defaults,
+            key: metadataKey,
+            secrets: secrets
+          ) else { return false }
+    for id in Set(previousIds).subtracting(items.map(\.id)) {
+      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: rowKey(id))
+    }
+    return true
+  }
+
+  func destroy() {
+    let ids = read()?.map(\.id) ?? []
+    for id in ids {
+      GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: rowKey(id), secrets: secrets)
+    }
+    GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: metadataKey, secrets: secrets)
+  }
+
+  private func rowKey(_ id: String) -> String {
+    let digest = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "\(prefix)-row-\(digest)"
   }
 }
