@@ -114,7 +114,7 @@ final class AgentKnowledgeDatabase {
          existing.updatedAtMillis >= checkpoint.updatedAtMillis {
         return false
       }
-      guard let plaintext = try? JSONEncoder.galaxySSI.encode(checkpoint),
+      guard let plaintext = try? AgentKnowledgeVectorStorage.encode(checkpoint),
             let encrypted = try? vectorCipher.encrypt(plaintext, purpose: vectorPurpose(vectorKey)),
             execute("BEGIN IMMEDIATE TRANSACTION"),
             let statement = prepare("""
@@ -187,10 +187,7 @@ final class AgentKnowledgeDatabase {
         }
         let key = String(cString: keyText)
         guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
-              let checkpoint = try? JSONDecoder.galaxySSI.decode(
-                AgentKnowledgeVectorCheckpoint.self,
-                from: plaintext
-              ), checkpoint.isValid else {
+              let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         checkpoints.append(checkpoint)
@@ -332,10 +329,7 @@ final class AgentKnowledgeDatabase {
         }
         let key = String(cString: keyText)
         guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
-              let checkpoint = try? JSONDecoder.galaxySSI.decode(
-                AgentKnowledgeVectorCheckpoint.self,
-                from: plaintext
-              ), checkpoint.isValid else {
+              let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         checkpoints.append(checkpoint)
@@ -776,7 +770,7 @@ final class AgentKnowledgeDatabase {
           let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(vectorKey)) else {
       return nil
     }
-    return try? JSONDecoder.galaxySSI.decode(AgentKnowledgeVectorCheckpoint.self, from: plaintext)
+    return try? AgentKnowledgeVectorStorage.decode(plaintext)
   }
 
   private func orphanedVectorDocuments() -> [AgentKnowledgeVectorCheckpoint] {
@@ -793,10 +787,7 @@ final class AgentKnowledgeDatabase {
             let encrypted = blob(statement, column: 1) else { continue }
       let key = String(cString: keyText)
       guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
-            let checkpoint = try? JSONDecoder.galaxySSI.decode(
-              AgentKnowledgeVectorCheckpoint.self,
-              from: plaintext
-            ) else { continue }
+            let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else { continue }
       let identity = "\(checkpoint.itemId):\(checkpoint.provenance.modelSHA256)"
       if seen.insert(identity).inserted { documents.append(checkpoint) }
     }
