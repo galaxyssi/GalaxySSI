@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 57
-        versionName = "0.3.25"
+        versionCode = 60
+        versionName = "0.3.28"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -171,7 +171,7 @@ val webFiles = listOf(
     "AgentWebReadingWindow.kt", "AgentResearchTrace.kt", "ResearchEvidenceAudit.kt",
     "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
-val webSlices = listOf("MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
+val webSlices = listOf("AgentModelSelectionSettings.kt", "MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt", "AgentRemoteOutcomeCodec.kt", "AgentResultReceipt.kt")
 val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
 val syncPhoneWebParser by tasks.registering {
@@ -188,6 +188,9 @@ val syncPhoneWebParser by tasks.registering {
             return source.substring(start, end)
         }
         // Compile the phone's desktop readiness rules verbatim, including its TTL and clock skew.
+        // Keep capability normalization, retired-model filtering and wire fields identical to Android.
+        write("AgentInvocationProfile.kt", phoneWebRoot.resolve("AgentModelSelectionSettings.kt").readText()
+            .substringBefore("object AgentModelSelectionPolicy {"))
         write("AgentConnectorAvailability.kt", "package com.galaxyssi.chat\nimport org.json.JSONObject\nimport java.util.Locale\n" +
             slice(phoneWebRoot.resolve("MobileAgentConnectors.kt").readText(),
                 "object AgentConnectorAvailability {", "    fun cloudModelReady(") + "}\n")

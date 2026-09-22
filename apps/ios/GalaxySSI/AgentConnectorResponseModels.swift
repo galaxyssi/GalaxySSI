@@ -1030,6 +1030,17 @@ final class AgentConnectorResponseBus {
     store.pending()
   }
 
+  func wasRecorded(_ response: AgentConnectorResponse) -> Bool {
+    store.hasReceivedDelivery(AgentTerminalDelivery(
+      sourceMessageId: response.sourceMessageId,
+      conversationId: response.conversationId,
+      turnId: response.turnId,
+      taskId: response.taskId,
+      contactId: response.contactId,
+      executionGeneration: response.executionGeneration
+    ))
+  }
+
   func remove(_ response: AgentConnectorResponse) {
     store.remove(response)
   }

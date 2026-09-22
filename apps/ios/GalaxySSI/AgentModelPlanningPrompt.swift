@@ -33,10 +33,10 @@ enum AgentModelPlanningPrompt {
     appendCoordinationRules(to: &prompt, settings: normalizedSettings)
     appendRequestedMembers(to: &prompt, request: request)
     append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
+    appendReplanContext(to: &prompt, request: request)
+    appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
     appendConversationContext(to: &prompt, request: request)
     appendGlobalRealtimeContext(to: &prompt, request: request)
-    appendReplanContext(to: &prompt, request: request)
-    appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings)
     appendScreenSummary(to: &prompt, request: request)
     if normalizedSettings.shareScreenText {
       appendScreenInventory(
@@ -207,7 +207,9 @@ enum AgentModelPlanningPrompt {
     to prompt: inout String,
     request: AgentModelPlanningPromptRequest
   ) {
-    let reason = request.parsingContext.replanReason.trimmingCharacters(in: .whitespacesAndNewlines)
+    let reason = AgentObservationRedaction.redact(
+      request.parsingContext.replanReason.trimmingCharacters(in: .whitespacesAndNewlines)
+    )
     guard !reason.isEmpty else {
       return
     }
@@ -235,20 +237,17 @@ enum AgentModelPlanningPrompt {
   private static func appendExecutionHistory(
     to prompt: inout String,
     request: AgentModelPlanningPromptRequest,
-    settings: AgentModelPlannerSettings
+    settings: AgentModelPlannerSettings,
+    compact: Bool
   ) {
-    guard !request.executionHistory.isEmpty else {
-      return
-    }
-    append(&prompt, "Execution history:\n")
-    for action in request.executionHistory.suffix(30) {
-      append(&prompt, "- \(action.kind.rawValue) | \(action.status.rawValue) | \(action.description.prefixStringForPlanning(180))\n")
-      if settings.shareAgentOutputsWithPlanner,
-         action.kind == .callConnector,
-         !action.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        append(&prompt, "  Untrusted output data: \(safePlannerOutput(action.result))\n")
-      }
-    }
+    append(
+      &prompt,
+      AgentPlanningHistoryContext.build(
+        request: request,
+        settings: settings,
+        maximumCharacters: compact ? 3_000 : 6_000
+      )
+    )
   }
 
   private static func appendScreenSummary(
@@ -405,24 +404,6 @@ enum AgentModelPlanningPrompt {
   ) -> Bool {
     request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
-  }
-
-  private static func safePlannerOutput(_ value: String) -> String {
-    if hasSensitivePlannerText(value) {
-      return "[redacted sensitive output]"
-    }
-    if value.range(of: #"\b\d{4,8}\b"#, options: .regularExpression) != nil {
-      return "[redacted numeric secret]"
-    }
-    return value
-      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .prefixStringForPlanning(1_500)
-  }
-
-  private static func hasSensitivePlannerText(_ value: String) -> Bool {
-    let normalized = value.lowercased()
-    return sensitivePlannerTerms.contains { normalized.contains($0) }
   }
 
   private static func formatConfidence(_ value: Double) -> String {
@@ -616,6 +597,64 @@ enum AgentPlannerObservation {
     "private key", "seed phrase", "bank card", "credit card", "cvv",
     "\u{5bc6}\u{7801}", "\u{9a8c}\u{8bc1}\u{7801}", "\u{79c1}\u{94a5}",
     "\u{94f6}\u{884c}\u{5361}", "\u{652f}\u{4ed8}"
+  ]
+}
+
+enum AgentObservationRedaction {
+  static func redact(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let data = trimmed.data(using: .utf8),
+       let parsed = try? JSONSerialization.jsonObject(with: data),
+       JSONSerialization.isValidJSONObject(parsed),
+       let encoded = try? JSONSerialization.data(
+         withJSONObject: redactJSON(parsed, depth: 0),
+         options: [.sortedKeys]
+       ),
+       let result = String(data: encoded, encoding: .utf8) {
+      return result
+    }
+    return redactText(trimmed)
+  }
+
+  private static func redactJSON(_ value: Any, depth: Int) -> Any {
+    guard depth <= 64 else { return "[nested data omitted]" }
+    if let object = value as? [String: Any] {
+      return object.reduce(into: [String: Any]()) { result, entry in
+        let normalized = entry.key.lowercased().replacingOccurrences(of: "-", with: "_")
+        result[entry.key] = secretKeys.contains(normalized)
+          ? "[redacted]"
+          : redactJSON(entry.value, depth: depth + 1)
+      }
+    }
+    if let array = value as? [Any] {
+      return array.map { redactJSON($0, depth: depth + 1) }
+    }
+    if let string = value as? String { return redactText(string) }
+    return value
+  }
+
+  private static func redactText(_ value: String) -> String {
+    value
+      .replacingOccurrences(
+        of: #"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z ]+ )?PRIVATE KEY-----|$)"#,
+        with: "[redacted private key]",
+        options: [.regularExpression, .caseInsensitive]
+      )
+      .replacingOccurrences(
+        of: #"\b(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]{8,}"#,
+        with: "[redacted authorization]",
+        options: [.regularExpression, .caseInsensitive]
+      )
+      .replacingOccurrences(
+        of: #"(?i)((?:[\"']?)(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|session[_-]?token|password|secret|client[_-]?secret|private[_-]?key|seed[_-]?phrase)(?:[\"']?)\s*[:=]\s*)(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;]+)"#,
+        with: "$1[redacted]",
+        options: .regularExpression
+      )
+  }
+
+  private static let secretKeys: Set<String> = [
+    "api_key", "apikey", "access_token", "auth_token", "refresh_token", "session_token",
+    "password", "secret", "client_secret", "authorization", "private_key", "seed_phrase"
   ]
 }
 

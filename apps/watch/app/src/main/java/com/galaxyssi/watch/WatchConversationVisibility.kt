@@ -2,7 +2,7 @@ package com.galaxyssi.watch
 
 data class WatchConversationKey(val desktop: String, val route: String, val agent: String, val conversation: String)
 
-fun WatchTask.conversationKey() = WatchConversationKey(desktopId, routeId, agentId, conversationId)
+fun WatchTask.conversationKey() = WatchConversationKey("", "", "", sessionId)
 
 /** Tracks the resumed conversation screen, independently of background transport. */
 class WatchConversationVisibility {

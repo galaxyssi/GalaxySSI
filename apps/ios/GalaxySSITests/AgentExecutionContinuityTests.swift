@@ -375,6 +375,30 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(plan.checkpoints.last?.id, "checkpoint-139")
   }
 
+  func testAgentExecutionCheckpointPersistsOriginalRevisionParameterPresence() throws {
+    let action = AgentAction(
+      id: "node-a",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .running,
+      description: "Read a file"
+    )
+    let checkpoint = AgentExecutionContinuity.checkpointBefore(
+      action: action,
+      screen: AgentScreenContext(foregroundApp: "Test"),
+      planRevision: 2,
+      nowMillis: 100
+    )
+
+    XCTAssertEqual(checkpoint.revisionParameterPresent, false)
+    let restored = try JSONDecoder().decode(
+      AgentExecutionCheckpoint.self,
+      from: JSONEncoder().encode(checkpoint)
+    )
+    XCTAssertEqual(restored.revisionParameterPresent, false)
+  }
+
   func testAgentPlanNodeJournalPersistsIndependentObservationBeforeBatchCompletion() throws {
     let suite = "AgentPlanNodeJournalTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -483,6 +507,36 @@ extension GalaxySSIStoreTests {
     XCTAssertNotEqual(original.journalId, changedConversation.journalId)
   }
 
+  func testAgentPlanContinuationScopeRejectsConflictsAndBindsFrameworkIdentity() throws {
+    let first = AgentAction(
+      id: "first",
+      kind: .callNativeTool,
+      target: "workspace.read",
+      risk: .low,
+      status: .completed,
+      description: "Read first",
+      parameters: [AgentPlanContinuationScope.conversationIdKey: "conversation-a"]
+    )
+    var second = first
+    second.id = "second"
+    second.parameters[AgentPlanContinuationScope.conversationIdKey] = "conversation-b"
+    var conflicting = lifecyclePlan(first)
+    conflicting.actions = [first, second]
+
+    XCTAssertNil(AgentPlanContinuationScope.resolve(
+      plan: conflicting,
+      activeConversationId: "",
+      activeTurnId: "turn-a",
+      sessionId: "session"
+    ))
+
+    let scope = AgentPlanContinuationScope(conversationId: "conversation-a", turnId: "turn-a")
+    let bound = scope.bind(second)
+    XCTAssertEqual(bound.parameters[AgentPlanContinuationScope.conversationIdKey], "conversation-a")
+    XCTAssertEqual(bound.parameters[AgentPlanContinuationScope.turnIdKey], "turn-a")
+    XCTAssertTrue(scope.owns(bound))
+    XCTAssertFalse(scope.owns(second))
+  }
   func testAgentPlanNodeIdentityIgnoresRevisionAddedAfterCheckpoint() throws {
     let originalAction = AgentAction(
       id: "node-a",
@@ -520,38 +574,6 @@ extension GalaxySSIStoreTests {
 
     XCTAssertEqual(original.journalId, restored.journalId)
   }
-
-  func testAgentPlanContinuationScopeRejectsConflictsAndBindsFrameworkIdentity() throws {
-    let first = AgentAction(
-      id: "first",
-      kind: .callNativeTool,
-      target: "workspace.read",
-      risk: .low,
-      status: .completed,
-      description: "Read first",
-      parameters: [AgentPlanContinuationScope.conversationIdKey: "conversation-a"]
-    )
-    var second = first
-    second.id = "second"
-    second.parameters[AgentPlanContinuationScope.conversationIdKey] = "conversation-b"
-    var conflicting = lifecyclePlan(first)
-    conflicting.actions = [first, second]
-
-    XCTAssertNil(AgentPlanContinuationScope.resolve(
-      plan: conflicting,
-      activeConversationId: "",
-      activeTurnId: "turn-a",
-      sessionId: "session"
-    ))
-
-    let scope = AgentPlanContinuationScope(conversationId: "conversation-a", turnId: "turn-a")
-    let bound = scope.bind(second)
-    XCTAssertEqual(bound.parameters[AgentPlanContinuationScope.conversationIdKey], "conversation-a")
-    XCTAssertEqual(bound.parameters[AgentPlanContinuationScope.turnIdKey], "turn-a")
-    XCTAssertTrue(scope.owns(bound))
-    XCTAssertFalse(scope.owns(second))
-  }
-
   func testAgentPlanContinuationScopeKeepsPersistedTurnAcrossControlMessage() throws {
     let action = AgentAction(
       id: "first",
@@ -587,7 +609,6 @@ extension GalaxySSIStoreTests {
       sessionId: "session"
     ))
   }
-
   func testAgentPlanNodeJournalRejectsObservationForAnotherAction() throws {
     let suite = "AgentPlanNodeJournalMismatchTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
