@@ -72,13 +72,28 @@ internal class WatchForegroundWake(context: Context,
             check(input.recordingState == AudioRecord.RECORDSTATE_RECORDING)
             main.post { if (generation.get() == token) publish(State.LISTENING) }
             val samples = ShortArray(1600)
+            val candidate = WatchWakeCandidate()
+            var reads = 0L
+            var rejected = 0L
+            var lastDiagnostic = android.os.SystemClock.elapsedRealtime()
             while (generation.get() == token) {
                 val count = input.read(samples, 0, samples.size)
                 if (generation.get() != token) break
                 check(count > 0)
-                if (recognizer.acceptWaveForm(samples, count) && WatchWakePolicy.confidentResult(recognizer.result)) {
+                reads++
+                if (recognizer.acceptWaveForm(samples, count)) {
+                    if (WatchWakePolicy.confidentResult(recognizer.result)) { detected = true; break }
+                    rejected++
+                    candidate.observe("{}", android.os.SystemClock.elapsedRealtime())
+                } else if (candidate.observe(recognizer.partialResult, android.os.SystemClock.elapsedRealtime())) {
                     detected = true
                     break
+                }
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastDiagnostic >= 30000) {
+                    // Counters only: never log captured sound or recognized words.
+                    android.util.Log.i("WatchWake", "capture reads=$reads rejected=$rejected")
+                    lastDiagnostic = now
                 }
             }
             samples.fill(0)
@@ -94,6 +109,7 @@ internal class WatchForegroundWake(context: Context,
                     enabled = false
                     failed = error
                     publish(if (error) State.FAILED else State.PAUSED)
+                    android.util.Log.i("WatchWake", "capture ended detected=$detected error=$error")
                     if (detected && !error) onWake()
                 }
             }

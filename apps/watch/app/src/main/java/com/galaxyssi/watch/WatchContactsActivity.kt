@@ -56,7 +56,10 @@ class WatchContactsActivity : Activity() {
                 busy = false; composer?.sending(false)
                 if (ok) updateMessages() else error()
             }
-        }, ::error)
+        }, ::error, onRecordingStopped = {
+            WatchBackgroundWakeService.peerRecordingFinished()
+            if (resumed) refreshWake()
+        })
         page = savedInstanceState?.getString("page") ?: "list"
         peer = savedInstanceState?.getString("peer") ?: intent.getStringExtra("peer").orEmpty()
         draft = savedInstanceState?.getString("draft").orEmpty()
@@ -80,11 +83,12 @@ class WatchContactsActivity : Activity() {
         if (repo.store.backgroundEnabled) startForegroundService(Intent(this, WatchConnectionService::class.java))
         if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
-        visibility(); listener()
+        visibility(); listener(); refreshWake()
     }
     override fun onPause() {
         peerVoice.abort()
-        resumed = false; repo.contacts.visiblePeer = ""; repo.unlisten(listener); repo.foreground(false)
+        resumed = false
+        WatchBackgroundWakeService.otherPage(false); repo.contacts.visiblePeer = ""; repo.unlisten(listener); repo.foreground(false)
         super.onPause()
     }
     override fun onDestroy() { peerVoice.close(); super.onDestroy() }
@@ -95,7 +99,10 @@ class WatchContactsActivity : Activity() {
             getSystemService(NotificationManager::class.java).cancel("peer", peer.hashCode())
         }
     }
-    private fun navigate(value: String) { peerVoice.abort(); page = value; render(); visibility() }
+    private fun navigate(value: String) { peerVoice.abort(); page = value; render(); visibility(); refreshWake() }
+    private fun refreshWake() {
+        WatchBackgroundWakeService.otherPage(resumed && draft.isBlank() && editor?.hasFocus() != true)
+    }
     private fun back() {
         when (page) {
             "list" -> finish()
@@ -209,8 +216,9 @@ class WatchContactsActivity : Activity() {
             }
             "chat" -> {
                 chatRows = body; updateMessages(true)
-                composer = WatchMessageComposer(this, draft, { draft = it }, { send(draft) }, ::voice, { navigate("actions") }, peerVoice::finish, peerVoice::move)
+                composer = WatchMessageComposer(this, draft, { draft = it; refreshWake() }, { send(draft) }, ::voice, { navigate("actions") }, peerVoice::finish, peerVoice::move)
                 editor = composer?.input
+                editor?.setOnFocusChangeListener { _, _ -> refreshWake() }
                 root.addView(composer, composer!!.placement(10))
 
             }
@@ -361,7 +369,13 @@ class WatchContactsActivity : Activity() {
     }
     private fun voice() {
         if (busy || repo.contacts.person(peer)?.status != "approved") return
-        voicePeer = peer; peerVoice.start()
+        voicePeer = peer
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            peerVoice.start()
+        } else WatchBackgroundWakeService.stopForPeerRecordingThen {
+            if (resumed && page == "chat") peerVoice.start()
+            else WatchBackgroundWakeService.peerRecordingFinished()
+        }
     }
     private fun error() { if (!isDestroyed) Toast.makeText(this, R.string.peer_error, Toast.LENGTH_LONG).show() }
     private fun row(label: String, color: Int = 0xff1d1f21.toInt(), click: () -> Unit) {

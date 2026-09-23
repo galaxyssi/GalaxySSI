@@ -31,7 +31,7 @@ internal class WatchRemoteRecovery(context: Context,
     fun refresh(tasks: List<WatchTask>) {
         val now = android.os.SystemClock.elapsedRealtime()
         tasks.filter { it.desktopId !in setOf("api", "watch-location") && it.localOperation.isEmpty() &&
-            (!it.state.terminal || (it.remoteTaskId.isNotBlank() && it.reply.isBlank())) }
+            (!it.state.terminal || (it.reply.isBlank() && (it.remoteTaskId.isNotBlank() || it.localTimedOut))) }
             .takeLast(32).forEach { task ->
                 if (now - (last[task.id] ?: Long.MIN_VALUE / 2) < 30_000 || !running.add(task.id)) return@forEach
                 last[task.id] = now
