@@ -945,7 +945,7 @@ class MainActivity : Activity() {
             text = "‹"; textSize = 28f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
             contentDescription = getString(R.string.back)
             setOnClickListener { back() }
-        }, FrameLayout.LayoutParams(dp(42), dp(42), Gravity.START or Gravity.TOP))
+        }, FrameLayout.LayoutParams(dp(42), dp(42), Gravity.START or Gravity.TOP).apply { leftMargin = 10 })
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(2) })
     }
     private fun settingsRow(title: Int, subtitle: Int, action: () -> Unit) {
