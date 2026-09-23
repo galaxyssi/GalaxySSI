@@ -84,7 +84,9 @@ enum AgentModelPlanParser {
       return nil
     }
 
-    var plan = AgentPlanFactory.actions(request: request, actions)
+    var plan = AgentPlanningTiming.measure("plan") {
+      AgentPlanFactory.actions(request: request, actions)
+    }
     let expectedResult = json.string("expected_result").trimmedForModelPlan.prefixString(500)
     let rollbackStrategy = json.string("rollback_strategy").trimmedForModelPlan.prefixString(500)
     if !expectedResult.isEmpty {

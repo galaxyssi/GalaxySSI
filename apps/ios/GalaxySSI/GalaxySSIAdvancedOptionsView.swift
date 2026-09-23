@@ -302,6 +302,14 @@ struct GalaxySSIAgentLatencyDashboardView: View {
     case "phone_connector_first_visible_ms": return t("agent_latency_first_visible", "Publish to first visible output")
     case "phone_connector_complete_visible_ms": return t("agent_latency_final_visible", "Publish to final visible output")
     case "phone_render_ms": return t("agent_latency_render", "Response rendering")
+    case "phone_planning_total_ms": return t("agent_latency_planning_total", "Planning total")
+    case "phone_planning_progress_ms": return t("agent_latency_planning_progress", "Progress ledger")
+    case "phone_planning_inventory_ms": return t("agent_latency_planning_inventory", "Tool inventory")
+    case "phone_planning_goal_ms": return t("agent_latency_planning_goal", "Goal preparation")
+    case "phone_planning_context_ms": return t("agent_latency_planning_context", "Durable context")
+    case "phone_planning_conversation_ms": return t("agent_latency_planning_conversation", "Conversation context")
+    case "phone_planning_prompt_ms": return t("agent_latency_planning_prompt", "Prompt assembly")
+    case "phone_planning_plan_ms": return t("agent_latency_planning_plan", "Plan construction")
     default: return key
     }
   }
