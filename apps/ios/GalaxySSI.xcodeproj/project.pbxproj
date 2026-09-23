@@ -658,6 +658,8 @@
     A10000000000000000000320 /* AgentHomeAssistantPromptRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000320 /* AgentHomeAssistantPromptRouter.swift */; };
     A10000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */; };
     A10000000000000000000322 /* AgentNativeToolActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */; };
+    D12979000000000000000001 /* AgentActionEffectExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22979000000000000000001 /* AgentActionEffectExecutor.swift */; };
+    D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */; };
     A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */; };
     A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */; };
     A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */; };
@@ -1581,6 +1583,8 @@
     A20000000000000000000320 /* AgentHomeAssistantPromptRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHomeAssistantPromptRouter.swift; sourceTree = "<group>"; };
     A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHomeAssistantNativeToolPlanBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolActionExecutor.swift; sourceTree = "<group>"; };
+    D22979000000000000000001 /* AgentActionEffectExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionEffectExecutor.swift; sourceTree = "<group>"; };
+    D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionEffectExecutorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolLifecycleEvents.swift; sourceTree = "<group>"; };
     A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolRunControlAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolWorkspaceProgressBridge.swift; sourceTree = "<group>"; };
@@ -2218,6 +2222,7 @@
         A20000000000000000000320 /* AgentHomeAssistantPromptRouter.swift */,
         A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */,
         A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */,
+        D22979000000000000000001 /* AgentActionEffectExecutor.swift */,
         A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */,
         A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */,
         A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */,
@@ -2784,6 +2789,7 @@
     A40000000000000000000003 /* GalaxySSITests */ = {
       isa = PBXGroup;
       children = (
+        D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */,
         D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */,
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
@@ -3297,6 +3303,7 @@
         A10000000000000000000320 /* AgentHomeAssistantPromptRouter.swift in Sources */,
         A10000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift in Sources */,
         A10000000000000000000322 /* AgentNativeToolActionExecutor.swift in Sources */,
+        D12979000000000000000001 /* AgentActionEffectExecutor.swift in Sources */,
         A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */,
         A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */,
         A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */,
@@ -3926,6 +3933,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */,
         D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */,
         F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */,
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
