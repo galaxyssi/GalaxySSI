@@ -345,4 +345,47 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(store.delete(query: "unrelated search"), 0)
     XCTAssertEqual(store.count(), 2)
   }
+
+  func testMemoryBrowsePaginatesAndRejectsStaleCursor() throws {
+    let store = InMemoryAgentMemoryStore(items: (0..<7).map { index in
+      AgentMemoryItem(
+        kind: index.isMultiple(of: 2) ? .preference : .knowledge,
+        value: "memory-\(index)",
+        timestampMillis: Int64(index),
+        id: "memory-\(index)",
+        important: index == 0
+      )
+    })
+    let first = try store.browse(AgentMemoryBrowseRequest(limit: 3))
+    let second = try store.browse(AgentMemoryBrowseRequest(cursor: first.next, limit: 3))
+
+    XCTAssertEqual(first.entries.map(\.item.id), ["memory-0", "memory-6", "memory-5"])
+    XCTAssertEqual(second.entries.map(\.item.id), ["memory-4", "memory-3", "memory-2"])
+    XCTAssertEqual(first.counts.active, 7)
+    XCTAssertNotNil(second.previous)
+
+    store.remember(AgentMemoryItem(kind: .knowledge, value: "new", id: "new"))
+    XCTAssertThrowsError(try store.browse(AgentMemoryBrowseRequest(cursor: first.next, limit: 3))) {
+      XCTAssertEqual($0 as? AgentMemoryBrowseError, .pageChanged)
+    }
+  }
+
+  func testMemoryBrowseFiltersKindsAndPrivateExpiredItems() throws {
+    let store = InMemoryAgentMemoryStore(items: [
+      AgentMemoryItem(kind: .preference, value: "visible", timestampMillis: 3, id: "visible"),
+      AgentMemoryItem(kind: .preference, value: "private", timestampMillis: 2, id: "private", privateMemory: true),
+      AgentMemoryItem(kind: .preference, value: "expired", timestampMillis: 1, id: "expired", expiresAtMillis: 10),
+      AgentMemoryItem(kind: .knowledge, value: "knowledge", timestampMillis: 4, id: "knowledge")
+    ])
+    let page = try store.browse(AgentMemoryBrowseRequest(
+      kinds: [.preference],
+      limit: 10,
+      publicOnly: true,
+      nowMillis: 10
+    ))
+
+    XCTAssertEqual(page.entries.map(\.item.id), ["visible"])
+    XCTAssertEqual(page.counts.active, 3)
+    XCTAssertEqual(store.browseKindCounts()[.knowledge], 1)
+  }
 }
