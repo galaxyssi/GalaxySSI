@@ -300,6 +300,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
       guard let self else { return }
       do {
         state.phase = .verifying
+        let storage = self.storage
         try await Task.detached(priority: .utility) { try storage.importFile(url) }.value
         state.installed = true
         state.enabled = true
@@ -322,6 +323,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     work = Task { [weak self] in
       guard let self else { return }
       do {
+        let storage = self.storage
         if enabled { try await Task.detached(priority: .utility) { try storage.verifyInstalled() }.value }
         state.enabled = enabled
         state.installed = storage.installed
