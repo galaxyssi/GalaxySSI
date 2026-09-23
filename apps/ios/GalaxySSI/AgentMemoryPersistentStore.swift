@@ -169,20 +169,16 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   @discardableResult
   func setImportant(itemId: String, important: Bool) -> Bool {
     locked {
-      let changed = base.setImportant(itemId: itemId, important: important)
-      if changed {
-        persistUnlocked()
-      }
-      return changed
+      guard rows.updateFlags(id: itemId, important: important) != nil else { return false }
+      return base.setImportant(itemId: itemId, important: important)
     }
   }
 
   @discardableResult
   func setPrivate(itemId: String, privateMemory: Bool) -> Bool {
     locked {
-      let changed = base.setPrivate(itemId: itemId, privateMemory: privateMemory)
-      if changed { persistUnlocked() }
-      return changed
+      guard rows.updateFlags(id: itemId, privateMemory: privateMemory) != nil else { return false }
+      return base.setPrivate(itemId: itemId, privateMemory: privateMemory)
     }
   }
 
@@ -371,6 +367,44 @@ final class UserDefaultsAgentPersonalMemoryRows {
     GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: metadataKey, secrets: secrets) != nil
   }
 
+  func find(id: String) -> AgentMemoryItem? {
+    guard !id.isEmpty,
+          let data = GalaxySSIEncryptedUserDefaultsStore.load(
+            defaults: defaults,
+            key: rowKey(id),
+            secrets: secrets
+          ), let item = try? JSONDecoder().decode(AgentMemoryItem.self, from: data),
+          item.id == id,
+          !item.value.agentMemoryTrimmed.isEmpty else { return nil }
+    return item
+  }
+
+  @discardableResult
+  func updateFlags(
+    id: String,
+    important: Bool? = nil,
+    privateMemory: Bool? = nil
+  ) -> (before: AgentMemoryItem, after: AgentMemoryItem)? {
+    guard important != nil || privateMemory != nil,
+          let before = find(id: id),
+          before.status == .active else { return nil }
+    let after = before.copy(
+      important: important ?? before.important,
+      privateMemory: privateMemory ?? before.privateMemory
+    )
+    if before != after {
+      guard let data = try? JSONEncoder().encode(after),
+            GalaxySSIEncryptedUserDefaultsStore.write(
+              data,
+              defaults: defaults,
+              key: rowKey(id),
+              secrets: secrets
+            ) else { return nil }
+      refreshMetadataRevision()
+    }
+    return (before, after)
+  }
+
   func read() -> [AgentMemoryItem]? {
     guard let metadataData = GalaxySSIEncryptedUserDefaultsStore.load(
       defaults: defaults,
@@ -441,5 +475,21 @@ final class UserDefaultsAgentPersonalMemoryRows {
   private func rowKey(_ id: String) -> String {
     let digest = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
     return "\(prefix)-row-\(digest)"
+  }
+
+  private func refreshMetadataRevision() {
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: metadataKey,
+      secrets: secrets
+    ), var metadata = try? JSONDecoder().decode(Metadata.self, from: data) else { return }
+    metadata.revision = UUID().uuidString
+    guard let updated = try? JSONEncoder().encode(metadata) else { return }
+    _ = GalaxySSIEncryptedUserDefaultsStore.write(
+      updated,
+      defaults: defaults,
+      key: metadataKey,
+      secrets: secrets
+    )
   }
 }
