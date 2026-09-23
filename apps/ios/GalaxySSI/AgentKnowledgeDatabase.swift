@@ -558,6 +558,20 @@ final class AgentKnowledgeDatabase {
   }
 
   func sourceSnapshotItems(_ group: AgentKnowledgeSourceGroup) throws -> [AgentKnowledgeItem] {
+    var items: [AgentKnowledgeItem] = []
+    try enumerateSourceSnapshotItems(group) { items.append($0) }
+    guard AgentKnowledgeSourceRevision.digest(items) == group.sourceRevision else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return items.sorted { left, right in
+      left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
+    }
+  }
+
+  func enumerateSourceSnapshotItems(
+    _ group: AgentKnowledgeSourceGroup,
+    consume: (AgentKnowledgeItem) throws -> Void
+  ) throws {
     guard !group.source.isBlank, group.chunkCount >= 0, !group.sourceRevision.isBlank else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
@@ -611,7 +625,7 @@ final class AgentKnowledgeDatabase {
     var afterUpdatedAt = Int64.max
     var afterItemHash = ""
     var firstPage = true
-    var items: [AgentKnowledgeItem] = []
+    var emitted = 0
     while true {
       let predicate = firstPage ? "" : "AND (updated_at < ? OR (updated_at = ? AND item_hash > ?))"
       var page: OpaquePointer?
@@ -645,8 +659,9 @@ final class AgentKnowledgeDatabase {
           sqlite3_finalize(page)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
-        items.append(item)
-        guard items.count <= group.chunkCount else {
+        try consume(item)
+        emitted += 1
+        guard emitted <= group.chunkCount else {
           sqlite3_finalize(page)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
@@ -658,12 +673,8 @@ final class AgentKnowledgeDatabase {
       if pageCount < 64 { break }
       firstPage = false
     }
-    guard items.count == group.chunkCount,
-          AgentKnowledgeSourceRevision.digest(items) == group.sourceRevision else {
+    guard emitted == group.chunkCount else {
       throw AgentKnowledgeDatabaseError.corruptRecord
-    }
-    return items.sorted { left, right in
-      left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
     }
   }
 
