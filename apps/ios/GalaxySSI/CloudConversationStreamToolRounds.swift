@@ -137,11 +137,17 @@ enum CloudImageAnnotationSession {
 
 final class CloudWebToolLoopProgress {
   private var outputsByCall: [String: String] = [:]
+  private var unavailableResources: [String: String] = [:]
+  private var retrievedResources: [String: String] = [:]
   private var requestedRepairs: Set<String> = []
   private(set) var finalizationRequested = false
 
   func cached(toolName: String, arguments: AgentMcpJSONObject) -> String? {
-    outputsByCall[semanticKey(toolName: toolName, arguments: arguments)]
+    if let exact = outputsByCall[semanticKey(toolName: toolName, arguments: arguments)] { return exact }
+    guard let resource = resourceKey(toolName: toolName, arguments: arguments) else { return nil }
+    return unavailableResources[resource] ?? (canReuseBody(toolName: toolName, arguments: arguments)
+      ? retrievedResources[resource]
+      : nil)
   }
 
   @discardableResult
@@ -149,7 +155,41 @@ final class CloudWebToolLoopProgress {
     let key = semanticKey(toolName: toolName, arguments: arguments)
     guard outputsByCall[key] == nil else { return false }
     outputsByCall[key] = output
+    if let root = decode(output),
+       ["web_source_timeout", "renderer_unavailable"].contains(root["error_code"]?.stringValue ?? ""),
+       let resource = resourceKey(toolName: toolName, arguments: arguments) {
+      unavailableResources[resource] = output
+    }
+    if canReuseBody(toolName: toolName, arguments: arguments),
+       let root = decode(output), root["status"] == .string("completed"),
+       let resource = resourceKey(toolName: toolName, arguments: arguments),
+       root["evidence_pack"]?.objectValue?["items"]?.arrayValue?.contains(where: { value in
+         guard let item = value.objectValue else { return false }
+         return item["evidence_level"] == .string("retrieved_body") &&
+           AgentIOSWebEvidencePack.canonicalURL(item["url"]?.stringValue ?? "") == resource
+       }) == true {
+      retrievedResources[resource] = output
+    }
     return true
+  }
+
+  private func canReuseBody(toolName: String, arguments: AgentMcpJSONObject) -> Bool {
+    let tool = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return ["web_fetch", "web_extract"].contains(tool) &&
+      arguments["force"]?.boolValue != true && arguments["content"] == nil &&
+      (arguments["fields"]?.arrayValue?.isEmpty ?? true) && arguments["focus"] == nil
+  }
+
+  private func resourceKey(toolName: String, arguments: AgentMcpJSONObject) -> String? {
+    let tool = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard ["web_fetch", "web_extract", "web_diff"].contains(tool) else { return nil }
+    let value = AgentIOSWebEvidencePack.canonicalURL(arguments["url"]?.stringValue ?? "")
+    return value.isEmpty ? nil : value
+  }
+
+  private func decode(_ value: String) -> AgentMcpJSONObject? {
+    guard let data = value.data(using: .utf8) else { return nil }
+    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
   }
 
   @discardableResult
