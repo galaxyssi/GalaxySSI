@@ -154,20 +154,7 @@ enum AgentMemoryCausalDeletionPolicy {
   }
 
   static func lineageIds(in items: [AgentMemoryItem], target: AgentMemoryItem) -> Set<String> {
-    var relatedIds = Set([target.id])
-    var changed = true
-    while changed {
-      changed = false
-      for item in items {
-        if relatedIds.contains(item.id), !item.supersedesId.isEmpty {
-          changed = relatedIds.insert(item.supersedesId).inserted || changed
-        }
-        if relatedIds.contains(item.supersedesId) {
-          changed = relatedIds.insert(item.id).inserted || changed
-        }
-      }
-    }
-    return relatedIds
+    AgentMemoryIdentity.lineageIds(in: items, target: target)
   }
 
   static func items(in snapshot: AgentMemorySnapshot) -> [AgentMemoryItem] {
@@ -204,28 +191,43 @@ enum AgentMemoryCausalDeletionPolicy {
     by tombstones: [AgentMemoryDeletionTombstone]
   ) -> Bool {
     let fingerprint = semanticFingerprint(item)
+    let legacyFingerprint = semanticFingerprint(
+      kind: item.kind.rawValue,
+      key: item.key,
+      value: item.value,
+      scope: item.scope.rawValue,
+      scopeId: item.scopeId,
+      legacyScope: true
+    )
     return tombstones.contains { tombstone in
       tombstone.memoryIds.contains(item.id) ||
         (item.timestampMillis <= tombstone.deletedAtMillis &&
-          tombstone.semanticFingerprints.contains(fingerprint))
+          (tombstone.semanticFingerprints.contains(fingerprint) ||
+            tombstone.semanticFingerprints.contains(legacyFingerprint)))
     }
   }
 
-  private static func semanticFingerprint(
+  static func semanticFingerprint(
     kind: String,
     key: String,
     value: String,
     scope: String,
-    scopeId: String
+    scopeId: String,
+    legacyScope: Bool = false
   ) -> String {
     let normalizedKey = normalize(key)
     let semanticIdentity = normalizedKey.isEmpty ? digest(normalize(value)) : normalizedKey
-    return digest([
+    let fields = [
       kind.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
       scope.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
-      normalize(scopeId),
+      legacyScope ? normalize(scopeId) : scopeId,
       semanticIdentity
-    ].joined(separator: "\u{0000}"))
+    ]
+    if legacyScope {
+      return digest(fields.joined(separator: "\u{0000}"))
+    }
+    let encoded = fields.map { "\($0.utf8.count):\($0)" }.joined()
+    return "scope-v2:\(digest(encoded))"
   }
 
   private static func retractionEventIds(for item: AgentMemoryItem) -> Set<String> {
@@ -241,7 +243,7 @@ enum AgentMemoryCausalDeletionPolicy {
     return ids
   }
 
-  private static func tombstoneId(
+  static func tombstoneId(
     memoryIds: Set<String>,
     semanticFingerprints: Set<String>,
     retractedEventIds: Set<String>,
