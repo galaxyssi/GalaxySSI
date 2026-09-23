@@ -8,6 +8,28 @@ enum AgentKnowledgeDatabaseError: Error, Equatable {
   case staleCursor
 }
 
+enum AgentKnowledgeVectorChangeOperation: String, Codable, Equatable {
+  case ready
+  case removal
+}
+
+struct AgentKnowledgeVectorChange: Codable, Equatable {
+  var sequence: Int64
+  var previousSequence: Int64
+  var epoch: String
+  var operation: AgentKnowledgeVectorChangeOperation
+  var itemHash: String
+  var sourceRevisionHash: String
+  var chunkCount: Int
+  var updatedAtMillis: Int64
+}
+
+struct AgentKnowledgeVectorChangePage: Equatable {
+  var epoch: String
+  var headSequence: Int64
+  var events: [AgentKnowledgeVectorChange]
+}
+
 final class AgentKnowledgeDatabase {
   private let fileURL: URL
   private let secrets: GalaxySSISecretStore
@@ -94,6 +116,7 @@ final class AgentKnowledgeDatabase {
       }
       guard let plaintext = try? JSONEncoder.galaxySSI.encode(checkpoint),
             let encrypted = try? vectorCipher.encrypt(plaintext, purpose: vectorPurpose(vectorKey)),
+            execute("BEGIN IMMEDIATE TRANSACTION"),
             let statement = prepare("""
               INSERT INTO knowledge_vectors(
                 vector_key, item_hash, model_hash, source_revision_hash, updated_at, encrypted_payload
@@ -102,8 +125,10 @@ final class AgentKnowledgeDatabase {
                 source_revision_hash = excluded.source_revision_hash,
                 updated_at = excluded.updated_at,
                 encrypted_payload = excluded.encrypted_payload
-              """) else { return false }
-      defer { sqlite3_finalize(statement) }
+            """) else {
+        _ = execute("ROLLBACK")
+        return false
+      }
       bind(vectorKey, at: 1, to: statement)
       bind(keyedHash(checkpoint.itemId), at: 2, to: statement)
       bind(keyedHash(checkpoint.provenance.modelSHA256), at: 3, to: statement)
@@ -112,7 +137,35 @@ final class AgentKnowledgeDatabase {
       encrypted.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 6, bytes.baseAddress, Int32(encrypted.count), Self.transient)
       }
-      return sqlite3_step(statement) == SQLITE_DONE
+      let stored = sqlite3_step(statement) == SQLITE_DONE
+      sqlite3_finalize(statement)
+      guard stored else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      let checkpoints = (try? vectorCheckpoints(
+        itemId: checkpoint.itemId,
+        modelSHA256: checkpoint.provenance.modelSHA256
+      )) ?? []
+      let complete = checkpoints.count == checkpoint.chunkCount &&
+        Set(checkpoints.map(\.chunkIndex)) == Set(0..<checkpoint.chunkCount) &&
+        checkpoints.allSatisfy { $0.sourceRevision == checkpoint.sourceRevision }
+      if complete, !publishVectorChange(
+        operation: .ready,
+        itemId: checkpoint.itemId,
+        modelSHA256: checkpoint.provenance.modelSHA256,
+        sourceRevision: checkpoint.sourceRevision,
+        chunkCount: checkpoint.chunkCount,
+        updatedAtMillis: checkpoint.updatedAtMillis
+      ) {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      guard execute("COMMIT") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      return true
     }
   }
 
@@ -149,13 +202,92 @@ final class AgentKnowledgeDatabase {
   @discardableResult
   func clearVectorCheckpoints(itemId: String, modelSHA256: String) -> Bool {
     locked {
+      let existing = (try? vectorCheckpoints(itemId: itemId, modelSHA256: modelSHA256)) ?? []
+      guard execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
       guard let statement = prepare(
         "DELETE FROM knowledge_vectors WHERE item_hash = ? AND model_hash = ?"
-      ) else { return false }
-      defer { sqlite3_finalize(statement) }
+      ) else {
+        _ = execute("ROLLBACK")
+        return false
+      }
       bind(keyedHash(itemId), at: 1, to: statement)
       bind(keyedHash(modelSHA256.lowercased()), at: 2, to: statement)
-      return sqlite3_step(statement) == SQLITE_DONE
+      let deleted = sqlite3_step(statement) == SQLITE_DONE
+      sqlite3_finalize(statement)
+      guard deleted else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      if !existing.isEmpty, !publishVectorChange(
+        operation: .removal,
+        itemId: itemId,
+        modelSHA256: modelSHA256,
+        sourceRevision: existing[0].sourceRevision,
+        chunkCount: 0,
+        updatedAtMillis: AgentMemoryClock.nowMillis()
+      ) {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      guard execute("COMMIT") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      return true
+    }
+  }
+
+  func vectorChangePage(
+    modelSHA256: String,
+    epoch expectedEpoch: String? = nil,
+    afterSequence: Int64 = 0,
+    limit: Int = 128
+  ) throws -> AgentKnowledgeVectorChangePage {
+    try locked {
+      let modelHash = keyedHash(modelSHA256.lowercased())
+      let state = ensureVectorFeedModel(modelHash: modelHash)
+      if let expectedEpoch, expectedEpoch != state.epoch {
+        throw AgentKnowledgeDatabaseError.staleCursor
+      }
+      guard afterSequence >= 0, afterSequence <= state.head,
+            let statement = prepare("""
+              SELECT sequence, previous_sequence, epoch, operation, item_hash,
+                     source_revision_hash, chunk_count, updated_at
+              FROM knowledge_vector_changes
+              WHERE model_hash = ? AND sequence > ?
+              ORDER BY sequence ASC LIMIT ?
+              """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(modelHash, at: 1, to: statement)
+      sqlite3_bind_int64(statement, 2, afterSequence)
+      sqlite3_bind_int(statement, 3, Int32(min(max(limit, 1), 512)))
+      var expectedPrevious = afterSequence
+      var events: [AgentKnowledgeVectorChange] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let epochText = sqlite3_column_text(statement, 2),
+              let operationText = sqlite3_column_text(statement, 3),
+              let itemText = sqlite3_column_text(statement, 4),
+              let revisionText = sqlite3_column_text(statement, 5),
+              let operation = AgentKnowledgeVectorChangeOperation(rawValue: String(cString: operationText)) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let event = AgentKnowledgeVectorChange(
+          sequence: sqlite3_column_int64(statement, 0),
+          previousSequence: sqlite3_column_int64(statement, 1),
+          epoch: String(cString: epochText),
+          operation: operation,
+          itemHash: String(cString: itemText),
+          sourceRevisionHash: String(cString: revisionText),
+          chunkCount: Int(sqlite3_column_int64(statement, 6)),
+          updatedAtMillis: sqlite3_column_int64(statement, 7)
+        )
+        guard event.epoch == state.epoch, event.previousSequence == expectedPrevious else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        expectedPrevious = event.sequence
+        events.append(event)
+      }
+      return AgentKnowledgeVectorChangePage(epoch: state.epoch, headSequence: state.head, events: events)
     }
   }
 
@@ -298,7 +430,19 @@ final class AgentKnowledgeDatabase {
         _ = execute("ROLLBACK")
         return false
       }
+      let removals = orphanedVectorDocuments()
       guard execute("DELETE FROM knowledge_vectors WHERE item_hash NOT IN (SELECT item_hash FROM knowledge_items)") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      for checkpoint in removals where !publishVectorChange(
+        operation: .removal,
+        itemId: checkpoint.itemId,
+        modelSHA256: checkpoint.provenance.modelSHA256,
+        sourceRevision: checkpoint.sourceRevision,
+        chunkCount: 0,
+        updatedAtMillis: AgentMemoryClock.nowMillis()
+      ) {
         _ = execute("ROLLBACK")
         return false
       }
@@ -440,6 +584,27 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_lookup ON knowledge_vectors(item_hash, model_hash)")
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_feed_models (
+        model_hash TEXT PRIMARY KEY NOT NULL,
+        epoch TEXT NOT NULL,
+        head_sequence INTEGER NOT NULL DEFAULT 0
+      )
+      """)
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_changes (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_hash TEXT NOT NULL,
+        epoch TEXT NOT NULL,
+        previous_sequence INTEGER NOT NULL,
+        operation TEXT NOT NULL,
+        item_hash TEXT NOT NULL,
+        source_revision_hash TEXT NOT NULL,
+        chunk_count INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+      """)
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_change_replay ON knowledge_vector_changes(model_hash, sequence)")
     rebuildIndexIfNeeded()
   }
 
@@ -517,6 +682,89 @@ final class AgentKnowledgeDatabase {
 
   private func vectorPurpose(_ vectorKey: String) -> String { "agent-knowledge-vector:\(vectorKey)" }
 
+  private func ensureVectorFeedModel(modelHash: String) -> (epoch: String, head: Int64) {
+    if let statement = prepare(
+      "SELECT epoch, head_sequence FROM knowledge_vector_feed_models WHERE model_hash = ? LIMIT 1"
+    ) {
+      bind(modelHash, at: 1, to: statement)
+      if sqlite3_step(statement) == SQLITE_ROW,
+         let epochText = sqlite3_column_text(statement, 0) {
+        let state = (String(cString: epochText), sqlite3_column_int64(statement, 1))
+        sqlite3_finalize(statement)
+        return state
+      }
+      sqlite3_finalize(statement)
+    }
+    let epoch = UUID().uuidString.lowercased()
+    guard let insert = prepare(
+      "INSERT OR IGNORE INTO knowledge_vector_feed_models(model_hash, epoch, head_sequence) VALUES (?, ?, 0)"
+    ) else { return (epoch, 0) }
+    bind(modelHash, at: 1, to: insert)
+    bind(epoch, at: 2, to: insert)
+    sqlite3_step(insert)
+    sqlite3_finalize(insert)
+    return ensureVectorFeedModel(modelHash: modelHash)
+  }
+
+  private func publishVectorChange(
+    operation: AgentKnowledgeVectorChangeOperation,
+    itemId: String,
+    modelSHA256: String,
+    sourceRevision: String,
+    chunkCount: Int,
+    updatedAtMillis: Int64
+  ) -> Bool {
+    let modelHash = keyedHash(modelSHA256.lowercased())
+    let itemHash = keyedHash(itemId)
+    let revisionHash = keyedHash(sourceRevision)
+    let state = ensureVectorFeedModel(modelHash: modelHash)
+    if let latest = prepare("""
+      SELECT operation, item_hash, source_revision_hash FROM knowledge_vector_changes
+      WHERE model_hash = ? ORDER BY sequence DESC LIMIT 1
+      """) {
+      bind(modelHash, at: 1, to: latest)
+      if sqlite3_step(latest) == SQLITE_ROW,
+         let operationText = sqlite3_column_text(latest, 0),
+         let itemText = sqlite3_column_text(latest, 1),
+         let revisionText = sqlite3_column_text(latest, 2),
+         String(cString: operationText) == operation.rawValue,
+         String(cString: itemText) == itemHash,
+         String(cString: revisionText) == revisionHash {
+        sqlite3_finalize(latest)
+        return true
+      }
+      sqlite3_finalize(latest)
+    }
+    guard let insert = prepare("""
+      INSERT INTO knowledge_vector_changes(
+        model_hash, epoch, previous_sequence, operation, item_hash,
+        source_revision_hash, chunk_count, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      """) else { return false }
+    bind(modelHash, at: 1, to: insert)
+    bind(state.epoch, at: 2, to: insert)
+    sqlite3_bind_int64(insert, 3, state.head)
+    bind(operation.rawValue, at: 4, to: insert)
+    bind(itemHash, at: 5, to: insert)
+    bind(revisionHash, at: 6, to: insert)
+    sqlite3_bind_int64(insert, 7, Int64(max(chunkCount, 0)))
+    sqlite3_bind_int64(insert, 8, max(updatedAtMillis, 0))
+    let inserted = sqlite3_step(insert) == SQLITE_DONE
+    sqlite3_finalize(insert)
+    guard inserted else { return false }
+    let sequence = sqlite3_last_insert_rowid(database)
+    guard let update = prepare(
+      "UPDATE knowledge_vector_feed_models SET head_sequence = ? WHERE model_hash = ? AND epoch = ? AND head_sequence = ?"
+    ) else { return false }
+    sqlite3_bind_int64(update, 1, sequence)
+    bind(modelHash, at: 2, to: update)
+    bind(state.epoch, at: 3, to: update)
+    sqlite3_bind_int64(update, 4, state.head)
+    let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+    sqlite3_finalize(update)
+    return updated
+  }
+
   private func vectorCheckpoint(vectorKey: String) -> AgentKnowledgeVectorCheckpoint? {
     guard let statement = prepare(
       "SELECT encrypted_payload FROM knowledge_vectors WHERE vector_key = ?"
@@ -529,6 +777,30 @@ final class AgentKnowledgeDatabase {
       return nil
     }
     return try? JSONDecoder.galaxySSI.decode(AgentKnowledgeVectorCheckpoint.self, from: plaintext)
+  }
+
+  private func orphanedVectorDocuments() -> [AgentKnowledgeVectorCheckpoint] {
+    guard let statement = prepare("""
+      SELECT v.vector_key, v.encrypted_payload FROM knowledge_vectors v
+      LEFT JOIN knowledge_items k ON k.item_hash = v.item_hash
+      WHERE k.item_hash IS NULL ORDER BY v.vector_key ASC
+      """) else { return [] }
+    defer { sqlite3_finalize(statement) }
+    var seen = Set<String>()
+    var documents: [AgentKnowledgeVectorCheckpoint] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let keyText = sqlite3_column_text(statement, 0),
+            let encrypted = blob(statement, column: 1) else { continue }
+      let key = String(cString: keyText)
+      guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
+            let checkpoint = try? JSONDecoder.galaxySSI.decode(
+              AgentKnowledgeVectorCheckpoint.self,
+              from: plaintext
+            ) else { continue }
+      let identity = "\(checkpoint.itemId):\(checkpoint.provenance.modelSHA256)"
+      if seen.insert(identity).inserted { documents.append(checkpoint) }
+    }
+    return documents
   }
 
   private func decode(
