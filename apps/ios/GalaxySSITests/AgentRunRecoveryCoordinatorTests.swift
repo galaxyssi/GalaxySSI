@@ -7,7 +7,7 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
     let passesFinished = expectation(description: "coalesced recovery passes finished")
     passesFinished.expectedFulfillmentCount = 2
     let counter = RecoveryWakeCounter()
-    let coordinator = AgentRecoveryWakeCoordinator {
+    let coordinator = AgentRecoveryWakeCoordinator { _ in
       let count = counter.increment()
       if count == 1 {
         firstStarted.fulfill()
@@ -25,6 +25,55 @@ final class AgentRunRecoveryCoordinatorTests: XCTestCase {
     coordinator.request()
     coordinator.request()
     await fulfillment(of: [passesFinished], timeout: 2)
+
+    XCTAssertEqual(counter.value, 2)
+    XCTAssertFalse(coordinator.hasPendingWake)
+  }
+
+  func testRecoveryWakeRetriesUnresolvedPassAndExternalWakeInterruptsBackoff() async throws {
+    let firstStarted = expectation(description: "first recovery started")
+    let secondStarted = expectation(description: "retry recovery started")
+    let counter = RecoveryWakeCounter()
+    let coordinator = AgentRecoveryWakeCoordinator(
+      recover: { retry in
+        let count = counter.increment()
+        if count == 1 {
+          firstStarted.fulfill()
+          retry()
+        } else if count == 2 {
+          secondStarted.fulfill()
+        }
+      },
+      initialRetryMillis: 1_000,
+      maxRetryMillis: 2_000
+    )
+
+    coordinator.request(isConnected: true)
+    await fulfillment(of: [firstStarted], timeout: 1)
+    coordinator.request()
+    await fulfillment(of: [secondStarted], timeout: 0.5)
+
+    XCTAssertEqual(counter.value, 2)
+    XCTAssertFalse(coordinator.hasPendingWake)
+  }
+
+  func testRecoveryWakeAutomaticallyRetriesAfterBoundedDelay() async throws {
+    let retried = expectation(description: "unresolved recovery retried")
+    let counter = RecoveryWakeCounter()
+    let coordinator = AgentRecoveryWakeCoordinator(
+      recover: { retry in
+        if counter.increment() == 1 {
+          retry()
+        } else {
+          retried.fulfill()
+        }
+      },
+      initialRetryMillis: 20,
+      maxRetryMillis: 40
+    )
+
+    coordinator.request(isConnected: true)
+    await fulfillment(of: [retried], timeout: 1)
 
     XCTAssertEqual(counter.value, 2)
     XCTAssertFalse(coordinator.hasPendingWake)

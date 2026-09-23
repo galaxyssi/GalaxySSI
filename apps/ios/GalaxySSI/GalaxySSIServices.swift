@@ -165,7 +165,7 @@ final class MessageCoordinator: ObservableObject {
     coordinator: self
   )
   private lazy var pendingReplyRecoveryWake = AgentRecoveryWakeCoordinator(
-    recover: { [weak self] in
+    recover: { [weak self] _ in
       await self?.resumePendingAgentDelivery()
     },
     failed: { [weak self] error in
@@ -5819,12 +5819,16 @@ final class MessageCoordinator: ObservableObject {
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
-      let result = await planner.planOrRespond(
-        request: planningRequest,
-        settings: store.modelPlannerSettings,
-        safetySettings: store.agentSafetySettings,
-        fallbackPlan: fallbackPlan
-      )
+      let result = await AgentPlanningTiming.capture(
+        taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      ) {
+        await planner.planOrRespond(
+          request: planningRequest,
+          settings: store.modelPlannerSettings,
+          safetySettings: store.agentSafetySettings,
+          fallbackPlan: fallbackPlan
+        )
+      }
       if case .directResponse = result {
         return result
       }
@@ -6243,6 +6247,8 @@ final class MessageCoordinator: ObservableObject {
     }
     updatedPlan.validation = AgentPlanValidator.validate(updatedPlan)
     task.planContext = AgentTaskPlanContext(plan: updatedPlan)
+    task.activePlan = updatedPlan
+    task.lastNativeActionResult = results.last
     task.result = recordLocalNativeBatchSummary(task.nativeActionResults)
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
 
@@ -6285,17 +6291,32 @@ final class MessageCoordinator: ObservableObject {
       return
     }
 
-    task.phase = .completed
-    task.verification = "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
-    task.executionLog.append("Native tools: \(parallelMode.rawValue) batch completed")
+    let rollingBatchBoundary = AgentRollingPlanPolicy.shouldRequestNextBatch(
+      plan: updatedPlan,
+      result: results.last
+    )
+    task.phase = rollingBatchBoundary ? .waitingResponse : .completed
+    task.verification = rollingBatchBoundary
+      ? "Waiting for the planning model to assess parallel native tool receipts"
+      : "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
+    task.executionLog.append(rollingBatchBoundary
+      ? "Rolling plan: parallel batch completed; requesting model assessment"
+      : "Native tools: \(parallelMode.rawValue) batch completed")
     store.upsertAgentTask(task)
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
       stage: "local_native_tool_reply",
       detail: actions.map { $0.parameters["tool_id"] ?? $0.target }.joined(separator: ","),
-      status: .delivered
+      status: rollingBatchBoundary ? .sent : .delivered
     )
+    if rollingBatchBoundary {
+      let taskId = task.taskId
+      Task { @MainActor [weak self] in
+        await self?.continueRollingNativePlan(taskId: taskId, outgoing: outgoing)
+      }
+      return
+    }
     _ = store.appendIncoming(
       task.result,
       from: outgoing.contactId,

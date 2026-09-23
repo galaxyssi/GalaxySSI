@@ -615,25 +615,35 @@ final class AgentRunRecoveryCoordinator {
 
 final class AgentRecoveryWakeCoordinator {
   private let lock = NSLock()
-  private let recover: () async throws -> Void
+  private let recover: (_ retry: () -> Void) async throws -> Void
   private let failed: (Error) -> Void
+  private let initialRetryMillis: UInt64
+  private let maxRetryMillis: UInt64
   private var connected = false
   private var pending = false
+  private var wakeGeneration: UInt64 = 0
   private var worker: Task<Void, Never>?
   private var workerId: UUID?
 
   init(
-    recover: @escaping () async throws -> Void,
-    failed: @escaping (Error) -> Void = { _ in }
+    recover: @escaping (_ retry: () -> Void) async throws -> Void,
+    failed: @escaping (Error) -> Void = { _ in },
+    initialRetryMillis: UInt64 = 1_000,
+    maxRetryMillis: UInt64 = 30_000
   ) {
+    precondition(initialRetryMillis > 0 && maxRetryMillis >= initialRetryMillis)
     self.recover = recover
     self.failed = failed
+    self.initialRetryMillis = initialRetryMillis
+    self.maxRetryMillis = maxRetryMillis
   }
 
   func connectionChanged(_ value: Bool) {
     let workerId = locked { () -> UUID? in
+      let changed = value != connected
       if value && !connected { pending = true }
       connected = value
+      if changed { wakeGeneration &+= 1 }
       return claimWorkerLocked()
     }
     if let workerId { launchWorker(workerId) }
@@ -643,6 +653,7 @@ final class AgentRecoveryWakeCoordinator {
     let workerId = locked { () -> UUID? in
       if let isConnected { connected = isConnected }
       pending = true
+      wakeGeneration &+= 1
       return claimWorkerLocked()
     }
     if let workerId { launchWorker(workerId) }
@@ -672,6 +683,7 @@ final class AgentRecoveryWakeCoordinator {
   private func launchWorker(_ id: UUID) {
     let task = Task { [weak self] in
       guard let self else { return }
+      var retryMillis = initialRetryMillis
       while !Task.isCancelled {
         let shouldRecover = locked { () -> Bool in
           guard connected, pending else { return false }
@@ -679,12 +691,32 @@ final class AgentRecoveryWakeCoordinator {
           return true
         }
         guard shouldRecover else { break }
+        let retryState = AgentRecoveryRetryState()
         do {
-          try await recover()
+          try await recover { retryState.request() }
         } catch is CancellationError {
           break
         } catch {
           failed(error)
+        }
+        if retryState.requested {
+          let wait = locked { () -> (required: Bool, generation: UInt64) in
+            let required = connected && !pending
+            pending = true
+            return (required, wakeGeneration)
+          }
+          if wait.required {
+            await waitForWakeOrTimeout(
+              generation: wait.generation,
+              milliseconds: retryMillis
+            )
+          }
+          retryMillis = min(
+            maxRetryMillis,
+            retryMillis > maxRetryMillis / 2 ? maxRetryMillis : retryMillis * 2
+          )
+        } else {
+          retryMillis = initialRetryMillis
         }
       }
       let restart = locked { () -> UUID? in
@@ -703,6 +735,16 @@ final class AgentRecoveryWakeCoordinator {
     if !accepted { task.cancel() }
   }
 
+  private func waitForWakeOrTimeout(generation: UInt64, milliseconds: UInt64) async {
+    let deadline = DispatchTime.now().uptimeNanoseconds &+ milliseconds * 1_000_000
+    while !Task.isCancelled {
+      let shouldStop = locked { !connected || wakeGeneration != generation }
+      if shouldStop || DispatchTime.now().uptimeNanoseconds >= deadline { return }
+      let remaining = deadline - DispatchTime.now().uptimeNanoseconds
+      try? await Task.sleep(nanoseconds: min(remaining, 25_000_000))
+    }
+  }
+
   private func locked<T>(_ body: () -> T) -> T {
     lock.lock()
     defer { lock.unlock() }
@@ -711,6 +753,23 @@ final class AgentRecoveryWakeCoordinator {
 
   deinit {
     worker?.cancel()
+  }
+}
+
+private final class AgentRecoveryRetryState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value = false
+
+  var requested: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return value
+  }
+
+  func request() {
+    lock.lock()
+    value = true
+    lock.unlock()
   }
 }
 
