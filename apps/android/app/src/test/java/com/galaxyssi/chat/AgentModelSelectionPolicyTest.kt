@@ -264,6 +264,21 @@ class AgentModelSelectionPolicyTest {
     }
 
     @Test
+    fun gpt6CatalogRefreshPreservesDefaultAndSelectedModelInRequest() {
+        val ids = listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-luna")
+        val models = JSONArray().put("gpt-5.6-sol")
+        ids.forEach { models.put(JSONObject().put("id", it).put("display_name", it)) }
+        val profile = AgentInvocationProfileJsonCodec.decode(JSONObject()
+            .put("default_model", "gpt-5.6-sol").put("models", models))
+        assertEquals("gpt-5.6-sol", profile.defaultModelId)
+        ids.forEach { id ->
+            assertEquals(id, profile.normalizedModelId(id))
+            assertEquals(id, checkNotNull(AgentInvocationRequestJsonCodec.encode(
+                id, AgentModelReasoningEffort.HIGH)).getString("model_id"))
+        }
+    }
+
+    @Test
     fun retiredSelectionDelegatesToDesktopDefaultWithoutDroppingEffort() {
         assertNull(AgentInvocationRequestJsonCodec.encode("gpt-5.3-codex-spark", AgentModelReasoningEffort.AUTO))
         val request = checkNotNull(AgentInvocationRequestJsonCodec.encode(

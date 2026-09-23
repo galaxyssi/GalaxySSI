@@ -13,6 +13,8 @@ RETIRED_CODEX_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MODELS = (
     ("gpt-5.6-sol", "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
     ("gpt-6-astra", "GPT-6 Astra\uff0c\u590d\u6742\u63a8\u7406\u3001\u7f16\u7801\u4e0e\u591a\u6b65\u9aa4\u4efb\u52a1"),
+    ("gpt-6-sol", "GPT-6 Sol\uff0c\u7f16\u7801\u4e0e Agent \u5de5\u4f5c\u6d41"),
+    ("gpt-6-luna", "GPT-6 Luna\uff0c\u5feb\u901f\u3001\u9ad8\u6548\u7684\u65e5\u5e38\u4efb\u52a1"),
     ("gpt-5.6-terra", "\u80fd\u529b\u3001\u901f\u5ea6\u3001\u6210\u672c\u5747\u8861"),
     ("gpt-5.6-luna", "\u5feb\u901f\u3001\u4f4e\u6210\u672c"),
     ("gpt-5.5", "\u590d\u6742\u7f16\u7801\u3001\u7814\u7a76\u548c\u901a\u7528\u4efb\u52a1"),
