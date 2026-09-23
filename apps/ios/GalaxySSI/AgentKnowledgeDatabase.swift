@@ -90,25 +90,60 @@ final class AgentKnowledgeDatabase {
   }
 
   func searchCandidates(query: String, limit: Int = 256) throws -> [AgentKnowledgeItem] {
-    try locked {
-      let tokens = searchTokens(query).map(keyedHash)
-      guard !tokens.isEmpty else { return [] }
-      guard let statement = prepare("""
+    let tokens = searchTokens(query).map(keyedHash)
+    guard !tokens.isEmpty else { return [] }
+    var snapshot: OpaquePointer?
+    guard sqlite3_open_v2(
+      fileURL.path,
+      &snapshot,
+      SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+      nil
+    ) == SQLITE_OK, let snapshot else {
+      if let snapshot { sqlite3_close_v2(snapshot) }
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_close_v2(snapshot) }
+    sqlite3_busy_timeout(snapshot, 5_000)
+    guard sqlite3_exec(snapshot, "PRAGMA query_only = ON", nil, nil, nil) == SQLITE_OK,
+          sqlite3_exec(snapshot, "PRAGMA cache_size = -2048", nil, nil, nil) == SQLITE_OK,
+          sqlite3_exec(snapshot, "PRAGMA mmap_size = 0", nil, nil, nil) == SQLITE_OK,
+          sqlite3_exec(snapshot, "BEGIN", nil, nil, nil) == SQLITE_OK else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil) }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      snapshot,
+      """
         SELECT k.item_hash, k.encrypted_payload
         FROM knowledge_fts f
         JOIN knowledge_items k ON k.item_hash = f.item_hash
         WHERE knowledge_fts MATCH ?
         ORDER BY bm25(knowledge_fts), k.updated_at DESC
         LIMIT ?
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
-      bind(tokens.joined(separator: " OR "), at: 1, to: statement)
-      sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 256)))
-      var items: [AgentKnowledgeItem] = []
-      while sqlite3_step(statement) == SQLITE_ROW {
-        items.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
+        """,
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK, let statement else { throw AgentKnowledgeDatabaseError.unavailable }
+    defer { sqlite3_finalize(statement) }
+    bind(tokens.joined(separator: " OR "), at: 1, to: statement)
+    sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 256)))
+    var snapshotItems: [AgentKnowledgeItem] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      snapshotItems.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
+    }
+    return try locked {
+      try snapshotItems.filter { candidate in
+        let itemHash = keyedHash(candidate.id)
+        guard let current = prepare(
+          "SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1"
+        ) else { throw AgentKnowledgeDatabaseError.unavailable }
+        defer { sqlite3_finalize(current) }
+        bind(itemHash, at: 1, to: current)
+        guard sqlite3_step(current) == SQLITE_ROW else { return false }
+        return try decode(current, hashColumn: 0, payloadColumn: 1) == candidate
       }
-      return items
     }
   }
 

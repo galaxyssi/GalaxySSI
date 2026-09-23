@@ -554,6 +554,28 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertEqual(try database.all(), [item])
   }
 
+  func testKnowledgeSearchSnapshotReturnsOnlyCurrentRows() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeSearchSnapshotTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(
+      fileURL: directory.appendingPathComponent("knowledge.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    let first = AgentKnowledgeItem(
+      id: "snapshot-one", kind: .document, title: "Battery benchmark",
+      content: "Battery benchmark measured 42 hours.", source: "report", updatedAtMillis: 1
+    )
+    let second = AgentKnowledgeItem(
+      id: "snapshot-two", kind: .document, title: "Unrelated",
+      content: "No matching evidence.", source: "notes", updatedAtMillis: 2
+    )
+    XCTAssertTrue(database.replaceAll([first, second]))
+
+    XCTAssertEqual(try database.searchCandidates(query: "battery benchmark").map(\.id), [first.id])
+    XCTAssertEqual(try database.all(), [first, second])
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
