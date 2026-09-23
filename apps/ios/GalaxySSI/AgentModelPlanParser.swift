@@ -37,6 +37,15 @@ enum AgentModelPlanParser {
           !actionValues.isEmpty else {
       return nil
     }
+    let completionRequirements = AgentCompletionRequirements.parse(
+      json["completion_requirements"]?.objectValue
+    )
+    if json["completion_requirements"] != nil && completionRequirements == nil {
+      return nil
+    }
+    if completionRequirements?.canReplace(request.completionRequirements) == false {
+      return nil
+    }
     let normalizedSettings = settings.normalized
     let maximumActions = context.maximumActionsOverride ?? normalizedSettings.maxActions
     guard actionValues.count <= maximumActions else {
@@ -85,6 +94,7 @@ enum AgentModelPlanParser {
     }
 
     var plan = AgentPlanFactory.actions(request: request, actions)
+    plan.completionRequirements = completionRequirements ?? request.completionRequirements
     let expectedResult = json.string("expected_result").trimmedForModelPlan.prefixString(500)
     let rollbackStrategy = json.string("rollback_strategy").trimmedForModelPlan.prefixString(500)
     if !expectedResult.isEmpty {

@@ -563,6 +563,58 @@ struct AgentAuditEntry: Codable, Equatable {
   }
 }
 
+enum AgentPublicationRequirement: String, Codable, CaseIterable {
+  case none
+  case commit
+  case push
+  case pullRequest = "pull_request"
+}
+
+/// Model-declared goal requirements. These are never inferred from user wording.
+struct AgentCompletionRequirements: Codable, Equatable {
+  var publication: AgentPublicationRequirement
+  var phoneLinux: Bool
+  var reason: String
+
+  init(
+    publication: AgentPublicationRequirement,
+    phoneLinux: Bool,
+    reason: String = ""
+  ) {
+    self.publication = publication
+    self.phoneLinux = phoneLinux
+    self.reason = String(reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_000))
+  }
+
+  func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
+    publication != previous.publication || phoneLinux != previous.phoneLinux
+  }
+
+  func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
+    guard let previous else { return true }
+    return !changesOutcome(from: previous) || !reason.isEmpty
+  }
+
+  static func parse(_ object: AgentMcpJSONObject?) -> AgentCompletionRequirements? {
+    guard let object,
+          let publication = AgentPublicationRequirement(rawValue: object.string("publication")),
+          let phoneLinux = object["phone_linux"]?.boolValue else { return nil }
+    let reason = object.string("reason")
+    guard reason.count <= 1_000 else { return nil }
+    return AgentCompletionRequirements(
+      publication: publication,
+      phoneLinux: phoneLinux,
+      reason: reason
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case publication
+    case phoneLinux = "phone_linux"
+    case reason
+  }
+}
+
 struct AgentPlan: Codable, Equatable, Identifiable {
   var goal: String
   var screen: AgentScreenContext
@@ -587,6 +639,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
   var replanCount: Int
   var actionHistory: [AgentAction]
   var checkpoints: [AgentExecutionCheckpoint]
+  var completionRequirements: AgentCompletionRequirements?
 
   var id: String { planId }
 
@@ -613,7 +666,8 @@ struct AgentPlan: Codable, Equatable, Identifiable {
     revision: Int = 1,
     replanCount: Int = 0,
     actionHistory: [AgentAction] = [],
-    checkpoints: [AgentExecutionCheckpoint] = []
+    checkpoints: [AgentExecutionCheckpoint] = [],
+    completionRequirements: AgentCompletionRequirements? = nil
   ) {
     self.goal = goal
     self.screen = screen
@@ -638,6 +692,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
     self.replanCount = replanCount
     self.actionHistory = actionHistory
     self.checkpoints = checkpoints
+    self.completionRequirements = completionRequirements
   }
 
   enum CodingKeys: String, CodingKey {
@@ -664,6 +719,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
     case replanCount = "replan_count"
     case actionHistory = "action_history"
     case checkpoints
+    case completionRequirements = "completion_requirements"
   }
 
   init(from decoder: Decoder) throws {
@@ -691,7 +747,11 @@ struct AgentPlan: Codable, Equatable, Identifiable {
       revision: try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1,
       replanCount: try container.decodeIfPresent(Int.self, forKey: .replanCount) ?? 0,
       actionHistory: try container.decodeIfPresent([AgentAction].self, forKey: .actionHistory) ?? [],
-      checkpoints: try container.decodeIfPresent([AgentExecutionCheckpoint].self, forKey: .checkpoints) ?? []
+      checkpoints: try container.decodeIfPresent([AgentExecutionCheckpoint].self, forKey: .checkpoints) ?? [],
+      completionRequirements: try container.decodeIfPresent(
+        AgentCompletionRequirements.self,
+        forKey: .completionRequirements
+      )
     )
   }
 }
@@ -809,6 +869,7 @@ struct AgentPlanRequest: Codable, Equatable {
   var responseLanguage: String
   var executionMode: AgentTaskExecutionMode
   var requestedMembers: [AgentRequestedMember]
+  var completionRequirements: AgentCompletionRequirements?
 
   init(
     goal: String,
@@ -818,7 +879,8 @@ struct AgentPlanRequest: Codable, Equatable {
     contextDigest: String = "",
     responseLanguage: String = LanguagePolicySettings.auto,
     executionMode: AgentTaskExecutionMode = .autoComplete,
-    requestedMembers: [AgentRequestedMember] = []
+    requestedMembers: [AgentRequestedMember] = [],
+    completionRequirements: AgentCompletionRequirements? = nil
   ) {
     self.goal = goal
     self.screen = screen
@@ -828,6 +890,7 @@ struct AgentPlanRequest: Codable, Equatable {
     self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
     self.executionMode = executionMode
     self.requestedMembers = Array(requestedMembers.prefix(12))
+    self.completionRequirements = completionRequirements
   }
 
   enum CodingKeys: String, CodingKey {
@@ -839,6 +902,7 @@ struct AgentPlanRequest: Codable, Equatable {
     case responseLanguage = "response_language"
     case executionMode = "execution_mode"
     case requestedMembers = "requested_members"
+    case completionRequirements = "completion_requirements"
   }
 
   init(from decoder: Decoder) throws {
@@ -851,7 +915,11 @@ struct AgentPlanRequest: Codable, Equatable {
       contextDigest: try container.decodeIfPresent(String.self, forKey: .contextDigest) ?? "",
       responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? LanguagePolicySettings.auto,
       executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete,
-      requestedMembers: try container.decodeIfPresent([AgentRequestedMember].self, forKey: .requestedMembers) ?? []
+      requestedMembers: try container.decodeIfPresent([AgentRequestedMember].self, forKey: .requestedMembers) ?? [],
+      completionRequirements: try container.decodeIfPresent(
+        AgentCompletionRequirements.self,
+        forKey: .completionRequirements
+      )
     )
   }
 }
@@ -896,7 +964,8 @@ enum AgentPlanFactory {
       plannerProfile: "rule-based-local",
       contextDigest: resolvedContextDigest(request),
       routeRationale: routeRationale(for: routeAction, request: request),
-      route: AgentRouteResolver.resolve(action: routeAction, targets: request.targets)
+      route: AgentRouteResolver.resolve(action: routeAction, targets: request.targets),
+      completionRequirements: request.completionRequirements
     )
     plan.validation = AgentPlanValidator.validate(plan)
     return plan
