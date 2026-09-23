@@ -537,7 +537,7 @@ struct AgentHomeView: View {
       modelStatusLabel: presentation.modelStatusLabel,
       modelLogoLabel: presentation.modelLogoLabel,
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
-      voiceNavigationLabel: t("galaxyssi.agent.open_voice", "Open voice"),
+      newConversationLabel: t("new_conversation", "New conversation"),
       settingsNavigationLabel: t("galaxyssi.tab.settings", "Settings"),
       openWindowLabel: t("galaxyssi.agent.open_window", "Open in New Window"),
       modelSelectionDestination: GalaxySSIAgentModelSelectionView {
@@ -554,7 +554,7 @@ struct AgentHomeView: View {
             )
           }
         : nil,
-      onOpenVoice: { openMainTab(.voice) }
+      onNewConversation: createAgentConversation
     )
   }
 
