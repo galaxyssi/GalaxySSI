@@ -59,6 +59,7 @@ struct AgentInitialPlanningInput: Codable, Equatable {
   var allowsDirectResponse: Bool
   var completionRequirements: AgentCompletionRequirements?
   var plannerConfigurationSha256: String
+  var plannerSnapshot: AgentPlannerModelSnapshot? = nil
   var replanning: AgentReplanningIntent? = nil
 
   enum CodingKeys: String, CodingKey {
@@ -70,6 +71,7 @@ struct AgentInitialPlanningInput: Codable, Equatable {
     case allowsDirectResponse = "allows_direct_response"
     case completionRequirements = "completion_requirements"
     case plannerConfigurationSha256 = "planner_configuration_sha256"
+    case plannerSnapshot = "planner_snapshot"
     case replanning
   }
 }

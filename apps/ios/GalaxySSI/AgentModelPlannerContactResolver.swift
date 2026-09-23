@@ -86,6 +86,58 @@ struct AgentModelPlannerContactResolver {
   }
 
   @MainActor
+  func captureSnapshot(
+    settings: AgentModelPlannerSettings,
+    modelId: String = ""
+  ) -> AgentPlannerModelSnapshot? {
+    let normalized = settings.normalized
+    if let localProfile = localProfile(for: normalized) {
+      return AgentPlannerModelSnapshot(
+        settings: normalized,
+        route: nil,
+        localProfileId: localProfile.id
+      )
+    }
+    guard let resolution = resolve(settings: normalized, modelId: modelId) else { return nil }
+    return AgentPlannerModelSnapshot(
+      settings: normalized,
+      route: AgentPlannerProviderRoute(resolution: resolution),
+      localProfileId: nil
+    )
+  }
+
+  @MainActor
+  func makePlanner(
+    snapshot: AgentPlannerModelSnapshot,
+    sender: CloudModelStructuredSending = CloudModelClient()
+  ) throws -> GuardedModelAgentPlanner {
+    if let profileId = snapshot.localProfileId {
+      guard snapshot.settings.normalized.cloudContactId == "local-llm",
+            let profile = LocalModelRuntimeCatalog.profiles().first(where: { $0.id == profileId }) else {
+        throw AgentModelLoopRecoveryError(code: "planner_local_model_unavailable")
+      }
+      return GuardedModelAgentPlanner(
+        provider: LocalModelAgentPlanningProvider(profile: profile),
+        modelProfile: profile.id,
+        voiceCorrectionJournal: voiceCorrectionJournal
+      )
+    }
+    guard let route = snapshot.route else {
+      throw AgentModelLoopRecoveryError(code: "planner_provider_snapshot_invalid")
+    }
+    let resolution = try route.resolve(contacts: store.contacts) { store.apiKey(for: $0) }
+    return GuardedModelAgentPlanner(
+      provider: CloudModelAgentPlanningProvider(
+        contact: resolution.contact,
+        store: store,
+        sender: sender
+      ),
+      modelProfile: resolution.modelProfile,
+      voiceCorrectionJournal: voiceCorrectionJournal
+    )
+  }
+
+  @MainActor
   func makeToolLoopPlanner(
     settings: AgentModelPlannerSettings,
     toolRegistry: AgentNativeToolRegistry,

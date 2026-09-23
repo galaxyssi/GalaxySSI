@@ -137,6 +137,69 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
     XCTAssertEqual(normalized?.contact.selectedCloudModelId, "model-a")
   }
 
+  func testPlannerProviderRouteRetainsOriginalModelAndCredential() throws {
+    var contact = makeCloudContact(
+      id: "cloud:openai",
+      provider: "OpenAI",
+      modelId: "model-a",
+      keychainAccount: "credential-a"
+    )
+    contact.cloudModels.append(CloudModelConfig(
+      id: "cloud:openai:model-b",
+      displayName: "Model B",
+      provider: "OpenAI",
+      modelId: "model-b",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiStyle: .openAICompatible,
+      keychainAccount: "credential-b",
+      updatedAt: Date(timeIntervalSince1970: 1_800_000_001)
+    ))
+    let original = try XCTUnwrap(AgentModelPlannerContactResolver.resolve(
+      preferredContactId: contact.id,
+      contacts: [contact],
+      apiKey: { $0.keychainAccount == "credential-a" ? "sk-original" : nil },
+      preferredModelId: "model-a"
+    ))
+    let route = AgentPlannerProviderRoute(resolution: original)
+    contact.selectedCloudModelId = "model-b"
+
+    let restored = try route.resolve(contacts: [contact]) {
+      $0.keychainAccount == "credential-a" ? "sk-refreshed" : nil
+    }
+
+    XCTAssertEqual(restored.selectedModel.modelId, "model-a")
+    XCTAssertEqual(restored.contact.selectedCloudModelId, "model-a")
+    XCTAssertThrowsError(try route.resolve(contacts: [contact]) {
+      $0.keychainAccount == "credential-b" ? "sk-wrong-model" : nil
+    }) { error in
+      XCTAssertEqual(
+        error as? AgentModelLoopRecoveryError,
+        AgentModelLoopRecoveryError(code: "planner_provider_credentials_unavailable")
+      )
+    }
+  }
+
+  func testPlannerProviderRouteRejectsChangedEndpointAndRemovedModel() throws {
+    var contact = makeCloudContact(id: "cloud:openai", modelId: "model-a")
+    let resolution = try XCTUnwrap(resolve(contact))
+    let route = AgentPlannerProviderRoute(resolution: resolution)
+    contact.cloudModels[0].endpoint = "https://changed.example/v1/chat/completions"
+
+    XCTAssertThrowsError(try route.resolve(contacts: [contact]) { _ in "sk-live-key" }) { error in
+      XCTAssertEqual(
+        error as? AgentModelLoopRecoveryError,
+        AgentModelLoopRecoveryError(code: "planner_provider_route_changed")
+      )
+    }
+    contact.cloudModels = []
+    XCTAssertThrowsError(try route.resolve(contacts: [contact]) { _ in "sk-live-key" }) { error in
+      XCTAssertEqual(
+        error as? AgentModelLoopRecoveryError,
+        AgentModelLoopRecoveryError(code: "planner_provider_model_unavailable")
+      )
+    }
+  }
+
   private func resolve(
     _ contact: GalaxySSIContact,
     apiKey: String? = "sk-live-key"

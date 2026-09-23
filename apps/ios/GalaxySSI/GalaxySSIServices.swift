@@ -527,11 +527,7 @@ final class MessageCoordinator: ObservableObject {
             let outgoing = localOutgoingMessage(for: candidate) else { continue }
       do {
         let outcome = try await localInitialPlanningJournal.restore(reference) { input in
-          guard input.plannerConfigurationSha256 == self.initialPlannerConfigurationSha256(
-            conversationId: input.conversation.conversationId
-          ) else {
-            throw AgentModelLoopRecoveryError(code: "initial_planner_configuration_changed")
-          }
+          try self.validatePlannerSnapshot(input, expected: candidate.plannerSnapshot)
           guard let result = await self.modelPlannedLocalNativeActions(
             requestText: input.goal,
             attachments: [],
@@ -540,7 +536,8 @@ final class MessageCoordinator: ObservableObject {
             allowsDirectResponse: input.allowsDirectResponse,
             completionRequirements: input.completionRequirements,
             conversationOverride: input.conversation,
-            hasAttachmentsOverride: input.hasAttachments
+            hasAttachmentsOverride: input.hasAttachments,
+            plannerSnapshotOverride: input.plannerSnapshot
           ) else {
             throw AgentModelLoopRecoveryError(code: "initial_planning_result_unavailable")
           }
@@ -604,11 +601,7 @@ final class MessageCoordinator: ObservableObject {
           guard let intent = input.replanning else {
             throw AgentModelLoopRecoveryError(code: "replanning_intent_missing")
           }
-          guard input.plannerConfigurationSha256 == self.initialPlannerConfigurationSha256(
-            conversationId: input.conversation.conversationId
-          ) else {
-            throw AgentModelLoopRecoveryError(code: "replanning_planner_configuration_changed")
-          }
+          try self.validatePlannerSnapshot(input, expected: candidate.plannerSnapshot)
           guard intent.planId == basePlan.planId,
                 intent.revision == basePlan.revision,
                 intent.planSha256 == self.localInitialPlanningJournal.planFingerprint(
@@ -627,7 +620,8 @@ final class MessageCoordinator: ObservableObject {
             executionHistory: basePlan.historyForReplan().filter(continuationScope.owns),
             completionRequirements: input.completionRequirements,
             conversationOverride: input.conversation,
-            hasAttachmentsOverride: false
+            hasAttachmentsOverride: false,
+            plannerSnapshotOverride: input.plannerSnapshot
           )
         }
         guard var task = store.agentTask(id: candidate.taskId),
@@ -3411,6 +3405,8 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     task.phase = .cancelled
+    task.pendingPlanning = nil
+    task.plannerSnapshot = nil
     task.pendingAction = nil
     task.pendingActions = []
     let denial = localizedReply(
@@ -3489,6 +3485,21 @@ final class MessageCoordinator: ObservableObject {
     if let previousPlan, let continuationScope {
       let priorPhase = task.phase
       let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
+      let plannerSnapshot = task.plannerSnapshot
+        ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
+      if let plannerSnapshot {
+        do {
+          _ = try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: plannerSnapshot)
+        } catch {
+          task.phase = .paused
+          task.blocked = true
+          task.verification = error.localizedDescription
+          task.executionLog.append("Native action replanning stopped: \(error.localizedDescription)")
+          task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+          store.upsertAgentTask(task)
+          return false
+        }
+      }
       let input = AgentInitialPlanningInput(
         goal: task.goal,
         conversation: conversation,
@@ -3497,9 +3508,9 @@ final class MessageCoordinator: ObservableObject {
         hasAttachments: false,
         allowsDirectResponse: false,
         completionRequirements: previousPlan.completionRequirements,
-        plannerConfigurationSha256: initialPlannerConfigurationSha256(
-          conversationId: outgoing.conversationId
-        ),
+        plannerConfigurationSha256: plannerSnapshot?.configurationSha256
+          ?? initialPlannerConfigurationSha256(conversationId: outgoing.conversationId),
+        plannerSnapshot: plannerSnapshot,
         replanning: AgentReplanningIntent(
           planId: previousPlan.planId,
           revision: previousPlan.revision,
@@ -3516,6 +3527,7 @@ final class MessageCoordinator: ObservableObject {
           committedReference = reference
           task.phase = .planning
           task.pendingPlanning = reference
+          task.plannerSnapshot = plannerSnapshot
           task.executionLog.append(
             "Native action plan: committed revision \(previousPlan.revision) for durable replanning"
           )
@@ -3531,7 +3543,8 @@ final class MessageCoordinator: ObservableObject {
             executionHistory: plannerHistory,
             completionRequirements: previousPlan.completionRequirements,
             conversationOverride: conversation,
-            hasAttachmentsOverride: false
+            hasAttachmentsOverride: false,
+            plannerSnapshotOverride: plannerSnapshot
           )
         }
       } catch {
@@ -3773,6 +3786,8 @@ final class MessageCoordinator: ObservableObject {
     }
     guard var cancelled = store.agentTask(id: taskId) else { return false }
     cancelled.phase = .cancelled
+    cancelled.pendingPlanning = nil
+    cancelled.plannerSnapshot = nil
     cancelled.blocked = false
     cancelled.result = localizedReply(
       "galaxyssi.agent.local_task_cancelled",
@@ -3833,6 +3848,8 @@ final class MessageCoordinator: ObservableObject {
     PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
     let action = task.pendingAction
     task.phase = .cancelled
+    task.pendingPlanning = nil
+    task.plannerSnapshot = nil
     task.blocked = false
     task.pendingAction = nil
     task.pendingActions = []
@@ -4042,6 +4059,7 @@ final class MessageCoordinator: ObservableObject {
         requestText: requestText,
         outgoing: outgoing
       )
+      let plannerSnapshot = capturePlannerSnapshot(conversationId: outgoing.conversationId)
       let planningInput = AgentInitialPlanningInput(
         goal: requestText,
         conversation: planningConversation,
@@ -4050,9 +4068,9 @@ final class MessageCoordinator: ObservableObject {
         hasAttachments: !attachments.isEmpty,
         allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty,
         completionRequirements: nil,
-        plannerConfigurationSha256: initialPlannerConfigurationSha256(
-          conversationId: outgoing.conversationId
-        )
+        plannerConfigurationSha256: plannerSnapshot?.configurationSha256
+          ?? initialPlannerConfigurationSha256(conversationId: outgoing.conversationId),
+        plannerSnapshot: plannerSnapshot
       )
       let modelOutcome = try await localInitialPlanningJournal.begin(
         sessionId: task.sessionId,
@@ -4060,6 +4078,7 @@ final class MessageCoordinator: ObservableObject {
       ) { reference in
         task.phase = .planning
         task.pendingPlanning = reference
+        task.plannerSnapshot = plannerSnapshot
         task.executionLog.append("Initial planning input committed for recovery")
         task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
         store.upsertAgentTask(task)
@@ -4069,7 +4088,8 @@ final class MessageCoordinator: ObservableObject {
           outgoing: outgoing,
           executionMode: executionMode,
           allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty,
-          conversationOverride: planningConversation
+          conversationOverride: planningConversation,
+          plannerSnapshotOverride: plannerSnapshot
         )
       }
       guard store.agentTask(id: task.taskId)?.phase == .planning else { return }
@@ -6021,6 +6041,40 @@ final class MessageCoordinator: ObservableObject {
     ])
   }
 
+  private func capturePlannerSnapshot(conversationId: String) -> AgentPlannerModelSnapshot? {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    let plannerModelId = selection.mode == .manual &&
+      selection.targetId == store.modelPlannerSettings.cloudContactId
+      ? selection.modelId
+      : ""
+    return AgentModelPlannerContactResolver(store: store).captureSnapshot(
+      settings: store.modelPlannerSettings,
+      modelId: plannerModelId
+    )
+  }
+
+  private func validatePlannerSnapshot(
+    _ input: AgentInitialPlanningInput,
+    expected: AgentPlannerModelSnapshot?
+  ) throws {
+    if let snapshot = input.plannerSnapshot {
+      guard expected == nil || expected == snapshot else {
+        throw AgentModelLoopRecoveryError(code: "task_planner_reference_changed")
+      }
+      guard input.plannerConfigurationSha256 == snapshot.configurationSha256 else {
+        throw AgentModelLoopRecoveryError(code: "task_planner_snapshot_hash_changed")
+      }
+      _ = try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: snapshot)
+      return
+    }
+    guard expected == nil,
+          input.plannerConfigurationSha256 == initialPlannerConfigurationSha256(
+            conversationId: input.conversation.conversationId
+          ) else {
+      throw AgentModelLoopRecoveryError(code: "initial_planner_configuration_changed")
+    }
+  }
+
   private func modelPlannedLocalNativeActions(
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
@@ -6031,9 +6085,11 @@ final class MessageCoordinator: ObservableObject {
     executionHistory: [AgentAction] = [],
     completionRequirements: AgentCompletionRequirements? = nil,
     conversationOverride: AgentConversationContext? = nil,
-    hasAttachmentsOverride: Bool? = nil
+    hasAttachmentsOverride: Bool? = nil,
+    plannerSnapshotOverride: AgentPlannerModelSnapshot? = nil
   ) async -> GuardedModelAgentPlanningResult? {
-    guard store.modelPlannerSettings.enabled,
+    let plannerSettings = plannerSnapshotOverride?.settings ?? store.modelPlannerSettings
+    guard plannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
       return nil
     }
@@ -6053,14 +6109,21 @@ final class MessageCoordinator: ObservableObject {
     guard !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
     }
-    let modelSelection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
-    let plannerModelId = modelSelection.mode == .manual &&
-      modelSelection.targetId == store.modelPlannerSettings.cloudContactId
-      ? modelSelection.modelId
-      : ""
-    guard let planner = AgentModelPlannerContactResolver(store: store)
-      .makePlanner(settings: store.modelPlannerSettings, modelId: plannerModelId) else {
-      return nil
+    let resolver = AgentModelPlannerContactResolver(store: store)
+    let planner: GuardedModelAgentPlanner
+    if let plannerSnapshotOverride {
+      guard let restored = try? resolver.makePlanner(snapshot: plannerSnapshotOverride) else { return nil }
+      planner = restored
+    } else {
+      let modelSelection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
+      let plannerModelId = modelSelection.mode == .manual &&
+        modelSelection.targetId == plannerSettings.cloudContactId
+        ? modelSelection.modelId
+        : ""
+      guard let selected = resolver.makePlanner(settings: plannerSettings, modelId: plannerModelId) else {
+        return nil
+      }
+      planner = selected
     }
     let planRequest = AgentPlanRequest(
       goal: requestText,
@@ -6935,6 +6998,21 @@ final class MessageCoordinator: ObservableObject {
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
     let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
     let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
+    let plannerSnapshot = task.plannerSnapshot
+      ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
+    if let plannerSnapshot {
+      do {
+        _ = try AgentModelPlannerContactResolver(store: store).makePlanner(snapshot: plannerSnapshot)
+      } catch {
+        task.phase = .paused
+        task.blocked = true
+        task.verification = error.localizedDescription
+        task.executionLog.append("Rolling plan provider unavailable: \(error.localizedDescription)")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        return
+      }
+    }
     let planningInput = AgentInitialPlanningInput(
       goal: task.goal,
       conversation: conversation,
@@ -6943,9 +7021,9 @@ final class MessageCoordinator: ObservableObject {
       hasAttachments: false,
       allowsDirectResponse: false,
       completionRequirements: previousPlan.completionRequirements,
-      plannerConfigurationSha256: initialPlannerConfigurationSha256(
-        conversationId: outgoing.conversationId
-      ),
+      plannerConfigurationSha256: plannerSnapshot?.configurationSha256
+        ?? initialPlannerConfigurationSha256(conversationId: outgoing.conversationId),
+      plannerSnapshot: plannerSnapshot,
       replanning: AgentReplanningIntent(
         planId: previousPlan.planId,
         revision: previousPlan.revision,
@@ -6963,6 +7041,7 @@ final class MessageCoordinator: ObservableObject {
         committedReference = reference
         task.phase = .planning
         task.pendingPlanning = reference
+        task.plannerSnapshot = plannerSnapshot
         task.executionLog.append(
           "Rolling plan: committed revision \(previousPlan.revision) for durable replanning"
         )
@@ -6978,7 +7057,8 @@ final class MessageCoordinator: ObservableObject {
           executionHistory: plannerHistory,
           completionRequirements: previousPlan.completionRequirements,
           conversationOverride: conversation,
-          hasAttachmentsOverride: false
+          hasAttachmentsOverride: false,
+          plannerSnapshotOverride: plannerSnapshot
         )
       }
     } catch {
