@@ -166,7 +166,7 @@ final class MessageCoordinator: ObservableObject {
     coordinator: self
   )
   private lazy var pendingReplyRecoveryWake = AgentRecoveryWakeCoordinator(
-    recover: { [weak self] in
+    recover: { [weak self] _ in
       await self?.resumePendingAgentDelivery()
     },
     failed: { [weak self] error in
@@ -3478,7 +3478,8 @@ final class MessageCoordinator: ObservableObject {
       goal: task.goal,
       screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
-      responseLanguage: store.languagePolicy.responseLanguage
+      responseLanguage: store.languagePolicy.responseLanguage,
+      completionRequirements: previousPlan?.completionRequirements
     )
     let fallbackPlan = AgentDirectNativeToolPlanner.plan(request: planRequest)
     let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
@@ -6178,12 +6179,16 @@ final class MessageCoordinator: ObservableObject {
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
-      let result = await planner.planOrRespond(
-        request: planningRequest,
-        settings: plannerSettings,
-        safetySettings: store.agentSafetySettings,
-        fallbackPlan: fallbackPlan
-      )
+      let result = await AgentPlanningTiming.capture(
+        taskId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      ) {
+        await planner.planOrRespond(
+          request: planningRequest,
+          settings: store.modelPlannerSettings,
+          safetySettings: store.agentSafetySettings,
+          fallbackPlan: fallbackPlan
+        )
+      }
       if case .directResponse = result {
         return result
       }
@@ -6192,7 +6197,26 @@ final class MessageCoordinator: ObservableObject {
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
          AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-        return .plan(plan)
+        let missing = AgentCompletionEvidencePolicy.missingEvidence(
+          requirements: plan.completionRequirements,
+          history: executionHistory
+        )
+        if missing.isEmpty {
+          return .plan(plan)
+        }
+        guard repairAttempt == 0 else { return nil }
+        planningRequest.planRequest.completionRequirements = plan.completionRequirements
+        let priorReason = planningRequest.parsingContext.replanReason
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        planningRequest.parsingContext.replanReason = String([
+          priorReason,
+          "Completion rejected. Declare or correct completion_requirements from the user's actual intent, including exclusions, and perform only genuinely missing work. Missing evidence: \(missing.joined(separator: "; "))."
+        ]
+          .filter { !$0.isEmpty }
+          .joined(separator: " ")
+          .prefix(500))
+        planningRequest.allowsDirectResponse = false
+        continue
       }
       let actions = plan.actions.filter { $0.kind == .callNativeTool }
       guard !actions.isEmpty, actions.count == plan.actions.count else { return nil }
@@ -6550,7 +6574,8 @@ final class MessageCoordinator: ObservableObject {
         var completed = updatedPlan.actions[planIndex]
         completed.status = result.success ? .completed : .failed
         completed.result = result.message
-        completed.evidence = result.metadata["evidence"]
+        completed.evidence = result.metadata["native_tool_output"]
+          ?? result.metadata["evidence"]
           ?? result.metadata["receipt"]
           ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
         updatedPlan.actions[planIndex] = completed
@@ -6585,6 +6610,8 @@ final class MessageCoordinator: ObservableObject {
     }
     updatedPlan.validation = AgentPlanValidator.validate(updatedPlan)
     task.planContext = AgentTaskPlanContext(plan: updatedPlan)
+    task.activePlan = updatedPlan
+    task.lastNativeActionResult = results.last
     task.result = recordLocalNativeBatchSummary(task.nativeActionResults)
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
 
@@ -6627,17 +6654,32 @@ final class MessageCoordinator: ObservableObject {
       return
     }
 
-    task.phase = .completed
-    task.verification = "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
-    task.executionLog.append("Native tools: \(parallelMode.rawValue) batch completed")
+    let rollingBatchBoundary = AgentRollingPlanPolicy.shouldRequestNextBatch(
+      plan: updatedPlan,
+      result: results.last
+    )
+    task.phase = rollingBatchBoundary ? .waitingResponse : .completed
+    task.verification = rollingBatchBoundary
+      ? "Waiting for the planning model to assess parallel native tool receipts"
+      : "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
+    task.executionLog.append(rollingBatchBoundary
+      ? "Rolling plan: parallel batch completed; requesting model assessment"
+      : "Native tools: \(parallelMode.rawValue) batch completed")
     store.upsertAgentTask(task)
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
       stage: "local_native_tool_reply",
       detail: actions.map { $0.parameters["tool_id"] ?? $0.target }.joined(separator: ","),
-      status: .delivered
+      status: rollingBatchBoundary ? .sent : .delivered
     )
+    if rollingBatchBoundary {
+      let taskId = task.taskId
+      Task { @MainActor [weak self] in
+        await self?.continueRollingNativePlan(taskId: taskId, outgoing: outgoing)
+      }
+      return
+    }
     _ = store.appendIncoming(
       task.result,
       from: outgoing.contactId,
@@ -6937,7 +6979,8 @@ final class MessageCoordinator: ObservableObject {
     var completed = plan.actions[index]
     completed.status = result.success ? .completed : .failed
     completed.result = result.message
-    completed.evidence = result.metadata["evidence"]
+    completed.evidence = result.metadata["native_tool_output"]
+      ?? result.metadata["evidence"]
       ?? result.metadata["receipt"]
       ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
     plan.actions[index] = completed
@@ -7097,6 +7140,8 @@ final class MessageCoordinator: ObservableObject {
     continuedPlan.actions = nextPlan.actions.map { $0.withPlanRevision(nextRevision) }
     continuedPlan.revision = nextRevision
     continuedPlan.replanCount = max(nextPlan.replanCount, previousPlan.replanCount + 1)
+    continuedPlan.completionRequirements = nextPlan.completionRequirements
+      ?? previousPlan.completionRequirements
     continuedPlan.actionHistory = previousPlan.historyForNextRevision(nextRevision)
     continuedPlan.checkpoints = previousPlan.checkpoints
     continuedPlan.verificationResults = previousPlan.verificationResults
@@ -7138,6 +7183,8 @@ final class MessageCoordinator: ObservableObject {
     completedPlan.actions = [completedMarker]
     completedPlan.revision = nextRevision
     completedPlan.replanCount += 1
+    completedPlan.completionRequirements = finalPlan.completionRequirements
+      ?? previousPlan.completionRequirements
     completedPlan.expectedResult = finalPlan.expectedResult
       .ifBlank(finalAction.result)
       .ifBlank(finalAction.description)

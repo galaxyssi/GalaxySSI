@@ -1444,6 +1444,137 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.error?.details["original_invocation_id"], .string("interrupted"))
   }
 
+  func testAgentNativeEffectObservationPrecedesLiveAvailability() throws {
+    var available = true
+    var availabilityChecks = 0
+    var executions = 0
+    let store = InMemoryAgentNativeToolReplayStore()
+    let descriptor = try nativeToolDescriptor(
+      "galaxyssi.test.offline.effect",
+      inputSchema: [
+        "type": .string("object"),
+        "properties": .object(["value": .object(["type": .string("integer")])]),
+        "required": .array([.string("value")]),
+        "additionalProperties": .bool(false)
+      ],
+      idempotency: .idempotencyKeyRequired
+    )
+    let definition = AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: "test.effect",
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        availabilityChecks += 1
+        return available
+          ? .available
+          : AgentNativeToolAvailability(status: .unavailable, reason: "Provider is offline")
+      }
+    )
+    let registry = try AgentNativeToolRegistry(replayStore: store)
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: definition,
+        executor: { _ in
+          executions += 1
+          return .success(output: ["execution": .int(Int64(executions))])
+        }
+      ))
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "first",
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "effect",
+      attributes: ["client_route_id": "phone", "goal_id": "goal", "task_id": "task"]
+    )
+
+    let first = registry.invoke(descriptor.id, input: ["value": .int(1)], context: context)
+    available = false
+    var replayContext = context
+    replayContext.invocationId = "second"
+    let replay = registry.invoke(descriptor.id, input: ["value": .int(1)], context: replayContext)
+    replayContext.invocationId = "third"
+    let conflict = registry.invoke(descriptor.id, input: ["value": .int(2)], context: replayContext)
+
+    XCTAssertTrue(first.isSuccess)
+    XCTAssertEqual(replay.output, first.output)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(replay.receipt.originalInvocationId, "first")
+    XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(availabilityChecks, 1)
+  }
+
+  func testAgentNativeEffectObservationProtectsUnfinishedClaimWhileOffline() throws {
+    var availabilityChecks = 0
+    var executions = 0
+    let store = InMemoryAgentNativeToolReplayStore()
+    let descriptor = try nativeToolDescriptor(
+      "galaxyssi.test.offline.interrupted-effect",
+      idempotency: .idempotencyKeyRequired
+    )
+    let definition = AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: "test.effect",
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        availabilityChecks += 1
+        return AgentNativeToolAvailability(status: .unavailable, reason: "Provider is offline")
+      }
+    )
+    let registry = try AgentNativeToolRegistry(replayStore: store)
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: definition,
+        executor: { _ in
+          executions += 1
+          return .success()
+        }
+      ))
+    let interruptedContext = AgentNativeToolInvocationContext(
+      invocationId: "interrupted",
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "interrupted-effect",
+      attributes: ["client_route_id": "phone", "goal_id": "goal", "task_id": "task"]
+    )
+    let interruptedKey = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: "interrupted-effect",
+      scope: AgentNativeEffectScope(context: interruptedContext)
+    )
+    XCTAssertTrue(try store.claim(
+      interruptedKey,
+      inputSha256: AgentMcpJSONCodec.sha256(AgentMcpJSONObject()),
+      invocationId: "interrupted"
+    ).acquired)
+
+    var recoveryContext = interruptedContext
+    recoveryContext.invocationId = "recovery"
+    let recovery = registry.invoke(descriptor.id, input: [:], context: recoveryContext)
+    let freshContext = AgentNativeToolInvocationContext(
+      invocationId: "fresh",
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "fresh-effect",
+      attributes: interruptedContext.attributes
+    )
+    let fresh = registry.invoke(descriptor.id, input: [:], context: freshContext)
+    let freshKey = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: "fresh-effect",
+      scope: AgentNativeEffectScope(context: freshContext)
+    )
+
+    XCTAssertEqual(recovery.error?.code, "effect_outcome_unknown")
+    XCTAssertEqual(recovery.error?.retryable, false)
+    XCTAssertEqual(recovery.error?.details["original_invocation_id"], .string("interrupted"))
+    XCTAssertEqual(fresh.error?.code, "tool_unavailable")
+    XCTAssertNil(store.observe(freshKey))
+    XCTAssertEqual(executions, 0)
+    XCTAssertEqual(availabilityChecks, 1)
+  }
+
   func testNonIdempotentEffectUsesInvocationFallbackAndReplaysRecordedOutcome() throws {
     var executions = 0
     let descriptor = try nativeToolDescriptor(
