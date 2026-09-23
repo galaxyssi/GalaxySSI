@@ -618,7 +618,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   func count() -> Int {
     normalizeConflicts()
-    allItems.filter { $0.status == .active }.count
+    return allItems.filter { $0.status == .active }.count
   }
 
   @discardableResult
