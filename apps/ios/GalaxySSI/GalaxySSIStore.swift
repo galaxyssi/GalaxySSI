@@ -322,8 +322,8 @@ final class GalaxySSIStore: ObservableObject {
     }
   }
 
-  private let defaults: UserDefaults
-  private let secrets: GalaxySSISecretStore
+  let defaults: UserDefaults
+  let secrets: GalaxySSISecretStore
   let agentConversationDatabase: AgentConversationDatabase
   let chatHistoryDatabase: GalaxySSIChatHistoryDatabase
   let agentKnowledgeDatabase: AgentKnowledgeDatabase
