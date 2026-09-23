@@ -259,10 +259,24 @@ enum AgentMediaAttachmentTransportEncoder {
   static func inlinePayload(
     for attachment: GalaxySSIDraftAttachment,
     profile: AgentMediaDeliveryProfile?,
-    remainingBytes: Int
+    remainingBytes: Int,
+    taskId: String = ""
   ) -> AgentMediaInlinePayload? {
     let budget = inlineBudget(for: attachment, profile: profile, remainingBytes: remainingBytes)
     guard attachment.sizeBytes > 0, budget > 0 else { return nil }
+    if attachment.isImage,
+       let encoded = AgentImagePipeline.encodeForTransport(
+        attachment,
+        byteLimit: budget,
+        taskId: taskId
+       ) {
+      return AgentMediaInlinePayload(
+        data: encoded.data,
+        mimeType: encoded.mimeType,
+        displayName: encoded.transportName(originalName: attachment.displayName),
+        lossless: encoded.lossless
+      )
+    }
     if attachment.sizeBytes <= budget {
       return AgentMediaInlinePayload(
         data: attachment.data,
@@ -271,12 +285,6 @@ enum AgentMediaAttachmentTransportEncoder {
         lossless: true
       )
     }
-    #if canImport(UIKit)
-    if attachment.isImage,
-       let compressed = compressedImagePayload(for: attachment, targetBytes: budget) {
-      return compressed
-    }
-    #endif
     return nil
   }
 
@@ -292,36 +300,6 @@ enum AgentMediaAttachmentTransportEncoder {
     return min(remaining, profile.imageTargetBytes)
   }
 
-  #if canImport(UIKit)
-  private static func compressedImagePayload(
-    for attachment: GalaxySSIDraftAttachment,
-    targetBytes: Int
-  ) -> AgentMediaInlinePayload? {
-    guard targetBytes > 0,
-          let image = UIImage(data: attachment.data) else {
-      return nil
-    }
-    let qualities: [CGFloat] = [0.82, 0.68, 0.54, 0.4, 0.28, 0.18]
-    for quality in qualities {
-      guard let data = image.jpegData(compressionQuality: quality) else { continue }
-      if data.count <= targetBytes {
-        return AgentMediaInlinePayload(
-          data: data,
-          mimeType: "image/jpeg",
-          displayName: jpegTransportName(for: attachment.displayName),
-          lossless: false
-        )
-      }
-    }
-    return nil
-  }
-
-  private static func jpegTransportName(for name: String) -> String {
-    let clean = GalaxySSIAttachmentPayloadBuilder.sanitizeName(name)
-    let base = (clean as NSString).deletingPathExtension.ifBlank("image")
-    return "\(base).jpg"
-  }
-  #endif
 }
 
 enum AgentMediaLinkPayloadPolicy {

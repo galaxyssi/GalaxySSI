@@ -17,6 +17,14 @@ enum AgentLatencyStage: String, Codable, CaseIterable {
   case phoneRuntimeReceiptObserveFinished = "phone_runtime_receipt_observe_finished"
   case phoneRuntimeResultVerifyStarted = "phone_runtime_result_verify_started"
   case phoneRuntimeResultVerifyFinished = "phone_runtime_result_verify_finished"
+  case phoneRuntimeImagePrepareStarted = "phone_runtime_image_prepare_started"
+  case phoneRuntimeImagePrepareFinished = "phone_runtime_image_prepare_finished"
+  case phoneRuntimeImageOriginalProbeStarted = "phone_runtime_image_original_probe_started"
+  case phoneRuntimeImageOriginalProbeFinished = "phone_runtime_image_original_probe_finished"
+  case phoneRuntimeImageDecodeStarted = "phone_runtime_image_decode_started"
+  case phoneRuntimeImageDecodeFinished = "phone_runtime_image_decode_finished"
+  case phoneRuntimeImageEncodeStarted = "phone_runtime_image_encode_started"
+  case phoneRuntimeImageEncodeFinished = "phone_runtime_image_encode_finished"
   case phonePlanningTotalStarted = "phone_planning_total_started"
   case phonePlanningTotalFinished = "phone_planning_total_finished"
   case phonePlanningProgressStarted = "phone_planning_progress_started"
@@ -80,6 +88,10 @@ enum AgentLatencyContract {
     ("phone_runtime_screen_observe_ms", .phoneRuntimeScreenObserveStarted, .phoneRuntimeScreenObserveFinished),
     ("phone_runtime_receipt_observe_ms", .phoneRuntimeReceiptObserveStarted, .phoneRuntimeReceiptObserveFinished),
     ("phone_runtime_result_verify_ms", .phoneRuntimeResultVerifyStarted, .phoneRuntimeResultVerifyFinished),
+    ("phone_runtime_image_prepare_ms", .phoneRuntimeImagePrepareStarted, .phoneRuntimeImagePrepareFinished),
+    ("phone_runtime_image_original_probe_ms", .phoneRuntimeImageOriginalProbeStarted, .phoneRuntimeImageOriginalProbeFinished),
+    ("phone_runtime_image_decode_ms", .phoneRuntimeImageDecodeStarted, .phoneRuntimeImageDecodeFinished),
+    ("phone_runtime_image_encode_ms", .phoneRuntimeImageEncodeStarted, .phoneRuntimeImageEncodeFinished),
     ("phone_planning_total_ms", .phonePlanningTotalStarted, .phonePlanningTotalFinished),
     ("phone_planning_progress_ms", .phonePlanningProgressStarted, .phonePlanningProgressFinished),
     ("phone_planning_inventory_ms", .phonePlanningInventoryStarted, .phonePlanningInventoryFinished),
@@ -157,6 +169,10 @@ enum AgentRuntimeTimingPhase: String, CaseIterable {
   case screenObserve = "screen_observe"
   case receiptObserve = "receipt_observe"
   case resultVerify = "result_verify"
+  case imagePrepare = "image_prepare"
+  case imageOriginalProbe = "image_original_probe"
+  case imageDecode = "image_decode"
+  case imageEncode = "image_encode"
 
   var boundaries: (start: AgentLatencyStage, finish: AgentLatencyStage) {
     switch self {
@@ -168,6 +184,14 @@ enum AgentRuntimeTimingPhase: String, CaseIterable {
       return (.phoneRuntimeReceiptObserveStarted, .phoneRuntimeReceiptObserveFinished)
     case .resultVerify:
       return (.phoneRuntimeResultVerifyStarted, .phoneRuntimeResultVerifyFinished)
+    case .imagePrepare:
+      return (.phoneRuntimeImagePrepareStarted, .phoneRuntimeImagePrepareFinished)
+    case .imageOriginalProbe:
+      return (.phoneRuntimeImageOriginalProbeStarted, .phoneRuntimeImageOriginalProbeFinished)
+    case .imageDecode:
+      return (.phoneRuntimeImageDecodeStarted, .phoneRuntimeImageDecodeFinished)
+    case .imageEncode:
+      return (.phoneRuntimeImageEncodeStarted, .phoneRuntimeImageEncodeFinished)
     }
   }
 }

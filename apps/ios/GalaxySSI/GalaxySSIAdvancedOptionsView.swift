@@ -310,6 +310,14 @@ struct GalaxySSIAgentLatencyDashboardView: View {
       return t("agent_latency_receipt_observe", "Tool receipt observation")
     case "phone_runtime_result_verify_ms":
       return t("agent_latency_result_verify", "Verification result application")
+    case "phone_runtime_image_prepare_ms":
+      return t("agent_latency_image_prepare", "Image preparation")
+    case "phone_runtime_image_original_probe_ms":
+      return t("agent_latency_image_original_probe", "Original image probe")
+    case "phone_runtime_image_decode_ms":
+      return t("agent_latency_image_decode", "Image decode and orientation")
+    case "phone_runtime_image_encode_ms":
+      return t("agent_latency_image_encode", "Image compression and encoding")
     case "phone_planning_total_ms": return t("agent_latency_planning_total", "Planning total")
     case "phone_planning_progress_ms": return t("agent_latency_planning_progress", "Progress ledger")
     case "phone_planning_inventory_ms": return t("agent_latency_planning_inventory", "Tool inventory")
