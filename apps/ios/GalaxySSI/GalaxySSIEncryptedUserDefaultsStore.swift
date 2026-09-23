@@ -7,8 +7,17 @@ enum GalaxySSIEncryptedUserDefaultsStore {
     key: String,
     secrets: GalaxySSISecretStore
   ) -> Data? {
+    load(defaults: defaults, key: key, keyMaterialKey: key, secrets: secrets)
+  }
+
+  static func load(
+    defaults: UserDefaults,
+    key: String,
+    keyMaterialKey: String,
+    secrets: GalaxySSISecretStore
+  ) -> Data? {
     guard let serialized = defaults.data(forKey: encryptedKey(for: key)),
-          let encryptionKey = encryptionKey(for: key, secrets: secrets, createIfMissing: false),
+          let encryptionKey = encryptionKey(for: keyMaterialKey, secrets: secrets, createIfMissing: false),
           let sealed = try? AES.GCM.SealedBox(combined: serialized),
           let plaintext = try? AES.GCM.open(sealed, using: encryptionKey, authenticating: associatedData(for: key)) else {
       return nil
@@ -23,7 +32,18 @@ enum GalaxySSIEncryptedUserDefaultsStore {
     key: String,
     secrets: GalaxySSISecretStore
   ) -> Bool {
-    guard let encryptionKey = encryptionKey(for: key, secrets: secrets, createIfMissing: true),
+    write(plaintext, defaults: defaults, key: key, keyMaterialKey: key, secrets: secrets)
+  }
+
+  @discardableResult
+  static func write(
+    _ plaintext: Data,
+    defaults: UserDefaults,
+    key: String,
+    keyMaterialKey: String,
+    secrets: GalaxySSISecretStore
+  ) -> Bool {
+    guard let encryptionKey = encryptionKey(for: keyMaterialKey, secrets: secrets, createIfMissing: true),
           let sealed = try? AES.GCM.seal(
             plaintext,
             using: encryptionKey,
@@ -37,6 +57,18 @@ enum GalaxySSIEncryptedUserDefaultsStore {
     return true
   }
 
+  static func remove(defaults: UserDefaults, key: String) {
+    defaults.removeObject(forKey: encryptedKey(for: key))
+    defaults.removeObject(forKey: key)
+  }
+
+  static func storedKeys(defaults: UserDefaults, prefix: String) -> [String] {
+    defaults.dictionaryRepresentation().keys.compactMap { storedKey in
+      guard storedKey.hasPrefix(prefix), storedKey.hasSuffix(encryptedSuffix) else { return nil }
+      return String(storedKey.dropLast(encryptedSuffix.count))
+    }
+  }
+
   static func destroy(
     defaults: UserDefaults,
     key: String,
@@ -48,8 +80,10 @@ enum GalaxySSIEncryptedUserDefaultsStore {
   }
 
   private static func encryptedKey(for key: String) -> String {
-    "\(key).encrypted.v1"
+    key + encryptedSuffix
   }
+
+  private static let encryptedSuffix = ".encrypted.v1"
 
   private static func associatedData(for key: String) -> Data {
     Data("com.galaxyssi.chat.ios.userdefaults.\(key).v1".utf8)
