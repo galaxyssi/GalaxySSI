@@ -77,6 +77,7 @@ class MainActivity : Activity() {
     private var wakeCooldownUntil = 0L
     private val refreshWakeLater = Runnable { refreshWake() }
     private var lastWakeGate = ""
+    private var settingsRefreshOnResume = false
     private var screenAwake: WatchScreenAwake? = null
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
@@ -91,7 +92,8 @@ class MainActivity : Activity() {
     private val saveDraft = Runnable { repo.saveDraft(draft) }
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
-        else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
+        else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review",
+                "settings", "about", "location-settings", "web-sources", "web-credential", "api-providers", "api-models")) render(true)
 
     }
 
@@ -176,11 +178,14 @@ class MainActivity : Activity() {
         super.onResume(); resumed = true
         wakePreference = repo.store.foregroundWake
         if (wakePreference && repo.store.backgroundWake) WatchBackgroundWakeService.start(this)
+        if (page == "settings" && settingsRefreshOnResume) render(true)
+        settingsRefreshOnResume = false
         updateConversationVisibility(); updated(); refreshWake()
         handler.removeCallbacks(refreshModelStatus); handler.postDelayed(refreshModelStatus, 30_000)
     }
     override fun onPause() {
         handler.removeCallbacks(refreshModelStatus)
+        if (page == "settings") settingsRefreshOnResume = true
         resumed = false; handler.removeCallbacks(openVoiceEntry); voiceEntryScheduled = false; wake?.setEnabled(false); screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); refreshWake(); super.onPause()
     }
     private fun updateScreenAwake() {
