@@ -132,6 +132,48 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(secondAdapter.requests.count, 0)
   }
 
+  func testInitialPlanningJournalRestoresBoundEncryptedInput() async throws {
+    let backing = InMemoryAgentModelLoopJournal()
+    let journal = AgentInitialPlanningJournal(journal: backing)
+    let input = AgentInitialPlanningInput(
+      goal: "Read durable memory",
+      conversation: AgentConversationContext(
+        conversationId: "conversation-1",
+        summary: "Original private context",
+        turns: [],
+        privateMode: true,
+        globalContext: "Committed global context",
+        trackingPaused: false
+      ),
+      turnId: "turn-1",
+      executionMode: .autoComplete,
+      hasAttachments: false,
+      allowsDirectResponse: true,
+      completionRequirements: nil,
+      plannerConfigurationSha256: "configuration"
+    )
+    var retainedReference: AgentInitialPlanningReference?
+    let value = try await journal.begin(sessionId: "session-1", input: input) { reference in
+      retainedReference = reference
+      return 42
+    }
+    let reference = try XCTUnwrap(retainedReference)
+    let restored = try await journal.restore(reference) { $0 }
+
+    XCTAssertEqual(value, 42)
+    XCTAssertEqual(restored, input)
+    XCTAssertEqual(reference.inputSha256.count, 64)
+
+    var changed = reference
+    changed.inputSha256 = String(repeating: "0", count: 64)
+    do {
+      _ = try await journal.restore(changed) { $0 }
+      XCTFail("Expected changed initial planning input to be rejected.")
+    } catch let error as AgentModelLoopRecoveryError {
+      XCTAssertEqual(error.code, "initial_planning_input_changed")
+    }
+  }
+
   func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() async throws {
     var capturedContexts: [AgentNativeToolInvocationContext] = []
     let registry = try registry(idempotency: .idempotent) { invocation in

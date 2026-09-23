@@ -310,7 +310,8 @@ private struct GalaxySSIRuntimeRoot: View {
         runtime.agentStartupRecovery.start(
           store: runtime.store,
           reconcileLocalTasks: {
-            runtime.coordinator.reconcileInterruptedLocalPlanNodes()
+            let planning = await runtime.coordinator.recoverInterruptedInitialPlanning()
+            return planning + runtime.coordinator.reconcileInterruptedLocalPlanNodes()
           },
           completion: {
             runtime.coordinator.start()

@@ -92,7 +92,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   }
 
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
-    let recoveryIdentity = AgentModelLoopRecoveryIdentity.sha256(invocation.request)
+    let recoveryIdentity = Self.recoveryIdentity(invocation.request)
     let loopId = Self.boundedIdentifier(
       "planner-\(recoveryIdentity)",
       fallback: requestIdFactory()
@@ -212,6 +212,19 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       descriptor.risk == .low &&
       descriptor.requiredConsents.allSatisfy { !$0.required } &&
       (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
+  }
+
+  private static func recoveryIdentity(_ request: AgentModelPlanningPromptRequest) -> String {
+    AgentModelLoopRecoveryIdentity.sha256([
+      "goal": request.planRequest.goal,
+      "conversation_id": request.conversationContext.conversationId,
+      "execution_turn_id": request.executionTurnId,
+      "replan_reason": request.parsingContext.replanReason,
+      "completion_requirements": AgentModelLoopRecoveryIdentity.sha256(
+        request.planRequest.completionRequirements
+      ),
+      "execution_history": AgentModelLoopRecoveryIdentity.sha256(request.executionHistory)
+    ])
   }
 
   private static func boundedIdentifier(_ value: String, fallback: String) -> String {

@@ -78,7 +78,7 @@ enum AgentTaskCenterPolicy {
 
   static func cancellable(_ task: AgentTaskRecord) -> Bool {
     cancellablePhases.contains(task.phase) &&
-      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+      (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 
   static func resumable(_ task: AgentTaskRecord) -> Bool {
@@ -88,7 +88,7 @@ enum AgentTaskCenterPolicy {
 
   static func pauseable(_ task: AgentTaskRecord) -> Bool {
     [.planning, .waitingConfirmation, .executing, .verifying].contains(task.phase) &&
-      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+      (task.pendingPlanning != nil || task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 
   static func isReusableGoal(_ goal: String) -> Bool {
@@ -103,6 +103,7 @@ enum AgentTaskCenterPolicy {
   private static let terminalPhases: Set<AgentPhase> = [.completed, .failed, .cancelled, .blocked]
   private static let cancellablePhases: Set<AgentPhase> = [
     .observing,
+    .planning,
     .waitingConfirmation,
     .executing,
     .verifying,

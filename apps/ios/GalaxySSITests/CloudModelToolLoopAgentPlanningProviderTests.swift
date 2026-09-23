@@ -23,7 +23,16 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
 
   func testToolLoopPlanningProviderDoesNotFallbackAcrossDurableRecovery() async throws {
     let source = invocation(nativeTools: [])
-    let identity = AgentModelLoopRecoveryIdentity.sha256(source.request)
+    let identity = AgentModelLoopRecoveryIdentity.sha256([
+      "goal": source.request.planRequest.goal,
+      "conversation_id": source.request.conversationContext.conversationId,
+      "execution_turn_id": source.request.executionTurnId,
+      "replan_reason": source.request.parsingContext.replanReason,
+      "completion_requirements": AgentModelLoopRecoveryIdentity.sha256(
+        source.request.planRequest.completionRequirements
+      ),
+      "execution_history": AgentModelLoopRecoveryIdentity.sha256(source.request.executionHistory)
+    ])
     let loopId = "planner-\(identity)"
     let recoveryRequest = AgentModelToolLoopRequest(
       sessionId: loopId,
