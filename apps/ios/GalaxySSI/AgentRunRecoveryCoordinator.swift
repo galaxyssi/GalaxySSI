@@ -777,11 +777,11 @@ struct AgentStartupRecoverySequence {
   @MainActor
   static func run(
     recoverRuns: () async throws -> Int,
-    reconcileLocalTasks: () -> Int,
+    reconcileLocalTasks: () async -> Int,
     dispatch: (Int) -> Void
   ) async throws {
     let runCount = try await recoverRuns()
-    let recoveredCount = runCount + reconcileLocalTasks()
+    let recoveredCount = runCount + (await reconcileLocalTasks())
     dispatch(recoveredCount)
   }
 }
@@ -797,7 +797,7 @@ final class AgentStartupRecoveryCoordinator: ObservableObject {
 
   func start(
     store: GalaxySSIStore,
-    reconcileLocalTasks: @escaping @MainActor () -> Int,
+    reconcileLocalTasks: @escaping @MainActor () async -> Int,
     completion: @escaping @MainActor () -> Void
   ) {
     guard !hasStarted else { return }

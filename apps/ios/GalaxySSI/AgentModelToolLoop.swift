@@ -5,6 +5,7 @@ final class AgentModelToolLoop {
   private let toolRegistry: AgentNativeToolRegistry
   private let clock: AgentModelToolLoopClock
   private let idFactory: AgentModelToolLoopIdFactory
+  private let journal: AgentModelLoopJournal?
   private let approvalLock = NSLock()
   private var pendingApprovals: [String: PendingApproval] = [:]
 
@@ -12,26 +13,58 @@ final class AgentModelToolLoop {
     modelAdapter: AgentModelAdapter,
     toolRegistry: AgentNativeToolRegistry,
     clock: AgentModelToolLoopClock = .system,
-    idFactory: AgentModelToolLoopIdFactory = .uuids
+    idFactory: AgentModelToolLoopIdFactory = .uuids,
+    journal: AgentModelLoopJournal? = nil
   ) {
     self.modelAdapter = modelAdapter
     self.toolRegistry = toolRegistry
     self.clock = clock
     self.idFactory = idFactory
+    self.journal = journal
   }
 
   func run(_ request: AgentModelToolLoopRequest) async -> AgentModelToolLoopOutcome {
+    guard let journal else { return await runOwned(request, checkpoint: nil) }
+    do {
+      let scope = AgentModelLoopScope(request: request)
+      return try await journal.withLease(scope: scope) { records in
+        await self.runOwned(request, checkpoint: AgentModelLoopCheckpoint(records: records))
+      }
+    } catch {
+      return recoveryFailed(request: request, error: error)
+    }
+  }
+
+  private func runOwned(
+    _ request: AgentModelToolLoopRequest,
+    checkpoint: AgentModelLoopCheckpoint?
+  ) async -> AgentModelToolLoopOutcome {
     let startedAt = clock.nowEpochMillis()
     let manifestJson = toolRegistry.catalogJson()
+    let manifestSha256 = AgentModelToolProtocolJSON.sha256(manifestJson)
+    var effectiveRequest = request
+    if let checkpoint {
+      do {
+        effectiveRequest.messages = try checkpoint.initial(
+          request: request,
+          manifestSha256: manifestSha256
+        )
+      } catch {
+        return recoveryFailed(request: request, error: error)
+      }
+    }
     let state = LoopState(
-      request: request,
-      messages: request.messages,
+      request: effectiveRequest,
+      messages: effectiveRequest.messages,
       manifestJson: manifestJson,
-      manifestSha256: AgentModelToolProtocolJSON.sha256(manifestJson),
+      manifestSha256: manifestSha256,
       startedAtEpochMillis: startedAt,
-      deadlineEpochMillis: AgentModelToolLoopValidation.safeAdd(startedAt, request.budget.maxDurationMillis)
+      deadlineEpochMillis: AgentModelToolLoopValidation.safeAdd(startedAt, request.budget.maxDurationMillis),
+      checkpoint: checkpoint
     )
-    emit(state, .loopStarted)
+    if checkpoint?.cancelled == true { return cancelled(state) }
+    if checkpoint?.failure != nil { return recoveryFailed(state) }
+    emit(state, .loopStarted, publish: checkpoint?.restored != true)
     return await advance(state, initialCalls: [])
   }
 
@@ -125,7 +158,6 @@ final class AgentModelToolLoop {
       }
 
       state.rounds += 1
-      emit(state, .modelRequested)
       let modelRequest = AgentModelRequest(
         sessionId: state.request.sessionId,
         conversationId: state.request.conversationId,
@@ -142,10 +174,20 @@ final class AgentModelToolLoop {
         maxDepth: state.request.budget.maxDepth,
         cancellationToken: state.request.cancellationToken
       )
+      let recordedResponse = state.checkpoint?.response(modelRequest)
+      if state.checkpoint?.failure != nil { return recoveryFailed(state) }
+      state.replayingResponse = recordedResponse != nil
+      emit(state, .modelRequested, publish: !state.replayingResponse)
 
       let response: AgentModelResponse
       do {
-        response = try await modelAdapter.complete(modelRequest)
+        if let recordedResponse {
+          response = recordedResponse
+        } else {
+          response = try await modelAdapter.complete(modelRequest)
+          state.checkpoint?.recordResponse(response, request: modelRequest)
+          if state.checkpoint?.failure != nil { return recoveryFailed(state) }
+        }
       } catch {
         if state.request.cancellationToken.isCancellationRequested {
           return cancelled(state)
@@ -167,7 +209,8 @@ final class AgentModelToolLoop {
           "tool_call_count": .int(Int64(response.toolCalls.count)),
           "input_tokens": .int(response.usage.inputTokens),
           "output_tokens": .int(response.usage.outputTokens)
-        ]
+        ],
+        publish: !state.replayingResponse
       )
 
       if let terminal = terminalGuard(state) {
@@ -286,7 +329,7 @@ final class AgentModelToolLoop {
     remainingCalls: [AgentModelToolCall]
   ) -> PreparationResult {
     let call = boundWorkspaceCall(proposedCall, workspaceId: state.request.workspaceId)
-    emit(state, .toolCallProposed, call: call)
+    emit(state, .toolCallProposed, call: call, publish: !state.replayingResponse)
     guard consumeToolCallAttempt(state) else {
       return .terminal(budgetExceeded(
         state,
@@ -443,7 +486,8 @@ final class AgentModelToolLoop {
   ) -> ProcessResult {
     precondition(preparedCalls.count > 1)
     if let terminal = terminalGuard(state) { return .terminal(terminal) }
-    let attempts = preparedCalls.map { beginInvocation(state, prepared: $0, attempt: 1) }
+    let attempts = preparedCalls.compactMap { beginInvocation(state, prepared: $0, attempt: 1) }
+    guard attempts.count == preparedCalls.count else { return .terminal(recoveryFailed(state)) }
     let results = AgentNativeToolBatchExecutor.executeOrdered(
       inputs: attempts,
       limitProvider: { AgentAdaptiveConcurrencyRuntime.currentLimit(workload) },
@@ -452,6 +496,7 @@ final class AgentModelToolLoop {
     for (attempt, result) in zip(attempts, results) {
       finishInvocation(state, attempt: attempt, result: result)
     }
+    if state.checkpoint?.failure != nil { return .terminal(recoveryFailed(state)) }
     if results.contains(where: { $0.status == .cancelled }) ||
         state.request.cancellationToken.isCancellationRequested {
       for (attempt, result) in zip(attempts, results) {
@@ -497,7 +542,8 @@ final class AgentModelToolLoop {
           "next_attempt": .int(2),
           "error_code": .string(result.error?.code ?? ""),
           "idempotency": .string(descriptor.idempotency.rawValue)
-        ]
+        ],
+        publish: attempt.checkpoint?.result == nil
       )
       let retried = executeCall(
         state: state,
@@ -514,16 +560,28 @@ final class AgentModelToolLoop {
   private func beginInvocation(
     _ state: LoopState,
     prepared: PreparedCall,
-    attempt: Int
-  ) -> NativeInvocationAttempt {
+    attempt: Int,
+    confirmationId: String? = nil
+  ) -> NativeInvocationAttempt? {
     let idempotencyKey = prepared.call.idempotencyKey ?? derivedIdempotencyKey(state, call: prepared.call)
-    let invocationId = checkedId("invocation")
+    let retained = state.checkpoint?.invocation(
+      round: state.rounds,
+      call: prepared.call,
+      toolVersion: prepared.descriptor.version,
+      attempt: attempt,
+      idempotencyKey: idempotencyKey,
+      makeInvocationId: { self.checkedId("invocation") }
+    )
+    if state.checkpoint?.failure != nil { return nil }
+    let invocationId = retained?.invocationId ?? checkedId("invocation")
+    state.eventSequence = max(state.eventSequence, retained?.eventSequence ?? 0)
     emit(
       state,
       .toolStarted,
       call: prepared.call,
       invocationId: invocationId,
-      details: ["attempt": .int(Int64(attempt)), "tool_version": .string(prepared.descriptor.version)]
+      details: ["attempt": .int(Int64(attempt)), "tool_version": .string(prepared.descriptor.version)],
+      publish: retained?.result == nil
     )
     let context = invocationContext(
       state,
@@ -531,14 +589,15 @@ final class AgentModelToolLoop {
       invocationId: invocationId,
       idempotencyKey: idempotencyKey,
       approvedConsentIds: prepared.approvedConsentIds,
-      confirmationId: nil,
+      confirmationId: confirmationId,
       attempt: attempt
     )
     return NativeInvocationAttempt(
       prepared: prepared,
       invocationId: invocationId,
       context: context,
-      attempt: attempt
+      attempt: attempt,
+      checkpoint: retained
     )
   }
 
@@ -546,7 +605,8 @@ final class AgentModelToolLoop {
     _ state: LoopState,
     attempt: NativeInvocationAttempt
   ) -> AgentNativeToolResult {
-    toolRegistry.invoke(
+    if let retained = attempt.checkpoint?.result { return retained }
+    let result = toolRegistry.invoke(
       attempt.prepared.call.toolId,
       input: attempt.prepared.call.arguments,
       context: attempt.context,
@@ -555,6 +615,10 @@ final class AgentModelToolLoop {
         cancellationRequested: { state.request.cancellationToken.isCancellationRequested }
       )
     )
+    if let checkpoint = attempt.checkpoint {
+      state.checkpoint?.recordResult(result, invocation: checkpoint, eventSequence: state.eventSequence)
+    }
+    return result
   }
 
   private func finishInvocation(
@@ -573,7 +637,8 @@ final class AgentModelToolLoop {
       .toolFinished,
       call: attempt.prepared.call,
       invocationId: attempt.invocationId,
-      details: details
+      details: details,
+      publish: attempt.checkpoint?.result == nil
     )
   }
 
@@ -628,72 +693,28 @@ final class AgentModelToolLoop {
     confirmationId: String? = nil,
     startingAttempt: Int = 0
   ) -> ProcessResult {
-    let idempotencyKey = call.idempotencyKey ?? derivedIdempotencyKey(state, call: call)
-
     var attempt = max(startingAttempt, 0)
     while true {
       if let terminal = terminalGuard(state) {
         return .terminal(terminal)
       }
       attempt += 1
-      let invocationId = checkedId("invocation")
-      emit(
-        state,
-        .toolStarted,
+      let prepared = PreparedCall(
         call: call,
-        invocationId: invocationId,
-        details: ["attempt": .int(Int64(attempt)), "tool_version": .string(descriptor.version)]
+        descriptor: descriptor,
+        approvedConsentIds: approvedConsentIds
       )
-      var attributes: [String: String] = [
-        "task_id": state.request.taskId,
-        "goal_id": state.request.goalId,
-        "client_route_id": state.request.clientRouteId,
-        "workspace_id": state.request.workspaceId,
-        "tool_call_id": call.callId,
-        "tool_manifest_sha256": state.manifestSha256,
-        "model_round": String(state.rounds),
-        "tool_depth": String(call.depth),
-        "retry_attempt": String(attempt - 1),
-        "response_language": LanguagePolicySettings.resolve(state.request.responseLanguage)
-      ]
-      if !state.request.loopId.isEmpty {
-        attributes["model_loop_id"] = state.request.loopId
+      guard let invocation = beginInvocation(
+        state,
+        prepared: prepared,
+        attempt: attempt,
+        confirmationId: confirmationId
+      ) else {
+        return .terminal(recoveryFailed(state))
       }
-      if let confirmationId {
-        attributes["confirmation_id"] = confirmationId
-        attributes["explicit_user_approval"] = "true"
-      }
-      let context = AgentNativeToolInvocationContext(
-        invocationId: invocationId,
-        sessionId: state.request.sessionId,
-        conversationId: state.request.conversationId,
-        turnId: state.request.turnId,
-        callerId: state.request.callerId,
-        requestedAtEpochMillis: clock.nowEpochMillis(),
-        deadlineEpochMillis: state.deadlineEpochMillis,
-        idempotencyKey: idempotencyKey,
-        grantedPermissions: state.request.grantedPermissions,
-        grantedConsents: state.request.grantedConsents.union(approvedConsentIds),
-        attributes: attributes
-      )
-      let result = toolRegistry.invoke(
-        call.toolId,
-        input: call.arguments,
-        context: context,
-        hooks: AgentNativeToolInvocationHooks(
-          nowMillis: clock.nowEpochMillis,
-          cancellationRequested: { state.request.cancellationToken.isCancellationRequested }
-        )
-      )
-      var details: AgentMcpJSONObject = [
-        "status": .string(result.status.rawValue),
-        "retryable": .bool(result.error?.retryable == true),
-        "attempt": .int(Int64(attempt))
-      ]
-      if let code = result.error?.code {
-        details["error_code"] = .string(code)
-      }
-      emit(state, .toolFinished, call: call, invocationId: invocationId, details: details)
+      let result = invokeNativeTool(state, attempt: invocation)
+      finishInvocation(state, attempt: invocation, result: result)
+      if state.checkpoint?.failure != nil { return .terminal(recoveryFailed(state)) }
 
       if result.status == .cancelled || state.request.cancellationToken.isCancellationRequested {
         appendToolResult(state, call, result: result, retryCount: attempt - 1)
@@ -721,12 +742,13 @@ final class AgentModelToolLoop {
         state,
         .toolRetryScheduled,
         call: call,
-        invocationId: invocationId,
+        invocationId: invocation.invocationId,
         details: [
           "next_attempt": .int(Int64(attempt + 1)),
           "error_code": .string(result.error?.code ?? ""),
           "idempotency": .string(descriptor.idempotency.rawValue)
-        ]
+        ],
+        publish: invocation.checkpoint?.result == nil
       )
     }
   }
@@ -770,7 +792,13 @@ final class AgentModelToolLoop {
     for (key, value) in details {
       eventDetails[key] = value
     }
-    emit(state, .toolCallRejected, call: call, details: eventDetails)
+    emit(
+      state,
+      .toolCallRejected,
+      call: call,
+      details: eventDetails,
+      publish: !state.replayingResponse
+    )
   }
 
   private func basicCallError(_ call: AgentModelToolCall) -> (code: String, message: String)? {
@@ -793,6 +821,9 @@ final class AgentModelToolLoop {
   }
 
   private func terminalGuard(_ state: LoopState) -> AgentModelToolLoopOutcome? {
+    if state.checkpoint?.failure != nil {
+      return recoveryFailed(state)
+    }
     if state.request.cancellationToken.isCancellationRequested {
       return cancelled(state)
     }
@@ -806,14 +837,17 @@ final class AgentModelToolLoop {
     emit(
       state,
       .loopCompleted,
-      details: ["assistant_text_present": .bool(!assistantText.isBlank)]
+      details: ["assistant_text_present": .bool(!assistantText.isBlank)],
+      publish: !state.replayingResponse
     )
     return outcome(state, status: .completed)
   }
 
   private func cancelled(_ state: LoopState) -> AgentModelToolLoopOutcome {
+    let alreadyCancelled = state.checkpoint?.cancelled == true
+    state.checkpoint?.markCancelled()
     if state.events.last?.type != .loopCancelled {
-      emit(state, .loopCancelled)
+      emit(state, .loopCancelled, publish: !alreadyCancelled)
     }
     return outcome(
       state,
@@ -858,6 +892,37 @@ final class AgentModelToolLoop {
     )
   }
 
+  private func recoveryFailed(
+    request: AgentModelToolLoopRequest,
+    error: Error
+  ) -> AgentModelToolLoopOutcome {
+    let manifestJson = toolRegistry.catalogJson()
+    let startedAt = clock.nowEpochMillis()
+    let state = LoopState(
+      request: request,
+      messages: request.messages,
+      manifestJson: manifestJson,
+      manifestSha256: AgentModelToolProtocolJSON.sha256(manifestJson),
+      startedAtEpochMillis: startedAt,
+      deadlineEpochMillis: AgentModelToolLoopValidation.safeAdd(startedAt, request.budget.maxDurationMillis)
+    )
+    return recoveryFailed(state, error: error)
+  }
+
+  private func recoveryFailed(
+    _ state: LoopState,
+    error: Error? = nil
+  ) -> AgentModelToolLoopOutcome {
+    let recoveryError = error as? AgentModelLoopRecoveryError ?? state.checkpoint?.failure
+    let code = recoveryError?.code ?? "model_loop_recovery_failed"
+    emit(state, .loopFailed, details: ["code": .string(code)])
+    return outcome(
+      state,
+      status: .modelFailed,
+      error: AgentModelToolLoopError(code: code, message: code)
+    )
+  }
+
   private func outcome(
     _ state: LoopState,
     status: AgentModelToolLoopStatus,
@@ -889,7 +954,8 @@ final class AgentModelToolLoop {
     _ type: AgentModelToolLoopEventType,
     call: AgentModelToolCall? = nil,
     invocationId: String? = nil,
-    details: AgentMcpJSONObject = [:]
+    details: AgentMcpJSONObject = [:],
+    publish: Bool = true
   ) {
     state.eventSequence += 1
     var scopedDetails = details
@@ -910,7 +976,7 @@ final class AgentModelToolLoop {
       details: scopedDetails
     )
     state.events.append(event)
-    state.request.eventSink.onEvent(event)
+    if publish { state.request.eventSink.onEvent(event) }
   }
 
   private func consumeToolCallAttempt(_ state: LoopState) -> Bool {
@@ -926,6 +992,14 @@ final class AgentModelToolLoop {
   }
 
   private func derivedIdempotencyKey(_ state: LoopState, call: AgentModelToolCall) -> String {
+    if state.checkpoint != nil {
+      return AgentMcpJSONCodec.sha256([
+        "scope": .string(AgentModelLoopScope(request: state.request).digest),
+        "call_id": .string(call.callId),
+        "tool_id": .string(call.toolId),
+        "arguments": .object(call.arguments)
+      ])
+    }
     var components = [
       state.request.sessionId,
       state.request.turnId
@@ -1003,6 +1077,7 @@ final class AgentModelToolLoop {
     var invocationId: String
     var context: AgentNativeToolInvocationContext
     var attempt: Int
+    var checkpoint: AgentModelLoopCheckpoint.Invocation?
   }
 
   private final class LoopState {
@@ -1023,6 +1098,8 @@ final class AgentModelToolLoop {
     var outputTokens: Int64 = 0
     var lastAssistantText = ""
     var eventSequence: Int64 = 0
+    var checkpoint: AgentModelLoopCheckpoint?
+    var replayingResponse = false
 
     init(
       request: AgentModelToolLoopRequest,
@@ -1030,7 +1107,8 @@ final class AgentModelToolLoop {
       manifestJson: String,
       manifestSha256: String,
       startedAtEpochMillis: Int64,
-      deadlineEpochMillis: Int64
+      deadlineEpochMillis: Int64,
+      checkpoint: AgentModelLoopCheckpoint? = nil
     ) {
       self.request = request
       self.messages = messages
@@ -1038,6 +1116,7 @@ final class AgentModelToolLoop {
       self.manifestSha256 = manifestSha256
       self.startedAtEpochMillis = startedAtEpochMillis
       self.deadlineEpochMillis = deadlineEpochMillis
+      self.checkpoint = checkpoint
     }
 
     func totalTokens() -> Int64 {

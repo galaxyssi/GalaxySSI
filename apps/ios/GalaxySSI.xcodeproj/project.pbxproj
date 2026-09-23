@@ -741,6 +741,8 @@
     A10000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */; };
     A10000000000000000000155 /* AgentModelToolLoopModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000155 /* AgentModelToolLoopModels.swift */; };
     A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000156 /* AgentModelToolLoop.swift */; };
+    B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000297 /* AgentModelLoopJournal.swift */; };
+    B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000298 /* AgentInitialPlanningJournal.swift */; };
     A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000157 /* AgentModelPlanParserModels.swift */; };
     A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000158 /* AgentModelPlanParser.swift */; };
     A10000000000000000000159 /* AgentModelPlanningPromptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000159 /* AgentModelPlanningPromptModels.swift */; };
@@ -1724,6 +1726,8 @@
     A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolGeminiAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000155 /* AgentModelToolLoopModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoopModels.swift; sourceTree = "<group>"; };
     A20000000000000000000156 /* AgentModelToolLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoop.swift; sourceTree = "<group>"; };
+    B20000000000000000000297 /* AgentModelLoopJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelLoopJournal.swift; sourceTree = "<group>"; };
+    B20000000000000000000298 /* AgentInitialPlanningJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInitialPlanningJournal.swift; sourceTree = "<group>"; };
     A20000000000000000000157 /* AgentModelPlanParserModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParserModels.swift; sourceTree = "<group>"; };
     A20000000000000000000158 /* AgentModelPlanParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParser.swift; sourceTree = "<group>"; };
     A20000000000000000000159 /* AgentModelPlanningPromptModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPromptModels.swift; sourceTree = "<group>"; };
@@ -2413,6 +2417,8 @@
         A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */,
         A20000000000000000000155 /* AgentModelToolLoopModels.swift */,
         A20000000000000000000156 /* AgentModelToolLoop.swift */,
+        B20000000000000000000297 /* AgentModelLoopJournal.swift */,
+        B20000000000000000000298 /* AgentInitialPlanningJournal.swift */,
         A20000000000000000000157 /* AgentModelPlanParserModels.swift */,
         A20000000000000000000158 /* AgentModelPlanParser.swift */,
         A20000000000000000000159 /* AgentModelPlanningPromptModels.swift */,
@@ -3493,6 +3499,8 @@
         A10000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift in Sources */,
         A10000000000000000000155 /* AgentModelToolLoopModels.swift in Sources */,
         A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */,
+        B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */,
+        B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */,
         A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */,
         A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */,
         A10000000000000000000159 /* AgentModelPlanningPromptModels.swift in Sources */,

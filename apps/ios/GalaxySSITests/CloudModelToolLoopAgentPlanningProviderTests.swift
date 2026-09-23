@@ -21,6 +21,57 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(fallback.invocations.count, 1)
   }
 
+  func testToolLoopPlanningProviderDoesNotFallbackAcrossDurableRecovery() async throws {
+    let source = invocation(nativeTools: [])
+    let identity = AgentModelLoopRecoveryIdentity.sha256([
+      "goal": source.request.planRequest.goal,
+      "conversation_id": source.request.conversationContext.conversationId,
+      "execution_turn_id": source.request.executionTurnId,
+      "replan_reason": source.request.parsingContext.replanReason,
+      "completion_requirements": AgentModelLoopRecoveryIdentity.sha256(
+        source.request.planRequest.completionRequirements
+      ),
+      "execution_history": AgentModelLoopRecoveryIdentity.sha256(source.request.executionHistory)
+    ])
+    let loopId = "planner-\(identity)"
+    let recoveryRequest = AgentModelToolLoopRequest(
+      sessionId: loopId,
+      conversationId: loopId,
+      turnId: loopId,
+      taskId: loopId,
+      workspaceId: AgentWorkspaceScope.id(conversationId: loopId, sessionId: loopId),
+      loopId: loopId,
+      messages: [.system(source.systemPrompt), .user(source.prompt)],
+      budget: CloudModelToolLoopAgentPlanningProvider.androidPlannerBudget,
+      callerId: CloudModelToolLoopAgentPlanningProvider.toolLoopCallerId,
+      recoveryInputIdentity: identity
+    )
+    let journal = InMemoryAgentModelLoopJournal()
+    try await journal.withLease(scope: AgentModelLoopScope(request: recoveryRequest)) { records in
+      _ = try AgentModelLoopCheckpoint(records: records).initial(
+        request: recoveryRequest,
+        manifestSha256: "retained-manifest"
+      )
+    }
+    let fallback = RecordingPlanningProvider(raw: "fallback")
+    let provider = try CloudModelToolLoopAgentPlanningProvider(
+      fallbackProvider: fallback,
+      toolRegistry: AgentNativeToolRegistry(),
+      recoveryJournal: journal
+    ) { _, _ in
+      XCTFail("A missing live catalog must not replace a durable loop.")
+      return RecordingPlanningToolLoopRunner(.completedPlan())
+    }
+
+    do {
+      _ = try await provider.rawPlan(invocation: source)
+      XCTFail("Expected durable recovery to block fallback planning.")
+    } catch let error as AgentModelPlanningProviderError {
+      XCTAssertEqual(error, .unavailable("model_loop_requires_recovery_not_fallback"))
+    }
+    XCTAssertTrue(fallback.invocations.isEmpty)
+  }
+
   func testToolLoopPlanningProviderRunsSafeNativeToolsWithAndroidPlannerBudget() async throws {
     let descriptor = try nativeToolDescriptor(
       id: Self.echoToolId,
@@ -64,7 +115,8 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
       request.workspaceId,
       AgentWorkspaceScope.id(conversationId: "conversation-1", sessionId: "conversation-1")
     )
-    XCTAssertEqual(request.loopId, "turn-1")
+    XCTAssertTrue(request.loopId.hasPrefix("planner-"))
+    XCTAssertEqual(request.recoveryInputIdentity.count, 64)
     XCTAssertEqual(request.callerId, "galaxyssi.ios_model_planner_tool_loop")
     XCTAssertEqual(request.messages.map(\.role), [.system, .user])
     XCTAssertEqual(request.messages[0].text, "system")
@@ -112,7 +164,7 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(runner.requests.count, 1)
   }
 
-  func testPlanningAttemptsReuseConversationWorkspaceWithDistinctLoopIdentity() async throws {
+  func testPlanningAttemptsReuseStableDurableLoopIdentity() async throws {
     let descriptor = try nativeToolDescriptor(id: Self.echoToolId)
     let registry = try executableRegistry(descriptor: descriptor)
     let runner = RecordingPlanningToolLoopRunner(.completedPlan())
@@ -133,7 +185,9 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
 
     XCTAssertEqual(Set(runner.requests.map(\.workspaceId)).count, 1)
     XCTAssertEqual(runner.requests.map(\.turnId), ["execution-turn", "execution-turn"])
-    XCTAssertEqual(runner.requests.map(\.loopId), ["loop-a", "loop-b"])
+    XCTAssertEqual(Set(runner.requests.map(\.loopId)).count, 1)
+    XCTAssertTrue(runner.requests.allSatisfy { $0.loopId.hasPrefix("planner-") })
+    XCTAssertEqual(Set(runner.requests.map(\.recoveryInputIdentity)).count, 1)
   }
 
   func testToolLoopPlanningProviderThrowsWhenToolLoopDoesNotComplete() async throws {

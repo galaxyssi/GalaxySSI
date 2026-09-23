@@ -20,6 +20,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   var budget: AgentModelToolLoopBudget
   var requestIdFactory: () -> String
   var memoryTelemetryCapture: (AgentWorkspace?) -> Void
+  var recoveryJournal: AgentModelLoopJournal?
 
   private var makeToolLoop: ([AgentNativeToolDescriptor], AgentNativeToolRegistry) throws -> AgentModelPlanningToolLoopRunning
 
@@ -35,6 +36,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     budget: AgentModelToolLoopBudget = CloudModelToolLoopAgentPlanningProvider.androidPlannerBudget,
     clock: AgentModelToolLoopClock = .system,
     loopIdFactory: AgentModelToolLoopIdFactory = .uuids,
+    journal: AgentModelLoopJournal = EncryptedAgentModelLoopJournal(),
     requestIdFactory: @escaping () -> String = { UUID().uuidString },
     memoryTelemetryCapture: @escaping (AgentWorkspace?) -> Void = {
       AgentMemoryPssRuntime.requestCapture(workspace: $0)
@@ -50,7 +52,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       toolRegistry: toolRegistry,
       budget: budget,
       requestIdFactory: requestIdFactory,
-      memoryTelemetryCapture: memoryTelemetryCapture
+      memoryTelemetryCapture: memoryTelemetryCapture,
+      recoveryJournal: journal
     ) { catalog, registry in
       AgentModelToolLoop(
         modelAdapter: CloudModelNativeToolAdapter(
@@ -62,7 +65,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
         ),
         toolRegistry: registry,
         clock: clock,
-        idFactory: loopIdFactory
+        idFactory: loopIdFactory,
+        journal: journal
       )
     }
   }
@@ -75,6 +79,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     memoryTelemetryCapture: @escaping (AgentWorkspace?) -> Void = {
       AgentMemoryPssRuntime.requestCapture(workspace: $0)
     },
+    recoveryJournal: AgentModelLoopJournal? = nil,
     makeToolLoop: @escaping ([AgentNativeToolDescriptor], AgentNativeToolRegistry) throws -> AgentModelPlanningToolLoopRunning
   ) {
     self.fallbackProvider = fallbackProvider
@@ -82,20 +87,36 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     self.budget = budget
     self.requestIdFactory = requestIdFactory
     self.memoryTelemetryCapture = memoryTelemetryCapture
+    self.recoveryJournal = recoveryJournal
     self.makeToolLoop = makeToolLoop
   }
 
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    let recoveryIdentity = Self.recoveryIdentity(invocation.request)
+    let loopId = Self.boundedIdentifier(
+      "planner-\(recoveryIdentity)",
+      fallback: requestIdFactory()
+    )
     guard let selection = try safeExecutableSelection(for: invocation) else {
+      let recoveryRequest = Self.toolLoopRequest(
+        invocation: invocation,
+        catalog: [],
+        budget: budget,
+        loopId: loopId,
+        recoveryIdentity: recoveryIdentity
+      )
+      if try recoveryJournal?.hasRecords(scope: AgentModelLoopScope(request: recoveryRequest)) == true {
+        throw AgentModelPlanningProviderError.unavailable("model_loop_requires_recovery_not_fallback")
+      }
       return try await fallbackProvider.rawPlan(invocation: invocation)
     }
 
-    let loopId = Self.boundedIdentifier(requestIdFactory(), fallback: UUID().uuidString)
     let request = Self.toolLoopRequest(
       invocation: invocation,
       catalog: selection.catalog,
       budget: budget,
-      loopId: loopId
+      loopId: loopId,
+      recoveryIdentity: recoveryIdentity
     )
     let runner = try makeToolLoop(selection.catalog, selection.registry)
     memoryTelemetryCapture(Self.telemetryWorkspace(request: request))
@@ -137,7 +158,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     invocation: AgentModelPlanningInvocation,
     catalog: [AgentNativeToolDescriptor],
     budget: AgentModelToolLoopBudget,
-    loopId: String
+    loopId: String,
+    recoveryIdentity: String
   ) -> AgentModelToolLoopRequest {
     let conversationId = boundedIdentifier(
       invocation.request.conversationContext.conversationId,
@@ -165,7 +187,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       budget: budget,
       callerId: toolLoopCallerId,
       grantedPermissions: grantedPermissions,
-      grantedConsents: grantedConsents
+      grantedConsents: grantedConsents,
+      recoveryInputIdentity: recoveryIdentity
     )
   }
 
@@ -189,6 +212,19 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       descriptor.risk == .low &&
       descriptor.requiredConsents.allSatisfy { !$0.required } &&
       (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
+  }
+
+  private static func recoveryIdentity(_ request: AgentModelPlanningPromptRequest) -> String {
+    AgentModelLoopRecoveryIdentity.sha256([
+      "goal": request.planRequest.goal,
+      "conversation_id": request.conversationContext.conversationId,
+      "execution_turn_id": request.executionTurnId,
+      "replan_reason": request.parsingContext.replanReason,
+      "completion_requirements": AgentModelLoopRecoveryIdentity.sha256(
+        request.planRequest.completionRequirements
+      ),
+      "execution_history": AgentModelLoopRecoveryIdentity.sha256(request.executionHistory)
+    ])
   }
 
   private static func boundedIdentifier(_ value: String, fallback: String) -> String {
