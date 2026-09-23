@@ -148,7 +148,8 @@ final class LocalModelCooperativeRuntime {
     hasAttachments: Bool = false,
     executionProfile: AgentExecutionProfile? = nil,
     workClass: LocalModelWorkClass = .interactive,
-    preferredProfileId: String = ""
+    preferredProfileId: String = "",
+    taskId: String = ""
   ) async throws -> LocalModelInferenceResult {
     let preferredId = preferredProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
     let resolvedExecutionProfile = executionProfile ?? AgentExecutionProfile.forGoal(
@@ -196,7 +197,8 @@ final class LocalModelCooperativeRuntime {
         maximumTokens: Self.plannerMaximumTokens,
         temperature: 0.1,
         thinkingMode: plan.plannerThinkingMode,
-        workClass: workClass
+        workClass: workClass,
+        taskId: taskId
       ).text.toPlanningBrief()) ?? ""
     }
 
@@ -240,7 +242,8 @@ final class LocalModelCooperativeRuntime {
           maximumTokens: maximumTokens,
           temperature: temperature,
           thinkingMode: mode,
-          workClass: workClass
+          workClass: workClass,
+          taskId: taskId
         )
         return result.withElapsedMillis(
           max(result.elapsedMillis, Int64(Date().timeIntervalSince(startedAt) * 1_000))

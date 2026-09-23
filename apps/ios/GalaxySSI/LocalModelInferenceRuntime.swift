@@ -17,6 +17,7 @@ final class LocalModelInferenceRuntime {
   private var backend: LocalModelInferenceBackend
   private var loadedProfile = ""
   private var loadedContextTokens = 0
+  private var loadedTaskId = ""
   private var foregroundWaiters = 0
   private var foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + LocalModelInferenceRuntime.backgroundStartupGraceSeconds
   private var idleReleaseWorkItem: DispatchWorkItem?
@@ -79,7 +80,8 @@ final class LocalModelInferenceRuntime {
     maximumTokens: Int = 768,
     temperature: Double = 0.3,
     thinkingMode: LocalModelThinkingMode = .automatic,
-    workClass: LocalModelWorkClass = .interactive
+    workClass: LocalModelWorkClass = .interactive,
+    timing: AgentModelTiming
   ) throws -> LocalModelInferenceResult {
     guard profile.supportsIOSRuntime else {
       throw LocalModelInferenceError.modelNotReady
@@ -100,55 +102,68 @@ final class LocalModelInferenceRuntime {
     guard !LocalModelWhisperResourceArbiter.shared.asrHasPriority() else {
       throw LocalModelASRPriorityError()
     }
+    let workerLockWait = timing.begin(.workerLockWait)
     lock.lock()
+    workerLockWait.completed()
     defer { lock.unlock() }
-    refreshBackendIfNeededLocked()
+    timing.measure(.sdkInit) {
+      refreshBackendIfNeededLocked()
+    }
 
     if workClass == .background && !canRunBackgroundLocked() {
       throw LocalModelBackgroundDeferredError()
     }
 
-    guard backend.isAvailable else {
-      throw LocalModelInferenceError.nativeBackendUnavailable
-    }
-    let modelURL: URL
-    do {
-      modelURL = try storage.verifyForNativeLoad(profile)
-    } catch {
-      throw LocalModelInferenceError.modelNotReady
-    }
-
-    let requestedContext = min(
-      max(512, LocalModelRuntimeSettings.contextTokens()),
-      profile.maximumContextTokens
-    )
-    let estimate: LocalModelRuntimeEstimate
-    do {
-      estimate = try LocalModelRuntimePreflight.beforeLaunch(
-        profile: profile,
-        modelFileURL: modelURL,
-        contextTokens: requestedContext
-      )
-    } catch {
-      throw LocalModelInferenceError.modelLoadFailed(error.localizedDescription)
-    }
-
-    if loadedProfile != profile.id || loadedContextTokens != estimate.recommendedContextTokens {
-      backend.unload()
+    let preparation = try timing.measure(.preflight) { () -> (URL, LocalModelRuntimeEstimate) in
+      guard backend.isAvailable else {
+        throw LocalModelInferenceError.nativeBackendUnavailable
+      }
+      let modelURL: URL
       do {
-        try backend.loadModel(
-          at: modelURL,
-          contextTokens: estimate.recommendedContextTokens,
-          threads: estimate.recommendedThreads
-        )
+        modelURL = try storage.verifyForNativeLoad(profile)
       } catch {
-        loadedProfile = ""
-        loadedContextTokens = 0
+        throw LocalModelInferenceError.modelNotReady
+      }
+      let requestedContext = min(
+        max(512, LocalModelRuntimeSettings.contextTokens()),
+        profile.maximumContextTokens
+      )
+      do {
+        let estimate = try LocalModelRuntimePreflight.beforeLaunch(
+          profile: profile,
+          modelFileURL: modelURL,
+          contextTokens: requestedContext
+        )
+        return (modelURL, estimate)
+      } catch {
         throw LocalModelInferenceError.modelLoadFailed(error.localizedDescription)
       }
-      loadedProfile = profile.id
-      loadedContextTokens = estimate.recommendedContextTokens
     }
+    let modelURL = preparation.0
+    let estimate = preparation.1
+
+    if loadedProfile != profile.id || loadedContextTokens != estimate.recommendedContextTokens {
+      try timing.measure(.load) {
+        backend.unload()
+        do {
+          try backend.loadModel(
+            at: modelURL,
+            contextTokens: estimate.recommendedContextTokens,
+            threads: estimate.recommendedThreads
+          )
+        } catch {
+          loadedProfile = ""
+          loadedContextTokens = 0
+          loadedTaskId = ""
+          throw LocalModelInferenceError.modelLoadFailed(error.localizedDescription)
+        }
+        loadedProfile = profile.id
+        loadedContextTokens = estimate.recommendedContextTokens
+      }
+    } else {
+      timing.measure(.reuse) {}
+    }
+    loadedTaskId = timingTaskId(timing)
 
     let startedAt = Date()
     let prompt = Self.prepareUserPrompt(
@@ -158,12 +173,14 @@ final class LocalModelInferenceRuntime {
     )
     let response: String
     do {
-      response = try backend.generate(
-        systemPrompt: systemPrompt,
-        userPrompt: prompt,
-        maximumTokens: max(1, maximumTokens),
-        temperature: max(0, temperature)
-      ).trimmingCharacters(in: .whitespacesAndNewlines)
+      response = try timing.measure(.generate) {
+        try backend.generate(
+          systemPrompt: systemPrompt,
+          userPrompt: prompt,
+          maximumTokens: max(1, maximumTokens),
+          temperature: max(0, temperature)
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+      }
     } catch {
       throw LocalModelInferenceError.generationFailed(error.localizedDescription)
     }
@@ -185,22 +202,29 @@ final class LocalModelInferenceRuntime {
     maximumTokens: Int = 768,
     temperature: Double = 0.3,
     thinkingMode: LocalModelThinkingMode = .automatic,
-    workClass: LocalModelWorkClass = .interactive
+    workClass: LocalModelWorkClass = .interactive,
+    taskId: String = ""
   ) async throws -> LocalModelInferenceResult {
-    try await withCheckedThrowingContinuation { continuation in
-      inferenceQueue.async { [self] in
-        do {
-          continuation.resume(returning: try generate(
-            profile: profile,
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            maximumTokens: maximumTokens,
-            temperature: temperature,
-            thinkingMode: thinkingMode,
-            workClass: workClass
-          ))
-        } catch {
-          continuation.resume(throwing: error)
+    let timing = AgentModelTiming(taskId: taskId)
+    return try await timing.measureAsync(.request) {
+      let queueWait = timing.begin(.clientLockWait)
+      return try await withCheckedThrowingContinuation { continuation in
+        inferenceQueue.async { [self] in
+          queueWait.completed()
+          do {
+            continuation.resume(returning: try generate(
+              profile: profile,
+              systemPrompt: systemPrompt,
+              userPrompt: userPrompt,
+              maximumTokens: maximumTokens,
+              temperature: temperature,
+              thinkingMode: thinkingMode,
+              workClass: workClass,
+              timing: timing
+            ))
+          } catch {
+            continuation.resume(throwing: error)
+          }
         }
       }
     }
@@ -215,9 +239,11 @@ final class LocalModelInferenceRuntime {
     idleReleaseWorkItem?.cancel()
     idleReleaseWorkItem = nil
     refreshBackendIfNeededLocked()
-    backend.unload()
+    let timing = AgentModelTiming(taskId: loadedTaskId)
+    timing.measure(.release) { backend.unload() }
     loadedProfile = ""
     loadedContextTokens = 0
+    loadedTaskId = ""
     lock.unlock()
   }
 
@@ -228,9 +254,11 @@ final class LocalModelInferenceRuntime {
       lock.unlock()
       return
     }
-    backend.unload()
+    let timing = AgentModelTiming(taskId: loadedTaskId)
+    timing.measure(.release) { backend.unload() }
     loadedProfile = ""
     loadedContextTokens = 0
+    loadedTaskId = ""
     lock.unlock()
   }
 
@@ -259,6 +287,7 @@ final class LocalModelInferenceRuntime {
     backend = registered
     loadedProfile = ""
     loadedContextTokens = 0
+    loadedTaskId = ""
   }
 
   private func beginInteractiveWork() {
@@ -295,14 +324,20 @@ final class LocalModelInferenceRuntime {
       return
     }
     refreshBackendIfNeededLocked()
-    backend.unload()
+    let timing = AgentModelTiming(taskId: loadedTaskId)
+    timing.measure(.release) { backend.unload() }
     loadedProfile = ""
     loadedContextTokens = 0
+    loadedTaskId = ""
     idleReleaseWorkItem = nil
   }
 
   private func canRunBackgroundLocked() -> Bool {
     foregroundWaiters == 0 && ProcessInfo.processInfo.systemUptime >= foregroundLeaseUntilUptime
+  }
+
+  private func timingTaskId(_ timing: AgentModelTiming) -> String {
+    timing.taskIdentity
   }
 
   private static func backgroundSafe(_ profile: LocalModelRuntimeProfile) -> Bool {

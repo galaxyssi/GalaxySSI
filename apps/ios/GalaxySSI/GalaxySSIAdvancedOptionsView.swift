@@ -318,6 +318,27 @@ struct GalaxySSIAgentLatencyDashboardView: View {
       return t("agent_latency_image_decode", "Image decode and orientation")
     case "phone_runtime_image_encode_ms":
       return t("agent_latency_image_encode", "Image compression and encoding")
+    case "phone_model_request_ms": return t("agent_latency_model_request", "Local model request")
+    case "phone_model_client_lock_wait_ms":
+      return t("agent_latency_model_client_lock", "Local model caller lock wait")
+    case "phone_model_worker_lock_wait_ms":
+      return t("agent_latency_model_worker_lock", "Local model worker lock wait")
+    case "phone_model_service_bind_ms":
+      return t("agent_latency_model_bind", "Local model service binding")
+    case "phone_model_process_roundtrip_ms":
+      return t("agent_latency_model_roundtrip", "Local model process round trip")
+    case "phone_model_service_queue_ms":
+      return t("agent_latency_model_queue", "Local model worker queue")
+    case "phone_model_preflight_ms":
+      return t("agent_latency_model_preflight", "Local model preparation checks")
+    case "phone_model_sdk_init_ms":
+      return t("agent_latency_model_sdk", "Local model SDK initialization")
+    case "phone_model_load_ms": return t("agent_latency_model_load", "Local model cold load")
+    case "phone_model_reuse_ms": return t("agent_latency_model_reuse", "Loaded local model reuse")
+    case "phone_model_generate_ms": return t("agent_latency_model_generate", "Local model generation")
+    case "phone_model_first_token_ms":
+      return t("agent_latency_model_first_token", "First nonempty local model token")
+    case "phone_model_release_ms": return t("agent_latency_model_release", "Local model release")
     case "phone_planning_total_ms": return t("agent_latency_planning_total", "Planning total")
     case "phone_planning_progress_ms": return t("agent_latency_planning_progress", "Progress ledger")
     case "phone_planning_inventory_ms": return t("agent_latency_planning_inventory", "Tool inventory")

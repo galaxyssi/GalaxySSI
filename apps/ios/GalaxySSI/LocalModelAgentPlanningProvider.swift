@@ -33,7 +33,10 @@ struct LocalModelAgentPlanningProvider: AgentModelPlanningProviding {
         userPrompt: invocation.prompt,
         maximumTokens: 4_096,
         temperature: 0.2,
-        workClass: workClass
+        workClass: workClass,
+        taskId: invocation.request.executionTurnId.ifBlank(
+          invocation.request.conversationContext.conversationId
+        )
       )
       return result.text
     } catch {

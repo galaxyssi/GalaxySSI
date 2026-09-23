@@ -25,6 +25,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   private let preferredProfileID: String
   private let hasAttachments: Bool
   private let baseSystemPrompt: String
+  private let taskID: String
   private(set) var lastInference: LocalModelInferenceResult?
 
   init(
@@ -32,13 +33,15 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     fallbackProfile: LocalModelRuntimeProfile,
     preferredProfileID: String,
     hasAttachments: Bool,
-    baseSystemPrompt: String
+    baseSystemPrompt: String,
+    taskID: String
   ) {
     self.catalog = catalog
     self.fallbackProfile = fallbackProfile
     self.preferredProfileID = preferredProfileID
     self.hasAttachments = hasAttachments
     self.baseSystemPrompt = baseSystemPrompt
+    self.taskID = taskID
   }
 
   func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
@@ -95,7 +98,8 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
       temperature: 0.1,
       hasAttachments: hasAttachments,
       executionProfile: AgentExecutionProfile.forGoal(userPrompt, hasAttachments: hasAttachments),
-      preferredProfileId: preferredProfileID
+      preferredProfileId: preferredProfileID,
+      taskId: taskID
     )
     lastInference = result
     return result
@@ -122,7 +126,8 @@ enum AgentIOSLocalModelWebToolRunner {
       fallbackProfile: profile,
       preferredProfileID: profile.id,
       hasAttachments: hasAttachments,
-      baseSystemPrompt: baseSystemPrompt
+      baseSystemPrompt: baseSystemPrompt,
+      taskID: taskID
     )
     let permissions = Set(catalog.flatMap(\.requiredPermissions).filter(\.required).map(\.id))
     let consents = Set(catalog.flatMap(\.requiredConsents).filter(\.required).map(\.id))
