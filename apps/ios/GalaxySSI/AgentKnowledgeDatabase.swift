@@ -42,6 +42,8 @@ final class AgentKnowledgeDatabase {
   private let secrets: GalaxySSISecretStore
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let vectorCipher: GalaxySSIAttachmentAtRestCipher
+  private let sourcePreviewCipher: GalaxySSIAttachmentAtRestCipher
+  private let sourcePreviewNamespace: String
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
 
@@ -56,6 +58,13 @@ final class AgentKnowledgeDatabase {
       secrets: secrets,
       keyAccount: "agent.knowledge.vector.aes256.v1"
     )
+    sourcePreviewCipher = GalaxySSIAttachmentAtRestCipher(
+      secrets: secrets,
+      keyAccount: "agent.knowledge.source-preview.aes256.v1"
+    )
+    sourcePreviewNamespace = SHA256.hash(data: Data(fileURL.standardizedFileURL.path.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
     open()
   }
 
@@ -465,14 +474,16 @@ final class AgentKnowledgeDatabase {
         throw AgentKnowledgeDatabaseError.unavailable
       }
       if let cursor, cursor.revision != revision { throw AgentKnowledgeDatabaseError.staleCursor }
-      let predicate = cursor == nil ? "" : "WHERE updated_at < ? OR (updated_at = ? AND source_hash > ?)"
+      let predicate = cursor == nil ? "" : "WHERE h.updated_at < ? OR (h.updated_at = ? AND h.source_hash > ?)"
       guard let statement = prepare("""
-        SELECT source_hash, updated_at, encrypted_header FROM knowledge_source_headers
+        SELECT h.source_hash, h.updated_at, h.encrypted_header,
+          p.header_fingerprint, p.encrypted_preview
+        FROM knowledge_source_headers h
+        LEFT JOIN knowledge_source_previews p ON p.source_hash = h.source_hash
         \(predicate)
-        ORDER BY updated_at DESC, source_hash ASC
+        ORDER BY h.updated_at DESC, h.source_hash ASC
         LIMIT ?
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
       var bindIndex: Int32 = 1
       if let cursor {
         sqlite3_bind_int64(statement, bindIndex, cursor.updatedAtMillis)
@@ -481,18 +492,30 @@ final class AgentKnowledgeDatabase {
         bindIndex += 3
       }
       sqlite3_bind_int(statement, bindIndex, Int32(pageSize + 1))
-      var rows: [(String, AgentKnowledgeSourceGroup)] = []
+      var stored: [(String, Int64, Data, Data?, Data?)] = []
       while sqlite3_step(statement) == SQLITE_ROW {
         guard let hashText = sqlite3_column_text(statement, 0),
               let encrypted = blob(statement, column: 2) else {
+          sqlite3_finalize(statement)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
-        let sourceHash = String(cString: hashText)
-        guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: sourceHeaderPurpose(sourceHash)),
-              let group = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext) else {
-          throw AgentKnowledgeDatabaseError.corruptRecord
-        }
-        rows.append((sourceHash, group))
+        stored.append((
+          String(cString: hashText),
+          sqlite3_column_int64(statement, 1),
+          encrypted,
+          blob(statement, column: 3),
+          blob(statement, column: 4)
+        ))
+      }
+      sqlite3_finalize(statement)
+      let rows = try stored.map { row in
+        (row.0, try decodeSourcePreview(
+          sourceHash: row.0,
+          updatedAtMillis: row.1,
+          encryptedHeader: row.2,
+          storedFingerprint: row.3,
+          encryptedPreview: row.4
+        ))
       }
       let shown = Array(rows.prefix(pageSize))
       let next = rows.count > pageSize ? shown.last.map {
@@ -654,6 +677,90 @@ final class AgentKnowledgeDatabase {
     encrypted.withUnsafeBytes { bytes in
       sqlite3_bind_blob(statement, 3, bytes.baseAddress, Int32(encrypted.count), Self.transient)
     }
+    guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+    return insertSourcePreview(
+      group,
+      sourceHash: sourceHash,
+      updatedAtMillis: group.updatedAtMillis,
+      encryptedHeader: encrypted
+    )
+  }
+
+  private func decodeSourcePreview(
+    sourceHash: String,
+    updatedAtMillis: Int64,
+    encryptedHeader: Data,
+    storedFingerprint: Data?,
+    encryptedPreview: Data?
+  ) throws -> AgentKnowledgeSourceGroup {
+    let fingerprint = sourceHeaderFingerprint(
+      sourceHash: sourceHash,
+      updatedAtMillis: updatedAtMillis,
+      encryptedHeader: encryptedHeader
+    )
+    if storedFingerprint != nil || encryptedPreview != nil {
+      guard storedFingerprint == fingerprint, let encryptedPreview,
+            let plaintext = try? sourcePreviewCipher.decrypt(
+              encryptedPreview,
+              expectedPurpose: sourcePreviewPurpose(sourceHash: sourceHash, fingerprint: fingerprint)
+            ),
+            let group = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext),
+            group.updatedAtMillis == updatedAtMillis,
+            keyedHash(group.source) == sourceHash else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      return group
+    }
+    guard let plaintext = try? cipher.decrypt(
+            encryptedHeader,
+            expectedPurpose: sourceHeaderPurpose(sourceHash)
+          ),
+          let group = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext),
+          group.updatedAtMillis == updatedAtMillis,
+          keyedHash(group.source) == sourceHash,
+          insertSourcePreview(
+            group,
+            sourceHash: sourceHash,
+            updatedAtMillis: updatedAtMillis,
+            encryptedHeader: encryptedHeader
+          ) else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return group
+  }
+
+  private func insertSourcePreview(
+    _ group: AgentKnowledgeSourceGroup,
+    sourceHash: String,
+    updatedAtMillis: Int64,
+    encryptedHeader: Data
+  ) -> Bool {
+    guard group.updatedAtMillis == updatedAtMillis, keyedHash(group.source) == sourceHash else { return false }
+    let fingerprint = sourceHeaderFingerprint(
+      sourceHash: sourceHash,
+      updatedAtMillis: updatedAtMillis,
+      encryptedHeader: encryptedHeader
+    )
+    guard let plaintext = try? JSONEncoder.galaxySSI.encode(group),
+          let encrypted = try? sourcePreviewCipher.encrypt(
+            plaintext,
+            purpose: sourcePreviewPurpose(sourceHash: sourceHash, fingerprint: fingerprint)
+          ),
+          let statement = prepare("""
+            INSERT INTO knowledge_source_previews(source_hash, header_fingerprint, encrypted_preview)
+            VALUES (?, ?, ?)
+            ON CONFLICT(source_hash) DO UPDATE SET
+              header_fingerprint = excluded.header_fingerprint,
+              encrypted_preview = excluded.encrypted_preview
+            """) else { return false }
+    defer { sqlite3_finalize(statement) }
+    bind(sourceHash, at: 1, to: statement)
+    fingerprint.withUnsafeBytes { bytes in
+      sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(fingerprint.count), Self.transient)
+    }
+    encrypted.withUnsafeBytes { bytes in
+      sqlite3_bind_blob(statement, 3, bytes.baseAddress, Int32(encrypted.count), Self.transient)
+    }
     return sqlite3_step(statement) == SQLITE_DONE
   }
 
@@ -694,6 +801,7 @@ final class AgentKnowledgeDatabase {
     _ = execute("CREATE TABLE IF NOT EXISTS knowledge_metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
     _ = execute("INSERT OR IGNORE INTO knowledge_metadata(key, value) VALUES ('source_header_schema', 0)")
     setupSourceDirectoryState()
+    setupSourcePreviews()
     _ = execute("""
       CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
         item_hash UNINDEXED,
@@ -799,6 +907,30 @@ final class AgentKnowledgeDatabase {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     return (complete == 1, groups)
+  }
+
+  private func setupSourcePreviews() {
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_source_previews (
+        source_hash TEXT PRIMARY KEY NOT NULL,
+        header_fingerprint BLOB NOT NULL CHECK(length(header_fingerprint) = 32),
+        encrypted_preview BLOB NOT NULL
+      )
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_source_preview_header_update
+      AFTER UPDATE OF source_hash, updated_at, encrypted_header ON knowledge_source_headers
+      BEGIN
+        DELETE FROM knowledge_source_previews WHERE source_hash = OLD.source_hash;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_source_preview_header_delete
+      AFTER DELETE ON knowledge_source_headers
+      BEGIN
+        DELETE FROM knowledge_source_previews WHERE source_hash = OLD.source_hash;
+      END
+      """)
   }
 
   private func setupVectorCounts() {
@@ -1253,6 +1385,29 @@ final class AgentKnowledgeDatabase {
 
   private func sourceHeaderPurpose(_ sourceHash: String) -> String {
     "agent-knowledge-source:\(sourceHash)"
+  }
+
+  private func sourceHeaderFingerprint(
+    sourceHash: String,
+    updatedAtMillis: Int64,
+    encryptedHeader: Data
+  ) -> Data {
+    var material = Data()
+    func append(_ value: Data) {
+      var length = UInt64(value.count).bigEndian
+      withUnsafeBytes(of: &length) { material.append(contentsOf: $0) }
+      material.append(value)
+    }
+    append(Data(sourceHash.utf8))
+    var updated = updatedAtMillis.bigEndian
+    append(withUnsafeBytes(of: &updated) { Data($0) })
+    append(encryptedHeader)
+    return Data(SHA256.hash(data: material))
+  }
+
+  private func sourcePreviewPurpose(sourceHash: String, fingerprint: Data) -> String {
+    let digest = fingerprint.map { String(format: "%02x", $0) }.joined()
+    return "agent-knowledge-source-preview:v1:\(sourcePreviewNamespace):\(sourceHash):\(digest)"
   }
 
   private func vectorPurpose(_ vectorKey: String) -> String { "agent-knowledge-vector:\(vectorKey)" }

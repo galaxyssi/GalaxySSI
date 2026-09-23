@@ -363,6 +363,48 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertEqual(try database.sourceItemIds(sourceIdentity: "large-source").count, 601)
   }
 
+  func testSourcePreviewsArePersistedLazilyAndRejectHeaderMismatch() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeSourcePreviewTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    let items = (0..<3).map { index in
+      AgentKnowledgeItem(
+        id: "preview-item-\(index)",
+        kind: .document,
+        title: "Preview \(index)",
+        content: "Private preview body \(index)",
+        source: "preview-source-\(index)",
+        updatedAtMillis: Int64(index + 1)
+      )
+    }
+    XCTAssertTrue(database.replaceAll(items))
+
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+    XCTAssertEqual(sqlite3_exec(raw, "DELETE FROM knowledge_source_previews", nil, nil, nil), SQLITE_OK)
+    sqlite3_close_v2(raw)
+    raw = nil
+
+    XCTAssertEqual(try database.sourcePage().groups.count, 3)
+    XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+    var count: OpaquePointer?
+    XCTAssertEqual(sqlite3_prepare_v2(raw, "SELECT COUNT(*) FROM knowledge_source_previews", -1, &count, nil), SQLITE_OK)
+    XCTAssertEqual(sqlite3_step(count), SQLITE_ROW)
+    XCTAssertEqual(sqlite3_column_int64(count, 0), 3)
+    sqlite3_finalize(count)
+    XCTAssertEqual(
+      sqlite3_exec(raw, "UPDATE knowledge_source_previews SET header_fingerprint = zeroblob(32)", nil, nil, nil),
+      SQLITE_OK
+    )
+    sqlite3_close_v2(raw)
+
+    XCTAssertThrowsError(try database.sourcePage()) { error in
+      XCTAssertEqual(error as? AgentKnowledgeDatabaseError, .corruptRecord)
+    }
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
