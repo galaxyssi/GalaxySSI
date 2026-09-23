@@ -2,6 +2,41 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testAgentProcessClockStopsOnceAtMatchingFinalReply() {
+    let process = AgentTranscriptEntry(
+      id: "process",
+      role: .process,
+      text: "Working",
+      timestampMillis: 100,
+      conversationId: "conversation",
+      turnId: "turn",
+      taskId: "task"
+    )
+    let live = AgentTranscriptEntry(
+      id: "agent-stream-live",
+      role: .assistant,
+      text: "Draft",
+      timestampMillis: 150,
+      conversationId: "conversation",
+      turnId: "turn"
+    )
+    let final = AgentTranscriptEntry(
+      id: "final",
+      role: .assistant,
+      text: "Done",
+      timestampMillis: 220,
+      conversationId: "conversation",
+      turnId: "turn"
+    )
+    let clock = AgentProcessClock(startedAtMillis: 100)
+
+    XCTAssertEqual(AgentProcessClockPolicy.finalReplyTimestamp(for: process, in: [live, final]), 220)
+    clock.observe(completedAtMillis: 220)
+    clock.observe(completedAtMillis: 500)
+    XCTAssertEqual(clock.completedAtMillis, 220)
+    XCTAssertEqual(clock.elapsed(at: 900), 120)
+  }
+
   func testAgentWorkspaceFileModelsUseAndroidWireNames() throws {
     let policy = AgentWorkspaceFilePolicy(maxTextReadBytes: -1, maxZipCompressionRatio: 0)
     let encodedPolicy = String(decoding: try JSONEncoder().encode(policy), as: UTF8.self)

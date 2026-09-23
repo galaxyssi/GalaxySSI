@@ -211,6 +211,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       var evidenceResults: [(String, String)] = []
+      let evidencePromptLedger = CloudEvidencePromptLedger()
       let progress = CloudWebToolLoopProgress()
       var round = 0
 
@@ -220,6 +221,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let roundId = "\(requestId):r\(currentRound)"
         let finalRound = progress.finalizationRequested
         let bufferForCitationVerification = !evidenceResults.isEmpty
+        let citationPreview = bufferForCitationVerification
+          ? CloudCitationPreview(evidence: evidenceResults)
+          : nil
+        var previewShown = false
         let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
@@ -245,6 +250,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
           case .textDelta(let value):
             let visibleText = inlineProtocolGuard.append(value.text)
+            if let preview = citationPreview?.append(visibleText) {
+              previewShown = true
+              continuation.yield(.citationPreview(ModelStreamCitationPreview(
+                requestId: requestId,
+                text: preview,
+                receivedAtElapsedMs: value.receivedAtElapsedMs
+              )))
+            }
             if !visibleText.isEmpty && !bufferForCitationVerification {
               emittedText = true
               emittedSequence += 1
@@ -259,6 +272,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 )
               )
             }
+
+          case .citationPreview:
+            continue
 
           case .toolCallDelta(let value):
             assembler.accept(value.payload)
@@ -287,6 +303,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         setActiveRound(nil, for: requestId)
 
         if let failure = roundFailure {
+          if previewShown {
+            continuation.yield(.citationPreview(ModelStreamCitationPreview(
+              requestId: requestId,
+              text: "",
+              receivedAtElapsedMs: elapsedMillis()
+            )))
+          }
           if !emittedText && failure.error.code == "STREAM_UNSUPPORTED" {
             await emitLegacyConversation(
               contact: contact,
@@ -312,6 +335,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         guard roundCompleted else {
+          if previewShown {
+            continuation.yield(.citationPreview(ModelStreamCitationPreview(
+              requestId: requestId,
+              text: "",
+              receivedAtElapsedMs: elapsedMillis()
+            )))
+          }
           let error = ModelStreamError(
             code: "STREAM_INTERRUPTED",
             message: "The provider stream ended before completion",
@@ -359,6 +389,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             )
           }
           : structuredCalls
+        if previewShown && (!calls.isEmpty || CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
+          continuation.yield(.citationPreview(ModelStreamCitationPreview(
+            requestId: requestId,
+            text: "",
+            receivedAtElapsedMs: elapsedMillis()
+          )))
+        }
         if calls.isEmpty {
           if CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
              !finalRound,
@@ -373,6 +410,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                let repairPrompt,
                !finalRound,
                progress.requestRepair("stream_citations") {
+              if previewShown {
+                continuation.yield(.citationPreview(ModelStreamCitationPreview(
+                  requestId: requestId,
+                  text: "",
+                  receivedAtElapsedMs: elapsedMillis()
+                )))
+              }
               prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
               continue
             }
@@ -507,10 +551,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return (call, output)
         }
 
+        let promptResults = results.map { call, output in
+          (call, evidencePromptLedger.project(output))
+        }
         if usesInlineProtocol {
-          prepared.appendInlineToolResults(rawRoundText, results: results)
+          prepared.appendInlineToolResults(rawRoundText, results: promptResults)
         } else {
-          try prepared.appendToolResults(results)
+          try prepared.appendToolResults(promptResults)
         }
         if !madeProgress {
           progress.requestFinalization()

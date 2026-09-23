@@ -2,6 +2,25 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  func testRichContentUpdatePolicyIgnoresGeneratedIdsAndKeepsPassiveGroupsStable() {
+    let first = [
+      AgentRichBlock(id: "one", type: .text, text: "First"),
+      AgentRichBlock(id: "two", type: .heading, text: "Second"),
+      AgentRichBlock(id: "three", type: .image, uri: "https://example.com/image.jpg"),
+      AgentRichBlock(id: "four", type: .code, text: "print(1)")
+    ]
+    let regenerated = zip(first, 0...).map { block, index in
+      var copy = block
+      copy.id = "generated-\(index)"
+      return copy
+    }
+
+    XCTAssertTrue(AgentRichContentUpdatePolicy.supports(first))
+    XCTAssertEqual(AgentRichContentUpdatePolicy.groups(first).map(\.count), [2, 1, 1])
+    XCTAssertTrue(AgentRichContentUpdatePolicy.sameContent(first, regenerated))
+    XCTAssertFalse(AgentRichContentUpdatePolicy.sameContent(first, Array(regenerated.dropLast())))
+  }
+
   func testMarkdownImagesBecomeRenderableImageBlocks() throws {
     let blocks = AgentRichContentCodec.fromText(
       "Before ![Mackerel](https://example.com/fish.jpg) after"

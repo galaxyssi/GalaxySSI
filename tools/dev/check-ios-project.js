@@ -227,6 +227,16 @@ const requiredProjectSnippets = [
 ];
 
 const requiredSourceSnippets = [
+  [models, "final class CloudCitationPreview"],
+  [models, "final class CloudEvidencePromptLedger"],
+  [models, "case citationPreview(ModelStreamCitationPreview)"],
+  [models, "final class ModelStreamTimingTracker"],
+  [models, "enum AgentProcessClockPolicy"],
+  [models, "enum AgentRichContentUpdatePolicy"],
+  [tests, "testCitationPreviewPublishesOnlyVerifiedPassiveParagraphs"],
+  [tests, "testEvidencePromptLedgerDeduplicatesItemsAndDropsLocalVerificationBulk"],
+  [tests, "testCitationPreviewIsReplacedInTheSameSilentAssistantRow"],
+  [tests, "testAgentProcessClockStopsOnceAtMatchingFinalReply"],
   [models, "enum AgentKnowledgeVectorStorage"],
   [models, "case scalar8"],
   [models, "case float16"],

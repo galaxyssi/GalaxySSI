@@ -2,6 +2,68 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudWebGroundingTests: XCTestCase {
+  func testCitationPreviewPublishesOnlyVerifiedPassiveParagraphs() throws {
+    let url = "https://example.com/report"
+    let pack = AgentIOSWebEvidencePack.build(
+      query: "report",
+      status: "completed",
+      documents: [[
+        "url": .string(url),
+        "title": .string("Report"),
+        "content": .string("Verified report body")
+      ]],
+      results: [],
+      receipts: [],
+      generatedAtMillis: 1
+    )
+    let encoded = AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    let preview = CloudCitationPreview(evidence: [("web_fetch", encoded)])
+
+    XCTAssertNil(preview.append("Verified claim [source](\(url))."))
+    XCTAssertEqual(preview.append("\n\n"), "Verified claim [source](\(url)).\n\n")
+    XCTAssertNil(preview.append("```swift\nprint(1)\n```\n\n"))
+
+    let unsafe = CloudCitationPreview(evidence: [("web_fetch", encoded)])
+    XCTAssertNil(unsafe.append("<b>Hidden markup</b> [source](\(url)).\n\n"))
+  }
+
+  func testEvidencePromptLedgerDeduplicatesItemsAndDropsLocalVerificationBulk() throws {
+    let pack = AgentIOSWebEvidencePack.build(
+      query: "report",
+      status: "completed",
+      documents: [[
+        "url": .string("https://example.com/report"),
+        "title": .string("Report"),
+        "content": .string("Verified report body"),
+        "images": .array([.object([
+          "url": .string("https://example.com/image.jpg"),
+          "thumbnail_url": .string("https://example.com/image.jpg"),
+          "title": .string("Image"),
+          "alt": .string("Image")
+        ])])
+      ]],
+      results: [],
+      receipts: [["duration_millis": .int(42), "status": .string("ok")]],
+      generatedAtMillis: 1
+    )
+    let source = AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)])
+    let ledger = CloudEvidencePromptLedger()
+    let first = try XCTUnwrap(decodeObject(ledger.project(source)))
+    let second = try XCTUnwrap(decodeObject(ledger.project(source)))
+    let firstPack = try XCTUnwrap(first["evidence_pack"]?.objectValue)
+    let secondPack = try XCTUnwrap(second["evidence_pack"]?.objectValue)
+    let firstItem = try XCTUnwrap(firstPack["items"]?.arrayValue?.first?.objectValue)
+    let secondItem = try XCTUnwrap(secondPack["items"]?.arrayValue?.first?.objectValue)
+
+    XCTAssertEqual(firstItem["evidence_ref"], .string("e1"))
+    XCTAssertEqual(secondItem["evidence_ref"], .string("e1"))
+    XCTAssertNil(secondItem["url"])
+    XCTAssertNil(firstPack["verification"]?.objectValue?["citation_manifest"])
+    XCTAssertNil(firstPack["receipts"]?.arrayValue?.first?.objectValue?["duration_millis"])
+    XCTAssertNotNil(firstPack["projection"])
+    XCTAssertLessThan(ledger.project(source).count, source.count)
+  }
+
   func testExposesAllUnifiedWebIntelligenceOperations() {
     let names = CloudWebGrounding.openAITools().compactMap {
       $0["function"]?.objectValue?["name"]?.stringValue

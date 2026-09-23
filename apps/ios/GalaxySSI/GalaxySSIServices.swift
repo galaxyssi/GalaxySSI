@@ -925,7 +925,7 @@ final class MessageCoordinator: ObservableObject {
               receivedAtMillis: nowMillis
             ))
             return true
-          case .connected, .usage, .toolCallDelta, .completed:
+          case .connected, .usage, .toolCallDelta, .citationPreview, .completed:
             continue
           }
         }
@@ -1087,7 +1087,7 @@ final class MessageCoordinator: ObservableObject {
               receivedAtMillis: nowMillis
             ))
             return true
-          case .connected, .usage, .toolCallDelta, .completed:
+          case .connected, .usage, .toolCallDelta, .citationPreview, .completed:
             continue
           }
         }
@@ -1198,7 +1198,7 @@ final class MessageCoordinator: ObservableObject {
           case .failed(let failure):
             _ = connectorResponseBus.publish(AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: contact.id, content: failure.error.message, conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId, success: false, receivedAtMillis: nowMillis))
             return true
-          case .connected, .usage, .toolCallDelta, .completed: continue
+          case .connected, .usage, .toolCallDelta, .citationPreview, .completed: continue
           }
         }
         let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5892,7 +5892,7 @@ final class MessageCoordinator: ObservableObject {
       case .textDelta(let delta): accumulated += delta.text
       case .completed: completed = true
       case .failed(let failure): throw GalaxySSIError.invalidPayload(failure.error.message)
-      case .connected, .usage, .toolCallDelta: continue
+      case .connected, .usage, .toolCallDelta, .citationPreview: continue
       }
     }
     let result = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7780,6 +7780,37 @@ final class MessageCoordinator: ObservableObject {
       case .connected, .usage, .toolCallDelta:
         continue
 
+      case .citationPreview(let preview):
+        if preview.text.isEmpty {
+          if let current = incoming,
+             current.remoteMessageId.hasPrefix("agent-stream-preview-") {
+            _ = store.deleteMessage(current.id, contactId: destinationId)
+            incoming = nil
+          }
+          continue
+        }
+        if let current = incoming {
+          incoming = store.updateMessageContent(
+            current.id,
+            contactId: destinationId,
+            content: preview.text,
+            status: .sent
+          ) ?? current
+        } else {
+          incoming = store.appendIncoming(
+            preview.text,
+            from: destinationId,
+            remoteMessageId: "agent-stream-preview-\(requestId)",
+            status: .sent,
+            traceStage: "cloud_citation_preview",
+            conversationId: outgoing.conversationId,
+            turnId: outgoing.turnId
+          )
+        }
+        if let partial = incoming {
+          onIncomingMessageDelta?(partial)
+        }
+
       case .textDelta(let delta):
         accumulated += delta.text
         let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(accumulated)
@@ -7788,7 +7819,8 @@ final class MessageCoordinator: ObservableObject {
             current.id,
             contactId: destinationId,
             content: content,
-            status: .sent
+            status: .sent,
+            remoteMessageId: requestId
           ) ?? current
         } else {
           incoming = store.appendIncoming(

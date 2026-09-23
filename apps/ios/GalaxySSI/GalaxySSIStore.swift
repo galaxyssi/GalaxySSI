@@ -1152,7 +1152,8 @@ final class GalaxySSIStore: ObservableObject {
     status: ChatDeliveryStatus? = nil,
     traceStage: String? = nil,
     detail: String = "",
-    richOutputJson: String? = nil
+    richOutputJson: String? = nil,
+    remoteMessageId: String? = nil
   ) -> ChatMessage? {
     guard var messages = messagesByContact[contactId],
           let index = messages.firstIndex(where: { $0.id == messageId }) else {
@@ -1167,6 +1168,9 @@ final class GalaxySSIStore: ObservableObject {
     }
     if let richOutputJson {
       messages[index].richOutputJson = richOutputJson
+    }
+    if let remoteMessageId {
+      messages[index].remoteMessageId = remoteMessageId
     }
     messagesByContact[contactId] = messages
     save()
