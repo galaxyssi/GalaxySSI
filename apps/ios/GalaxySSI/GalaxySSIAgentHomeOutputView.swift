@@ -202,7 +202,10 @@ extension AgentHomeView {
               onMessageVisible: { message in
                 guard !message.isMine, !message.isSystem else { return }
                 let localTask = agentTask(for: message)
-                let remoteTask = remoteAgentTask(for: message)
+                let remoteTask = replyRuntimeIndex.remoteTask(
+                  for: message,
+                  activeConversationId: store.activeAgentConversationId
+                )
                 let taskId = localTask?.taskId ?? remoteTask?.taskId ?? ""
                 let final = localTask.map {
                   [.completed, .failed, .cancelled, .blocked].contains($0.phase)
