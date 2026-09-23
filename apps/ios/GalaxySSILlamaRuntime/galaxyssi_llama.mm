@@ -409,7 +409,7 @@ extern "C" int64_t galaxyssi_embedding_open(
         params.no_perf = true;
         encoder->context = llama_init_from_model(encoder->model, params);
         if (encoder->context == nullptr) throw std::runtime_error("Could not create embedding context");
-        const llama_pooling_type pooling = llama_pooling_type(encoder->context);
+        const enum llama_pooling_type pooling = llama_pooling_type(encoder->context);
         if (pooling != LLAMA_POOLING_TYPE_CLS && pooling != LLAMA_POOLING_TYPE_MEAN &&
             pooling != LLAMA_POOLING_TYPE_LAST) {
             throw std::runtime_error("Model must provide sequence embedding pooling");
