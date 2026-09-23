@@ -2898,6 +2898,10 @@
 "agent_latency_first_visible" = "发布至首个可见输出";
 "agent_latency_final_visible" = "发布至最终输出可见";
 "agent_latency_render" = "响应渲染";
+"agent_latency_action_dispatch" = "动作派发与回执";
+"agent_latency_screen_observe" = "执行后屏幕观察";
+"agent_latency_receipt_observe" = "工具回执观察";
+"agent_latency_result_verify" = "验证结果应用";
 "agent_latency_planning_total" = "规划总耗时";
 "agent_latency_planning_progress" = "进度账本";
 "agent_latency_planning_inventory" = "工具清单";

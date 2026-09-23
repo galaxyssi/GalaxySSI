@@ -9,6 +9,14 @@ enum AgentLatencyStage: String, Codable, CaseIterable {
   case phoneFirstOutputVisible = "phone_first_output_visible"
   case phoneFinalReceived = "phone_final_received"
   case phoneFinalOutputVisible = "phone_final_output_visible"
+  case phoneRuntimeActionDispatchStarted = "phone_runtime_action_dispatch_started"
+  case phoneRuntimeActionDispatchFinished = "phone_runtime_action_dispatch_finished"
+  case phoneRuntimeScreenObserveStarted = "phone_runtime_screen_observe_started"
+  case phoneRuntimeScreenObserveFinished = "phone_runtime_screen_observe_finished"
+  case phoneRuntimeReceiptObserveStarted = "phone_runtime_receipt_observe_started"
+  case phoneRuntimeReceiptObserveFinished = "phone_runtime_receipt_observe_finished"
+  case phoneRuntimeResultVerifyStarted = "phone_runtime_result_verify_started"
+  case phoneRuntimeResultVerifyFinished = "phone_runtime_result_verify_finished"
   case phonePlanningTotalStarted = "phone_planning_total_started"
   case phonePlanningTotalFinished = "phone_planning_total_finished"
   case phonePlanningProgressStarted = "phone_planning_progress_started"
@@ -68,6 +76,10 @@ enum AgentLatencyContract {
     ("phone_connector_first_visible_ms", .phonePublishStarted, .phoneFirstOutputVisible),
     ("phone_connector_complete_visible_ms", .phonePublishStarted, .phoneFinalOutputVisible),
     ("phone_render_ms", .phoneResponseReceived, .phoneFirstOutputVisible),
+    ("phone_runtime_action_dispatch_ms", .phoneRuntimeActionDispatchStarted, .phoneRuntimeActionDispatchFinished),
+    ("phone_runtime_screen_observe_ms", .phoneRuntimeScreenObserveStarted, .phoneRuntimeScreenObserveFinished),
+    ("phone_runtime_receipt_observe_ms", .phoneRuntimeReceiptObserveStarted, .phoneRuntimeReceiptObserveFinished),
+    ("phone_runtime_result_verify_ms", .phoneRuntimeResultVerifyStarted, .phoneRuntimeResultVerifyFinished),
     ("phone_planning_total_ms", .phonePlanningTotalStarted, .phonePlanningTotalFinished),
     ("phone_planning_progress_ms", .phonePlanningProgressStarted, .phonePlanningProgressFinished),
     ("phone_planning_inventory_ms", .phonePlanningInventoryStarted, .phonePlanningInventoryFinished),
@@ -138,6 +150,72 @@ enum AgentLatencyContract {
 
   private static let allowedOutcomes: Set<String> = ["", "completed", "failed", "cancelled", "timed_out"]
   private static let unsuccessfulOutcomes: Set<String> = ["failed", "cancelled", "timed_out"]
+}
+
+enum AgentRuntimeTimingPhase: String, CaseIterable {
+  case actionDispatch = "action_dispatch"
+  case screenObserve = "screen_observe"
+  case receiptObserve = "receipt_observe"
+  case resultVerify = "result_verify"
+
+  var boundaries: (start: AgentLatencyStage, finish: AgentLatencyStage) {
+    switch self {
+    case .actionDispatch:
+      return (.phoneRuntimeActionDispatchStarted, .phoneRuntimeActionDispatchFinished)
+    case .screenObserve:
+      return (.phoneRuntimeScreenObserveStarted, .phoneRuntimeScreenObserveFinished)
+    case .receiptObserve:
+      return (.phoneRuntimeReceiptObserveStarted, .phoneRuntimeReceiptObserveFinished)
+    case .resultVerify:
+      return (.phoneRuntimeResultVerifyStarted, .phoneRuntimeResultVerifyFinished)
+    }
+  }
+}
+
+/// Content-free synchronous spans. Instrumentation never replaces operation results or errors.
+struct AgentRuntimeTiming {
+  var tracer: AgentLatencyTracer?
+
+  func measure<T>(
+    taskId: String,
+    phase: AgentRuntimeTimingPhase,
+    outcome: (T) -> String = { _ in "completed" },
+    operation: () throws -> T
+  ) rethrows -> T {
+    let normalizedTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let tracer, !normalizedTaskId.isEmpty else { return try operation() }
+    let operationId = UUID().uuidString
+    let boundaries = phase.boundaries
+    tracer.recordOpaque(
+      taskId: normalizedTaskId,
+      stage: boundaries.start,
+      operationId: operationId
+    )
+    var resultOutcome = "failed"
+    defer {
+      tracer.recordOpaque(
+        taskId: normalizedTaskId,
+        stage: boundaries.finish,
+        operationId: operationId,
+        outcome: resultOutcome
+      )
+    }
+    do {
+      let result = try operation()
+      resultOutcome = Self.normalizedOutcome(outcome(result))
+      return result
+    } catch {
+      if error is CancellationError { resultOutcome = "cancelled" }
+      throw error
+    }
+  }
+
+  private static func normalizedOutcome(_ value: String) -> String {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return ["completed", "failed", "cancelled", "timed_out"].contains(normalized)
+      ? normalized
+      : "failed"
+  }
 }
 
 final class AgentLatencyJournal {
@@ -400,6 +478,7 @@ enum AgentPlanningTiming {
 
 enum AgentLatencyTelemetry {
   static let shared = AgentLatencyTracer(journal: AgentLatencyJournal())
+  static let runtime = AgentRuntimeTiming(tracer: shared)
 
   static func currentMonotonicNs() -> Int64 {
     Int64(clamping: DispatchTime.now().uptimeNanoseconds)
