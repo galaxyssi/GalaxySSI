@@ -21,6 +21,40 @@ enum AgentKnowledgeHybridRanking {
   }
 }
 
+final class AgentKnowledgeRetrievalAdmission {
+  final class Lease {
+    private let releaseHandler: () -> Void
+    private let lock = NSLock()
+    private var released = false
+
+    fileprivate init(release: @escaping () -> Void) {
+      releaseHandler = release
+    }
+
+    func release() {
+      lock.lock()
+      guard !released else {
+        lock.unlock()
+        return
+      }
+      released = true
+      lock.unlock()
+      releaseHandler()
+    }
+
+    deinit { release() }
+  }
+
+  private let semaphore = DispatchSemaphore(value: 1)
+
+  func acquire(timeoutMillis: Int = 25) -> Lease? {
+    let timeout = DispatchTime.now() + .milliseconds(max(timeoutMillis, 0))
+    guard semaphore.wait(timeout: timeout) == .success else { return nil }
+    let ownedSemaphore = semaphore
+    return Lease { ownedSemaphore.signal() }
+  }
+}
+
 final class AgentKnowledgeSemanticSearch {
   private struct IndexedEntry {
     var checkpoint: AgentKnowledgeVectorCheckpoint
@@ -39,18 +73,21 @@ final class AgentKnowledgeSemanticSearch {
   private let provenance: AgentKnowledgeVectorProvenance
   private let queue = DispatchQueue(label: "com.galaxyssi.knowledge-hnsw", qos: .utility)
   private let ttlMillis: Int64
+  private let admission: AgentKnowledgeRetrievalAdmission
   private var cache: Cache?
 
   init(
     database: AgentKnowledgeDatabase,
     runtime: GalaxySSIEmbeddingRuntime,
     provenance: AgentKnowledgeVectorProvenance,
-    ttlMillis: Int64 = 300_000
+    ttlMillis: Int64 = 300_000,
+    admission: AgentKnowledgeRetrievalAdmission = AgentKnowledgeRetrievalAdmission()
   ) {
     self.database = database
     self.runtime = runtime
     self.provenance = provenance
     self.ttlMillis = max(ttlMillis, 1_000)
+    self.admission = admission
   }
 
   func search(
@@ -59,6 +96,10 @@ final class AgentKnowledgeSemanticSearch {
     limit: Int = 24,
     nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) async throws -> [AgentKnowledgeHit] {
+    guard let lease = admission.acquire() else {
+      return Array(lexicalHits.prefix(max(limit, 0)))
+    }
+    defer { lease.release() }
     let queryVector = try await runtime.embed(query)
     return try await withCheckedThrowingContinuation { continuation in
       queue.async { [self] in

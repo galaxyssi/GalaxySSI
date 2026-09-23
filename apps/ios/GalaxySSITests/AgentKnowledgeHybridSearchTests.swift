@@ -20,4 +20,17 @@ final class AgentKnowledgeHybridSearchTests: XCTestCase {
 
     XCTAssertEqual(ranked.map(\.id), ["a", "b"])
   }
+
+  func testRetrievalAdmissionFallsBackInsteadOfQueueingBehindOwner() throws {
+    let admission = AgentKnowledgeRetrievalAdmission()
+    let first = try XCTUnwrap(admission.acquire(timeoutMillis: 0))
+
+    XCTAssertNil(admission.acquire(timeoutMillis: 0))
+    first.release()
+    first.release()
+
+    let next = try XCTUnwrap(admission.acquire(timeoutMillis: 0))
+    XCTAssertNil(admission.acquire(timeoutMillis: 0))
+    next.release()
+  }
 }
