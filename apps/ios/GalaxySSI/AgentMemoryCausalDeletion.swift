@@ -357,6 +357,7 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
   private let defaults: UserDefaults
   private let key: String
   private let encryptedStorageKey: String
+  private let outboxStorageKey: String
   private let secrets: GalaxySSISecretStore
   private let lock = NSLock()
 
@@ -367,7 +368,9 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
   ) {
     self.defaults = defaults
     self.key = key
-    self.encryptedStorageKey = key == Self.defaultKey ? Self.encryptedKey : "\(key)-encrypted-v2"
+    let resolvedEncryptedKey = key == Self.defaultKey ? Self.encryptedKey : "\(key)-encrypted-v2"
+    self.encryptedStorageKey = resolvedEncryptedKey
+    self.outboxStorageKey = "\(resolvedEncryptedKey)-retraction-outbox-v1"
     self.secrets = secrets
     migrateLegacyIfNeeded()
   }
@@ -383,6 +386,12 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
       key: key == defaultKey ? encryptedKey : "\(key)-encrypted-v2",
       secrets: secrets
     )
+    let encryptedStorageKey = key == defaultKey ? encryptedKey : "\(key)-encrypted-v2"
+    GalaxySSIEncryptedUserDefaultsStore.destroy(
+      defaults: defaults,
+      key: "\(encryptedStorageKey)-retraction-outbox-v1",
+      secrets: secrets
+    )
   }
 
   @discardableResult
@@ -396,6 +405,7 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
     ) else { return nil }
     locked {
       saveUnlocked(AgentMemoryCausalDeletionPolicy.merge(current: loadUnlocked(), incoming: [tombstone]))
+      enqueueRetractionsUnlocked(for: [tombstone])
     }
     return tombstone
   }
@@ -409,6 +419,7 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
     locked {
       let merged = AgentMemoryCausalDeletionPolicy.merge(current: loadUnlocked(), incoming: tombstones ?? [])
       saveUnlocked(merged)
+      enqueueRetractionsUnlocked(for: tombstones ?? [])
       return merged
     }
   }
@@ -427,6 +438,11 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
       GalaxySSIEncryptedUserDefaultsStore.destroy(
         defaults: defaults,
         key: encryptedStorageKey,
+        secrets: secrets
+      )
+      GalaxySSIEncryptedUserDefaultsStore.destroy(
+        defaults: defaults,
+        key: outboxStorageKey,
         secrets: secrets
       )
     }
@@ -471,6 +487,98 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
       return
     }
     saveUnlocked(decoded)
+  }
+
+  func pendingRetractions(limit: Int = 100) -> [GlobalConversationEvent] {
+    locked {
+      bootstrapOutboxUnlocked()
+      return Array(loadOutboxUnlocked().events.prefix(min(max(limit, 1), 250)))
+    }
+  }
+
+  func pendingRetractionCount() -> Int {
+    locked {
+      bootstrapOutboxUnlocked()
+      return loadOutboxUnlocked().events.count
+    }
+  }
+
+  func acknowledgeRetractions(eventIds: Set<String>) {
+    guard !eventIds.isEmpty else { return }
+    locked {
+      var state = loadOutboxUnlocked()
+      state.events.removeAll { eventIds.contains($0.id) }
+      saveOutboxUnlocked(state)
+    }
+  }
+
+  @discardableResult
+  func requeueAllRetractions() -> Int {
+    locked {
+      var state = loadOutboxUnlocked()
+      state.ready = true
+      state.events = mergeRetractionEvents(
+        existing: state.events,
+        incoming: loadUnlocked().flatMap(AgentMemoryCausalDeletionPolicy.retractionEvents)
+      )
+      saveOutboxUnlocked(state)
+      return state.events.count
+    }
+  }
+
+  private struct RetractionOutboxState: Codable {
+    var ready: Bool = false
+    var events: [GlobalConversationEvent] = []
+  }
+
+  private func bootstrapOutboxUnlocked() {
+    var state = loadOutboxUnlocked()
+    guard !state.ready else { return }
+    state.ready = true
+    state.events = mergeRetractionEvents(
+      existing: state.events,
+      incoming: loadUnlocked().flatMap(AgentMemoryCausalDeletionPolicy.retractionEvents)
+    )
+    saveOutboxUnlocked(state)
+  }
+
+  private func enqueueRetractionsUnlocked(for tombstones: [AgentMemoryDeletionTombstone]) {
+    var state = loadOutboxUnlocked()
+    state.ready = true
+    state.events = mergeRetractionEvents(
+      existing: state.events,
+      incoming: tombstones.flatMap(AgentMemoryCausalDeletionPolicy.retractionEvents)
+    )
+    saveOutboxUnlocked(state)
+  }
+
+  private func mergeRetractionEvents(
+    existing: [GlobalConversationEvent],
+    incoming: [GlobalConversationEvent]
+  ) -> [GlobalConversationEvent] {
+    var known = Set<String>()
+    return (existing + incoming).filter { !$0.id.isEmpty && known.insert($0.id).inserted }
+  }
+
+  private func loadOutboxUnlocked() -> RetractionOutboxState {
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: outboxStorageKey,
+      secrets: secrets
+    ), let state = try? JSONDecoder().decode(RetractionOutboxState.self, from: data) else {
+      return RetractionOutboxState()
+    }
+    return state
+  }
+
+  private func saveOutboxUnlocked(_ state: RetractionOutboxState) {
+    guard let data = try? JSONEncoder().encode(state) else { return }
+    _ = GalaxySSIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: outboxStorageKey,
+      secrets: secrets
+    )
   }
 
   private func locked<T>(_ operation: () -> T) -> T {

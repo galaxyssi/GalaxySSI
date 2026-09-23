@@ -52,6 +52,19 @@ extension GalaxySSIStore {
     memoryDeletionIndex.snapshot()
   }
 
+  func pendingAgentMemoryRetractions(limit: Int = 100) -> [GlobalConversationEvent] {
+    memoryDeletionIndex.pendingRetractions(limit: limit)
+  }
+
+  func acknowledgeAgentMemoryRetractions(eventIds: Set<String>) {
+    memoryDeletionIndex.acknowledgeRetractions(eventIds: eventIds)
+  }
+
+  @discardableResult
+  func requeueAgentMemoryRetractions() -> Int {
+    memoryDeletionIndex.requeueAllRetractions()
+  }
+
   func agentMemoryTrustProfile(id itemId: String) -> AgentMemoryTrustProfile? {
     guard let item = AgentMemoryCausalDeletionPolicy.items(in: agentMemoryStore.snapshot())
       .first(where: { $0.id == itemId }) else { return nil }
