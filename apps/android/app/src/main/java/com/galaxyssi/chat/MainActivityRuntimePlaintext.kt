@@ -6,7 +6,7 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
     if (runtimePlaintextCleared || isChangingConfigurations) return
     runtimePlaintextCleared = true
     KnowledgeSemanticSearch.clearRuntime(suspend = true)
-    agentSessionsDialog?.dismiss()
+    suspendConversationHubForBackground()
     runtimePlaintextContactId = selectedContact?.id.orEmpty()
     runtimePlaintextConversationId = agentTranscriptWindow.conversationId.ifBlank {
         agentTranscriptStore.activeConversation().id

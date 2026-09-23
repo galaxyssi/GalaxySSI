@@ -470,6 +470,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val agentRunIdsByTurn = ConcurrentHashMap<String, String>()
     internal var agentSessionsDialog: android.app.Dialog? = null
     internal var restoreHiddenConversationHub: (() -> Boolean)? = null
+    internal var captureConversationHubNavigation: (() -> ConversationHubNavigationState)? = null
+    internal var suspendedConversationHub: ConversationHubNavigationState? = null
     internal var conversationHubContactsChangedListener: ((List<Contact>) -> Unit)? = null
     internal var showingFriendRequests = false
     internal var activeFriendRequestContactId = ""
@@ -1141,6 +1143,11 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (suspendedConversationHub != null && (intent?.getBooleanExtra("galaxyssi_open_agent", false) == true ||
+                !intent?.getStringExtra("galaxyssi_open_contact_id").isNullOrBlank())) {
+            suspendedConversationHub = null
+            restoreHiddenConversationHub = null
+        }
         setIntent(intent)
         intent?.putExtra(AgentConversationWindows.WINDOW_KEY, conversationWindow.key)
         if (intent?.getBooleanExtra("galaxyssi_open_agent", false) == true) {
@@ -1350,6 +1357,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             ?.takeIf { featurePage.visibility == View.VISIBLE }
             ?.let(DesktopRemoteControl::resumeScreenshotStream)
         traceResume("complete")
+        if (suspendedConversationHub?.visible == true) restoreSuspendedConversationHub()
     }
 
 
