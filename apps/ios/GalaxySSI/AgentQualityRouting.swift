@@ -193,12 +193,19 @@ enum AgentQualityAwareRoutingPolicy {
 
 final class AgentShadowRoutingStore {
   private struct State: Codable { var recommendations: [AgentShadowRoutingRecommendation] = [] }
+  private struct OrderEntry: Codable, Equatable {
+    var key: String
+    var createdAtMillis: Int64
+  }
+  private struct OrderIndex: Codable {
+    var version = 1
+    var entries: [OrderEntry]
+  }
 
   static let defaultKey = "galaxyssi-ios-agent-shadow-routing-v1"
   private let defaults: UserDefaults
   private let secrets: GalaxySSISecretStore
   private let key: String
-  private let lock = NSRecursiveLock()
 
   init(
     defaults: UserDefaults = .standard,
@@ -212,38 +219,140 @@ final class AgentShadowRoutingStore {
 
   func save(_ recommendation: AgentShadowRoutingRecommendation) {
     locked {
-      var state = load()
-      state.recommendations.removeAll { $0.id == recommendation.id }
-      state.recommendations.append(recommendation)
-      state.recommendations = Array(state.recommendations.sorted { $0.createdAtMillis > $1.createdAtMillis }.prefix(Self.maximumItems))
-      persist(state)
+      let previous = order()
+      let recordKey = storageKey(for: recommendation.id)
+      let retained = Self.retain(
+        previous.filter { $0.key != recordKey } + [
+          OrderEntry(key: recordKey, createdAtMillis: recommendation.createdAtMillis)
+        ]
+      )
+      guard persist(recommendation, storageKey: recordKey), persist(retained) else { return }
+      let retainedKeys = Set(retained.map(\.key))
+      for staleKey in Set(previous.map(\.key) + [recordKey]).subtracting(retainedKeys) {
+        GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: staleKey)
+      }
     }
   }
 
   func recent(limit: Int = AgentShadowRoutingStore.maximumItems) -> [AgentShadowRoutingRecommendation] {
     locked {
-      Array(load().recommendations.sorted { $0.createdAtMillis > $1.createdAtMillis }.prefix(min(max(limit, 1), Self.maximumItems)))
+      order().prefix(min(max(limit, 1), Self.maximumItems)).compactMap(loadRecommendation)
     }
   }
 
-  private func load() -> State {
+  private func loadLegacyState() -> State {
     guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets),
           let state = try? JSONDecoder().decode(State.self, from: data) else { return State() }
     return state
   }
 
-  private func persist(_ state: State) {
-    guard let data = try? JSONEncoder().encode(state) else { return }
-    _ = GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: key, secrets: secrets)
+  private func order() -> [OrderEntry] {
+    let storedRecordKeys = Set(GalaxySSIEncryptedUserDefaultsStore.storedKeys(
+      defaults: defaults,
+      prefix: recordPrefix
+    ))
+    if let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: indexKey,
+      keyMaterialKey: key,
+      secrets: secrets
+    ),
+       let index = try? JSONDecoder().decode(OrderIndex.self, from: data),
+       index.version == 1,
+       index.entries == Self.retain(index.entries),
+       Set(index.entries.map(\.key)) == storedRecordKeys {
+      return index.entries
+    }
+
+    var recovered = storedRecordKeys.compactMap { recordKey -> OrderEntry? in
+      guard let recommendation = loadRecommendation(recordKey) else { return nil }
+      return OrderEntry(key: recordKey, createdAtMillis: recommendation.createdAtMillis)
+    }
+    let legacy = loadLegacyState().recommendations
+    for recommendation in legacy {
+      let recordKey = storageKey(for: recommendation.id)
+      if persist(recommendation, storageKey: recordKey) {
+        recovered.append(OrderEntry(key: recordKey, createdAtMillis: recommendation.createdAtMillis))
+      }
+    }
+    let retained = Self.retain(recovered)
+    _ = persist(retained)
+    let retainedKeys = Set(retained.map(\.key))
+    for staleKey in storedRecordKeys.subtracting(retainedKeys) {
+      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: staleKey)
+    }
+    if !legacy.isEmpty {
+      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: key)
+    }
+    return retained
+  }
+
+  private func loadRecommendation(_ entry: OrderEntry) -> AgentShadowRoutingRecommendation? {
+    loadRecommendation(entry.key)
+  }
+
+  private func loadRecommendation(_ storageKey: String) -> AgentShadowRoutingRecommendation? {
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: storageKey,
+      keyMaterialKey: key,
+      secrets: secrets
+    ) else { return nil }
+    return try? JSONDecoder().decode(AgentShadowRoutingRecommendation.self, from: data)
+  }
+
+  private func persist(
+    _ recommendation: AgentShadowRoutingRecommendation,
+    storageKey: String
+  ) -> Bool {
+    guard let data = try? JSONEncoder().encode(recommendation) else { return false }
+    return GalaxySSIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: storageKey,
+      keyMaterialKey: key,
+      secrets: secrets
+    )
+  }
+
+  private func persist(_ entries: [OrderEntry]) -> Bool {
+    guard let data = try? JSONEncoder().encode(OrderIndex(entries: entries)) else { return false }
+    return GalaxySSIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: indexKey,
+      keyMaterialKey: key,
+      secrets: secrets
+    )
+  }
+
+  private func storageKey(for id: String) -> String {
+    recordPrefix + AgentLatencyContract.opaqueId(id)
+  }
+
+  private var recordPrefix: String { key + ".recommendation." }
+  private var indexKey: String { key + ".order-index-v1" }
+
+  private static func retain(_ entries: [OrderEntry]) -> [OrderEntry] {
+    var seen = Set<String>()
+    return Array(entries
+      .sorted {
+        $0.createdAtMillis == $1.createdAtMillis
+          ? $0.key < $1.key
+          : $0.createdAtMillis > $1.createdAtMillis
+      }
+      .filter { $0.key.contains(".recommendation.") && seen.insert($0.key).inserted }
+      .prefix(maximumItems))
   }
 
   private func locked<T>(_ work: () -> T) -> T {
-    lock.lock()
-    defer { lock.unlock() }
+    Self.storeLock.lock()
+    defer { Self.storeLock.unlock() }
     return work()
   }
 
   static let maximumItems = 500
+  private static let storeLock = NSRecursiveLock()
 }
 
 enum AgentQualityRoutingService {
