@@ -188,7 +188,8 @@ enum AgentIOSWebMediaNativeToolCatalog {
       requiredConsents: consentRequirements(operation),
       timeoutMillis: maxToolTimeoutMillis,
       idempotency: idempotency(operation),
-      availability: availability(provider: provider, operation: operation)
+      availability: availability(provider: provider, operation: operation),
+      effect: effect(operation)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -251,6 +252,16 @@ enum AgentIOSWebMediaNativeToolCatalog {
       return .nonIdempotent
     case .webSearch, .webOpen, .browserRender, .contentExtract, .httpRequest, .webHead, .webFetch, .ocrRecognizeContent:
       return .idempotent
+    }
+  }
+
+  private static func effect(_ operation: AgentIOSWebMediaOperation) -> AgentNativeToolEffect {
+    switch operation {
+    case .webSearch, .webOpen, .browserRender, .contentExtract, .httpRequest, .webHead, .webFetch,
+         .ocrRecognizeContent:
+      return .readOnly
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose, .fileDownload, .webDownload:
+      return .mutation
     }
   }
 

@@ -191,7 +191,8 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
       timeoutMillis: timeoutMillis,
       timeoutPolicy: progressAwareOperations.contains(operation) ? .progressAware : .fixed,
       idempotency: .idempotent,
-      availability: provider.availability(operation: operation)
+      availability: provider.availability(operation: operation),
+      effect: [.cache, .watch].contains(operation) ? .mutation : .readOnly
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,

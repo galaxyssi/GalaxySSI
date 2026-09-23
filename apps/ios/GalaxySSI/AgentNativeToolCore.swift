@@ -75,6 +75,13 @@ enum AgentNativeToolConcurrency: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum AgentNativeToolEffect: String, Codable, CaseIterable, Identifiable {
+  case readOnly = "read_only"
+  case mutation
+
+  var id: String { rawValue }
+}
+
 enum AgentNativeToolTimeoutPolicy: String, Codable, CaseIterable, Identifiable {
   case fixed
   case progressAware = "progress_aware"
@@ -188,6 +195,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   var idempotency: AgentNativeToolIdempotency
   var concurrency: AgentNativeToolConcurrency
   var availability: AgentNativeToolAvailability
+  var effect: AgentNativeToolEffect?
 
   init(
     id: String,
@@ -205,7 +213,8 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     timeoutPolicy: AgentNativeToolTimeoutPolicy = .fixed,
     idempotency: AgentNativeToolIdempotency = .nonIdempotent,
     concurrency: AgentNativeToolConcurrency = .serial,
-    availability: AgentNativeToolAvailability = .available
+    availability: AgentNativeToolAvailability = .available,
+    effect: AgentNativeToolEffect? = nil
   ) throws {
     let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
     guard cleanId.range(
@@ -238,6 +247,10 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     guard Set(requiredConsents.map(\.id)).count == requiredConsents.count else {
       throw AgentRuntimeCapabilityError.invalid("Consent ids must be unique")
     }
+    guard concurrency != .parallelReadOnly ||
+      (risk == .low && idempotency == .idempotent && effect != .mutation) else {
+      throw AgentRuntimeCapabilityError.invalid("Parallel native tools must be low-risk read-only idempotent operations")
+    }
 
     self.id = cleanId
     self.version = version
@@ -255,6 +268,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     self.idempotency = idempotency
     self.concurrency = concurrency
     self.availability = availability
+    self.effect = effect
   }
 
   enum CodingKeys: String, CodingKey {
@@ -274,6 +288,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     case idempotency
     case concurrency
     case availability
+    case effect
   }
 
   init(from decoder: Decoder) throws {
@@ -294,7 +309,8 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
       timeoutPolicy: try container.decodeIfPresent(AgentNativeToolTimeoutPolicy.self, forKey: .timeoutPolicy) ?? .fixed,
       idempotency: try container.decodeIfPresent(AgentNativeToolIdempotency.self, forKey: .idempotency) ?? .nonIdempotent,
       concurrency: try container.decodeIfPresent(AgentNativeToolConcurrency.self, forKey: .concurrency) ?? .serial,
-      availability: try container.decodeIfPresent(AgentNativeToolAvailability.self, forKey: .availability) ?? .available
+      availability: try container.decodeIfPresent(AgentNativeToolAvailability.self, forKey: .availability) ?? .available,
+      effect: try container.decodeIfPresent(AgentNativeToolEffect.self, forKey: .effect)
     )
   }
 
@@ -310,9 +326,10 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
 
 extension AgentNativeToolDescriptor {
   // Mutating and explicitly keyed tools must claim their durable effect before execution.
-  // Parallel read-only idempotent tools can safely retain the lighter replay cache path.
+  // Explicit read-only idempotent tools retain the lighter retry and replay-cache path.
   var requiresEffectClaim: Bool {
-    idempotency != .idempotent || concurrency != .parallelReadOnly
+    idempotency != .idempotent ||
+      !(effect == .readOnly || (effect == nil && concurrency == .parallelReadOnly))
   }
 }
 

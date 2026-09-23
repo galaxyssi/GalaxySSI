@@ -232,7 +232,8 @@ enum AgentIOSNotificationNativeToolCatalog {
       ],
       timeoutMillis: 10_000,
       idempotency: idempotency,
-      availability: provider.availability()
+      availability: provider.availability(),
+      effect: idempotency == .idempotent ? .readOnly : .mutation
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,

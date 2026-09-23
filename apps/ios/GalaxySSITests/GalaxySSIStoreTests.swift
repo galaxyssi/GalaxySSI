@@ -2300,7 +2300,8 @@ final class GalaxySSIStoreTests: XCTestCase {
     inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
     outputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
     timeoutMillis: Int64 = AgentNativeToolDescriptor.defaultTimeoutMillis,
-    idempotency: AgentNativeToolIdempotency = .nonIdempotent
+    idempotency: AgentNativeToolIdempotency = .nonIdempotent,
+    effect: AgentNativeToolEffect? = nil
   ) throws -> AgentNativeToolDescriptor {
     try AgentNativeToolDescriptor(
       id: id,
@@ -2316,7 +2317,8 @@ final class GalaxySSIStoreTests: XCTestCase {
       requiredConsents: requiredConsents,
       timeoutMillis: timeoutMillis,
       idempotency: idempotency,
-      availability: availability
+      availability: availability,
+      effect: effect
     )
   }
 
