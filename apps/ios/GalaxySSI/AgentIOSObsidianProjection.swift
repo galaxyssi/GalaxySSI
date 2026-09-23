@@ -10,6 +10,12 @@ private struct AgentIOSObsidianProjectionSpec {
   var content: () throws -> String
 }
 
+private enum AgentIOSObsidianProjectionStep: Equatable {
+  case written
+  case unchanged
+  case deferred
+}
+
 @MainActor
 enum AgentIOSObsidianBridge {
   static func settings(stateStore: AgentIOSObsidianStateStore = AgentIOSObsidianStateStore()) -> AgentIOSObsidianSettings {
@@ -121,76 +127,69 @@ enum AgentIOSObsidianBridge {
       }
 
       let candidateCount = scanUserEdits(root: root, stateStore: stateStore)
-      let specs = projectionSpecs(appStore: appStore).sorted { $0.sourceKey < $1.sourceKey }
       let writeLimit = max(1, min(maximumWrites, 32))
-      let scanLimit = max(writeLimit, 64)
-      let namespace = sha256(settings.bookmarkData.base64EncodedString())
-      let catalogRevision = sha256(
-        specs.map { "\($0.sourceKey)\u{0}\($0.sourceRevision)" }.joined(separator: "\u{1e}")
-      )
-      let savedCheckpoint = stateStore.projectionCheckpoint()
-      let checkpoint = savedCheckpoint?.namespace == namespace &&
-        savedCheckpoint?.catalogRevision == catalogRevision &&
-        (savedCheckpoint?.nextOffset ?? -1) >= 0 &&
-        (savedCheckpoint?.nextOffset ?? 0) <= specs.count
-        ? savedCheckpoint
-        : nil
-      if savedCheckpoint != nil && checkpoint == nil {
-        stateStore.saveProjectionCheckpoint(nil)
-      }
       var written = 0
       var unchanged = 0
-      var offset = checkpoint?.nextOffset ?? 0
+      let namespace = sha256(settings.bookmarkData.base64EncodedString())
+      var checkpoint = stateStore.projectionCheckpoint()
+      if checkpoint?.namespace != namespace {
+        checkpoint = nil
+        stateStore.saveProjectionCheckpoint(nil)
+      }
+      var page: AgentKnowledgeSourcePage
+      do {
+        page = try appStore.agentKnowledgeDatabase.sourcePage(cursor: checkpoint?.cursor, limit: 50)
+      } catch AgentKnowledgeDatabaseError.staleCursor {
+        checkpoint = nil
+        stateStore.saveProjectionCheckpoint(nil)
+        page = try appStore.agentKnowledgeDatabase.sourcePage(limit: 50)
+      }
+      if let savedCheckpoint = checkpoint, savedCheckpoint.visited > page.total {
+        stateStore.saveProjectionCheckpoint(nil)
+        checkpoint = nil
+        page = try appStore.agentKnowledgeDatabase.sourcePage(limit: 50)
+      }
       var visited = checkpoint?.visited ?? 0
-      var scanned = 0
-      while offset < specs.count && scanned < scanLimit {
-        let spec = specs[offset]
-        let indexed = stateStore.index(sourceKey: spec.sourceKey) ?? adoptLegacyIndex(
-          spec: spec,
+      for index in page.groups.indices {
+        let step = try project(
+          knowledgeProjectionSpec(appStore: appStore, group: page.groups[index]),
+          canWrite: written < writeLimit,
           root: root,
           stateStore: stateStore
         )
-        if indexed?.userModified == true || indexed?.sourceRevision == spec.sourceRevision {
-          unchanged += 1
-        } else {
-          guard written < writeLimit else { break }
-          let content = spec.content()
-          if content.isEmpty {
-            unchanged += 1
-          } else {
-            let relativePath = indexed?.relativePath.ifBlank(spec.relativePath) ?? spec.relativePath
-            let fileURL = root.appendingPathComponent(relativePath)
-            try FileManager.default.createDirectory(
-              at: fileURL.deletingLastPathComponent(),
-              withIntermediateDirectories: true,
-              attributes: nil
-            )
-            try content.write(to: fileURL, atomically: true, encoding: .utf8)
-            stateStore.saveIndex(.init(
-              sourceKey: spec.sourceKey,
-              relativePath: relativePath,
-              sourceRevision: spec.sourceRevision,
-              generatedHash: sha256(content),
-              lastModifiedMillis: modifiedMillis(fileURL),
-              userModified: false
-            ))
-            written += 1
-          }
-        }
-        offset += 1
+        if step == .deferred { break }
+        if step == .written { written += 1 } else { unchanged += 1 }
         visited += 1
-        scanned += 1
         stateStore.saveProjectionCheckpoint(.init(
           namespace: namespace,
-          catalogRevision: catalogRevision,
-          nextOffset: offset,
+          cursor: page.positions[index],
           visited: visited
         ))
       }
-      if offset >= specs.count {
+      let currentRevision = try appStore.agentKnowledgeDatabase.sourceBrowseRevision()
+      var knowledgeRemaining = max(page.total - visited, 0)
+      if let pageRevision = page.positions.first?.revision, pageRevision != currentRevision {
+        stateStore.saveProjectionCheckpoint(nil)
+        knowledgeRemaining = max(page.total, 1)
+      } else if knowledgeRemaining == 0 {
         stateStore.saveProjectionCheckpoint(nil)
       }
-      let remaining = max(specs.count - offset, 0)
+
+      var otherRemaining = 0
+      for spec in otherProjectionSpecs(appStore: appStore) {
+        let step = try project(
+          spec,
+          canWrite: written < writeLimit,
+          root: root,
+          stateStore: stateStore
+        )
+        switch step {
+        case .written: written += 1
+        case .unchanged: unchanged += 1
+        case .deferred: otherRemaining += 1
+        }
+      }
+      let remaining = knowledgeRemaining + otherRemaining
       settings.lastProjectionAtMillis = AgentMemoryClock.nowMillis()
       settings.lastError = ""
       stateStore.saveSettings(settings)
@@ -240,70 +239,78 @@ enum AgentIOSObsidianBridge {
     return lines.joined(separator: "\n")
   }
 
-  private static func projectionSpecs(appStore: GalaxySSIStore) -> [AgentIOSObsidianProjectionSpec] {
-    var specs: [AgentIOSObsidianProjectionSpec] = []
-    let knowledgeGroups = Dictionary(grouping: appStore.agentKnowledgeItems) { item in
-      item.source.trimmingCharacters(in: .whitespacesAndNewlines)
-        .ifBlank("local:\(item.id)")
-    }
-    for (_, chunks) in knowledgeGroups {
-      let ordered = chunks.sorted { left, right in
-        left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
-      }
-      guard let latest = ordered.max(by: { $0.updatedAtMillis < $1.updatedAtMillis }) else { continue }
-      let group = AgentKnowledgeSourceGroup(
-        source: latest.source,
-        title: latest.title.replacingOccurrences(
+  private static func knowledgeProjectionSpec(
+    appStore: GalaxySSIStore,
+    group: AgentKnowledgeSourceGroup
+  ) -> AgentIOSObsidianProjectionSpec {
+    let source = group.localItemId.ifBlank(group.source)
+    let reading = source.lowercased().hasPrefix("http://") || source.lowercased().hasPrefix("https://")
+    let sourceKey = knowledgeSourceKey(group)
+    let title = group.title.ifBlank("Knowledge")
+    return AgentIOSObsidianProjectionSpec(
+      sourceKey: sourceKey,
+      relativePath: "\(reading ? "60 Reading" : "10 Knowledge")/\(fileName(title, sourceKey: sourceKey))",
+      sourceRevision: group.sourceRevision,
+      legacySourceKey: "knowledge:\(GlobalAgentText.stableKey(source))",
+      exactSource: source
+    ) {
+      let ordered = try appStore.agentKnowledgeDatabase.sourceSnapshotItems(group)
+      let safe = ordered.filter { AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge($0.content) }
+      guard let first = safe.first else { return "" }
+      return note(
+        sourceKey: sourceKey,
+        type: reading ? "reading" : "knowledge",
+        title: first.title.replacingOccurrences(
           of: #"\s+\[[0-9]+/[0-9]+\]$"#,
           with: "",
           options: .regularExpression
-        ),
-        itemIds: ordered.map(\.id),
-        chunkCount: ordered.count,
-        cloudAccess: latest.cloudAccess,
-        agentAccess: latest.agentAccess,
-        allowedAgentIds: latest.allowedAgentIds,
-        updatedAtMillis: latest.updatedAtMillis,
-        sourceRevision: AgentKnowledgeSourceRevision.digest(ordered),
-        localItemId: latest.source.isBlank ? latest.id : ""
+        ).ifBlank(title),
+        source: source,
+        updatedAtMillis: safe.map(\.updatedAtMillis).max() ?? 0,
+        tags: Array(Set(safe.flatMap(\.tags))).sorted().prefixArray(16),
+        body: safe.map(\.content).joined(separator: "\n\n")
       )
-        let source = group.localItemId.ifBlank(group.source)
-        let reading = source.lowercased().hasPrefix("http://") || source.lowercased().hasPrefix("https://")
-        let sourceKey = knowledgeSourceKey(group)
-        let legacySourceKey = "knowledge:\(GlobalAgentText.stableKey(source))"
-        let title = group.title.ifBlank("Knowledge")
-        let relativePath = "\(reading ? "60 Reading" : "10 Knowledge")/\(fileName(title, sourceKey: sourceKey))"
-        specs.append(.init(
-          sourceKey: sourceKey,
-          relativePath: relativePath,
-          sourceRevision: group.sourceRevision,
-          legacySourceKey: legacySourceKey,
-          exactSource: source
-        ) {
-          let ids = Set(group.itemIds)
-          let ordered = appStore.agentKnowledgeItems.filter { ids.contains($0.id) }.sorted { left, right in
-            left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
-          }
-          guard AgentKnowledgeSourceRevision.digest(ordered) == group.sourceRevision else {
-            throw AgentKnowledgeDatabaseError.staleCursor
-          }
-          let safe = ordered.filter { AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge($0.content) }
-          guard let first = safe.first else { return "" }
-          return note(
-            sourceKey: sourceKey,
-            type: reading ? "reading" : "knowledge",
-            title: first.title.replacingOccurrences(
-              of: #"\s+\[[0-9]+/[0-9]+\]$"#,
-              with: "",
-              options: .regularExpression
-            ).ifBlank(title),
-            source: source,
-            updatedAtMillis: safe.map(\.updatedAtMillis).max() ?? 0,
-            tags: Array(Set(safe.flatMap(\.tags))).sorted().prefixArray(16),
-            body: safe.map(\.content).joined(separator: "\n\n")
-          )
-        })
     }
+  }
+
+  private static func project(
+    _ spec: AgentIOSObsidianProjectionSpec,
+    canWrite: Bool,
+    root: URL,
+    stateStore: AgentIOSObsidianStateStore
+  ) throws -> AgentIOSObsidianProjectionStep {
+    let indexed = stateStore.index(sourceKey: spec.sourceKey) ?? adoptLegacyIndex(
+      spec: spec,
+      root: root,
+      stateStore: stateStore
+    )
+    if indexed?.userModified == true || indexed?.sourceRevision == spec.sourceRevision {
+      return .unchanged
+    }
+    guard canWrite else { return .deferred }
+    let content = try spec.content()
+    guard !content.isEmpty else { return .unchanged }
+    let relativePath = indexed?.relativePath.ifBlank(spec.relativePath) ?? spec.relativePath
+    let fileURL = root.appendingPathComponent(relativePath)
+    try FileManager.default.createDirectory(
+      at: fileURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true,
+      attributes: nil
+    )
+    try content.write(to: fileURL, atomically: true, encoding: .utf8)
+    stateStore.saveIndex(.init(
+      sourceKey: spec.sourceKey,
+      relativePath: relativePath,
+      sourceRevision: spec.sourceRevision,
+      generatedHash: sha256(content),
+      lastModifiedMillis: modifiedMillis(fileURL),
+      userModified: false
+    ))
+    return .written
+  }
+
+  private static func otherProjectionSpecs(appStore: GalaxySSIStore) -> [AgentIOSObsidianProjectionSpec] {
+    var specs: [AgentIOSObsidianProjectionSpec] = []
 
     for installation in UserDefaultsAgentSkillStore().list() {
       let manifest = installation.manifest

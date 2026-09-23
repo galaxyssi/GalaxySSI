@@ -405,6 +405,41 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     }
   }
 
+  func testSourceSnapshotPagesMembersAndRejectsStaleRevision() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeSourceSnapshotTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(
+      fileURL: directory.appendingPathComponent("knowledge.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    var items = (0..<130).map { index in
+      AgentKnowledgeItem(
+        id: "snapshot-member-\(index)",
+        kind: .document,
+        title: "Snapshot source [\(index + 1)/130]",
+        content: "Authenticated body \(index)",
+        source: "snapshot-source",
+        chunkIndex: index,
+        chunkCount: 130,
+        updatedAtMillis: Int64(1_000 - index)
+      )
+    }
+    XCTAssertTrue(database.replaceAll(items))
+    let group = try XCTUnwrap(try database.sourcePage().groups.first)
+    let snapshot = try database.sourceSnapshotItems(group)
+    XCTAssertEqual(snapshot.count, 130)
+    XCTAssertEqual(snapshot.map(\.chunkIndex), Array(0..<130))
+    XCTAssertEqual(snapshot.first?.content, "Authenticated body 0")
+
+    items[0].content = "Changed after revision capture"
+    items[0].updatedAtMillis = 2_000
+    XCTAssertTrue(database.replaceAll(items))
+    XCTAssertThrowsError(try database.sourceSnapshotItems(group)) { error in
+      XCTAssertEqual(error as? AgentKnowledgeDatabaseError, .staleCursor)
+    }
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)

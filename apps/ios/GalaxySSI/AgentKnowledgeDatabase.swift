@@ -557,6 +557,125 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  func sourceSnapshotItems(_ group: AgentKnowledgeSourceGroup) throws -> [AgentKnowledgeItem] {
+    guard !group.source.isBlank, group.chunkCount >= 0, !group.sourceRevision.isBlank else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    var snapshot: OpaquePointer?
+    guard sqlite3_open_v2(
+      fileURL.path,
+      &snapshot,
+      SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+      nil
+    ) == SQLITE_OK, let snapshot else {
+      if let snapshot { sqlite3_close_v2(snapshot) }
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_close_v2(snapshot) }
+    sqlite3_busy_timeout(snapshot, 5_000)
+    guard sqlite3_exec(snapshot, "PRAGMA query_only = ON", nil, nil, nil) == SQLITE_OK,
+          sqlite3_exec(snapshot, "PRAGMA cache_size = -2048", nil, nil, nil) == SQLITE_OK,
+          sqlite3_exec(snapshot, "PRAGMA mmap_size = 0", nil, nil, nil) == SQLITE_OK,
+          sqlite3_exec(snapshot, "BEGIN", nil, nil, nil) == SQLITE_OK else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil) }
+
+    let sourceHash = keyedHash(group.source)
+    var header: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      snapshot,
+      "SELECT updated_at, encrypted_header FROM knowledge_source_headers WHERE source_hash = ? LIMIT 1",
+      -1,
+      &header,
+      nil
+    ) == SQLITE_OK, let header else { throw AgentKnowledgeDatabaseError.unavailable }
+    bind(sourceHash, at: 1, to: header)
+    guard sqlite3_step(header) == SQLITE_ROW,
+          let encryptedHeader = blob(header, column: 1),
+          let plaintext = try? cipher.decrypt(
+            encryptedHeader,
+            expectedPurpose: sourceHeaderPurpose(sourceHash)
+          ),
+          let current = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext) else {
+      sqlite3_finalize(header)
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    sqlite3_finalize(header)
+    guard current.source == group.source,
+          current.sourceRevision == group.sourceRevision,
+          current.chunkCount == group.chunkCount else {
+      throw AgentKnowledgeDatabaseError.staleCursor
+    }
+
+    var afterUpdatedAt = Int64.max
+    var afterItemHash = ""
+    var firstPage = true
+    var items: [AgentKnowledgeItem] = []
+    while true {
+      let predicate = firstPage ? "" : "AND (updated_at < ? OR (updated_at = ? AND item_hash > ?))"
+      var page: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        snapshot,
+        """
+        SELECT item_hash, updated_at, encrypted_payload FROM knowledge_items
+        WHERE source_hash = ? \(predicate)
+        ORDER BY updated_at DESC, item_hash ASC LIMIT 64
+        """,
+        -1,
+        &page,
+        nil
+      ) == SQLITE_OK, let page else { throw AgentKnowledgeDatabaseError.unavailable }
+      bind(sourceHash, at: 1, to: page)
+      if !firstPage {
+        sqlite3_bind_int64(page, 2, afterUpdatedAt)
+        sqlite3_bind_int64(page, 3, afterUpdatedAt)
+        bind(afterItemHash, at: 4, to: page)
+      }
+      var pageCount = 0
+      while sqlite3_step(page) == SQLITE_ROW {
+        guard let hashText = sqlite3_column_text(page, 0) else {
+          sqlite3_finalize(page)
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let itemHash = String(cString: hashText)
+        let updatedAt = sqlite3_column_int64(page, 1)
+        let item = try decode(page, hashColumn: 0, payloadColumn: 2)
+        guard sourceIdentity(item) == group.source, item.updatedAtMillis == updatedAt else {
+          sqlite3_finalize(page)
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        items.append(item)
+        guard items.count <= group.chunkCount else {
+          sqlite3_finalize(page)
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        afterUpdatedAt = updatedAt
+        afterItemHash = itemHash
+        pageCount += 1
+      }
+      sqlite3_finalize(page)
+      if pageCount < 64 { break }
+      firstPage = false
+    }
+    guard items.count == group.chunkCount,
+          AgentKnowledgeSourceRevision.digest(items) == group.sourceRevision else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return items.sorted { left, right in
+      left.chunkIndex == right.chunkIndex ? left.id < right.id : left.chunkIndex < right.chunkIndex
+    }
+  }
+
+  func sourceBrowseRevision() throws -> Int64 {
+    try locked {
+      guard let revision = scalar("SELECT revision FROM knowledge_browse_revision WHERE id = 1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      return revision
+    }
+  }
+
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
