@@ -59,6 +59,7 @@ struct AgentLatencyPoint: Codable, Equatable {
   var stage: AgentLatencyStage
   var monotonicNs: Int64
   var wallClockMs: Int64
+  var operationId: String = ""
   var outcome: String
 
   enum CodingKeys: String, CodingKey {
@@ -67,7 +68,21 @@ struct AgentLatencyPoint: Codable, Equatable {
     case stage
     case monotonicNs = "monotonic_ns"
     case wallClockMs = "wall_clock_ms"
+    case operationId = "operation_id"
     case outcome
+  }
+}
+
+extension AgentLatencyPoint {
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    traceId = try container.decode(String.self, forKey: .traceId)
+    clockId = try container.decode(String.self, forKey: .clockId)
+    stage = try container.decode(AgentLatencyStage.self, forKey: .stage)
+    monotonicNs = try container.decode(Int64.self, forKey: .monotonicNs)
+    wallClockMs = try container.decode(Int64.self, forKey: .wallClockMs)
+    operationId = try container.decodeIfPresent(String.self, forKey: .operationId) ?? ""
+    outcome = try container.decode(String.self, forKey: .outcome)
   }
 }
 
@@ -122,13 +137,18 @@ enum AgentLatencyContract {
   static func valid(_ point: AgentLatencyPoint) -> Bool {
     point.traceId.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil
       && point.clockId.range(of: #"^[a-f0-9]{32}$"#, options: .regularExpression) != nil
+      && (point.operationId.isEmpty
+        || point.operationId.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil)
       && point.monotonicNs >= 0
       && point.wallClockMs >= 0
       && allowedOutcomes.contains(point.outcome)
   }
 
   static func summarize(_ points: [AgentLatencyPoint]) -> [String: AgentLatencyMetric] {
-    let groups = Dictionary(grouping: points.filter(valid), by: { "\($0.traceId):\($0.clockId)" })
+    let groups = Dictionary(
+      grouping: points.filter(valid),
+      by: { "\($0.traceId):\($0.clockId):\($0.operationId)" }
+    )
     return Dictionary(uniqueKeysWithValues: metricPairs.map { pair in
       var incomplete = 0
       var unsuccessful = 0
@@ -468,10 +488,21 @@ final class AgentLatencyTracer {
   }
 
   func record(taskId: String, stage: AgentLatencyStage, outcome: String = "") {
+    recordOpaque(taskId: taskId, stage: stage, operationId: "", outcome: outcome)
+  }
+
+  func recordOpaque(
+    taskId: String,
+    stage: AgentLatencyStage,
+    operationId: String,
+    outcome: String = ""
+  ) {
     let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTaskId.isEmpty else { return }
     let traceId = AgentLatencyContract.opaqueId(cleanTaskId)
-    let key = "\(traceId):\(stage.rawValue)"
+    let cleanOperationId = operationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let opaqueOperationId = cleanOperationId.isEmpty ? "" : AgentLatencyContract.opaqueId(cleanOperationId)
+    let key = "\(traceId):\(stage.rawValue):\(opaqueOperationId)"
     lock.lock()
     guard seen.insert(key).inserted else {
       lock.unlock()
@@ -492,6 +523,7 @@ final class AgentLatencyTracer {
       stage: stage,
       monotonicNs: max(0, monotonicNs()),
       wallClockMs: max(0, wallClockMs()),
+      operationId: opaqueOperationId,
       outcome: stage == .phoneFinalReceived ? normalizedOutcome(outcome) : normalizedOutcome(outcome, emptyAllowed: true)
     ))
   }
@@ -499,8 +531,8 @@ final class AgentLatencyTracer {
   func visible(taskId: String, final: Bool) {
     let traceId = AgentLatencyContract.opaqueId(taskId)
     lock.lock()
-    let hasResponse = seen.contains("\(traceId):\(AgentLatencyStage.phoneResponseReceived.rawValue)")
-    let hasFinal = seen.contains("\(traceId):\(AgentLatencyStage.phoneFinalReceived.rawValue)")
+    let hasResponse = seen.contains("\(traceId):\(AgentLatencyStage.phoneResponseReceived.rawValue):")
+    let hasFinal = seen.contains("\(traceId):\(AgentLatencyStage.phoneFinalReceived.rawValue):")
     let outcome = outcomes[traceId] ?? "completed"
     lock.unlock()
     guard hasResponse else { return }
