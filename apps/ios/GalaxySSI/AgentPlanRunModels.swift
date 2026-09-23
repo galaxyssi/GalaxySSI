@@ -558,12 +558,52 @@ struct AgentAuditEntry: Codable, Equatable {
   }
 }
 
+enum AgentPublicationRequirement: String, Codable, CaseIterable {
+  case none
+  case commit
+  case push
+  case pullRequest = "pull_request"
+}
+
+/// Completion obligations interpreted by the planning model, never inferred from goal keywords.
+struct AgentCompletionRequirements: Codable, Equatable {
+  var publication: AgentPublicationRequirement
+  var phoneLinux: Bool
+  var reason: String
+
+  init(
+    publication: AgentPublicationRequirement,
+    phoneLinux: Bool,
+    reason: String = ""
+  ) {
+    self.publication = publication
+    self.phoneLinux = phoneLinux
+    self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  func changesOutcome(from previous: AgentCompletionRequirements) -> Bool {
+    publication != previous.publication || phoneLinux != previous.phoneLinux
+  }
+
+  func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
+    guard let previous else { return true }
+    return !changesOutcome(from: previous) || !reason.isEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case publication
+    case phoneLinux = "phone_linux"
+    case reason
+  }
+}
+
 struct AgentPlan: Codable, Equatable, Identifiable {
   var goal: String
   var screen: AgentScreenContext
   var steps: [AgentStep]
   var actions: [AgentAction]
   var executionMode: AgentTaskExecutionMode
+  var completionRequirements: AgentCompletionRequirements?
   var planId: String
   var selectedAgentOrModel: String
   var requiredPermissions: [AgentPermissionRequirement]
@@ -591,6 +631,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
     steps: [AgentStep],
     actions: [AgentAction],
     executionMode: AgentTaskExecutionMode = .autoComplete,
+    completionRequirements: AgentCompletionRequirements? = nil,
     planId: String = UUID().uuidString,
     selectedAgentOrModel: String? = nil,
     requiredPermissions: [AgentPermissionRequirement] = [],
@@ -615,6 +656,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
     self.steps = steps
     self.actions = actions
     self.executionMode = executionMode
+    self.completionRequirements = completionRequirements
     self.planId = planId
     self.selectedAgentOrModel = selectedAgentOrModel ?? actions.first?.target ?? ""
     self.requiredPermissions = requiredPermissions
@@ -641,6 +683,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
     case steps
     case actions
     case executionMode = "execution_mode"
+    case completionRequirements = "completion_requirements"
     case planId = "plan_id"
     case selectedAgentOrModel = "selected_agent_or_model"
     case requiredPermissions = "required_permissions"
@@ -669,6 +712,7 @@ struct AgentPlan: Codable, Equatable, Identifiable {
       steps: try container.decodeIfPresent([AgentStep].self, forKey: .steps) ?? [],
       actions: try container.decodeIfPresent([AgentAction].self, forKey: .actions) ?? [],
       executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete,
+      completionRequirements: try container.decodeIfPresent(AgentCompletionRequirements.self, forKey: .completionRequirements),
       planId: try container.decodeIfPresent(String.self, forKey: .planId) ?? UUID().uuidString,
       selectedAgentOrModel: try container.decodeIfPresent(String.self, forKey: .selectedAgentOrModel),
       requiredPermissions: try container.decodeIfPresent([AgentPermissionRequirement].self, forKey: .requiredPermissions) ?? [],
@@ -803,6 +847,7 @@ struct AgentPlanRequest: Codable, Equatable {
   var contextDigest: String
   var responseLanguage: String
   var executionMode: AgentTaskExecutionMode
+  var completionRequirements: AgentCompletionRequirements?
   var requestedMembers: [AgentRequestedMember]
 
   init(
@@ -813,6 +858,7 @@ struct AgentPlanRequest: Codable, Equatable {
     contextDigest: String = "",
     responseLanguage: String = LanguagePolicySettings.auto,
     executionMode: AgentTaskExecutionMode = .autoComplete,
+    completionRequirements: AgentCompletionRequirements? = nil,
     requestedMembers: [AgentRequestedMember] = []
   ) {
     self.goal = goal
@@ -822,6 +868,7 @@ struct AgentPlanRequest: Codable, Equatable {
     self.contextDigest = contextDigest
     self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
     self.executionMode = executionMode
+    self.completionRequirements = completionRequirements
     self.requestedMembers = Array(requestedMembers.prefix(12))
   }
 
@@ -833,6 +880,7 @@ struct AgentPlanRequest: Codable, Equatable {
     case contextDigest = "context_digest"
     case responseLanguage = "response_language"
     case executionMode = "execution_mode"
+    case completionRequirements = "completion_requirements"
     case requestedMembers = "requested_members"
   }
 
@@ -846,6 +894,7 @@ struct AgentPlanRequest: Codable, Equatable {
       contextDigest: try container.decodeIfPresent(String.self, forKey: .contextDigest) ?? "",
       responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? LanguagePolicySettings.auto,
       executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete,
+      completionRequirements: try container.decodeIfPresent(AgentCompletionRequirements.self, forKey: .completionRequirements),
       requestedMembers: try container.decodeIfPresent([AgentRequestedMember].self, forKey: .requestedMembers) ?? []
     )
   }
@@ -882,6 +931,7 @@ enum AgentPlanFactory {
       ],
       actions: resolvedActions,
       executionMode: request.executionMode,
+      completionRequirements: request.completionRequirements,
       selectedAgentOrModel: selectedAgentOrModel(resolvedActions),
       requiredPermissions: distinctPermissions(resolvedActions.flatMap { permissions(for: $0, request: request) }),
       confirmationRequired: true,
