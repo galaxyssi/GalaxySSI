@@ -9,11 +9,22 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
   private var timings: [String: ModelStreamTiming] = [:]
 
   init(
-    session: URLSession = .shared,
+    session: URLSession? = nil,
     elapsedMillis: @escaping () -> Int64 = URLSessionCloudModelStreamClient.defaultElapsedMillis
   ) {
-    self.session = session
+    self.session = session ?? URLSession(configuration: Self.mobileStreamingConfiguration())
     self.elapsedMillis = elapsedMillis
+  }
+
+  static func mobileStreamingConfiguration() -> URLSessionConfiguration {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.waitsForConnectivity = true
+    configuration.timeoutIntervalForRequest = 5 * 60
+    configuration.timeoutIntervalForResource = 15 * 60
+    configuration.httpMaximumConnectionsPerHost = 8
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.urlCache = nil
+    return configuration
   }
 
   func stream(_ request: ModelStreamRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {

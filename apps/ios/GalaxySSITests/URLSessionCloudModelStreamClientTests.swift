@@ -2,6 +2,16 @@ import XCTest
 @testable import GalaxySSI
 
 final class URLSessionCloudModelStreamClientTests: XCTestCase {
+  func testMobileStreamingConfigurationAvoidsSharedCacheAndKeepsActiveTimeouts() {
+    let configuration = URLSessionCloudModelStreamClient.mobileStreamingConfiguration()
+    XCTAssertTrue(configuration.waitsForConnectivity)
+    XCTAssertEqual(configuration.timeoutIntervalForRequest, 300)
+    XCTAssertEqual(configuration.timeoutIntervalForResource, 900)
+    XCTAssertEqual(configuration.httpMaximumConnectionsPerHost, 8)
+    XCTAssertNil(configuration.urlCache)
+    XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+  }
+
   func testSSEFrameAccumulatorCombinesEventAndMultilineData() {
     let accumulator = ModelStreamFrameAccumulator(transport: .sse)
     var frames: [ModelStreamFrame] = []
