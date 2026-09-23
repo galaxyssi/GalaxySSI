@@ -360,21 +360,35 @@ struct AgentKnowledgeStats: Codable, Equatable {
   var itemCount: Int
   var sourceCount: Int
   var lastUpdatedAtMillis: Int64
+  var countsComplete: Bool
 
   init(
     itemCount: Int = 0,
     sourceCount: Int = 0,
-    lastUpdatedAtMillis: Int64 = 0
+    lastUpdatedAtMillis: Int64 = 0,
+    countsComplete: Bool = true
   ) {
     self.itemCount = max(itemCount, 0)
     self.sourceCount = max(sourceCount, 0)
     self.lastUpdatedAtMillis = max(lastUpdatedAtMillis, 0)
+    self.countsComplete = countsComplete
   }
 
   enum CodingKeys: String, CodingKey {
     case itemCount = "item_count"
     case sourceCount = "source_count"
     case lastUpdatedAtMillis = "last_updated_at_millis"
+    case countsComplete = "counts_complete"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      itemCount: try container.decodeIfPresent(Int.self, forKey: .itemCount) ?? 0,
+      sourceCount: try container.decodeIfPresent(Int.self, forKey: .sourceCount) ?? 0,
+      lastUpdatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastUpdatedAtMillis) ?? 0,
+      countsComplete: try container.decodeIfPresent(Bool.self, forKey: .countsComplete) ?? true
+    )
   }
 }
 

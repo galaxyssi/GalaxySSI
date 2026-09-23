@@ -2,6 +2,9 @@ import Foundation
 
 extension GalaxySSIStore {
   var agentKnowledgeStats: AgentKnowledgeStats {
+    if let indexed = try? agentKnowledgeDatabase.knowledgeStats() {
+      return indexed
+    }
     let sources = Set(agentKnowledgeItems.map(agentKnowledgeSourceKey))
     return AgentKnowledgeStats(
       itemCount: agentKnowledgeItems.count,

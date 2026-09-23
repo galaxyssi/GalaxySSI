@@ -440,6 +440,42 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     }
   }
 
+  func testIndexedKnowledgeStatsPersistAndReportLegacyCountsAsPartial() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeIndexedStatsTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let items = (0..<70).map { index in
+      AgentKnowledgeItem(
+        id: "stats-item-\(index)",
+        kind: .document,
+        title: "Stats \(index)",
+        content: "Body \(index)",
+        source: "source-\(index % 2)",
+        updatedAtMillis: Int64(index + 10)
+      )
+    }
+    XCTAssertTrue(database.replaceAll(items))
+    XCTAssertEqual(
+      try database.knowledgeStats(),
+      AgentKnowledgeStats(itemCount: 70, sourceCount: 2, lastUpdatedAtMillis: 79, countsComplete: true)
+    )
+    XCTAssertEqual(try AgentKnowledgeDatabase(fileURL: url, secrets: secrets).knowledgeStats().itemCount, 70)
+
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+    XCTAssertEqual(sqlite3_exec(raw, "DELETE FROM knowledge_item_count_state", nil, nil, nil), SQLITE_OK)
+    sqlite3_close_v2(raw)
+    let legacy = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let partial = try legacy.knowledgeStats()
+    XCTAssertFalse(partial.countsComplete)
+    XCTAssertEqual(partial.itemCount, 0)
+    XCTAssertEqual(partial.sourceCount, 2)
+    XCTAssertEqual(partial.lastUpdatedAtMillis, 79)
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
