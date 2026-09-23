@@ -183,7 +183,8 @@ struct CloudConversationNonStreamingToolEngine {
   private func parseOpenAI(_ object: [String: Any]) -> ParsedResponse {
     let message = (object["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]
     let text = (message?["content"] as? String) ?? (object["output_text"] as? String) ?? ""
-    let calls = (message?["tool_calls"] as? [[String: Any]] ?? []).enumerated().compactMap { index, item in
+    let calls = (message?["tool_calls"] as? [[String: Any]] ?? []).enumerated().compactMap {
+      index, item -> AssembledToolCall? in
       guard let function = item["function"] as? [String: Any],
             let name = function["name"] as? String, !name.isBlank else { return nil }
       return AssembledToolCall(
