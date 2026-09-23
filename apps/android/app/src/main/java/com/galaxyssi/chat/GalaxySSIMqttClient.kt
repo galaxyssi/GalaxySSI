@@ -1379,6 +1379,8 @@ object GalaxySSIMqttClient {
         }
 
         if (peerRoutes?.readyForTopic(topic) != true) {
+            Log.w(TAG, "Encrypted message awaiting peer route reason=${peerRoutes?.blockedReasonForTopic(topic) ?: "no_route_manager"}")
+            if (peerRoutes?.recoverBlockedSend(topic) == true) Log.w(TAG, "Stalled peer route reissued")
             scheduleOutboxRetries()
             return MqttPublishResult.QUEUED
         }
@@ -1405,7 +1407,7 @@ object GalaxySSIMqttClient {
     private fun retryPendingMessages() = synchronized(outboxDispatchLock) {
         val context = appContext ?: return
         val mqtt = client ?: return
-        if (!mqtt.isConnected || !isRequestReplyReady()) return
+        if (!mqtt.isConnected) return
         val held = GalaxySSILinkDeliveryStore.holdStaleUncorrelated(context)
         if (held > 0) Log.w(TAG, "Held $held stale uncorrelated outbox records; retained for inspection, not acknowledged")
         GalaxySSILinkDeliveryStore.discardExhausted(
@@ -1504,6 +1506,8 @@ object GalaxySSIMqttClient {
                 }?.routes?.control
             }
             if (currentTopic == null || peerRoutes?.readyForTopic(currentTopic) != true) {
+                if (currentTopic != null && peerRoutes?.recoverBlockedSend(currentTopic) == true)
+                    Log.w(TAG, "Stalled peer route reissued")
                 GalaxySSILinkDeliveryStore.waitForPeerRoute(context, pending.messageId)
                 continue
             }
