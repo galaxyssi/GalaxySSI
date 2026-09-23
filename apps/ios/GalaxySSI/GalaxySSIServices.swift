@@ -711,7 +711,6 @@ final class MessageCoordinator: ObservableObject {
 
   deinit {
     pairingConfirmationTimeoutTask?.cancel()
-    pendingReplyRecoveryWake.cancel()
     transportReceiptDrainTask?.cancel()
     if let foregroundRecoveryObserver {
       NotificationCenter.default.removeObserver(foregroundRecoveryObserver)
@@ -6460,7 +6459,7 @@ final class MessageCoordinator: ObservableObject {
     let results = await Task.detached(priority: .userInitiated) {
       PhoneExecutionAuthority.authorizeParallel(actions: executionActions)
       defer { PhoneExecutionAuthority.revokeParallel(actions: executionActions) }
-      AgentNativeToolBatchExecutor.executeOrdered(
+      return AgentNativeToolBatchExecutor.executeOrdered(
         inputs: Array(executionActions.indices),
         limitProvider: {
           AgentAdaptiveConcurrencyRuntime.currentLimit(
@@ -8738,9 +8737,9 @@ final class MessageCoordinator: ObservableObject {
       topic: link.routes.upTopic,
       wirePayload: wire.wireText,
       requiresValidatedNetwork: true,
+      attachmentTransferId: attachment.transferId,
       clientSourceMessageId: attachment.scope.clientMessageId ?? "",
-      contactId: attachment.scope.contactId,
-      attachmentTransferId: attachment.transferId
+      contactId: attachment.scope.contactId
     )
     scheduleOutboxFlush(after: 0)
   }
