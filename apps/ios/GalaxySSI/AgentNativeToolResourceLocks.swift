@@ -161,6 +161,16 @@ enum AgentNativeToolResourcePolicy {
     return .write
   }
 
+  private static func isPathKey(_ key: String) -> Bool {
+    let normalized = key.lowercased()
+    return normalized == "path" || normalized.hasSuffix("_path")
+  }
+
+  private static func isPathCollectionKey(_ key: String) -> Bool {
+    let normalized = key.lowercased()
+    return normalized == "paths" || normalized.hasSuffix("_paths")
+  }
+
   private static func normalizePath(_ value: String) -> [String] {
     var normalized: [String] = []
     for raw in value.replacingOccurrences(of: "\\", with: "/").split(separator: "/", omittingEmptySubsequences: false) {
