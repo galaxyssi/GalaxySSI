@@ -96,6 +96,7 @@
     <string name="state_stop_requested">已请求停止 · 等待确认</string>
     <string name="state_completed">已完成</string>
     <string name="state_failed">失败</string>
+    <string name="remote_silence_timeout">电脑连续 5 分钟未报告进展，已停止等待。重新连接后可重试。</string>
     <string name="state_cancelled">已停止</string>
     <string name="task_limit">正在执行的任务过多，请先完成已有任务。</string>
     <string name="draft_kept">草稿已保留</string>

@@ -96,6 +96,7 @@
     <string name="state_stop_requested">Stop requested · awaiting confirmation</string>
     <string name="state_completed">Completed</string>
     <string name="state_failed">Failed</string>
+    <string name="remote_silence_timeout">Desktop did not report progress for five minutes. Waiting stopped; you can retry after it reconnects.</string>
     <string name="state_cancelled">Stopped</string>
     <string name="task_limit">Too many active tasks. Finish existing tasks first.</string>
     <string name="draft_kept">Draft retained</string>

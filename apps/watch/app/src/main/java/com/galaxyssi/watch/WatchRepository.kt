@@ -85,6 +85,7 @@ class WatchRepository(private val context: Context) {
     @Volatile var errorResource = 0
         private set
     private val seen = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val remoteSilence = WatchRemoteSilence()
     private val recovery by lazy { WatchRemoteRecovery(context,
         publish = { desktop, payload -> worker.submit<Boolean> {
             Link.serverLink(context, desktop)?.let { sendEphemeral(it, payload) } ?: false
@@ -176,6 +177,7 @@ class WatchRepository(private val context: Context) {
     internal fun transportDiagnostics() = mqtt?.diagnostics().orEmpty()
 
     private fun tick() {
+        sweepRemoteSilence()
         if (!visible && !monitoring && System.currentTimeMillis() - hiddenAt > 15_000) {
             mqtt?.close(); mqtt = null
             connection = ConnectionState.DISCONNECTED
@@ -206,6 +208,18 @@ class WatchRepository(private val context: Context) {
         flush()
         recovery.refresh(store.tasks().filter { task -> links().any { it.desktopId == task.desktopId && mqtt?.ready(it) == true } })
         changed()
+    }
+
+    private fun sweepRemoteSilence() {
+        val now = System.currentTimeMillis()
+        store.tasks().forEach { task ->
+            if (!remoteSilence.expired(task, now)) return@forEach
+            // An unacknowledged request must not be delivered hours later when Desktop returns.
+            if (task.state in setOf(TaskState.QUEUED, TaskState.SENT)) store.outbox.remove(task.messageId)
+            store.save(task.copy(state = TaskState.FAILED, progress = context.getString(R.string.remote_silence_timeout),
+                localTimedOut = true))
+            changed()
+        }
     }
 
     private fun connect() {
@@ -250,7 +264,8 @@ class WatchRepository(private val context: Context) {
             mqtt?.hash(entry.getString("wire")) != hash) return
         store.outbox.remove(id)
         store.task(entry.optString("task"))?.let {
-            if (it.state in setOf(TaskState.QUEUED, TaskState.SENT)) store.save(it.copy(state = TaskState.ACCEPTED))
+            if (it.state in setOf(TaskState.QUEUED, TaskState.SENT))
+                store.save(it.copy(state = TaskState.ACCEPTED, remoteObservedAt = System.currentTimeMillis()))
         }
         seen[desktop] = System.currentTimeMillis(); changed()
     }
@@ -537,7 +552,8 @@ class WatchRepository(private val context: Context) {
                 if (queued.optString("desktop") == desktop) {
                     store.outbox.remove(id)
                     store.task(queued.optString("task"))?.let {
-                        if (it.state in setOf(TaskState.QUEUED, TaskState.SENT)) store.save(it.copy(state = TaskState.ACCEPTED))
+                        if (it.state in setOf(TaskState.QUEUED, TaskState.SENT))
+                            store.save(it.copy(state = TaskState.ACCEPTED, remoteObservedAt = System.currentTimeMillis()))
                     }
                 }
             }
@@ -545,7 +561,7 @@ class WatchRepository(private val context: Context) {
             store.tasks().firstOrNull { it.matches(desktop, payload) }?.let { old ->
                 val updated = old.reduce(desktop, payload)
                 if (old != updated) {
-                    store.save(updated); store.outbox.remove(old.messageId)
+                    store.save(updated.copy(remoteObservedAt = System.currentTimeMillis())); store.outbox.remove(old.messageId)
                     if (updated.state.terminal && updated.reply.isNotBlank()) {
                         com.galaxyssi.chat.AgentResultReceipt.from(payload, desktop)?.let { receipt ->
                             Link.serverLink(context, desktop)?.let { link ->
@@ -553,7 +569,9 @@ class WatchRepository(private val context: Context) {
                             }
                         }
                     }
-                    if (live && !old.state.terminal && updated.state.terminal) main.post { WatchNotifications.completed(context, updated) }
+                    if (live && updated.state.terminal && (!old.state.terminal ||
+                            (old.localTimedOut && updated.reply.isNotBlank())))
+                        main.post { WatchNotifications.completed(context, updated) }
                 }
             }
         }

@@ -42,6 +42,15 @@ class WatchTaskTest {
         val response = event("completed").put("type", "text").put("content", "Summary")
         assertEquals("Summary", completed.reduce(task.desktopId, response).reply)
     }
+    @Test fun authenticatedLateResultReplacesLocalSilenceTimeout() {
+        val timedOut = task.copy(state = TaskState.FAILED, localTimedOut = true)
+        assertEquals(timedOut, timedOut.reduce(task.desktopId, event("running")))
+        val reply = timedOut.reduce(task.desktopId,
+            event("completed").put("type", "text").put("content", "Late answer"))
+        assertEquals(TaskState.COMPLETED, reply.state)
+        assertEquals("Late answer", reply.reply)
+        assertFalse(reply.localTimedOut)
+    }
     @Test fun newTurnUsesSameConversationAndDistinctTaskIdentity() {
         val next = WatchTask.create(task.desktopId, task.routeId, task.agentId, "Continue", task.conversationId)
         assertEquals(task.conversationId, next.conversationId)
