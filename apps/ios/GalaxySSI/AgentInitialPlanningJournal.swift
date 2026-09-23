@@ -5,6 +5,12 @@ struct AgentInitialPlanningReference: Codable, Equatable {
   var conversationId: String
   var turnId: String
   var inputSha256: String
+  var basePlanId: String? = nil
+  var baseRevision: Int? = nil
+
+  var isReplanning: Bool {
+    !(basePlanId ?? "").isBlank && (baseRevision ?? 0) > 0
+  }
 
   var scope: AgentModelLoopScope {
     AgentModelLoopScope(
@@ -13,8 +19,10 @@ struct AgentInitialPlanningReference: Codable, Equatable {
       turnId: turnId,
       taskId: turnId,
       workspaceId: AgentWorkspaceScope.id(conversationId: conversationId, sessionId: sessionId),
-      callerId: "ios-initial-planner",
-      loopId: "initial-planning-intent"
+      callerId: isReplanning ? "ios-replanner" : "ios-initial-planner",
+      loopId: isReplanning
+        ? "replanning-intent-\((baseRevision ?? 0) + 1)-\(inputSha256)"
+        : "initial-planning-intent"
     )
   }
 
@@ -23,6 +31,22 @@ struct AgentInitialPlanningReference: Codable, Equatable {
     case conversationId = "conversation_id"
     case turnId = "turn_id"
     case inputSha256 = "input_sha256"
+    case basePlanId = "base_plan_id"
+    case baseRevision = "base_revision"
+  }
+}
+
+struct AgentReplanningIntent: Codable, Equatable {
+  var planId: String
+  var revision: Int
+  var planSha256: String
+  var reason: String
+
+  enum CodingKeys: String, CodingKey {
+    case planId = "plan_id"
+    case revision
+    case planSha256 = "plan_sha256"
+    case reason
   }
 }
 
@@ -35,6 +59,7 @@ struct AgentInitialPlanningInput: Codable, Equatable {
   var allowsDirectResponse: Bool
   var completionRequirements: AgentCompletionRequirements?
   var plannerConfigurationSha256: String
+  var replanning: AgentReplanningIntent? = nil
 
   enum CodingKeys: String, CodingKey {
     case goal
@@ -45,6 +70,7 @@ struct AgentInitialPlanningInput: Codable, Equatable {
     case allowsDirectResponse = "allows_direct_response"
     case completionRequirements = "completion_requirements"
     case plannerConfigurationSha256 = "planner_configuration_sha256"
+    case replanning
   }
 }
 
@@ -65,7 +91,9 @@ final class AgentInitialPlanningJournal {
       sessionId: sessionId,
       conversationId: input.conversation.conversationId,
       turnId: input.turnId,
-      inputSha256: AgentModelLoopRecoveryIdentity.sha256(input)
+      inputSha256: AgentModelLoopRecoveryIdentity.sha256(input),
+      basePlanId: input.replanning?.planId,
+      baseRevision: input.replanning?.revision
     )
     guard !reference.sessionId.isBlank,
           !reference.conversationId.isBlank,
@@ -95,8 +123,18 @@ final class AgentInitialPlanningJournal {
             input.conversation.conversationId == reference.conversationId else {
         throw AgentModelLoopRecoveryError(code: "initial_planning_scope_changed")
       }
+      guard input.replanning?.planId == reference.basePlanId,
+            input.replanning?.revision == reference.baseRevision else {
+        throw AgentModelLoopRecoveryError(code: "planning_base_scope_changed")
+      }
       return try await operation(input)
     }
+  }
+
+  func planFingerprint(_ plan: AgentPlan, goal: String) -> String {
+    AgentModelLoopRecoveryIdentity.sha256(
+      AgentPlanningPlanFingerprint(goal: goal, plan: plan)
+    )
   }
 
   private static func encode(_ input: AgentInitialPlanningInput) throws -> Data {
@@ -116,6 +154,11 @@ final class AgentInitialPlanningJournal {
       throw AgentModelLoopRecoveryError(code: "initial_planning_input_invalid")
     }
   }
+}
+
+private struct AgentPlanningPlanFingerprint: Encodable {
+  var goal: String
+  var plan: AgentPlan
 }
 
 extension AgentModelLoopScope {

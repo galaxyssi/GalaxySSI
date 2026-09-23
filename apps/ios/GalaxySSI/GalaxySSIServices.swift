@@ -518,7 +518,7 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func recoverInterruptedInitialPlanning() async -> Int {
-    var recoveredCount = 0
+    var recoveredCount = await recoverInterruptedReplanning()
     let candidates = store.recentAgentTasks(limit: 500).filter {
       $0.phase == .planning && $0.activePlan == nil && $0.pendingPlanning != nil && !$0.blocked
     }
@@ -574,6 +574,85 @@ final class MessageCoordinator: ObservableObject {
         task.blocked = true
         task.verification = error.localizedDescription
         task.executionLog.append("Initial planning recovery stopped: \(error.localizedDescription)")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        recoveredCount += 1
+      }
+    }
+    return recoveredCount
+  }
+
+  private func recoverInterruptedReplanning() async -> Int {
+    var recoveredCount = 0
+    let candidates = store.recentAgentTasks(limit: 500).filter {
+      $0.phase == .planning && $0.activePlan != nil && $0.pendingPlanning?.isReplanning == true
+    }
+    for candidate in candidates {
+      guard let reference = candidate.pendingPlanning,
+            let basePlan = candidate.activePlan,
+            let outgoing = localOutgoingMessage(for: candidate),
+            reference.basePlanId == basePlan.planId,
+            reference.baseRevision == basePlan.revision,
+            let continuationScope = AgentPlanContinuationScope.resolve(
+              plan: basePlan,
+              activeConversationId: outgoing.conversationId,
+              activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+              sessionId: candidate.sessionId
+            ) else { continue }
+      do {
+        let outcome = try await localInitialPlanningJournal.restore(reference) { input in
+          guard let intent = input.replanning else {
+            throw AgentModelLoopRecoveryError(code: "replanning_intent_missing")
+          }
+          guard input.plannerConfigurationSha256 == self.initialPlannerConfigurationSha256(
+            conversationId: input.conversation.conversationId
+          ) else {
+            throw AgentModelLoopRecoveryError(code: "replanning_planner_configuration_changed")
+          }
+          guard intent.planId == basePlan.planId,
+                intent.revision == basePlan.revision,
+                intent.planSha256 == self.localInitialPlanningJournal.planFingerprint(
+                  basePlan,
+                  goal: input.goal
+                ) else {
+            throw AgentModelLoopRecoveryError(code: "replanning_base_plan_changed")
+          }
+          return await self.modelPlannedLocalNativeActions(
+            requestText: input.goal,
+            attachments: [],
+            outgoing: outgoing,
+            executionMode: input.executionMode,
+            allowsDirectResponse: false,
+            replanReason: intent.reason,
+            executionHistory: basePlan.historyForReplan().filter(continuationScope.owns),
+            completionRequirements: input.completionRequirements,
+            conversationOverride: input.conversation,
+            hasAttachmentsOverride: false
+          )
+        }
+        guard var task = store.agentTask(id: candidate.taskId),
+              task.phase == .planning,
+              task.pendingPlanning == reference else { continue }
+        task.pendingPlanning = nil
+        task.phase = .waitingResponse
+        task.executionLog.append("Recovered interrupted model replanning from durable input")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        _ = acceptRollingPlanningOutcome(
+          outcome,
+          previousPlan: basePlan,
+          outgoing: outgoing,
+          task: &task
+        )
+        recoveredCount += 1
+      } catch {
+        guard var task = store.agentTask(id: candidate.taskId),
+              task.phase == .planning,
+              task.pendingPlanning == reference else { continue }
+        task.phase = .paused
+        task.blocked = true
+        task.verification = error.localizedDescription
+        task.executionLog.append("Replanning recovery stopped: \(error.localizedDescription)")
         task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
         store.upsertAgentTask(task)
         recoveredCount += 1
@@ -3404,15 +3483,86 @@ final class MessageCoordinator: ObservableObject {
       request: task.goal,
       configuredMode: store.agentSafetySettings.taskExecutionMode
     ).mode
-    let modelOutcome = await modelPlannedLocalNativeActions(
-      requestText: task.goal,
-      attachments: [],
-      outgoing: outgoing,
-      executionMode: taskExecutionMode,
-      allowsDirectResponse: false,
-      replanReason: "User requested a revised plan from the current phone state",
-      executionHistory: plannerHistory
-    )
+    let replanReason = "User requested a revised plan from the current phone state"
+    let modelOutcome: GuardedModelAgentPlanningResult?
+    if let previousPlan, let continuationScope {
+      let priorPhase = task.phase
+      let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
+      let input = AgentInitialPlanningInput(
+        goal: task.goal,
+        conversation: conversation,
+        turnId: continuationScope.turnId,
+        executionMode: taskExecutionMode,
+        hasAttachments: false,
+        allowsDirectResponse: false,
+        completionRequirements: previousPlan.completionRequirements,
+        plannerConfigurationSha256: initialPlannerConfigurationSha256(
+          conversationId: outgoing.conversationId
+        ),
+        replanning: AgentReplanningIntent(
+          planId: previousPlan.planId,
+          revision: previousPlan.revision,
+          planSha256: localInitialPlanningJournal.planFingerprint(previousPlan, goal: task.goal),
+          reason: replanReason
+        )
+      )
+      var committedReference: AgentInitialPlanningReference?
+      do {
+        modelOutcome = try await localInitialPlanningJournal.begin(
+          sessionId: task.sessionId,
+          input: input
+        ) { reference in
+          committedReference = reference
+          task.phase = .planning
+          task.pendingPlanning = reference
+          task.executionLog.append(
+            "Native action plan: committed revision \(previousPlan.revision) for durable replanning"
+          )
+          task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+          store.upsertAgentTask(task)
+          return await modelPlannedLocalNativeActions(
+            requestText: task.goal,
+            attachments: [],
+            outgoing: outgoing,
+            executionMode: taskExecutionMode,
+            allowsDirectResponse: false,
+            replanReason: replanReason,
+            executionHistory: plannerHistory,
+            completionRequirements: previousPlan.completionRequirements,
+            conversationOverride: conversation,
+            hasAttachmentsOverride: false
+          )
+        }
+      } catch {
+        task.phase = .paused
+        task.blocked = true
+        task.verification = error.localizedDescription
+        task.executionLog.append("Native action replanning persistence failed: \(error.localizedDescription)")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        return false
+      }
+      guard let reference = committedReference,
+            let persistedTask = store.agentTask(id: taskId),
+            persistedTask.phase == .planning,
+            persistedTask.pendingPlanning == reference else { return false }
+      task = persistedTask
+      task.pendingPlanning = nil
+      task.phase = priorPhase
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+    } else {
+      modelOutcome = await modelPlannedLocalNativeActions(
+        requestText: task.goal,
+        attachments: [],
+        outgoing: outgoing,
+        executionMode: taskExecutionMode,
+        allowsDirectResponse: false,
+        replanReason: replanReason,
+        executionHistory: plannerHistory,
+        completionRequirements: previousPlan?.completionRequirements
+      )
+    }
     let plan = modelOutcome?.actionPlan ?? fallbackPlan
     guard var resolvedPlan = plan else {
       return false
@@ -3542,6 +3692,19 @@ final class MessageCoordinator: ObservableObject {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused else {
       return false
+    }
+    if task.pendingPlanning?.isReplanning == true {
+      task.phase = .planning
+      task.blocked = false
+      task.result = ""
+      task.verification = "User resumed interrupted model replanning"
+      task.executionLog.append("Rolling plan: durable replanning resumed")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      Task { @MainActor [weak self] in
+        _ = await self?.recoverInterruptedReplanning()
+      }
+      return true
     }
     let action: AgentAction
     if let plan = task.activePlan {
@@ -6749,29 +6912,99 @@ final class MessageCoordinator: ObservableObject {
     }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
     let plannerHistory = previousPlan.historyForReplan().filter(continuationScope.owns)
-    let outcome = await modelPlannedLocalNativeActions(
-      requestText: task.goal,
-      attachments: [],
-      outgoing: outgoing,
+    let conversation = initialPlanningConversation(requestText: task.goal, outgoing: outgoing)
+    let planningInput = AgentInitialPlanningInput(
+      goal: task.goal,
+      conversation: conversation,
+      turnId: continuationScope.turnId,
       executionMode: previousPlan.executionMode,
+      hasAttachments: false,
       allowsDirectResponse: false,
-      replanReason: reason,
-      executionHistory: plannerHistory
+      completionRequirements: previousPlan.completionRequirements,
+      plannerConfigurationSha256: initialPlannerConfigurationSha256(
+        conversationId: outgoing.conversationId
+      ),
+      replanning: AgentReplanningIntent(
+        planId: previousPlan.planId,
+        revision: previousPlan.revision,
+        planSha256: localInitialPlanningJournal.planFingerprint(previousPlan, goal: task.goal),
+        reason: reason
+      )
     )
-    guard store.agentTask(id: taskId)?.phase == .waitingResponse else { return }
+    var committedReference: AgentInitialPlanningReference?
+    let outcome: GuardedModelAgentPlanningResult?
+    do {
+      outcome = try await localInitialPlanningJournal.begin(
+        sessionId: task.sessionId,
+        input: planningInput
+      ) { reference in
+        committedReference = reference
+        task.phase = .planning
+        task.pendingPlanning = reference
+        task.executionLog.append(
+          "Rolling plan: committed revision \(previousPlan.revision) for durable replanning"
+        )
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        return await modelPlannedLocalNativeActions(
+          requestText: task.goal,
+          attachments: [],
+          outgoing: outgoing,
+          executionMode: previousPlan.executionMode,
+          allowsDirectResponse: false,
+          replanReason: reason,
+          executionHistory: plannerHistory,
+          completionRequirements: previousPlan.completionRequirements,
+          conversationOverride: conversation,
+          hasAttachmentsOverride: false
+        )
+      }
+    } catch {
+      task.phase = .paused
+      task.blocked = true
+      task.verification = error.localizedDescription
+      task.executionLog.append("Rolling plan persistence failed: \(error.localizedDescription)")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
+    guard let reference = committedReference,
+          let persistedTask = store.agentTask(id: taskId),
+          persistedTask.phase == .planning,
+          persistedTask.pendingPlanning == reference else { return }
+    task = persistedTask
+    task.pendingPlanning = nil
+    task.phase = .waitingResponse
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    _ = acceptRollingPlanningOutcome(
+      outcome,
+      previousPlan: previousPlan,
+      outgoing: outgoing,
+      task: &task
+    )
+  }
+
+  @discardableResult
+  private func acceptRollingPlanningOutcome(
+    _ outcome: GuardedModelAgentPlanningResult?,
+    previousPlan: AgentPlan,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
     guard let outcome else {
       task.verification = "Rolling plan assessment is pending because the planning model is unavailable"
       task.executionLog.append("Rolling plan: waiting for model assessment for revision \(previousPlan.revision)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
-      return
+      return false
     }
     guard case let .plan(nextPlan) = outcome else {
       task.verification = "Rolling plan assessment did not return an executable batch"
       task.executionLog.append("Rolling plan: waiting for a structured model assessment")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
-      return
+      return false
     }
     if nextPlan.actions.count == 1,
        let finalAction = nextPlan.actions.first,
@@ -6783,7 +7016,7 @@ final class MessageCoordinator: ObservableObject {
         outgoing: outgoing,
         task: &task
       )
-      return
+      return true
     }
 
     let nextRevision = max(nextPlan.revision, previousPlan.revision + 1)
@@ -6802,7 +7035,7 @@ final class MessageCoordinator: ObservableObject {
       task.executionLog.append("Rolling plan: invalid model batch at revision \(previousPlan.revision + 1)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
-      return
+      return false
     }
     task.phase = .executing
     task.result = ""
@@ -6810,7 +7043,7 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Rolling plan: accepted revision \(continuedPlan.revision) with \(continuedPlan.actions.count) action(s)")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
-    _ = applyLocalNativeActions(
+    return applyLocalNativeActions(
       actions: continuedPlan.actions,
       outgoing: outgoing,
       task: &task,

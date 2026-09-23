@@ -174,6 +174,56 @@ final class AgentModelToolLoopTests: XCTestCase {
     }
   }
 
+  func testPlanningJournalRestoresBoundReplanningIntent() async throws {
+    let backing = InMemoryAgentModelLoopJournal()
+    let journal = AgentInitialPlanningJournal(journal: backing)
+    let intent = AgentReplanningIntent(
+      planId: "plan-1",
+      revision: 7,
+      planSha256: String(repeating: "a", count: 64),
+      reason: "rolling_batch_completed:revision=7"
+    )
+    let input = AgentInitialPlanningInput(
+      goal: "Continue from committed observations",
+      conversation: AgentConversationContext(
+        conversationId: "conversation-1",
+        summary: "Original private context",
+        turns: [],
+        privateMode: true,
+        globalContext: "Committed global context",
+        trackingPaused: false
+      ),
+      turnId: "turn-1",
+      executionMode: .autoComplete,
+      hasAttachments: false,
+      allowsDirectResponse: false,
+      completionRequirements: nil,
+      plannerConfigurationSha256: "configuration",
+      replanning: intent
+    )
+    var retainedReference: AgentInitialPlanningReference?
+    _ = try await journal.begin(sessionId: "session-1", input: input) { reference in
+      retainedReference = reference
+    }
+    let reference = try XCTUnwrap(retainedReference)
+    let restored = try await journal.restore(reference) { $0 }
+
+    XCTAssertTrue(reference.isReplanning)
+    XCTAssertEqual(reference.basePlanId, intent.planId)
+    XCTAssertEqual(reference.baseRevision, intent.revision)
+    XCTAssertEqual(restored, input)
+    XCTAssertEqual(restored.replanning, intent)
+
+    var changed = reference
+    changed.basePlanId = "different-plan"
+    do {
+      _ = try await journal.restore(changed) { $0 }
+      XCTFail("Expected changed replanning base scope to be rejected.")
+    } catch let error as AgentModelLoopRecoveryError {
+      XCTAssertEqual(error.code, "planning_base_scope_changed")
+    }
+  }
+
   func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() async throws {
     var capturedContexts: [AgentNativeToolInvocationContext] = []
     let registry = try registry(idempotency: .idempotent) { invocation in
