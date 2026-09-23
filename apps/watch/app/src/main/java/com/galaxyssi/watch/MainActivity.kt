@@ -684,20 +684,25 @@ class MainActivity : Activity() {
         }
         button(R.string.refresh) { repo.refresh() }
     }
-    private fun directoryRow(name: String, subtitle: String, count: Int = 0, fingerprint: String = "", action: () -> Unit) {
+    private fun directoryRow(name: String, subtitle: String, count: Int = 0, fingerprint: String = "",
+        status: WatchConversationStatus? = null, action: () -> Unit) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(62)
             setPadding(dp(2), dp(7), dp(2), dp(7)); setOnClickListener { action() }
-            addView(ImageView(this@MainActivity).apply {
+            addView(if (status != null) WatchConversationStatusIcon(this@MainActivity, status) else ImageView(this@MainActivity).apply {
                 if (fingerprint.isBlank()) setImageResource(R.mipmap.ic_launcher)
                 else setImageDrawable(com.galaxyssi.chat.GalaxySSIIdenticonDrawable(fingerprint))
             }, LinearLayout.LayoutParams(dp(28), dp(28)))
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, dp(2), 0)
-                addView(TextView(this@MainActivity).apply { text = name.take(80).replace('\n', ' ').replace('\r', ' '); textSize = 14f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(TextView(this@MainActivity).apply {
+                    text = name.take(80).replace('\n', ' ').replace('\r', ' '); textSize = 14f; setTextColor(Color.WHITE)
+                    maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                    if (status == WatchConversationStatus.COMPLETE_UNREAD) setTypeface(typeface, Typeface.BOLD)
+                })
                 addView(TextView(this@MainActivity).apply { text = subtitle.take(120).replace('\n', ' ').replace('\r', ' '); textSize = 11f; setTextColor(Color.LTGRAY); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            if (count > 0) addView(TextView(this@MainActivity).apply { text = count.toString(); setTextColor(green); textSize = 12f })
+            if (status == null && count > 0) addView(TextView(this@MainActivity).apply { text = count.toString(); setTextColor(green); textSize = 12f })
         }
         content.addView(row, LinearLayout.LayoutParams(-1, -2))
         content.addView(View(this).apply { setBackgroundColor(Color.rgb(52, 56, 65)) }, LinearLayout.LayoutParams(-1, dp(1)))
@@ -715,9 +720,15 @@ class MainActivity : Activity() {
         }
         val entries = mutableListOf<Pair<Long, () -> Unit>>()
         groups.forEach { turns ->
-            val current = turns.first()
+            val current = WatchConversationStatus.latest(turns)
+            val status = WatchConversationStatus.resolve(current, turns.any { it.state == TaskState.COMPLETED && repo.store.cachedUnread(it) })
+            val subtitle = when (status) {
+                WatchConversationStatus.COMPLETE_UNREAD, WatchConversationStatus.READ -> current.reply
+                WatchConversationStatus.RUNNING -> current.progress.ifBlank { getString(status.label()) }
+                else -> getString(status.label())
+            }
             entries += current.sourceId to {
-            directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::cachedUnread)) {
+            directoryRow(turns.minBy { it.sourceId }.prompt, subtitle, status = status) {
                 selectedTask = current.id; repo.saveActiveTask(current.id); followUpId = ""; navigate("home")
             }
             }
