@@ -37,6 +37,13 @@ enum AgentModelPlanParser {
           !actionValues.isEmpty else {
       return nil
     }
+    let completionRequirements = parseCompletionRequirements(json["completion_requirements"])
+    if json["completion_requirements"] != nil && completionRequirements == nil {
+      return nil
+    }
+    if completionRequirements?.canReplace(request.completionRequirements) == false {
+      return nil
+    }
     let normalizedSettings = settings.normalized
     let maximumActions = context.maximumActionsOverride ?? normalizedSettings.maxActions
     guard actionValues.count <= maximumActions else {
@@ -84,7 +91,10 @@ enum AgentModelPlanParser {
       return nil
     }
 
-    var plan = AgentPlanFactory.actions(request: request, actions)
+    var plan = AgentPlanningTiming.measure("plan") {
+      AgentPlanFactory.actions(request: request, actions)
+    }
+    plan.completionRequirements = completionRequirements ?? request.completionRequirements
     let expectedResult = json.string("expected_result").trimmedForModelPlan.prefixString(500)
     let rollbackStrategy = json.string("rollback_strategy").trimmedForModelPlan.prefixString(500)
     if !expectedResult.isEmpty {
@@ -98,6 +108,31 @@ enum AgentModelPlanParser {
     plan.validation = AgentPlanValidator.validate(plan)
     let maximumGraphDepth = context.maximumActionsOverride ?? normalizedSettings.maxAgentHops
     return plan.validation.valid && toolGraphDepth(actions: plan.actions) <= maximumGraphDepth ? plan : nil
+  }
+
+  private static func parseCompletionRequirements(
+    _ value: AgentMcpJSONValue?
+  ) -> AgentCompletionRequirements? {
+    guard let object = value?.objectValue,
+          case .string(let publicationValue) = object["publication"],
+          let publication = AgentPublicationRequirement(rawValue: publicationValue),
+          case .bool(let phoneLinux) = object["phone_linux"] else {
+      return nil
+    }
+    let reason: String
+    if let value = object["reason"] {
+      guard case .string(let rawReason) = value, rawReason.count <= 1_000 else {
+        return nil
+      }
+      reason = rawReason
+    } else {
+      reason = ""
+    }
+    return AgentCompletionRequirements(
+      publication: publication,
+      phoneLinux: phoneLinux,
+      reason: reason
+    )
   }
 
   private static func parseAction(

@@ -348,3 +348,107 @@ enum AgentRollingPlanPolicy {
     }
   }
 }
+
+enum AgentCompletionEvidencePolicy {
+  static func missingEvidence(
+    requirements: AgentCompletionRequirements?,
+    history: [AgentAction]
+  ) -> [String] {
+    guard let requirements else {
+      return ["model-declared completion_requirements (publication and phone_linux)"]
+    }
+    let completedTools = Set(history.filter(hasVerifiedCompletionReceipt).map(toolId))
+    var missing: [String] = []
+    if requirements.phoneLinux && !completedTools.contains(runtimeExecute) {
+      missing.append("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
+    }
+    switch requirements.publication {
+    case .none:
+      break
+    case .commit where !completedTools.contains(repositoryCommit):
+      missing.append("a successful commit of the verified phone project")
+    case .push where !completedTools.contains(repositoryPush):
+      missing.append("a successful push of the verified project branch")
+    case .pullRequest where completedTools.isDisjoint(with: pullRequestTools):
+      missing.append("a successfully created pull request with its URL")
+    default:
+      break
+    }
+    return missing
+  }
+
+  private static func hasVerifiedCompletionReceipt(_ action: AgentAction) -> Bool {
+    guard action.status == .completed else { return false }
+    let id = toolId(action)
+    guard terminalEvidenceTools.contains(id) else { return true }
+    guard let output = decodeObject(action.evidence) else { return false }
+    switch id {
+    case runtimeExecute:
+      return output["exit_code"]?.intValue == 0
+    case repositoryCommit:
+      return isGitCommit(output.string("commit"))
+    case repositoryPush:
+      return !output.string("branch").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    case createPullRequest:
+      return hasValidPullRequest(output, numberKey: "number", urlKey: "url")
+    case publishPullRequest:
+      return hasValidPullRequest(
+        output,
+        numberKey: "pull_request_number",
+        urlKey: "pull_request_url"
+      )
+    case finalizePullRequest:
+      return isGitCommit(output.string("commit")) && hasValidPullRequest(
+        output,
+        numberKey: "pull_request_number",
+        urlKey: "pull_request_url"
+      )
+    default:
+      return true
+    }
+  }
+
+  private static func toolId(_ action: AgentAction) -> String {
+    let parameter = action.parameters["tool_id"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return parameter.isEmpty ? action.target : parameter
+  }
+
+  private static func decodeObject(_ value: String) -> AgentMcpJSONObject? {
+    guard let data = value.data(using: .utf8) else { return nil }
+    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
+  }
+
+  private static func isGitCommit(_ value: String) -> Bool {
+    value.range(of: #"^[0-9a-fA-F]{7,64}$"#, options: .regularExpression) != nil
+  }
+
+  private static func hasValidPullRequest(
+    _ output: AgentMcpJSONObject,
+    numberKey: String,
+    urlKey: String
+  ) -> Bool {
+    guard (output[numberKey]?.intValue ?? 0) > 0 else { return false }
+    return output.string(urlKey).range(
+      of: #"^https://github\.com/[^/\s]+/[^/\s]+/pull/[1-9][0-9]*$"#,
+      options: .regularExpression
+    ) != nil
+  }
+
+  private static let runtimeExecute = AgentIOSOnDeviceRuntimeNativeToolCatalog.execute
+  private static let repositoryCommit = AgentIOSProjectRepositoryMutationToolCatalog.commit
+  private static let repositoryPush = AgentIOSProjectRepositoryMutationToolCatalog.push
+  private static let createPullRequest = "galaxyssi.project.github.pull_request.create"
+  private static let publishPullRequest = "galaxyssi.project.github.pull_request.publish"
+  private static let finalizePullRequest = "galaxyssi.project.github.pull_request.finalize"
+  private static let pullRequestTools: Set<String> = [
+    createPullRequest,
+    publishPullRequest,
+    finalizePullRequest
+  ]
+  private static let terminalEvidenceTools = pullRequestTools.union([
+    runtimeExecute,
+    repositoryCommit,
+    repositoryPush
+  ])
+}

@@ -9,6 +9,15 @@ enum AgentModelPlanningPrompt {
     request: AgentModelPlanningPromptRequest,
     settings: AgentModelPlannerSettings
   ) -> String {
+    AgentPlanningTiming.measure("prompt") {
+      buildPrompt(request: request, settings: settings)
+    }
+  }
+
+  private static func buildPrompt(
+    request: AgentModelPlanningPromptRequest,
+    settings: AgentModelPlannerSettings
+  ) -> String {
     let normalizedSettings = settings.normalized
     let compact = request.requirements.mode == .fast || request.requirements.mode == .economy
     let screenItemLimit = compact ? 16 : 40
@@ -32,11 +41,19 @@ enum AgentModelPlanningPrompt {
     appendProjectBatchContract(to: &prompt, request: request)
     appendCoordinationRules(to: &prompt, request: request, settings: normalizedSettings)
     appendRequestedMembers(to: &prompt, request: request)
-    append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
+    AgentPlanningTiming.measure("goal") {
+      append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
+    }
     appendReplanContext(to: &prompt, request: request)
-    appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
-    appendConversationContext(to: &prompt, request: request)
-    appendGlobalRealtimeContext(to: &prompt, request: request)
+    AgentPlanningTiming.measure("progress") {
+      appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings, compact: compact)
+    }
+    AgentPlanningTiming.measure("conversation") {
+      appendConversationContext(to: &prompt, request: request)
+    }
+    AgentPlanningTiming.measure("context") {
+      appendGlobalRealtimeContext(to: &prompt, request: request)
+    }
     appendScreenSummary(to: &prompt, request: request)
     if normalizedSettings.shareScreenText {
       appendScreenInventory(
@@ -48,7 +65,9 @@ enum AgentModelPlanningPrompt {
     }
     appendInstalledApps(to: &prompt, request: request, limit: appItemLimit)
     appendConnectors(to: &prompt, request: request, limit: connectorItemLimit)
-    appendNativeTools(to: &prompt, request: request, compact: compact)
+    AgentPlanningTiming.measure("inventory") {
+      appendNativeTools(to: &prompt, request: request, compact: compact)
+    }
     return prompt.prefixStringForPlanning(promptLimit)
   }
 
@@ -78,6 +97,7 @@ enum AgentModelPlanningPrompt {
     }
     append(&prompt, "ActionPlan JSON schema:\n")
     append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
+    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\"},")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")
     append(&prompt, "\"use_outputs_from\":[\"earlier_ref\"],\"parameters\":{\"key\":\"value\"}}]}\n\n")
@@ -105,6 +125,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "For galaxyssi.runtime.execute phone-development manifests, include language=python and put the complete manifest under phone_development_manifest; the manifest must name an entry_file present in files. ")
     append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
     append(&prompt, "Plan only the next bounded execution batch, never the entire long-running goal. ")
+    append(&prompt, "Declare root completion_requirements by interpreting the user's actual requested outcome, including exclusions. There is no default publication requirement. publication is none, commit, push, or pull_request; phone_linux is true only when successful execution in the phone Linux guest is part of the requested outcome. These fields are completion obligations, not permissions. Preserve an existing declaration unless correcting it, and explain every outcome-changing correction in reason. ")
     if maxBatchActions >= 3 {
       append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
     }
@@ -165,7 +186,9 @@ enum AgentModelPlanningPrompt {
       &prompt,
       "Independent reads and disjoint mutations may run concurrently. Order resource conflicts, runtime work, and publication. Native use_outputs_from must stay empty. Only finish after all required evidence exists. "
     )
-    append(&prompt, "Stop the graph when later choices require interpreting a receipt. Use next_cursor for lists and keep same or nested paths ordered.\n\n")
+    append(&prompt, "Generic native receipts are observations, not final answers. Stop the graph when later choices require interpreting a receipt. ")
+    append(&prompt, "After verified evidence proves completion, return one DRAFT_PLAN with target=task-complete and a concise final answer in the user's language; do not repeat tools merely to produce an answer. ")
+    append(&prompt, "Use next_cursor for lists and keep same or nested paths ordered.\n\n")
   }
 
   private static func appendCoordinationRules(
@@ -213,6 +236,11 @@ enum AgentModelPlanningPrompt {
       return
     }
     append(&prompt, "Replan reason: \(reason.prefixStringForPlanning(500))\n")
+    if let requirements = request.planRequest.completionRequirements,
+       let data = try? JSONEncoder().encode(requirements),
+       let encoded = String(data: data, encoding: .utf8) {
+      append(&prompt, "Current model-declared completion_requirements: \(encoded)\n")
+    }
     append(&prompt, "Continue from the current state. Do not repeat completed actions unless the screen proves they were undone.\n")
     if AgentRollingPlanPolicy.isBatchBoundaryReason(reason) {
       append(&prompt, "The previous execution batch finished. Reassess the whole goal from verified observations. ")

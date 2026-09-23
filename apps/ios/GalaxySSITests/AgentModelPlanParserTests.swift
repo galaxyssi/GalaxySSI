@@ -223,6 +223,54 @@ final class AgentModelPlanParserTests: XCTestCase {
     ))
   }
 
+  func testAgentModelPlanParserPreservesAndValidatesCompletionRequirements() throws {
+    let previous = AgentCompletionRequirements(publication: .commit, phoneLinux: true)
+    let inherited = try XCTUnwrap(AgentModelPlanParser.parse(
+      request: request(completionRequirements: previous),
+      raw: planJson(actionJson(ref: "read", kind: "READ_SCREEN")),
+      settings: AgentModelPlannerSettings(),
+      context: context()
+    ))
+    XCTAssertEqual(inherited.completionRequirements, previous)
+
+    let changedWithoutReason = """
+    {"completion_requirements":{"publication":"none","phone_linux":false},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    XCTAssertNil(AgentModelPlanParser.parse(
+      request: request(completionRequirements: previous),
+      raw: changedWithoutReason,
+      settings: AgentModelPlannerSettings(),
+      context: context()
+    ))
+
+    let corrected = """
+    {"completion_requirements":{"publication":"none","phone_linux":false,
+     "reason":"The user explicitly excluded committing and Linux execution."},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    let parsed = try XCTUnwrap(AgentModelPlanParser.parse(
+      request: request(completionRequirements: previous),
+      raw: corrected,
+      settings: AgentModelPlannerSettings(),
+      context: context()
+    ))
+    XCTAssertEqual(parsed.completionRequirements?.publication, .none)
+    XCTAssertEqual(parsed.completionRequirements?.phoneLinux, false)
+    XCTAssertFalse(parsed.completionRequirements?.reason.isEmpty ?? true)
+
+    let malformed = """
+    {"completion_requirements":{"publication":"none","phone_linux":"false"},
+     "actions":[{"ref":"read","kind":"READ_SCREEN","parameters":{}}]}
+    """
+    XCTAssertNil(AgentModelPlanParser.parse(
+      request: request(completionRequirements: previous),
+      raw: malformed,
+      settings: AgentModelPlannerSettings(),
+      context: context()
+    ))
+  }
+
   func testAgentModelPlanParserUsesMcpCallToolProvisionalRisk() throws {
     let callTool = try nativeToolDescriptor(id: AgentMcpNativeTools.callTool, risk: .low)
     let plan = try XCTUnwrap(AgentModelPlanParser.parse(
@@ -243,14 +291,16 @@ final class AgentModelPlanParserTests: XCTestCase {
 
   private func request(
     targets: [AgentCallableTarget]? = nil,
-    nativeTools: [AgentNativeToolDescriptor] = []
+    nativeTools: [AgentNativeToolDescriptor] = [],
+    completionRequirements: AgentCompletionRequirements? = nil
   ) -> AgentPlanRequest {
     AgentPlanRequest(
       goal: "Complete the task",
       screen: AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent", isAccessibilityEnabled: true),
       targets: targets ?? [target()],
       nativeTools: nativeTools,
-      contextDigest: "model-plan-parser-test"
+      contextDigest: "model-plan-parser-test",
+      completionRequirements: completionRequirements
     )
   }
 

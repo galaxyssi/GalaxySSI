@@ -2902,6 +2902,14 @@
 "agent_latency_screen_observe" = "执行后屏幕观察";
 "agent_latency_receipt_observe" = "工具回执观察";
 "agent_latency_result_verify" = "验证结果应用";
+"agent_latency_planning_total" = "规划总耗时";
+"agent_latency_planning_progress" = "进度账本";
+"agent_latency_planning_inventory" = "工具清单";
+"agent_latency_planning_goal" = "目标准备";
+"agent_latency_planning_context" = "持久上下文";
+"agent_latency_planning_conversation" = "会话上下文";
+"agent_latency_planning_prompt" = "提示词组装";
+"agent_latency_planning_plan" = "计划构建";
 "voice_performance_subtitle" = "延迟、可靠性、温度状态与自动回退";
 "voice_performance_hero_title" = "语音链路健康度";
 "voice_performance_hero_subtitle" = "来自本机且不包含内容的性能数据";
