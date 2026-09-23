@@ -438,7 +438,7 @@ final class GalaxySSILinkDeliveryStore {
   func discard(messageId: String) {
     guard !messageId.isEmpty else { return }
     let before = state.outbox.count
-    state.outbox
+    return state.outbox
       .filter { $0.messageId == messageId }
       .forEach(deleteOutboxPayload)
     state.outbox.removeAll { $0.messageId == messageId }
