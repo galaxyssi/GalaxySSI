@@ -24,7 +24,10 @@ class WatchApplication : com.galaxyssi.chat.GalaxySSIApplication() {
     override fun onCreate() {
         super.onCreate()
         registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
-            override fun onActivityResumed(activity: android.app.Activity) { foregroundActivity = activity; WatchBackgroundWakeService.visibility(true) }
+            override fun onActivityResumed(activity: android.app.Activity) { foregroundActivity = activity
+                WatchBackgroundWakeService.visibility(true)
+                if (activity !is MainActivity && activity !is VoiceEntry) WatchBackgroundWakeService.otherPage(true)
+            }
             override fun onActivityPaused(activity: android.app.Activity) { if (foregroundActivity === activity) { foregroundActivity = null; WatchBackgroundWakeService.visibility(false) } }
             override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) = Unit
             override fun onActivityStarted(a: android.app.Activity) = Unit
@@ -33,6 +36,8 @@ class WatchApplication : com.galaxyssi.chat.GalaxySSIApplication() {
             override fun onActivityDestroyed(a: android.app.Activity) = Unit
         })
     }
+    fun anotherActivityIsForeground(activity: android.app.Activity): Boolean =
+        foregroundActivity != null && foregroundActivity !== activity
     fun openContactRequest(id: String): Boolean {
         val activity = foregroundActivity ?: return false
         activity.startActivity(android.content.Intent(activity, WatchContactsActivity::class.java)

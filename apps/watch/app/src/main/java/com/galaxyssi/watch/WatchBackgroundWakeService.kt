@@ -76,7 +76,7 @@ class WatchBackgroundWakeService : Service() {
             .setOnlyAlertOnce(true).addAction(Notification.Action.Builder(null, getString(R.string.background_wake_stop), stop).build()).build()
     }
     private fun refresh() {
-        val allowed = WatchBackgroundWakePolicy.allowed(visible, foregroundAllowed, blocked,
+        val allowed = WatchBackgroundWakePolicy.allowed(visible, foregroundAllowed, blocked || peerRecording,
             SystemClock.elapsedRealtime() < detectedUntil)
         engine.setEnabled(allowed)
     }
@@ -96,6 +96,7 @@ class WatchBackgroundWakeService : Service() {
         private var visible = false
         private var foregroundAllowed = false
         private var blocked = false
+        private var peerRecording = false
         private var foregroundWake: (() -> Unit)? = null
         fun visibility(value: Boolean) {
             visible = value
@@ -107,6 +108,21 @@ class WatchBackgroundWakeService : Service() {
         }
         fun update(allowed: Boolean, suspended: Boolean, onWake: (() -> Unit)?) {
             foregroundAllowed = allowed; blocked = suspended; foregroundWake = onWake
+            instance?.refresh()
+        }
+        fun otherPage(allowed: Boolean) {
+            foregroundAllowed = allowed
+            blocked = false
+            foregroundWake = null
+            instance?.refresh()
+        }
+        fun stopForPeerRecordingThen(action: () -> Unit) {
+            peerRecording = true
+            val service = instance
+            if (service == null) action() else service.engine.stopThen(action)
+        }
+        fun peerRecordingFinished() {
+            peerRecording = false
             instance?.refresh()
         }
         fun stopThen(action: () -> Unit) {

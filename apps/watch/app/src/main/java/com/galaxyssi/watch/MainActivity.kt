@@ -76,6 +76,7 @@ class MainActivity : Activity() {
     private var wasSpeaking = false
     private var wakeCooldownUntil = 0L
     private val refreshWakeLater = Runnable { refreshWake() }
+    private var lastWakeGate = ""
     private var screenAwake: WatchScreenAwake? = null
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
@@ -175,7 +176,7 @@ class MainActivity : Activity() {
         super.onResume(); resumed = true
         wakePreference = repo.store.foregroundWake
         if (wakePreference && repo.store.backgroundWake) WatchBackgroundWakeService.start(this)
-        updateConversationVisibility(); updated()
+        updateConversationVisibility(); updated(); refreshWake()
         handler.removeCallbacks(refreshModelStatus); handler.postDelayed(refreshModelStatus, 30_000)
     }
     override fun onPause() {
@@ -1050,27 +1051,33 @@ class MainActivity : Activity() {
         refreshWake()
         if (page == "settings") render()
     }
-    private fun wakeAllowed(): Boolean = wakePreference && resumed && page == "home" && conversationReady &&
-        !voicePending && !voiceEntryPending && !busy && speech?.active != true && draft.isBlank() && conversationView?.input?.hasFocus() != true &&
-        repo.store.cachedTask(selectedTask)?.state?.terminal != false &&
+    private fun wakeAllowed(): Boolean = wakePreference && resumed && conversationReady &&
+        !voicePending && !voiceEntryPending && speech?.audible != true && draft.isBlank() && conversationView?.input?.hasFocus() != true &&
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
         android.os.SystemClock.elapsedRealtime() >= wakeCooldownUntil
 
     private fun refreshWake() {
         wakePreference = repo.store.foregroundWake
-        val speaking = speech?.active == true
+        val speaking = speech?.audible == true
         if (wasSpeaking && !speaking) scheduleWakeResume()
         wasSpeaking = speaking
         val background = repo.store.backgroundWake && wakePreference
+        val gate = "on=$wakePreference visible=$resumed ready=$conversationReady pending=$voicePending entry=$voiceEntryPending " +
+            "speaking=$speaking draft=${draft.isNotBlank()} focus=${conversationView?.input?.hasFocus() == true} " +
+            "cooldown=${android.os.SystemClock.elapsedRealtime() < wakeCooldownUntil} bg=$background"
+        if (gate != lastWakeGate) { android.util.Log.i("WatchWakeGate", gate); lastWakeGate = gate }
         wake?.setEnabled(!background && wakeAllowed())
-        WatchBackgroundWakeService.update(background && wakeAllowed(), voicePending || voiceEntryPending || speaking,
-            if (resumed) ({
-                if (wakeAllowed()) {
-                    wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
-                    followUpId = selectedTask
-                    startVoice()
-                }
-            }) else null)
+        // A paused MainActivity may still receive speech/repository callbacks after another watch page resumes.
+        if (!(application as WatchApplication).anotherActivityIsForeground(this)) {
+            WatchBackgroundWakeService.update(background && wakeAllowed(), voicePending || voiceEntryPending || speaking,
+                if (resumed) ({
+                    if (wakeAllowed()) {
+                        wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
+                        followUpId = selectedTask
+                        startVoice()
+                    }
+                }) else null)
+        }
     }
     private fun scheduleWakeResume() {
         wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500

@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
 
 /** Uses Android's actual Opus recorder and speech playback attributes. No recognition service. */
 internal class WatchPeerVoice(private val activity: Activity, private val send: (ByteArray, Long) -> Unit,
-    private val failed: () -> Unit) {
+    private val failed: () -> Unit, private val onRecordingStopped: () -> Unit = {}) {
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var recorder: PeerVoiceOpusRecorder? = null // owned by worker
@@ -95,10 +95,11 @@ internal class WatchPeerVoice(private val activity: Activity, private val send: 
         val owner = generation
         worker.execute {
             val current = recorder; recorder = null
-            if (current == null) return@execute
-            if (discard) { current.cancel(); return@execute }
+            if (current == null) { main.post(onRecordingStopped); return@execute }
+            if (discard) { current.cancel(); main.post(onRecordingStopped); return@execute }
             val result = runCatching { current.stopAndEncode() }
             main.post {
+                onRecordingStopped()
                 result.onSuccess {
                     if (generation == owner && !activity.isDestroyed) send(it.encodedOggOpus, it.durationMillis)
                     else it.encodedOggOpus.fill(0)
