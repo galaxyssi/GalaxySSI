@@ -2,8 +2,12 @@ import SwiftUI
 
 struct GalaxySSIMainTabView: View {
   @EnvironmentObject private var store: GalaxySSIStore
-  @State private var selectedTab: GalaxySSIMainTab = .agent
+  @State private var selectedTab: GalaxySSIMainTab
   @State private var pendingContactId = ""
+
+  init(initialTab: GalaxySSIMainTab = .agent) {
+    _selectedTab = State(initialValue: initialTab)
+  }
 
   var body: some View {
     selectedContent

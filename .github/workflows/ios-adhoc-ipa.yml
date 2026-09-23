@@ -21,6 +21,11 @@ on:
         required: true
         type: boolean
         default: true
+      ui_screenshots:
+        description: Render the production iOS UI in a simulator and upload screenshots
+        required: true
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -44,7 +49,7 @@ env:
 
 jobs:
   build-linux-image:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.offline_bundle }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.offline_bundle && !inputs.ui_screenshots) }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -124,7 +129,7 @@ jobs:
 
   build-ipa:
     needs: build-linux-image
-    if: ${{ always() && (needs.build-linux-image.result == 'success' || (github.event_name == 'workflow_dispatch' && !inputs.offline_bundle)) }}
+    if: ${{ always() && !inputs.ui_screenshots && (needs.build-linux-image.result == 'success' || (github.event_name == 'workflow_dispatch' && !inputs.offline_bundle)) }}
     runs-on: macos-latest
     timeout-minutes: 180
     steps:
@@ -494,3 +499,90 @@ jobs:
               --notes-file "$NOTES" \
               --repo "$GITHUB_REPOSITORY"
           fi
+
+  capture-ui-screenshots:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.ui_screenshots }}
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Create and boot screenshot simulator
+        run: |
+          set -euo pipefail
+          RUNTIME_ID="$(xcrun simctl list runtimes available -j | python3 -c 'import json,sys; items=json.load(sys.stdin)["runtimes"]; ios=[x for x in items if x.get("platform")=="iOS" or "iOS" in x.get("name","")]; print(ios[-1]["identifier"])')"
+          DEVICE_TYPE_ID="$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; items=json.load(sys.stdin)["devicetypes"]; preferred=["iPhone 16 Pro","iPhone 15 Pro","iPhone 14 Pro"]; match=next((x for name in preferred for x in items if x["name"]==name), next(x for x in items if x["name"].startswith("iPhone"))); print(match["identifier"])')"
+          SIMULATOR_ID="$(xcrun simctl create 'GalaxySSI UI Screenshots' "$DEVICE_TYPE_ID" "$RUNTIME_ID")"
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$SIMULATOR_ID"
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcrun simctl status_bar "$SIMULATOR_ID" override \
+            --time '12:14' \
+            --batteryState charged \
+            --batteryLevel 100 \
+            --wifiBars 3 \
+            --cellularBars 4
+
+      - name: Build production app for iOS Simulator
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/ios/GalaxySSI.xcodeproj \
+            -scheme GalaxySSI \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/ios-ui-screenshots \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Capture production UI pages
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/ios-ui-screenshots/Build/Products/Debug-iphonesimulator -maxdepth 1 -type d -name 'GalaxySSI.app' -print -quit)"
+          test -n "$APP_PATH"
+          xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+          mkdir -p build/ios-ui-screenshots/output
+
+          routes=(
+            '01-home:home'
+            '02-conversations:sessions'
+            '03-discover:discover'
+            '04-settings:settings'
+            '05-add-contact:add-contact'
+            '06-my-contact-qr:my-qr'
+            '07-model-selection:model-selection'
+            '08-local-model:local-model'
+            '09-linux-runtime:linux-runtime'
+            '10-voice:voice'
+            '11-permissions:permissions'
+            '12-memory:memory'
+            '13-knowledge:knowledge'
+            '14-system-status:system-status'
+            '15-add-cloud-model:cloud-model'
+          )
+
+          for item in "${routes[@]}"; do
+            name="${item%%:*}"
+            route="${item#*:}"
+            xcrun simctl terminate "$SIMULATOR_ID" com.galaxyssi.chat.ios >/dev/null 2>&1 || true
+            xcrun simctl launch "$SIMULATOR_ID" com.galaxyssi.chat.ios \
+              -GalaxySSIScreenshotRoute "$route" \
+              -AppleLanguages '(zh-Hans)' \
+              -AppleLocale 'zh_CN'
+            if [[ "$name" == '01-home' ]]; then sleep 12; else sleep 6; fi
+            xcrun simctl io "$SIMULATOR_ID" screenshot \
+              "build/ios-ui-screenshots/output/$name.png"
+          done
+
+          ls -lh build/ios-ui-screenshots/output
+
+      - name: Upload iOS UI screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: GalaxySSI-iOS-production-UI-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: build/ios-ui-screenshots/output/*.png
