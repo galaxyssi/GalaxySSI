@@ -2,6 +2,42 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  func testMarkdownImagesBecomeRenderableImageBlocks() throws {
+    let blocks = AgentRichContentCodec.fromText(
+      "Before ![Mackerel](https://example.com/fish.jpg) after"
+    )
+
+    XCTAssertEqual(blocks.map(\.type), [.text, .image, .text])
+    let image = try XCTUnwrap(blocks.first { $0.type == .image })
+    XCTAssertEqual(image.title, "Mackerel")
+    XCTAssertEqual(image.uri, "https://example.com/fish.jpg")
+    XCTAssertEqual(image.metadata["markdown_image_source"], image.uri)
+  }
+
+  func testMarkdownImageParserPreservesLiteralAndUnsafeSources() {
+    let literalCases = [
+      "[Image](https://example.com/fish.jpg)",
+      #"\![Image](https://example.com/fish.jpg)"#,
+      "`![Image](https://example.com/fish.jpg)`",
+      "![Image](file:///private/image.jpg)",
+      "![Image](https://user:password@example.com/image.jpg)"
+    ]
+    for value in literalCases {
+      XCTAssertEqual(AgentRichContentCodec.fromText(value).map(\.type), [.text], value)
+    }
+  }
+
+  func testDecodedDesktopTextExpandsMarkdownImageWithStableMetadata() throws {
+    let source = "![A](<https://example.com/fish_(1)?size=100&amp;x=2> \"Photo\")"
+    let encoded = AgentRichContentCodec.encode([
+      AgentRichBlock(id: "final", type: .text, text: source, metadata: ["origin": "desktop"])
+    ])
+    let image = try XCTUnwrap(AgentRichContentCodec.decode(encoded).first)
+
+    XCTAssertEqual(image.type, .image)
+    XCTAssertEqual(image.id, "final")
+    XCTAssertEqual(image.uri, "https://example.com/fish_(1)?size=100&x=2")
+    XCTAssertEqual(image.metadata["origin"], "desktop")
   func testFinalTextBlockExpandsMarkdownTableWithStableIdentity() throws {
     let markdown = """
     Results
