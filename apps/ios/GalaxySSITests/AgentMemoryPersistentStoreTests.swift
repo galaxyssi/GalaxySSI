@@ -160,6 +160,41 @@ final class AgentMemoryPersistentStoreTests: XCTestCase {
     XCTAssertEqual(store.exportItems().count, 2)
   }
 
+  func testRecallRefreshesOnlySelectedRowsAndThrottlesWrites() throws {
+    let suiteName = "AgentPersonalMemoryRecallAccess-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    var now: Int64 = 1_000
+    let store = UserDefaultsAgentMemoryStore(defaults: defaults, secrets: secrets, nowMillis: { now })
+    let selected = memory(id: "selected", value: "Favorite language is Swift", key: "language", timestampMillis: 100)
+    let unrelated = memory(id: "unrelated", value: "Favorite editor is Nova", key: "editor", timestampMillis: 200)
+    store.remember(selected)
+    store.remember(unrelated)
+    let unrelatedKey = encryptedRowKey(unrelated.id)
+    let unrelatedCiphertext = try XCTUnwrap(defaults.data(forKey: unrelatedKey))
+
+    now = 2_000
+    XCTAssertEqual(store.recall(query: "language Swift").single?.lastAccessedAtMillis, now)
+    XCTAssertEqual(defaults.data(forKey: unrelatedKey), unrelatedCiphertext)
+    let selectedKey = encryptedRowKey(selected.id)
+    let firstCiphertext = try XCTUnwrap(defaults.data(forKey: selectedKey))
+
+    now += InMemoryAgentMemoryStore.accessRefreshIntervalMillis - 1
+    XCTAssertEqual(store.recall(query: "language Swift").single?.lastAccessedAtMillis, 2_000)
+    XCTAssertEqual(defaults.data(forKey: selectedKey), firstCiphertext)
+
+    now += 1
+    XCTAssertEqual(store.recall(query: "language Swift").single?.lastAccessedAtMillis, now)
+    XCTAssertNotEqual(defaults.data(forKey: selectedKey), firstCiphertext)
+    XCTAssertEqual(defaults.data(forKey: unrelatedKey), unrelatedCiphertext)
+  }
+
+  private func encryptedRowKey(_ id: String) -> String {
+    let digest = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "galaxyssi_agent_memory_rows_v3-row-\(digest).encrypted.v1"
+  }
+
   private func memory(id: String, value: String, key: String, timestampMillis: Int64) -> AgentMemoryItem {
     AgentMemoryItem(
       kind: .preference,
