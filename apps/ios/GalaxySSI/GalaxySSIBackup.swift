@@ -484,13 +484,60 @@ struct GalaxySSIBackupRoot: Codable, Equatable {
   }
 }
 
+struct GalaxySSIStreamingBackupChunk: Codable, Equatable {
+  var index: Int
+  var plaintextByteCount: Int
+  var nonce: String
+  var ciphertext: String
+
+  enum CodingKeys: String, CodingKey {
+    case index
+    case plaintextByteCount = "plaintext_byte_count"
+    case nonce
+    case ciphertext
+  }
+}
+
+struct GalaxySSIStreamingBackupRoot: Codable, Equatable {
+  var version: Int
+  var type: String
+  var kdf: String
+  var iterations: Int
+  var cipher: String
+  var salt: String
+  var chunkByteCount: Int
+  var plaintextByteCount: Int
+  var chunks: [GalaxySSIStreamingBackupChunk]
+  var payloadSHA256: String
+  var footer: String
+  var createdAt: Int64
+
+  enum CodingKeys: String, CodingKey {
+    case version
+    case type
+    case kdf
+    case iterations
+    case cipher
+    case salt
+    case chunkByteCount = "chunk_byte_count"
+    case plaintextByteCount = "plaintext_byte_count"
+    case chunks
+    case payloadSHA256 = "payload_sha256"
+    case footer
+    case createdAt = "created_at"
+  }
+}
+
 enum GalaxySSIBackupManager {
-  static let version = 1
+  static let legacyVersion = 1
+  static let version = 2
   static let type = "galaxyssi_backup"
   static let kdf = "pbkdf2-hmac-sha256"
   static let cipher = "aes-256-gcm"
-  static let iterations = 180_000
+  static let legacyIterations = 180_000
+  static let iterations = 600_000
   static let minimumPasswordLength = 8
+  static let chunkByteCount = 64 * 1024
 
   private static let keyByteCount = 32
   private static let saltByteCount = 16
@@ -523,29 +570,63 @@ enum GalaxySSIBackupManager {
     }
     let payloadData = try backupEncoder.encode(payload)
     let salt = try randomData(count: saltByteCount)
-    let iv = try randomData(count: nonceByteCount)
     let key = SymmetricKey(data: try pbkdf2SHA256(
       password: password,
       salt: salt,
       iterations: iterations,
       keyByteCount: keyByteCount
     ))
-    let sealed = try AES.GCM.seal(
-      payloadData,
-      using: key,
-      nonce: try AES.GCM.Nonce(data: iv)
+    let expectedChunkCount = expectedStreamingChunkCount(for: payloadData.count)
+    var chunks: [GalaxySSIStreamingBackupChunk] = []
+    chunks.reserveCapacity(expectedChunkCount)
+    var footerInput = streamingHeaderAuthenticationData(
+      iterations: iterations,
+      salt: salt,
+      plaintextByteCount: payloadData.count,
+      chunkCount: expectedChunkCount
     )
-    var androidCompatibleCiphertext = sealed.ciphertext
-    androidCompatibleCiphertext.append(sealed.tag)
-    let root = GalaxySSIBackupRoot(
+
+    for index in 0..<expectedChunkCount {
+      let lowerBound = index * chunkByteCount
+      let upperBound = min(lowerBound + chunkByteCount, payloadData.count)
+      let plaintext = payloadData.subdata(in: lowerBound..<upperBound)
+      let nonceData = try randomData(count: nonceByteCount)
+      let sealed = try AES.GCM.seal(
+        plaintext,
+        using: key,
+        nonce: try AES.GCM.Nonce(data: nonceData),
+        authenticating: chunkAuthenticationData(
+          index: index,
+          plaintextByteCount: plaintext.count,
+          totalPlaintextByteCount: payloadData.count,
+          chunkCount: expectedChunkCount
+        )
+      )
+      var combined = sealed.ciphertext
+      combined.append(sealed.tag)
+      footerInput.append(nonceData)
+      footerInput.append(combined)
+      chunks.append(GalaxySSIStreamingBackupChunk(
+        index: index,
+        plaintextByteCount: plaintext.count,
+        nonce: nonceData.base64EncodedString(),
+        ciphertext: combined.base64EncodedString()
+      ))
+    }
+
+    let footer = Data(HMAC<SHA256>.authenticationCode(for: footerInput, using: key))
+    let root = GalaxySSIStreamingBackupRoot(
       version: version,
       type: type,
       kdf: kdf,
       iterations: iterations,
       cipher: cipher,
       salt: salt.base64EncodedString(),
-      iv: iv.base64EncodedString(),
-      ciphertext: androidCompatibleCiphertext.base64EncodedString(),
+      chunkByteCount: chunkByteCount,
+      plaintextByteCount: payloadData.count,
+      chunks: chunks,
+      payloadSHA256: Data(SHA256.hash(data: payloadData)).hexString(),
+      footer: footer.base64EncodedString(),
       createdAt: currentTimestampMilliseconds()
     )
     return try backupEncoder.encode(root)
@@ -553,13 +634,59 @@ enum GalaxySSIBackupManager {
 
   static func importBackup(data: Data, password: String) throws -> GalaxySSIBackupPayload {
     try validatePassword(password)
-    let root = try decodeRoot(from: data)
-    let payloadData = try decryptRoot(root, password: password)
+    let envelope = try backupDecoder.decode(BackupEnvelopeVersion.self, from: data)
+    let payloadData: Data
+    switch envelope.version {
+    case legacyVersion:
+      payloadData = try decryptRoot(decodeRoot(from: data), password: password)
+    case version:
+      payloadData = try decryptStreamingRoot(decodeStreamingRoot(from: data), password: password)
+    default:
+      throw GalaxySSIError.invalidPayload("Backup file format is not supported.")
+    }
     return try backupDecoder.decode(GalaxySSIBackupPayload.self, from: payloadData)
   }
 
   static func decodeRoot(from data: Data) throws -> GalaxySSIBackupRoot {
     try backupDecoder.decode(GalaxySSIBackupRoot.self, from: data)
+  }
+
+  static func decodeStreamingRoot(from data: Data) throws -> GalaxySSIStreamingBackupRoot {
+    try backupDecoder.decode(GalaxySSIStreamingBackupRoot.self, from: data)
+  }
+
+  static func encryptLegacyPayload(
+    _ payload: GalaxySSIBackupPayload,
+    password: String,
+    iterations: Int = GalaxySSIBackupManager.legacyIterations
+  ) throws -> Data {
+    try validatePassword(password)
+    guard iterations > 0 else {
+      throw GalaxySSIError.invalidPayload("Backup KDF iterations must be positive.")
+    }
+    let payloadData = try backupEncoder.encode(payload)
+    let salt = try randomData(count: saltByteCount)
+    let iv = try randomData(count: nonceByteCount)
+    let key = SymmetricKey(data: try pbkdf2SHA256(
+      password: password,
+      salt: salt,
+      iterations: iterations,
+      keyByteCount: keyByteCount
+    ))
+    let sealed = try AES.GCM.seal(payloadData, using: key, nonce: try AES.GCM.Nonce(data: iv))
+    var combined = sealed.ciphertext
+    combined.append(sealed.tag)
+    return try backupEncoder.encode(GalaxySSIBackupRoot(
+      version: legacyVersion,
+      type: type,
+      kdf: kdf,
+      iterations: iterations,
+      cipher: cipher,
+      salt: salt.base64EncodedString(),
+      iv: iv.base64EncodedString(),
+      ciphertext: combined.base64EncodedString(),
+      createdAt: currentTimestampMilliseconds()
+    ))
   }
 
   static func pbkdf2SHA256(
@@ -610,7 +737,7 @@ enum GalaxySSIBackupManager {
   }
 
   private static func decryptRoot(_ root: GalaxySSIBackupRoot, password: String) throws -> Data {
-    guard root.version == version,
+    guard root.version == legacyVersion,
           root.type == type,
           root.kdf == kdf,
           root.cipher == cipher else {
@@ -644,6 +771,122 @@ enum GalaxySSIBackupManager {
     }
   }
 
+  private static func decryptStreamingRoot(
+    _ root: GalaxySSIStreamingBackupRoot,
+    password: String
+  ) throws -> Data {
+    guard root.version == version,
+          root.type == type,
+          root.kdf == kdf,
+          root.cipher == cipher,
+          root.iterations > 0,
+          root.iterations <= iterations,
+          root.chunkByteCount == chunkByteCount,
+          root.plaintextByteCount >= 0,
+          let salt = Data(base64Encoded: root.salt),
+          salt.count == saltByteCount,
+          let expectedFooter = Data(base64Encoded: root.footer),
+          expectedFooter.count == SHA256.byteCount else {
+      throw GalaxySSIError.invalidPayload("Backup envelope is malformed.")
+    }
+    let expectedChunkCount = expectedStreamingChunkCount(for: root.plaintextByteCount)
+    guard root.chunks.count == expectedChunkCount else {
+      throw GalaxySSIError.invalidPayload("Backup archive is incomplete.")
+    }
+    let key = SymmetricKey(data: try pbkdf2SHA256(
+      password: password,
+      salt: salt,
+      iterations: root.iterations,
+      keyByteCount: keyByteCount
+    ))
+    var footerInput = streamingHeaderAuthenticationData(
+      iterations: root.iterations,
+      salt: salt,
+      plaintextByteCount: root.plaintextByteCount,
+      chunkCount: expectedChunkCount
+    )
+    var decodedChunks: [(nonce: Data, combined: Data, plaintextByteCount: Int)] = []
+    decodedChunks.reserveCapacity(expectedChunkCount)
+    var totalByteCount = 0
+
+    for (expectedIndex, chunk) in root.chunks.enumerated() {
+      guard chunk.index == expectedIndex,
+            chunk.plaintextByteCount >= 0,
+            chunk.plaintextByteCount <= chunkByteCount,
+            let nonce = Data(base64Encoded: chunk.nonce),
+            nonce.count == nonceByteCount,
+            let combined = Data(base64Encoded: chunk.ciphertext),
+            combined.count == chunk.plaintextByteCount + gcmTagByteCount else {
+        throw GalaxySSIError.invalidPayload("Backup archive contains an invalid chunk.")
+      }
+      totalByteCount += chunk.plaintextByteCount
+      footerInput.append(nonce)
+      footerInput.append(combined)
+      decodedChunks.append((nonce, combined, chunk.plaintextByteCount))
+    }
+    guard totalByteCount == root.plaintextByteCount else {
+      throw GalaxySSIError.invalidPayload("Backup archive byte count does not match its footer.")
+    }
+    let actualFooter = Data(HMAC<SHA256>.authenticationCode(for: footerInput, using: key))
+    guard actualFooter.constantTimeEquals(expectedFooter) else {
+      throw GalaxySSIError.invalidPayload("Backup password is incorrect or the file is damaged.")
+    }
+
+    var plaintext = Data()
+    plaintext.reserveCapacity(root.plaintextByteCount)
+    do {
+      for (index, chunk) in decodedChunks.enumerated() {
+        let ciphertext = chunk.combined.prefix(chunk.combined.count - gcmTagByteCount)
+        let tag = chunk.combined.suffix(gcmTagByteCount)
+        let sealed = try AES.GCM.SealedBox(
+          nonce: try AES.GCM.Nonce(data: chunk.nonce),
+          ciphertext: Data(ciphertext),
+          tag: Data(tag)
+        )
+        plaintext.append(try AES.GCM.open(
+          sealed,
+          using: key,
+          authenticating: chunkAuthenticationData(
+            index: index,
+            plaintextByteCount: chunk.plaintextByteCount,
+            totalPlaintextByteCount: root.plaintextByteCount,
+            chunkCount: expectedChunkCount
+          )
+        ))
+      }
+    } catch {
+      throw GalaxySSIError.invalidPayload("Backup password is incorrect or the file is damaged.")
+    }
+    guard plaintext.count == root.plaintextByteCount,
+          Data(SHA256.hash(data: plaintext)).hexString() == root.payloadSHA256.lowercased() else {
+      throw GalaxySSIError.invalidPayload("Backup archive payload digest does not match.")
+    }
+    return plaintext
+  }
+
+  private static func streamingHeaderAuthenticationData(
+    iterations: Int,
+    salt: Data,
+    plaintextByteCount: Int,
+    chunkCount: Int
+  ) -> Data {
+    Data("\(type)|\(version)|\(kdf)|\(cipher)|\(iterations)|\(salt.base64EncodedString())|\(chunkByteCount)|\(plaintextByteCount)|\(chunkCount)".utf8)
+  }
+
+  private static func chunkAuthenticationData(
+    index: Int,
+    plaintextByteCount: Int,
+    totalPlaintextByteCount: Int,
+    chunkCount: Int
+  ) -> Data {
+    Data("\(type)|\(version)|\(index)|\(plaintextByteCount)|\(totalPlaintextByteCount)|\(chunkCount)".utf8)
+  }
+
+  private static func expectedStreamingChunkCount(for plaintextByteCount: Int) -> Int {
+    guard plaintextByteCount > 0 else { return 1 }
+    return (plaintextByteCount / chunkByteCount) + (plaintextByteCount % chunkByteCount == 0 ? 0 : 1)
+  }
+
   private static func validatePassword(_ password: String) throws {
     guard password.count >= minimumPasswordLength else {
       throw GalaxySSIError.invalidPayload("Backup password must be at least 8 characters.")
@@ -670,6 +913,19 @@ enum GalaxySSIBackupManager {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return decoder
+  }
+}
+
+private struct BackupEnvelopeVersion: Decodable {
+  var version: Int
+}
+
+private extension Data {
+  func constantTimeEquals(_ other: Data) -> Bool {
+    guard count == other.count else { return false }
+    return zip(self, other).reduce(UInt8(0)) { partial, pair in
+      partial | (pair.0 ^ pair.1)
+    } == 0
   }
 }
 
