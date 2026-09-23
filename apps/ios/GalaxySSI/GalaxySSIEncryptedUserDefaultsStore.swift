@@ -5,10 +5,12 @@ enum GalaxySSIEncryptedUserDefaultsStore {
   static func load(
     defaults: UserDefaults,
     key: String,
+    keyMaterialKey: String? = nil,
     secrets: GalaxySSISecretStore
   ) -> Data? {
+    let materialKey = keyMaterialKey ?? key
     guard let serialized = defaults.data(forKey: encryptedKey(for: key)),
-          let encryptionKey = encryptionKey(for: key, secrets: secrets, createIfMissing: false),
+          let encryptionKey = encryptionKey(for: materialKey, secrets: secrets, createIfMissing: false),
           let sealed = try? AES.GCM.SealedBox(combined: serialized),
           let plaintext = try? AES.GCM.open(sealed, using: encryptionKey, authenticating: associatedData(for: key)) else {
       return nil
@@ -21,9 +23,11 @@ enum GalaxySSIEncryptedUserDefaultsStore {
     _ plaintext: Data,
     defaults: UserDefaults,
     key: String,
+    keyMaterialKey: String? = nil,
     secrets: GalaxySSISecretStore
   ) -> Bool {
-    guard let encryptionKey = encryptionKey(for: key, secrets: secrets, createIfMissing: true),
+    let materialKey = keyMaterialKey ?? key
+    guard let encryptionKey = encryptionKey(for: materialKey, secrets: secrets, createIfMissing: true),
           let sealed = try? AES.GCM.seal(
             plaintext,
             using: encryptionKey,
@@ -35,6 +39,11 @@ enum GalaxySSIEncryptedUserDefaultsStore {
     defaults.set(serialized, forKey: encryptedKey(for: key))
     defaults.removeObject(forKey: key)
     return true
+  }
+
+  static func remove(defaults: UserDefaults, key: String) {
+    defaults.removeObject(forKey: encryptedKey(for: key))
+    defaults.removeObject(forKey: key)
   }
 
   static func destroy(
