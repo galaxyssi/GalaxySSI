@@ -122,6 +122,34 @@ final class AgentMemoryPersistentStoreTests: XCTestCase {
     ).isEmpty)
   }
 
+  func testLargePersonalMemoryRowUsesAuthenticatedSegments() throws {
+    let suiteName = "AgentPersonalMemorySegments-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    let rows = UserDefaultsAgentPersonalMemoryRows(defaults: defaults, secrets: secrets)
+    let item = memory(
+      id: "large-row",
+      value: String(repeating: "large-private-memory-", count: 8_000),
+      key: "large",
+      timestampMillis: 1_000
+    )
+
+    XCTAssertTrue(rows.replace([item]))
+    XCTAssertEqual(rows.find(id: item.id), item)
+    let rowPrefix = "galaxyssi_agent_memory_rows_v3-row-"
+    let segmentKeys = defaults.dictionaryRepresentation().keys.filter {
+      $0.hasPrefix(rowPrefix) && $0.contains("-segment-") && $0.hasSuffix(".encrypted.v1")
+    }
+    XCTAssertGreaterThan(segmentKeys.count, 1)
+
+    let damagedKey = try XCTUnwrap(segmentKeys.first)
+    var damaged = try XCTUnwrap(defaults.data(forKey: damagedKey))
+    damaged[damaged.startIndex] ^= 0x01
+    defaults.set(damaged, forKey: damagedKey)
+    XCTAssertNil(rows.find(id: item.id))
+  }
+
   func testPersonalMemoryPointFlagsUpdateOnlyTargetRow() throws {
     let suiteName = "AgentPersonalMemoryPointFlags-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

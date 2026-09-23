@@ -338,6 +338,149 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   }
 }
 
+private enum AgentMemorySegmentedRowPayload {
+  private struct Manifest: Codable {
+    var version: Int
+    var generation: String
+    var segmentCount: Int
+    var plaintextByteCount: Int
+    var plaintextSHA256: String
+  }
+
+  static let segmentByteCount = 64 * 1024
+
+  static func load(
+    defaults: UserDefaults,
+    key: String,
+    secrets: GalaxySSISecretStore
+  ) -> Data? {
+    guard let manifest = manifest(defaults: defaults, key: key, secrets: secrets) else {
+      return GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets)
+    }
+    guard manifest.version == 1,
+          manifest.segmentCount > 0,
+          manifest.segmentCount <= 16_384,
+          manifest.plaintextByteCount > segmentByteCount,
+          manifest.plaintextByteCount <= manifest.segmentCount * segmentByteCount else { return nil }
+    var plaintext = Data()
+    plaintext.reserveCapacity(manifest.plaintextByteCount)
+    for index in 0..<manifest.segmentCount {
+      guard let segment = GalaxySSIEncryptedUserDefaultsStore.load(
+        defaults: defaults,
+        key: segmentKey(key: key, generation: manifest.generation, index: index),
+        keyMaterialKey: key,
+        secrets: secrets
+      ), !segment.isEmpty,
+      segment.count <= segmentByteCount else { return nil }
+      plaintext.append(segment)
+    }
+    guard plaintext.count == manifest.plaintextByteCount,
+          Data(SHA256.hash(data: plaintext)).hexString() == manifest.plaintextSHA256 else { return nil }
+    return plaintext
+  }
+
+  @discardableResult
+  static func write(
+    _ plaintext: Data,
+    defaults: UserDefaults,
+    key: String,
+    secrets: GalaxySSISecretStore
+  ) -> Bool {
+    let previous = manifest(defaults: defaults, key: key, secrets: secrets)
+    guard plaintext.count > segmentByteCount else {
+      guard GalaxySSIEncryptedUserDefaultsStore.write(
+        plaintext,
+        defaults: defaults,
+        key: key,
+        secrets: secrets
+      ) else { return false }
+      removeGeneration(previous, defaults: defaults, key: key)
+      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: manifestKey(key))
+      return true
+    }
+
+    let generation = UUID().uuidString.lowercased()
+    let segmentCount = (plaintext.count / segmentByteCount) + (plaintext.count % segmentByteCount == 0 ? 0 : 1)
+    for index in 0..<segmentCount {
+      let lower = index * segmentByteCount
+      let upper = min(lower + segmentByteCount, plaintext.count)
+      guard GalaxySSIEncryptedUserDefaultsStore.write(
+        plaintext.subdata(in: lower..<upper),
+        defaults: defaults,
+        key: segmentKey(key: key, generation: generation, index: index),
+        keyMaterialKey: key,
+        secrets: secrets
+      ) else {
+        removeGeneration(
+          Manifest(version: 1, generation: generation, segmentCount: index, plaintextByteCount: 0, plaintextSHA256: ""),
+          defaults: defaults,
+          key: key
+        )
+        return false
+      }
+    }
+    let next = Manifest(
+      version: 1,
+      generation: generation,
+      segmentCount: segmentCount,
+      plaintextByteCount: plaintext.count,
+      plaintextSHA256: Data(SHA256.hash(data: plaintext)).hexString()
+    )
+    guard let encoded = try? JSONEncoder().encode(next),
+          GalaxySSIEncryptedUserDefaultsStore.write(
+            encoded,
+            defaults: defaults,
+            key: manifestKey(key),
+            keyMaterialKey: key,
+            secrets: secrets
+          ) else {
+      removeGeneration(next, defaults: defaults, key: key)
+      return false
+    }
+    GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: key)
+    removeGeneration(previous, defaults: defaults, key: key)
+    return true
+  }
+
+  static func destroy(defaults: UserDefaults, key: String, secrets: GalaxySSISecretStore) {
+    removeGeneration(manifest(defaults: defaults, key: key, secrets: secrets), defaults: defaults, key: key)
+    GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: manifestKey(key))
+    GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
+  }
+
+  private static func manifest(
+    defaults: UserDefaults,
+    key: String,
+    secrets: GalaxySSISecretStore
+  ) -> Manifest? {
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: manifestKey(key),
+      keyMaterialKey: key,
+      secrets: secrets
+    ) else { return nil }
+    return try? JSONDecoder().decode(Manifest.self, from: data)
+  }
+
+  private static func removeGeneration(_ manifest: Manifest?, defaults: UserDefaults, key: String) {
+    guard let manifest, manifest.segmentCount > 0, manifest.segmentCount <= 16_384 else { return }
+    for index in 0..<manifest.segmentCount {
+      GalaxySSIEncryptedUserDefaultsStore.remove(
+        defaults: defaults,
+        key: segmentKey(key: key, generation: manifest.generation, index: index)
+      )
+    }
+  }
+
+  private static func manifestKey(_ key: String) -> String {
+    "\(key)-segments-v1"
+  }
+
+  private static func segmentKey(key: String, generation: String, index: Int) -> String {
+    "\(key)-segment-\(generation)-\(index)"
+  }
+}
+
 final class UserDefaultsAgentPersonalMemoryRows {
   private struct Metadata: Codable {
     var schema: Int
@@ -368,7 +511,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
 
   func find(id: String) -> AgentMemoryItem? {
     guard !id.isEmpty,
-          let data = GalaxySSIEncryptedUserDefaultsStore.load(
+          let data = AgentMemorySegmentedRowPayload.load(
             defaults: defaults,
             key: rowKey(id),
             secrets: secrets
@@ -393,7 +536,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
     )
     if before != after {
       guard let data = try? JSONEncoder().encode(after),
-            GalaxySSIEncryptedUserDefaultsStore.write(
+            AgentMemorySegmentedRowPayload.write(
               data,
               defaults: defaults,
               key: rowKey(id),
@@ -417,7 +560,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
             candidate.lastAccessedAtMillis > before.lastAccessedAtMillis else { continue }
       let after = before.copy(lastAccessedAtMillis: candidate.lastAccessedAtMillis)
       guard let data = try? JSONEncoder().encode(after),
-            GalaxySSIEncryptedUserDefaultsStore.write(
+            AgentMemorySegmentedRowPayload.write(
               data,
               defaults: defaults,
               key: rowKey(candidate.id),
@@ -444,7 +587,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
     !metadata.revision.isEmpty else { return nil }
     var items: [AgentMemoryItem] = []
     for id in metadata.orderedIds {
-      guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      guard let data = AgentMemorySegmentedRowPayload.load(
         defaults: defaults,
         key: rowKey(id),
         secrets: secrets
@@ -465,7 +608,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
     for item in items {
       if find(id: item.id) == item { continue }
       guard let data = try? JSONEncoder().encode(item),
-            GalaxySSIEncryptedUserDefaultsStore.write(
+            AgentMemorySegmentedRowPayload.write(
               data,
               defaults: defaults,
               key: rowKey(item.id),
@@ -486,7 +629,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
             secrets: secrets
           ) else { return false }
     for id in Set(previousIds).subtracting(items.map(\.id)) {
-      GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: rowKey(id))
+      AgentMemorySegmentedRowPayload.destroy(defaults: defaults, key: rowKey(id), secrets: secrets)
     }
     return true
   }
@@ -494,7 +637,7 @@ final class UserDefaultsAgentPersonalMemoryRows {
   func destroy() {
     let ids = read()?.map(\.id) ?? []
     for id in ids {
-      GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: rowKey(id), secrets: secrets)
+      AgentMemorySegmentedRowPayload.destroy(defaults: defaults, key: rowKey(id), secrets: secrets)
     }
     GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: metadataKey, secrets: secrets)
   }
