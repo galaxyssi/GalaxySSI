@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import GalaxySSI
 
@@ -140,6 +141,23 @@ final class AgentMemoryPersistentStoreTests: XCTestCase {
     XCTAssertTrue(privateChange.after.privateMemory)
     XCTAssertTrue(rows.find(id: target.id)?.important == true)
     XCTAssertNil(rows.find(id: "missing"))
+  }
+
+  func testIncrementalRememberPreservesUnchangedRowCiphertextAndHistory() throws {
+    let suiteName = "AgentPersonalMemoryIncremental-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    let store = UserDefaultsAgentMemoryStore(defaults: defaults, secrets: secrets)
+    let unrelated = memory(id: "unrelated", value: "Keep ciphertext", key: "note", timestampMillis: 1_000)
+    store.remember(unrelated)
+    let rowKey = "galaxyssi_agent_memory_rows_v3-row-\(SHA256.hash(data: Data(unrelated.id.utf8)).map { String(format: "%02x", $0) }.joined()).encrypted.v1"
+    let ciphertext = try XCTUnwrap(defaults.data(forKey: rowKey))
+
+    store.remember(memory(id: "new", value: "New value", key: "other", timestampMillis: 2_000))
+
+    XCTAssertEqual(defaults.data(forKey: rowKey), ciphertext)
+    XCTAssertEqual(store.exportItems().count, 2)
   }
 
   private func memory(id: String, value: String, key: String, timestampMillis: Int64) -> AgentMemoryItem {
