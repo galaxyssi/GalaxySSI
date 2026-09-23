@@ -1662,6 +1662,7 @@ internal fun MainActivity.refreshAgentConversationHeader(
         R.string.agent_header_session_title,
         agentConversationDisplayTitle(conversation)
     )
+    refreshReplyUnreadDot()
     val conversationId = conversation.id
     runCatching {
         navigationContentExecutor.execute {

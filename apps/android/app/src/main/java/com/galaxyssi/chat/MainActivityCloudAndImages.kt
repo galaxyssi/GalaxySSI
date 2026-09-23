@@ -1042,6 +1042,9 @@ internal fun MainActivity.mergeDeliveryTrace(messageId: Long, contactId: String,
 }
 
 internal fun MainActivity.markContactRead(contactId: String) {
+    if (!isContactChatVisible(contactId)) return
+    summaries[contactId]?.unreadCount = 0
+    refreshReplyUnreadDot()
     MessageService.cancelIncomingMessageNotification(this, contactId)
     val readAt = System.currentTimeMillis()
     val list = messages[contactId].orEmpty()
@@ -1067,7 +1070,7 @@ internal fun MainActivity.markContactRead(contactId: String) {
         historyExecutor.execute {
             val changed = ChatHistoryStore.markContactRead(this, contactId, readAt)
             if (changed > 0) {
-                lastHistoryLoadedAt = maxOf(lastHistoryLoadedAt, ChatHistoryStore.updatedVersion(this))
+                AgentConversationWindows.changed()
             }
         }
     }

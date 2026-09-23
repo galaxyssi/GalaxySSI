@@ -269,6 +269,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
 
     fun onDataChanged() {
         if (!visible || activity.isDestroyed || activity.isFinishing || activity.initialAgentHydrationPending) return
+        activity.reloadChatHistoryIfChanged()
         refreshList?.invoke()
         val current = activity.agentTranscriptStore.activeConversation().id
         if (current != conversationId) selected(current)

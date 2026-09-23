@@ -230,7 +230,7 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
     val stored = if (msg.contact.id == (targetContact?.id ?: msg.contact.id)) msg else msg.copy(contact = targetContact ?: msg.contact)
     stored.deliveryTrace.add(newTraceEvent("persisted", "local_history"))
     val isVisibleIncoming = fromIncoming && !stored.isMine && !stored.isSystem &&
-        chatPage.visibility == View.VISIBLE && selectedContact?.id == stored.contact.id
+        isContactChatVisible(stored.contact.id)
     if (isVisibleIncoming && !hasTraceStage(stored, "read")) {
         stored.deliveryTrace.add(newTraceEvent("read", "chat_visible"))
         stored.deliveryStatus = getString(R.string.delivery_status_read)
@@ -240,7 +240,7 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
         val summary = summaries.getOrPut(stored.contact.id) { ContactSummary() }
         summary.lastMessage = stored.content.ifBlank { stored.attachments.firstOrNull()?.name.orEmpty() }
         summary.lastAt = stored.timestamp
-        if (fromIncoming && (chatPage.visibility != View.VISIBLE || selectedContact?.id != stored.contact.id)) {
+        if (fromIncoming && !stored.isMine && !isVisibleIncoming) {
             summary.unreadCount += 1
         }
     }
@@ -796,6 +796,7 @@ internal fun MainActivity.chatHistoryJson(message: ChatMessage): JSONObject =
 internal fun MainActivity.refreshDirectoryContacts() {
     val items = buildDirectoryContacts()
     runOnUiThread {
+        refreshReplyUnreadDot()
         conversationHubContactsChangedListener?.invoke(items)
     }
 }
