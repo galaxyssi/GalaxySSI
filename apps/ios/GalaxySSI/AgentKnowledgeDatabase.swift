@@ -6,6 +6,7 @@ enum AgentKnowledgeDatabaseError: Error, Equatable {
   case unavailable
   case corruptRecord
   case staleCursor
+  case sourceDirectoryNotReady(processedGroups: Int64)
 }
 
 enum AgentKnowledgeVectorChangeOperation: String, Codable, Equatable {
@@ -456,6 +457,10 @@ final class AgentKnowledgeDatabase {
   func sourcePage(cursor: AgentKnowledgeSourceCursor? = nil, limit: Int = 50) throws -> AgentKnowledgeSourcePage {
     try locked {
       let pageSize = min(max(limit, 1), 50)
+      let directory = try sourceDirectoryState()
+      guard directory.complete else {
+        throw AgentKnowledgeDatabaseError.sourceDirectoryNotReady(processedGroups: directory.groups)
+      }
       guard let revision = scalar("SELECT revision FROM knowledge_browse_revision WHERE id = 1") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -499,8 +504,15 @@ final class AgentKnowledgeDatabase {
       } : nil
       return AgentKnowledgeSourcePage(
         groups: shown.map { $0.1 },
-        total: Int(scalar("SELECT COUNT(*) FROM knowledge_source_headers") ?? 0),
-        next: next
+        total: Int(clamping: directory.groups),
+        next: next,
+        positions: shown.map {
+          AgentKnowledgeSourceCursor(
+            updatedAtMillis: $0.1.updatedAtMillis,
+            sourceHash: $0.0,
+            revision: revision
+          )
+        }
       )
     }
   }
@@ -555,7 +567,9 @@ final class AgentKnowledgeDatabase {
         _ = execute("ROLLBACK")
         return false
       }
-      guard execute("DELETE FROM knowledge_vector_queue"),
+      guard execute("UPDATE knowledge_metadata SET value = 2 WHERE key = 'source_header_schema'"),
+            execute("UPDATE knowledge_source_directory_state SET complete = 1 WHERE id = 1"),
+            execute("DELETE FROM knowledge_vector_queue"),
             execute("UPDATE knowledge_vector_enrollment SET after_item_hash = '', complete = 0"),
             execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1"),
             execute("COMMIT") else {
@@ -677,6 +691,9 @@ final class AgentKnowledgeDatabase {
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_header_recent ON knowledge_source_headers(updated_at DESC, source_hash ASC)")
     _ = execute("CREATE TABLE IF NOT EXISTS knowledge_browse_revision (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL)")
     _ = execute("INSERT OR IGNORE INTO knowledge_browse_revision(id, revision) VALUES (1, 0)")
+    _ = execute("CREATE TABLE IF NOT EXISTS knowledge_metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+    _ = execute("INSERT OR IGNORE INTO knowledge_metadata(key, value) VALUES ('source_header_schema', 0)")
+    setupSourceDirectoryState()
     _ = execute("""
       CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
         item_hash UNINDEXED,
@@ -733,6 +750,55 @@ final class AgentKnowledgeDatabase {
     _ = execute("INSERT OR IGNORE INTO knowledge_vector_enrollment(model_hash, complete) SELECT DISTINCT model_hash, 1 FROM knowledge_vectors")
     setupVectorCounts()
     rebuildIndexIfNeeded()
+  }
+
+  private func setupSourceDirectoryState() {
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_source_directory_state (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        complete INTEGER NOT NULL CHECK(complete IN (0, 1)),
+        groups INTEGER NOT NULL DEFAULT 0 CHECK(typeof(groups) = 'integer' AND groups >= 0)
+      )
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_source_directory_state(id, complete, groups)
+      SELECT 1,
+        CASE WHEN (SELECT value FROM knowledge_metadata WHERE key = 'source_header_schema') >= 2
+          OR NOT EXISTS(SELECT 1 FROM knowledge_items LIMIT 1) THEN 1 ELSE 0 END,
+        (SELECT COUNT(*) FROM knowledge_source_headers)
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_source_directory_insert
+      AFTER INSERT ON knowledge_source_headers
+      BEGIN
+        UPDATE knowledge_source_directory_state SET groups = groups + 1 WHERE id = 1;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Source directory state is missing') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_source_directory_delete
+      AFTER DELETE ON knowledge_source_headers
+      BEGIN
+        UPDATE knowledge_source_directory_state SET groups = groups - 1 WHERE id = 1;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Source directory state is missing') END;
+      END
+      """)
+  }
+
+  private func sourceDirectoryState() throws -> (complete: Bool, groups: Int64) {
+    guard let statement = prepare(
+      "SELECT complete, groups FROM knowledge_source_directory_state WHERE id = 1 LIMIT 1"
+    ) else { throw AgentKnowledgeDatabaseError.unavailable }
+    defer { sqlite3_finalize(statement) }
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    let complete = sqlite3_column_int(statement, 0)
+    let groups = sqlite3_column_int64(statement, 1)
+    guard (0...1).contains(complete), groups >= 0 else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return (complete == 1, groups)
   }
 
   private func setupVectorCounts() {

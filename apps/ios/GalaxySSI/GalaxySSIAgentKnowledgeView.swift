@@ -149,7 +149,26 @@ struct GalaxySSIAgentKnowledgeView: View {
             format: t("galaxyssi.agent_knowledge.section_sources", "SOURCES / %d"),
             sourcePage.total
           ))
-          if groups.isEmpty {
+          if sourcePage.preparing {
+            AgentKnowledgeInfoRow(
+              title: t("galaxyssi.agent_knowledge.directory_preparing", "Preparing source index"),
+              subtitle: t(
+                "galaxyssi.agent_knowledge.directory_preparing_subtitle",
+                "Encrypted source metadata is being indexed in the background."
+              ),
+              systemImage: "arrow.triangle.2.circlepath",
+              tint: .blue,
+              badge: t("galaxyssi.agent_knowledge.preparing", "Preparing")
+            )
+          } else if !sourcePage.preparationError.isEmpty {
+            AgentKnowledgeInfoRow(
+              title: t("galaxyssi.agent_knowledge.directory_error", "Source index unavailable"),
+              subtitle: sourcePage.preparationError,
+              systemImage: "exclamationmark.triangle",
+              tint: .orange,
+              badge: t("galaxyssi.common.retry", "Retry")
+            )
+          } else if groups.isEmpty {
             AgentKnowledgeInfoRow(
               title: t("galaxyssi.agent_knowledge.empty_title", "No private sources yet"),
               subtitle: t(

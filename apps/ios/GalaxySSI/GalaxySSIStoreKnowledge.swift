@@ -34,14 +34,25 @@ extension GalaxySSIStore {
     cursor: AgentKnowledgeSourceCursor? = nil,
     limit: Int = 50
   ) -> AgentKnowledgeSourcePage {
-    if let page = try? agentKnowledgeDatabase.sourcePage(cursor: cursor, limit: limit) { return page }
-    if cursor != nil, let first = try? agentKnowledgeDatabase.sourcePage(limit: limit) { return first }
-    let groups = agentKnowledgeSourceGroups()
-    return AgentKnowledgeSourcePage(
-      groups: Array(groups.prefix(min(max(limit, 1), 50))),
-      total: groups.count,
-      next: nil
-    )
+    do {
+      return try agentKnowledgeDatabase.sourcePage(cursor: cursor, limit: limit)
+    } catch AgentKnowledgeDatabaseError.staleCursor where cursor != nil {
+      return (try? agentKnowledgeDatabase.sourcePage(limit: limit)) ?? .empty
+    } catch let AgentKnowledgeDatabaseError.sourceDirectoryNotReady(processedGroups) {
+      return AgentKnowledgeSourcePage(
+        groups: [],
+        total: Int(clamping: processedGroups),
+        next: nil,
+        preparing: true
+      )
+    } catch {
+      return AgentKnowledgeSourcePage(
+        groups: [],
+        total: 0,
+        next: nil,
+        preparationError: String(error.localizedDescription.prefix(180))
+      )
+    }
   }
 
   func agentKnowledgeSourceItemIds(_ group: AgentKnowledgeSourceGroup) -> [String] {
