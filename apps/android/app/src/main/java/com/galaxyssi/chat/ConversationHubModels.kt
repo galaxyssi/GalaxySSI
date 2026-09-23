@@ -62,7 +62,8 @@ internal data class ConversationHubItem(
     val pinned: Boolean = false,
     val archived: Boolean = false,
     val searchableMetadata: String = "",
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val agentStatus: ConversationHubAgentStatus? = null
 )
 
 internal data class ConversationHubContactSummary(

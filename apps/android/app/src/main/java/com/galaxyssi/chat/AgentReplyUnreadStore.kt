@@ -48,6 +48,10 @@ internal object AgentReplyUnreadStore {
     }
 
     @Synchronized
+    fun hasUnread(context: Context, conversationId: String): Boolean =
+        preferences(context).getStringSet(conversationId, emptySet()).orEmpty().isNotEmpty()
+
+    @Synchronized
     fun hasAny(context: Context): Boolean = preferences(context).all.values.any { it is Set<*> && it.isNotEmpty() }
 
     @Synchronized

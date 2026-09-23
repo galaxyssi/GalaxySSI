@@ -403,6 +403,9 @@ internal class AgentTranscriptEntryDatabase(
     fun findById(entryId: String): AgentTranscriptEntry? =
         querySingle("entry_id = ?", arrayOf(entryId))
 
+    internal fun previewById(entryId: String): AgentTranscriptEntry? =
+        queryStored("entry_id = ?", arrayOf(entryId))
+
     fun findByDedupeKey(conversationId: String, dedupeKey: String): AgentTranscriptEntry? {
         if (dedupeKey.isBlank()) return null
         return querySingle(
