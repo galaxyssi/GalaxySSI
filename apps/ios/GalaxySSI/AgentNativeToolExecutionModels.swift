@@ -799,39 +799,23 @@ final class AgentNativeToolRegistry {
     context: AgentNativeToolInvocationContext = AgentNativeToolInvocationContext(),
     hooks: AgentNativeToolInvocationHooks = AgentNativeToolInvocationHooks()
   ) -> AgentNativeToolResult {
-    guard let executable = executableById[id] else {
-      if let definition = lookup(id) {
-        return finishSynthetic(
-          id,
-          input: input,
-          context: context,
-          hooks: hooks,
-          startedAtEpochMillis: hooks.nowMillis(),
-          status: .unavailable,
-          error: AgentNativeToolError(
-            code: "missing_executor",
-            message: "No executable native tool implementation is registered for id \(id)"
-          ),
-          risk: definition.descriptor.risk
-        )
-      } else {
-        return finishSynthetic(
-          id,
-          input: input,
-          context: context,
-          hooks: hooks,
-          startedAtEpochMillis: hooks.nowMillis(),
-          status: .rejected,
-          error: AgentNativeToolError(
-            code: "unknown_tool",
-            message: "No native tool is registered with id \(id)"
-          ),
-          risk: .blocked
-        )
-      }
+    guard let definition = lookup(id) else {
+      return finishSynthetic(
+        id,
+        input: input,
+        context: context,
+        hooks: hooks,
+        startedAtEpochMillis: hooks.nowMillis(),
+        status: .rejected,
+        error: AgentNativeToolError(
+          code: "unknown_tool",
+          message: "No native tool is registered with id \(id)"
+        ),
+        risk: .blocked
+      )
     }
 
-    let descriptor = executable.descriptor
+    let descriptor = definition.descriptor
     var effectiveContext = context
     if effectiveContext.idempotencyKey == nil,
        descriptor.requiresEffectClaim,
@@ -912,6 +896,64 @@ final class AgentNativeToolRegistry {
       return result
     }
 
+    let replayKey = effectiveContext.idempotencyKey.map {
+      AgentNativeToolReplayKey(
+        toolId: descriptor.id,
+        toolVersion: descriptor.version,
+        idempotencyKey: $0,
+        scope: AgentNativeEffectScope(context: effectiveContext)
+      )
+    }
+    if let replayKey,
+       descriptor.requiresEffectClaim,
+       let observation = replayStore.observe(replayKey) {
+      let inputSha256 = AgentMcpJSONCodec.sha256(input)
+      if observation.inputSha256 != inputSha256 {
+        return finish(
+          status: .rejected,
+          error: AgentNativeToolError(
+            code: "idempotency_key_conflict",
+            message: "The effect key was already claimed with different input"
+          )
+        )
+      }
+      if let cached = observation.result {
+        return finish(
+          status: cached.status,
+          output: cached.output,
+          message: cached.message,
+          metadata: cached.metadata,
+          error: cached.error,
+          verification: cached.verification,
+          replayed: true,
+          originalInvocationId: cached.receipt.originalInvocationId ?? cached.receipt.invocationId
+        )
+      }
+      return finish(
+        status: .failed,
+        error: AgentNativeToolError(
+          code: "effect_outcome_unknown",
+          message: "This effect was already started and has no durable outcome. Reconcile its external state before deciding the next action; it was not executed again.",
+          retryable: false,
+          details: [
+            "original_invocation_id": .string(observation.invocationId),
+            "effect_key": .string(replayKey.idempotencyKey),
+            "input_sha256": .string(observation.inputSha256)
+          ]
+        )
+      )
+    }
+
+    guard let executable = executableById[id] else {
+      return finish(
+        status: .unavailable,
+        error: AgentNativeToolError(
+          code: "missing_executor",
+          message: "No executable native tool implementation is registered for id \(id)"
+        )
+      )
+    }
+
     do {
       try invocation.checkpoint()
 
@@ -931,14 +973,6 @@ final class AgentNativeToolRegistry {
         return result
       }
 
-      let replayKey = effectiveContext.idempotencyKey.map {
-        AgentNativeToolReplayKey(
-          toolId: descriptor.id,
-          toolVersion: descriptor.version,
-          idempotencyKey: $0,
-          scope: AgentNativeEffectScope(context: effectiveContext)
-        )
-      }
       if let replayKey, descriptor.requiresEffectClaim {
         let inputSha256 = AgentMcpJSONCodec.sha256(input)
         let claim = try replayStore.claim(
