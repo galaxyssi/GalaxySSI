@@ -1,0 +1,5 @@
+<resources>
+    <string name="conversation_delivering">正在接收回复</string>
+    <string name="conversation_complete_unread">已完成，未读</string>
+    <string name="conversation_read">已读</string>
+</resources>
