@@ -524,6 +524,36 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     sqlite3_close_v2(raw)
   }
 
+  func testExternalPayloadReclamationRemovesOnlyOldUnreferencedFiles() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgePayloadReclamationTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    let item = AgentKnowledgeItem(
+      id: "reclamation-payload", kind: .document, title: "Large",
+      content: String(repeating: "payload ", count: 2_000), source: "test", updatedAtMillis: 1
+    )
+    XCTAssertTrue(database.replaceAll([item]))
+    let payloadDirectory = URL(fileURLWithPath: url.path + ".payloads", isDirectory: true)
+    let live = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: payloadDirectory, includingPropertiesForKeys: nil).first)
+    let orphan = payloadDirectory.appendingPathComponent(
+      "\(String(repeating: "f", count: 64))-\(String(repeating: "e", count: 16)).saenc"
+    )
+    try Data("orphan".utf8).write(to: orphan)
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date(timeIntervalSince1970: 1)], atPath: orphan.path
+    )
+
+    let result = try database.reclaimExternalPayloadFiles(pageSize: 8, minimumAge: 60)
+
+    XCTAssertTrue(result.complete)
+    XCTAssertEqual(result.removedFiles, 1)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: live.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+    XCTAssertEqual(try database.all(), [item])
+  }
+
   func testEncryptedDatabaseRejectsIdentityCollisionsAndWrongKeys() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("AgentKnowledgeDatabaseTests-\(UUID().uuidString)", isDirectory: true)
