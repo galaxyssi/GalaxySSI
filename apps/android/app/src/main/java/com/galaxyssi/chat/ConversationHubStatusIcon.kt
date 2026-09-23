@@ -20,6 +20,7 @@ internal class ConversationHubStatusIcon(context: Context, val status: Conversat
         setImageResource(when {
             status.animated -> R.drawable.ic_agent_plan_progress
             status == ConversationHubAgentStatus.COMPLETE_UNREAD -> R.drawable.ic_conversation_complete
+            status == ConversationHubAgentStatus.READ -> R.drawable.ic_conversation_read
             status in setOf(ConversationHubAgentStatus.WAITING_CONFIRMATION, ConversationHubAgentStatus.PAUSED) -> R.drawable.ic_conversation_paused
             status in setOf(ConversationHubAgentStatus.FAILED, ConversationHubAgentStatus.BLOCKED) -> R.drawable.ic_conversation_error
             else -> R.drawable.ic_tab_chat
