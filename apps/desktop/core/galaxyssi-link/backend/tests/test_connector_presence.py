@@ -9,7 +9,23 @@ import mqtt_bridge
 
 
 class ConnectorPresenceTest(unittest.TestCase):
-    def test_astra_catalog_reaches_mobile_in_full_and_compact_status(self) -> None:
+    def test_model_catalog_change_invalidates_presence_fingerprint(self) -> None:
+        old = [{"id": "pc:codex", "status": "ready", "invocation_profile": {
+            "models": [{"id": "gpt-6-astra"}],
+        }}]
+        updated = json.loads(json.dumps(old))
+        updated[0]["invocation_profile"]["models"].extend([
+            {"id": "gpt-6-sol"}, {"id": "gpt-6-luna"},
+        ])
+        with (
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Test PC"),
+            patch.object(mqtt_bridge, "get_signal_bundle", return_value={"identityKeySha256": "abc"}),
+        ):
+            self.assertNotEqual(mqtt_bridge._connector_status_fingerprint(old),
+                                mqtt_bridge._connector_status_fingerprint(updated))
+
+    def test_gpt6_catalog_reaches_phone_and_watch_in_full_and_compact_status(self) -> None:
         from agent_invocation_profiles import invocation_profile_for
         profile = invocation_profile_for("codex", ["codex", "--model", "gpt-5.6-sol"]).public()
         diagnostics = {"agents": [{
@@ -28,7 +44,10 @@ class ConnectorPresenceTest(unittest.TestCase):
                     agents = mqtt_bridge.mobile_connector_agents("a" * 22, detailed=detailed)
                     advertised = agents[0]["invocation_profile"]
                     self.assertEqual("gpt-5.6-sol", advertised["default_model"])
-                    self.assertIn("gpt-6-astra", [model["id"] for model in advertised["models"]])
+                    ids = [model["id"] for model in advertised["models"]]
+                    for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+                        self.assertIn(model, ids)
+                        self.assertEqual(1, ids.count(model))
 
     def setUp(self) -> None:
         with mqtt_bridge.connector_status_state_lock:

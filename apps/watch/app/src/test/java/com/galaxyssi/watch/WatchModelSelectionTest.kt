@@ -7,6 +7,24 @@ import org.junit.Test
 import okio.Buffer
 
 class WatchModelSelectionTest {
+    @Test fun refreshedGpt6CatalogPreservesSelectedModelThroughWatchRequest() {
+        val previous = org.json.JSONArray("""[{"agent_id":"codex","invocation_profile":{"models":["gpt-5.6-sol"]}}]""")
+        val refresh = org.json.JSONArray("""[{"agent_id":"codex","status":"ready","invocation_profile":{
+            "default_model":"gpt-5.6-sol","models":["gpt-5.6-sol","gpt-6-astra","gpt-6-sol","gpt-6-luna"],
+            "reasoning_efforts":["low","high"]}}]""")
+        val received = WatchAgentStatus.received(refresh, 100, previous).getJSONObject(0)
+        val updatedProfile = AgentInvocationProfileJsonCodec.decode(received.getJSONObject("invocation_profile"))
+        val updatedTarget = target("pc").copy(profile = updatedProfile)
+        assertEquals("gpt-5.6-sol", updatedProfile.defaultModelId)
+        for (model in listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-luna")) {
+            val selected = updatedTarget.normalize(WatchModelSelection(model = model, effort = "high"))
+            assertEquals(model, selected.model)
+            val task = WatchConversationRouting.create("scope", updatedTarget, selected, "Test", emptyList())
+            val restored = WatchTask.fromJson(JSONObject(task.json().toString()))
+            assertEquals(model, restored.request("zh").getJSONObject("agent_invocation").getString("model_id"))
+        }
+    }
+
     private val profile = AgentInvocationProfileJsonCodec.decode(JSONObject("""{
         "default_model":"model-b", "models":[{"id":"model-a","display_name":"A"},"model-b"],
         "reasoning_efforts":["low","medium","high"] }"""))
