@@ -75,8 +75,92 @@ final class AgentImagePipelineTests: XCTestCase {
     ))
 
     XCTAssertEqual(cloud.data, inline.data)
+    XCTAssertEqual(cloud.originalData, attachment.data)
     XCTAssertEqual(cloud.mimeType, inline.mimeType)
     XCTAssertTrue(inline.lossless)
+  }
+
+  func testImageAnnotationDrawsCompactInkOnOriginalCanvas() throws {
+    let plan = try CloudImageAnnotationPlan.parse(annotationArguments(), imageCount: 1)
+    let source = testImage()
+    let rendered = try CloudImageAnnotationRenderer.render(source: source, plan: plan)
+
+    XCTAssertEqual(rendered.size, source.size)
+    XCTAssertNotEqual(rendered.pngData(), source.pngData())
+    XCTAssertEqual(plan.marks.count, 2)
+    XCTAssertEqual(plan.marks[1].correction, "4")
+  }
+
+  func testImageAnnotationRejectsInvalidCoordinatesAndMissingCorrection() {
+    var arguments = annotationArguments()
+    var marks = arguments["marks"]?.arrayValue ?? []
+    var first = marks[0].objectValue ?? [:]
+    first["right"] = .double(1.2)
+    marks[0] = .object(first)
+    arguments["marks"] = .array(marks)
+    XCTAssertThrowsError(try CloudImageAnnotationPlan.parse(arguments, imageCount: 1))
+
+    arguments = annotationArguments()
+    marks = arguments["marks"]?.arrayValue ?? []
+    var second = marks[1].objectValue ?? [:]
+    second["correction"] = .string("")
+    marks[1] = .object(second)
+    arguments["marks"] = .array(marks)
+    XCTAssertThrowsError(try CloudImageAnnotationPlan.parse(arguments, imageCount: 1))
+  }
+
+  func testImageAnnotationToolIsRequestScopedAndReturnsOneCard() throws {
+    let data = try XCTUnwrap(testImage().pngData())
+    let image = try CloudImagePayload(displayName: "worksheet.png", mimeType: "image/png", data: data)
+    let context = CloudConversationToolExecutionContext(
+      requestId: "annotation-test-\(UUID().uuidString)",
+      conversationId: "conversation",
+      turnId: "turn",
+      images: [image]
+    )
+
+    let result = try CloudImageAnnotationSession.execute(arguments: annotationArguments(), context: context)
+    XCTAssertTrue(result.contains(#""image_saved":true"#))
+    let suffix = CloudImageAnnotationSession.artifactSuffix(requestId: context.requestId)
+    let blocks = AgentRichContentCodec.decode(
+      suffix.replacingOccurrences(of: "```galaxyssi-rich", with: "")
+        .replacingOccurrences(of: "```", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    )
+    XCTAssertEqual(blocks.count, 1)
+    XCTAssertEqual(blocks.first?.type, .image)
+    XCTAssertTrue(CloudImageAnnotationSession.artifactSuffix(requestId: context.requestId).isEmpty)
+  }
+
+  func testImageAnnotationSchemaIsOnlyAdvertisedForImageTurns() {
+    let withoutImages = CloudModelStreamToolSchemas.openAITools()
+    let withImages = CloudModelStreamToolSchemas.openAITools(includeImageAnnotation: true)
+    func names(_ tools: [[String: Any]]) -> [String] {
+      tools.compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
+    }
+
+    XCTAssertFalse(names(withoutImages).contains(CloudImageAnnotationPlan.toolName))
+    XCTAssertTrue(names(withImages).contains(CloudImageAnnotationPlan.toolName))
+  }
+
+  private func annotationArguments() -> AgentMcpJSONObject {
+    [
+      "image_index": .int(0),
+      "marks": .array([
+        .object([
+          "left": .double(0.20), "top": .double(0.20),
+          "right": .double(0.40), "bottom": .double(0.40),
+          "verdict": .string("correct"), "note": .string("Correct answer"),
+          "correction": .string("")
+        ]),
+        .object([
+          "left": .double(0.55), "top": .double(0.55),
+          "right": .double(0.75), "bottom": .double(0.75),
+          "verdict": .string("incorrect"), "note": .string("Recalculate"),
+          "correction": .string("4")
+        ])
+      ])
+    ]
   }
 
   private func testImage() -> UIImage {
