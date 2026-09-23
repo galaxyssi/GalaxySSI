@@ -19,6 +19,7 @@ internal class WatchConversationStatusIcon(context: Context, val status: WatchCo
         setImageResource(when {
             status.animated -> R.drawable.ic_agent_plan_progress
             status == WatchConversationStatus.COMPLETE_UNREAD -> R.drawable.ic_conversation_complete
+            status == WatchConversationStatus.READ -> R.drawable.ic_conversation_read
             status == WatchConversationStatus.WAITING_APPROVAL -> R.drawable.ic_conversation_paused
             status == WatchConversationStatus.FAILED -> R.drawable.ic_conversation_error
             else -> R.drawable.ic_tab_chat
