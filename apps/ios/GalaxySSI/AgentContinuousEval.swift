@@ -68,7 +68,10 @@ final class AgentContinuousEvalStore {
       var state = load()
       state.timestamps[String(scenarioId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))] = max(0, atMillis)
       if state.timestamps.count > 2_000 {
-        state.timestamps = Dictionary(uniqueKeysWithValues: state.timestamps.sorted { $0.value > $1.value }.prefix(2_000))
+        state.timestamps = Dictionary(uniqueKeysWithValues: state.timestamps
+          .sorted { $0.value > $1.value }
+          .prefix(2_000)
+          .map { ($0.key, $0.value) })
       }
       save(state)
     }
