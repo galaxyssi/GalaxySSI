@@ -188,7 +188,8 @@ final class AgentRunRecoveryCoordinator {
         registration: registration(snapshot.agentId, snapshot.deviceId)
       )
       guard decision.disposition == .reconnectDurableRemote,
-            let adapter = try await recoverOrNil({ try await adapterResolver(snapshot.agentId) }) else {
+            let resolvedAdapter = try await recoverOrNil({ try await adapterResolver(snapshot.agentId) }),
+            let adapter = resolvedAdapter else {
         continue
       }
       let timing = AgentRecoveryTimingStore.shared.begin(taskId: snapshot.taskId, phase: "query")
@@ -287,7 +288,8 @@ final class AgentRunRecoveryCoordinator {
     decision: AgentRunRecoveryDecision
   ) async throws -> AgentRunRecoveryResult {
     try Task.checkCancellation()
-    let adapter = try await recoverOrNil { try await adapterResolver(snapshot.agentId) }
+    let resolvedAdapter = try await recoverOrNil { try await adapterResolver(snapshot.agentId) }
+    let adapter = resolvedAdapter.flatMap { $0 }
     let workspace = workspaceFor(snapshot)
     let recoverable: [AgentRecoverableRun]
     let queryTiming = AgentRecoveryTimingStore.shared.begin(taskId: snapshot.taskId, phase: "query")

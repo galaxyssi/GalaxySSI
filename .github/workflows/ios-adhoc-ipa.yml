@@ -509,6 +509,15 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Restore iOS UI build cache
+        id: ui-build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ios-ui-screenshots
+          key: ios-ui-derived-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ios-ui-derived-${{ runner.os }}-
+
       - name: Create and boot screenshot simulator
         run: |
           set -euo pipefail
@@ -537,6 +546,13 @@ jobs:
             -derivedDataPath build/ios-ui-screenshots \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Save iOS UI build cache
+        if: ${{ always() && steps.ui-build-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: build/ios-ui-screenshots
+          key: ios-ui-derived-${{ runner.os }}-${{ github.sha }}
 
       - name: Capture production UI pages
         run: |
