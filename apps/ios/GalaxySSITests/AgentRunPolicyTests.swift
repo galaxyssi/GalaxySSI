@@ -103,6 +103,62 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(reason.contains("completed=1"))
     XCTAssertTrue(reason.contains("last_action=action"))
   }
+
+  func testAgentCompletionEvidencePolicyUsesDeclaredVerifiedOutcomes() {
+    func completed(_ toolId: String, evidence: String) -> AgentAction {
+      AgentAction(
+        id: toolId,
+        kind: .callNativeTool,
+        target: toolId,
+        risk: .low,
+        status: .completed,
+        description: toolId,
+        parameters: ["tool_id": toolId],
+        requiresConfirmation: false,
+        result: evidence,
+        evidence: evidence
+      )
+    }
+    let local = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    let linux = AgentCompletionRequirements(publication: .none, phoneLinux: true)
+    let commit = AgentCompletionRequirements(publication: .commit, phoneLinux: false)
+    let runtimeReceipt = completed(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+      evidence: #"{"exit_code":0}"#
+    )
+    let commitReceipt = completed(
+      AgentIOSProjectRepositoryMutationToolCatalog.commit,
+      evidence: #"{"commit":"1234abc"}"#
+    )
+
+    XCTAssertEqual(
+      AgentCompletionEvidencePolicy.missingEvidence(requirements: nil, history: []),
+      ["model-declared completion_requirements (publication and phone_linux)"]
+    )
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: local,
+      history: []
+    ).isEmpty)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: linux,
+      history: []
+    ).isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: linux,
+      history: [runtimeReceipt]
+    ).isEmpty)
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: commit,
+      history: [commitReceipt]
+    ).isEmpty)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: commit,
+      history: [completed(
+        AgentIOSProjectRepositoryMutationToolCatalog.commit,
+        evidence: #"{"status":"ok"}"#
+      )]
+    ).isEmpty)
+  }
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,
@@ -1533,6 +1589,34 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(metric?.incomplete, 1)
     XCTAssertEqual(metric?.unsuccessful, 1)
     XCTAssertEqual(metric?.p95Ms, 80)
+  }
+
+  func testAgentPlanningTimingKeepsRepeatedPhasesSeparateWithoutPayloads() async {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentPlanningTimingTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var monotonic: Int64 = 1_000_000
+    let journal = AgentLatencyJournal(fileURL: root.appendingPathComponent("agent.jsonl"))
+    let tracer = AgentLatencyTracer(
+      journal: journal,
+      monotonicNs: {
+        defer { monotonic += 1_000_000 }
+        return monotonic
+      },
+      wallClockMs: { 1 },
+      clockId: "0123456789abcdef0123456789abcdef"
+    )
+
+    await AgentPlanningTiming.capture(taskId: "private planner payload", tracer: tracer) {
+      AgentPlanningTiming.measure("progress") { _ = 1 }
+      AgentPlanningTiming.measure("progress") { _ = 2 }
+    }
+
+    let points = journal.snapshot()
+    XCTAssertEqual(tracer.summary()["phone_planning_total_ms"]?.count, 1)
+    XCTAssertEqual(tracer.summary()["phone_planning_progress_ms"]?.count, 2)
+    XCTAssertFalse(String(describing: points).contains("private planner payload"))
+    XCTAssertEqual(Set(points.compactMap(\.operationId)).count, 3)
   }
 
   func testAgentProactiveTaskSchedulerIntervalCatchUpIsBounded() throws {
