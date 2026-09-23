@@ -438,7 +438,7 @@ final class GalaxySSILinkDeliveryStore {
   func discard(messageId: String) {
     guard !messageId.isEmpty else { return }
     let before = state.outbox.count
-    return state.outbox
+    state.outbox
       .filter { $0.messageId == messageId }
       .forEach(deleteOutboxPayload)
     state.outbox.removeAll { $0.messageId == messageId }
@@ -632,7 +632,7 @@ final class GalaxySSILinkDeliveryStore {
     attachmentMaxAttempts: Int? = nil
   ) -> TimeInterval? {
     let attachmentLimit = max(maxAttempts, attachmentMaxAttempts ?? maxAttempts)
-    state.outbox
+    return state.outbox
       .filter { item in
         item.blockedByAttachmentTransferIds.isEmpty &&
           hasWirePayload(item) &&
