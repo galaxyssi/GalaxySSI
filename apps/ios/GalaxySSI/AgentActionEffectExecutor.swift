@@ -15,6 +15,21 @@ final class AgentActionEffectExecutor {
     self.nowMillis = nowMillis
   }
 
+  func dispatchedResult(
+    action: AgentAction,
+    context: AgentNativeToolInvocationContext
+  ) -> AgentActionResult? {
+    guard action.kind == .callConnector else { return nil }
+    let key = AgentNativeToolReplayKey(
+      toolId: Self.toolId,
+      toolVersion: Self.toolVersion,
+      idempotencyKey: AgentConnectorHandoffRecovery.effectAttemptKey(action),
+      scope: AgentNativeEffectScope(context: context)
+    )
+    guard let claim = store.observe(key), claim.result != nil else { return nil }
+    return Self.observedResult(action: action, digest: Self.inputDigest(action), claim: claim)
+  }
+
   func execute(
     action: AgentAction,
     screen: AgentScreenContext,
@@ -48,7 +63,7 @@ final class AgentActionEffectExecutor {
     let key = AgentNativeToolReplayKey(
       toolId: Self.toolId,
       toolVersion: Self.toolVersion,
-      idempotencyKey: AgentConnectorFallbackAction.effectAttemptKey(action),
+      idempotencyKey: AgentConnectorHandoffRecovery.effectAttemptKey(action),
       scope: AgentNativeEffectScope(context: context)
     )
     let digest = Self.inputDigest(action)

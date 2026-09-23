@@ -520,6 +520,56 @@ enum AgentConnectorFallbackAction {
   }
 }
 
+enum AgentConnectorHandoffRecovery {
+  static let maxAttempts = 3
+  private static let ownerParameter = "handoff_recovery_action_id"
+
+  static func prepare(
+    action: AgentAction,
+    sourceMessageId: Int64,
+    attempt: Int,
+    sessionId: String
+  ) -> AgentAction? {
+    guard action.kind == .callConnector,
+          sourceMessageId > 0,
+          (1...maxAttempts).contains(attempt) else { return nil }
+    var prepared = action
+    let key = (action.parameters["idempotency_key"] ?? "").ifBlank("\(sessionId):\(action.id)")
+    prepared.status = .pendingConfirmation
+    prepared.result = ""
+    prepared.evidence = ""
+    prepared.parameters[ownerParameter] = action.id
+    prepared.parameters["handoff_recovery_attempt"] = String(attempt)
+    prepared.parameters["superseded_source_message_id"] = String(sourceMessageId)
+    prepared.parameters["idempotency_key"] = "\(key):handoff-recovery:\(attempt)"
+    return prepared
+  }
+
+  static func effectAttemptKey(_ action: AgentAction) -> String {
+    let base = AgentConnectorFallbackAction.effectAttemptKey(action)
+    guard action.kind == .callConnector,
+          action.parameters[ownerParameter] == action.id,
+          let attempt = Int(action.parameters["handoff_recovery_attempt"] ?? ""),
+          (1...maxAttempts).contains(attempt),
+          let source = Int64(action.parameters["superseded_source_message_id"] ?? ""),
+          source > 0 else { return base }
+    return "\(base)/handoff/\(source)/\(attempt)"
+  }
+
+  static func requiresRemoteObservation(
+    metadata: [String: String],
+    hasDesktopBinding: Bool
+  ) -> Bool {
+    if hasDesktopBinding || metadata["resource_location"] == "desktop" ||
+       !(metadata["remote_task_id"] ?? "").isBlank { return true }
+    return [
+      "accepted", "queued", "starting", "recovering", "running", "waiting_input",
+      "waiting_approval", "waiting_on_user_input", "waiting_on_approval", "completed",
+      "failed", "timed_out", "cancelled"
+    ].contains((metadata["remote_task_status"] ?? "").lowercased())
+  }
+}
+
 /// Preserves the original Auto route while incorporating connectors that became
 /// available after the plan was persisted.
 enum AgentConnectorFallbackTrail {

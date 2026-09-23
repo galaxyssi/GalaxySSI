@@ -147,6 +147,55 @@ final class AgentActionEffectExecutorTests: XCTestCase {
     XCTAssertEqual(delegate.callCount, 2)
   }
 
+  func testConnectorHandoffRecoveryUsesIndependentInspectableReceipt() throws {
+    let store = InMemoryAgentNativeToolReplayStore()
+    let executor = AgentActionEffectExecutor(store: store)
+    let recovery = try XCTUnwrap(AgentConnectorHandoffRecovery.prepare(
+      action: action,
+      sourceMessageId: 123,
+      attempt: 1,
+      sessionId: "session"
+    ))
+    let delegate = CountingActionExecutor { action, _ in
+      AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Accepted",
+        metadata: ["awaiting_response": "true", "source_message_id": "123"]
+      )
+    }
+
+    _ = executor.execute(action: action, screen: screen, context: context(invocationId: "primary"), delegate: delegate)
+    _ = executor.execute(action: recovery, screen: screen, context: context(invocationId: "recovery"), delegate: delegate)
+    let observed = executor.dispatchedResult(action: recovery, context: context(invocationId: "inspect"))
+
+    XCTAssertNotEqual(
+      AgentConnectorHandoffRecovery.effectAttemptKey(action),
+      AgentConnectorHandoffRecovery.effectAttemptKey(recovery)
+    )
+    XCTAssertEqual(observed?.metadata["source_message_id"], "123")
+    XCTAssertEqual(observed?.metadata["action_effect_replayed"], "true")
+    XCTAssertNil(executor.dispatchedResult(
+      action: recovery,
+      context: AgentNativeToolInvocationContext(
+        invocationId: "other",
+        sessionId: "session",
+        conversationId: "other",
+        turnId: "turn"
+      )
+    ))
+    XCTAssertEqual(delegate.callCount, 2)
+  }
+
+  func testConnectorHandoffRecoveryRecognizesRemoteOwnership() {
+    XCTAssertTrue(AgentConnectorHandoffRecovery.requiresRemoteObservation(metadata: [:], hasDesktopBinding: true))
+    XCTAssertTrue(AgentConnectorHandoffRecovery.requiresRemoteObservation(
+      metadata: ["remote_task_status": "running"],
+      hasDesktopBinding: false
+    ))
+    XCTAssertFalse(AgentConnectorHandoffRecovery.requiresRemoteObservation(metadata: [:], hasDesktopBinding: false))
+  }
+
   private var action: AgentAction {
     AgentAction(
       id: "action-1",
