@@ -227,6 +227,13 @@ const requiredProjectSnippets = [
 ];
 
 const requiredSourceSnippets = [
+  [models, "CREATE TABLE IF NOT EXISTS knowledge_vector_enrollment"],
+  [models, "CREATE TABLE IF NOT EXISTS knowledge_vector_queue"],
+  [models, "func vectorEnrollmentPending(modelSHA256: String) throws -> Bool"],
+  [models, "refillVectorEnrollment(modelHash: modelHash)"],
+  [models, "var enrollmentPending = false"],
+  [views, "galaxyssi.agent_knowledge.semantic_discovering"],
+  [tests, "testVectorEnrollmentPagesPersistAcrossReopenWithoutWholeCorpusScan"],
   [models, "final class CloudCitationPreview"],
   [models, "final class CloudEvidencePromptLedger"],
   [models, "case citationPreview(ModelStreamCitationPreview)"],

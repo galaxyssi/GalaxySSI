@@ -63,7 +63,12 @@ struct AgentKnowledgeSemanticModelView: View {
       )
       metricRow(
         t("galaxyssi.agent_knowledge.semantic_pending", "Pending documents"),
-        "\(controller.state.pendingDocuments)"
+        controller.state.enrollmentPending
+          ? t(
+            "galaxyssi.agent_knowledge.semantic_discovering",
+            "\(controller.state.pendingDocuments) queued, discovering more"
+          )
+          : "\(controller.state.pendingDocuments)"
       )
       if controller.state.phase == .downloading {
         ProgressView(

@@ -161,6 +161,13 @@ final class AgentKnowledgeDatabase {
         _ = execute("ROLLBACK")
         return false
       }
+      if complete, !removeVectorQueueItem(
+        itemHash: keyedHash(checkpoint.itemId),
+        modelHash: keyedHash(checkpoint.provenance.modelSHA256)
+      ) {
+        _ = execute("ROLLBACK")
+        return false
+      }
       guard execute("COMMIT") else {
         _ = execute("ROLLBACK")
         return false
@@ -222,6 +229,13 @@ final class AgentKnowledgeDatabase {
         sourceRevision: existing[0].sourceRevision,
         chunkCount: 0,
         updatedAtMillis: AgentMemoryClock.nowMillis()
+      ) {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      if !enqueueVectorItemIfRegistered(
+        itemHash: keyedHash(itemId),
+        modelHash: keyedHash(modelSHA256.lowercased())
       ) {
         _ = execute("ROLLBACK")
         return false
@@ -289,20 +303,67 @@ final class AgentKnowledgeDatabase {
   }
 
   func pendingVectorItems(modelSHA256: String, limit: Int = 32) throws -> [AgentKnowledgeItem] {
-    let items = try all()
-    var pending: [AgentKnowledgeItem] = []
-    for item in items {
-      let revision = AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)
-      let checkpoints = try vectorCheckpoints(itemId: item.id, modelSHA256: modelSHA256)
-      let expectedCount = checkpoints.first?.chunkCount ?? 0
-      let completeIndices = Set(checkpoints.map(\.chunkIndex)) == Set(0..<expectedCount)
-      if checkpoints.isEmpty || checkpoints.contains(where: { $0.sourceRevision != revision }) ||
-         checkpoints.count != expectedCount || !completeIndices {
-        pending.append(item)
-        if pending.count >= min(max(limit, 1), 64) { break }
+    try locked {
+      let pageSize = min(max(limit, 1), 64)
+      let modelHash = keyedHash(modelSHA256.lowercased())
+      guard ensureVectorEnrollment(modelHash: modelHash) else {
+        throw AgentKnowledgeDatabaseError.unavailable
       }
+      if vectorQueueCount(modelHash: modelHash) == 0,
+         try vectorEnrollmentPending(modelSHA256: modelSHA256),
+         !refillVectorEnrollment(modelHash: modelHash) {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      guard let statement = prepare("""
+        SELECT q.item_hash, i.encrypted_payload
+        FROM knowledge_vector_queue q
+        JOIN knowledge_items i ON i.item_hash = q.item_hash
+        WHERE q.model_hash = ? ORDER BY q.item_hash ASC LIMIT ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(modelHash, at: 1, to: statement)
+      sqlite3_bind_int(statement, 2, 64)
+      var pending: [AgentKnowledgeItem] = []
+      var completedHashes: [String] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        let item = try decode(statement, hashColumn: 0, payloadColumn: 1)
+        guard let hashText = sqlite3_column_text(statement, 0) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let itemHash = String(cString: hashText)
+        let revision = AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)
+        let checkpoints = try vectorCheckpoints(itemId: item.id, modelSHA256: modelSHA256)
+        let expectedCount = checkpoints.first?.chunkCount ?? 0
+        let completeIndices = expectedCount > 0 &&
+          Set(checkpoints.map(\.chunkIndex)) == Set(0..<expectedCount)
+        if !checkpoints.isEmpty && checkpoints.allSatisfy({ $0.sourceRevision == revision }) &&
+           checkpoints.count == expectedCount && completeIndices {
+          completedHashes.append(itemHash)
+        } else {
+          pending.append(item)
+        }
+      }
+      for itemHash in completedHashes where !removeVectorQueueItem(itemHash: itemHash, modelHash: modelHash) {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      return Array(pending.prefix(pageSize))
     }
-    return pending
+  }
+
+  func vectorEnrollmentPending(modelSHA256: String) throws -> Bool {
+    try locked {
+      let modelHash = keyedHash(modelSHA256.lowercased())
+      guard ensureVectorEnrollment(modelHash: modelHash),
+            let statement = prepare(
+              "SELECT complete FROM knowledge_vector_enrollment WHERE model_hash = ? LIMIT 1"
+            ) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(modelHash, at: 1, to: statement)
+      guard sqlite3_step(statement) == SQLITE_ROW else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      return sqlite3_column_int(statement, 0) == 0
+    }
   }
 
   func vectorCatalog(
@@ -440,7 +501,9 @@ final class AgentKnowledgeDatabase {
         _ = execute("ROLLBACK")
         return false
       }
-      guard execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1"),
+      guard execute("DELETE FROM knowledge_vector_queue"),
+            execute("UPDATE knowledge_vector_enrollment SET after_item_hash = '', complete = 0"),
+            execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1"),
             execute("COMMIT") else {
         _ = execute("ROLLBACK")
         return false
@@ -599,7 +662,154 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_change_replay ON knowledge_vector_changes(model_hash, sequence)")
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_enrollment (
+        model_hash TEXT PRIMARY KEY NOT NULL,
+        after_item_hash TEXT NOT NULL DEFAULT '',
+        complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1))
+      )
+      """)
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_queue (
+        model_hash TEXT NOT NULL,
+        item_hash TEXT NOT NULL,
+        PRIMARY KEY(model_hash, item_hash)
+      )
+      """)
+    _ = execute("INSERT OR IGNORE INTO knowledge_vector_enrollment(model_hash, complete) SELECT DISTINCT model_hash, 1 FROM knowledge_vectors")
     rebuildIndexIfNeeded()
+  }
+
+  private func ensureVectorEnrollment(modelHash: String) -> Bool {
+    guard modelHash.count == 64,
+          let statement = prepare("""
+            INSERT OR IGNORE INTO knowledge_vector_enrollment(model_hash, after_item_hash, complete)
+            VALUES (?, '', CASE WHEN EXISTS(
+              SELECT 1 FROM knowledge_vectors WHERE model_hash = ? LIMIT 1
+            ) THEN 1 ELSE 0 END)
+            """) else { return false }
+    defer { sqlite3_finalize(statement) }
+    bind(modelHash, at: 1, to: statement)
+    bind(modelHash, at: 2, to: statement)
+    return sqlite3_step(statement) == SQLITE_DONE
+  }
+
+  private func refillVectorEnrollment(modelHash: String, pageSize: Int = 64) -> Bool {
+    guard (1...256).contains(pageSize), execute("BEGIN IMMEDIATE TRANSACTION"),
+          let state = prepare(
+            "SELECT after_item_hash, complete FROM knowledge_vector_enrollment WHERE model_hash = ? LIMIT 1"
+          ) else {
+      _ = execute("ROLLBACK")
+      return false
+    }
+    bind(modelHash, at: 1, to: state)
+    guard sqlite3_step(state) == SQLITE_ROW,
+          let cursorText = sqlite3_column_text(state, 0) else {
+      sqlite3_finalize(state)
+      _ = execute("ROLLBACK")
+      return false
+    }
+    let cursor = String(cString: cursorText)
+    let complete = sqlite3_column_int(state, 1) == 1
+    sqlite3_finalize(state)
+    guard cursor.isEmpty || (cursor.count == 64 && cursor.allSatisfy(\.isHexDigit)) else {
+      _ = execute("ROLLBACK")
+      return false
+    }
+    if complete {
+      guard execute("COMMIT") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      return true
+    }
+    guard let page = prepare("""
+      SELECT item_hash FROM knowledge_items
+      WHERE item_hash > ? ORDER BY item_hash ASC LIMIT ?
+      """) else {
+      _ = execute("ROLLBACK")
+      return false
+    }
+    bind(cursor, at: 1, to: page)
+    sqlite3_bind_int(page, 2, Int32(pageSize + 1))
+    var keys: [String] = []
+    while sqlite3_step(page) == SQLITE_ROW, let text = sqlite3_column_text(page, 0) {
+      let key = String(cString: text)
+      guard key.count == 64, key.allSatisfy(\.isHexDigit) else {
+        sqlite3_finalize(page)
+        _ = execute("ROLLBACK")
+        return false
+      }
+      keys.append(key)
+    }
+    sqlite3_finalize(page)
+    for itemHash in keys.prefix(pageSize) {
+      guard let insert = prepare(
+        "INSERT OR IGNORE INTO knowledge_vector_queue(model_hash, item_hash) VALUES (?, ?)"
+      ) else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      bind(modelHash, at: 1, to: insert)
+      bind(itemHash, at: 2, to: insert)
+      let inserted = sqlite3_step(insert) == SQLITE_DONE
+      sqlite3_finalize(insert)
+      if !inserted {
+        _ = execute("ROLLBACK")
+        return false
+      }
+    }
+    let nextCursor = keys.prefix(pageSize).last ?? cursor
+    guard let update = prepare("""
+      UPDATE knowledge_vector_enrollment SET after_item_hash = ?, complete = ?
+      WHERE model_hash = ?
+      """) else {
+      _ = execute("ROLLBACK")
+      return false
+    }
+    bind(nextCursor, at: 1, to: update)
+    sqlite3_bind_int(update, 2, keys.count <= pageSize ? 1 : 0)
+    bind(modelHash, at: 3, to: update)
+    let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+    sqlite3_finalize(update)
+    guard updated, execute("COMMIT") else {
+      _ = execute("ROLLBACK")
+      return false
+    }
+    return true
+  }
+
+  private func removeVectorQueueItem(itemHash: String, modelHash: String) -> Bool {
+    guard let statement = prepare(
+      "DELETE FROM knowledge_vector_queue WHERE model_hash = ? AND item_hash = ?"
+    ) else { return false }
+    defer { sqlite3_finalize(statement) }
+    bind(modelHash, at: 1, to: statement)
+    bind(itemHash, at: 2, to: statement)
+    return sqlite3_step(statement) == SQLITE_DONE
+  }
+
+  private func vectorQueueCount(modelHash: String) -> Int64 {
+    guard let statement = prepare(
+      "SELECT COUNT(*) FROM knowledge_vector_queue WHERE model_hash = ?"
+    ) else { return -1 }
+    defer { sqlite3_finalize(statement) }
+    bind(modelHash, at: 1, to: statement)
+    return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : -1
+  }
+
+  private func enqueueVectorItemIfRegistered(itemHash: String, modelHash: String) -> Bool {
+    guard let statement = prepare("""
+      INSERT OR IGNORE INTO knowledge_vector_queue(model_hash, item_hash)
+      SELECT ?, ? WHERE EXISTS(
+        SELECT 1 FROM knowledge_vector_enrollment WHERE model_hash = ?
+      )
+      """) else { return false }
+    defer { sqlite3_finalize(statement) }
+    bind(modelHash, at: 1, to: statement)
+    bind(itemHash, at: 2, to: statement)
+    bind(modelHash, at: 3, to: statement)
+    return sqlite3_step(statement) == SQLITE_DONE
   }
 
   private func rebuildIndexIfNeeded() {

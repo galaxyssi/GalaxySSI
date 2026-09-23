@@ -32,8 +32,49 @@ struct AgentKnowledgeSemanticState: Codable, Equatable {
   var downloadedBytes: Int64 = 0
   var indexedChunks = 0
   var pendingDocuments = 0
+  var enrollmentPending = false
   var downloadRequestId = ""
   var error = ""
+
+  private enum CodingKeys: String, CodingKey {
+    case installed, enabled, phase, downloadedBytes, indexedChunks, pendingDocuments
+    case enrollmentPending, downloadRequestId, error
+  }
+
+  init(
+    installed: Bool = false,
+    enabled: Bool = false,
+    phase: AgentKnowledgeSemanticPhase = .notInstalled,
+    downloadedBytes: Int64 = 0,
+    indexedChunks: Int = 0,
+    pendingDocuments: Int = 0,
+    enrollmentPending: Bool = false,
+    downloadRequestId: String = "",
+    error: String = ""
+  ) {
+    self.installed = installed
+    self.enabled = enabled
+    self.phase = phase
+    self.downloadedBytes = downloadedBytes
+    self.indexedChunks = indexedChunks
+    self.pendingDocuments = pendingDocuments
+    self.enrollmentPending = enrollmentPending
+    self.downloadRequestId = downloadRequestId
+    self.error = error
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    installed = try values.decodeIfPresent(Bool.self, forKey: .installed) ?? false
+    enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+    phase = try values.decodeIfPresent(AgentKnowledgeSemanticPhase.self, forKey: .phase) ?? .notInstalled
+    downloadedBytes = try values.decodeIfPresent(Int64.self, forKey: .downloadedBytes) ?? 0
+    indexedChunks = try values.decodeIfPresent(Int.self, forKey: .indexedChunks) ?? 0
+    pendingDocuments = try values.decodeIfPresent(Int.self, forKey: .pendingDocuments) ?? 0
+    enrollmentPending = try values.decodeIfPresent(Bool.self, forKey: .enrollmentPending) ?? false
+    downloadRequestId = try values.decodeIfPresent(String.self, forKey: .downloadRequestId) ?? ""
+    error = try values.decodeIfPresent(String.self, forKey: .error) ?? ""
+  }
 }
 
 final class AgentKnowledgeSemanticModelStorage {
@@ -296,7 +337,13 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         state.phase = .indexing
         let runtime = try await ensureRuntime()
         let indexer = AgentKnowledgeVectorIndexer(database: database, runtime: runtime, provenance: provenance)
-        while try await indexer.indexPending(pageSize: 32) > 0 {
+        while true {
+          let indexed = try await indexer.indexPending(pageSize: 32)
+          let enrollmentPending = try database.vectorEnrollmentPending(
+            modelSHA256: AgentKnowledgeEmbeddingModel.sha256
+          )
+          state.enrollmentPending = enrollmentPending
+          if indexed == 0 && !enrollmentPending { break }
           state.indexedChunks = try countIndexedChunks()
           state.pendingDocuments = try database.pendingVectorItems(
             modelSHA256: AgentKnowledgeEmbeddingModel.sha256,
@@ -305,6 +352,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         }
         state.indexedChunks = try countIndexedChunks()
         state.pendingDocuments = 0
+        state.enrollmentPending = false
         state.phase = .ready
         persist()
       } catch is CancellationError {

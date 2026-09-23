@@ -80,6 +80,64 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
     XCTAssertEqual(try AgentKnowledgeVectorStorage.decode(packed), checkpoint)
   }
 
+  func testVectorEnrollmentPagesPersistAcrossReopenWithoutWholeCorpusScan() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentKnowledgeEnrollment-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let modelSHA = String(repeating: "9", count: 64)
+    let items = (0..<131).map { index in
+      AgentKnowledgeItem(
+        id: "enrollment-item-\(index)",
+        kind: .document,
+        title: "Enrollment \(index)",
+        content: "Private source body \(index)",
+        source: "source-\(index)"
+      )
+    }
+    func finish(_ page: [AgentKnowledgeItem], in database: AgentKnowledgeDatabase) {
+      for item in page {
+        let checkpoint = AgentKnowledgeVectorCheckpoint(
+          itemId: item.id,
+          sourceRevision: AgentKnowledgeVectorCheckpoint.sourceRevision(for: item),
+          chunkIndex: 0,
+          vector: [0.6, 0.8],
+          provenance: AgentKnowledgeVectorProvenance(
+            modelSHA256: modelSHA,
+            dimensions: 2,
+            contextTokens: 512,
+            chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+          )
+        )
+        XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+      }
+    }
+
+    let initial = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    XCTAssertTrue(initial.replaceAll(items))
+    let first = try initial.pendingVectorItems(modelSHA256: modelSHA, limit: 64)
+    XCTAssertEqual(first.count, 64)
+    XCTAssertTrue(try initial.vectorEnrollmentPending(modelSHA256: modelSHA))
+    finish(first, in: initial)
+
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let second = try reopened.pendingVectorItems(modelSHA256: modelSHA, limit: 64)
+    XCTAssertEqual(second.count, 64)
+    XCTAssertTrue(Set(first.map(\.id)).isDisjoint(with: Set(second.map(\.id))))
+    finish(second, in: reopened)
+    let third = try reopened.pendingVectorItems(modelSHA256: modelSHA, limit: 64)
+    XCTAssertEqual(third.count, 3)
+    finish(third, in: reopened)
+
+    XCTAssertEqual(Set((first + second + third).map(\.id)), Set(items.map(\.id)))
+    XCTAssertFalse(try reopened.vectorEnrollmentPending(modelSHA256: modelSHA))
+    XCTAssertTrue(try reopened.pendingVectorItems(modelSHA256: modelSHA).isEmpty)
+    let raw = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+    XCTAssertFalse(raw.contains("enrollment-item-"))
+    XCTAssertFalse(raw.contains(modelSHA))
+  }
+
   @MainActor
   func testStableIdsKeepSameNamedSourcesAndRejectReassignment() throws {
     let suite = "AgentKnowledgeIdentityTests-\(UUID().uuidString)"

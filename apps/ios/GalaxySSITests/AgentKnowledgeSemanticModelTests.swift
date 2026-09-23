@@ -40,6 +40,7 @@ final class AgentKnowledgeSemanticModelTests: XCTestCase {
       downloadedBytes: 12,
       indexedChunks: 34,
       pendingDocuments: 5,
+      enrollmentPending: true,
       downloadRequestId: "request",
       error: ""
     )
@@ -48,5 +49,13 @@ final class AgentKnowledgeSemanticModelTests: XCTestCase {
       AgentKnowledgeSemanticState.self,
       from: JSONEncoder().encode(state)
     ), state)
+  }
+
+  func testSemanticStateDecodesLegacyEnrollmentState() throws {
+    let legacy = Data(#"{"installed":true,"enabled":true,"phase":"INDEXING","pendingDocuments":0}"#.utf8)
+    let state = try JSONDecoder().decode(AgentKnowledgeSemanticState.self, from: legacy)
+
+    XCTAssertFalse(state.enrollmentPending)
+    XCTAssertEqual(state.phase, .indexing)
   }
 }
