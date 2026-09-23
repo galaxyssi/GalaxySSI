@@ -30,6 +30,12 @@ struct AgentKnowledgeVectorChangePage: Equatable {
   var events: [AgentKnowledgeVectorChange]
 }
 
+struct AgentKnowledgeVectorCountSnapshot: Equatable {
+  var chunks: Int64
+  var pending: Int64
+  var complete: Bool
+}
+
 final class AgentKnowledgeDatabase {
   private let fileURL: URL
   private let secrets: GalaxySSISecretStore
@@ -309,7 +315,7 @@ final class AgentKnowledgeDatabase {
       guard ensureVectorEnrollment(modelHash: modelHash) else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
-      if vectorQueueCount(modelHash: modelHash) == 0,
+      if try vectorQueueIsEmpty(modelHash: modelHash),
          try vectorEnrollmentPending(modelSHA256: modelSHA256),
          !refillVectorEnrollment(modelHash: modelHash) {
         throw AgentKnowledgeDatabaseError.unavailable
@@ -363,6 +369,54 @@ final class AgentKnowledgeDatabase {
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       return sqlite3_column_int(statement, 0) == 0
+    }
+  }
+
+  func vectorCountSnapshot(modelSHA256: String) throws -> AgentKnowledgeVectorCountSnapshot {
+    try locked {
+      let modelHash = keyedHash(modelSHA256.lowercased())
+      guard ensureVectorEnrollment(modelHash: modelHash),
+            let statement = prepare(
+              "SELECT chunks, pending, legacy FROM knowledge_vector_counts WHERE model_hash = ? LIMIT 1"
+            ) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(modelHash, at: 1, to: statement)
+      guard sqlite3_step(statement) == SQLITE_ROW else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      let chunks = sqlite3_column_int64(statement, 0)
+      let pending = sqlite3_column_int64(statement, 1)
+      let legacy = sqlite3_column_int(statement, 2)
+      guard chunks >= 0, pending >= 0, (0...1).contains(legacy) else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      return AgentKnowledgeVectorCountSnapshot(
+        chunks: chunks,
+        pending: pending,
+        complete: legacy == 0 && !countMaintenancePending()
+      )
+    }
+  }
+
+  @discardableResult
+  func maintainVectorCounts(pageSize: Int = 64) throws -> Bool {
+    try locked {
+      guard (1...256).contains(pageSize), execute("BEGIN IMMEDIATE TRANSACTION") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      do {
+        _ = try advanceVectorCountScan(kind: "vectors", pageSize: pageSize)
+        _ = try advanceVectorCountScan(kind: "queue", pageSize: pageSize)
+        let pending = countMaintenancePending()
+        if !pending, !execute("UPDATE knowledge_vector_counts SET legacy = 0") {
+          throw AgentKnowledgeDatabaseError.unavailable
+        }
+        guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+        return !pending
+      } catch {
+        _ = execute("ROLLBACK")
+        throw error
+      }
     }
   }
 
@@ -677,7 +731,245 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("INSERT OR IGNORE INTO knowledge_vector_enrollment(model_hash, complete) SELECT DISTINCT model_hash, 1 FROM knowledge_vectors")
+    setupVectorCounts()
     rebuildIndexIfNeeded()
+  }
+
+  private func setupVectorCounts() {
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_counts (
+        model_hash TEXT PRIMARY KEY NOT NULL,
+        chunks INTEGER NOT NULL DEFAULT 0 CHECK(typeof(chunks) = 'integer' AND chunks >= 0),
+        pending INTEGER NOT NULL DEFAULT 0 CHECK(typeof(pending) = 'integer' AND pending >= 0),
+        legacy INTEGER NOT NULL DEFAULT 0 CHECK(legacy IN (0, 1))
+      )
+      """)
+    _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_count_scan (
+        kind TEXT PRIMARY KEY NOT NULL,
+        after_primary TEXT NOT NULL DEFAULT '',
+        after_secondary TEXT NOT NULL DEFAULT '',
+        complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1))
+      )
+      """)
+    if !columnExists("count_tracked", in: "knowledge_vectors") {
+      _ = execute("ALTER TABLE knowledge_vectors ADD COLUMN count_tracked INTEGER NOT NULL DEFAULT 0")
+    }
+    if !columnExists("count_tracked", in: "knowledge_vector_queue") {
+      _ = execute("ALTER TABLE knowledge_vector_queue ADD COLUMN count_tracked INTEGER NOT NULL DEFAULT 0")
+    }
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_vector_counts(model_hash, legacy)
+      SELECT model_hash, 1 FROM knowledge_vector_enrollment
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_vector_counts(model_hash, legacy)
+      SELECT DISTINCT model_hash, 1 FROM knowledge_vectors
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_vector_counts(model_hash, legacy)
+      SELECT DISTINCT model_hash, 1 FROM knowledge_vector_queue
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_count_scan(kind, complete)
+      VALUES ('vectors', CASE WHEN EXISTS(SELECT 1 FROM knowledge_vectors LIMIT 1) THEN 0 ELSE 1 END)
+      """)
+    _ = execute("""
+      INSERT OR IGNORE INTO knowledge_count_scan(kind, complete)
+      VALUES ('queue', CASE WHEN EXISTS(SELECT 1 FROM knowledge_vector_queue LIMIT 1) THEN 0 ELSE 1 END)
+      """)
+    installVectorCountTriggers()
+  }
+
+  private func installVectorCountTriggers() {
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_vector_insert_guard
+      BEFORE INSERT ON knowledge_vectors
+      WHEN typeof(NEW.count_tracked) != 'integer' OR NEW.count_tracked != 0
+      BEGIN SELECT RAISE(ABORT, 'Invalid new vector count tracking state'); END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_vector_update_guard
+      BEFORE UPDATE ON knowledge_vectors
+      WHEN typeof(NEW.count_tracked) != 'integer' OR NEW.count_tracked NOT IN (0, 1)
+        OR NEW.count_tracked < OLD.count_tracked
+        OR NEW.vector_key IS NOT OLD.vector_key OR NEW.item_hash IS NOT OLD.item_hash
+        OR NEW.model_hash IS NOT OLD.model_hash
+      BEGIN SELECT RAISE(ABORT, 'Invalid vector count identity or transition'); END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_vector_insert
+      AFTER INSERT ON knowledge_vectors
+      BEGIN
+        UPDATE knowledge_vectors SET count_tracked = 1 WHERE vector_key = NEW.vector_key;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Vector count tracking update was lost') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_vector_track
+      AFTER UPDATE OF count_tracked ON knowledge_vectors
+      WHEN OLD.count_tracked = 0 AND NEW.count_tracked = 1
+      BEGIN
+        UPDATE knowledge_vector_counts SET chunks = chunks + 1 WHERE model_hash = NEW.model_hash;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Vector count update was lost') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_vector_delete
+      AFTER DELETE ON knowledge_vectors WHEN OLD.count_tracked = 1
+      BEGIN
+        UPDATE knowledge_vector_counts SET chunks = chunks - 1 WHERE model_hash = OLD.model_hash;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Vector count delete was lost') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_queue_insert_guard
+      BEFORE INSERT ON knowledge_vector_queue
+      WHEN typeof(NEW.count_tracked) != 'integer' OR NEW.count_tracked != 0
+      BEGIN SELECT RAISE(ABORT, 'Invalid new queue count tracking state'); END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_queue_update_guard
+      BEFORE UPDATE ON knowledge_vector_queue
+      WHEN typeof(NEW.count_tracked) != 'integer' OR NEW.count_tracked NOT IN (0, 1)
+        OR NEW.count_tracked < OLD.count_tracked
+        OR NEW.model_hash IS NOT OLD.model_hash OR NEW.item_hash IS NOT OLD.item_hash
+      BEGIN SELECT RAISE(ABORT, 'Invalid queue count identity or transition'); END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_queue_insert
+      AFTER INSERT ON knowledge_vector_queue
+      BEGIN
+        UPDATE knowledge_vector_queue SET count_tracked = 1
+        WHERE model_hash = NEW.model_hash AND item_hash = NEW.item_hash;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Queue count tracking update was lost') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_queue_track
+      AFTER UPDATE OF count_tracked ON knowledge_vector_queue
+      WHEN OLD.count_tracked = 0 AND NEW.count_tracked = 1
+      BEGIN
+        UPDATE knowledge_vector_counts SET pending = pending + 1 WHERE model_hash = NEW.model_hash;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Queue count update was lost') END;
+      END
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_count_queue_delete
+      AFTER DELETE ON knowledge_vector_queue WHEN OLD.count_tracked = 1
+      BEGIN
+        UPDATE knowledge_vector_counts SET pending = pending - 1 WHERE model_hash = OLD.model_hash;
+        SELECT CASE WHEN changes() != 1 THEN RAISE(ABORT, 'Queue count delete was lost') END;
+      END
+      """)
+  }
+
+  private func columnExists(_ column: String, in table: String) -> Bool {
+    guard let statement = prepare("PRAGMA table_info(\(table))") else { return false }
+    defer { sqlite3_finalize(statement) }
+    while sqlite3_step(statement) == SQLITE_ROW {
+      if let name = sqlite3_column_text(statement, 1), String(cString: name) == column { return true }
+    }
+    return false
+  }
+
+  private func countMaintenancePending() -> Bool {
+    guard let statement = prepare("SELECT 1 FROM knowledge_count_scan WHERE complete = 0 LIMIT 1") else {
+      return true
+    }
+    defer { sqlite3_finalize(statement) }
+    return sqlite3_step(statement) == SQLITE_ROW
+  }
+
+  private func advanceVectorCountScan(kind: String, pageSize: Int) throws -> Bool {
+    guard ["vectors", "queue"].contains(kind),
+          let state = prepare("""
+            SELECT after_primary, after_secondary, complete
+            FROM knowledge_count_scan WHERE kind = ? LIMIT 1
+            """) else { throw AgentKnowledgeDatabaseError.unavailable }
+    bind(kind, at: 1, to: state)
+    guard sqlite3_step(state) == SQLITE_ROW,
+          let primaryText = sqlite3_column_text(state, 0),
+          let secondaryText = sqlite3_column_text(state, 1) else {
+      sqlite3_finalize(state)
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    let primary = String(cString: primaryText)
+    let secondary = String(cString: secondaryText)
+    let complete = sqlite3_column_int(state, 2)
+    sqlite3_finalize(state)
+    guard (0...1).contains(complete),
+          (primary.isEmpty || isOpaqueHash(primary)),
+          (secondary.isEmpty || isOpaqueHash(secondary)) else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    if complete == 1 { return true }
+
+    let sql = kind == "vectors"
+      ? "SELECT vector_key, model_hash, count_tracked FROM knowledge_vectors WHERE vector_key > ? ORDER BY vector_key LIMIT ?"
+      : """
+        SELECT model_hash, item_hash, count_tracked FROM knowledge_vector_queue
+        WHERE model_hash > ? OR (model_hash = ? AND item_hash > ?)
+        ORDER BY model_hash, item_hash LIMIT ?
+        """
+    guard let page = prepare(sql) else { throw AgentKnowledgeDatabaseError.unavailable }
+    if kind == "vectors" {
+      bind(primary, at: 1, to: page)
+      sqlite3_bind_int(page, 2, Int32(pageSize + 1))
+    } else {
+      bind(primary, at: 1, to: page)
+      bind(primary, at: 2, to: page)
+      bind(secondary, at: 3, to: page)
+      sqlite3_bind_int(page, 4, Int32(pageSize + 1))
+    }
+    var rows: [(String, String, Bool)] = []
+    while sqlite3_step(page) == SQLITE_ROW,
+          let firstText = sqlite3_column_text(page, 0),
+          let secondText = sqlite3_column_text(page, 1) {
+      let first = String(cString: firstText)
+      let second = String(cString: secondText)
+      let tracked = sqlite3_column_int(page, 2)
+      guard isOpaqueHash(first), isOpaqueHash(second), (0...1).contains(tracked) else {
+        sqlite3_finalize(page)
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      rows.append((first, second, tracked == 1))
+    }
+    sqlite3_finalize(page)
+
+    for row in rows.prefix(pageSize) where !row.2 {
+      let updateSQL = kind == "vectors"
+        ? "UPDATE knowledge_vectors SET count_tracked = 1 WHERE vector_key = ? AND count_tracked = 0"
+        : "UPDATE knowledge_vector_queue SET count_tracked = 1 WHERE model_hash = ? AND item_hash = ? AND count_tracked = 0"
+      guard let update = prepare(updateSQL) else { throw AgentKnowledgeDatabaseError.unavailable }
+      bind(row.0, at: 1, to: update)
+      if kind == "queue" { bind(row.1, at: 2, to: update) }
+      let changed = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+      sqlite3_finalize(update)
+      guard changed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    }
+
+    let last = rows.prefix(pageSize).last
+    let nextPrimary = last?.0 ?? primary
+    let nextSecondary = kind == "queue" ? (last?.1 ?? secondary) : ""
+    guard let checkpoint = prepare("""
+      UPDATE knowledge_count_scan
+      SET after_primary = ?, after_secondary = ?, complete = ? WHERE kind = ?
+      """) else { throw AgentKnowledgeDatabaseError.unavailable }
+    bind(nextPrimary, at: 1, to: checkpoint)
+    bind(nextSecondary, at: 2, to: checkpoint)
+    sqlite3_bind_int(checkpoint, 3, rows.count <= pageSize ? 1 : 0)
+    bind(kind, at: 4, to: checkpoint)
+    let saved = sqlite3_step(checkpoint) == SQLITE_DONE && sqlite3_changes(database) == 1
+    sqlite3_finalize(checkpoint)
+    guard saved else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return rows.count <= pageSize
+  }
+
+  private func isOpaqueHash(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy {
+      ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+    }
   }
 
   private func ensureVectorEnrollment(modelHash: String) -> Bool {
@@ -691,7 +983,20 @@ final class AgentKnowledgeDatabase {
     defer { sqlite3_finalize(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(modelHash, at: 2, to: statement)
-    return sqlite3_step(statement) == SQLITE_DONE
+    guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+    guard let counts = prepare("""
+      INSERT OR IGNORE INTO knowledge_vector_counts(model_hash, legacy)
+      VALUES (?, CASE WHEN EXISTS(
+        SELECT 1 FROM knowledge_vectors WHERE model_hash = ? LIMIT 1
+      ) OR EXISTS(
+        SELECT 1 FROM knowledge_vector_queue WHERE model_hash = ? LIMIT 1
+      ) THEN 1 ELSE 0 END)
+      """) else { return false }
+    defer { sqlite3_finalize(counts) }
+    bind(modelHash, at: 1, to: counts)
+    bind(modelHash, at: 2, to: counts)
+    bind(modelHash, at: 3, to: counts)
+    return sqlite3_step(counts) == SQLITE_DONE
   }
 
   private func refillVectorEnrollment(modelHash: String, pageSize: Int = 64) -> Bool {
@@ -789,13 +1094,13 @@ final class AgentKnowledgeDatabase {
     return sqlite3_step(statement) == SQLITE_DONE
   }
 
-  private func vectorQueueCount(modelHash: String) -> Int64 {
+  private func vectorQueueIsEmpty(modelHash: String) throws -> Bool {
     guard let statement = prepare(
-      "SELECT COUNT(*) FROM knowledge_vector_queue WHERE model_hash = ?"
-    ) else { return -1 }
+      "SELECT 1 FROM knowledge_vector_queue WHERE model_hash = ? LIMIT 1"
+    ) else { throw AgentKnowledgeDatabaseError.unavailable }
     defer { sqlite3_finalize(statement) }
     bind(modelHash, at: 1, to: statement)
-    return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : -1
+    return sqlite3_step(statement) != SQLITE_ROW
   }
 
   private func enqueueVectorItemIfRegistered(itemHash: String, modelHash: String) -> Bool {

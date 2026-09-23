@@ -33,12 +33,14 @@ struct AgentKnowledgeSemanticState: Codable, Equatable {
   var indexedChunks = 0
   var pendingDocuments = 0
   var enrollmentPending = false
+  var countsPending = false
+  var countsError = ""
   var downloadRequestId = ""
   var error = ""
 
   private enum CodingKeys: String, CodingKey {
     case installed, enabled, phase, downloadedBytes, indexedChunks, pendingDocuments
-    case enrollmentPending, downloadRequestId, error
+    case enrollmentPending, countsPending, countsError, downloadRequestId, error
   }
 
   init(
@@ -49,6 +51,8 @@ struct AgentKnowledgeSemanticState: Codable, Equatable {
     indexedChunks: Int = 0,
     pendingDocuments: Int = 0,
     enrollmentPending: Bool = false,
+    countsPending: Bool = false,
+    countsError: String = "",
     downloadRequestId: String = "",
     error: String = ""
   ) {
@@ -59,6 +63,8 @@ struct AgentKnowledgeSemanticState: Codable, Equatable {
     self.indexedChunks = indexedChunks
     self.pendingDocuments = pendingDocuments
     self.enrollmentPending = enrollmentPending
+    self.countsPending = countsPending
+    self.countsError = countsError
     self.downloadRequestId = downloadRequestId
     self.error = error
   }
@@ -72,6 +78,8 @@ struct AgentKnowledgeSemanticState: Codable, Equatable {
     indexedChunks = try values.decodeIfPresent(Int.self, forKey: .indexedChunks) ?? 0
     pendingDocuments = try values.decodeIfPresent(Int.self, forKey: .pendingDocuments) ?? 0
     enrollmentPending = try values.decodeIfPresent(Bool.self, forKey: .enrollmentPending) ?? false
+    countsPending = try values.decodeIfPresent(Bool.self, forKey: .countsPending) ?? false
+    countsError = try values.decodeIfPresent(String.self, forKey: .countsError) ?? ""
     downloadRequestId = try values.decodeIfPresent(String.self, forKey: .downloadRequestId) ?? ""
     error = try values.decodeIfPresent(String.self, forKey: .error) ?? ""
   }
@@ -217,6 +225,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
   private let secrets: GalaxySSISecretStore
   private let storage: AgentKnowledgeSemanticModelStorage
   private var work: Task<Void, Never>?
+  private var countWork: Task<Void, Never>?
   private var runtime: GalaxySSIEmbeddingRuntime?
   private var semanticSearch: AgentKnowledgeSemanticSearch?
   private let stateKey = "galaxyssi.agent.knowledge.semantic-model.v1"
@@ -235,6 +244,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     state.installed = storage.installed
     state.downloadedBytes = storage.partialBytes
     if !state.installed && state.phase == .ready { state.phase = .notInstalled }
+    startCountMaintenance()
     if !state.downloadRequestId.isEmpty {
       startDownload(recovering: true)
     } else if state.installed, state.enabled {
@@ -343,15 +353,10 @@ final class AgentKnowledgeSemanticController: ObservableObject {
             modelSHA256: AgentKnowledgeEmbeddingModel.sha256
           )
           state.enrollmentPending = enrollmentPending
+          try refreshCounts()
           if indexed == 0 && !enrollmentPending { break }
-          state.indexedChunks = try countIndexedChunks()
-          state.pendingDocuments = try database.pendingVectorItems(
-            modelSHA256: AgentKnowledgeEmbeddingModel.sha256,
-            limit: 64
-          ).count
         }
-        state.indexedChunks = try countIndexedChunks()
-        state.pendingDocuments = 0
+        try refreshCounts()
         state.enrollmentPending = false
         state.phase = .ready
         persist()
@@ -381,6 +386,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
 
   func destroyPrivateData() {
     work?.cancel()
+    countWork?.cancel()
     storage.delete()
     GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: stateKey, secrets: secrets)
     state = AgentKnowledgeSemanticState()
@@ -414,17 +420,36 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     runtime = nil
   }
 
-  private func countIndexedChunks() throws -> Int {
-    var offset = 0
-    while true {
-      let page = try database.vectorCatalog(
-        modelSHA256: AgentKnowledgeEmbeddingModel.sha256,
-        offset: offset,
-        limit: 512
-      )
-      offset += page.count
-      if page.count < 512 { return offset }
+  private func startCountMaintenance() {
+    guard countWork == nil else { return }
+    state.countsError = ""
+    countWork = Task { [weak self] in
+      guard let self else { return }
+      do {
+        while !Task.isCancelled {
+          let complete = try await Task.detached(priority: .utility) {
+            try self.database.maintainVectorCounts(pageSize: 64)
+          }.value
+          try refreshCounts()
+          if complete { break }
+          await Task.yield()
+        }
+      } catch is CancellationError {
+        // The durable cursor resumes on the next controller lifetime.
+      } catch {
+        state.countsError = String(error.localizedDescription.prefix(180))
+      }
+      countWork = nil
+      persist()
     }
+  }
+
+  private func refreshCounts() throws {
+    let snapshot = try database.vectorCountSnapshot(modelSHA256: AgentKnowledgeEmbeddingModel.sha256)
+    state.indexedChunks = Int(clamping: snapshot.chunks)
+    state.pendingDocuments = Int(clamping: snapshot.pending)
+    state.countsPending = !snapshot.complete
+    if snapshot.complete { state.countsError = "" }
   }
 
   private func persist() {
