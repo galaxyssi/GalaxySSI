@@ -102,7 +102,7 @@ actor GalaxySSIPeerVoiceTranscriber {
 
   init(
     asr: VoiceLocalWhisperASR = VoiceLocalWhisperASR(
-      runtime: DefaultVoiceLocalWhisperRuntime()
+      runtime: VoiceSharedWhisperRuntime.shared
     )
   ) {
     self.asr = asr
