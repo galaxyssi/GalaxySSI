@@ -33,11 +33,6 @@ import androidx.recyclerview.widget.RecyclerView
 private const val CONVERSATION_HUB_ROW_END_INSET_DP = 14
 private const val CONVERSATION_HUB_PAGE_SIZE = 24
 
-private data class ConversationHubScrollAnchor(
-    val stableRowId: String,
-    val topOffset: Int
-)
-
 internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
     if (restoreHiddenConversationHub?.invoke() == true) return
     showConversationHub(ConversationHubTab.CONVERSATIONS, showArchived)
@@ -46,8 +41,10 @@ internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
 internal fun MainActivity.showConversationHub(
     initialTab: ConversationHubTab = ConversationHubTab.CONVERSATIONS,
     showArchived: Boolean = false,
-    afterFirstFramePresented: (() -> Unit)? = null
+    afterFirstFramePresented: (() -> Unit)? = null,
+    restoredNavigation: ConversationHubNavigationState? = null
 ) {
+    suspendedConversationHub = null
     agentSessionsDialog?.dismiss()
     val dialog = Dialog(this)
     agentSessionsDialog = dialog
@@ -76,7 +73,8 @@ internal fun MainActivity.showConversationHub(
     lateinit var renderBody: () -> Unit
     var loadConversationPage: (Boolean) -> Unit = {}
     var captureConversationScroll: () -> Unit = {}
-    var restoreConversationScrollOnNextRender = false
+    var restoreConversationScrollOnNextRender = restoredNavigation?.anchor != null
+    var restoreContactScrollOnNextRender = restoredNavigation?.tab == ConversationHubTab.CONTACTS
     var windowRefresh: (() -> Unit)? = null
     var windowRefreshPending = false
     val handleBack = {
@@ -232,7 +230,7 @@ internal fun MainActivity.showConversationHub(
         }
     }
     val linearLayoutManager = LinearLayoutManager(this)
-    var savedConversationScrollAnchor: ConversationHubScrollAnchor? = null
+    var savedConversationScrollAnchor: ConversationHubScrollAnchor? = restoredNavigation?.anchor
     val conversationList = RecyclerView(this).apply {
         layoutManager = linearLayoutManager
         adapter = conversationAdapter
@@ -252,10 +250,11 @@ internal fun MainActivity.showConversationHub(
             val firstPosition = linearLayoutManager.findFirstVisibleItemPosition()
             val firstRow = conversationAdapter.currentList.getOrNull(firstPosition)
             val firstView = linearLayoutManager.findViewByPosition(firstPosition)
-            if (firstRow != null && firstView != null) {
+            if (firstRow != null && firstRow !is ConversationHubRow.Empty && firstView != null) {
                 savedConversationScrollAnchor = ConversationHubScrollAnchor(
                     stableRowId = firstRow.stableId,
-                    topOffset = firstView.top - conversationList.paddingTop
+                    topOffset = firstView.top - conversationList.paddingTop,
+                    position = firstPosition
                 )
             }
         }
@@ -286,35 +285,34 @@ internal fun MainActivity.showConversationHub(
                 val snapshot = conversations
                 val agentItems = agentConversationItems
                 val contactSnapshot = contactConversationSummaries
-                val rows = if (contactSnapshot == null) {
+                val ready = contactSnapshot != null && snapshot != null
+                val rows = if (!ready) {
                     listOf(ConversationHubRow.Empty(getString(R.string.navigation_content_loading)))
                 } else {
                     conversationHubRows(
                         query = searchInput.text?.toString().orEmpty(),
                         archived = archivedMode,
                         agentItems = if (snapshot == null) emptyList() else agentItems.orEmpty(),
-                        contacts = contactSnapshot,
+                        contacts = contactSnapshot.orEmpty(),
                         archivedConversationCount = archivedConversationCount
                     )
                 }
                 val scrollAnchor = savedConversationScrollAnchor.takeIf {
-                    restoreConversationScrollOnNextRender
+                    restoreConversationScrollOnNextRender && ready
                 }
-                restoreConversationScrollOnNextRender = false
                 conversationAdapter.submitList(rows) {
                     if (
                         scrollAnchor != null &&
                         selectedTab == ConversationHubTab.CONVERSATIONS &&
                         dialog.isShowing
                     ) {
-                        val anchorPosition = conversationAdapter.currentList.indexOfFirst {
-                            it.stableId == scrollAnchor.stableRowId
-                        }
+                        val anchorPosition = scrollAnchor.restoredPosition(conversationAdapter.currentList.map { it.stableId })
                         if (anchorPosition >= 0) {
                             linearLayoutManager.scrollToPositionWithOffset(
                                 anchorPosition,
                                 scrollAnchor.topOffset
                             )
+                            restoreConversationScrollOnNextRender = false
                         }
                     }
                 }
@@ -330,6 +328,10 @@ internal fun MainActivity.showConversationHub(
                         dialog,
                         snapshot
                     )
+                    if (restoreContactScrollOnNextRender) {
+                        restoreContactScrollOnNextRender = false
+                        contactScroll.post { contactScroll.scrollTo(0, restoredNavigation?.contactScrollY ?: 0) }
+                    }
                 } ?: body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
             }
         }
@@ -416,6 +418,13 @@ internal fun MainActivity.showConversationHub(
         true
     }
     restoreHiddenConversationHub = restoreAction
+    val captureNavigation: () -> ConversationHubNavigationState = {
+        if (dialog.isShowing && !restoreConversationScrollOnNextRender) captureConversationScroll()
+        ConversationHubNavigationState(selectedTab, archivedMode, dialog.isShowing,
+            returnState.hiddenDestination, savedConversationScrollAnchor,
+            conversations?.size ?: restoredNavigation?.loadedAgentCount ?: 0, contactScroll.scrollY)
+    }
+    captureConversationHubNavigation = captureNavigation
     dialog.setContentView(root)
     dialog.setOnKeyListener { _, keyCode, event ->
         if (keyCode != KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
@@ -426,7 +435,7 @@ internal fun MainActivity.showConversationHub(
         }
         true
     }
-    var windowRefreshCount = 0
+    var windowRefreshCount = restoredNavigation?.loadedAgentCount ?: 0
     dialog.setOnDismissListener {
         if (conversationWindow.refreshList === windowRefresh) conversationWindow.refreshList = null
         val frameView = firstFrameView
@@ -441,6 +450,7 @@ internal fun MainActivity.showConversationHub(
         conversationList.recycledViewPool.clear()
         if (agentSessionsDialog === dialog) agentSessionsDialog = null
         if (restoreHiddenConversationHub === restoreAction) restoreHiddenConversationHub = null
+        if (captureConversationHubNavigation === captureNavigation) captureConversationHubNavigation = null
         if (conversationHubContactsChangedListener === contactsChangedListener) {
             conversationHubContactsChangedListener = null
         }
