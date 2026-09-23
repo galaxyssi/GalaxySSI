@@ -1259,6 +1259,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         super.onDestroy()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::conversationWindow.isInitialized && ::agentSessionTitle.isInitialized) {
+            selectedContact?.id?.takeIf { isContactChatVisible(it) }?.let(::markContactRead)
+            refreshReplyUnreadDot()
+        }
+    }
+
     override fun onResume() {
         KnowledgeSemanticSearch.resumeRuntime()
         KnowledgeSemanticRuntime.production(applicationContext).requestIndex()

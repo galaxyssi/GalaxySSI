@@ -1076,6 +1076,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (loadDraftConversation()?.id == conversationId) preferences.remove(draftPreferenceKey)
         entryDatabase.deleteConversation(conversationId)
         AgentResearchTraceStore.delete(appContext, conversationId)
+        AgentReplyUnreadStore.remove(appContext, conversationId)
         preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
         if (activeConversationId() == conversationId) {
@@ -1096,6 +1097,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val deleted = conversationDatabase.deleteConversations(ids)
         entryDatabase.deleteConversations(ids)
         ids.forEach { AgentResearchTraceStore.delete(appContext, it) }
+        ids.forEach { AgentReplyUnreadStore.remove(appContext, it) }
         ids.forEach(preparedContextCache::invalidate)
         AgentModelSelectionSettings.clearConversations(appContext, ids)
         draftConversation?.takeIf { it.id in ids }?.let {
@@ -1394,6 +1396,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             }
         }
         if (!inserted) return false
+        AgentReplyUnreadStore.record(appContext, entry)
         synchronized(this) { persistDraftIfNeeded(conversationId) }
         AgentConversationWindows.changed()
         preparedContextCache.invalidateTranscriptMutation(conversationId, role)
@@ -1465,6 +1468,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         } ?: return false
         synchronized(this) { persistDraftIfNeeded(conversationId) }
         val eventEntry = mutation.eventEntry
+        AgentReplyUnreadStore.record(appContext, eventEntry, mutation.previousEntry)
         AgentConversationWindows.changed()
         val previous = mutation.previousEntry
         val updated = mutation.updated
@@ -1502,6 +1506,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationsMigrated = true
         entryDatabase.clear()
         AgentResearchTraceStore.clear(appContext)
+        AgentReplyUnreadStore.clear(appContext)
     }
 
     @Synchronized
