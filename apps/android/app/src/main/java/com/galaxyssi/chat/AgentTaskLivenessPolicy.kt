@@ -40,13 +40,16 @@ internal object AgentTaskTerminalReplyPolicy {
         "skill-result:"
     )
 
+    fun isTerminalReply(entry: AgentTranscriptEntry): Boolean =
+        entry.role == AgentTranscriptRole.ASSISTANT &&
+            terminalDedupePrefixes.any(entry.dedupeKey::startsWith)
+
     fun hasTerminalReply(entries: List<AgentTranscriptEntry>, turnId: String): Boolean {
         val cleanTurnId = turnId.trim()
         if (cleanTurnId.isBlank()) return false
         return entries.any { entry ->
             (entry.turnId == cleanTurnId || entry.taskId == cleanTurnId) &&
-                entry.role == AgentTranscriptRole.ASSISTANT &&
-                terminalDedupePrefixes.any(entry.dedupeKey::startsWith)
+                isTerminalReply(entry)
         }
     }
 }
