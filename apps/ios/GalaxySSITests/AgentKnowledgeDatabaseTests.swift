@@ -3,6 +3,83 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentKnowledgeDatabaseTests: XCTestCase {
+  func testAdaptiveVectorStorageCompactsAndRestoresDirection() throws {
+    let dimensions = 512
+    let raw = (0..<dimensions).map { Float(sin(Double($0 + 1))) }
+    let norm = sqrt(raw.reduce(0.0) { $0 + Double($1) * Double($1) })
+    let vector = raw.map { Float(Double($0) / norm) }
+    let checkpoint = AgentKnowledgeVectorCheckpoint(
+      itemId: "compact-vector",
+      sourceRevision: String(repeating: "a", count: 64),
+      chunkIndex: 0,
+      vector: vector,
+      provenance: AgentKnowledgeVectorProvenance(
+        modelSHA256: String(repeating: "b", count: 64),
+        dimensions: dimensions,
+        contextTokens: 512,
+        chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+      )
+    )
+
+    let compact = try AgentKnowledgeVectorStorage.encode(checkpoint)
+    let legacy = try JSONEncoder.galaxySSI.encode(checkpoint)
+    let restored = try AgentKnowledgeVectorStorage.decode(compact)
+    let squaredError = zip(vector, restored.vector).reduce(0.0) { result, values in
+      let delta = Double(values.0) - Double(values.1)
+      return result + delta * delta
+    }
+
+    XCTAssertEqual(AgentKnowledgeVectorStorage.codec(in: compact), .scalar8)
+    XCTAssertLessThan(compact.count, legacy.count / 2)
+    XCTAssertLessThanOrEqual(squaredError, 0.0001)
+    XCTAssertEqual(restored.itemId, checkpoint.itemId)
+    XCTAssertEqual(restored.provenance, checkpoint.provenance)
+  }
+
+  func testAdaptiveVectorStorageFallsBackAndReadsLegacyCheckpoint() throws {
+    let checkpoint = AgentKnowledgeVectorCheckpoint(
+      itemId: "legacy-vector",
+      sourceRevision: String(repeating: "c", count: 64),
+      chunkIndex: 0,
+      vector: [0.6, 0.8],
+      provenance: AgentKnowledgeVectorProvenance(
+        modelSHA256: String(repeating: "d", count: 64),
+        dimensions: 2,
+        contextTokens: 512,
+        chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+      )
+    )
+
+    let packed = try AgentKnowledgeVectorStorage.encode(checkpoint)
+    let legacy = try JSONEncoder.galaxySSI.encode(checkpoint)
+
+    XCTAssertEqual(AgentKnowledgeVectorStorage.codec(in: packed), .float32)
+    XCTAssertEqual(try AgentKnowledgeVectorStorage.decode(packed), checkpoint)
+    XCTAssertEqual(try AgentKnowledgeVectorStorage.decode(legacy), checkpoint)
+  }
+
+  func testAdaptiveVectorStorageUsesFloat16WhenScalarErrorIsTooLarge() throws {
+    var sparse = [Float](repeating: 0, count: 512)
+    sparse[37] = 1
+    let checkpoint = AgentKnowledgeVectorCheckpoint(
+      itemId: "sparse-vector",
+      sourceRevision: String(repeating: "e", count: 64),
+      chunkIndex: 0,
+      vector: sparse,
+      provenance: AgentKnowledgeVectorProvenance(
+        modelSHA256: String(repeating: "f", count: 64),
+        dimensions: sparse.count,
+        contextTokens: 512,
+        chunkingContract: AgentKnowledgeEmbeddingChunker.contract
+      )
+    )
+
+    let packed = try AgentKnowledgeVectorStorage.encode(checkpoint)
+
+    XCTAssertEqual(AgentKnowledgeVectorStorage.codec(in: packed), .float16)
+    XCTAssertEqual(try AgentKnowledgeVectorStorage.decode(packed), checkpoint)
+  }
+
   @MainActor
   func testStableIdsKeepSameNamedSourcesAndRejectReassignment() throws {
     let suite = "AgentKnowledgeIdentityTests-\(UUID().uuidString)"

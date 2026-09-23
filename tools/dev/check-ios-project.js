@@ -227,6 +227,14 @@ const requiredProjectSnippets = [
 ];
 
 const requiredSourceSnippets = [
+  [models, "enum AgentKnowledgeVectorStorage"],
+  [models, "case scalar8"],
+  [models, "case float16"],
+  [models, "maximumSquaredError = 0.0001"],
+  [models, "AgentKnowledgeVectorStorage.decode(plaintext)"],
+  [tests, "testAdaptiveVectorStorageCompactsAndRestoresDirection"],
+  [tests, "testAdaptiveVectorStorageFallsBackAndReadsLegacyCheckpoint"],
+  [tests, "testAdaptiveVectorStorageUsesFloat16WhenScalarErrorIsTooLarge"],
   [readme, "iOS 15"],
   [readme, "Swift source is split by functional domain"],
   [readme, "should stay limited to shared foundation types"],
