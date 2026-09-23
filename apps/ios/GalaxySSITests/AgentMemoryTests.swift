@@ -2,6 +2,22 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testAgentMemoryRecallUsesIndexedCandidateSubsetWithoutChangingRanking() {
+    let items = (0..<200).map { index in
+      AgentMemoryItem(
+        kind: .knowledge,
+        value: index == 137 ? "preferred zxcompiler is Swift" : "unrelated record \(index)",
+        timestampMillis: Int64(index),
+        id: "memory-\(index)",
+        key: "record-\(index)"
+      )
+    }
+    let store = InMemoryAgentMemoryStore(items: items, nowMillis: { 10_000 })
+
+    XCTAssertEqual(store.recall(query: "zxcompiler Swift").map(\.id), ["memory-137"])
+    XCTAssertLessThan(store.lastRecallCandidateCount, items.count)
+  }
+
   func testAgentMemoryModelsUseAndroidWireNamesAndBounds() throws {
     let decoded = try JSONDecoder().decode(
       AgentMemoryItem.self,
