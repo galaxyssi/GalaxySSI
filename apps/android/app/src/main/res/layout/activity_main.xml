@@ -119,7 +119,7 @@
                             android:contentDescription="@string/conversation_window_open"
                             android:focusable="true"
                             android:tooltipText="@string/conversation_window_open"
-                            android:src="@mipmap/ic_launcher" />
+                            android:src="@drawable/galaxyssi_mark_large" />
 
                         <LinearLayout
                             android:id="@+id/agentBrandNewConversation"
