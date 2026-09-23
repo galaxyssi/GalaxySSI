@@ -77,6 +77,8 @@ internal fun MainActivity.showConversationHub(
     var loadConversationPage: (Boolean) -> Unit = {}
     var captureConversationScroll: () -> Unit = {}
     var restoreConversationScrollOnNextRender = false
+    var windowRefresh: (() -> Unit)? = null
+    var windowRefreshPending = false
     val handleBack = {
         when (ConversationHubBackPolicy.action(selectedTab, archivedMode)) {
             ConversationHubBackAction.SHOW_CONVERSATIONS -> {
@@ -405,6 +407,7 @@ internal fun MainActivity.showConversationHub(
         }
         applyConversationHubHostStatusBar()
         renderBody()
+        windowRefresh?.invoke()
         if (hiddenDestination == ConversationHubItemKind.CONTACT) {
             runAfterFirstFrame {
                 showAgentHomeFromChat(preserveNavigationContent = true)
@@ -424,7 +427,6 @@ internal fun MainActivity.showConversationHub(
         true
     }
     var windowRefreshCount = 0
-    var windowRefresh: (() -> Unit)? = null
     dialog.setOnDismissListener {
         if (conversationWindow.refreshList === windowRefresh) conversationWindow.refreshList = null
         val frameView = firstFrameView
@@ -506,6 +508,9 @@ internal fun MainActivity.showConversationHub(
                 refreshed.copy(items = items)
             }.getOrElse { AgentConversationPage(emptyList(), null, false) }
             val queryElapsedMillis = SystemClock.elapsedRealtime() - queryStartedAt
+            val workspaceSnapshot = runCatching { EncryptedAgentWorkspaceStore(applicationContext).list() }
+                .getOrDefault(emptyList())
+            val pageItems = toConversationHubItems(page.items, workspaceSnapshot)
             val archivedCountSnapshot = if (reset) {
                 runCatching {
                     agentTranscriptStore.conversationCount(AgentConversationStatus.ARCHIVED)
@@ -530,7 +535,8 @@ internal fun MainActivity.showConversationHub(
                     (conversations.orEmpty() + page.items).distinctBy(AgentConversation::id)
                 }
                 conversations = merged
-                agentConversationItems = toConversationHubItems(merged)
+                agentConversationItems = if (requestedCursor == null) pageItems
+                    else (agentConversationItems.orEmpty() + pageItems).distinctBy(ConversationHubItem::id)
                 loadedConversationStatus = requestedStatus
                 conversationPageCursor = page.nextCursor
                 conversationHasMore = page.hasMore
@@ -546,10 +552,15 @@ internal fun MainActivity.showConversationHub(
                 if (!searchInput.text.isNullOrBlank() && conversationHasMore) {
                     loadConversationPage(false)
                 }
+                if (windowRefreshPending && !conversationPageLoading) {
+                    windowRefreshPending = false
+                    windowRefresh?.invoke()
+                }
             }
         }
     }
     windowRefresh = {
+        if (dialog.isShowing && conversationPageLoading) windowRefreshPending = true
         if (dialog.isShowing && !conversationPageLoading) {
             captureConversationScroll()
             restoreConversationScrollOnNextRender = true
@@ -614,21 +625,33 @@ internal fun MainActivity.showConversationHub(
 }
 
 private fun MainActivity.toConversationHubItems(
-    conversations: List<AgentConversation>
+    conversations: List<AgentConversation>,
+    workspaces: List<AgentWorkspace>
 ): List<ConversationHubItem> =
     conversations.map { conversation ->
+        val latest = runCatching { agentTranscriptStore.previewEntry(conversation.latestMessageEntryId) }.getOrNull()
+        val workspace = ConversationHubAgentStatusPolicy.workspace(conversation.id, latest, workspaces)
+        val state = ConversationHubAgentStatusPolicy.resolve(workspace, latest,
+            AgentReplyUnreadStore.hasUnread(this, conversation.id))
+        val progress = workspace?.eventJournal?.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS }
+            ?.message?.takeIf { state == ConversationHubAgentStatus.RUNNING || state == ConversationHubAgentStatus.WAITING_RESPONSE }
+            ?.let(::localizedAgentProcessText)?.replace(Regex("\\s+"), " ")?.take(160).orEmpty()
+        val subtitle = if (state == ConversationHubAgentStatus.READ || state == ConversationHubAgentStatus.COMPLETE_UNREAD) {
+            conversation.latestMessagePreview
+        } else progress.ifBlank { getString(state.labelRes()) }
         ConversationHubItem(
             id = conversation.id,
             kind = ConversationHubItemKind.AGENT,
             title = agentConversationDisplayTitle(conversation),
-            subtitle = conversation.latestMessagePreview,
+            subtitle = subtitle,
             updatedAt = maxOf(
                 conversation.updatedAt,
                 conversation.latestMessageTimestampMillis
             ),
             pinned = conversation.pinned,
             archived = conversation.status == AgentConversationStatus.ARCHIVED,
-            searchableMetadata = conversation.selectedModelOrAgent
+            searchableMetadata = conversation.selectedModelOrAgent,
+            agentStatus = state
         )
     }
 
@@ -831,6 +854,7 @@ private fun MainActivity.conversationHubConversationRow(
         contact = contact,
         tintIcon = item.kind != ConversationHubItemKind.CONTACT,
         unreadCount = item.unreadCount,
+        agentStatus = item.agentStatus,
         onClick = {
             if (item.kind == ConversationHubItemKind.CONTACT) {
                 onOpenContact(item.id)
@@ -1027,6 +1051,7 @@ private fun MainActivity.conversationHubListRow(
     contact: Contact? = null,
     tintIcon: Boolean = true,
     unreadCount: Int = 0,
+    agentStatus: ConversationHubAgentStatus? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)? = null
 ): View = conversationHubBaseRow(
@@ -1040,6 +1065,7 @@ private fun MainActivity.conversationHubListRow(
     iconTint = getColorCompat(R.color.galaxyssi_green),
     iconBackground = Color.parseColor("#ECF9F2"),
     showChevron = false,
+    agentStatus = agentStatus,
     onClick = onClick,
     onLongClick = onLongClick
 )
@@ -1055,6 +1081,7 @@ private fun MainActivity.conversationHubBaseRow(
     iconTint: Int,
     iconBackground: Int,
     showChevron: Boolean,
+    agentStatus: ConversationHubAgentStatus? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)?
 ): View = LinearLayout(this).apply {
@@ -1066,8 +1093,10 @@ private fun MainActivity.conversationHubBaseRow(
         setPadding(dp(4), dp(8), dp(CONVERSATION_HUB_ROW_END_INSET_DP), dp(8))
         background = conversationHubSelectableBackground()
         addView(FrameLayout(this@conversationHubBaseRow).apply {
-            background = hubShape(if (tintIcon) iconBackground else Color.TRANSPARENT, 8f)
-            addView(ImageView(this@conversationHubBaseRow).apply {
+            background = hubShape(agentStatus?.let { Color.parseColor(it.backgroundColor()) }
+                ?: if (tintIcon) iconBackground else Color.TRANSPARENT, 8f)
+            val icon = if (agentStatus != null) ConversationHubStatusIcon(this@conversationHubBaseRow, agentStatus)
+            else ImageView(this@conversationHubBaseRow).apply {
                 if (contact != null) {
                     bindContactAvatar(this, contact)
                 } else {
@@ -1075,13 +1104,15 @@ private fun MainActivity.conversationHubBaseRow(
                     if (tintIcon) imageTintList = ColorStateList.valueOf(iconTint)
                 }
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
-            }, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER))
+            }
+            addView(icon, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER))
         }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(12) })
         addView(LinearLayout(this@conversationHubBaseRow).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             addView(TextView(this@conversationHubBaseRow).apply {
                 text = title
+                if (agentStatus == ConversationHubAgentStatus.COMPLETE_UNREAD) setTypeface(typeface, Typeface.BOLD)
                 textSize = 16f
                 setTextColor(getColorCompat(R.color.text_primary))
                 maxLines = 1

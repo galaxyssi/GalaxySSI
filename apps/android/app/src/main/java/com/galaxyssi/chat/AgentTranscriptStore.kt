@@ -1182,6 +1182,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return if (cleanEntryId.isBlank()) null else entryDatabase.findById(cleanEntryId)
     }
 
+    internal fun previewEntry(entryId: String): AgentTranscriptEntry? =
+        entryId.takeIf(String::isNotBlank)?.let(entryDatabase::previewById)
+
     internal fun textChunkPage(
         entryId: String,
         offset: Int = 0,
