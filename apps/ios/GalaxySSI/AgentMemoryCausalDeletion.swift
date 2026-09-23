@@ -16,9 +16,9 @@ struct AgentMemoryDeletionTombstone: Codable, Equatable, Identifiable {
     deletedAtMillis: Int64
   ) {
     self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
-    self.memoryIds = Self.clean(memoryIds, limit: AgentMemoryCausalDeletionPolicy.maxIdsPerTombstone)
-    self.semanticFingerprints = Self.clean(semanticFingerprints, limit: AgentMemoryCausalDeletionPolicy.maxIdsPerTombstone)
-    self.retractedEventIds = Self.clean(retractedEventIds, limit: AgentMemoryCausalDeletionPolicy.maxRetractionsPerTombstone)
+    self.memoryIds = Self.clean(memoryIds)
+    self.semanticFingerprints = Self.clean(semanticFingerprints)
+    self.retractedEventIds = Self.clean(retractedEventIds)
     self.deletedAtMillis = max(deletedAtMillis, 0)
   }
 
@@ -32,12 +32,22 @@ struct AgentMemoryDeletionTombstone: Codable, Equatable, Identifiable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let memoryIds = try container.decode([String].self, forKey: .memoryIds)
+    let semanticFingerprints = try container.decode([String].self, forKey: .semanticFingerprints)
+    let retractedEventIds = try container.decode([String].self, forKey: .retractedEventIds)
+    guard Set(memoryIds).count == memoryIds.count,
+          Set(semanticFingerprints).count == semanticFingerprints.count,
+          Set(retractedEventIds).count == retractedEventIds.count else {
+      throw DecodingError.dataCorrupted(
+        .init(codingPath: decoder.codingPath, debugDescription: "Deletion ledger sets contain duplicate entries")
+      )
+    }
     self.init(
-      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
-      memoryIds: Set(try container.decodeIfPresent([String].self, forKey: .memoryIds) ?? []),
-      semanticFingerprints: Set(try container.decodeIfPresent([String].self, forKey: .semanticFingerprints) ?? []),
-      retractedEventIds: Set(try container.decodeIfPresent([String].self, forKey: .retractedEventIds) ?? []),
-      deletedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .deletedAtMillis) ?? 0
+      id: try container.decode(String.self, forKey: .id),
+      memoryIds: Set(memoryIds),
+      semanticFingerprints: Set(semanticFingerprints),
+      retractedEventIds: Set(retractedEventIds),
+      deletedAtMillis: try container.decode(Int64.self, forKey: .deletedAtMillis)
     )
   }
 
@@ -50,26 +60,19 @@ struct AgentMemoryDeletionTombstone: Codable, Equatable, Identifiable {
     try container.encode(deletedAtMillis, forKey: .deletedAtMillis)
   }
 
-  private static func clean(_ values: Set<String>, limit: Int) -> Set<String> {
-    Set(values
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-      .sorted()
-      .prefix(limit))
+  private static func clean(_ values: Set<String>) -> Set<String> {
+    Set(values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
   }
 }
 
 enum AgentMemoryCausalDeletionPolicy {
-  static let maxTombstones = 2_000
-  static let maxIdsPerTombstone = 1_000
-  static let maxRetractionsPerTombstone = 2_000
   static let maxRetractionsPerEvent = 128
 
   static func tombstone(
     deletedItems: [AgentMemoryItem],
     deletedAtMillis: Int64 = AgentMemoryClock.nowMillis()
   ) -> AgentMemoryDeletionTombstone? {
-    let memoryIds = Set(deletedItems.map(\.id).map(cleanIdentifier).filter { !$0.isEmpty })
+    let memoryIds = Set(deletedItems.map(\.id).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     let fingerprints = Set(deletedItems.map(semanticFingerprint).filter { !$0.isEmpty })
     let retractions = Set(deletedItems.flatMap { retractionEventIds(for: $0) }.filter { !$0.isEmpty })
     guard !memoryIds.isEmpty || !fingerprints.isEmpty || !retractions.isEmpty else { return nil }
@@ -99,7 +102,7 @@ enum AgentMemoryCausalDeletionPolicy {
       }
       .values
       .sorted { $0.deletedAtMillis < $1.deletedAtMillis }
-    return Array(merged.suffix(maxTombstones))
+    return Array(merged)
   }
 
   static func filterRestoredItems(
@@ -349,21 +352,37 @@ final class InMemoryAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
 
 final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
   static let defaultKey = "galaxyssi_agent_memory_deletions_v1"
+  static let encryptedKey = "galaxyssi_agent_memory_deletions_v2"
 
   private let defaults: UserDefaults
   private let key: String
+  private let encryptedStorageKey: String
+  private let secrets: GalaxySSISecretStore
   private let lock = NSLock()
 
-  init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentMemoryDeletionIndex.defaultKey) {
+  init(
+    defaults: UserDefaults = .standard,
+    key: String = UserDefaultsAgentMemoryDeletionIndex.defaultKey,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared
+  ) {
     self.defaults = defaults
     self.key = key
+    self.encryptedStorageKey = key == Self.defaultKey ? Self.encryptedKey : "\(key)-encrypted-v2"
+    self.secrets = secrets
+    migrateLegacyIfNeeded()
   }
 
   static func destroyPersistentStore(
     defaults: UserDefaults = .standard,
-    key: String = UserDefaultsAgentMemoryDeletionIndex.defaultKey
+    key: String = UserDefaultsAgentMemoryDeletionIndex.defaultKey,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared
   ) {
     defaults.removeObject(forKey: key)
+    GalaxySSIEncryptedUserDefaultsStore.destroy(
+      defaults: defaults,
+      key: key == defaultKey ? encryptedKey : "\(key)-encrypted-v2",
+      secrets: secrets
+    )
   }
 
   @discardableResult
@@ -405,11 +424,20 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
   func clear() {
     locked {
       defaults.removeObject(forKey: key)
+      GalaxySSIEncryptedUserDefaultsStore.destroy(
+        defaults: defaults,
+        key: encryptedStorageKey,
+        secrets: secrets
+      )
     }
   }
 
   private func loadUnlocked() -> [AgentMemoryDeletionTombstone] {
-    guard let data = defaults.data(forKey: key),
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: encryptedStorageKey,
+      secrets: secrets
+    ),
           let decoded = try? JSONDecoder().decode([AgentMemoryDeletionTombstone].self, from: data) else {
       return []
     }
@@ -420,7 +448,29 @@ final class UserDefaultsAgentMemoryDeletionIndex: AgentMemoryDeletionIndex {
     guard let data = try? JSONEncoder().encode(AgentMemoryCausalDeletionPolicy.merge(current: [], incoming: tombstones)) else {
       return
     }
-    defaults.set(data, forKey: key)
+    if GalaxySSIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: encryptedStorageKey,
+      secrets: secrets
+    ) {
+      defaults.removeObject(forKey: key)
+    }
+  }
+
+  private func migrateLegacyIfNeeded() {
+    lock.lock()
+    defer { lock.unlock() }
+    guard GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: encryptedStorageKey,
+      secrets: secrets
+    ) == nil,
+    let legacyData = defaults.data(forKey: key),
+    let decoded = try? JSONDecoder().decode([AgentMemoryDeletionTombstone].self, from: legacyData) else {
+      return
+    }
+    saveUnlocked(decoded)
   }
 
   private func locked<T>(_ operation: () -> T) -> T {

@@ -226,6 +226,66 @@ final class AgentMemoryCausalDeletionTests: XCTestCase {
     XCTAssertTrue(AgentMemoryCausalDeletionPolicy.filterRestoredItems([item], tombstones: [tombstone]).isEmpty)
   }
 
+  func testDeletionLedgerDoesNotTruncateRecordsOrLargeTombstones() throws {
+    let deleted = (0..<1_501).map { index in
+      memory(id: "memory-\(index)", value: "Value \(index)", key: "key-\(index)", timestampMillis: 1_000)
+    }
+    let large = try XCTUnwrap(
+      AgentMemoryCausalDeletionPolicy.tombstone(deletedItems: deleted, deletedAtMillis: 2_000)
+    )
+    let records = (0..<2_105).compactMap { index in
+      AgentMemoryCausalDeletionPolicy.tombstone(
+        deletedItems: [memory(id: "record-\(index)", value: "Value", key: "key-\(index)", timestampMillis: 1_000)],
+        deletedAtMillis: Int64(index + 2)
+      )
+    }
+
+    XCTAssertEqual(large.memoryIds.count, 1_501)
+    XCTAssertEqual(large.semanticFingerprints.count, 1_501)
+    XCTAssertEqual(large.retractedEventIds.count, 1_501)
+    XCTAssertEqual(AgentMemoryCausalDeletionPolicy.merge(current: [], incoming: records).count, 2_105)
+  }
+
+  func testDeletionTombstoneDecoderRejectsMissingAndDuplicateSetFields() throws {
+    let item = memory(id: "memory-a", value: "Value", key: "key", timestampMillis: 1_000)
+    let tombstone = try XCTUnwrap(
+      AgentMemoryCausalDeletionPolicy.tombstone(deletedItems: [item], deletedAtMillis: 2_000)
+    )
+    let encoded = try JSONEncoder().encode(tombstone)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    var missing = object
+    missing.removeValue(forKey: "memory_ids")
+    var duplicate = object
+    duplicate["memory_ids"] = [item.id, item.id]
+
+    XCTAssertThrowsError(try JSONDecoder().decode(
+      AgentMemoryDeletionTombstone.self,
+      from: JSONSerialization.data(withJSONObject: missing)
+    ))
+    XCTAssertThrowsError(try JSONDecoder().decode(
+      AgentMemoryDeletionTombstone.self,
+      from: JSONSerialization.data(withJSONObject: duplicate)
+    ))
+  }
+
+  func testPersistentDeletionLedgerEncryptsAndMigratesLegacyRows() throws {
+    let suiteName = "AgentMemoryDeletionMigration-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
+    let tombstone = try XCTUnwrap(AgentMemoryCausalDeletionPolicy.tombstone(
+      deletedItems: [memory(id: "memory-a", value: "Value", key: "key", timestampMillis: 1_000)],
+      deletedAtMillis: 2_000
+    ))
+    defaults.set(try JSONEncoder().encode([tombstone]), forKey: UserDefaultsAgentMemoryDeletionIndex.defaultKey)
+
+    let index = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
+
+    XCTAssertEqual(index.snapshot(), [tombstone])
+    XCTAssertNil(defaults.data(forKey: UserDefaultsAgentMemoryDeletionIndex.defaultKey))
+    XCTAssertNotNil(defaults.data(forKey: "\(UserDefaultsAgentMemoryDeletionIndex.encryptedKey).encrypted.v1"))
+  }
+
   private func memory(
     _ id: String,
     _ value: String,

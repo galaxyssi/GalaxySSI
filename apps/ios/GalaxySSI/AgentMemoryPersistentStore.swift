@@ -25,7 +25,7 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
     self.key = key
     self.encryptedKey = "\(key)-encrypted-v3"
     self.secrets = secrets
-    self.deletionIndex = deletionIndex ?? UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
+    self.deletionIndex = deletionIndex ?? UserDefaultsAgentMemoryDeletionIndex(defaults: defaults, secrets: secrets)
     self.nowMillis = nowMillis
     self.retractionSink = retractionSink
     let encrypted = GalaxySSIEncryptedUserDefaultsStore.load(
