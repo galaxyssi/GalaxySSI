@@ -126,13 +126,23 @@ enum AgentIOSLocalModelWebToolRunner {
     )
     let permissions = Set(catalog.flatMap(\.requiredPermissions).filter(\.required).map(\.id))
     let consents = Set(catalog.flatMap(\.requiredConsents).filter(\.required).map(\.id))
-    let outcome = await AgentModelToolLoop(modelAdapter: session, toolRegistry: webRegistry).run(
+    let recoveryIdentity = AgentModelLoopRecoveryIdentity.sha256([
+      "prompt": prompt,
+      "profile_id": profile.id,
+      "has_attachments": String(hasAttachments)
+    ])
+    let outcome = await AgentModelToolLoop(
+      modelAdapter: session,
+      toolRegistry: webRegistry,
+      journal: EncryptedAgentModelLoopJournal()
+    ).run(
       AgentModelToolLoopRequest(
         sessionId: sessionID.ifBlank(taskID),
         conversationId: conversationID.ifBlank(taskID),
         turnId: turnID.ifBlank(taskID),
         taskId: taskID,
         workspaceId: conversationID.ifBlank(taskID),
+        loopId: "local-web-\(recoveryIdentity)",
         messages: [.system(baseSystemPrompt), .user(prompt)],
         budget: AgentModelToolLoopBudget(
           maxRounds: 8,
@@ -145,7 +155,8 @@ enum AgentIOSLocalModelWebToolRunner {
         ),
         callerId: "galaxyssi.local_model_web_loop",
         grantedPermissions: permissions,
-        grantedConsents: consents
+        grantedConsents: consents,
+        recoveryInputIdentity: recoveryIdentity
       )
     )
     guard outcome.status == .completed, !outcome.assistantText.isBlank else {

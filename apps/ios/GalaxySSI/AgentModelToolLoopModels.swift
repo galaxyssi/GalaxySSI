@@ -144,6 +144,7 @@ struct AgentModelToolLoopRequest {
   var callerId: String
   var grantedPermissions: Set<String>
   var grantedConsents: Set<String>
+  var recoveryInputIdentity: String
   var cancellationToken: AgentModelToolLoopCancellationToken
   var eventSink: AgentModelToolLoopEventSink
 
@@ -162,6 +163,7 @@ struct AgentModelToolLoopRequest {
     responseLanguage: String = LanguagePolicySettings.auto,
     grantedPermissions: Set<String> = [],
     grantedConsents: Set<String> = [],
+    recoveryInputIdentity: String = "",
     cancellationToken: AgentModelToolLoopCancellationToken = .none,
     eventSink: AgentModelToolLoopEventSink = .none
   ) {
@@ -193,6 +195,7 @@ struct AgentModelToolLoopRequest {
     self.callerId = callerId
     self.grantedPermissions = grantedPermissions
     self.grantedConsents = grantedConsents
+    self.recoveryInputIdentity = recoveryInputIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
     self.cancellationToken = cancellationToken
     self.eventSink = eventSink
   }

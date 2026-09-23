@@ -60,6 +60,78 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(second.events.allSatisfy { $0.details["model_loop_id"] == .string("loop-b") })
   }
 
+  func testDurableModelLoopRestoresCommittedResponsesAndToolObservations() async throws {
+    var executions = 0
+    let journal = InMemoryAgentModelLoopJournal()
+    let firstRegistry = try registry(idempotency: .idempotencyKeyRequired) { _ in
+      executions += 1
+      return .success(output: ["echo": .string("durable")])
+    }
+    let firstAdapter = ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("durable-call")]),
+      AgentModelResponse(assistantText: "Durable result.")
+    )
+    var firstEvents: [AgentModelToolLoopEvent] = []
+    let durableRequest = request(
+      eventSink: AgentModelToolLoopEventSink { firstEvents.append($0) },
+      loopId: "durable-loop"
+    )
+
+    let first = await loop(
+      adapter: firstAdapter,
+      registry: firstRegistry,
+      journal: journal
+    ).run(durableRequest)
+
+    let restoredRegistry = try registry(idempotency: .idempotencyKeyRequired) { _ in
+      executions += 1
+      return .failure(code: "unexpected_execution", message: "Recovered tool ran again")
+    }
+    let restoredAdapter = ScriptedModelAdapter(AgentModelResponse(assistantText: "Unexpected model call."))
+    var restoredEvents: [AgentModelToolLoopEvent] = []
+    var restoredRequest = durableRequest
+    restoredRequest.eventSink = AgentModelToolLoopEventSink { restoredEvents.append($0) }
+    let restored = await loop(
+      adapter: restoredAdapter,
+      registry: restoredRegistry,
+      journal: journal
+    ).run(restoredRequest)
+
+    XCTAssertEqual(first.status, .completed)
+    XCTAssertEqual(restored.status, .completed)
+    XCTAssertEqual(restored.assistantText, "Durable result.")
+    XCTAssertEqual(restored.messages, first.messages)
+    XCTAssertEqual(firstAdapter.requests.count, 2)
+    XCTAssertEqual(restoredAdapter.requests.count, 0)
+    XCTAssertEqual(executions, 1)
+    XCTAssertFalse(firstEvents.isEmpty)
+    XCTAssertTrue(restoredEvents.isEmpty)
+  }
+
+  func testDurableModelLoopRejectsInputAndManifestDrift() async throws {
+    let journal = InMemoryAgentModelLoopJournal()
+    let registry = try registry { _ in .success() }
+    let firstAdapter = ScriptedModelAdapter(AgentModelResponse(assistantText: "Stored."))
+    let first = await loop(
+      adapter: firstAdapter,
+      registry: registry,
+      journal: journal
+    ).run(request(loopId: "drift-loop"))
+    var changed = request(loopId: "drift-loop")
+    changed.messages = [.user("Changed input must not reuse the old loop." )]
+    let secondAdapter = ScriptedModelAdapter(AgentModelResponse(assistantText: "Unexpected."))
+    let rejected = await loop(
+      adapter: secondAdapter,
+      registry: registry,
+      journal: journal
+    ).run(changed)
+
+    XCTAssertEqual(first.status, .completed)
+    XCTAssertEqual(rejected.status, .modelFailed)
+    XCTAssertEqual(rejected.error?.code, "model_loop_checkpoint_binding_changed")
+    XCTAssertEqual(secondAdapter.requests.count, 0)
+  }
+
   func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() async throws {
     var capturedContexts: [AgentNativeToolInvocationContext] = []
     let registry = try registry(idempotency: .idempotent) { invocation in
@@ -424,13 +496,15 @@ final class AgentModelToolLoopTests: XCTestCase {
   private func loop(
     adapter: AgentModelAdapter,
     registry: AgentNativeToolRegistry,
-    clock: MutableClock = MutableClock(now: 100)
+    clock: MutableClock = MutableClock(now: 100),
+    journal: AgentModelLoopJournal? = nil
   ) -> AgentModelToolLoop {
     AgentModelToolLoop(
       modelAdapter: adapter,
       toolRegistry: registry,
       clock: AgentModelToolLoopClock { clock.now },
-      idFactory: countingIds()
+      idFactory: countingIds(),
+      journal: journal
     )
   }
 
