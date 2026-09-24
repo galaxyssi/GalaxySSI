@@ -388,6 +388,7 @@ class MainActivity : ComponentActivity() {
                 if (page == "settings") render() else if (page == "chat") updateConversationView()
                 if (next.phase == "wifi_required") main.postDelayed(setupRetry, 5000)
                 if (next.phase == "network_changed") main.postDelayed({ if (resumed && setupServer == null) startPhoneSetup() }, 2000)
+                if (next.phase == "saved") main.postDelayed({ if (resumed && setupServer == null) startPhoneSetup() }, 2000)
             },
             apply = { payload ->
                 if (payload.optString("kind") != "cloud") JSONObject().put("status", "unsupported")
