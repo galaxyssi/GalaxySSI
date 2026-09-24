@@ -1258,7 +1258,8 @@ internal fun MainActivity.submitAgentGoal(
     pendingVoiceDedupeKey: String = "",
     pendingVoiceConversationId: String = "",
     goalOverride: String? = null,
-    attachmentsOverride: List<AgentInputAttachment>? = null
+    attachmentsOverride: List<AgentInputAttachment>? = null,
+    onTurnCreated: ((String) -> Unit)? = null
 ) {
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val goal = goalOverride?.trim()
@@ -1282,6 +1283,7 @@ internal fun MainActivity.submitAgentGoal(
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
+    onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
     agentVoiceConversation?.session?.registerTurn(voiceTraceId, turnId)

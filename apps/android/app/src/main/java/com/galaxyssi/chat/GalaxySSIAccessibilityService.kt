@@ -11,6 +11,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 class GalaxySSIAccessibilityService : AccessibilityService() {
     private var lastVisualCaptureRequestAt = 0L
+    private var screenAssistant: ScreenAssistantOverlay? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -18,8 +19,9 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val root = rootInActiveWindow ?: return
         val packageName = event?.packageName?.toString().orEmpty()
+        screenAssistant?.onForegroundPackage(packageName)
+        val root = rootInActiveWindow ?: return
         val className = event?.className?.toString().orEmpty()
         ScreenPerceptionState.update(
             AccessibilityTreeReader.snapshot(
@@ -39,6 +41,11 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        screenAssistant?.close()
+        screenAssistant = ScreenAssistantOverlay(this).also {
+            it.onForegroundPackage(rootInActiveWindow?.packageName?.toString().orEmpty())
+            it.retryPending()
+        }
         rootInActiveWindow?.let { root ->
             ScreenPerceptionState.update(
                 AccessibilityTreeReader.snapshot(
@@ -51,6 +58,8 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        screenAssistant?.close()
+        screenAssistant = null
         if (activeService === this) activeService = null
         super.onDestroy()
     }
@@ -181,6 +190,14 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         private const val VISUAL_CAPTURE_THROTTLE_MILLIS = 2_500L
 
         fun isActive(): Boolean = activeService != null
+
+        fun refreshScreenAssistant() {
+            activeService?.screenAssistant?.refresh()
+        }
+
+        fun retryPendingScreenAssistant() {
+            activeService?.screenAssistant?.retryPending()
+        }
 
         fun captureCurrentScreen(defaultApp: String, defaultTitle: String): ScreenContext? =
             activeService?.captureScreen(defaultApp, defaultTitle)

@@ -1306,6 +1306,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             chatPage.visibility == View.VISIBLE
         }
         AppForegroundTracker.onActivityForeground(this, resumedConversationId)
+        GalaxySSIAccessibilityService.refreshScreenAssistant()
+        GalaxySSIAccessibilityService.retryPendingScreenAssistant()
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         AndroidAgentRecoveryWake.request(this)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
@@ -1365,6 +1367,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         if (::conversationWindow.isInitialized) conversationWindow.pause()
         agentVoiceConversation?.onForeground(false)
         AppForegroundTracker.onActivityBackground(this)
+        GalaxySSIAccessibilityService.refreshScreenAssistant()
         GalaxySSIMqttClient.removeListener(this)
         if (highAccuracyAsrControllerDelegate.isInitialized()) {
             highAccuracyAsrController.onAppForegroundChanged(false)

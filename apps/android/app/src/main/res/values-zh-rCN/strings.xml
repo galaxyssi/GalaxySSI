@@ -1611,7 +1611,7 @@
     <string name="advanced_debug_mode">调试模式</string>
     <string name="advanced_debug_mode_subtitle">显示传输数据和步骤详情</string>
     <string name="accessibility_service_label">GalaxySSI 屏幕 Agent</string>
-    <string name="accessibility_service_description">经用户授权后读取当前屏幕结构，让 GalaxySSI 规划本机任务。</string>
+    <string name="accessibility_service_description">经授权后读取当前屏幕结构，用于本机任务。开启屏幕助手后，仅在你点击悬浮按钮时截图。</string>
     <string name="agent_status_accessibility_needed">屏幕访问未开启</string>
     <string name="agent_status_accessibility_needed_subtitle">点击打开无障碍设置</string>
     <string name="agent_status_visual_ready">视觉屏幕上下文已就绪</string>

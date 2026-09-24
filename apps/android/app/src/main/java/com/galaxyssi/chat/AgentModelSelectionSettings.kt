@@ -233,6 +233,15 @@ object AgentModelSelectionSettings {
         editor.apply()
     }
 
+    fun selectAutoForConversation(context: Context, conversationId: String) {
+        val scope = requireConversationId(conversationId)
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val editor = preferences.edit()
+        rememberActiveTarget(editor, scope, readSelection(preferences) { field -> key(scope, field) })
+        writeSelection(editor, { field -> key(scope, field) }, AgentModelSelection())
+        editor.apply()
+    }
+
     fun selectManual(
         context: Context,
         conversationId: String,

@@ -264,9 +264,82 @@ internal fun MainActivity.renderControlCenterGeneralPage() {
         )),
         ControlCenterSectionSpec("", listOf(
             myAgentRow(routeAction(ControlCenterRoute.NOTIFICATIONS_HUB), R.string.my_agent_notifications, R.drawable.ic_settings_notification),
+            myAgentRow("general.screen_assistant", R.string.screen_assistant_title, R.drawable.ic_agent_screen,
+                subtitle = getString(R.string.screen_assistant_settings_summary)),
             myAgentRow("general.about", R.string.settings_about_galaxyssi, R.drawable.ic_info_outline)
         ))
     )))
+}
+
+internal fun MainActivity.showScreenAssistantSettingsPage() {
+    val available = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+    showControlCenterFeature(getString(R.string.screen_assistant_title), ControlCenterPageSpec(
+        banner = ControlCenterBannerSpec(
+            getString(R.string.screen_assistant_title),
+            getString(R.string.screen_assistant_disclosure),
+            R.drawable.ic_agent_screen,
+            ControlCenterTone.GREEN
+        ),
+        sections = listOf(ControlCenterSectionSpec("", listOf(
+            ControlCenterRowSpec(
+                actionId = "screen_assistant.toggle",
+                title = getString(R.string.screen_assistant_enable),
+                subtitle = getString(R.string.screen_assistant_enable_summary),
+                iconRes = R.drawable.ic_agent_screen,
+                switchValue = ScreenAssistantSettings.enabled(this),
+                showChevron = false,
+                enabled = available
+            ),
+            ControlCenterRowSpec(
+                actionId = "screen_assistant.accessibility",
+                title = getString(R.string.screen_assistant_permission),
+                subtitle = getString(R.string.screen_assistant_permission_summary),
+                iconRes = R.drawable.ic_security_shield,
+                status = getString(if (GalaxySSIAccessibilityService.isActive())
+                    R.string.screen_assistant_connected else R.string.screen_assistant_not_connected)
+            ),
+            ControlCenterRowSpec(
+                actionId = "screen_assistant.target",
+                title = getString(R.string.screen_assistant_target),
+                subtitle = getString(R.string.screen_assistant_target_summary),
+                iconRes = R.drawable.ic_settings_agent,
+                status = ScreenAssistantSettings.target(this).name.ifBlank {
+                    getString(R.string.agent_model_selection_automatic)
+                }
+            )
+        ))),
+        footer = getString(R.string.screen_assistant_footer)
+    ))
+}
+
+internal fun MainActivity.showScreenAssistantTargetPicker() {
+    val targets = controlCenterResourceTargets(mobileNativeAgent.snapshot().callableTargets)
+    val agents = AgentModelSelectionPolicy.selectableAgentTargets(targets)
+    val models = targets.filter {
+        it.kind == AgentConnectorKind.MODEL && it.id != "local-llm" &&
+            it.status == AgentConnectorStatus.AVAILABLE && it.providerProfile != null
+    }
+    val choices = (agents + models).distinctBy(AgentCallableTarget::id)
+    val labels = listOf(getString(R.string.agent_model_selection_automatic)) +
+        choices.map(::agentModelTargetDisplayName)
+    android.app.AlertDialog.Builder(this)
+        .setTitle(R.string.screen_assistant_target)
+        .setItems(labels.toTypedArray()) { _, index ->
+            val target = choices.getOrNull(index - 1)
+            ScreenAssistantSettings.setTarget(this, if (target == null) {
+                ScreenAssistantSettings.Target("", "", "")
+            } else {
+                ScreenAssistantSettings.Target(
+                    target.id,
+                    agentModelTargetDisplayName(target),
+                    target.invocationProfile.normalizedModelId("")
+                        .ifBlank { target.providerProfile?.modelId.orEmpty() }
+                )
+            })
+            showScreenAssistantSettingsPage()
+            GalaxySSIAccessibilityService.retryPendingScreenAssistant()
+        }
+        .show()
 }
 
 internal fun MainActivity.showTextSizeSettingsPage() {

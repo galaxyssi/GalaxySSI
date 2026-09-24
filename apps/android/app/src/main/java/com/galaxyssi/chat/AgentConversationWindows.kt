@@ -39,6 +39,9 @@ internal object AgentConversationWindows {
     }
 
     fun register(controller: AgentConversationWindowController) { windows[controller.key] = WeakReference(controller) }
+    fun screenAssistantRunner(): MainActivity? = listOfNotNull(windows["main"]?.get()?.activity).asSequence()
+        .plus(windows.values.asSequence().mapNotNull { it.get()?.activity })
+        .firstOrNull { !it.isDestroyed && !it.isFinishing && !it.initialAgentHydrationPending }
     fun unregister(controller: AgentConversationWindowController) {
         if (windows[controller.key]?.get() === controller) windows.remove(controller.key)
     }
