@@ -446,7 +446,7 @@ enum AgentKnowledgeSourceRevision {
   }
 }
 
-struct AgentKnowledgeSourceCursor: Equatable {
+struct AgentKnowledgeSourceCursor: Codable, Equatable {
   var updatedAtMillis: Int64
   var sourceHash: String
   var revision: Int64

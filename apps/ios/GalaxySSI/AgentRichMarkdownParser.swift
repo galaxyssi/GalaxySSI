@@ -10,7 +10,9 @@ enum AgentMarkdownArtifactReferences {
     while index < characters.count {
       let lineStart = index == 0 || characters[index - 1] == "\n"
       if lineStart, let marker = fenceMarker(characters, at: index) {
-        if let fence, marker.character == fence.character, marker.count >= fence.count {
+        if let activeFence = fence,
+           marker.0 == activeFence.character,
+           marker.1 >= activeFence.count {
           self.appendLine(from: index, characters: characters, to: &output, next: &index)
           fence = nil
           continue

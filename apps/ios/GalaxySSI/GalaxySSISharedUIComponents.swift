@@ -20,6 +20,7 @@ extension Color {
   static var galaxySSIPageBackground: Color { Color(galaxySSIColor(light: 0xF6F7F8, dark: 0x15171B)) }
   static var galaxySSIBarBackground: Color { Color(galaxySSIColor(light: 0xFFFFFF, dark: 0x202329)) }
   static var galaxySSISurface: Color { Color(galaxySSIColor(light: 0xFFFFFF, dark: 0x252930)) }
+  static var galaxySSICardBackground: Color { galaxySSISurface }
   static var galaxySSISearchBackground: Color { Color(galaxySSIColor(light: 0xE5E5EA, dark: 0x2B3038)) }
   static var galaxySSITextPrimary: Color { Color(galaxySSIColor(light: 0x111111, dark: 0xF2F4F7)) }
   static var galaxySSITextSecondary: Color { Color(galaxySSIColor(light: 0x8E8E93, dark: 0xA5ABB6)) }

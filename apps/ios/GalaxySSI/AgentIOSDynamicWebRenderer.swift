@@ -111,7 +111,7 @@ enum AgentIOSWebRenderURLPolicy {
     var hints = addrinfo()
     hints.ai_flags = AI_ADDRCONFIG
     hints.ai_family = AF_UNSPEC
-    hints.ai_socktype = Int32(SOCK_STREAM.rawValue)
+    hints.ai_socktype = SOCK_STREAM
     hints.ai_protocol = Int32(IPPROTO_TCP)
     var result: UnsafeMutablePointer<addrinfo>?
     guard getaddrinfo(host, nil, &hints, &result) == 0, let first = result else { return false }

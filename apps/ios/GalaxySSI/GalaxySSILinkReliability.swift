@@ -632,7 +632,7 @@ final class GalaxySSILinkDeliveryStore {
     attachmentMaxAttempts: Int? = nil
   ) -> TimeInterval? {
     let attachmentLimit = max(maxAttempts, attachmentMaxAttempts ?? maxAttempts)
-    state.outbox
+    return state.outbox
       .filter { item in
         item.blockedByAttachmentTransferIds.isEmpty &&
           hasWirePayload(item) &&

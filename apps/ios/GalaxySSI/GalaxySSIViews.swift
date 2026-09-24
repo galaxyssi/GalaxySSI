@@ -325,6 +325,9 @@ private struct GalaxySSIRuntimeRoot: View {
   }
 
   private func requestNotificationPermissionIfNeeded() {
+#if DEBUG
+    guard ProcessInfo.processInfo.arguments.galaxySSIScreenshotRoute == nil else { return }
+#endif
     UNUserNotificationCenter.current().getNotificationSettings { settings in
       guard settings.authorizationStatus == .notDetermined else { return }
       Task { @MainActor in
@@ -374,7 +377,7 @@ struct RootView: View {
 
   var body: some View {
     ZStack {
-      GalaxySSIMainTabView()
+      launchContent
         .accentColor(.galaxySSIAccent)
         .galaxySSIInterfaceLanguage(interfaceLanguage)
         .id(interfaceLanguage)
@@ -399,7 +402,66 @@ struct RootView: View {
         await GalaxySSINavigationContentPrewarm.prepare(store: store)
       }
   }
+
+  @ViewBuilder
+  private var launchContent: some View {
+#if DEBUG
+    switch ProcessInfo.processInfo.arguments.galaxySSIScreenshotRoute {
+    case "sessions":
+      GalaxySSIMainTabView(initialTab: .sessions)
+    case "discover":
+      GalaxySSIMainTabView(initialTab: .discover)
+    case "settings":
+      GalaxySSIMainTabView(initialTab: .settings)
+    case "add-contact":
+      screenshotNavigation { AddContactView() }
+    case "my-qr":
+      screenshotNavigation { MyContactQRCodeView() }
+    case "model-selection":
+      screenshotNavigation { GalaxySSIAgentModelSelectionView() }
+    case "local-model":
+      screenshotNavigation { GalaxySSILocalModelLabView() }
+    case "linux-runtime":
+      screenshotNavigation { GalaxySSIOnDeviceRuntimeView() }
+    case "voice":
+      screenshotNavigation { GalaxySSIVoiceAssistantSettingsView() }
+    case "permissions":
+      screenshotNavigation { OnDeviceAgentPermissionsView() }
+    case "memory":
+      screenshotNavigation { GalaxySSIAgentMemoryView() }
+    case "knowledge":
+      screenshotNavigation { GalaxySSIAgentKnowledgeView() }
+    case "system-status":
+      screenshotNavigation { GalaxySSISystemStatusView() }
+    case "cloud-model":
+      AddCloudModelView()
+    default:
+      GalaxySSIMainTabView(initialTab: .agent)
+    }
+#else
+    GalaxySSIMainTabView(initialTab: .agent)
+#endif
+  }
+
+#if DEBUG
+  private func screenshotNavigation<Content: View>(
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    NavigationView(content: content)
+      .navigationViewStyle(.stack)
+  }
+#endif
 }
+
+#if DEBUG
+private extension Array where Element == String {
+  var galaxySSIScreenshotRoute: String? {
+    guard let flag = firstIndex(of: "-GalaxySSIScreenshotRoute"),
+          indices.contains(flag + 1) else { return nil }
+    return self[flag + 1]
+  }
+}
+#endif
 
 private extension View {
   @ViewBuilder

@@ -17,10 +17,10 @@ final class AgentReplySpeechRuntime: ObservableObject {
 
   init(
     controller: AgentReplySpeechController = AgentReplySpeechController(),
-    speech: VoiceProgressiveReplySpeechService = VoiceProgressiveReplySpeechService()
+    speech: VoiceProgressiveReplySpeechService? = nil
   ) {
     self.controller = controller
-    self.speech = speech
+    self.speech = speech ?? VoiceProgressiveReplySpeechService()
   }
 
   func observe(

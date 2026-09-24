@@ -10,7 +10,8 @@ struct AgentKnowledgeSemanticModelView: View {
     VStack(spacing: 0) {
       GalaxySSITopBar(
         title: t("galaxyssi.agent_knowledge.semantic_title", "Semantic model"),
-        leading: { GalaxySSIBackButton() }
+        leading: { GalaxySSIBackButton() },
+        trailing: { Color.clear }
       )
 
       ScrollView {

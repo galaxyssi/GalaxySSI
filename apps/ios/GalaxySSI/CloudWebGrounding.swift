@@ -793,8 +793,8 @@ enum CloudWebGrounding {
   ) -> AgentMcpJSONObject {
     var result = arguments
     if operation(forToolName: name) == .search {
-      let imageSearch = result["verticals"]?.arrayValue.contains {
-        $0.stringValue.caseInsensitiveCompare("image") == .orderedSame
+      let imageSearch = result["verticals"]?.arrayValue?.contains {
+        ($0.stringValue ?? "").caseInsensitiveCompare("image") == .orderedSame
       } == true
       if result["limit"] == nil {
         let maxResults = Int(result["max_results"]?.intValue ?? (imageSearch ? 3 : 10)).clamped(to: 1...100)
@@ -807,7 +807,7 @@ enum CloudWebGrounding {
     }
     if operation(forToolName: name) == .research,
        result["profile"] == nil,
-       (result["query_plan"]?.arrayValue.isEmpty ?? true) {
+       (result["query_plan"]?.arrayValue?.isEmpty ?? true) {
       result["profile"] = .string("fast")
       if result["evidence_limit"] == nil { result["evidence_limit"] = .int(3) }
       if result["engine_fanout"] == nil { result["engine_fanout"] = .int(3) }
@@ -871,22 +871,22 @@ enum CloudWebGrounding {
       let sourceIds = (item["source_ids"]?.arrayValue ?? []).prefix(8).compactMap { value in
         value.stringValue.map { AgentMcpJSONValue.string(String($0.prefix(64))) }
       }
-      return .object([
-        "citation_id": .string(String((item["citation_id"]?.stringValue ?? "").prefix(32))),
-        "source_kind": .string(String((item["source_kind"]?.stringValue ?? "").prefix(32))),
-        "evidence_level": .string(String((item["evidence_level"]?.stringValue ?? "").prefix(32))),
-        "url": .string(String((item["url"]?.stringValue ?? "").prefix(4_096))),
-        "title": .string(String((item["title"]?.stringValue ?? "").prefix(256))),
-        "author": .string(String((item["author"]?.stringValue ?? "").prefix(256))),
-        "published_at": .string(String((item["published_at"]?.stringValue ?? "").prefix(96))),
-        "retrieved_at_millis": item["retrieved_at_millis"] ?? .int(0),
-        "content_type": .string(String((item["content_type"]?.stringValue ?? "").prefix(128))),
-        "content_sha256": .string(String((item["content_sha256"]?.stringValue ?? "").prefix(64))),
-        "excerpt": .string(String((item["excerpt"]?.stringValue ?? "").prefix(excerptLimit))),
-        "rank": item["rank"] ?? .int(0),
-        "source_ids": .array(sourceIds),
-        "fetch_tier": .string(String((item["fetch_tier"]?.stringValue ?? "").prefix(64)))
-      ])
+      var compactItem: AgentMcpJSONObject = [:]
+      compactItem["citation_id"] = .string(String((item["citation_id"]?.stringValue ?? "").prefix(32)))
+      compactItem["source_kind"] = .string(String((item["source_kind"]?.stringValue ?? "").prefix(32)))
+      compactItem["evidence_level"] = .string(String((item["evidence_level"]?.stringValue ?? "").prefix(32)))
+      compactItem["url"] = .string(String((item["url"]?.stringValue ?? "").prefix(4_096)))
+      compactItem["title"] = .string(String((item["title"]?.stringValue ?? "").prefix(256)))
+      compactItem["author"] = .string(String((item["author"]?.stringValue ?? "").prefix(256)))
+      compactItem["published_at"] = .string(String((item["published_at"]?.stringValue ?? "").prefix(96)))
+      compactItem["retrieved_at_millis"] = item["retrieved_at_millis"] ?? .int(0)
+      compactItem["content_type"] = .string(String((item["content_type"]?.stringValue ?? "").prefix(128)))
+      compactItem["content_sha256"] = .string(String((item["content_sha256"]?.stringValue ?? "").prefix(64)))
+      compactItem["excerpt"] = .string(String((item["excerpt"]?.stringValue ?? "").prefix(excerptLimit)))
+      compactItem["rank"] = item["rank"] ?? .int(0)
+      compactItem["source_ids"] = .array(sourceIds)
+      compactItem["fetch_tier"] = .string(String((item["fetch_tier"]?.stringValue ?? "").prefix(64)))
+      return .object(compactItem)
     }
     var compactPackInput: AgentMcpJSONObject = [
       "protocol": pack["protocol"] ?? .null,

@@ -478,7 +478,7 @@ enum AgentBenchmarkMemoryFixtures {
       if store.snapshot().activeItems.contains(where: { $0.key == key && $0.value == "\(fixture) = \(value)" }) {
         return true
       }
-      store.remember(AgentMemoryItem(
+      return store.remember(AgentMemoryItem(
         kind: .knowledge,
         value: "\(fixture) = \(value)",
         timestampMillis: nowMillis,

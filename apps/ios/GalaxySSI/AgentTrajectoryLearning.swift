@@ -96,7 +96,8 @@ final class AgentFailureMemoryStore {
       state.memories[stable] = updated
       state.memories = Dictionary(uniqueKeysWithValues: state.memories
         .sorted { $0.value.lastObservedAtMillis > $1.value.lastObservedAtMillis }
-        .prefix(Self.maximumItems))
+        .prefix(Self.maximumItems)
+        .map { ($0.key, $0.value) })
       save(state)
       return updated
     }

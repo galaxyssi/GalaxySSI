@@ -166,7 +166,7 @@ enum AgentInteractiveProgressPolicy {
     let currentIndex = resolvedCurrentIndex(in: currentBatch.steps)
     let activeAction = planActions.first { activeActionStatuses.contains($0.status) }
     let pendingAction = planActions.first { pendingActionStatuses.contains($0.status) }
-    let summary = activeAction?.description
+    let summary = (activeAction?.description ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(
         declaredPlan != nil && !terminal
@@ -175,7 +175,7 @@ enum AgentInteractiveProgressPolicy {
       )
       .ifBlank(pendingAction?.description ?? "")
       .ifBlank(currentBatch.steps[currentIndex].text)
-    let agentLabel = plan?.route.targetTitle
+    let agentLabel = (plan?.route.targetTitle ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(plan?.selectedAgentOrModel ?? "")
       .ifBlank(task.targetTitle)

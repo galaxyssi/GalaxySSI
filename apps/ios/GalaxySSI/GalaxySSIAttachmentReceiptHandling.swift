@@ -38,8 +38,9 @@ final class GalaxySSITransportReceiptJournal {
     binding: String,
     receivedMessageId: String,
     wirePayload: String,
-    nowMillis: Int64 = Self.nowMillis()
+    nowMillis: Int64? = nil
   ) throws {
+    let nowMillis = nowMillis ?? Self.nowMillis()
     let id = Self.receiptId(
       peerId: peerId,
       phonePeer: phonePeer,
@@ -60,14 +61,16 @@ final class GalaxySSITransportReceiptJournal {
     try save()
   }
 
-  func due(nowMillis: Int64 = Self.nowMillis(), limit: Int = 4) -> [GalaxySSITransportReceiptRecord] {
-    Array(records
+  func due(nowMillis: Int64? = nil, limit: Int = 4) -> [GalaxySSITransportReceiptRecord] {
+    let nowMillis = nowMillis ?? Self.nowMillis()
+    return Array(records
       .filter { $0.nextAttemptAtMillis <= nowMillis }
       .sorted { $0.nextAttemptAtMillis < $1.nextAttemptAtMillis }
       .prefix(max(1, min(32, limit))))
   }
 
-  func claim(id: String, nowMillis: Int64 = Self.nowMillis()) throws -> GalaxySSITransportReceiptRecord? {
+  func claim(id: String, nowMillis: Int64? = nil) throws -> GalaxySSITransportReceiptRecord? {
+    let nowMillis = nowMillis ?? Self.nowMillis()
     guard let index = records.firstIndex(where: { $0.id == id && $0.nextAttemptAtMillis <= nowMillis }) else {
       return nil
     }
@@ -89,7 +92,8 @@ final class GalaxySSITransportReceiptJournal {
     if records.count != before { try save() }
   }
 
-  func reconnect(nowMillis: Int64 = Self.nowMillis()) throws {
+  func reconnect(nowMillis: Int64? = nil) throws {
+    let nowMillis = nowMillis ?? Self.nowMillis()
     for index in records.indices {
       records[index].attemptToken = ""
       records[index].nextAttemptAtMillis = min(records[index].nextAttemptAtMillis, nowMillis)

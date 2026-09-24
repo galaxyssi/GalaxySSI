@@ -45,8 +45,9 @@ struct AgentIOSObsidianProjectionIndexEntry: Codable, Equatable {
 
 struct AgentIOSObsidianProjectionCheckpoint: Codable, Equatable {
   var namespace: String
-  var catalogRevision: String
-  var nextOffset: Int
+  var cursor: AgentKnowledgeSourceCursor?
+  var catalogRevision = ""
+  var nextOffset = 0
   var visited: Int
 }
 

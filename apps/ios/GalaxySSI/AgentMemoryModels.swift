@@ -618,7 +618,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
 
   func count() -> Int {
     normalizeConflicts()
-    allItems.filter { $0.status == .active }.count
+    return allItems.filter { $0.status == .active }.count
   }
 
   @discardableResult
@@ -1082,7 +1082,7 @@ enum AgentMemoryPolicy {
   static let dayMillis: Int64 = 86_400_000
 }
 
-private extension AgentMemoryItem {
+extension AgentMemoryItem {
   func copy(
     kind: AgentMemoryKind? = nil,
     value: String? = nil,
@@ -1136,7 +1136,7 @@ private extension AgentMemoryItem {
   }
 }
 
-private extension String {
+extension String {
   var agentMemoryTrimmed: String {
     trimmingCharacters(in: .whitespacesAndNewlines)
   }

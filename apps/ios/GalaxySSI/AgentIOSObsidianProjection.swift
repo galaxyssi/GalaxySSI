@@ -134,7 +134,8 @@ enum AgentIOSObsidianBridge {
       var unchanged = 0
       let namespace = sha256(settings.bookmarkData.base64EncodedString())
       var checkpoint = stateStore.projectionCheckpoint()
-      if checkpoint?.namespace != namespace {
+      if checkpoint?.namespace != namespace ||
+          (checkpoint?.cursor == nil && (checkpoint?.visited ?? 0) > 0) {
         checkpoint = nil
         stateStore.saveProjectionCheckpoint(nil)
       }

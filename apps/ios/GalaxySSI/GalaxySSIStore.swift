@@ -322,8 +322,8 @@ final class GalaxySSIStore: ObservableObject {
     }
   }
 
-  private let defaults: UserDefaults
-  private let secrets: GalaxySSISecretStore
+  let defaults: UserDefaults
+  let secrets: GalaxySSISecretStore
   let agentConversationDatabase: AgentConversationDatabase
   let chatHistoryDatabase: GalaxySSIChatHistoryDatabase
   let agentKnowledgeDatabase: AgentKnowledgeDatabase
@@ -427,9 +427,10 @@ final class GalaxySSIStore: ObservableObject {
         cursor: nil,
         pageSize: AgentConversationDatabase.maximumPageSize
       ).items
-      activeAgentConversationId = agentConversationDatabase.activeConversationId
+      let restoredActiveConversationId = agentConversationDatabase.activeConversationId
         .ifBlank(state.activeAgentConversationId)
-      agentConversationDatabase.setActiveConversationId(activeAgentConversationId)
+      activeAgentConversationId = restoredActiveConversationId
+      agentConversationDatabase.setActiveConversationId(restoredActiveConversationId)
       agentMemoryItems = memoryStore.exportItems()
       let durableKnowledge = (try? agentKnowledgeDatabase.all()) ?? []
       if durableKnowledge.isEmpty, !state.agentKnowledgeItems.isEmpty,
@@ -470,8 +471,9 @@ final class GalaxySSIStore: ObservableObject {
       profile = generatedProfile
       contacts = [GalaxySSIContact.hermes(), GalaxySSIContact.system()]
       friendRequests = []
-      messagesByContact = GalaxySSIStore.defaultMessages()
-      _ = chatHistoryDatabase.replaceAll(messagesByContact)
+      let defaultMessages = GalaxySSIStore.defaultMessages()
+      messagesByContact = defaultMessages
+      _ = chatHistoryDatabase.replaceAll(defaultMessages)
       readAtByContact = [:]
       pinnedContactIds = []
       serverLinks = []
