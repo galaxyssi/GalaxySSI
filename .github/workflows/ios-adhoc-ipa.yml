@@ -537,6 +537,9 @@ jobs:
       - name: Build production app for iOS Simulator
         run: |
           set -euo pipefail
+          # Build products are not portable between ephemeral macOS runners. Keep
+          # downloaded packages/module caches, but regenerate package C objects.
+          rm -rf build/ios-ui-screenshots/Build
           xcodebuild \
             -project apps/ios/GalaxySSI.xcodeproj \
             -scheme GalaxySSI \
@@ -545,6 +548,9 @@ jobs:
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath build/ios-ui-screenshots \
             CODE_SIGNING_ALLOWED=NO \
+            CLANG_ENABLE_CODE_COVERAGE=NO \
+            GCC_GENERATE_TEST_COVERAGE_FILES=NO \
+            GCC_INSTRUMENT_PROGRAM_FLOW_ARCS=NO \
             build
 
       - name: Save iOS UI build cache
