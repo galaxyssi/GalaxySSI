@@ -61,6 +61,8 @@ internal fun MainActivity.renderMyAgentDevicesPage() {
             myAgentRow("my_agent.scan", R.string.conversation_hub_scan_add, R.drawable.ic_scan)),
         myAgentSection(R.string.my_agent_watches,
             myAgentRow("advanced.watch_setup", R.string.my_agent_watch_setup, R.drawable.ic_protocol_link)),
+        myAgentSection(R.string.my_agent_glasses,
+            myAgentRow("advanced.glasses_setup", R.string.my_agent_glasses_setup, R.drawable.ic_protocol_link)),
         myAgentSection(R.string.my_agent_other,
             myAgentRow(routeAction(ControlCenterRoute.SMART_SPACES), R.string.my_agent_smart_home, R.drawable.ic_device_node))
     )))

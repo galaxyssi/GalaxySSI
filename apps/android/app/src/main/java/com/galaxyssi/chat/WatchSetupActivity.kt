@@ -25,6 +25,10 @@ import java.util.concurrent.Executors
 
 /** Configuration drafts live only in this Activity, never in Bundles, logs or plaintext preferences. */
 class WatchSetupActivity : Activity() {
+    companion object { const val EXTRA_GLASSES = "configure_glasses" }
+    private val glassesMode by lazy { intent.getBooleanExtra(EXTRA_GLASSES, false) }
+    private fun device(zhWatch: String, zhGlasses: String, enWatch: String, enGlasses: String) =
+        tr(if (glassesMode) zhGlasses else zhWatch, if (glassesMode) enGlasses else enWatch)
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private var client: WatchSetupClient? = null
@@ -54,6 +58,7 @@ class WatchSetupActivity : Activity() {
     private fun color(id: Int) = getColor(id)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (glassesMode) deviceName = "GalaxySSI AR"
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0)
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         render(); discover()
@@ -132,7 +137,7 @@ class WatchSetupActivity : Activity() {
             "cloud" -> tr("云端 API Key", "Cloud API Key"); "edit" -> tr("编辑云端配置", "Edit cloud configuration")
             "preview" -> tr("确认同步", "Confirm transfer"); "remote" -> tr("添加远端电脑", "Add remote computer")
             "waiting", "agents" -> tr("远端 Agent", "Remote Agent"); "success" -> tr("同步完成", "Transfer complete")
-            "offline" -> tr("连接已断开", "Disconnected"); else -> tr("配置手表", "Configure watch")
+            "offline" -> tr("连接已断开", "Disconnected"); else -> device("配置手表", "配置 AR 眼镜", "Configure watch", "Configure AR glasses")
         }
         root.addView(toolbar)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12)) }
@@ -140,32 +145,33 @@ class WatchSetupActivity : Activity() {
         footer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(14), dp(18)) }; root.addView(footer)
         when (page) {
             "discover" -> {
-                card(tr("连接你的手表", "Connect your watch"), tr("手机与手表连接同一个 Wi-Fi\n在手表打开 GalaxySSI 配置页", "Join the same Wi-Fi on both devices. Open GalaxySSI setup on the watch."))
-                text(tr("发现的手表", "Discovered watches"), true)
+                card(device("连接你的手表", "连接你的 AR 眼镜", "Connect your watch", "Connect your AR glasses"),
+                    device("手机与手表连接同一个 Wi-Fi\n在手表打开 GalaxySSI 配置页", "手机与眼镜连接同一个 Wi-Fi\n在眼镜打开 GalaxySSI 手机配置页", "Join the same Wi-Fi on both devices. Open GalaxySSI setup on the watch.", "Join the same Wi-Fi on both devices. Open GalaxySSI phone setup on the glasses."))
+                text(device("发现的手表", "发现的眼镜", "Discovered watches", "Discovered glasses"), true)
                 devices.values.forEach { info -> card(info.serviceName, tr("等待连接", "Not connected")) { resolve(info) } }
                 if (devices.isEmpty()) text(tr("正在搜索…也可使用手动连接", "Searching… Manual connection is also available."), true)
                 card(tr("手动连接", "Manual connection")) { go("manual") }
                 button(tr("重新搜索", "Search again")) { discover() }
             }
             "manual" -> {
-                text(tr("输入手表「连接帮助」中显示的地址", "Enter the address shown in Connection help on the watch."), true)
+                text(device("输入手表「连接帮助」中显示的地址", "输入眼镜配置页显示的地址", "Enter the address shown in Connection help on the watch.", "Enter the address shown on the glasses setup screen."), true)
                 input(tr("IP 地址", "IP address"), host) { host = it.trim() }
                 input(tr("端口", "Port"), port, numeric = true) { port = it.trim() }
-                button(tr("连接手表", "Connect watch")) { connect() }
+                button(device("连接手表", "连接眼镜", "Connect watch", "Connect glasses")) { connect() }
             }
             "connecting" -> text(tr("正在建立加密连接…", "Establishing encrypted connection…"))
             "confirm" -> {
-                text(tr("请核对手表上的数字", "Compare the code on the watch"), size = 20f)
+                text(device("请核对手表上的数字", "请核对眼镜上的数字", "Compare the code on the watch", "Compare the code on the glasses"), size = 20f)
                 text(code.chunked(3).joinToString(" "), size = 40f).gravity = Gravity.CENTER
-                text(tr("两端数字一致后，也请在手表上点击确认", "If the codes match, also confirm on the watch."), true)
+                text(device("两端数字一致后，也请在手表上点击确认", "两端数字一致后，也请在眼镜上点击确认", "If the codes match, also confirm on the watch.", "If the codes match, also confirm on the glasses."), true)
                 button(tr("一致，继续", "Codes match, continue")) { busy = true; render(); client?.confirm() }
                 button(tr("取消连接", "Cancel"), primary = false) { disconnect(); go("discover"); discover() }
             }
             "hub" -> {
                 card(deviceName, tr("● 已连接", "● Connected")); text(tr("对话方式", "Conversation mode"), true)
-                card(tr("云端 API Key", "Cloud API Key"), tr("手表直接连接模型服务", "Connect the watch directly to a model provider")) { go("cloud") }
-                card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
-                text(tr("配置任意一种方式即可开始", "Configure either option to start."), true)
+                card(tr("云端 API Key", "Cloud API Key"), device("手表直接连接模型服务", "眼镜直接连接模型服务", "Connect the watch directly to a model provider", "Connect the glasses directly to a model provider")) { go("cloud") }
+                if (!glassesMode) card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
+                text(if (glassesMode) tr("配置云端连接即可开始语音对话", "Configure a cloud connection to start voice chat.") else tr("配置任意一种方式即可开始", "Configure either option to start."), true)
             }
             "cloud" -> {
                 text(tr("使用手机已有配置", "Use a phone configuration"), true)
@@ -195,14 +201,14 @@ class WatchSetupActivity : Activity() {
                 input("API Key", profile.optString("api_key"), password = true) { profile.put("api_key", it.trim()); tested = false }
                 card(tr("选择模型", "Select model"), profile.optString("model")) { chooseModel() }
                 input(tr("模型 ID（可手动填写）", "Model ID (editable)"), profile.optString("model")) { profile.put("model", it.trim()); tested = false }
-                card(tr("深度思考", "Deep thinking"), tr("关闭 · 手表默认使用简洁回答", "Off · Concise watch responses"))
+                card(tr("深度思考", "Deep thinking"), device("关闭 · 手表默认使用简洁回答", "关闭 · 眼镜默认使用简洁回答", "Off · Concise watch responses", "Off · Concise glasses responses"))
                 button(tr("测试连接", "Test connection"), primary = false) { testCloud() }
                 button(tr("保存并继续", "Save and continue")) { runCatching { WatchSetupCloud.validate(profile) }.onSuccess { go("preview") }.onFailure { invalid() } }
             }
             "preview" -> {
-                card(if (tested) tr("手机端连接测试通过", "Phone connection test passed") else tr("尚未测试连接", "Connection not tested"), tr("还未同步到手表", "Not yet transferred to the watch"))
-                card(tr("目标手表", "Watch"), deviceName); card(provider, profile.optString("model")); card("API Key", tr("已隐藏", "Hidden"))
-                button(tr("同步到手表", "Transfer to watch")) { exchange(JSONObject().put("type", "configure").put("kind", "cloud").put("profile", profile)) { result -> require(result.optString("status") == "saved"); detail = provider + " · " + profile.optString("model"); disconnect(); go("success") } }
+                card(if (tested) tr("手机端连接测试通过", "Phone connection test passed") else tr("尚未测试连接", "Connection not tested"), device("还未同步到手表", "还未同步到眼镜", "Not yet transferred to the watch", "Not yet transferred to the glasses"))
+                card(device("目标手表", "目标眼镜", "Watch", "Glasses"), deviceName); card(provider, profile.optString("model")); card("API Key", tr("已隐藏", "Hidden"))
+                button(device("同步到手表", "同步到眼镜", "Transfer to watch", "Transfer to glasses")) { exchange(JSONObject().put("type", "configure").put("kind", "cloud").put("profile", profile)) { result -> require(result.optString("status") == "saved"); detail = provider + " · " + profile.optString("model"); disconnect(); go("success") } }
             }
             "remote" -> {
                 card(tr("扫描电脑配对码", "Scan computer pairing code"), tr("使用新的配对码，为手表建立独立连接", "Use a fresh pairing code for the watch's own connection.")) {
@@ -221,10 +227,10 @@ class WatchSetupActivity : Activity() {
                     exchange(JSONObject().put("type", "configure").put("kind", "select_agent").put("agent_id", selectedAgent)) { result -> require(result.optString("status") == "saved"); detail = desktopName + " · " + result.optString("agent_name"); disconnect(); go("success") }
                 }
             }
-            "success" -> { card(tr("✓ 手表已确认接收", "✓ Watch confirmed receipt"), detail); text(tr("现在可以在手表开始对话", "You can now chat on the watch."), true); button(tr("完成", "Done")) { finish() } }
+            "success" -> { card(device("✓ 手表已确认接收", "✓ 眼镜已确认接收", "✓ Watch confirmed receipt", "✓ Glasses confirmed receipt"), detail); text(device("现在可以在手表开始对话", "现在可以在眼镜说 Hello Hello 开始对话", "You can now chat on the watch.", "Say Hello Hello on the glasses to start chatting."), true); button(tr("完成", "Done")) { finish() } }
             "offline" -> {
-                card(tr("尚未收到手表确认", "No watch acknowledgment"), tr("本次配置草稿仍保留在当前页面", "Your draft remains available in this screen."))
-                text(tr("请保持同一 Wi-Fi，并在手表重新打开配置页。重新连接后需再次核对数字。", "Use the same Wi-Fi and reopen watch setup. Compare the new code when reconnecting."), true)
+                card(device("尚未收到手表确认", "尚未收到眼镜确认", "No watch acknowledgment", "No glasses acknowledgment"), tr("本次配置草稿仍保留在当前页面", "Your draft remains available in this screen."))
+                text(device("请保持同一 Wi-Fi，并在手表重新打开配置页。重新连接后需再次核对数字。", "请保持同一 Wi-Fi，并在眼镜重新打开手机配置页。重新连接后需再次核对数字。", "Use the same Wi-Fi and reopen watch setup. Compare the new code when reconnecting.", "Use the same Wi-Fi and reopen glasses setup. Compare the new code when reconnecting."), true)
                 button(tr("重新连接", "Reconnect")) { go("discover"); discover() }
             }
         }
@@ -315,7 +321,7 @@ class WatchSetupActivity : Activity() {
             } } }
         }
         discovery = listener
-        runCatching { getSystemService(NsdManager::class.java).discoverServices("_galaxyssi-watch._tcp.", NsdManager.PROTOCOL_DNS_SD, listener) }
+        runCatching { getSystemService(NsdManager::class.java).discoverServices(if (glassesMode) "_galaxyssi-glasses._tcp." else "_galaxyssi-watch._tcp.", NsdManager.PROTOCOL_DNS_SD, listener) }
     }
     private fun resolve(info: NsdServiceInfo) {
         val owner = generation

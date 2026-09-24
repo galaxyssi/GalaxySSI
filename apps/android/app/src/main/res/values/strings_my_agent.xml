@@ -18,6 +18,8 @@
     <string name="my_agent_routing">Automatic selection</string>
     <string name="my_agent_computers">Computers</string>
     <string name="my_agent_watches">Watches</string>
+    <string name="my_agent_glasses">AR glasses</string>
+    <string name="my_agent_glasses_setup">Configure AR glasses</string>
     <string name="my_agent_other">Other</string>
     <string name="my_agent_watch_setup">Manage watches</string>
     <string name="my_agent_smart_home">Smart home</string>

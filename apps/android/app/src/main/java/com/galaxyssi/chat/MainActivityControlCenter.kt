@@ -630,6 +630,7 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "routing.manage" -> openExistingControlCenterPage { showAgentFeaturePage() }
         "routing.policy" -> openExistingControlCenterPage { showRoutingPolicyPage() }
         "advanced.watch_setup" -> startActivity(Intent(this, WatchSetupActivity::class.java))
+        "advanced.glasses_setup" -> startActivity(Intent(this, WatchSetupActivity::class.java).putExtra(WatchSetupActivity.EXTRA_GLASSES, true))
         "advanced.protocol" -> openExistingControlCenterPage { showSignalLinkProtocolPage() }
         "advanced.web_sources" -> openExistingControlCenterPage { showWebIntelligenceSourcesPage() }
         "advanced.voice_performance" -> openExistingControlCenterPage { showVoicePerformanceDashboardPage() }

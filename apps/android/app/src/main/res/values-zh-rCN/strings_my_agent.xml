@@ -18,6 +18,8 @@
     <string name="my_agent_routing">自动选择</string>
     <string name="my_agent_computers">电脑</string>
     <string name="my_agent_watches">手表</string>
+    <string name="my_agent_glasses">AR 眼镜</string>
+    <string name="my_agent_glasses_setup">配置 AR 眼镜</string>
     <string name="my_agent_other">其他</string>
     <string name="my_agent_watch_setup">添加与配置手表</string>
     <string name="my_agent_smart_home">智能家居</string>
