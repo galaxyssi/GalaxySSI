@@ -1,18 +1,26 @@
 package com.galaxyssi.chat
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.drawable.GradientDrawable
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.text.InputType
 import android.text.Editable
 import android.text.TextWatcher
@@ -60,6 +68,13 @@ class WatchSetupActivity : Activity() {
     private var wifiPassword = ""
     private var wifiQrVisible = false
     private var wifiQrImage: ImageView? = null
+    private var wifiSsidInput: EditText? = null
+    private var wifiScanFeedback: TextView? = null
+    private var wifiNetworkList: LinearLayout? = null
+    private var wifiNetworks = emptyList<String>()
+    private var wifiScanReceiver: BroadcastReceiver? = null
+    private var wifiScanStatus = ""
+    private var wifiScanPermissionAsked = false
     private lateinit var content: LinearLayout
     private lateinit var footer: LinearLayout
     private fun tr(zh: String, en: String) = if (resources.configuration.locales[0].language == "zh") zh else en
@@ -72,19 +87,26 @@ class WatchSetupActivity : Activity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         render(); discover()
     }
+    override fun onResume() {
+        super.onResume()
+        if (page == "wifi" && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED && wifiScanReceiver == null)
+            beginWifiScan()
+    }
     override fun onStop() {
-        super.onStop(); stopDiscovery()
+        super.onStop(); stopDiscovery(); stopWifiScan()
         // The scanner is an app-owned foreground step, and does not receive credentials.
         if (!scanning && !isChangingConfigurations) {
             disconnect()
-            if (page !in setOf("success", "discover", "manual")) { page = "offline"; render() }
+            if (page !in setOf("success", "discover", "manual", "wifi")) { page = "offline"; render() }
         }
     }
-    override fun onDestroy() { disconnect(); stopDiscovery(); main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy() }
+    override fun onDestroy() { disconnect(); stopDiscovery(); stopWifiScan(); main.removeCallbacksAndMessages(null); worker.shutdownNow(); super.onDestroy() }
     private fun disconnect() { generation++; client?.close(); client = null; connected = false; busy = false; devices.releaseSelection() }
     private fun go(value: String) {
         currentFocus?.windowToken?.let { getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(it, 0) }
+        if (page == "wifi" && value != "wifi") stopWifiScan()
         pageRevision++; page = value; render()
+        if (value == "wifi") beginWifiScan()
     }
     @Deprecated("Native back dispatch") override fun onBackPressed() {
         if (busy) {
@@ -167,7 +189,11 @@ class WatchSetupActivity : Activity() {
             }
             "wifi" -> {
                 text(tr("在手机填写眼镜要连接的 Wi-Fi。眼镜说“Hello Hello 扫描配网”，看向此二维码，核对名称后说“Hello Hello 确认联网”。首次连接仍需批准眼镜上的系统提示。", "Enter the Wi-Fi network for the glasses. Say “Hello Hello scan Wi-Fi” on the glasses, look at this QR code, then confirm the network. Android may require one system approval on the glasses."), true)
-                input(tr("Wi-Fi 名称（SSID）", "Wi-Fi name (SSID)"), wifiSsid) { wifiSsid = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
+                wifiScanFeedback = text(wifiScanStatus.ifBlank { tr("正在查找附近 Wi-Fi…", "Looking for nearby Wi-Fi…") }, true)
+                text(tr("列表仅显示 WPA2 兼容网络；隐藏的 WPA2 网络可手动输入。", "Only WPA2-compatible networks are listed; hidden WPA2 networks can be entered manually."), true, 12f)
+                wifiNetworkList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also { content.addView(it) }
+                renderWifiNetworks()
+                wifiSsidInput = input(tr("Wi-Fi 名称（SSID）", "Wi-Fi name (SSID)"), wifiSsid) { wifiSsid = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
                 input(tr("Wi-Fi 密码（WPA2，8–63 位）", "Wi-Fi password (WPA2, 8–63 characters)"), wifiPassword, password = true) { wifiPassword = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
                 if (wifiQrVisible) {
                     val raw = JSONObject().put("type", "galaxyssi_wifi_v1").put("ssid", wifiSsid).put("passphrase", wifiPassword).toString()
@@ -183,6 +209,11 @@ class WatchSetupActivity : Activity() {
                         Toast.makeText(this, tr("请检查 SSID 和 WPA2 密码", "Check the SSID and WPA2 password."), Toast.LENGTH_LONG).show()
                     else { wifiQrVisible = true; render() }
                 }
+                button(tr("刷新附近 Wi-Fi", "Refresh nearby Wi-Fi"), primary = false) { beginWifiScan(retryPermission = true) }
+                if (!getSystemService(LocationManager::class.java).isLocationEnabled)
+                    button(tr("打开手机定位设置", "Open phone Location settings"), primary = false) {
+                        startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    }
             }
             "manual" -> {
                 text(device("输入手表「连接帮助」中显示的地址", "输入眼镜配置页显示的地址", "Enter the address shown in Connection help on the watch.", "Enter the address shown on the glasses setup screen."), true)
@@ -379,4 +410,99 @@ class WatchSetupActivity : Activity() {
         info.serviceName, info.serviceType.trimEnd('.'),
         if (android.os.Build.VERSION.SDK_INT >= 33) info.network?.networkHandle?.toString().orEmpty() else ""
     )
+
+    private fun stopWifiScan() {
+        wifiScanReceiver?.let { runCatching { unregisterReceiver(it) } }
+        wifiScanReceiver = null
+    }
+
+    private fun wifiFeedback(value: String) {
+        wifiScanStatus = value
+        if (page == "wifi") wifiScanFeedback?.text = value
+    }
+
+    private fun beginWifiScan(retryPermission: Boolean = false) {
+        if (page != "wifi" || isDestroyed) return
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            wifiFeedback(tr("扫描附近 Wi-Fi 需要精确位置权限；也可手动输入名称。", "Nearby Wi-Fi scanning needs precise location permission; you can enter the name manually."))
+            if (!wifiScanPermissionAsked || retryPermission) {
+                wifiScanPermissionAsked = true
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), 93)
+            }
+            return
+        }
+        val wifi = getSystemService(WifiManager::class.java)
+        if (!getSystemService(LocationManager::class.java).isLocationEnabled) {
+            wifiFeedback(tr("手机定位开关未开启；开启后可扫描附近 Wi-Fi，也可手动输入。", "Phone Location is off. Turn it on to scan nearby Wi-Fi, or enter a name manually."))
+            return
+        }
+        if (!wifi.isWifiEnabled) {
+            wifiFeedback(tr("手机 Wi-Fi 未开启；可手动输入网络名称。", "Phone Wi-Fi is off; enter the network name manually."))
+            return
+        }
+        if (wifiScanReceiver == null) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (page != "wifi") return
+                    loadWifiNetworks(wifi,
+                        intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false))
+                }
+            }
+            val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(receiver, filter)
+            wifiScanReceiver = receiver
+        }
+        loadWifiNetworks(wifi, false)
+        val started = runCatching { wifi.startScan() }.getOrDefault(false)
+        wifiFeedback(if (started) tr("正在扫描附近 Wi-Fi…", "Scanning nearby Wi-Fi…")
+            else tr("系统暂未启动新扫描，显示最近的结果；可稍后刷新。", "The system limited a new scan; showing recent results. Refresh later."))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun loadWifiNetworks(wifi: WifiManager, updated: Boolean) {
+        val results = runCatching { wifi.scanResults }.onFailure {
+            wifiFeedback(tr("无法读取附近 Wi-Fi；请检查精确位置权限和手机定位开关。", "Cannot read nearby Wi-Fi. Check precise location permission and phone Location setting."))
+        }.getOrNull() ?: return
+        wifiNetworks = results.asSequence().filter { it.SSID.isNotBlank() && it.capabilities.contains("PSK") }
+            .groupBy { it.SSID }
+            .entries.sortedByDescending { entry -> entry.value.maxOf { it.level } }
+            .map { it.key }.take(20)
+        if (updated) wifiFeedback(tr("选择附近的 Wi-Fi，或手动输入名称。", "Select nearby Wi-Fi or enter a name manually."))
+        renderWifiNetworks()
+    }
+
+    private fun renderWifiNetworks() {
+        val list = wifiNetworkList ?: return
+        list.removeAllViews()
+        if (wifiNetworks.isEmpty()) {
+            list.addView(TextView(this).apply {
+                text = tr("暂无可选网络，可手动输入。", "No networks listed; enter a name manually.")
+                setTextColor(color(R.color.text_secondary)); textSize = 13f; setPadding(dp(6), dp(8), dp(6), dp(8))
+            })
+            return
+        }
+        wifiNetworks.forEach { name ->
+            list.addView(Button(this).apply {
+                text = name; isAllCaps = false; textSize = 15f
+                setTextColor(color(R.color.text_primary))
+                background = shape(color(R.color.surface_bg))
+                setOnClickListener {
+                    wifiSsid = name
+                    wifiSsidInput?.setText(name)
+                    wifiSsidInput?.setSelection(name.length)
+                    wifiFeedback(tr("已选择：$name", "Selected: $name"))
+                }
+            }, LinearLayout.LayoutParams(-1, dp(45)).apply { bottomMargin = dp(5) })
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 93 && page == "wifi") {
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+                beginWifiScan()
+            else wifiFeedback(tr("未授予精确位置权限，请手动输入 Wi-Fi 名称。", "Precise location was not granted; enter the Wi-Fi name manually."))
+        }
+    }
 }
