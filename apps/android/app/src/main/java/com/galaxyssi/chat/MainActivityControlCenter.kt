@@ -603,7 +603,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "general.text_size" -> openExistingControlCenterPage { showTextSizeSettingsPage() }
         "general.screen_assistant" -> openExistingControlCenterPage { showScreenAssistantSettingsPage() }
         "screen_assistant.accessibility" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        "screen_assistant.target" -> showScreenAssistantTargetPicker()
         "screen_assistant.toggle" -> {
             if (ScreenAssistantSettings.enabled(this)) {
                 ScreenAssistantSettings.setEnabled(this, false)

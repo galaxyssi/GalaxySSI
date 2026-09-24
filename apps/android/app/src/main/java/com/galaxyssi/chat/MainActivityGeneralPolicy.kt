@@ -297,49 +297,10 @@ internal fun MainActivity.showScreenAssistantSettingsPage() {
                 iconRes = R.drawable.ic_security_shield,
                 status = getString(if (GalaxySSIAccessibilityService.isActive())
                     R.string.screen_assistant_connected else R.string.screen_assistant_not_connected)
-            ),
-            ControlCenterRowSpec(
-                actionId = "screen_assistant.target",
-                title = getString(R.string.screen_assistant_target),
-                subtitle = getString(R.string.screen_assistant_target_summary),
-                iconRes = R.drawable.ic_settings_agent,
-                status = ScreenAssistantSettings.target(this).name.ifBlank {
-                    getString(R.string.agent_model_selection_automatic)
-                }
             )
         ))),
         footer = getString(R.string.screen_assistant_footer)
     ))
-}
-
-internal fun MainActivity.showScreenAssistantTargetPicker() {
-    val targets = controlCenterResourceTargets(mobileNativeAgent.snapshot().callableTargets)
-    val agents = AgentModelSelectionPolicy.selectableAgentTargets(targets)
-    val models = targets.filter {
-        it.kind == AgentConnectorKind.MODEL && it.id != "local-llm" &&
-            it.status == AgentConnectorStatus.AVAILABLE && it.providerProfile != null
-    }
-    val choices = (agents + models).distinctBy(AgentCallableTarget::id)
-    val labels = listOf(getString(R.string.agent_model_selection_automatic)) +
-        choices.map(::agentModelTargetDisplayName)
-    android.app.AlertDialog.Builder(this)
-        .setTitle(R.string.screen_assistant_target)
-        .setItems(labels.toTypedArray()) { _, index ->
-            val target = choices.getOrNull(index - 1)
-            ScreenAssistantSettings.setTarget(this, if (target == null) {
-                ScreenAssistantSettings.Target("", "", "")
-            } else {
-                ScreenAssistantSettings.Target(
-                    target.id,
-                    agentModelTargetDisplayName(target),
-                    target.invocationProfile.normalizedModelId("")
-                        .ifBlank { target.providerProfile?.modelId.orEmpty() }
-                )
-            })
-            showScreenAssistantSettingsPage()
-            GalaxySSIAccessibilityService.retryPendingScreenAssistant()
-        }
-        .show()
 }
 
 internal fun MainActivity.showTextSizeSettingsPage() {

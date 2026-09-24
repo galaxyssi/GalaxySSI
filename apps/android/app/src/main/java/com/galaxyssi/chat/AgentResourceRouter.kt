@@ -282,8 +282,12 @@ object AgentTaskRequirementAnalyzer {
         "\u4fee\u6539", "\u7f16\u8f91", "\u91cd\u6784", "\u8fd0\u884c", "\u6267\u884c", "\u9a8c\u8bc1", "\u6d4b\u8bd5",
         "\u514b\u9686", "\u68c0\u51fa", "\u62c9\u53d6", "\u63d0\u4ea4", "\u63a8\u9001", "\u521b\u5efa pr", "\u63d0\u4ea4 pr"
     )
-    private val deviceTerms = listOf("home assistant", "smart home", "light", "scene", "device", "\u667a\u80fd\u5bb6\u5c45", "\u5f00\u706f", "\u5173\u706f", "\u8bbe\u5907", "\u573a\u666f")
-    private val screenTerms = listOf("screen", "tap", "click", "swipe", "open app", "\u5c4f\u5e55", "\u70b9\u51fb", "\u6ed1\u52a8", "\u6253\u5f00 app")
+    private val deviceTerms = listOf(
+        "home assistant", "smart home", "turn on light", "turn off light", "control device",
+        "activate scene", "\u667a\u80fd\u5bb6\u5c45", "\u5f00\u706f", "\u5173\u706f", "\u63a7\u5236\u8bbe\u5907", "\u5207\u6362\u573a\u666f"
+    )
+    private val deviceCommand = Regex("\\b(?:turn|switch|set|dim|control|activate)\\b.{0,32}\\b(?:lights?|devices?|scenes?)\\b")
+    private val screenTerms = listOf("tap", "click", "swipe", "open app", "\u70b9\u51fb", "\u6ed1\u52a8", "\u6253\u5f00 app")
     private val knowledgeTerms = listOf("knowledge", "memory", "document", "pdf", "\u77e5\u8bc6\u5e93", "\u8bb0\u5fc6", "\u6587\u6863")
     private val mcpTerms = listOf("mcp", "model context protocol", "\u4e0a\u4e0b\u6587\u534f\u8bae")
     private val skillTerms = listOf("skill", "skills", "\u6280\u80fd")
@@ -307,7 +311,7 @@ object AgentTaskRequirementAnalyzer {
         val codeExecution = code &&
             codeExecutionTerms.any { term -> lower.containsPolicyTerm(term) } &&
             !codeDiscussion
-        val device = lower.containsAny(deviceTerms)
+        val device = lower.containsAny(deviceTerms) || deviceCommand.containsMatchIn(lower)
         val screen = lower.containsAny(screenTerms)
         val knowledge = lower.containsAny(knowledgeTerms)
         val mcp = lower.containsAny(mcpTerms)

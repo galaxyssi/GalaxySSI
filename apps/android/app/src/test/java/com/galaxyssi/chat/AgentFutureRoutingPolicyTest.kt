@@ -32,6 +32,43 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
+    fun analyzingAScreenshotDoesNotRequireAppNavigation() {
+        listOf(
+            "请分析这张屏幕截图，概括重要内容并给出建议",
+            "Explain what is visible in this screen image",
+            "请分析这张屏幕截图。\n\n" +
+                AgentDirectVisionPolicy.instructionForMimeTypes(listOf("image/jpeg"))
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+            assertTrue(goal, AgentCapability.CHAT in requirements.capabilities)
+            assertFalse(goal, AgentCapability.APP_NAVIGATION in requirements.capabilities)
+            assertFalse(goal, AgentCapability.DEVICE_CONTROL in requirements.capabilities)
+        }
+    }
+
+    @Test
+    fun screenControlStillRequiresAppNavigation() {
+        listOf("点击屏幕上的按钮", "tap the button on the screen")
+            .forEach { goal ->
+                assertTrue(
+                    goal,
+                    AgentCapability.APP_NAVIGATION in AgentTaskRequirementAnalyzer.analyze(goal).capabilities
+                )
+            }
+    }
+
+    @Test
+    fun smartHomeCommandsStillRequireDeviceControl() {
+        listOf("开灯", "控制设备打开空调", "activate scene movie night", "dim the living room lights")
+            .forEach { goal ->
+                assertTrue(
+                    goal,
+                    AgentCapability.DEVICE_CONTROL in AgentTaskRequirementAnalyzer.analyze(goal).capabilities
+                )
+            }
+    }
+
+    @Test
     fun codexAdvertisesWebCapabilityWithoutHostClassifyingThePrompt() {
         val codex = StaticAgentConnectorRegistry().availableTargets().first { it.id == "codex" }
         val requirements = AgentTaskRequirementAnalyzer.analyze("What is the current weather in Shanghai today?")

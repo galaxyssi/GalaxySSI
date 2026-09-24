@@ -43,9 +43,6 @@ internal object ScreenAssistantSettings {
     private const val LAST_TURN = "last_turn"
     private const val PENDING_FILE = "pending_file"
     private const val PENDING_QUESTION = "pending_question"
-    private const val TARGET_ID = "target_id"
-    private const val TARGET_NAME = "target_name"
-    private const val MODEL_ID = "model_id"
     private const val LAST_CAPTURE = "last_capture"
     private const val BUBBLE_X = "bubble_x"
     private const val BUBBLE_Y = "bubble_y"
@@ -60,15 +57,6 @@ internal object ScreenAssistantSettings {
     fun saveConversation(context: Context, id: String) = prefs(context).edit().putString(CONVERSATION, id).apply()
     fun lastTurn(context: Context): String = prefs(context).getString(LAST_TURN, "").orEmpty()
     fun saveLastTurn(context: Context, id: String) = prefs(context).edit().putString(LAST_TURN, id).apply()
-    data class Target(val id: String, val name: String, val modelId: String)
-    fun target(context: Context): Target = Target(
-        prefs(context).getString(TARGET_ID, "").orEmpty(),
-        prefs(context).getString(TARGET_NAME, "").orEmpty(),
-        prefs(context).getString(MODEL_ID, "").orEmpty()
-    )
-    fun setTarget(context: Context, target: Target) = prefs(context).edit()
-        .putString(TARGET_ID, target.id).putString(TARGET_NAME, target.name)
-        .putString(MODEL_ID, target.modelId).apply()
     fun saveLastCapture(context: Context, file: File) = prefs(context).edit()
         .putString(LAST_CAPTURE, file.canonicalPath).apply()
     fun lastCapture(context: Context): File? = validatedCaptureFile(
@@ -236,7 +224,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     private fun updateBubbleBadge() {
         val color = when (currentStatus) {
             service.getString(R.string.screen_assistant_ready) -> null
-            service.getString(R.string.screen_assistant_analyzing) -> 0xFFE2A430.toInt()
+            service.getString(R.string.screen_assistant_analyzing),
+            service.getString(R.string.screen_assistant_delayed) -> 0xFFE2A430.toInt()
             service.getString(R.string.screen_assistant_completed) -> 0xFF169F75.toInt()
             else -> 0xFFD95353.toInt()
         }
@@ -498,31 +487,36 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             update(service.getString(R.string.screen_assistant_open_app), "", true)
             return
         }
-        val target = ScreenAssistantSettings.target(service)
-        if (target.id.isNotBlank() && runner.mobileNativeAgent.snapshot().callableTargets.none {
-            it.id == target.id && AgentConnectorRouteSelector.isDeliverable(it)
+        val store = runner.agentTranscriptStore
+        val homeSelection = AgentModelSelectionSettings.defaultSelection(service)
+        val selectedTarget = homeSelection.targetId.takeIf {
+            homeSelection.mode == AgentModelSelectionMode.MANUAL && it.isNotBlank()
+        }
+        if (selectedTarget != null && runner.mobileNativeAgent.snapshot().callableTargets.none {
+            it.id == selectedTarget && AgentConnectorRouteSelector.isDeliverable(it)
         }) {
             ScreenAssistantSettings.savePending(service, file, question)
             update(service.getString(R.string.screen_assistant_target_unavailable), "", true)
             return
         }
         runCatching {
-            val store = runner.agentTranscriptStore
             val conversationId = ScreenAssistantSettings.conversation(service)
                 .takeIf { it.isNotBlank() && store.conversation(it) != null }
                 ?: store.createAgentConversation(service.getString(R.string.screen_assistant_conversation)).id.also {
                     ScreenAssistantSettings.saveConversation(service, it)
                 }
-            if (target.id.isBlank()) {
+            if (selectedTarget == null) {
                 AgentModelSelectionSettings.selectAutoForConversation(service, conversationId)
                 store.setSelectedModelOrAgent(conversationId,
                     service.getString(R.string.agent_model_selection_automatic))
             } else {
                 AgentModelSelectionSettings.selectManual(
-                    service, conversationId, target.id, target.modelId, target.name,
+                    service, conversationId, selectedTarget, homeSelection.modelId,
+                    homeSelection.displayName, homeSelection.reasoningEffort,
                     rememberAsDefault = false
                 )
-                store.setSelectedModelOrAgent(conversationId, target.name)
+                store.setSelectedModelOrAgent(conversationId,
+                    homeSelection.displayName.ifBlank { selectedTarget })
             }
             val name = service.getString(R.string.screen_assistant_attachment)
             val attachment = AgentInputAttachment(
@@ -557,6 +551,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         val started = SystemClock.elapsedRealtime()
         var lastReply = ""
         var lastReplyChangeAt = 0L
+        var recoveryRequested = false
         fun poll() {
             if (closed || generation != pollGeneration) return
             worker.execute {
@@ -576,11 +571,22 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                                 R.string.screen_assistant_completed else R.string.screen_assistant_analyzing),
                             reply.text, false
                         )
+                        SystemClock.elapsedRealtime() - started >= 90_000L -> {
+                            if (!recoveryRequested) {
+                                recoveryRequested = true
+                                AndroidAgentRecoveryWake.request(service)
+                            }
+                            update(
+                                service.getString(R.string.screen_assistant_delayed),
+                                service.getString(R.string.screen_assistant_delayed_detail), false
+                            )
+                        }
                         progress != null -> update(service.getString(R.string.screen_assistant_analyzing), progress.text, false)
                     }
                     val replySettled = reply != null && SystemClock.elapsedRealtime() - lastReplyChangeAt >= 6_000L
-                    if (!replySettled && SystemClock.elapsedRealtime() - started < 30 * 60_000L) {
-                        handler.postDelayed(::poll, 1500L)
+                    if (!replySettled) {
+                        handler.postDelayed(::poll,
+                            if (SystemClock.elapsedRealtime() - started < 30 * 60_000L) 1500L else 10_000L)
                     }
                 }
             }
