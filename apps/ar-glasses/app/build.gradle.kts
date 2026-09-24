@@ -41,13 +41,13 @@ val prepareSpeechModel by tasks.registering {
 
 android {
     namespace = "com.galaxyssi.glasses"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.galaxyssi.glasses"
         minSdk = 30
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.1"
+        versionCode = 5
+        versionName = "0.3.0"
     }
     sourceSets["main"].assets.srcDir(modelAssets)
     compileOptions {
@@ -60,7 +60,17 @@ android {
 tasks.named("preBuild").configure { dependsOn(prepareSpeechModel) }
 
 dependencies {
+    val cameraX = "1.5.3"
+    implementation("androidx.activity:activity:1.12.3")
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-view:$cameraX")
+    implementation("androidx.camera:camera-video:$cameraX")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("com.alphacephei:vosk-android:0.3.75@aar")
     implementation("net.java.dev.jna:jna:5.18.1@aar")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

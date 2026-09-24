@@ -123,6 +123,9 @@ internal class BilingualSpeech(
         val enText = en.optString("text", en.optString("partial")).trim()
         if (enText.isBlank()) return cnText
         if (cnText.isBlank()) return enText
+        // The English decoder may hear the wake phrase while Mandarin hears the command.
+        if (wakePhrase.containsMatchIn(enText) && cnText.count(::isHan) >= 2)
+            return "$enText $cnText"
         val enConfidence = confidence(en)
         val cnConfidence = confidence(cn)
         return if (enText.contains(Regex("(?i)\\b(hello|hi|hey)\\b")) ||
@@ -136,7 +139,10 @@ internal class BilingualSpeech(
     }
 
     private fun chooseText(cn: String, en: String): String {
+        if (wakePhrase.containsMatchIn(en) && cn.count(::isHan) >= 2) return "$en $cn"
         if (en.contains(Regex("(?i)\\b(hello|hi|hey)\\b"))) return en
         return if (cn.isNotBlank()) cn else en
     }
+    private fun isHan(char: Char) = char.code in 0x4e00..0x9fff
+    private val wakePhrase = Regex("(?i)\\bhello[\\s,，。.!?]*hello\\b")
 }

@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
@@ -19,6 +21,9 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import com.google.zxing.integration.android.IntentIntegrator
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -51,6 +56,10 @@ class WatchSetupActivity : Activity() {
     private var agents = JSONArray()
     private var selectedAgent = ""
     private var detail = ""
+    private var wifiSsid = ""
+    private var wifiPassword = ""
+    private var wifiQrVisible = false
+    private var wifiQrImage: ImageView? = null
     private lateinit var content: LinearLayout
     private lateinit var footer: LinearLayout
     private fun tr(zh: String, en: String) = if (resources.configuration.locales[0].language == "zh") zh else en
@@ -134,6 +143,7 @@ class WatchSetupActivity : Activity() {
         toolbar.findViewById<ImageButton>(R.id.watchSetupBack).setOnClickListener { onBackPressed() }
         toolbar.findViewById<TextView>(R.id.watchSetupTitle).text = when (page) {
             "manual" -> tr("手动连接", "Manual connection"); "confirm" -> tr("核对连接", "Verify connection")
+            "wifi" -> tr("眼镜 Wi-Fi 配网", "Glasses Wi-Fi setup")
             "cloud" -> tr("云端 API Key", "Cloud API Key"); "edit" -> tr("编辑云端配置", "Edit cloud configuration")
             "preview" -> tr("确认同步", "Confirm transfer"); "remote" -> tr("添加远端电脑", "Add remote computer")
             "waiting", "agents" -> tr("远端 Agent", "Remote Agent"); "success" -> tr("同步完成", "Transfer complete")
@@ -146,12 +156,33 @@ class WatchSetupActivity : Activity() {
         when (page) {
             "discover" -> {
                 card(device("连接你的手表", "连接你的 AR 眼镜", "Connect your watch", "Connect your AR glasses"),
-                    device("手机与手表连接同一个 Wi-Fi\n在手表打开 GalaxySSI 配置页", "手机与眼镜连接同一个 Wi-Fi\n在眼镜打开 GalaxySSI 手机配置页", "Join the same Wi-Fi on both devices. Open GalaxySSI setup on the watch.", "Join the same Wi-Fi on both devices. Open GalaxySSI phone setup on the glasses."))
+                    device("手机与手表连接同一个 Wi-Fi\n在手表打开 GalaxySSI 配置页", "手机与眼镜连接同一个 Wi-Fi\n在眼镜打开 GalaxySSI 即可自动发现，无需进入设置页", "Join the same Wi-Fi on both devices. Open GalaxySSI setup on the watch.", "Join the same Wi-Fi on both devices. Open GalaxySSI on the glasses; no settings page is needed."))
                 text(device("发现的手表", "发现的眼镜", "Discovered watches", "Discovered glasses"), true)
                 devices.values.forEach { info -> card(info.serviceName, tr("等待连接", "Not connected")) { resolve(info) } }
                 if (devices.isEmpty()) text(tr("正在搜索…也可使用手动连接", "Searching… Manual connection is also available."), true)
+                if (glassesMode) card(tr("眼镜还没有联网？生成配网码", "Glasses offline? Create Wi-Fi QR"),
+                    tr("Wi-Fi 名称和密码只在手机输入；用眼镜语音扫描。", "Enter Wi-Fi details on the phone, then scan using glasses voice control.")) { go("wifi") }
                 card(tr("手动连接", "Manual connection")) { go("manual") }
                 button(tr("重新搜索", "Search again")) { discover() }
+            }
+            "wifi" -> {
+                text(tr("在手机填写眼镜要连接的 Wi-Fi。眼镜说“Hello Hello 扫描配网”，看向此二维码，核对名称后说“Hello Hello 确认联网”。首次连接仍需批准眼镜上的系统提示。", "Enter the Wi-Fi network for the glasses. Say “Hello Hello scan Wi-Fi” on the glasses, look at this QR code, then confirm the network. Android may require one system approval on the glasses."), true)
+                input(tr("Wi-Fi 名称（SSID）", "Wi-Fi name (SSID)"), wifiSsid) { wifiSsid = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
+                input(tr("Wi-Fi 密码（WPA2，8–63 位）", "Wi-Fi password (WPA2, 8–63 characters)"), wifiPassword, password = true) { wifiPassword = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
+                if (wifiQrVisible) {
+                    val raw = JSONObject().put("type", "galaxyssi_wifi_v1").put("ssid", wifiSsid).put("passphrase", wifiPassword).toString()
+                    val matrix = QRCodeWriter().encode(raw, BarcodeFormat.QR_CODE, 512, 512,
+                        mapOf(EncodeHintType.CHARACTER_SET to "UTF-8"))
+                    val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+                    for (y in 0 until 512) for (x in 0 until 512) bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+                    wifiQrImage = ImageView(this).apply { setImageBitmap(bitmap); contentDescription = tr("眼镜 Wi-Fi 配网二维码", "Glasses Wi-Fi setup QR") }
+                    content.addView(wifiQrImage, LinearLayout.LayoutParams(dp(280), dp(280)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+                }
+                button(tr("显示配网码", "Show Wi-Fi QR")) {
+                    if (wifiSsid.isBlank() || wifiSsid.toByteArray(Charsets.UTF_8).size > 32 || wifiPassword.length !in 8..63 || wifiPassword.any { it.code !in 32..126 })
+                        Toast.makeText(this, tr("请检查 SSID 和 WPA2 密码", "Check the SSID and WPA2 password."), Toast.LENGTH_LONG).show()
+                    else { wifiQrVisible = true; render() }
+                }
             }
             "manual" -> {
                 text(device("输入手表「连接帮助」中显示的地址", "输入眼镜配置页显示的地址", "Enter the address shown in Connection help on the watch.", "Enter the address shown on the glasses setup screen."), true)
@@ -171,7 +202,8 @@ class WatchSetupActivity : Activity() {
                 card(deviceName, tr("● 已连接", "● Connected")); text(tr("对话方式", "Conversation mode"), true)
                 card(tr("云端 API Key", "Cloud API Key"), device("手表直接连接模型服务", "眼镜直接连接模型服务", "Connect the watch directly to a model provider", "Connect the glasses directly to a model provider")) { go("cloud") }
                 if (!glassesMode) card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
-                text(if (glassesMode) tr("配置云端连接即可开始语音对话", "Configure a cloud connection to start voice chat.") else tr("配置任意一种方式即可开始", "Configure either option to start."), true)
+                if (glassesMode) text(tr("电脑配对码扫描暂未接入眼镜；当前可同步手机已有云端模型。", "Desktop pairing QR is not yet available on the glasses; existing phone cloud models can be transferred."), true)
+                text(if (glassesMode) tr("云端模型可在手机选取、测试并同步；眼镜上只需核对一次配对数字。", "Choose, test and transfer a cloud model on the phone; only compare the pairing code on the glasses.") else tr("配置任意一种方式即可开始", "Configure either option to start."), true)
             }
             "cloud" -> {
                 text(tr("使用手机已有配置", "Use a phone configuration"), true)
