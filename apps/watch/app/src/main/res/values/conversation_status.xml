@@ -1,0 +1,5 @@
+<resources>
+    <string name="conversation_delivering">Receiving reply</string>
+    <string name="conversation_complete_unread">Completed, unread</string>
+    <string name="conversation_read">Read</string>
+</resources>

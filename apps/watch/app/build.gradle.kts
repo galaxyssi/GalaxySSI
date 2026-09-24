@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 66
-        versionName = "0.3.34"
+        versionCode = 79
+        versionName = "0.3.47"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -129,6 +129,9 @@ val phoneBrandOutput = layout.buildDirectory.dir("generated/phoneBrand")
 val syncPhoneBrand by tasks.registering(Sync::class) {
     from("../../android/app/src/main/res") {
         include("drawable/galaxyssi_mark_large.png", "drawable/ic_galaxyssi_logo.xml",
+            "drawable/ic_agent_plan_progress.xml", "drawable/ic_tab_chat.xml",
+            "drawable/ic_conversation_complete.xml", "drawable/ic_conversation_paused.xml", "drawable/ic_conversation_error.xml",
+            "drawable/ic_conversation_read.xml",
             "drawable/ic_input_menu_layers.xml", "drawable/ic_composer_send_plane.xml",
             "mipmap-anydpi-v26/ic_launcher.xml", "mipmap-anydpi-v26/ic_launcher_round.xml")
     }

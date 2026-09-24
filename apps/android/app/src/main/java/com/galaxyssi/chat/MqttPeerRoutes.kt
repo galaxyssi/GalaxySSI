@@ -38,6 +38,9 @@ internal class MqttPeerRoutes(
         var readyGenerations: Map<String, Long> = emptyMap()
         var nextSend = 0L
         var failureUntil = 0L
+        var lastVerifiedAt = Long.MIN_VALUE
+        var blockedSince = Long.MIN_VALUE
+        var lastRecoveryAt = Long.MIN_VALUE
         val responses = mutableMapOf<String, Pair<String, Long>>()
     }
     private val lock = Any()
@@ -194,6 +197,7 @@ internal class MqttPeerRoutes(
                     digest == ours.digest()) { "Unsolicited or mismatched resume acknowledgement" }
             }
             if (!store.record(scope, advertisement, at)) return true
+            peer.lastVerifiedAt = now()
             if (advertisement.epoch > peer.remoteEpoch) {
                 if (!transport.policy.acceptVerifiedResume(scope, MqttMultipathPolicy.PeerRoute(advertisement.epoch,
                         advertisement.receiveBrokers, advertisement.packetBytes, true,
@@ -241,7 +245,8 @@ internal class MqttPeerRoutes(
             if (!peer.active || !binding.enabled || advertisement.expiresAtMs <= wall() || peer.confirmedEpoch != advertisement.epoch) return false
             val current = transport.readyPathGenerations(binding.receiveTopics)
             if (current.isEmpty() || current.any { peer.generations[it.key] != it.value }) return false
-            transport.policy.plan(scope, "route-readiness", MqttMultipathPolicy.Traffic.MESSAGE, 1, binding.receiveTopics, now()).isNotEmpty()
+            transport.policy.plan(scope, "route-readiness", MqttMultipathPolicy.Traffic.MESSAGE, 1, binding.receiveTopics, now())
+                .isNotEmpty().also { if (it) peer.blockedSince = Long.MIN_VALUE }
         }
     }
 
@@ -258,6 +263,59 @@ internal class MqttPeerRoutes(
     }
 
     fun readyForTopic(topic: String): Boolean = synchronized(lock) { outgoing[topic]?.binding?.scope }?.let(::ready) == true
+    fun recoverBlockedSend(topic: String): Boolean {
+        val peer = synchronized(lock) { outgoing[topic] } ?: return false
+        if (ready(peer.binding.scope)) return false
+        val recovered = peer.lock.withLock {
+            if (!peer.active || !peer.binding.enabled) return@withLock false
+            val at = now()
+            if (transport.readyPathGenerations(peer.binding.receiveTopics).isEmpty()) {
+                peer.blockedSince = Long.MIN_VALUE
+                return@withLock false
+            }
+            if (peer.lastVerifiedAt == Long.MIN_VALUE ||
+                at - peer.lastVerifiedAt > MqttBrokerCatalog.RESUME_TTL_MS) {
+                peer.blockedSince = Long.MIN_VALUE
+                return@withLock false
+            }
+            if (peer.blockedSince == Long.MIN_VALUE) {
+                peer.blockedSince = at
+                return@withLock false
+            }
+            if (at - peer.blockedSince < 30_000 ||
+                (peer.lastRecoveryAt != Long.MIN_VALUE && at - peer.lastRecoveryAt < 120_000)) return@withLock false
+            peer.local = null
+            peer.generations = emptyMap()
+            peer.confirmedEpoch = 0
+            peer.remoteEpoch = 0
+            peer.readyLeaseUntil = 0
+            peer.readyGenerations = emptyMap()
+            peer.nextSend = 0
+            peer.responses.clear()
+            peer.lastRecoveryAt = at
+            peer.blockedSince = at
+            true
+        }
+        request(peer.binding.scope)
+        return recovered
+    }
+    fun blockedReasonForTopic(topic: String): String {
+        val peer = synchronized(lock) { outgoing[topic] } ?: return "missing_binding"
+        return peer.lock.withLock {
+            val binding = peer.binding
+            val local = peer.local
+            val current = transport.readyPathGenerations(binding.receiveTopics)
+            when {
+                !peer.active || !binding.enabled -> "inactive_binding"
+                current.isEmpty() -> "no_local_subscription"
+                local == null -> "no_local_advertisement"
+                local.expiresAtMs <= wall() -> "expired_local_advertisement"
+                peer.confirmedEpoch != local.epoch -> "unconfirmed_local_epoch"
+                current.any { peer.generations[it.key] != it.value } -> "changed_broker_generation"
+                else -> "no_verified_common_route"
+            }
+        }
+    }
     fun anyReady(): Boolean = synchronized(lock) { peers.keys.toList() }.any(::ready)
 
     fun prepareDelivery(topic: String, wire: JSONObject, messageId: String,

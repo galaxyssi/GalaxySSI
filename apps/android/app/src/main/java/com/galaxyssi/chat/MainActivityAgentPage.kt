@@ -269,8 +269,6 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     }
     if (!notificationsOnly) bindContactAvatar(chatAvatar, contact)
     exitChatComposerTextMode(hideKeyboard = true)
-    summaries.getOrPut(contact.id) { ContactSummary() }.unreadCount = 0
-    markContactRead(contact.id)
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
@@ -285,6 +283,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     mainPage.visibility = View.GONE
     featurePage.visibility = View.GONE
     chatPage.visibility = View.VISIBLE
+    markContactRead(contact.id)
     loadLatestChatHistory(
         contactId = contact.id,
         force = ChatHistoryLoadPolicy.shouldReload(

@@ -1,0 +1,14 @@
+<resources>
+    <string name="conversation_status_queued">Queued</string>
+    <string name="conversation_status_running">Working</string>
+    <string name="conversation_status_waiting_response">Waiting for Agent reply</string>
+    <string name="conversation_status_reconnecting">Reconnecting</string>
+    <string name="conversation_status_delivering">Receiving reply</string>
+    <string name="conversation_status_unread">Completed, unread</string>
+    <string name="conversation_status_read">Read</string>
+    <string name="conversation_status_confirmation">Waiting for confirmation</string>
+    <string name="conversation_status_paused">Paused</string>
+    <string name="conversation_status_blocked">Action required</string>
+    <string name="conversation_status_failed">Execution failed</string>
+    <string name="conversation_status_cancelled">Stopped</string>
+</resources>

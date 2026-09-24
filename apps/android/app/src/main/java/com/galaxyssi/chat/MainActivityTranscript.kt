@@ -813,6 +813,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
             AgentTranscriptRenderPolicy.signature(entry)
     }
     notifyAgentReplySpeechRows(speechChangedEntryIds)
+    refreshReplyUnreadDot()
     if (!changed && speechChangedEntryIds.isEmpty()) return
     val elapsed = SystemClock.elapsedRealtime() - renderStartedAt
     if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS || structuralChange) {

@@ -9,15 +9,16 @@ from typing import Mapping, Sequence
 
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,127}$")
 CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
-RETIRED_CODEX_MODELS = frozenset({"gpt-5.3-codex-spark"})
+DEFAULT_CODEX_MODEL = "gpt-5.6-sol"
+RETIRED_CODEX_MODELS = frozenset({"gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"})
 CODEX_MODELS = (
-    ("gpt-5.6-sol", "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
     ("gpt-6-astra", "GPT-6 Astra\uff0c\u590d\u6742\u63a8\u7406\u3001\u7f16\u7801\u4e0e\u591a\u6b65\u9aa4\u4efb\u52a1"),
+    ("gpt-6-sol", "GPT-6 Sol\uff0c\u7f16\u7801\u4e0e Agent \u5de5\u4f5c\u6d41"),
+    ("gpt-6-luna", "GPT-6 Luna\uff0c\u5feb\u901f\u3001\u9ad8\u6548\u7684\u65e5\u5e38\u4efb\u52a1"),
+    ("gpt-5.6-sol", "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
     ("gpt-5.6-terra", "\u80fd\u529b\u3001\u901f\u5ea6\u3001\u6210\u672c\u5747\u8861"),
     ("gpt-5.6-luna", "\u5feb\u901f\u3001\u4f4e\u6210\u672c"),
     ("gpt-5.5", "\u590d\u6742\u7f16\u7801\u3001\u7814\u7a76\u548c\u901a\u7528\u4efb\u52a1"),
-    ("gpt-5.4", "\u65e5\u5e38\u7f16\u7801"),
-    ("gpt-5.4-mini", "\u7b80\u5355\u4efb\u52a1\u3001\u5b50\u667a\u80fd\u4f53"),
 )
 CLAUDE_MODELS = (
     ("best", "\u6709\u6743\u9650\u65f6\u4f7f\u7528 Fable 5\uff0c\u5426\u5219 Opus 5"),
@@ -78,7 +79,7 @@ def effective_agent_invocation(
         and selection.model_id.strip().casefold() in RETIRED_CODEX_MODELS
     ):
         return AgentInvocationSelection(
-            model_id=CODEX_MODELS[0][0],
+            model_id=DEFAULT_CODEX_MODEL,
             reasoning_effort=selection.reasoning_effort,
         )
     return selection
@@ -109,9 +110,11 @@ def invocation_profile_for(
         "claude": CLAUDE_MODELS,
     }.get(clean_agent_id, ())
     configured_models = _configured_models(clean_agent_id)
+    catalog_ids = tuple(model_id for model_id, _ in catalog)
     models = _unique_valid_models((
-        command_model,
-        *(model_id for model_id, _ in catalog),
+        # A configured default must not move a known Codex model to the top.
+        "" if clean_agent_id == "codex" and command_model in catalog_ids else command_model,
+        *catalog_ids,
         *configured_models,
     ))
     if clean_agent_id == "codex":
@@ -121,7 +124,8 @@ def invocation_profile_for(
     default_model = (
         command_model
         if command_model in models
-        else ("best" if clean_agent_id == "claude" and "best" in models else (models[0] if models else ""))
+        else (DEFAULT_CODEX_MODEL if clean_agent_id == "codex" else
+              ("best" if clean_agent_id == "claude" and "best" in models else (models[0] if models else "")))
     )
     return AgentInvocationProfile(
         agent_id=clean_agent_id,

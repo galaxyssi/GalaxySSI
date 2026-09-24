@@ -218,14 +218,16 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertEqual("gpt-5.6-terra", codex[codex.index("--model") + 1])
         self.assertEqual("sonnet[1m]", claude[claude.index("--model") + 1])
 
-    def test_selected_astra_model_reaches_codex_command(self):
-        command = agent_gateway._apply_selected_agent_model(
-            agent_gateway.BASE_AGENTS["codex"],
-            ["codex", "exec", "--model", "gpt-5.6-sol", "-"],
-            "gpt-6-astra",
-        )
-        self.assertEqual(1, command.count("--model"))
-        self.assertEqual("gpt-6-astra", command[command.index("--model") + 1])
+    def test_selected_gpt6_models_reach_codex_command(self):
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+            with self.subTest(model=model):
+                command = agent_gateway._apply_selected_agent_model(
+                    agent_gateway.BASE_AGENTS["codex"],
+                    ["codex", "exec", "--model", "gpt-5.6-sol", "-"],
+                    model,
+                )
+                self.assertEqual(1, command.count("--model"))
+                self.assertEqual(model, command[command.index("--model") + 1])
 
     def test_retired_default_is_replaced_even_without_phone_or_watch_model_selection(self):
         for arguments in (["--model", "gpt-5.3-codex-spark"],

@@ -847,7 +847,7 @@ internal fun MainActivity.applyCloudStreamUiUpdate(state: ActiveCloudStream, upd
     val list = messages.getOrPut(state.contact.id) { mutableListOf() }
     val index = list.indexOfFirst { it.id == state.incomingId }
     if (index < 0) {
-        val visible = chatPage.visibility == View.VISIBLE && selectedContact?.id == state.contact.id
+        val visible = isContactChatVisible(state.contact.id)
         val message = ChatMessage(
             id = state.incomingId,
             content = update.text,

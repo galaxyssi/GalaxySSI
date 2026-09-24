@@ -21,20 +21,20 @@ class AgentInvocationProfileTests(unittest.TestCase):
         self.assertEqual("gpt-5.6-sol", profile.default_model)
         self.assertEqual(
             (
-                "gpt-5.6-sol",
                 "gpt-6-astra",
+                "gpt-6-sol",
+                "gpt-6-luna",
+                "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
                 "gpt-5.5",
-                "gpt-5.4",
-                "gpt-5.4-mini",
             ),
             profile.models,
         )
         self.assertEqual(("low", "medium", "high", "xhigh"), profile.reasoning_efforts)
         self.assertEqual(
             "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1",
-            profile.public()["models"][0]["description"],
+            profile.public()["models"][3]["description"],
         )
 
     def test_codex_additional_models_are_advertised_without_duplicates(self):
@@ -47,20 +47,41 @@ class AgentInvocationProfileTests(unittest.TestCase):
                 ["codex", "exec", "--model", "gpt-5.6-sol", "-"],
             )
 
-        self.assertEqual("gpt-5.6-sol", profile.models[0])
+        self.assertEqual("gpt-5.6-sol", profile.models[3])
         self.assertEqual("gpt-5.6-sol-fast", profile.models[-1])
         self.assertEqual(len(profile.models), len(set(profile.models)))
 
-    def test_astra_is_selectable_and_preserved_for_image_input(self):
+    def test_gpt6_models_are_selectable_and_preserved_for_image_input(self):
         command = ["codex", "exec", "--model", "gpt-5.6-sol", "-"]
-        for effort in ("auto", "low", "medium", "high", "xhigh"):
-            with self.subTest(effort=effort):
-                selection = requested_agent_invocation(
-                    "codex", {"model_id": "gpt-6-astra", "reasoning_effort": effort}, command)
-                self.assertEqual("gpt-6-astra", selection.model_id)
-                self.assertEqual("" if effort == "auto" else effort, selection.reasoning_effort)
-                self.assertEqual(selection, effective_agent_invocation(
-                    "codex", selection, has_image_input=True))
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+            for effort in ("auto", "low", "medium", "high", "xhigh"):
+                with self.subTest(model=model, effort=effort):
+                    selection = requested_agent_invocation(
+                        "codex", {"model_id": model, "reasoning_effort": effort}, command)
+                    self.assertEqual(model, selection.model_id)
+                    self.assertEqual("" if effort == "auto" else effort, selection.reasoning_effort)
+                    self.assertEqual(selection, effective_agent_invocation(
+                        "codex", selection, has_image_input=True))
+
+    def test_removed_gpt54_models_cannot_reappear_from_saved_configuration(self):
+        for model in ("gpt-5.4", "gpt-5.4-mini"):
+            with self.subTest(model=model), patch.dict(os.environ, {"GALAXYSSI_CODEX_MODELS": model}):
+                command = ["codex", "--model", model]
+                profile = invocation_profile_for("codex", command)
+                self.assertNotIn(model, profile.models)
+                self.assertEqual("gpt-5.6-sol", profile.default_model)
+                self.assertEqual("gpt-5.6-sol", requested_agent_invocation(
+                    "codex", {"model_id": model}, command).model_id)
+                self.assertEqual("gpt-5.6-sol", effective_agent_model(
+                    "codex", model, has_image_input=False))
+
+    def test_known_codex_default_does_not_change_catalog_order(self):
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.5"):
+            with self.subTest(model=model):
+                profile = invocation_profile_for("codex", ["codex", "--model", model])
+                self.assertEqual(model, profile.default_model)
+                self.assertEqual(("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol"),
+                                 profile.models[:4])
 
     def test_astra_catalog_preserves_defaults_and_deduplicates_configuration(self):
         self.assertEqual("gpt-5.6-sol", invocation_profile_for("codex", []).default_model)

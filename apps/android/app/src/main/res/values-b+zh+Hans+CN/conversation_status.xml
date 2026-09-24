@@ -1,0 +1,14 @@
+<resources>
+    <string name="conversation_status_queued">等待执行</string>
+    <string name="conversation_status_running">正在处理</string>
+    <string name="conversation_status_waiting_response">等待 Agent 回复</string>
+    <string name="conversation_status_reconnecting">正在重连</string>
+    <string name="conversation_status_delivering">正在接收回复</string>
+    <string name="conversation_status_unread">已完成，未读</string>
+    <string name="conversation_status_read">已读</string>
+    <string name="conversation_status_confirmation">等待确认</string>
+    <string name="conversation_status_paused">已暂停</string>
+    <string name="conversation_status_blocked">需要处理</string>
+    <string name="conversation_status_failed">执行异常</string>
+    <string name="conversation_status_cancelled">已停止</string>
+</resources>

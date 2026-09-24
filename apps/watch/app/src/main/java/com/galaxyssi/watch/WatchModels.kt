@@ -28,7 +28,9 @@ data class WatchTask(
     val executionGeneration: Long = 1,
     val localConversationId: String = "",
     val modelId: String = "",
-    val reasoningEffort: String = "auto"
+    val reasoningEffort: String = "auto",
+    val remoteObservedAt: Long = 0,
+    val localTimedOut: Boolean = false
 ) {
     /** Local transcript identity is independent of the authenticated remote conversation. */
     val sessionId: String get() = localConversationId.ifBlank {
@@ -44,6 +46,7 @@ data class WatchTask(
         .put("remote_task_id", remoteTaskId)
         .put("execution_generation", executionGeneration)
         .put("local_conversation", localConversationId).put("model_id", modelId).put("reasoning_effort", reasoningEffort)
+        .put("remote_observed_at", remoteObservedAt).put("local_timed_out", localTimedOut)
 
     fun request(language: String): JSONObject = JSONObject().put("type", "text")
         .put("message_id", messageId).put("content", prompt).put("contact_id", contactId)
@@ -85,9 +88,9 @@ data class WatchTask(
                 else -> TaskState.COMPLETED
             }
             return copy(reply = content.take(32_000), state = outcome, remoteTaskId = payload.getString("task_id"),
-                executionGeneration = version.generation, sequence = maxOf(sequence, version.sequence))
+                executionGeneration = version.generation, sequence = maxOf(sequence, version.sequence), localTimedOut = false)
         }
-        if ((state.terminal && version.generation <= executionGeneration) || type != "agent_task_event") return this
+        if ((state.terminal && !localTimedOut && version.generation <= executionGeneration) || type != "agent_task_event") return this
         val seq = payload.optLong("status_seq", -1)
         if (version.generation == executionGeneration && seq >= 0 && seq <= sequence) return this
         val next = when (payload.optString("task_status")) {
@@ -97,10 +100,11 @@ data class WatchTask(
             "waiting_approval", "awaiting_approval", "approval_required" -> TaskState.WAITING_APPROVAL
             else -> if (state == TaskState.STOP_REQUESTED) state else TaskState.RUNNING
         }
+        if (localTimedOut && !next.terminal) return this
         return copy(state = next, sequence = if (version.generation > executionGeneration) seq else maxOf(sequence, seq),
             remoteTaskId = payload.getString("task_id"), executionGeneration = version.generation,
             progress = payload.optString("current_step").ifBlank { payload.optString("error") }.take(2000),
-            reply = payload.optString("result").ifBlank { reply }.take(32_000))
+            reply = payload.optString("result").ifBlank { reply }.take(32_000), localTimedOut = false)
     }
 
     companion object {
@@ -115,7 +119,8 @@ data class WatchTask(
             j.getString("route"), j.getString("agent"), j.getString("conversation"),
             j.getString("turn"), j.getString("message"), j.getLong("source"), j.getString("prompt"),
             j.optString("reply"), TaskState.valueOf(j.getString("state")), j.optLong("sequence", -1), j.optString("progress"), j.optString("local_operation"), j.optString("location"), j.optString("remote_task_id"), j.optLong("execution_generation", 1),
-            j.optString("local_conversation"), j.optString("model_id"), j.optString("reasoning_effort", "auto"))
+            j.optString("local_conversation"), j.optString("model_id"), j.optString("reasoning_effort", "auto"),
+            j.optLong("remote_observed_at", 0), j.optBoolean("local_timed_out", false))
     }
 }
 

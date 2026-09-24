@@ -254,7 +254,6 @@ abstract class AbstractAgentWorkspaceStore(
     ): AgentWorkspace {
         val normalized = AgentWorkspaceBounds.normalizeOrNull(workspace)
         requireNotNull(normalized) { "Agent workspace fields are invalid or exceed storage limits" }
-
         val items = load()
         val existing = items.firstOrNull { it.workspaceId == normalized.workspaceId }
         val actualRevision = existing?.revision ?: 0L
@@ -626,6 +625,7 @@ class EncryptedAgentWorkspaceStore(
         isNew: Boolean = false
     ): AgentWorkspace {
         val started = System.nanoTime()
+        val previousPresentation = state.cache[workspace.workspaceId]
         val normalized = AgentWorkspaceBounds.normalizeOrNull(workspace)
         requireNotNull(normalized) { "Agent workspace fields are invalid or exceed storage limits" }
         val workspaceIds = state.workspaceIds.toMutableList()
@@ -678,6 +678,11 @@ class EncryptedAgentWorkspaceStore(
         state.workspaceIds.addAll(workspaceIds)
         state.recoverableIds.clear()
         state.recoverableIds.addAll(recoverableIds)
+        if (previousPresentation?.status != normalized.status ||
+            previousPresentation?.eventJournal?.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS } !=
+            normalized.eventJournal.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS }) {
+            AgentConversationWindows.statusChanged()
+        }
         return normalized
     }
 

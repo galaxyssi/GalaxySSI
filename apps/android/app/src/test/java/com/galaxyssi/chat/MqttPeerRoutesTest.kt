@@ -78,6 +78,56 @@ class MqttPeerRoutesTest {
         assertEquals(listOf("pair", "pair"), notifications)
     }
 
+    @Test fun blockedSendRenewsOnlyItsOwnAuthenticatedRoute() {
+        val second = binding.copy(scope = "second", receiver = "d".repeat(64), secret = "e".repeat(43),
+            sendTopic = "second-out", sendTopics = setOf("second-out"), receiveTopics = setOf("second-in"))
+        start(listOf(binding, second))
+        receive(ack())
+        receive(ack(second), second)
+        val secondEpoch = store.issued.getValue(second.scope).epoch
+        val oldAck = ack()
+        val oldEpoch = store.issued.getValue(binding.scope).epoch
+        rig.transport.policy.forgetPeer(binding.scope)
+        assertFalse(routes.ready(binding.scope))
+        assertFalse(routes.recoverBlockedSend(binding.sendTopic))
+        rig.clock.addAndGet(30_001)
+        rig.wall.addAndGet(30_001)
+        assertTrue(routes.recoverBlockedSend(binding.sendTopic))
+        routes.maintenance()
+        assertTrue(store.issued.getValue(binding.scope).epoch > oldEpoch)
+        assertFalse(routes.ready(binding.scope))
+        assertEquals(secondEpoch, store.issued.getValue(second.scope).epoch)
+        assertTrue(routes.ready(second.scope))
+        assertTrue(receive(oldAck))
+        assertFalse(routes.ready(binding.scope))
+        receive(ack(advertisement = remote(epoch = 2)))
+        assertTrue(routes.ready(binding.scope))
+    }
+
+    @Test fun unverifiedPeerCannotTriggerRepeatedRouteRecovery() {
+        start()
+        val epoch = store.issued.getValue(binding.scope).epoch
+        assertFalse(routes.recoverBlockedSend(binding.sendTopic))
+        rig.clock.addAndGet(30_001)
+        rig.wall.addAndGet(30_001)
+        assertFalse(routes.recoverBlockedSend(binding.sendTopic))
+        routes.maintenance()
+        assertEquals(epoch, store.issued.getValue(binding.scope).epoch)
+    }
+
+    @Test fun healthyOrOfflineRouteNeverForcesRecovery() {
+        start()
+        receive(ack())
+        val issued = store.issued.getValue(binding.scope)
+        rig.clock.addAndGet(30_001)
+        rig.wall.addAndGet(30_001)
+        assertFalse(routes.recoverBlockedSend(binding.sendTopic))
+        routes.maintenance()
+        assertEquals(issued, store.issued.getValue(binding.scope))
+        rig.transport.networkUnavailable()
+        assertFalse(routes.recoverBlockedSend(binding.sendTopic))
+    }
+
     private fun wire() = JSONObject().put("scheme", "signal").put("from", "alice").put("to", "bob")
         .put("signal_type", "prekey").put("message_type", 3).put("body", "AQIDBA==")
     private fun deliveryFrames() = rig.clients.values.flatten().flatMap { it.sent }.mapNotNull {

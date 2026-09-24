@@ -125,6 +125,35 @@ final class AgentRichContentMermaidTests: XCTestCase {
     XCTAssertEqual(image.id, "final")
     XCTAssertEqual(image.uri, "https://example.com/fish_(1)?size=100&x=2")
     XCTAssertEqual(image.metadata["origin"], "desktop")
+  func testFinalTextBlockExpandsMarkdownTableWithStableIdentity() throws {
+    let markdown = """
+    Results
+
+    | Name | Value |
+    | --- | ---: |
+    | Apples | 3 |
+    | Pears | 5 |
+    """
+    let encoded = AgentRichContentCodec.encode([
+      AgentRichBlock(
+        id: "desktop-final-text",
+        type: .text,
+        text: markdown,
+        metadata: ["source": "desktop"]
+      )
+    ])
+
+    let blocks = AgentRichContentCodec.decode(encoded)
+    XCTAssertEqual(blocks.map(\.type), [.text, .table])
+    XCTAssertEqual(blocks[0].id, "desktop-final-text")
+    XCTAssertEqual(blocks[1].id, "desktop-final-text-markdown-1")
+    XCTAssertEqual(blocks[1].columns, ["Name", "Value"])
+    XCTAssertEqual(blocks[1].rows, [["Apples", "3"], ["Pears", "5"]])
+    XCTAssertTrue(blocks.allSatisfy { $0.metadata["source"] == "desktop" })
+
+    let reloaded = AgentRichContentCodec.decode(AgentRichContentCodec.encode(blocks))
+    XCTAssertEqual(reloaded.map(\.id), blocks.map(\.id))
+    XCTAssertEqual(reloaded.first(where: { $0.type == .table })?.rows, blocks[1].rows)
   }
 
   func testSingleMarkdownSourceLinkRemainsInlineWithoutWebpagePreview() throws {

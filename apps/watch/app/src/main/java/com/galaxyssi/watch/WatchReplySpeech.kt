@@ -31,6 +31,7 @@ internal class WatchReplySpeech(context: Context, private val onActivityChanged:
     private var focused = false
     private var closed = false
     val active: Boolean get() = playing || queue.isNotEmpty() || awaitingMore
+    val audible: Boolean get() = playing || queue.isNotEmpty()
 
     fun observe(task: WatchTask?, enabled: Boolean) {
         if (closed) return

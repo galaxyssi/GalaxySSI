@@ -23,6 +23,20 @@ internal object AgentConversationWindows {
     private val opening = ConcurrentHashMap<String, String>()
     private val main = Handler(Looper.getMainLooper())
     private var changePosted = false
+    private var statusChangePosted = false
+
+    fun statusChanged() {
+        main.post {
+            if (!statusChangePosted) {
+                statusChangePosted = true
+                main.postDelayed({
+                    statusChangePosted = false
+                    windows.values.mapNotNull { it.get() }.filter { it.visible && !it.activity.isDestroyed }
+                        .forEach { it.refreshList?.invoke() }
+                }, 200L)
+            }
+        }
+    }
 
     fun register(controller: AgentConversationWindowController) { windows[controller.key] = WeakReference(controller) }
     fun unregister(controller: AgentConversationWindowController) {
@@ -269,6 +283,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
 
     fun onDataChanged() {
         if (!visible || activity.isDestroyed || activity.isFinishing || activity.initialAgentHydrationPending) return
+        activity.reloadChatHistoryIfChanged()
         refreshList?.invoke()
         val current = activity.agentTranscriptStore.activeConversation().id
         if (current != conversationId) selected(current)

@@ -76,6 +76,8 @@ class MainActivity : Activity() {
     private var wasSpeaking = false
     private var wakeCooldownUntil = 0L
     private val refreshWakeLater = Runnable { refreshWake() }
+    private var lastWakeGate = ""
+    private var settingsPageRefreshOnResume = false
     private var screenAwake: WatchScreenAwake? = null
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
@@ -90,7 +92,9 @@ class MainActivity : Activity() {
     private val saveDraft = Runnable { repo.saveDraft(draft) }
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
-        else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review")) render(true)
+        else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review",
+                "settings", "settings-connection", "settings-voice", "settings-wake", "settings-web", "settings-feedback",
+                "about", "location-settings", "web-sources", "web-credential", "api-providers", "api-models")) render(true)
 
     }
 
@@ -175,11 +179,14 @@ class MainActivity : Activity() {
         super.onResume(); resumed = true
         wakePreference = repo.store.foregroundWake
         if (wakePreference && repo.store.backgroundWake) WatchBackgroundWakeService.start(this)
-        updateConversationVisibility(); updated()
+        if (page.startsWith("settings") && settingsPageRefreshOnResume) render(true)
+        settingsPageRefreshOnResume = false
+        updateConversationVisibility(); updated(); refreshWake()
         handler.removeCallbacks(refreshModelStatus); handler.postDelayed(refreshModelStatus, 30_000)
     }
     override fun onPause() {
         handler.removeCallbacks(refreshModelStatus)
+        if (page.startsWith("settings")) settingsPageRefreshOnResume = true
         resumed = false; handler.removeCallbacks(openVoiceEntry); voiceEntryScheduled = false; wake?.setEnabled(false); screenAwake?.update(false, false); speech?.stop(); repo.conversationVisibility.hide(this); refreshWake(); super.onPause()
     }
     private fun updateScreenAwake() {
@@ -325,6 +332,11 @@ class MainActivity : Activity() {
             "pair-review" -> pairReview()
             "forget" -> confirmForget()
             "settings" -> settings()
+            "settings-connection" -> settingsConnection()
+            "settings-voice" -> settingsVoice()
+            "settings-wake" -> settingsWake()
+            "settings-web" -> settingsWeb()
+            "settings-feedback" -> settingsFeedback()
             "location-settings" -> locationSettings()
             "about" -> {
                 title(R.string.about)
@@ -355,7 +367,7 @@ class MainActivity : Activity() {
             else -> homeMenu()
         }
         if (repo.errorResource != 0 && page !in setOf("compose", "pair", "pair-review", "paste")) label(getString(repo.errorResource), 12)
-        if (page !in setOf("home", "paste")) button(R.string.back) { back() }
+        if (page !in setOf("home", "paste") && !page.startsWith("settings")) button(R.string.back) { back() }
         if (preserveScroll) scroll.post { scroll.scrollTo(0, offset) }
         if (editor == null) scroll.requestFocus()
         if (listKey != null) {
@@ -672,20 +684,25 @@ class MainActivity : Activity() {
         }
         button(R.string.refresh) { repo.refresh() }
     }
-    private fun directoryRow(name: String, subtitle: String, count: Int = 0, fingerprint: String = "", action: () -> Unit) {
+    private fun directoryRow(name: String, subtitle: String, count: Int = 0, fingerprint: String = "",
+        status: WatchConversationStatus? = null, action: () -> Unit) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(62)
             setPadding(dp(2), dp(7), dp(2), dp(7)); setOnClickListener { action() }
-            addView(ImageView(this@MainActivity).apply {
+            addView(if (status != null) WatchConversationStatusIcon(this@MainActivity, status) else ImageView(this@MainActivity).apply {
                 if (fingerprint.isBlank()) setImageResource(R.mipmap.ic_launcher)
                 else setImageDrawable(com.galaxyssi.chat.GalaxySSIIdenticonDrawable(fingerprint))
             }, LinearLayout.LayoutParams(dp(28), dp(28)))
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, dp(2), 0)
-                addView(TextView(this@MainActivity).apply { text = name.take(80).replace('\n', ' ').replace('\r', ' '); textSize = 14f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(TextView(this@MainActivity).apply {
+                    text = name.take(80).replace('\n', ' ').replace('\r', ' '); textSize = 14f; setTextColor(Color.WHITE)
+                    maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                    if (status == WatchConversationStatus.COMPLETE_UNREAD) setTypeface(typeface, Typeface.BOLD)
+                })
                 addView(TextView(this@MainActivity).apply { text = subtitle.take(120).replace('\n', ' ').replace('\r', ' '); textSize = 11f; setTextColor(Color.LTGRAY); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            if (count > 0) addView(TextView(this@MainActivity).apply { text = count.toString(); setTextColor(green); textSize = 12f })
+            if (status == null && count > 0) addView(TextView(this@MainActivity).apply { text = count.toString(); setTextColor(green); textSize = 12f })
         }
         content.addView(row, LinearLayout.LayoutParams(-1, -2))
         content.addView(View(this).apply { setBackgroundColor(Color.rgb(52, 56, 65)) }, LinearLayout.LayoutParams(-1, dp(1)))
@@ -703,9 +720,15 @@ class MainActivity : Activity() {
         }
         val entries = mutableListOf<Pair<Long, () -> Unit>>()
         groups.forEach { turns ->
-            val current = turns.first()
+            val current = WatchConversationStatus.latest(turns)
+            val status = WatchConversationStatus.resolve(current, turns.any { it.state == TaskState.COMPLETED && repo.store.cachedUnread(it) })
+            val subtitle = when (status) {
+                WatchConversationStatus.COMPLETE_UNREAD, WatchConversationStatus.READ -> current.reply
+                WatchConversationStatus.RUNNING -> current.progress.ifBlank { getString(status.label()) }
+                else -> getString(status.label())
+            }
             entries += current.sourceId to {
-            directoryRow(turns.last().prompt, current.reply.ifBlank { getString(current.state.label()) }, turns.count(repo.store::cachedUnread)) {
+            directoryRow(turns.minBy { it.sourceId }.prompt, subtitle, status = status) {
                 selectedTask = current.id; repo.saveActiveTask(current.id); followUpId = ""; navigate("home")
             }
             }
@@ -789,46 +812,89 @@ class MainActivity : Activity() {
         button(R.string.cancel, true) { back() }
     }
     private fun settings() {
-        button(R.string.phone_setup_settings) { startActivity(Intent(this, WatchPhoneSetupActivity::class.java)) }
-        button(R.string.location_settings) { navigate("location-settings") }
-        title(R.string.settings)
-        toggle(R.string.background_enabled, repo.store.backgroundEnabled) {
-            repo.store.backgroundEnabled = it
-            if (it) startForegroundService(Intent(this, WatchConnectionService::class.java))
-            else stopService(Intent(this, WatchConnectionService::class.java))
+        settingsHeader(R.string.settings)
+        settingsRow(R.string.settings_connection, R.string.settings_connection_summary) { navigate("settings-connection") }
+        settingsRow(R.string.settings_voice, R.string.settings_voice_summary) { navigate("settings-voice") }
+        settingsRow(R.string.settings_wake, R.string.settings_wake_summary) { navigate("settings-wake") }
+        settingsRow(R.string.settings_web, R.string.settings_web_summary) { navigate("settings-web") }
+        settingsRow(R.string.settings_feedback, R.string.settings_feedback_summary) { navigate("settings-feedback") }
+    }
+    private fun settingsConnection() {
+        settingsHeader(R.string.settings_connection)
+        settingsRow(R.string.phone_setup_settings, R.string.settings_phone_summary) {
+            startActivity(Intent(this, WatchPhoneSetupActivity::class.java))
         }
-        toggle(R.string.web_search, repo.store.webSearch) { repo.store.webSearch = it }
-        label(getString(R.string.web_search_description), 12)
-        button(R.string.web_sources_title) { navigate("web-sources") }
-        toggle(R.string.vibrate, repo.store.vibration) { repo.store.vibration = it }
-        button(R.string.voice_entry_try) { voiceEntryPending = true; page = "home"; render() }
-        toggle(R.string.samsung_confirm_toggle, repo.store.samsungAutoConfirm) {
+        settingsRow(R.string.devices, R.string.settings_devices_summary) { navigate("devices") }
+        settingsRow(R.string.api_title, R.string.settings_api_summary) { openApiSettings() }
+        settingsNote(R.string.settings_connection_note)
+    }
+    private fun settingsVoice() {
+        settingsHeader(R.string.settings_voice)
+        settingsToggle(R.string.settings_auto_speech, R.string.settings_auto_speech_summary, repo.store.autoSpeech) {
+            repo.store.autoSpeech = it
+        }
+        settingsToggle(R.string.settings_samsung_confirm, R.string.settings_samsung_summary, repo.store.samsungAutoConfirm) {
             repo.store.samsungAutoConfirm = it
             if (!it) WatchSamsungConfirmService.cancelSession()
         }
-        label(getString(R.string.samsung_confirm_description), 12)
-        button(if (WatchSamsungConfirmService.enabled(this)) R.string.samsung_confirm_enabled else R.string.samsung_confirm_settings) {
+        settingsRow(R.string.settings_voice_service,
+            if (WatchSamsungConfirmService.enabled(this)) R.string.samsung_confirm_enabled else R.string.samsung_confirm_settings) {
             runCatching { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                 .onFailure { toast(R.string.samsung_confirm_settings) }
         }
-        toggle(R.string.auto_speech, repo.store.autoSpeech) { repo.store.autoSpeech = it }
-        toggle(R.string.foreground_wake, wakePreference) { enable ->
+        settingsRow(R.string.voice_entry_try, R.string.settings_voice_try_summary) {
+            voiceEntryPending = true; page = "home"; render()
+        }
+        settingsNote(R.string.settings_voice_note)
+    }
+    private fun settingsWake() {
+        settingsHeader(R.string.settings_wake)
+        settingsToggle(R.string.settings_hello_wake, R.string.settings_foreground_summary, wakePreference) { enable ->
             if (enable && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 43)
             } else setWakePreference(enable)
         }
-        label(getString(R.string.foreground_wake_help), 12)
-        toggle(R.string.background_wake, repo.store.backgroundWake) { enable ->
+        settingsToggle(R.string.background_wake, R.string.settings_background_wake_summary, repo.store.backgroundWake) { enable ->
             if (enable && (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)) {
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 49)
             } else setBackgroundWake(enable)
         }
-        label(getString(R.string.background_wake_help), 12)
-        button(R.string.notifications) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42) }
-        button(R.string.devices) { navigate("devices") }
-        button(R.string.api_title) { openApiSettings() }
-        label(getString(R.string.monitor_body), 12)
+        settingsToggle(R.string.background_enabled, R.string.settings_background_run_summary, repo.store.backgroundEnabled) {
+            repo.store.backgroundEnabled = it
+            if (it) startForegroundService(Intent(this, WatchConnectionService::class.java))
+            else stopService(Intent(this, WatchConnectionService::class.java))
+        }
+        settingsNote(R.string.settings_wake_note)
+    }
+    private fun settingsWeb() {
+        settingsHeader(R.string.settings_web)
+        settingsToggle(R.string.settings_web_search, R.string.settings_search_summary, repo.store.webSearch) {
+            repo.store.webSearch = it
+        }
+        settingsRow(R.string.web_sources_title, R.string.settings_sources_summary) { navigate("web-sources") }
+        settingsRow(R.string.location_settings, R.string.settings_location_summary) { navigate("location-settings") }
+        settingsNote(R.string.settings_web_note)
+    }
+    private fun settingsFeedback() {
+        settingsHeader(R.string.settings_feedback)
+        settingsRow(R.string.settings_task_notifications,
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+                R.string.settings_notifications_enabled else R.string.settings_notifications_summary) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                runCatching {
+                    startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+                }.onFailure {
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:$packageName")))
+                }
+            } else requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
+        }
+        settingsToggle(R.string.vibrate, R.string.settings_vibrate_summary, repo.store.vibration) {
+            repo.store.vibration = it
+        }
+        settingsNote(R.string.settings_feedback_note)
     }
     private fun locationSettings() {
         title(R.string.location_settings)
@@ -878,11 +944,83 @@ class MainActivity : Activity() {
             webCredentialValue = ""; back()
         }
     }
-    private fun toggle(resource: Int, checked: Boolean, changed: (Boolean) -> Unit) {
-        content.addView(Switch(this).apply {
-            text = getString(resource); setTextColor(Color.WHITE); textSize = 14f
-            minHeight = dp(48); isChecked = checked
-            setOnCheckedChangeListener { _, value -> changed(value) }
+    private fun settingsHeader(resource: Int) {
+        val bar = FrameLayout(this).apply { minimumHeight = dp(42) }
+        bar.addView(TextView(this).apply {
+            text = getString(resource); textSize = 16f; setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+            setPadding(dp(42), 0, dp(42), 0)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }, FrameLayout.LayoutParams(-1, dp(42), Gravity.TOP))
+        bar.addView(TextView(this).apply {
+            text = "‹"; textSize = 28f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            contentDescription = getString(R.string.back)
+            setOnClickListener { back() }
+        }, FrameLayout.LayoutParams(dp(42), dp(42), Gravity.START or Gravity.TOP).apply { leftMargin = 10 })
+        content.addView(bar, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(2) })
+    }
+    private fun settingsRow(title: Int, subtitle: Int, action: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(40)
+            background = background(Color.rgb(35, 40, 38))
+            setPadding(dp(12), dp(3), dp(12), dp(3))
+            contentDescription = "${getString(title)}，${getString(subtitle)}"
+            setOnClickListener { action() }
+        }
+        row.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@MainActivity).apply {
+                text = getString(title); textSize = 12f; setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD); maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = getString(subtitle); textSize = 9f; setTextColor(Color.LTGRAY)
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(TextView(this).apply {
+            text = "›"; textSize = 22f; setTextColor(Color.LTGRAY); gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(dp(20), -1))
+        content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) })
+    }
+    private fun settingsToggle(title: Int, subtitle: Int, checked: Boolean, changed: (Boolean) -> Unit) {
+        val row = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(40)
+            background = background(Color.rgb(35, 40, 38))
+            setPadding(dp(12), dp(3), dp(10), dp(3))
+        }
+        row.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@MainActivity).apply {
+                text = getString(title); textSize = 12f; setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD); maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = getString(subtitle); textSize = 9f; setTextColor(Color.LTGRAY)
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        val control = Switch(this).apply {
+            text = ""; isChecked = checked
+            contentDescription = getString(title)
+            thumbTintList = android.content.res.ColorStateList.valueOf(if (checked) Color.rgb(9, 43, 33) else Color.LTGRAY)
+            trackTintList = android.content.res.ColorStateList.valueOf(if (checked) Color.rgb(125, 228, 198) else Color.rgb(85, 92, 89))
+            setOnCheckedChangeListener { _, value ->
+                thumbTintList = android.content.res.ColorStateList.valueOf(if (value) Color.rgb(9, 43, 33) else Color.LTGRAY)
+                trackTintList = android.content.res.ColorStateList.valueOf(if (value) Color.rgb(125, 228, 198) else Color.rgb(85, 92, 89))
+                changed(value)
+            }
+        }
+        row.addView(control, LinearLayout.LayoutParams(dp(52), dp(34)))
+        row.setOnClickListener { control.isChecked = !control.isChecked }
+        content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) })
+    }
+    private fun settingsNote(resource: Int) {
+        content.addView(TextView(this).apply {
+            text = getString(resource); textSize = 11f; setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER; setPadding(dp(10), dp(9), dp(10), dp(9))
         }, LinearLayout.LayoutParams(-1, -2))
     }
     private fun startVoice() {
@@ -997,14 +1135,15 @@ class MainActivity : Activity() {
         if (requestCode == 49) {
             setBackgroundWake(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
-            if (page == "settings") render()
         }
         if (requestCode == 43) {
             setWakePreference(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
             if (!wakePreference) toast(R.string.wake_permission_needed)
-            render()
         }
-        if (requestCode == 42 && grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) toast(R.string.notification_denied)
+        if (requestCode == 42) {
+            if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) toast(R.string.notification_denied)
+            if (page == "settings-feedback") render(true)
+        }
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -1025,7 +1164,7 @@ class MainActivity : Activity() {
         wake?.retry()
         if (!value) { repo.store.backgroundWake = false; WatchBackgroundWakeService.stop(this) }
         refreshWake()
-        if (page == "settings") render()
+        if (page == "settings-wake") render(true)
     }
     private fun setBackgroundWake(value: Boolean) {
         repo.store.backgroundWake = value
@@ -1036,6 +1175,7 @@ class MainActivity : Activity() {
                 if (resumed && repo.store.backgroundWake && !WatchBackgroundWakeService.start(this)) {
                     repo.store.backgroundWake = false
                     toast(R.string.wake_failed)
+                    if (page == "settings-wake") render(true)
                 }
                 refreshWake()
             }
@@ -1044,33 +1184,39 @@ class MainActivity : Activity() {
                 WatchBackgroundWakeService.stop(this)
                 refreshWake()
             }
-            if (page == "settings") render()
+            if (page == "settings-wake") render(true)
             return
         }
         refreshWake()
-        if (page == "settings") render()
+        if (page == "settings-wake") render(true)
     }
-    private fun wakeAllowed(): Boolean = wakePreference && resumed && page == "home" && conversationReady &&
-        !voicePending && !voiceEntryPending && !busy && speech?.active != true && draft.isBlank() && conversationView?.input?.hasFocus() != true &&
-        repo.store.cachedTask(selectedTask)?.state?.terminal != false &&
+    private fun wakeAllowed(): Boolean = wakePreference && resumed && conversationReady &&
+        !voicePending && !voiceEntryPending && speech?.audible != true && draft.isBlank() && conversationView?.input?.hasFocus() != true &&
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
         android.os.SystemClock.elapsedRealtime() >= wakeCooldownUntil
 
     private fun refreshWake() {
         wakePreference = repo.store.foregroundWake
-        val speaking = speech?.active == true
+        val speaking = speech?.audible == true
         if (wasSpeaking && !speaking) scheduleWakeResume()
         wasSpeaking = speaking
         val background = repo.store.backgroundWake && wakePreference
+        val gate = "on=$wakePreference visible=$resumed ready=$conversationReady pending=$voicePending entry=$voiceEntryPending " +
+            "speaking=$speaking draft=${draft.isNotBlank()} focus=${conversationView?.input?.hasFocus() == true} " +
+            "cooldown=${android.os.SystemClock.elapsedRealtime() < wakeCooldownUntil} bg=$background"
+        if (gate != lastWakeGate) { android.util.Log.i("WatchWakeGate", gate); lastWakeGate = gate }
         wake?.setEnabled(!background && wakeAllowed())
-        WatchBackgroundWakeService.update(background && wakeAllowed(), voicePending || voiceEntryPending || speaking,
-            if (resumed) ({
-                if (wakeAllowed()) {
-                    wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
-                    followUpId = selectedTask
-                    startVoice()
-                }
-            }) else null)
+        // A paused MainActivity may still receive speech/repository callbacks after another watch page resumes.
+        if (!(application as WatchApplication).anotherActivityIsForeground(this)) {
+            WatchBackgroundWakeService.update(background && wakeAllowed(), voicePending || voiceEntryPending || speaking,
+                if (resumed) ({
+                    if (wakeAllowed()) {
+                        wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
+                        followUpId = selectedTask
+                        startVoice()
+                    }
+                }) else null)
+        }
     }
     private fun scheduleWakeResume() {
         wakeCooldownUntil = android.os.SystemClock.elapsedRealtime() + 2500
