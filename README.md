@@ -24,7 +24,7 @@ tests             Cross-platform fixtures and end-to-end tests
 ## Current Apps
 
 - Android app: `apps/android`
-- iOS app: `apps/ios` with Android-parity global Agent continuity, process-lifetime Agent task runtime, durable recoverable task workspaces, voice interaction, PCM/VAD voice capture, Local Whisper ASR foundation, Whisper model download and provider settings management, voice latency tracing, durable content-free diagnostics export, and native tool policies for iOS 15+
+- iOS app: `apps/ios` (native app for iOS 15+)
 - Desktop connector: `apps/desktop`
 - Wear OS watch app: `apps/watch`
 - GalaxySSI Link core: `apps/desktop/core/galaxyssi-link`
