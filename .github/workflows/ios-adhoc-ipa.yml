@@ -547,9 +547,6 @@ jobs:
           if [[ ! -f "$NUMKONG_DIR/include/cnumkong_module.c" ]]; then
             git -C "$NUMKONG_DIR" apply "$GITHUB_WORKSPACE/apps/ios/patches/numkong-spm-xcode.patch"
           fi
-          # Build products are not portable between ephemeral macOS runners. Keep
-          # downloaded packages/module caches, but regenerate package C objects.
-          rm -rf build/ios-ui-screenshots/Build
           xcodebuild \
             -project apps/ios/GalaxySSI.xcodeproj \
             -scheme GalaxySSI \
@@ -605,7 +602,7 @@ jobs:
               -GalaxySSIScreenshotRoute "$route" \
               -AppleLanguages '(zh-Hans)' \
               -AppleLocale 'zh_CN'
-            if [[ "$name" == '01-home' ]]; then sleep 12; else sleep 6; fi
+            if [[ "$name" == '01-home' ]]; then sleep 18; else sleep 15; fi
             xcrun simctl io "$SIMULATOR_ID" screenshot \
               "build/ios-ui-screenshots/output/$name.png"
           done
