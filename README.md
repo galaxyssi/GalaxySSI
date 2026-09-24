@@ -15,6 +15,7 @@ apps/android      Native Android app
 apps/ios          Native iOS app
 apps/desktop      Electron desktop app for Windows, macOS, and Linux
 apps/watch        Native Wear OS companion app
+apps/ar-glasses   Native Android app for AR glasses
 docs              Product, protocol, architecture, security, setup, and design docs
 assets            Logos, icons, screenshots, and marketing media
 tools             Development, diagnostics, release, and migration tools
@@ -27,12 +28,13 @@ tests             Cross-platform fixtures and end-to-end tests
 - iOS app: `apps/ios` (native app for iOS 15+)
 - Desktop connector: `apps/desktop`
 - Wear OS watch app: `apps/watch`
+- AR glasses app: `apps/ar-glasses` (voice chat; initially adapted for QIDI VENUS / VEN-A0)
 - GalaxySSI Link core: `apps/desktop/core/galaxyssi-link`
 
 ## Watch and AR Glasses
 
 - **Watch:** The native [GalaxySSI Watch](apps/watch/README.md) app runs on Wear OS with Android 13+ (API 33+). It supports conversations with paired Desktop assistants or configured cloud models, speech input, spoken replies, task status, and encrypted messaging. Watch-specific setup and current limitations are documented in its README.
-- **AR glasses:** GalaxySSI can be used as a phone-hosted companion on glasses that support standard Android screen mirroring and audio output. Compatibility depends on the glasses and phone; this is not a dedicated glasses app. Glasses-camera capture, spatial or gaze controls, and model-specific pairing have not been implemented or verified.
+- **AR glasses:** The native [GalaxySSI AR glasses](apps/ar-glasses/README.md) app supports on-glasses wake-word input, spoken and on-screen replies, and cloud-model configuration from the phone. The first supported device is QIDI VENUS / VEN-A0. Desktop pairing, Signal contacts, web tools, and background wake are not yet included.
 
 ## Development
 
