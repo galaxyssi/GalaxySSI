@@ -14,6 +14,7 @@ On-device agents can develop and verify projects within isolated local Linux wor
 apps/android      Native Android app
 apps/ios          Native iOS app
 apps/desktop      Electron desktop app for Windows, macOS, and Linux
+apps/watch        Native Wear OS companion app
 docs              Product, protocol, architecture, security, setup, and design docs
 assets            Logos, icons, screenshots, and marketing media
 tools             Development, diagnostics, release, and migration tools
@@ -25,7 +26,13 @@ tests             Cross-platform fixtures and end-to-end tests
 - Android app: `apps/android`
 - iOS app: `apps/ios` with Android-parity global Agent continuity, process-lifetime Agent task runtime, durable recoverable task workspaces, voice interaction, PCM/VAD voice capture, Local Whisper ASR foundation, Whisper model download and provider settings management, voice latency tracing, durable content-free diagnostics export, and native tool policies for iOS 15+
 - Desktop connector: `apps/desktop`
+- Wear OS watch app: `apps/watch`
 - GalaxySSI Link core: `apps/desktop/core/galaxyssi-link`
+
+## Watch and AR Glasses
+
+- **Watch:** The native [GalaxySSI Watch](apps/watch/README.md) app runs on Wear OS with Android 13+ (API 33+). It supports conversations with paired Desktop assistants or configured cloud models, speech input, spoken replies, task status, and encrypted messaging. Watch-specific setup and current limitations are documented in its README.
+- **AR glasses:** GalaxySSI can be used as a phone-hosted companion on glasses that support standard Android screen mirroring and audio output. Compatibility depends on the glasses and phone; this is not a dedicated glasses app. Glasses-camera capture, spatial or gaze controls, and model-specific pairing have not been implemented or verified.
 
 ## Development
 
