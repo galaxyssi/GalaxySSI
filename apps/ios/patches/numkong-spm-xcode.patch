@@ -1,0 +1,27 @@
+diff --git a/Package.swift b/Package.swift
+index dc8719fc7..bd1d0dbd0 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -53,9 +53,13 @@ let package = Package(
+                 .define("NK_NATIVE_BF16", to: "0"),
+             ]
+         ),
++        // CNumKong owns the public header umbrella and modulemap; the actual
++        // runtime dispatch lives in CNumKongDispatch. The single source makes
++        // the transitive target linkable in Xcode 16+.
+         .target(
+             name: "CNumKong",
+             path: "include",
++            sources: ["cnumkong_module.c"],
+             publicHeadersPath: ".",
+             cSettings: [
+                 .define("NK_DYNAMIC_DISPATCH", to: "1"),
+diff --git a/include/cnumkong_module.c b/include/cnumkong_module.c
+new file mode 100644
+index 000000000..52a03637e
+--- /dev/null
++++ b/include/cnumkong_module.c
+@@ -0,0 +1,3 @@
++#include "numkong/numkong.h"
++
++const unsigned int nk_cnumkong_module_loaded = 1u;

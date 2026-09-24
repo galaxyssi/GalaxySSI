@@ -537,6 +537,16 @@ jobs:
       - name: Build production app for iOS Simulator
         run: |
           set -euo pipefail
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project apps/ios/GalaxySSI.xcodeproj \
+            -scheme GalaxySSI \
+            -derivedDataPath build/ios-ui-screenshots
+          NUMKONG_DIR="$(find build/ios-ui-screenshots/SourcePackages/checkouts -maxdepth 1 -type d -name NumKong -print -quit)"
+          test -n "$NUMKONG_DIR"
+          if [[ ! -f "$NUMKONG_DIR/include/cnumkong_module.c" ]]; then
+            git -C "$NUMKONG_DIR" apply "$GITHUB_WORKSPACE/apps/ios/patches/numkong-spm-xcode.patch"
+          fi
           # Build products are not portable between ephemeral macOS runners. Keep
           # downloaded packages/module caches, but regenerate package C objects.
           rm -rf build/ios-ui-screenshots/Build
@@ -547,6 +557,7 @@ jobs:
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath build/ios-ui-screenshots \
+            -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO \
             CLANG_ENABLE_CODE_COVERAGE=NO \
             GCC_GENERATE_TEST_COVERAGE_FILES=NO \
