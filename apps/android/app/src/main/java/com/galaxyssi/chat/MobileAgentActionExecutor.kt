@@ -1171,7 +1171,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "elapsed_ms=${SystemClock.elapsedRealtime() - promptAssemblyStartedAt} " +
                 "chars=${outboundPrompt.length}"
         )
-        val published = GalaxySSIMqttClient.publishUserMessage(
+        val pendingDelivery = if (!managedTeamAction && conversationId.isNotBlank() && turnId.isNotBlank()) {
+            AgentPendingDelivery(messageId, clientConversationId, clientTurnId, remoteTaskId, contactId)
+        } else null
+        val published = AgentConnectorDispatchBinding.publish(
+            delivery = pendingDelivery,
+            register = { AgentPendingDeliveryStore.put(context, it) },
+            retire = { AgentPendingDeliveryStore.remove(context, it) }
+        ) { GalaxySSIMqttClient.publishUserMessage(
             content = outboundPrompt,
             contactId = contactId,
             topicOverride = topic,
@@ -1193,7 +1200,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             agentInstanceId = action.parameters["agent_instance_id"].orEmpty(),
             teamId = action.parameters["team_id"].orEmpty(),
             agentTeamMessage = action.parameters["agent_team_message"].toBoolean()
-        )
+        ) }
         if (!published) {
             voiceAgentRun?.snapshot?.runId?.let { runId ->
                 VoiceAgentRunBridge.get(context).markDispatchFailed(

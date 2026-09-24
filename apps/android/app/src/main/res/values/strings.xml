@@ -669,7 +669,7 @@
     <string name="security_revoked_all_pc">All PC pairings revoked</string>
     <string name="status_unknown">Unknown</string>
     <string name="accessibility_service_label">GalaxySSI Screen Agent</string>
-    <string name="accessibility_service_description">Reads the active screen structure after user authorization so GalaxySSI can plan local tasks.</string>
+    <string name="accessibility_service_description">Reads the active screen structure for local tasks. If you enable Screen assistant, it captures a screenshot only when you tap its floating button.</string>
     <string name="agent_tab_title">GalaxySSI</string>
     <string name="agent_brand_subtitle">Superintelligent agent</string>
     <string name="agent_more_actions">Agent actions</string>

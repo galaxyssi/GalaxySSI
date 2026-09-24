@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="screen_assistant_title">Screen assistant</string>
+    <string name="screen_assistant_settings_summary">Analyze the screen without leaving another app</string>
+    <string name="screen_assistant_disclosure">When you tap the floating button, GalaxySSI captures the current screen and sends that image and your question to the Agent currently selected on the home screen for analysis. The image may be processed by a configured cloud model or paired computer. No screenshot is taken merely because another app is open.</string>
+    <string name="screen_assistant_enable">Floating screen assistant</string>
+    <string name="screen_assistant_enable_summary">Show a draggable button while GalaxySSI is in the background</string>
+    <string name="screen_assistant_permission">Screen access</string>
+    <string name="screen_assistant_permission_summary">Enable GalaxySSI accessibility service in system settings</string>
+    <string name="screen_assistant_connected">Connected</string>
+    <string name="screen_assistant_not_connected">Not connected</string>
+    <string name="screen_assistant_footer">Tap once to capture. Long press for a question, crop, recent result or pause. Android 11 or newer is required. Protected screens cannot be captured.</string>
+    <string name="screen_assistant_capture">Analyze current screen</string>
+    <string name="screen_assistant_ask">Ask about this screen</string>
+    <string name="screen_assistant_crop">Select an area</string>
+    <string name="screen_assistant_last_result">Recent result</string>
+    <string name="screen_assistant_pause">Pause floating button</string>
+    <string name="screen_assistant_question_hint">What would you like to know?</string>
+    <string name="screen_assistant_send">Capture and send</string>
+    <string name="screen_assistant_crop_hint">Drag to select an area</string>
+    <string name="screen_assistant_ready">Screen assistant ready</string>
+    <string name="screen_assistant_unavailable">Open another app to capture its screen</string>
+    <string name="screen_assistant_capture_failed">This screen could not be captured</string>
+    <string name="screen_assistant_analyzing">Analyzing screen</string>
+    <string name="screen_assistant_delayed">Waiting for Agent</string>
+    <string name="screen_assistant_delayed_detail">No final result has arrived yet. Check the Screen analysis conversation in GalaxySSI for task details.</string>
+    <string name="screen_assistant_completed">Analysis complete</string>
+    <string name="screen_assistant_open_app">Open GalaxySSI once, then try again</string>
+    <string name="screen_assistant_target_unavailable">The Agent selected on the home screen is unavailable. Choose another Agent there, then retry.</string>
+    <string name="screen_assistant_conversation">Screen analysis</string>
+    <string name="screen_assistant_attachment">Screen capture</string>
+    <string name="screen_assistant_default_goal">Analyze this screen. Summarize what matters, explain the visible content, and suggest useful next steps. Do not invent details that are not visible.</string>
+    <string name="screen_assistant_waiting">Waiting for the Agent response</string>
+    <string name="screen_assistant_collapse">Collapse</string>
+    <string name="screen_assistant_expand">Expand</string>
+    <string name="screen_assistant_shrink">Shrink</string>
+    <string name="screen_assistant_follow_up">Ask more</string>
+    <string name="screen_assistant_follow_up_send">Send question</string>
+</resources>

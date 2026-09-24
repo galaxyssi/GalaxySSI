@@ -187,6 +187,10 @@ object AgentContactNavigationPolicy {
 }
 
 object AgentModelSelectionSettings {
+    fun defaultSelection(context: Context): AgentModelSelection = readSelection(
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE), ::defaultKey
+    )
+
     fun selection(context: Context, conversationId: String): AgentModelSelection {
         val scope = normalizedConversationId(conversationId)
         if (scope.isBlank()) return AgentModelSelection()
@@ -197,7 +201,7 @@ object AgentModelSelectionSettings {
     fun inheritDefault(context: Context, conversationId: String) {
         val scope = requireConversationId(conversationId)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val inherited = readSelection(preferences, ::defaultKey)
+        val inherited = defaultSelection(context)
         writeSelection(preferences.edit(), { field -> key(scope, field) }, inherited).apply()
     }
 
@@ -230,6 +234,15 @@ object AgentModelSelectionSettings {
         rememberActiveTarget(editor, scope, previous)
         writeSelection(editor, { field -> key(scope, field) }, selection)
         writeSelection(editor, ::defaultKey, selection)
+        editor.apply()
+    }
+
+    fun selectAutoForConversation(context: Context, conversationId: String) {
+        val scope = requireConversationId(conversationId)
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val editor = preferences.edit()
+        rememberActiveTarget(editor, scope, readSelection(preferences) { field -> key(scope, field) })
+        writeSelection(editor, { field -> key(scope, field) }, AgentModelSelection())
         editor.apply()
     }
 

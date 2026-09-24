@@ -601,6 +601,27 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         })
         "general.appearance" -> startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS))
         "general.text_size" -> openExistingControlCenterPage { showTextSizeSettingsPage() }
+        "general.screen_assistant" -> openExistingControlCenterPage { showScreenAssistantSettingsPage() }
+        "screen_assistant.accessibility" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        "screen_assistant.toggle" -> {
+            if (ScreenAssistantSettings.enabled(this)) {
+                ScreenAssistantSettings.setEnabled(this, false)
+                showScreenAssistantSettingsPage()
+            } else {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.screen_assistant_enable)
+                    .setMessage(R.string.screen_assistant_disclosure)
+                    .setPositiveButton(R.string.screen_assistant_enable) { _, _ ->
+                        ScreenAssistantSettings.setEnabled(this, true)
+                        showScreenAssistantSettingsPage()
+                        if (!GalaxySSIAccessibilityService.isActive()) {
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
         "general.about" -> openExistingControlCenterPage { showAboutGalaxySSIPage() }
         "general.advanced" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.ADVANCED))
         "apps.chat_history" -> showAgentSessionsPage()
