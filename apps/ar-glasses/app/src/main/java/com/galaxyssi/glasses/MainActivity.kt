@@ -56,7 +56,6 @@ class MainActivity : ComponentActivity() {
     private var listening = false
     private var loadingModel = false
     private var resumed = false
-    private var handsFreeEnabled = true
     private var busy = false
     private var awake = false
     private var firstHelloAt = 0L
@@ -93,7 +92,6 @@ class MainActivity : ComponentActivity() {
     private var waveBars = mutableListOf<View>()
     private var statusLabel: TextView? = null
     private var settingsFeedback: TextView? = null
-    private var micButton: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,8 +110,8 @@ class MainActivity : ComponentActivity() {
                 systemTts?.language = Locale.SIMPLIFIED_CHINESE
                 systemTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) = Unit
-                    override fun onDone(utteranceId: String?) { runOnUiThread { if (resumed && handsFreeEnabled) startListening() } }
-                    @Deprecated("Android TTS callback") override fun onError(utteranceId: String?) { runOnUiThread { if (resumed && handsFreeEnabled) startListening() } }
+                    override fun onDone(utteranceId: String?) { runOnUiThread { if (resumed) startListening() } }
+                    @Deprecated("Android TTS callback") override fun onError(utteranceId: String?) { runOnUiThread { if (resumed) startListening() } }
                 })
             }
         }
@@ -169,11 +167,11 @@ class MainActivity : ComponentActivity() {
         if (page == "camera" && destination != "camera") { camera?.close(); camera = null }
         page = destination; render()
         if (destination == "settings" && resumed && setupServer == null) startPhoneSetup()
-        if (resumed && handsFreeEnabled) startListening()
+        if (resumed) startListening()
     }
 
     private fun render() {
-        statusLabel = null; settingsFeedback = null; micButton = null
+        statusLabel = null; settingsFeedback = null
         mainText = null; subText = null; replyText = null; replyScroll = null; waveBars.clear()
         val root = column().apply {
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -230,11 +228,6 @@ class MainActivity : ComponentActivity() {
         replyText = label("", 19f, green).apply { gravity = Gravity.CENTER }.also { replyScroll?.addView(it) }
 
         val bottom = row().apply { gravity = Gravity.CENTER_VERTICAL }
-        micButton = button(if (listening) "暂停" else "开启麦克风", true) {
-            if (listening) { handsFreeEnabled = false; awake = false; cancelAutoSend(); stopListening(); updateConversationView() }
-            else { handsFreeEnabled = true; startListening() }
-        }.also { bottom.addView(it, LinearLayout.LayoutParams(dp(118), dp(42))) }
-        addSpace(bottom)
         bottom.addView(button("新对话") { cancelAutoSend(); awake = false; newSession(); updateConversationView() }, LinearLayout.LayoutParams(dp(92), dp(42)))
         addSpace(bottom)
         bottom.addView(button("重播回复") { latestAnswer()?.let(::speak) }, LinearLayout.LayoutParams(dp(100), dp(42)))
@@ -262,7 +255,7 @@ class MainActivity : ComponentActivity() {
             else -> {
                 title.text = "Hello Hello"
                 subtitle.text = when {
-                    !listening -> "麦克风已暂停"
+                    !listening -> if (loadingModel) "正在加载离线语音模型" else "正在启动麦克风"
                     profile() == null -> "请在手机 GalaxySSI 配置 AR 眼镜"
                     else -> "说“Hello Hello”开始"
                 }
@@ -455,7 +448,7 @@ class MainActivity : ComponentActivity() {
                     setStatus("回复已收到 · 点击回复可朗读")
                     speak(answer)
                 } else { setStatus("请求失败：${result.exceptionOrNull()?.message ?: "未知错误"}"); updateConversationView() }
-                if (result.isFailure && resumed && handsFreeEnabled) startListening()
+                if (result.isFailure && resumed) startListening()
             }
         }
     }
@@ -463,7 +456,7 @@ class MainActivity : ComponentActivity() {
     private fun speak(text: String) {
         stopListening(); stopSpeaking()
         val spoken = text.replace(Regex("[`*_#>\\[\\]]"), " ").take(1200)
-        if (spoken.isBlank()) return
+        if (spoken.isBlank()) { if (resumed) startListening(); return }
         if (systemTtsReady && (systemTts?.isLanguageAvailable(Locale.SIMPLIFIED_CHINESE) ?: -1) >= TextToSpeech.LANG_AVAILABLE) {
             systemTts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "galaxyssi-reply")
             setStatus("正在播报")
@@ -473,7 +466,7 @@ class MainActivity : ComponentActivity() {
             edgeTts?.speak(spoken, MicrosoftTtsVoiceCatalog.XIAOXIAO) { success, _ ->
                 runOnUiThread {
                     setStatus(if (success) "播报完成" else "语音播报失败，请检查网络")
-                    if (resumed && handsFreeEnabled) startListening()
+                    if (resumed) startListening()
                 }
             }
         }
@@ -500,7 +493,7 @@ class MainActivity : ComponentActivity() {
                     loadingModel = false
                     loaded.onSuccess { (cn, en) ->
                         chineseModel = cn; englishModel = en
-                        if (resumed && handsFreeEnabled) startListening()
+                        if (resumed) startListening()
                     }
                         .onFailure { setStatus("语音模型加载失败：${it.message}") }
                 }
@@ -545,11 +538,10 @@ class MainActivity : ComponentActivity() {
                 } },
                 onError = { reason ->
                     stopListening(); setStatus("语音识别失败：$reason")
-                    if (resumed && handsFreeEnabled) main.postDelayed({ if (resumed) startListening() }, 1200)
+                    if (resumed) main.postDelayed({ if (resumed) startListening() }, 1200)
                 })
             listening = true
             recognizer?.start()
-            micButton?.text = "暂停"
             setStatus(if (awake) "正在听问题" else "等待 Hello Hello")
             updateConversationView()
         } catch (error: Exception) {
@@ -585,7 +577,6 @@ class MainActivity : ComponentActivity() {
         if (!listening && recognizer == null) return
         listening = false
         recognizer?.stop(); recognizer = null
-        micButton?.text = "开启麦克风"
         setStatus("语音输入已停止")
     }
 
@@ -731,7 +722,7 @@ class MainActivity : ComponentActivity() {
         resumed = true
         if (::state.isInitialized) startPhoneSetup()
         if (page == "camera" && camera == null) render()
-        if (handsFreeEnabled && ::state.isInitialized) window.decorView.post { if (resumed) startListening() }
+        if (::state.isInitialized) window.decorView.post { if (resumed) startListening() }
     }
     override fun onStop() { super.onStop() }
     override fun onDestroy() {
