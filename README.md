@@ -28,7 +28,7 @@ tests             Cross-platform fixtures and end-to-end tests
 - iOS app: `apps/ios` (native app for iOS 15+)
 - Desktop connector: `apps/desktop`
 - Wear OS watch app: `apps/watch`
-- AR glasses app: `apps/ar-glasses` (voice chat; initially adapted for QIDI VENUS / VEN-A0)
+- AR glasses app: `apps/ar-glasses`
 - GalaxySSI Link core: `apps/desktop/core/galaxyssi-link`
 
 ## Watch and AR Glasses
