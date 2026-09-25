@@ -13,9 +13,10 @@ internal class SpeechSegmenter {
         require(size in 0..buffer.size && size % 2 == 0)
         if (size == 0) return null
         val voiced = amplitude >= VOICE_THRESHOLD
-        if (voiced) { recording = true; voicedBytes += size }
-        utterance.write(buffer, 0, size)
-        if (recording) silentBytes = if (voiced) 0 else silentBytes + size
+        val acceptedSize = minOf(size, MAX_UTTERANCE_BYTES - utterance.size())
+        if (voiced) { recording = true; voicedBytes += acceptedSize }
+        utterance.write(buffer, 0, acceptedSize)
+        if (recording) silentBytes = if (voiced) 0 else silentBytes + acceptedSize
         else if (utterance.size() > LEADING_BYTES) {
             val bytes = utterance.toByteArray()
             reset()
@@ -44,7 +45,7 @@ internal class SpeechSegmenter {
         const val VOICE_THRESHOLD = 180
         const val LEADING_BYTES = 16000             // 0.5 seconds
         const val END_SILENCE_BYTES = 16000 * 2 * 3 / 4
-        const val MAX_UTTERANCE_BYTES = 16000 * 2 * 20
+        const val MAX_UTTERANCE_BYTES = 16000 * 2 * 2
         const val MIN_VOICED_BYTES = 8192
     }
 }

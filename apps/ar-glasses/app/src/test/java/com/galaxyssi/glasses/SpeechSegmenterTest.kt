@@ -10,11 +10,11 @@ class SpeechSegmenterTest {
 
     @Test fun normalQuestionWaitsForSilenceBeforeTranscription() {
         val segmenter = SpeechSegmenter()
-        repeat(16) { assertNull(segmenter.accept(frame, frame.size, 500)) }
+        repeat(8) { assertNull(segmenter.accept(frame, frame.size, 500)) }
         repeat(5) { assertNull(segmenter.accept(frame, frame.size, 0)) }
         val pcm = segmenter.accept(frame, frame.size, 0)
         assertNotNull(pcm)
-        assertEquals((16 + 6) * frame.size / 2, pcm!!.size)
+        assertEquals((8 + 6) * frame.size / 2, pcm!!.size)
     }
 
     @Test fun briefNoiseDoesNotBecomeAnUtterance() {
@@ -23,12 +23,12 @@ class SpeechSegmenterTest {
         repeat(6) { assertNull(segmenter.accept(frame, frame.size, 0)) }
     }
 
-    @Test fun continuousSpeechIsCappedAtTwentySeconds() {
+    @Test fun continuousSpeechIsCappedAtExactlyTwoSeconds() {
         val segmenter = SpeechSegmenter()
         val fullFrames = (SpeechSegmenter.MAX_UTTERANCE_BYTES + frame.size - 1) / frame.size
         repeat(fullFrames - 1) { assertNull(segmenter.accept(frame, frame.size, 500)) }
         val pcm = segmenter.accept(frame, frame.size, 500)
         assertNotNull(pcm)
-        assertEquals(fullFrames * frame.size / 2, pcm!!.size)
+        assertEquals(16000 * 2, pcm!!.size)
     }
 }
