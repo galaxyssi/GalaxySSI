@@ -12,7 +12,6 @@ import android.util.Log
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
@@ -57,10 +56,7 @@ internal class BilingualSpeech(
         var wake: Recognizer? = null
         try {
             val buffer = ByteArray(4096)
-            val utterance = ByteArrayOutputStream(32000)
-            var recording = false
-            var silentBytes = 0
-            var voicedBytes = 0
+            val segmenter = SpeechSegmenter()
             var previousPartial = ""
             var lastPartialAt = 0L
             var lastLevelAt = 0L
@@ -82,11 +78,11 @@ internal class BilingualSpeech(
                 val now = System.currentTimeMillis()
                 if (now - lastLevelAt > 500) {
                     lastLevelAt = now
-                    if (isAwake()) Log.d("GalaxySpeech", "amplitude=$amplitude recording=$recording silentBytes=$silentBytes voicedBytes=$voicedBytes")
+                    if (isAwake()) Log.d("GalaxySpeech", "amplitude=$amplitude")
                     main.post { if (running.get()) onLevel((amplitude / 120).coerceIn(0, 100)) }
                 }
                 if (!isAwake()) {
-                    utterance.reset(); recording = false; silentBytes = 0; voicedBytes = 0
+                    segmenter.reset()
                     if (wake == null) wake = Recognizer(englishModel, 16000f,
                         "[\"hello hello\", \"hello\", \"[unk]\"]").also { it.setWords(true) }
                     val done = wake.acceptWaveForm(buffer, size)
@@ -106,31 +102,13 @@ internal class BilingualSpeech(
                 }
                 wake?.close(); wake = null
                 if (transcribing.get()) continue
-                // Keep 0.5 s of leading audio, and finish after 0.75 s of silence.
-                val voiced = amplitude >= 180
-                if (voiced) { recording = true; voicedBytes += size }
-                utterance.write(buffer, 0, size)
-                if (recording) silentBytes = if (voiced) 0 else silentBytes + size
-                else if (utterance.size() > 16000) {
-                    val tail = utterance.toByteArray().takeLast(16000).toByteArray()
-                    utterance.reset(); utterance.write(tail)
-                }
-                if (recording && (silentBytes >= 24000 || utterance.size() >= 16000 * 2 * 20)) {
-                    Log.d("GalaxySpeech", "utterance bytes=${utterance.size()} voicedBytes=$voicedBytes")
-                    if (voicedBytes >= 8192) {
-                        val bytes = utterance.toByteArray()
-                        val pcm = ShortArray(bytes.size / 2) { index ->
-                            ((bytes[index * 2 + 1].toInt() shl 8) or
-                                (bytes[index * 2].toInt() and 0xff)).toShort()
-                        }
-                        if (transcribing.compareAndSet(false, true)) {
-                            main.post {
-                                if (running.get()) onUtterance(pcm) { transcribing.set(false) }
-                                else transcribing.set(false)
-                            }
-                        }
+                val pcm = segmenter.accept(buffer, size, amplitude)
+                if (pcm != null && transcribing.compareAndSet(false, true)) {
+                    Log.d("GalaxySpeech", "utterance samples=${pcm.size}")
+                    main.post {
+                        if (running.get()) onUtterance(pcm) { transcribing.set(false) }
+                        else transcribing.set(false)
                     }
-                    utterance.reset(); recording = false; silentBytes = 0; voicedBytes = 0
                 }
             }
         } catch (error: Exception) {
