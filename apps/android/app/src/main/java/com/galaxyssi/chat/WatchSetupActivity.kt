@@ -66,9 +66,6 @@ class WatchSetupActivity : Activity() {
     private var selectedAgent = ""
     private var detail = ""
     private var resumePreviewAfterConnect = false
-    private var resumeAsrAfterConnect = false
-    private var asrEndpoint = ""
-    private var asrToken = ""
     private var wifiSsid = ""
     private var wifiPassword = ""
     private var wifiQrVisible = false
@@ -124,7 +121,7 @@ class WatchSetupActivity : Activity() {
             "discover", "success" -> finish()
             "confirm", "connecting", "offline", "manual" -> { disconnect(); go("discover"); discover() }
             "edit", "preview" -> go("cloud")
-            "cloud", "remote", "asr" -> go("hub")
+            "cloud", "remote" -> go("hub")
             "waiting", "agents" -> { disconnect(); go("offline") }
             else -> { disconnect(); go("discover"); discover() }
         }
@@ -242,8 +239,6 @@ class WatchSetupActivity : Activity() {
                 card(deviceName, if (connected) tr("● 已连接", "● Connected") else tr("○ 尚未连接眼镜", "○ Glasses not connected"))
                 text(tr("对话方式", "Conversation mode"), true)
                 card(device("云端 API Key", "云端 Agent 与大模型", "Cloud API Key", "Cloud Agent and model"), device("手表直接连接模型服务", "从手机选择已有 Agent 或新增云端模型，眼镜将直接连接模型服务", "Connect the watch directly to a model provider", "Choose a phone Agent or add a model; the glasses connect to the provider directly")) { go("cloud") }
-                if (glassesMode) card(tr("云语音识别代理", "Cloud speech proxy"),
-                    tr("在手机填写 HTTPS 地址和设备令牌，配对后同步到眼镜；云平台账号凭据留在代理端。", "Enter the HTTPS URL and device token on the phone, then sync to the glasses. Cloud account credentials stay on the proxy.")) { go("asr") }
                 if (!glassesMode) card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
                 if (glassesMode && !connected) card(tr("连接眼镜以同步", "Connect glasses to transfer"),
                     tr("眼镜和手机需处于同一 Wi-Fi；连接时两端核对六位数字。", "Use the same Wi-Fi and compare the six-digit code on both devices.")) { go("discover"); discover() }
@@ -272,20 +267,6 @@ class WatchSetupActivity : Activity() {
                 card(tr("新增配置", "New configuration")) { chooseProvider() }
                 text(tr("仅复制所选配置，不修改手机设置", "Copies the selected configuration without changing phone settings."), true)
                 if (profile.length() > 0) card(tr("继续编辑草稿", "Resume draft")) { go("edit") }
-            }
-            "asr" -> {
-                text(tr("语音识别代理", "Speech recognition proxy"), size = 20f)
-                text(tr("眼镜说 Hello Hello 后，问题音频经 HTTPS 发送到您配置的代理。代理不可用时使用眼镜上的 Whisper Tiny 离线备用。", "After Hello Hello, the glasses send question audio over HTTPS to your proxy. Offline Whisper Tiny is used if the proxy is unavailable."), true)
-                input(tr("代理地址（以 /transcribe 结尾）", "Proxy URL (ends with /transcribe)"), asrEndpoint) { asrEndpoint = it.trim() }
-                input(tr("设备令牌（至少 32 字符）", "Device token (at least 32 characters)"), asrToken, password = true) { asrToken = it.trim() }
-                button(tr("同步语音识别配置", "Sync speech configuration")) {
-                    val valid = runCatching { WatchSetupAsrProxy.validate(asrEndpoint, asrToken) }.isSuccess
-                    if (!valid) {
-                        Toast.makeText(this, tr("请检查 HTTPS /transcribe 地址和设备令牌", "Check the HTTPS /transcribe URL and device token"), Toast.LENGTH_LONG).show()
-                    } else if (!connected) {
-                        resumeAsrAfterConnect = true; go("discover"); discover()
-                    } else syncAsrProxy()
-                }
             }
             "edit" -> {
                 card(tr("服务商：", "Provider: ") + provider) { chooseProvider() }
@@ -357,15 +338,6 @@ class WatchSetupActivity : Activity() {
             main.post { if (owner == generation && revision == pageRevision && !isDestroyed) { busy = false; tested = ok; if (ok) go("preview") else { render(); Toast.makeText(this, tr("连接测试失败，请检查密钥、模型或网络", "Test failed. Check credentials, model or network."), Toast.LENGTH_LONG).show() } } }
         }
     }
-    private fun syncAsrProxy() {
-        val config = WatchSetupAsrProxy.validate(asrEndpoint, asrToken)
-        exchange(JSONObject().put("type", "configure").put("kind", "asr")
-            .put("profile", JSONObject().put("endpoint", config.first).put("token", config.second))) { result ->
-            require(result.optString("status") == "saved" && result.optString("kind") == "asr")
-            detail = tr("语音识别代理已同步", "Speech proxy synced")
-            disconnect(); go("success")
-        }
-    }
     private fun connect() {
         val cm = getSystemService(ConnectivityManager::class.java)
         val network = cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
@@ -377,12 +349,8 @@ class WatchSetupActivity : Activity() {
             runCatching { connection.connect(network, host, number) { value -> main.post { if (owner == generation) { code = value; go("confirm") } } } }
                 .onSuccess { main.post { if (owner == generation) {
                     connected = true; busy = false
-                    val next = when {
-                        resumeAsrAfterConnect -> "asr"
-                        resumePreviewAfterConnect -> "preview"
-                        else -> "hub"
-                    }
-                    resumeAsrAfterConnect = false; resumePreviewAfterConnect = false; go(next)
+                    val next = if (resumePreviewAfterConnect) "preview" else "hub"
+                    resumePreviewAfterConnect = false; go(next)
                 } } }
                 .onFailure { main.post { if (owner == generation) { disconnect(); go("offline") } } }
         }
