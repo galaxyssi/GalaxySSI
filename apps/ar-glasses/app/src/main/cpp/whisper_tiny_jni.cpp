@@ -1,7 +1,9 @@
 #include <jni.h>
 #include <whisper.h>
+#include <android/log.h>
 
 #include <algorithm>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -10,6 +12,11 @@ namespace {
 void throw_error(JNIEnv *env, const char *message) {
     jclass type = env->FindClass("java/lang/IllegalStateException");
     if (type != nullptr) env->ThrowNew(type, message);
+}
+
+bool timed_out(void *user_data) {
+    const auto *deadline = static_cast<std::chrono::steady_clock::time_point *>(user_data);
+    return std::chrono::steady_clock::now() >= *deadline;
 }
 
 }  // namespace
@@ -48,7 +55,7 @@ Java_com_galaxyssi_glasses_WhisperTinyNative_nativeTranscribe(
 
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.n_threads = threads;
-    params.language = "auto";
+    params.language = "zh";
     params.translate = false;
     params.no_context = true;
     params.single_segment = true;
@@ -58,22 +65,31 @@ Java_com_galaxyssi_glasses_WhisperTinyNative_nativeTranscribe(
     params.print_progress = false;
     params.print_timestamps = false;
     params.print_special = false;
-    params.max_tokens = 128;
+    params.max_tokens = 48;
+    params.greedy.best_of = 1;
+    params.temperature_inc = 0.0f;
+    params.no_speech_thold = 1.0f;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    params.abort_callback = timed_out;
+    params.abort_callback_user_data = &deadline;
     // The default 30-second encoder window is prohibitive on VENUS ARMv7.
     // Keep a small margin for the actual utterance instead of encoding 30 seconds of padding.
     const int audio_frames = (count + 319) / 320;
     params.audio_ctx = std::min(whisper_n_audio_ctx(context),
                                 std::max(128, ((audio_frames + 64 + 31) / 32) * 32));
     if (whisper_full(context, params, samples.data(), count) != 0) {
-        throw_error(env, "Whisper Tiny decode failed");
+        throw_error(env, timed_out(&deadline) ? "Whisper Tiny decode timed out" : "Whisper Tiny decode failed");
         return nullptr;
     }
     std::string text;
     const int segments = whisper_full_n_segments(context);
+    int tokens = 0;
     for (int i = 0; i < segments; ++i) {
+        tokens += whisper_full_n_tokens(context, i);
         const char *part = whisper_full_get_segment_text(context, i);
         if (part != nullptr) text += part;
     }
+    __android_log_print(ANDROID_LOG_DEBUG, "GalaxySpeech", "Whisper segments=%d tokens=%d", segments, tokens);
     return env->NewStringUTF(text.c_str());
 }
 

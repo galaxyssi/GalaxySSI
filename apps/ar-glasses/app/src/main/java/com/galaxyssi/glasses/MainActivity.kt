@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.Gravity
@@ -537,7 +538,9 @@ class MainActivity : ComponentActivity() {
                     val generation = speechGeneration
                     setStatus("正在识别…")
                     speechWorker.execute {
+                        val started = SystemClock.elapsedRealtime()
                         val result = runCatching { WhisperTinyNative.transcribe(pcm) }
+                        Log.d("GalaxySpeech", "Whisper decode ms=${SystemClock.elapsedRealtime() - started} success=${result.isSuccess} chars=${result.getOrNull()?.length ?: 0}")
                         runOnUiThread {
                             done()
                             if (listening && generation == speechGeneration) {
@@ -547,7 +550,10 @@ class MainActivity : ComponentActivity() {
                                         lastHeard = ""
                                         recognized(cleaned)
                                     } else setStatus("没有识别到语音 · 请再说一次")
-                                }.onFailure { setStatus("Whisper Tiny 识别失败：${it.message}") }
+                                }.onFailure {
+                                    setStatus(if (it.message?.contains("timed out") == true)
+                                        "识别超时 · 请再说一次" else "Whisper Tiny 识别失败：${it.message}")
+                                }
                             }
                         }
                     }

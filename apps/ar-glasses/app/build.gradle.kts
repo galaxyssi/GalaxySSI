@@ -69,6 +69,7 @@ android {
         versionCode = 11
         versionName = "0.3.6"
         ndk { abiFilters += "armeabi-v7a" }
+        testInstrumentationRunner = "com.galaxyssi.glasses.WhisperSmokeInstrumentation"
     }
     sourceSets["main"].assets.srcDir(modelAssets)
     compileOptions {
