@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
     private var loadingModel = false
     private var resumed = false
     private var busy = false
-    private var awake = false
+    @Volatile private var awake = false
     private var firstHelloAt = 0L
     private var replyVisible = false
     private var setupServer: GlassesPhoneSetupServer? = null
@@ -512,10 +512,16 @@ class MainActivity : ComponentActivity() {
             return
         }
         try {
-            recognizer = BilingualSpeech(this, chineseModel!!, englishModel!!,
+            recognizer = BilingualSpeech(this, chineseModel!!, englishModel!!, isAwake = { awake },
                 onLevel = { level -> if (listening) {
                     waveBars.forEachIndexed { i, bar -> bar.alpha = (0.3f + ((level + i * 13) % 70) / 100f).coerceAtMost(1f) }
-                    if (page == "chat" && status != "正在听") setStatus(if (awake) "正在听问题" else "等待 Hello Hello")
+                    if (page == "chat" && status in setOf(
+                        "正在听", "正在听问题", "等待 Hello Hello", "再说一次 Hello", "就绪"
+                    )) setStatus(when {
+                        awake -> "正在听问题"
+                        firstHelloAt != 0L && SystemClock.elapsedRealtime() - firstHelloAt < 7000 -> "再说一次 Hello"
+                        else -> "等待 Hello Hello"
+                    })
                 } },
                 onPartial = { partial -> if (listening) {
                     lastHeard = partial
@@ -527,7 +533,7 @@ class MainActivity : ComponentActivity() {
                         if (words.isNotBlank() && !singleHello.matches(words) && words != livePartial) {
                             livePartial = words
                             if (isDeviceCommand(words)) cancelAutoSend()
-                            else { setStatus("正在识别 · 停顿 1.5 秒后发送"); scheduleAutoSend() }
+                            else setStatus("正在识别 · 等待识别完成")
                             updateConversationView()
                         }
                     }
@@ -595,8 +601,15 @@ class MainActivity : ComponentActivity() {
     private val singleHello = Regex("(?i)^hello[\\s,，。.!?]*$")
     private val spokenChineseWake = Regex("^(哈喽|哈罗|你好|海螺)[\\s,，。]*(哈喽|哈罗|你好|海螺)")
     private fun stripSpokenWake(text: String) = spokenChineseWake.replaceFirst(text.trim(), "").trim()
-    private fun normalizedCommand(text: String) = text.trim().replace(" ", "")
-        .trim('。', '.', '!', '！', '?', '？', '，', ',').lowercase(Locale.ROOT)
+    private fun normalizedCommand(text: String): String {
+        val normalized = text.trim().replace(" ", "")
+            .trim('。', '.', '!', '！', '?', '？', '，', ',').lowercase(Locale.ROOT)
+        return when (normalized) {
+            // The bundled Mandarin model repeatedly transcribes 几点了 as 级别了 on VENUS.
+            "级别了", "几点啊", "现在几点了", "现在几点啊" -> "几点了"
+            else -> normalized
+        }
+    }
     private fun isDeviceCommand(text: String) = normalizedCommand(text) in setOf(
         "发送", "提交", "确认发送", "取消", "清空", "朗读", "读出来", "停止朗读", "别读了", "新对话",
         "设置", "打开设置", "手机配置", "确认配对", "配对确认", "取消配对", "返回", "打开对话", "对话",
@@ -674,9 +687,9 @@ class MainActivity : ComponentActivity() {
         val hasWake = wakePhrase.containsMatchIn(text)
         if (!awake) {
             val now = SystemClock.elapsedRealtime()
-            val twoSeparateHellos = singleHello.matches(text) && now - firstHelloAt in 1..3000
+            val twoSeparateHellos = singleHello.matches(text) && now - firstHelloAt in 1..7000
             if (!hasWake && !twoSeparateHellos) {
-                if (singleHello.matches(text)) firstHelloAt = now
+                if (singleHello.matches(text)) { firstHelloAt = now; setStatus("再说一次 Hello") }
                 return
             }
             firstHelloAt = 0L

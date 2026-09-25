@@ -46,8 +46,8 @@ android {
         applicationId = "com.galaxyssi.glasses"
         minSdk = 30
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.3.4"
+        versionCode = 10
+        versionName = "0.3.5"
     }
     sourceSets["main"].assets.srcDir(modelAssets)
     compileOptions {
