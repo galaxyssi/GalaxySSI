@@ -56,6 +56,7 @@ class WatchSetupActivity : Activity() {
     private var port = ""
     private var deviceName = "GalaxySSI Watch"
     private var provider = "DeepSeek"
+    private var selectedCloudAgent = ""
     private var profile = JSONObject()
     private var tested = false
     private var busy = false
@@ -64,6 +65,7 @@ class WatchSetupActivity : Activity() {
     private var agents = JSONArray()
     private var selectedAgent = ""
     private var detail = ""
+    private var resumePreviewAfterConnect = false
     private var wifiSsid = ""
     private var wifiPassword = ""
     private var wifiQrVisible = false
@@ -104,6 +106,7 @@ class WatchSetupActivity : Activity() {
     private fun disconnect() { generation++; client?.close(); client = null; connected = false; busy = false; devices.releaseSelection() }
     private fun go(value: String) {
         currentFocus?.windowToken?.let { getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(it, 0) }
+        if (page == "discover" && value != "discover") stopDiscovery()
         if (page == "wifi" && value != "wifi") stopWifiScan()
         pageRevision++; page = value; render()
         if (value == "wifi") beginWifiScan()
@@ -177,6 +180,8 @@ class WatchSetupActivity : Activity() {
         footer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(14), dp(18)) }; root.addView(footer)
         when (page) {
             "discover" -> {
+                if (glassesMode) card(tr("配置 Agent 与云端大模型", "Configure Agent and cloud model"),
+                    tr("可先在手机选择或新增云端 Agent，眼镜联网后再核对数字并同步。", "Choose or add a cloud Agent on the phone first, then connect and transfer it to the glasses.")) { go("hub") }
                 card(device("连接你的手表", "连接你的 AR 眼镜", "Connect your watch", "Connect your AR glasses"),
                     device("手机与手表连接同一个 Wi-Fi\n在手表打开 GalaxySSI 配置页", "手机与眼镜连接同一个 Wi-Fi\n在眼镜打开 GalaxySSI 即可自动发现，无需进入设置页", "Join the same Wi-Fi on both devices. Open GalaxySSI setup on the watch.", "Join the same Wi-Fi on both devices. Open GalaxySSI on the glasses; no settings page is needed."))
                 text(device("发现的手表", "发现的眼镜", "Discovered watches", "Discovered glasses"), true)
@@ -210,6 +215,7 @@ class WatchSetupActivity : Activity() {
                     else { wifiQrVisible = true; render() }
                 }
                 button(tr("刷新附近 Wi-Fi", "Refresh nearby Wi-Fi"), primary = false) { beginWifiScan(retryPermission = true) }
+                if (glassesMode) button(tr("继续配置 Agent 与云端模型", "Continue to Agent and cloud model"), primary = false) { go("hub") }
                 if (!getSystemService(LocationManager::class.java).isLocationEnabled)
                     button(tr("打开手机定位设置", "Open phone Location settings"), primary = false) {
                         startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
@@ -230,14 +236,17 @@ class WatchSetupActivity : Activity() {
                 button(tr("取消连接", "Cancel"), primary = false) { disconnect(); go("discover"); discover() }
             }
             "hub" -> {
-                card(deviceName, tr("● 已连接", "● Connected")); text(tr("对话方式", "Conversation mode"), true)
-                card(tr("云端 API Key", "Cloud API Key"), device("手表直接连接模型服务", "眼镜直接连接模型服务", "Connect the watch directly to a model provider", "Connect the glasses directly to a model provider")) { go("cloud") }
+                card(deviceName, if (connected) tr("● 已连接", "● Connected") else tr("○ 尚未连接眼镜", "○ Glasses not connected"))
+                text(tr("对话方式", "Conversation mode"), true)
+                card(device("云端 API Key", "云端 Agent 与大模型", "Cloud API Key", "Cloud Agent and model"), device("手表直接连接模型服务", "从手机选择已有 Agent 或新增云端模型，眼镜将直接连接模型服务", "Connect the watch directly to a model provider", "Choose a phone Agent or add a model; the glasses connect to the provider directly")) { go("cloud") }
                 if (!glassesMode) card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
-                if (glassesMode) text(tr("电脑配对码扫描暂未接入眼镜；当前可同步手机已有云端模型。", "Desktop pairing QR is not yet available on the glasses; existing phone cloud models can be transferred."), true)
-                text(if (glassesMode) tr("云端模型可在手机选取、测试并同步；眼镜上只需核对一次配对数字。", "Choose, test and transfer a cloud model on the phone; only compare the pairing code on the glasses.") else tr("配置任意一种方式即可开始", "Configure either option to start."), true)
+                if (glassesMode && !connected) card(tr("连接眼镜以同步", "Connect glasses to transfer"),
+                    tr("眼镜和手机需处于同一 Wi-Fi；连接时两端核对六位数字。", "Use the same Wi-Fi and compare the six-digit code on both devices.")) { go("discover"); discover() }
+                if (glassesMode) text(tr("云端配置在手机选择和测试，传送后由眼镜直接调用；电脑远端 Agent 仍需要眼镜端连接能力。", "Choose and test cloud settings on the phone; the glasses call the provider after transfer. Desktop Agent needs a glasses connection runtime."), true)
+                else text(tr("配置任意一种方式即可开始", "Configure either option to start."), true)
             }
             "cloud" -> {
-                text(tr("使用手机已有配置", "Use a phone configuration"), true)
+                text(device("使用手机已有配置", "选择手机已有云端 Agent", "Use a phone configuration", "Choose a cloud Agent on the phone"), true)
                 val contacts = AppStore.contacts(this)
                 for (i in 0 until contacts.length()) {
                     val raw = contacts.getJSONObject(i)
@@ -246,8 +255,9 @@ class WatchSetupActivity : Activity() {
                     for (j in 0 until models.length()) {
                         val model = models.getJSONObject(j)
                         if (model.optString("api_key").isBlank()) continue
-                        card(raw.optString("cloud_provider") + " · " + model.optString("model_id"), tr("密钥已隐藏", "Key hidden")) {
+                        card(raw.optString("name").ifBlank { raw.optString("cloud_provider") } + " · " + model.optString("model_id"), tr("密钥已隐藏", "Key hidden")) {
                             provider = raw.optString("cloud_provider")
+                            selectedCloudAgent = raw.optString("name").ifBlank { provider }
                             profile = JSONObject().put("endpoint", model.optString("endpoint")).put("model", model.optString("model_id"))
                                 .put("api_key", model.optString("api_key")).put("api_style", model.optString("api_style", "openai"))
                             tested = false; go("edit")
@@ -270,8 +280,12 @@ class WatchSetupActivity : Activity() {
             }
             "preview" -> {
                 card(if (tested) tr("手机端连接测试通过", "Phone connection test passed") else tr("尚未测试连接", "Connection not tested"), device("还未同步到手表", "还未同步到眼镜", "Not yet transferred to the watch", "Not yet transferred to the glasses"))
-                card(device("目标手表", "目标眼镜", "Watch", "Glasses"), deviceName); card(provider, profile.optString("model")); card("API Key", tr("已隐藏", "Hidden"))
-                button(device("同步到手表", "同步到眼镜", "Transfer to watch", "Transfer to glasses")) { exchange(JSONObject().put("type", "configure").put("kind", "cloud").put("profile", profile)) { result -> require(result.optString("status") == "saved"); detail = provider + " · " + profile.optString("model"); disconnect(); go("success") } }
+                card(device("目标手表", "目标眼镜", "Watch", "Glasses"), deviceName)
+                card(selectedCloudAgent.ifBlank { provider }, profile.optString("model")); card("API Key", tr("已隐藏", "Hidden"))
+                if (!connected && glassesMode) button(tr("连接眼镜并同步", "Connect glasses and transfer")) {
+                    resumePreviewAfterConnect = true; go("discover"); discover()
+                } else button(device("同步到手表", "同步到眼镜", "Transfer to watch", "Transfer to glasses")) { exchange(JSONObject().put("type", "configure").put("kind", "cloud").put("profile", profile)
+                    .put("agent_name", selectedCloudAgent.ifBlank { provider })) { result -> require(result.optString("status") == "saved"); detail = selectedCloudAgent.ifBlank { provider } + " · " + profile.optString("model"); disconnect(); go("success") } }
             }
             "remote" -> {
                 card(tr("扫描电脑配对码", "Scan computer pairing code"), tr("使用新的配对码，为手表建立独立连接", "Use a fresh pairing code for the watch's own connection.")) {
@@ -304,6 +318,7 @@ class WatchSetupActivity : Activity() {
         val names = CLOUD_MODEL_PRESETS.map { it.provider }.distinct()
         AlertDialog.Builder(this).setTitle(tr("选择服务商", "Select provider")).setItems(names.toTypedArray()) { _, n ->
             provider = names[n]; val preset = CLOUD_MODEL_PRESETS.first { it.provider == provider }
+            selectedCloudAgent = provider
             profile = JSONObject().put("endpoint", preset.endpoint).put("model", preset.modelId).put("api_style", preset.apiStyle).put("api_key", "")
             tested = false; go("edit")
         }.show()
@@ -332,7 +347,11 @@ class WatchSetupActivity : Activity() {
         val connection = WatchSetupClient(); client = connection; go("connecting")
         worker.execute {
             runCatching { connection.connect(network, host, number) { value -> main.post { if (owner == generation) { code = value; go("confirm") } } } }
-                .onSuccess { main.post { if (owner == generation) { connected = true; busy = false; go("hub") } } }
+                .onSuccess { main.post { if (owner == generation) {
+                    connected = true; busy = false
+                    val next = if (resumePreviewAfterConnect) "preview" else "hub"
+                    resumePreviewAfterConnect = false; go(next)
+                } } }
                 .onFailure { main.post { if (owner == generation) { disconnect(); go("offline") } } }
         }
     }

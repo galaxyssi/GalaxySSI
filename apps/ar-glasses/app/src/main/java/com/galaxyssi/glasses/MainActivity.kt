@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
     private var waveBars = mutableListOf<View>()
     private var statusLabel: TextView? = null
     private var settingsFeedback: TextView? = null
+    private var wifiScanButton: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,7 +172,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun render() {
-        statusLabel = null; settingsFeedback = null
+        statusLabel = null; settingsFeedback = null; wifiScanButton = null
         mainText = null; subText = null; replyText = null; replyScroll = null; waveBars.clear()
         val root = column().apply {
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -275,7 +276,9 @@ class MainActivity : ComponentActivity() {
         addSpace(actions)
         actions.addView(button("停止录像") { camera?.stopVideo() }, LinearLayout.LayoutParams(dp(105), dp(44)))
         addSpace(actions)
-        actions.addView(button("扫描配网码") { camera?.scanWifi() }, LinearLayout.LayoutParams(dp(120), dp(44)))
+        wifiScanButton = button(if (pendingWifi == null) "扫描配网码" else "确认联网") {
+            if (pendingWifi == null) camera?.scanWifi() else confirmWifi()
+        }.also { actions.addView(it, LinearLayout.LayoutParams(dp(120), dp(44))) }
         addSpace(actions)
         actions.addView(button("返回") { navigate("chat") }, LinearLayout.LayoutParams(dp(80), dp(44)))
         root.addView(actions)
@@ -294,7 +297,8 @@ class MainActivity : ComponentActivity() {
             }
         }, { raw ->
             pendingWifi = runCatching { WifiQrProvisioning.parse(raw) }.getOrNull()
-            setStatus("Wi-Fi：${pendingWifi?.ssid} · 说 Hello Hello 确认联网")
+            wifiScanButton?.text = "确认联网"
+            setStatus("已扫描 Wi-Fi：${pendingWifi?.ssid} · 确认后请求连接")
         }).also { it.open() }
     }
 
@@ -304,6 +308,10 @@ class MainActivity : ComponentActivity() {
         root.addView(center, LinearLayout.LayoutParams(-1, 0, 1f))
         center.addView(label("手机 GalaxySSI → 我的 Agent → 设备 → 配置 AR 眼镜", 21f, green).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(60)))
+        state.optJSONObject("profile")?.let { saved ->
+            center.addView(label("当前 Agent：${saved.optString("agent_name").ifBlank { "云端模型" }} · ${saved.optString("model")}", 15f, dim)
+                .apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, dp(38)))
+        }
         val instructions = when (setupPhase) {
             "wifi_required" -> "请先让眼镜与手机连接同一个 Wi-Fi"
             "waiting" -> "等待手机连接 · $setupHost:$setupPort"
@@ -396,7 +404,8 @@ class MainActivity : ComponentActivity() {
                             val candidate = Profile(raw.getString("endpoint"), raw.getString("model"),
                                 raw.getString("api_key"), raw.optString("api_style", "openai")).validated()
                             state.put("profile", JSONObject().put("endpoint", candidate.endpoint).put("model", candidate.model)
-                                .put("key", candidate.key).put("style", candidate.style))
+                                .put("key", candidate.key).put("style", candidate.style)
+                                .put("agent_name", payload.optString("agent_name").filterNot { Character.isISOControl(it) }.trim().take(80)))
                             persist()
                             outcome = JSONObject().put("status", "saved").put("kind", "cloud")
                         } catch (_: Exception) { outcome = JSONObject().put("status", "invalid") }
@@ -506,7 +515,7 @@ class MainActivity : ComponentActivity() {
             recognizer = BilingualSpeech(this, chineseModel!!, englishModel!!,
                 onLevel = { level -> if (listening) {
                     waveBars.forEachIndexed { i, bar -> bar.alpha = (0.3f + ((level + i * 13) % 70) / 100f).coerceAtMost(1f) }
-                    if (status != "正在听") setStatus(if (awake) "正在听问题" else "等待 Hello Hello")
+                    if (page == "chat" && status != "正在听") setStatus(if (awake) "正在听问题" else "等待 Hello Hello")
                 } },
                 onPartial = { partial -> if (listening) {
                     lastHeard = partial
@@ -597,6 +606,14 @@ class MainActivity : ComponentActivity() {
         "音量减", "调小音量", "电量", "查看电量", "几点了", "现在几点", "帮助", "有什么命令",
         "takephoto", "startrecording", "stoprecording", "scanwifi", "confirmwifi", "cancelwifi", "back", "home"
     )
+    private fun confirmWifi() {
+        val wifi = pendingWifi
+        if (wifi == null) { setStatus("请先扫描手机配网码"); return }
+        pendingWifi = null
+        wifiScanButton?.text = "扫描配网码"
+        val accepted = runCatching { wifi.suggest(this) }.getOrDefault(false)
+        setStatus(if (accepted) "已请求连接 ${wifi.ssid} · 请批准系统提示" else "Wi-Fi 请求未被系统接受")
+    }
     private fun openCamera(action: String? = null) {
         pendingCameraAction = action ?: pendingCameraAction
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -632,16 +649,8 @@ class MainActivity : ComponentActivity() {
             "扫描配网", "扫描配网码", "连接wifi", "scanwifi" -> {
                 if (page != "camera") openCamera("scan") else camera?.scanWifi()
             }
-            "确认联网", "confirmwifi" -> {
-                val wifi = pendingWifi
-                if (wifi == null) setStatus("请先扫描手机配网码")
-                else {
-                    pendingWifi = null
-                    val accepted = runCatching { wifi.suggest(this) }.getOrDefault(false)
-                    setStatus(if (accepted) "已请求连接 ${wifi.ssid} · 请批准系统提示" else "Wi-Fi 请求未被系统接受")
-                }
-            }
-            "取消联网", "cancelwifi" -> { pendingWifi = null; setStatus("已取消联网") }
+            "确认联网", "confirmwifi" -> confirmWifi()
+            "取消联网", "cancelwifi" -> { pendingWifi = null; wifiScanButton?.text = "扫描配网码"; setStatus("已取消联网") }
             "拍照", "拍一张", "照相", "takephoto" -> { if (page != "camera") openCamera("photo") else camera?.takePhoto() }
             "开始录像", "启动录像", "录像", "startrecording" -> { if (page != "camera") openCamera("video") else camera?.startVideo() }
             "停止录像", "结束录像", "stoprecording" -> camera?.stopVideo() ?: setStatus("当前没有录像")
