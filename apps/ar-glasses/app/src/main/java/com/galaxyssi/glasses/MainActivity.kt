@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val speechWorker = Executors.newSingleThreadExecutor()
     private val client = ChatClient()
+    private val cloudSpeech = CloudSpeechClient()
     private lateinit var secure: SecureStore
     private lateinit var state: JSONObject
     private var page = "chat"
@@ -82,7 +83,7 @@ class MainActivity : ComponentActivity() {
     private var requestGeneration = 0
     private var currentSession = ""
     private var englishModel: Model? = null
-    private var speechGeneration = 0
+    @Volatile private var speechGeneration = 0
     private var recognizer: BilingualSpeech? = null
     private var systemTts: TextToSpeech? = null
     private var systemTtsReady = false
@@ -396,20 +397,26 @@ class MainActivity : ComponentActivity() {
                 if (next.phase == "saved") main.postDelayed({ if (resumed && setupServer == null) startPhoneSetup() }, 2000)
             },
             apply = { payload ->
-                if (payload.optString("kind") != "cloud") JSONObject().put("status", "unsupported")
+                val kind = payload.optString("kind")
+                if (kind !in setOf("cloud", "asr")) JSONObject().put("status", "unsupported")
                 else {
                     val latch = CountDownLatch(1)
                     var outcome = JSONObject().put("status", "invalid")
                     main.post {
                         try {
                             val raw = payload.getJSONObject("profile")
-                            val candidate = Profile(raw.getString("endpoint"), raw.getString("model"),
-                                raw.getString("api_key"), raw.optString("api_style", "openai")).validated()
-                            state.put("profile", JSONObject().put("endpoint", candidate.endpoint).put("model", candidate.model)
-                                .put("key", candidate.key).put("style", candidate.style)
-                                .put("agent_name", payload.optString("agent_name").filterNot { Character.isISOControl(it) }.trim().take(80)))
+                            if (kind == "asr") {
+                                val candidate = AsrProxyConfig(raw.getString("endpoint"), raw.getString("token")).validated()
+                                state.put("asr", JSONObject().put("endpoint", candidate.endpoint).put("token", candidate.token))
+                            } else {
+                                val candidate = Profile(raw.getString("endpoint"), raw.getString("model"),
+                                    raw.getString("api_key"), raw.optString("api_style", "openai")).validated()
+                                state.put("profile", JSONObject().put("endpoint", candidate.endpoint).put("model", candidate.model)
+                                    .put("key", candidate.key).put("style", candidate.style)
+                                    .put("agent_name", payload.optString("agent_name").filterNot { Character.isISOControl(it) }.trim().take(80)))
+                            }
                             persist()
-                            outcome = JSONObject().put("status", "saved").put("kind", "cloud")
+                            outcome = JSONObject().put("status", "saved").put("kind", kind)
                         } catch (_: Exception) { outcome = JSONObject().put("status", "invalid") }
                         finally { latch.countDown() }
                     }
@@ -424,6 +431,9 @@ class MainActivity : ComponentActivity() {
     }
     private fun profile(): Profile? = state.optJSONObject("profile")?.let {
         Profile(it.optString("endpoint"), it.optString("model"), it.optString("key"), it.optString("style"))
+    }
+    private fun asrConfig(): AsrProxyConfig? = state.optJSONObject("asr")?.let {
+        AsrProxyConfig(it.optString("endpoint"), it.optString("token"))
     }
     private fun sendDraft() {
         cancelAutoSend()
@@ -494,10 +504,9 @@ class MainActivity : ComponentActivity() {
         }
         stopSpeaking()
         if (englishModel == null) {
-            loadingModel = true; setStatus("正在加载 Whisper Tiny 和唤醒词模型…")
+            loadingModel = true; setStatus("正在加载唤醒词模型…")
             worker.execute {
                 val loaded = runCatching {
-                    WhisperTinyNative.load(WhisperTinyNative.prepareModel(this))
                     Model(unpackModel("vosk-model-small-en-us-0.15").absolutePath)
                 }
                 runOnUiThread {
@@ -536,11 +545,20 @@ class MainActivity : ComponentActivity() {
                 } },
                 onUtterance = { pcm, done ->
                     val generation = speechGeneration
+                    val proxy = asrConfig()
                     setStatus("正在识别…")
                     speechWorker.execute {
                         val started = SystemClock.elapsedRealtime()
-                        val result = runCatching { WhisperTinyNative.transcribe(pcm) }
-                        Log.d("GalaxySpeech", "Whisper decode ms=${SystemClock.elapsedRealtime() - started} success=${result.isSuccess} chars=${result.getOrNull()?.length ?: 0}")
+                        val result = runCatching {
+                            if (proxy == null) localTranscribe(pcm) else try {
+                                cloudSpeech.transcribe(proxy, pcm)
+                            } catch (cloudError: Exception) {
+                                if (generation != speechGeneration) throw cloudError
+                                runOnUiThread { if (generation == speechGeneration) setStatus("云端不可用 · 正在离线识别…") }
+                                localTranscribe(pcm)
+                            }
+                        }
+                        Log.d("GalaxySpeech", "ASR elapsed ms=${SystemClock.elapsedRealtime() - started} success=${result.isSuccess} chars=${result.getOrNull()?.length ?: 0}")
                         runOnUiThread {
                             done()
                             if (listening && generation == speechGeneration) {
@@ -595,9 +613,15 @@ class MainActivity : ComponentActivity() {
         return target
     }
 
+    private fun localTranscribe(pcm: ShortArray): String {
+        WhisperTinyNative.load(WhisperTinyNative.prepareModel(this))
+        return WhisperTinyNative.transcribe(pcm)
+    }
+
     private fun stopListening() {
         if (!listening && recognizer == null) return
         speechGeneration++
+        cloudSpeech.cancel()
         listening = false
         recognizer?.stop(); recognizer = null
         setStatus("语音输入已停止")
@@ -759,6 +783,7 @@ class MainActivity : ComponentActivity() {
         cancelAutoSend(); stopPhoneSetup()
         camera?.close(); camera = null
         stopSpeaking(); systemTts?.shutdown(); edgeTts?.shutdown()
+        cloudSpeech.cancel()
         englishModel?.close(); worker.shutdownNow()
         speechWorker.execute { WhisperTinyNative.close() }; speechWorker.shutdown()
         super.onDestroy()
