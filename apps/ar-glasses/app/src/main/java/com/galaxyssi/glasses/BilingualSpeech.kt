@@ -8,6 +8,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -81,6 +82,7 @@ internal class BilingualSpeech(
                 val now = System.currentTimeMillis()
                 if (now - lastLevelAt > 500) {
                     lastLevelAt = now
+                    if (isAwake()) Log.d("GalaxySpeech", "amplitude=$amplitude recording=$recording silentBytes=$silentBytes voicedBytes=$voicedBytes")
                     main.post { if (running.get()) onLevel((amplitude / 120).coerceIn(0, 100)) }
                 }
                 if (!isAwake()) {
@@ -113,7 +115,8 @@ internal class BilingualSpeech(
                     val tail = utterance.toByteArray().takeLast(16000).toByteArray()
                     utterance.reset(); utterance.write(tail)
                 }
-                if (recording && (silentBytes >= 24000 || utterance.size() >= 16 * 2 * 20)) {
+                if (recording && (silentBytes >= 24000 || utterance.size() >= 16000 * 2 * 20)) {
+                    Log.d("GalaxySpeech", "utterance bytes=${utterance.size()} voicedBytes=$voicedBytes")
                     if (voicedBytes >= 8192) {
                         val bytes = utterance.toByteArray()
                         val pcm = ShortArray(bytes.size / 2) { index ->
