@@ -877,24 +877,24 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         Log.d("GalaxyTouchpad", "key code=${event.keyCode} action=${event.action}")
+        val handled = event.keyCode in setOf(
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F12,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK
+        )
+        if (!handled) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_UP) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F12 -> {
-                    activateTouchFocus(); return true
-                }
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    moveTouchFocus(true); return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> {
-                    moveTouchFocus(false); return true
-                }
-                KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK -> {
-                    performTouchpadBack(); return true
-                }
+                KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F12 -> activateTouchFocus()
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> moveTouchFocus(true)
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> moveTouchFocus(false)
+                KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK -> performTouchpadBack()
             }
         }
-        return super.dispatchKeyEvent(event)
+        return true
     }
 
     override fun onBackPressed() {
