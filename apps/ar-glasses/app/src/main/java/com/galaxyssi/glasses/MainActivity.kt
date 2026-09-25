@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private val dim = Color.rgb(68, 104, 126)
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+    private val speechWorker = Executors.newSingleThreadExecutor()
     private val client = ChatClient()
     private lateinit var secure: SecureStore
     private lateinit var state: JSONObject
@@ -79,8 +80,8 @@ class MainActivity : ComponentActivity() {
     }
     private var requestGeneration = 0
     private var currentSession = ""
-    private var chineseModel: Model? = null
     private var englishModel: Model? = null
+    private var speechGeneration = 0
     private var recognizer: BilingualSpeech? = null
     private var systemTts: TextToSpeech? = null
     private var systemTtsReady = false
@@ -491,19 +492,17 @@ class MainActivity : ComponentActivity() {
             return
         }
         stopSpeaking()
-        if (chineseModel == null || englishModel == null) {
-            loadingModel = true; setStatus("正在加载中英文离线语音模型…")
+        if (englishModel == null) {
+            loadingModel = true; setStatus("正在加载 Whisper Tiny 和唤醒词模型…")
             worker.execute {
                 val loaded = runCatching {
-                    val cn = Model(unpackModel("vosk-model-small-cn-0.22").absolutePath)
-                    val en = try { Model(unpackModel("vosk-model-small-en-us-0.15").absolutePath) }
-                        catch (error: Exception) { cn.close(); throw error }
-                    cn to en
+                    WhisperTinyNative.load(WhisperTinyNative.prepareModel(this))
+                    Model(unpackModel("vosk-model-small-en-us-0.15").absolutePath)
                 }
                 runOnUiThread {
                     loadingModel = false
-                    loaded.onSuccess { (cn, en) ->
-                        chineseModel = cn; englishModel = en
+                    loaded.onSuccess { en ->
+                        englishModel = en
                         if (resumed) startListening()
                     }
                         .onFailure { setStatus("语音模型加载失败：${it.message}") }
@@ -512,7 +511,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         try {
-            recognizer = BilingualSpeech(this, chineseModel!!, englishModel!!, isAwake = { awake },
+            recognizer = BilingualSpeech(this, englishModel!!, isAwake = { awake },
                 onLevel = { level -> if (listening) {
                     waveBars.forEachIndexed { i, bar -> bar.alpha = (0.3f + ((level + i * 13) % 70) / 100f).coerceAtMost(1f) }
                     if (page == "chat" && status in setOf(
@@ -526,33 +525,33 @@ class MainActivity : ComponentActivity() {
                 onPartial = { partial -> if (listening) {
                     lastHeard = partial
                     if (!awake && wakePhrase.containsMatchIn(partial)) {
-                        awake = true; replyVisible = false; firstHelloAt = 0L; updateConversationView()
-                    }
-                    if (awake) {
-                        val words = stripSpokenWake(wakePhrase.replaceFirst(partial, ""))
-                        if (words.isNotBlank() && !singleHello.matches(words) && words != livePartial) {
-                            livePartial = words
-                            if (isDeviceCommand(words)) cancelAutoSend()
-                            else setStatus("正在识别 · 等待识别完成")
-                            updateConversationView()
-                        }
+                        awake = true; lastHeard = ""; replyVisible = false; firstHelloAt = 0L; updateConversationView()
                     }
                 } },
                 onFinal = { result -> if (listening) {
                     lastHeard = ""
-                    val fallback = livePartial
-                    val before = draft
                     livePartial = ""
                     recognized(result)
-                    if (awake && draft == before && fallback.isNotBlank() &&
-                        (singleHello.matches(result) || wakePhrase.containsMatchIn(result))) {
-                        if (!executeDeviceCommand(fallback)) {
-                            draft = addWords(draft, fallback)
-                            setStatus("已识别 · 1.5 秒后发送")
-                            updateConversationView(); scheduleAutoSend()
+                } },
+                onUtterance = { pcm, done ->
+                    val generation = speechGeneration
+                    setStatus("正在识别…")
+                    speechWorker.execute {
+                        val result = runCatching { WhisperTinyNative.transcribe(pcm) }
+                        runOnUiThread {
+                            done()
+                            if (listening && generation == speechGeneration) {
+                                result.onSuccess { text ->
+                                    val cleaned = text.trim().trim('。', '.', '!', '！', '?', '？', '，', ',')
+                                    if (cleaned.isNotBlank()) {
+                                        lastHeard = ""
+                                        recognized(cleaned)
+                                    } else setStatus("没有识别到语音 · 请再说一次")
+                                }.onFailure { setStatus("Whisper Tiny 识别失败：${it.message}") }
+                            }
                         }
                     }
-                } },
+                },
                 onError = { reason ->
                     stopListening(); setStatus("语音识别失败：$reason")
                     if (resumed) main.postDelayed({ if (resumed) startListening() }, 1200)
@@ -592,6 +591,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopListening() {
         if (!listening && recognizer == null) return
+        speechGeneration++
         listening = false
         recognizer?.stop(); recognizer = null
         setStatus("语音输入已停止")
@@ -605,7 +605,7 @@ class MainActivity : ComponentActivity() {
         val normalized = text.trim().replace(" ", "")
             .trim('。', '.', '!', '！', '?', '？', '，', ',').lowercase(Locale.ROOT)
         return when (normalized) {
-            // The bundled Mandarin model repeatedly transcribes 几点了 as 级别了 on VENUS.
+            // Retain the alias for short commands that may be transcribed phonetically.
             "级别了", "几点啊", "现在几点了", "现在几点啊" -> "几点了"
             else -> normalized
         }
@@ -753,7 +753,8 @@ class MainActivity : ComponentActivity() {
         cancelAutoSend(); stopPhoneSetup()
         camera?.close(); camera = null
         stopSpeaking(); systemTts?.shutdown(); edgeTts?.shutdown()
-        chineseModel?.close(); englishModel?.close(); worker.shutdownNow()
+        englishModel?.close(); worker.shutdownNow()
+        speechWorker.execute { WhisperTinyNative.close() }; speechWorker.shutdown()
         super.onDestroy()
     }
 }
