@@ -607,24 +607,6 @@ class MainActivity : ComponentActivity() {
     private val singleHello = Regex("(?i)^hello[\\s,，。.!?]*$")
     private val spokenChineseWake = Regex("^(哈喽|哈罗|你好|海螺)[\\s,，。]*(哈喽|哈罗|你好|海螺)")
     private fun stripSpokenWake(text: String) = spokenChineseWake.replaceFirst(text.trim(), "").trim()
-    private fun normalizedCommand(text: String): String {
-        val normalized = text.trim().replace(" ", "")
-            .trim('。', '.', '!', '！', '?', '？', '，', ',').lowercase(Locale.ROOT)
-        return when (normalized) {
-            // Retain the alias for short commands that may be transcribed phonetically.
-            "级别了", "几点啊", "现在几点了", "现在几点啊" -> "几点了"
-            else -> normalized
-        }
-    }
-    private fun isDeviceCommand(text: String) = normalizedCommand(text) in setOf(
-        "发送", "提交", "确认发送", "取消", "清空", "朗读", "读出来", "停止朗读", "别读了", "新对话",
-        "设置", "打开设置", "手机配置", "确认配对", "配对确认", "取消配对", "返回", "打开对话", "对话",
-        "会话", "最近对话", "打开相机", "启动相机", "打开拍照", "拍照", "拍一张", "照相", "扫描配网", "扫描配网码", "连接wifi", "确认联网", "取消联网",
-        "开始录像", "启动录像", "录像", "停止录像", "结束录像", "打开相册", "查看照片",
-        "回到桌面", "返回桌面", "打开wifi设置", "打开无线设置", "打开蓝牙设置", "音量加", "调大音量",
-        "音量减", "调小音量", "电量", "查看电量", "几点了", "现在几点", "帮助", "有什么命令",
-        "takephoto", "startrecording", "stoprecording", "scanwifi", "confirmwifi", "cancelwifi", "back", "home"
-    )
     private fun confirmWifi() {
         val wifi = pendingWifi
         if (wifi == null) { setStatus("请先扫描手机配网码"); return }
@@ -642,9 +624,8 @@ class MainActivity : ComponentActivity() {
         navigate("camera")
     }
     private fun executeDeviceCommand(text: String): Boolean {
-        val command = normalizedCommand(text)
-        if (!isDeviceCommand(command)) return false
-        if (command in setOf("发送", "提交", "确认发送")) {
+        val command = VoiceCommandCatalog.resolve(text) ?: return false
+        if (command == VoiceCommand.SEND) {
             if (draft.isBlank() && livePartial.isNotBlank()) draft = livePartial
             livePartial = ""
             sendDraft()
@@ -652,38 +633,46 @@ class MainActivity : ComponentActivity() {
         }
         cancelAutoSend(); draft = ""; livePartial = ""; awake = false
         when (command) {
-            "取消", "清空" -> setStatus("已清空 · 正在听")
-            "朗读", "读出来" -> latestAnswer()?.let(::speak) ?: setStatus("没有可朗读的回复")
-            "停止朗读", "别读了" -> { stopSpeaking(); setStatus("已停止播报") }
-            "新对话" -> { newSession(); render() }
-            "设置", "打开设置", "手机配置" -> navigate("settings")
-            "确认配对", "配对确认" -> {
+            VoiceCommand.CLEAR -> setStatus("已清空 · 正在听")
+            VoiceCommand.SPEAK_REPLY -> latestAnswer()?.let(::speak) ?: setStatus("没有可朗读的回复")
+            VoiceCommand.STOP_SPEAKING -> { stopSpeaking(); setStatus("已停止播报") }
+            VoiceCommand.NEW_CHAT -> { newSession(); render() }
+            VoiceCommand.OPEN_SETTINGS -> navigate("settings")
+            VoiceCommand.STOP_CONFIGURATION -> {
+                pendingWifi = null
+                setupServer?.confirm(false)
+                stopPhoneSetup()
+                navigate("chat")
+                setStatus("已停止配置")
+            }
+            VoiceCommand.CONFIRM_PAIRING -> {
                 if (setupPhase == "confirm") { setupServer?.confirm(true); setupPhase = "transferring"; setStatus("配对已确认") }
                 else setStatus("当前没有待确认的配对")
             }
-            "取消配对" -> { setupServer?.confirm(false); setStatus("已取消配对") }
-            "返回", "打开对话", "对话", "back" -> navigate("chat")
-            "会话", "最近对话" -> navigate("sessions")
-            "打开相机", "启动相机", "打开拍照" -> openCamera()
-            "扫描配网", "扫描配网码", "连接wifi", "scanwifi" -> {
+            VoiceCommand.CANCEL_PAIRING -> { setupServer?.confirm(false); setStatus("已取消配对") }
+            VoiceCommand.OPEN_CHAT -> navigate("chat")
+            VoiceCommand.OPEN_SESSIONS -> navigate("sessions")
+            VoiceCommand.OPEN_CAMERA -> openCamera()
+            VoiceCommand.SCAN_WIFI -> {
                 if (page != "camera") openCamera("scan") else camera?.scanWifi()
             }
-            "确认联网", "confirmwifi" -> confirmWifi()
-            "取消联网", "cancelwifi" -> { pendingWifi = null; wifiScanButton?.text = "扫描配网码"; setStatus("已取消联网") }
-            "拍照", "拍一张", "照相", "takephoto" -> { if (page != "camera") openCamera("photo") else camera?.takePhoto() }
-            "开始录像", "启动录像", "录像", "startrecording" -> { if (page != "camera") openCamera("video") else camera?.startVideo() }
-            "停止录像", "结束录像", "stoprecording" -> camera?.stopVideo() ?: setStatus("当前没有录像")
-            "打开相册", "查看照片" -> runCatching {
+            VoiceCommand.CONFIRM_WIFI -> confirmWifi()
+            VoiceCommand.CANCEL_WIFI -> { pendingWifi = null; wifiScanButton?.text = "扫描配网码"; setStatus("已取消联网") }
+            VoiceCommand.TAKE_PHOTO -> { if (page != "camera") openCamera("photo") else camera?.takePhoto() }
+            VoiceCommand.START_RECORDING -> { if (page != "camera") openCamera("video") else camera?.startVideo() }
+            VoiceCommand.STOP_RECORDING -> camera?.stopVideo() ?: setStatus("当前没有录像")
+            VoiceCommand.OPEN_GALLERY -> runCatching {
                 startActivity(Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply { type = "image/*" })
             }.onFailure { setStatus("无法打开相册") }
-            "回到桌面", "返回桌面", "home" -> startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
-            "打开wifi设置", "打开无线设置" -> startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-            "打开蓝牙设置" -> startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-            "音量加", "调大音量" -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); setStatus("音量已调大") }
-            "音量减", "调小音量" -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0); setStatus("音量已调小") }
-            "电量", "查看电量" -> setStatus("电量 ${getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%")
-            "几点了", "现在几点" -> setStatus(java.text.SimpleDateFormat("HH:mm", Locale.CHINA).format(java.util.Date()))
-            "帮助", "有什么命令" -> setStatus("可说：拍照、开始录像、停止录像、返回、音量、电量、设置")
+            VoiceCommand.HOME -> startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
+            VoiceCommand.OPEN_WIFI_SETTINGS -> startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+            VoiceCommand.OPEN_BLUETOOTH_SETTINGS -> startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            VoiceCommand.VOLUME_UP -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); setStatus("音量已调大") }
+            VoiceCommand.VOLUME_DOWN -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0); setStatus("音量已调小") }
+            VoiceCommand.BATTERY -> setStatus("电量 ${getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%")
+            VoiceCommand.TIME -> setStatus(java.text.SimpleDateFormat("HH:mm", Locale.CHINA).format(java.util.Date()))
+            VoiceCommand.HELP -> setStatus("可说：拍照、录像、停止录像、扫描配网、停止配置、返回、音量、电量、时间")
+            VoiceCommand.SEND -> Unit
         }
         updateConversationView()
         return true
