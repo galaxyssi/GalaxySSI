@@ -308,6 +308,10 @@ class MainActivity : ComponentActivity() {
         root.addView(center, LinearLayout.LayoutParams(-1, 0, 1f))
         center.addView(label("手机 GalaxySSI → 我的 Agent → 设备 → 配置 AR 眼镜", 21f, green).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(60)))
+        state.optJSONObject("profile")?.let { saved ->
+            center.addView(label("当前 Agent：${saved.optString("agent_name").ifBlank { "云端模型" }} · ${saved.optString("model")}", 15f, dim)
+                .apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, dp(38)))
+        }
         val instructions = when (setupPhase) {
             "wifi_required" -> "请先让眼镜与手机连接同一个 Wi-Fi"
             "waiting" -> "等待手机连接 · $setupHost:$setupPort"
@@ -400,7 +404,8 @@ class MainActivity : ComponentActivity() {
                             val candidate = Profile(raw.getString("endpoint"), raw.getString("model"),
                                 raw.getString("api_key"), raw.optString("api_style", "openai")).validated()
                             state.put("profile", JSONObject().put("endpoint", candidate.endpoint).put("model", candidate.model)
-                                .put("key", candidate.key).put("style", candidate.style))
+                                .put("key", candidate.key).put("style", candidate.style)
+                                .put("agent_name", payload.optString("agent_name").filterNot { Character.isISOControl(it) }.trim().take(80)))
                             persist()
                             outcome = JSONObject().put("status", "saved").put("kind", "cloud")
                         } catch (_: Exception) { outcome = JSONObject().put("status", "invalid") }
