@@ -14,12 +14,25 @@ struct GalaxySSIControlCenterView: View {
   private let learningProposalStore = UserDefaultsAgentLearningProposalStore()
   private let globalAgentDeliberationStore = GlobalAgentDeliberationStore()
   private let globalAgentLongHorizonStore = GlobalLongHorizonGoalStore()
+  var onBackToAgent: (() -> Void)? = nil
+
   var body: some View {
     VStack(spacing: 0) {
       GalaxySSITopBar(
         title: t("settings_control_center_title", "My Agent"),
         leading: {
-          GalaxySSIBackButton()
+          if let onBackToAgent {
+            Button(action: onBackToAgent) {
+              Image(systemName: "chevron.left")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.galaxySSITextPrimary)
+                .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("galaxyssi.common.back", "Back")))
+          } else {
+            GalaxySSIBackButton()
+          }
         },
         trailing: {
           Color.clear
@@ -28,12 +41,8 @@ struct GalaxySSIControlCenterView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           overviewCard
-          connectedDevicesSection
-          modelsRuntimeSection
-          voiceInteractionSection
-          memoryKnowledgeSection
-          skillsTasksSection
-          securityDataSection
+          commonSection
+          settingsSection
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -51,91 +60,130 @@ struct GalaxySSIControlCenterView: View {
   }
 
   private var overviewCard: some View {
-    VStack(alignment: .leading, spacing: 16) {
+    HStack(alignment: .center, spacing: 14) {
       NavigationLink(destination: GalaxySSIProfileIdentityView()) {
         HStack(alignment: .center, spacing: 14) {
-          GalaxySSILogoView(size: 72, cornerRadius: 12)
+          GalaxySSILogoView(size: 64, cornerRadius: 11)
           VStack(alignment: .leading, spacing: 5) {
-            Text(t("settings_my_galaxyssi", "My GalaxySSI"))
-              .font(.system(size: 22, weight: .bold))
+            Text("GalaxySSI")
+              .font(.system(size: 21, weight: .bold))
               .foregroundColor(.galaxySSITextPrimary)
               .lineLimit(1)
               .minimumScaleFactor(0.72)
-            Text(t("cc_product_subtitle", "Agent operating system - This device online"))
+            Text(t("my_agent_personal_subtitle", "Super agent"))
               .font(.system(size: 14))
               .foregroundColor(.galaxySSITextSecondary)
-              .lineLimit(2)
-              .fixedSize(horizontal: false, vertical: true)
+              .lineLimit(1)
           }
-          Spacer(minLength: 4)
-          Image(systemName: "chevron.right")
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.galaxySSITextSecondary)
         }
       }
       .buttonStyle(.plain)
-      HStack(spacing: 10) {
-        NavigationLink(destination: GalaxySSIProfileIdentityView()) {
-          HStack(spacing: 6) {
-            Text(store.profile.name.ifBlank(t("cc_nickname_title", "Nickname")))
-              .font(.system(size: 15, weight: .semibold))
-              .lineLimit(1)
-            Image(systemName: "chevron.right")
-              .font(.system(size: 12, weight: .semibold))
-          }
-          .foregroundColor(.galaxySSITextPrimary)
-        }
-        .buttonStyle(.plain)
-        Spacer(minLength: 8)
-        Button {
-          showingQRCode = true
-        } label: {
-          Image(systemName: "qrcode")
-            .font(.system(size: 19, weight: .semibold))
-            .foregroundColor(.galaxySSIAccent)
-            .frame(width: 38, height: 38)
-            .background(Color.galaxySSIAccent.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(t("galaxyssi.discover.my_qr_title", "My QR Code")))
+      Spacer(minLength: 12)
+      Button {
+        showingQRCode = true
+      } label: {
+        Image(systemName: "qrcode")
+          .font(.system(size: 20, weight: .semibold))
+          .foregroundColor(.galaxySSIAccent)
+          .frame(width: 44, height: 44)
+          .background(Color.galaxySSIAccent.opacity(0.1))
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
-      HStack(spacing: 8) {
-        overviewBadge(agentCoreBadge, tint: agentCoreTint)
-        overviewBadge(
-          String(format: t("cc_trusted_devices_badge", "%d trusted devices"), trustedDeviceCount),
-          tint: .blue
-        )
-        overviewBadge(privacyBadge, tint: privacyTint)
-      }
-      Divider()
-        .overlay(Color.galaxySSISeparator)
-      HStack(spacing: 0) {
-        overviewMetric(
-          value: "\(intelligenceResourceCount)",
-          title: t("cc_metric_resources", "Intelligence resources")
-        )
-        Divider()
-          .frame(height: 48)
-          .overlay(Color.galaxySSISeparator)
-        overviewMetric(
-          value: "\(recentTaskCount)",
-          title: t("cc_metric_today_tasks", "Recent tasks")
-        )
-        Divider()
-          .frame(height: 48)
-          .overlay(Color.galaxySSISeparator)
-        overviewMetric(
-          value: securityBadge,
-          title: t("cc_metric_security", "Security")
-        )
-      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("galaxyssi.discover.my_qr_title", "My QR Code")))
     }
-    .padding(20)
+    .padding(16)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color.galaxySSISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityIdentifier("ios.control-center.overview")
+  }
+
+  private var commonSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      controlCenterSectionTitle(t("my_agent_common", "Common"))
+      controlCenterGroup {
+        homeRow(
+          title: t("my_agent_models", "Models & Agents"),
+          systemImage: "cpu",
+          tint: .blue,
+          destination: GalaxySSIAndroidModelHubView()
+        )
+        homeRow(
+          title: t("my_agent_devices", "Connected devices"),
+          systemImage: "desktopcomputer",
+          tint: .galaxySSIAccent,
+          destination: DeviceManagementView()
+        )
+        homeRow(
+          title: t("my_agent_voice", "Voice interaction"),
+          systemImage: "mic",
+          tint: .blue,
+          destination: GalaxySSIVoiceControlCenterView()
+        )
+        homeRow(
+          title: t("my_agent_memory", "Memory & knowledge"),
+          systemImage: "brain.head.profile",
+          tint: .galaxySSIAccent,
+          destination: GalaxySSIMemoryControlCenterView()
+        )
+        homeRow(
+          title: t("my_agent_proactive", "Proactive assistant"),
+          systemImage: "sparkles",
+          tint: .purple,
+          destination: GalaxySSIGlobalAgentControlView()
+        )
+        homeRow(
+          title: t("my_agent_skills", "Skills & tools"),
+          systemImage: "shippingbox",
+          tint: .purple,
+          destination: GalaxySSICapabilityLibraryView()
+        )
+      }
+    }
+  }
+
+  private var settingsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      controlCenterSectionTitle(t("my_agent_settings", "Settings"))
+      controlCenterGroup {
+        homeRow(
+          title: t("my_agent_safety", "Security & data"),
+          systemImage: "checkmark.shield",
+          tint: .galaxySSIAccent,
+          destination: GalaxySSISecurityCenterView()
+        )
+        homeRow(
+          title: t("my_agent_general", "General"),
+          systemImage: "gearshape",
+          tint: .gray,
+          destination: GalaxySSIGeneralControlCenterView()
+        )
+        homeRow(
+          title: t("my_agent_advanced", "Advanced"),
+          systemImage: "slider.horizontal.3",
+          tint: .orange,
+          destination: GalaxySSIAndroidAdvancedHubView()
+        )
+      }
+    }
+  }
+
+  private func homeRow<Destination: View>(
+    title: String,
+    systemImage: String,
+    tint: Color,
+    destination: Destination
+  ) -> some View {
+    GalaxySSIControlCenterNavigationRow(
+      title: title,
+      subtitle: "",
+      systemImage: systemImage,
+      tint: tint,
+      badge: ""
+    ) {
+      destination
+    }
   }
 
   private var connectedDevicesSection: some View {
@@ -672,6 +720,188 @@ struct GalaxySSIControlCenterView: View {
   }
 }
 
+private struct GalaxySSIAndroidModelHubView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    GalaxySSIAndroidHubPage(title: t("my_agent_models", "Models & Agents")) {
+      section(t("my_agent_add", "Add")) {
+        GalaxySSIAndroidGroupedMenuLink(
+          title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
+          subtitle: "",
+          systemImage: "cloud.badge.plus",
+          tint: .purple
+        ) {
+          CloudModelProviderSelectionView()
+        }
+        GalaxySSIAndroidMenuDivider()
+        GalaxySSIAndroidGroupedMenuLink(
+          title: t("conversation_hub_scan_add", "Scan to add"),
+          subtitle: "",
+          systemImage: "qrcode.viewfinder",
+          tint: .galaxySSIAccent
+        ) {
+          AddContactView(autoOpenScanner: true)
+        }
+      }
+      section(t("my_agent_installed", "Added")) {
+        GalaxySSIAndroidGroupedMenuLink(
+          title: t("cc_nodes_title", "Agents, Models & Nodes"),
+          subtitle: "",
+          systemImage: "point.3.connected.trianglepath.dotted",
+          tint: .galaxySSIAccent
+        ) {
+          GalaxySSIAgentsModelsNodesView()
+        }
+        GalaxySSIAndroidMenuDivider()
+        GalaxySSIAndroidGroupedMenuLink(
+          title: t("my_agent_downloaded_models", "Local models"),
+          subtitle: "",
+          systemImage: "memorychip",
+          tint: .blue
+        ) {
+          GalaxySSILocalModelLabView()
+        }
+      }
+    }
+  }
+
+  private func section<Content: View>(
+    _ title: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecuritySectionTitle(title: title)
+      GalaxySSIAndroidMenuGroup(content: content)
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct GalaxySSIAndroidAdvancedHubView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    GalaxySSIAndroidHubPage(title: t("my_agent_advanced", "Advanced")) {
+      section(t("my_agent_execution", "Execution")) {
+        link(
+          t("my_agent_execution", "Execution policy"),
+          "shield.lefthalf.filled",
+          .galaxySSIAccent,
+          AgentSafetySettingsView()
+        )
+        GalaxySSIAndroidMenuDivider()
+        link(
+          t("cc_planning_title", "Planning & collaboration"),
+          "point.3.connected.trianglepath.dotted",
+          .blue,
+          AgentModelPlannerSettingsView()
+        )
+        GalaxySSIAndroidMenuDivider()
+        link(
+          t("cc_task_budget_title", "Task budget"),
+          "gauge.with.dots.needle.33percent",
+          .orange,
+          AgentTaskBudgetSettingsView()
+        )
+      }
+      section(t("my_agent_environment", "Local runtime")) {
+        link(
+          t("my_agent_environment", "Local runtime"),
+          "terminal",
+          .orange,
+          GalaxySSIOnDeviceRuntimeView()
+        )
+        GalaxySSIAndroidMenuDivider()
+        link(
+          t("my_agent_evolution", "Self improvement"),
+          "arrow.triangle.2.circlepath",
+          .purple,
+          GalaxySSISelfEvolutionControlView()
+        )
+      }
+      section(t("my_agent_maintenance", "Checks & maintenance")) {
+        link(
+          t("my_agent_diagnostics", "Diagnostics & evaluation"),
+          "waveform.path.ecg",
+          .blue,
+          GalaxySSIAdvancedOptionsView()
+        )
+        GalaxySSIAndroidMenuDivider()
+        link(
+          t("my_agent_cognition_advanced", "Advanced cognition settings"),
+          "brain.head.profile",
+          .purple,
+          GalaxySSIGlobalAgentControlView()
+        )
+      }
+    }
+  }
+
+  private func section<Content: View>(
+    _ title: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecuritySectionTitle(title: title)
+      GalaxySSIAndroidMenuGroup(content: content)
+    }
+  }
+
+  private func link<Destination: View>(
+    _ title: String,
+    _ systemImage: String,
+    _ tint: Color,
+    _ destination: Destination
+  ) -> some View {
+    GalaxySSIAndroidGroupedMenuLink(
+      title: title,
+      subtitle: "",
+      systemImage: systemImage,
+      tint: tint
+    ) {
+      destination
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct GalaxySSIAndroidHubPage<Content: View>: View {
+  var title: String
+  let content: Content
+
+  init(title: String, @ViewBuilder content: () -> Content) {
+    self.title = title
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      GalaxySSITopBar(
+        title: title,
+        leading: { GalaxySSIBackButton() },
+        trailing: { Color.clear }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          content
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+  }
+}
+
 struct GalaxySSIControlCenterGeneralView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
@@ -815,11 +1045,13 @@ private struct GalaxySSIControlCenterNavigationRow<Destination: View>: View {
             .foregroundColor(.galaxySSITextPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.82)
-          Text(subtitle)
-            .font(.system(size: 13))
-            .foregroundColor(.galaxySSITextSecondary)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
+          if !subtitle.isEmpty {
+            Text(subtitle)
+              .font(.system(size: 13))
+              .foregroundColor(.galaxySSITextSecondary)
+              .lineLimit(2)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         }
         Spacer(minLength: 8)
         if !badge.isEmpty {

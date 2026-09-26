@@ -92,10 +92,12 @@ struct GalaxySSIAndroidGroupedMenuRowContent: View {
           .foregroundColor(.galaxySSITextPrimary)
           .lineLimit(1)
           .minimumScaleFactor(0.82)
-        Text(subtitle)
-          .font(.system(size: 12))
-          .foregroundColor(.galaxySSITextSecondary)
-          .lineLimit(2)
+        if !subtitle.isEmpty {
+          Text(subtitle)
+            .font(.system(size: 12))
+            .foregroundColor(.galaxySSITextSecondary)
+            .lineLimit(2)
+        }
       }
       Spacer(minLength: 8)
       Image(systemName: "chevron.right")

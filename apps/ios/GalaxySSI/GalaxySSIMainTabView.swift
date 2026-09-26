@@ -57,12 +57,12 @@ struct GalaxySSIMainTabView: View {
         }
       )
     case .settings:
-      SettingsView(
-        showsBackButton: false,
-        onBackToAgent: {
+      NavigationView {
+        GalaxySSIControlCenterView(onBackToAgent: {
           selectedTab = .agent
-        }
-      )
+        })
+      }
+      .navigationViewStyle(.stack)
     }
   }
 

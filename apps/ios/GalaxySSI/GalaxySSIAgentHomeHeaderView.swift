@@ -20,8 +20,8 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       let compact = proxy.size.width < 360 || usesAccessibilityDynamicType
       let stacked = proxy.size.width < 350 || usesAccessibilityDynamicType
       let modelColumnWidth = min(
-        128,
-        max(88, proxy.size.width * (compact ? 0.30 : 0.36))
+        176,
+        max(104, proxy.size.width * (compact ? 0.30 : 0.34))
       )
 
       if stacked {
@@ -66,11 +66,11 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       Button(action: onNewConversation) {
         VStack(alignment: .center, spacing: 2) {
           Text("GalaxySSI")
-            .font(.system(size: compact ? 13.5 : 14.5, weight: .bold))
+            .font(.system(size: compact ? 15 : 18, weight: .bold))
             .foregroundColor(.galaxySSITextPrimary)
             .lineLimit(1)
           Text(brandSubtitle)
-            .font(.system(size: compact ? 9 : 10, weight: .regular))
+            .font(.system(size: compact ? 10 : 12, weight: .regular))
             .foregroundColor(.galaxySSITextSecondary)
             .lineLimit(1)
             .minimumScaleFactor(0.58)
@@ -94,7 +94,7 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
           Image(systemName: "chevron.right")
             .font(.system(size: 9, weight: .bold))
         }
-        .font(.system(size: 14, weight: .bold))
+        .font(.system(size: compactHeaderTypography ? 14 : 17, weight: .bold))
         .foregroundColor(.galaxySSIAgentSessionTitle)
         .multilineTextAlignment(.trailing)
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -112,7 +112,7 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
             .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.72)
             .multilineTextAlignment(.trailing)
         }
-        .font(.system(size: 10, weight: .regular))
+        .font(.system(size: compactHeaderTypography ? 10 : 12, weight: .regular))
         .foregroundColor(.galaxySSITextSecondary)
         .frame(maxWidth: .infinity, alignment: .trailing)
       }
@@ -144,7 +144,7 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     if usesAccessibilityDynamicType {
       return 124
     }
-    return 76
+    return 88
   }
 
   private var usesAccessibilityDynamicType: Bool {
@@ -176,6 +176,10 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     default:
       scale = 1.45
     }
-    return min(56, max(32, 39 * scale))
+    return min(64, max(40, 48 * scale))
+  }
+
+  private var compactHeaderTypography: Bool {
+    dynamicTypeSize >= .xxLarge
   }
 }
