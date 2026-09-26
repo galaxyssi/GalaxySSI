@@ -119,6 +119,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.setBackgroundDrawableResource(android.R.color.black)
+        window.decorView.setBackgroundColor(Color.BLACK)
         secure = SecureStore(this)
         try { state = secure.read() } catch (error: Exception) {
             setContentView(label(error.message ?: "无法打开加密数据", 18f))
@@ -206,8 +209,7 @@ class MainActivity : ComponentActivity() {
         statusLabel = null; settingsFeedback = null; wifiScanButton = null
         mainText = null; subText = null; replyText = null; replyScroll = null; waveBars.clear()
         val root = column().apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(236, 249, 255), Color.rgb(193, 226, 244), Color.rgb(147, 204, 234)))
+            setBackgroundColor(Color.BLACK)
             setPadding(dp(24), dp(8), dp(24), dp(10))
         }
         when (page) {
