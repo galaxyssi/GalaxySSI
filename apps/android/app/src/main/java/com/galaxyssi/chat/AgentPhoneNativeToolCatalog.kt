@@ -128,6 +128,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentVisibleCaptureNativeTools.toolIds)
             addAll(AgentNotificationNativeTools.toolIds)
             addAll(AgentAndroidSystemNativeTools.toolIds)
+            add(DoorAccessNativeTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
             addAll(AgentMobileProjectArchiveTools.toolIds)
@@ -179,6 +180,8 @@ object AgentPhoneNativeToolCatalog {
             AgentHomeAssistantNativeTools.androidDefinitions(context.applicationContext, clock)
         ).registerAll(
             AgentAndroidSystemNativeTools.definitions(context.applicationContext)
+        ).registerAll(
+            DoorAccessNativeTool.definitions(context.applicationContext)
         ).registerAll(
             AgentSystemEvidenceNativeTools.definitions(context.applicationContext)
         ).registerAll(

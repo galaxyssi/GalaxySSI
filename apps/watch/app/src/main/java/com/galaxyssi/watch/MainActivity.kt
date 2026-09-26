@@ -19,10 +19,12 @@ import android.view.*
 import android.widget.*
 import android.window.OnBackInvokedDispatcher
 import androidx.wear.widget.SwipeDismissFrameLayout
+import com.galaxyssi.chat.DoorAccessConfigurationStore
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.UUID
 
 class MainActivity : Activity() {
     private val repo get() = (application as WatchApplication).repository
@@ -514,6 +516,15 @@ class MainActivity : Activity() {
     }
     private fun sendFromHome(prompt: String = draft) {
         if (busy || prompt.isBlank()) return
+        if (DoorAccessConfigurationStore(this).load()?.parse(prompt) != null) {
+            draft = ""
+            repo.saveDraft("")
+            conversationView?.setDraft("")
+            startActivity(Intent(this, com.galaxyssi.chat.DoorAccessActivity::class.java)
+                .putExtra(com.galaxyssi.chat.DoorAccessActivity.EXTRA_REQUEST, prompt)
+                .putExtra(com.galaxyssi.chat.DoorAccessActivity.EXTRA_COMMAND_ID, UUID.randomUUID().toString()))
+            return
+        }
         val locationRequest = WatchLocationIntent.matches(prompt)
         if (locationRequest && !WatchLocation.permitted(this)) {
             draft = prompt; repo.saveDraft(prompt); conversationView?.setDraft(prompt)
@@ -817,6 +828,9 @@ class MainActivity : Activity() {
         settingsRow(R.string.settings_voice, R.string.settings_voice_summary) { navigate("settings-voice") }
         settingsRow(R.string.settings_wake, R.string.settings_wake_summary) { navigate("settings-wake") }
         settingsRow(R.string.settings_web, R.string.settings_web_summary) { navigate("settings-web") }
+        settingsRow(R.string.settings_door_skill, R.string.settings_door_skill_summary) {
+            startActivity(Intent(this, com.galaxyssi.chat.DoorAccessActivity::class.java))
+        }
         settingsRow(R.string.settings_feedback, R.string.settings_feedback_summary) { navigate("settings-feedback") }
     }
     private fun settingsConnection() {

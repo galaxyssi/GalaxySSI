@@ -93,6 +93,7 @@ class AgentPhoneNativeToolCatalogTest {
             addAll(AgentVisibleCaptureNativeTools.toolIds)
             addAll(AgentNotificationNativeTools.toolIds)
             addAll(AgentAndroidSystemNativeTools.toolIds)
+            add(DoorAccessNativeTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
             addAll(AgentMobileProjectArchiveTools.toolIds)

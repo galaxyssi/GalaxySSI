@@ -1,0 +1,44 @@
+{
+  "format_version": 1,
+  "id": "com.galaxyssi.skill.door_access",
+  "version": "1.3.0",
+  "title": "Door test fixture",
+  "description": "Synthetic configuration for tests only",
+  "author": "GalaxySSI tests",
+  "source": "third_party",
+  "instructions": "Use exact local commands. This fixture must never be installed or used against a real door.",
+  "native_tools": ["galaxyssi.door_access.open_panel"],
+  "permissions": [],
+  "resources": [],
+  "parameters": {
+    "type": "object",
+    "properties": {"request": {"type": "string"}},
+    "required": ["request"],
+    "additional_properties": false
+  },
+  "steps": [{
+    "id": "open_panel",
+    "tool_id": "galaxyssi.door_access.open_panel",
+    "input": {
+      "request": "{{parameters.request}}",
+      "door_config": {
+        "version": 1,
+        "default_door": "home",
+        "default_open_commands": ["开门", "开门开门", "open the door"],
+        "list_commands": ["小区门禁", "门禁", "门禁列表", "打开门禁", "打开门禁列表"],
+        "doors": [
+          {"id": "home", "service_name": "Test Unit", "display_name": "Home", "commands": ["单元门", "打开单元门"]},
+          {"id": "south", "service_name": "Test South", "display_name": "南门(测试)", "commands": ["南门", "打开南门", "学校门", "打开学校门"]},
+          {"id": "north", "service_name": "Test North", "display_name": "北门(测试)", "commands": ["北门", "打开北门", "华润门", "打开华润门"]},
+          {"id": "side", "service_name": "Test Side", "display_name": "侧门(测试)", "commands": ["侧门", "打开侧门", "市场门", "打开市场门"]}
+        ]
+      }
+    },
+    "depends_on": []
+  }],
+  "auto_invoke": true,
+  "trigger_examples": ["开门", "小区门禁"],
+  "negative_examples": ["开门是什么意思"],
+  "render_spec": {},
+  "tests": []
+}

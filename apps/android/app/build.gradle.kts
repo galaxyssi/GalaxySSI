@@ -153,8 +153,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1040
-        versionName = "1.2.35"
+        versionCode = 1041
+        versionName = "1.2.36"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -282,6 +282,9 @@ tasks.withType<Test>().configureEach {
         showStackTraces = true
     }
 }
+
+// Door Skill fixtures are available only to instrumentation tests, never in the application APK.
+android.sourceSets.getByName("androidTest").assets.srcDir("src/testFixtures/door")
 
 dependencies {
     implementation(project(":llama-runtime"))

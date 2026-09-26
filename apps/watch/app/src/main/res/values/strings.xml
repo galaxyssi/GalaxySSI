@@ -1,4 +1,6 @@
 <resources>
+    <string name="settings_door_skill">Door access Skill</string>
+    <string name="settings_door_skill_summary">Install and use on this watch</string>
     <string name="location_permission">Allow location permission and try again. Approximate location is supported.</string>
     <string name="location_disabled">Location is off. Enable it in the watch system settings.</string>
     <string name="location_locating">Getting your current location…</string>
