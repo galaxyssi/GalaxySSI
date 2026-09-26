@@ -200,7 +200,7 @@ internal object GalaxySSIMqttMessagePublisher {
         )
     }
 
-    fun publishPhoneContactBundle(targetCard: JSONObject): Boolean {
+    fun publishPhoneContactBundle(targetCard: JSONObject, sessionRecovery: Boolean = false): Boolean {
         val context = GalaxySSIMqttClient.applicationContext() ?: return false
         if (!PhoneContactCard.isIdentityValid(targetCard)) return false
         val targetId = targetCard.optString("galaxyssi_id")
@@ -210,7 +210,7 @@ internal object GalaxySSIMqttMessagePublisher {
             PhoneContactCard.BUNDLE_RESPONSE_TYPE,
             targetId,
             localCard
-        )
+        ).put("session_recovery", sessionRecovery)
         return GalaxySSIMqttClient.publishOpaqueRelationshipOrConnect(
             context,
             routes.up,
