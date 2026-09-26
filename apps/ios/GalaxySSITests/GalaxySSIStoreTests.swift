@@ -614,10 +614,7 @@ final class GalaxySSIStoreTests: XCTestCase {
 
     XCTAssertTrue(store.deleteMessage(first.id, contactId: "hermes"))
 
-    XCTAssertEqual(store.messages(for: "hermes").map(\.content), [
-      "Pair GalaxySSI Desktop to start a trusted Link conversation.",
-      "second"
-    ])
+    XCTAssertEqual(store.messages(for: "hermes").map(\.content), ["second"])
     XCTAssertFalse(store.deleteMessage(first.id, contactId: "hermes"))
     XCTAssertEqual(store.messages(for: "hermes").last?.id, second.id)
   }

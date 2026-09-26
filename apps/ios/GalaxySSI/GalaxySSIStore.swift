@@ -3063,16 +3063,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   private static func defaultMessages() -> [String: [ChatMessage]] {
-    [
-      "hermes": [
-        ChatMessage(
-          contactId: "hermes",
-          content: "Pair GalaxySSI Desktop to start a trusted Link conversation.",
-          isMine: false,
-          isSystem: true
-        )
-      ]
-    ]
+    [:]
   }
 
   private static func slug(_ value: String) -> String {
