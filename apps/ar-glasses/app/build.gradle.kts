@@ -66,8 +66,8 @@ android {
         applicationId = "com.galaxyssi.glasses"
         minSdk = 30
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.3.9"
+        versionCode = 15
+        versionName = "0.3.10"
         ndk { abiFilters += "armeabi-v7a" }
         testInstrumentationRunner = "com.galaxyssi.glasses.WhisperSmokeInstrumentation"
     }
