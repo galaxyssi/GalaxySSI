@@ -21,8 +21,14 @@ import java.util.concurrent.TimeUnit
 class WatchPhoneSetupActivity : Activity() {
     companion object {
         const val EXTRA_CONFIGURE_MODELS = "configure_models"
+        const val EXTRA_IMPORT_SKILL = "import_skill"
     }
     private val configuringModels get() = intent.getBooleanExtra(EXTRA_CONFIGURE_MODELS, false)
+    private val importingSkill get() = intent.getBooleanExtra(EXTRA_IMPORT_SKILL, false)
+    private val compactSetup get() = configuringModels || importingSkill
+    private val skillInbox = com.galaxyssi.chat.WatchSkillTransferInbox()
+    @Volatile private var skillDecision: CompletableFuture<Boolean>? = null
+    private var skillDialog: android.app.AlertDialog? = null
     private val repo get() = (application as WatchApplication).repository
     private var server: WatchPhoneSetupServer? = null
     private var state = WatchPhoneSetupServer.State("starting")
@@ -49,6 +55,8 @@ class WatchPhoneSetupActivity : Activity() {
         if (state.phase != "saved") startReceiver()
     }
     override fun onPause() {
+        skillDecision?.complete(false)
+        skillDialog?.dismiss(); skillDialog = null; skillInbox.clear()
         resumed = false; generation++; server?.close(); server = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         repo.unlisten(desktopUpdate); repo.foreground(false)
@@ -58,6 +66,7 @@ class WatchPhoneSetupActivity : Activity() {
         // Discovery is foreground-only: keep this bounded setup window visible until it ends.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         generation++; val owner = generation
+        skillDecision?.complete(false); skillInbox.clear()
         server?.close(); state = WatchPhoneSetupServer.State("starting")
         screen = "intro"; render()
         server = WatchPhoneSetupServer(this, { value ->
@@ -69,7 +78,7 @@ class WatchPhoneSetupActivity : Activity() {
                 else if (screen == "confirm") screen = "intro"
                 if (value.phase == "saved") openHome() else render()
             }
-        }, ::applyConfiguration).also { it.start() }
+        }, { payload -> require(owner == generation && resumed); applyConfiguration(payload) }).also { it.start() }
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("requestedDeviceName", requestedDeviceName)
@@ -81,7 +90,11 @@ class WatchPhoneSetupActivity : Activity() {
     }
     private fun applyConfiguration(payload: JSONObject): JSONObject {
         require(resumed)
+        require(!importingSkill || payload.getString("kind").startsWith("skill_"))
         return when (payload.getString("kind")) {
+            "skill_begin" -> skillInbox.begin(payload)
+            "skill_chunk" -> skillInbox.append(payload)
+            "skill_finish" -> receiveSkill()
             "cloud" -> {
                 val profile = ApiProfile.fromJson(payload.getJSONObject("profile"))
                 val previous = repo.store.apiProfile; val preferred = repo.store.apiPreferred
@@ -121,8 +134,33 @@ class WatchPhoneSetupActivity : Activity() {
     }
     private fun openHome() {
         server?.close()
-        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra("open_skills", importingSkill))
         finish()
+    }
+    private fun receiveSkill(): JSONObject {
+        val skill = runCatching { skillInbox.finish() }.getOrElse {
+            return JSONObject().put("status", "invalid").put("kind", "skill")
+        }
+        val owner = generation
+        val decision = CompletableFuture<Boolean>(); skillDecision = decision
+        runOnUiThread {
+            if (!resumed || owner != generation || isFinishing) decision.complete(false)
+            else skillDialog = android.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.skill_import_title, skill.version))
+                .setMessage(R.string.door_access_import_notice)
+                .setNegativeButton(R.string.cancel) { _, _ -> decision.complete(false) }
+                .setPositiveButton(R.string.skills_install) { _, _ -> decision.complete(true) }
+                .setOnCancelListener { decision.complete(false) }.show()
+        }
+        val approved = runCatching { decision.get(60, TimeUnit.SECONDS) }.getOrDefault(false)
+        if (skillDecision === decision) skillDecision = null
+        runOnUiThread { if (owner == generation) { skillDialog?.dismiss(); skillDialog = null } }
+        if (!approved || !resumed || owner != generation) return JSONObject().put("status", "cancelled").put("kind", "skill")
+        return runCatching {
+            WatchSkillManager(this).install(skill)
+            JSONObject().put("status", "saved").put("kind", "skill")
+        }.getOrElse { JSONObject().put("status", "save_failed").put("kind", "skill") }
     }
     private fun render() {
         val box = LinearLayout(this).apply {
@@ -132,7 +170,7 @@ class WatchPhoneSetupActivity : Activity() {
         fun label(value: String, size: Float = 12f, color: Int = Color.WHITE, bold: Boolean = false) = TextView(this).apply {
             text = value; textSize = size; gravity = Gravity.CENTER; setTextColor(color); includeFontPadding = false
             if (bold) setTypeface(typeface, Typeface.BOLD)
-            box.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(if (configuringModels) 3 else 4) })
+            box.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(if (compactSetup) 3 else 4) })
         }
         fun button(value: String, action: () -> Unit) {
             box.addView(Button(this).apply {
@@ -143,7 +181,7 @@ class WatchPhoneSetupActivity : Activity() {
             }, LinearLayout.LayoutParams(dp(150), -2).apply { topMargin = dp(2); bottomMargin = dp(3) })
         }
         val secondary = Color.rgb(168, 176, 184)
-        if (configuringModels) {
+        if (compactSetup) {
             val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(TextView(this).apply {
                 text = "‹"; textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
@@ -151,7 +189,7 @@ class WatchPhoneSetupActivity : Activity() {
                 setOnClickListener { finish() }
             }, LinearLayout.LayoutParams(dp(30), dp(32)))
             header.addView(TextView(this).apply {
-                text = getString(R.string.configure_models); textSize = 15f; setTextColor(Color.WHITE)
+                text = getString(if (importingSkill) R.string.skills_import else R.string.configure_models); textSize = 15f; setTextColor(Color.WHITE)
                 setTypeface(typeface, Typeface.BOLD)
             })
             box.addView(header, LinearLayout.LayoutParams(-2, dp(28)).apply { bottomMargin = dp(3) })
@@ -186,7 +224,13 @@ class WatchPhoneSetupActivity : Activity() {
                 button(getString(R.string.back)) { screen = "intro"; render() }
             }
             else -> {
-                if (configuringModels) {
+                if (importingSkill) {
+                    label(getString(R.string.skills_phone_title), 14f, bold = true)
+                    label(getString(R.string.configure_models_wifi), 10f, secondary)
+                    label(getString(R.string.configure_models_phone), 11f)
+                    label(getString(R.string.skills_phone_path), 11f)
+                    label(getString(R.string.skills_phone_confirm), 10f, secondary)
+                } else if (configuringModels) {
                     label(getString(R.string.configure_models_title), 14f, bold = true)
                     label(getString(R.string.configure_models_wifi), 10f, secondary)
                     label(getString(R.string.configure_models_phone), 10f, secondary).apply {
@@ -219,16 +263,17 @@ class WatchPhoneSetupActivity : Activity() {
                     "wifi_required", "network_changed" -> R.string.phone_setup_need_wifi
                     "expired" -> R.string.phone_setup_expired
                     "error", "retry" -> R.string.phone_setup_retry
-                    "receiving" -> R.string.phone_setup_receiving
+                    "receiving", "uploading" -> R.string.phone_setup_receiving
+                    "cancelled", "invalid", "save_failed" -> R.string.skills_phone_retry
                     "pairing_started", "agents_ready" -> R.string.phone_setup_pairing
                     else -> R.string.phone_setup_waiting
                 }
-                label((if (configuringModels) "●  " else "") + getString(status), 11f, Color.rgb(101, 217, 203))
+                label((if (compactSetup) "●  " else "") + getString(status), 11f, Color.rgb(101, 217, 203))
                 if (state.phase in setOf("error", "expired", "network_changed", "wifi_required", "retry")) {
                     button(getString(R.string.phone_setup_wifi)) { wifiSettings() }
                     button(getString(R.string.phone_setup_restart)) { startReceiver() }
                 } else if (!configuringModels) button(getString(R.string.phone_setup_help)) { screen = "help"; render() }
-                if (!configuringModels) button(getString(R.string.contacts)) { startActivity(Intent(this, WatchContactsActivity::class.java)) }
+                if (!compactSetup) button(getString(R.string.contacts)) { startActivity(Intent(this, WatchContactsActivity::class.java)) }
             }
         }
         setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(Color.BLACK); addView(box) })

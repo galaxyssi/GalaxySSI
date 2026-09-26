@@ -12,6 +12,19 @@ and their Linux/model features are not modified.
 
 ## Included
 
+- Settings → Skill management lists only imported, installed packages. Bundled
+  executors do not appear as installed Skills. The current supported local package
+  is door access (`.gskill`); import validation reuses Android's package verifier.
+  Installed Skills can be enabled, disabled, updated, or uninstalled. Disabled or
+  uninstalled door Skills do not intercept chat commands; uninstall clears local
+  door credentials. Existing imported door packages remain visible after upgrade.
+  Import Skill opens a phone import guide; select the package on the phone and confirm installation on the watch.
+  On the Android phone, open Settings → General → Developer options → Configure
+  watch → Import Skill. Packages use the authenticated Wi-Fi setup channel and
+  require a separate installation confirmation on the watch.
+  Explicit door-opening commands with saved credentials reuse Android's direct
+  `openUnique` execution and report the result in the conversation. Door lists and
+  first-time login open the local panel. Unconfirmed openings are never retried.
 - Round-screen conversation home, searchable recent conversations with unread
   counts, connected assistants, device pairing, and settings; English and Chinese resources.
 - System speech input with transcript review, keyboard fallback, reply speech,

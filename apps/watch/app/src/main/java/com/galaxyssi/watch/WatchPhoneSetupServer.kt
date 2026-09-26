@@ -29,7 +29,8 @@ import javax.security.auth.x500.X500Principal
 internal class WatchPhoneSetupServer(
     private val context: Context,
     private val onState: (State) -> Unit,
-    private val apply: (JSONObject) -> JSONObject
+    private val apply: (JSONObject) -> JSONObject,
+    private val addressProvider: () -> InetAddress? = { wifiAddress(context) }
 ) : AutoCloseable {
     data class State(val phase: String, val host: String = "", val port: Int = 0, val code: String = "")
     private val main = Handler(Looper.getMainLooper())
@@ -47,7 +48,7 @@ internal class WatchPhoneSetupServer(
     private val checkNetwork = object : Runnable {
         override fun run() {
             if (closed) return
-            if (wifiAddress(context)?.hostAddress != address) { close(); onState(State("network_changed")); return }
+            if (addressProvider()?.hostAddress != address) { close(); onState(State("network_changed")); return }
             main.postDelayed(this, 2000)
         }
     }
@@ -55,7 +56,7 @@ internal class WatchPhoneSetupServer(
         main.postDelayed(timeout, 15 * 60_000L)
         Thread({
             try {
-                val ip = wifiAddress(context) ?: return@Thread emit("wifi_required")
+                val ip = addressProvider() ?: return@Thread emit("wifi_required")
                 deviceName = WatchDeviceName.current(context)
                 val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 val alias = "watch-phone-setup-ec-v1"
@@ -113,12 +114,12 @@ internal class WatchPhoneSetupServer(
                             require(confirm.getString("type") == "confirm" && confirm.getBoolean("accept"))
                             write(output, JSONObject().put("type", "ready"))
                             socket.soTimeout = 5 * 60_000
-                            repeat(200) {
+                            repeat(1100) {
                                 val config = read(input)
                                 require(config.getString("type") == "configure")
                                 val result = apply(config)
                                 write(output, result)
-                                emit(result.getString("status"))
+                                if (config.optString("kind") != "skill_chunk") emit(result.getString("status"))
                                 if (result.getString("status") == "saved") { close(); return@Thread }
                             }
                             close(); return@Thread

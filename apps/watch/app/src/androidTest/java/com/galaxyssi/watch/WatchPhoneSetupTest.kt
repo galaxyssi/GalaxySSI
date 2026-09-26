@@ -18,7 +18,7 @@ class WatchPhoneSetupTest {
         val payloads = LinkedBlockingQueue<JSONObject>()
         val server = WatchPhoneSetupServer(InstrumentationRegistry.getInstrumentation().targetContext, { states.offer(it) }, {
             payloads.offer(it); JSONObject().put("status", if (it.optString("kind") == "pending_test") "pairing_started" else "saved")
-        })
+        }, addressProvider = { java.net.InetAddress.getLoopbackAddress() })
         fun await(phase: String): WatchPhoneSetupServer.State {
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (System.nanoTime() < until) {
@@ -37,6 +37,8 @@ class WatchPhoneSetupTest {
                 override fun checkServerTrusted(chain: Array<X509Certificate>, type: String) = Unit
             }
             val tls = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), SecureRandom()) }
+            // Same-device Wi-Fi sockets are routed through the AP on some Wear OS builds.
+            // Loopback isolates TLS/SAS tests; the UI receiver retains its Wi-Fi-only binding.
             return (tls.socketFactory.createSocket(ready.host, ready.port) as SSLSocket).apply { soTimeout = 5000; startHandshake() }
         }
         override fun close() = server.close()

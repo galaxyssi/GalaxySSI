@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.galaxyssi.chat.doorAccessText
 import com.galaxyssi.chat.GalaxySSICrypto as Crypto
 import com.galaxyssi.chat.GalaxySSILinkProtocol as Link
 import com.galaxyssi.chat.WatchLinkTransport
@@ -98,8 +99,10 @@ class WatchRepository(private val context: Context) {
             runCatching {
                 // HTTP operations are never automatically replayed after process
                 // death, since a provider may have accepted and billed the request.
-                store.tasks().filter { (it.desktopId == "api" || it.localOperation == "location") && !it.state.terminal }.forEach {
-                    store.save(it.copy(state = TaskState.FAILED, progress = context.getString(R.string.api_interrupted)))
+                store.tasks().filter { (it.desktopId == "api" || it.localOperation.isNotEmpty()) && !it.state.terminal }.forEach {
+                    store.save(if (it.localOperation == "door") it.copy(state = TaskState.FAILED,
+                        reply = context.doorAccessText("unconfirmed"), progress = "")
+                    else it.copy(state = TaskState.FAILED, progress = context.getString(R.string.api_interrupted)))
                 }
                 changed()
             }.onFailure { errorResource = R.string.storage_error; changed() }
@@ -362,6 +365,40 @@ class WatchRepository(private val context: Context) {
         changed(); main.post { done(result) }
     } }
 
+    internal fun sendDoorAccess(prompt: String, previous: WatchTask?, plan: WatchDoorAccess.Plan.Open,
+        done: (WatchTask?) -> Unit) {
+        val scope = modelScope(previous)
+        val chosen = selectedModel(previous)
+        apiState.execute {
+            val started = runCatching {
+                require(apiCalls.size < 2)
+                val task = (chosen?.let { (target, selection) ->
+                    WatchConversationRouting.create(scope, target, selection, prompt, store.tasks())
+                } ?: WatchTask.create("watch-door", "local", "Door access", prompt,
+                    previous?.conversationId ?: UUID.randomUUID().toString()).copy(localConversationId = scope))
+                    .copy(state = TaskState.RUNNING, localOperation = "door", progress = context.doorAccessText("sending"))
+                val operation = WatchApiOperation()
+                // Persist before the side effect. Restart/retry must never reopen a door.
+                store.save(task); saveDraft(""); apiCalls[task.id] = operation
+                main.post { done(task) }; changed()
+                apiWorker.execute {
+                    val outcome = runCatching { WatchDoorAccess.execute(plan, checkpoint = operation::checkActive) }
+                    apiState.execute finish@ {
+                        apiCalls.remove(task.id)
+                        val latest = store.task(task.id) ?: return@finish
+                        if (!latest.state.terminal) {
+                            val reply = outcome.getOrElse { WatchDoorAccess.Outcome(TaskState.FAILED, "service_failed") }
+                            val result = latest.copy(state = reply.state, reply = context.doorAccessText(reply.message), progress = "")
+                            store.save(result); changed()
+                            main.post { WatchNotifications.completed(context, result) }
+                        }
+                    }
+                }
+            }
+            if (started.isFailure) { errorResource = R.string.send_failed; changed(); main.post { done(null) } }
+        }
+    }
+
     private fun sendLocation(prompt: String, previous: WatchTask?, done: (WatchTask?) -> Unit) {
         apiState.execute {
             val profile = store.apiProfile
@@ -477,11 +514,11 @@ class WatchRepository(private val context: Context) {
         runCatching { tick() }; changed()
     } }
 
-    fun cancel(task: WatchTask) { (if (task.desktopId == "api" || task.localOperation == "location") apiState else worker).execute {
+    fun cancel(task: WatchTask) { (if (task.desktopId == "api" || task.localOperation.isNotEmpty()) apiState else worker).execute {
         runCatching {
             val current = store.task(task.id) ?: return@runCatching
             if (current.state.terminal || current.state == TaskState.STOP_REQUESTED) return@runCatching
-            if (current.desktopId == "api" || current.localOperation == "location") {
+            if (current.desktopId == "api" || current.localOperation.isNotEmpty()) {
                 apiCalls.remove(current.id)?.cancel()
                 store.save(current.copy(state = TaskState.CANCELLED, progress = context.getString(R.string.api_cancelled)))
                 return@runCatching
