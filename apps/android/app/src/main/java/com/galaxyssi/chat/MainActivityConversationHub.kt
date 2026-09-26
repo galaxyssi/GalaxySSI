@@ -654,10 +654,7 @@ private fun MainActivity.toConversationHubItems(
             kind = ConversationHubItemKind.AGENT,
             title = agentConversationDisplayTitle(conversation),
             subtitle = subtitle,
-            updatedAt = maxOf(
-                conversation.updatedAt,
-                conversation.latestMessageTimestampMillis
-            ),
+            updatedAt = ConversationHubModels.messageActivityAt(conversation),
             pinned = conversation.pinned,
             archived = conversation.status == AgentConversationStatus.ARCHIVED,
             searchableMetadata = conversation.selectedModelOrAgent,

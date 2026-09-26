@@ -1253,7 +1253,8 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     var pendingResult = lastActionResult ?: return null
     val expectedSource = expectedSourceMessageId.takeIf { it > 0L } ?: sourceMessageId
     val recoveringTimeout = isRecoverableConnectorTimeout(pendingResult, expectedSource)
-    if (phase != AgentPhase.WAITING_RESPONSE && !recoveringTimeout) return null
+    val recoveringTeam = AgentTeamParentRecoveryPolicy.acceptsLateResult(phase, pendingResult.metadata, expectedSource)
+    if (phase != AgentPhase.WAITING_RESPONSE && !recoveringTimeout && !recoveringTeam) return null
     if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != expectedSource) return null
     val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
     if (expectedContactId.isNotBlank() && contactId.isNotBlank() && expectedContactId != contactId) return null
@@ -1264,7 +1265,9 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             turnId
         )
     ) return null
-    if (recoveringTimeout && !reopenConnectorOutcomeLoop()) return snapshot()
+    if ((recoveringTimeout || recoveringTeam) && !reopenConnectorOutcomeLoop()) return snapshot()
+    if (recoveringTeam) pendingResult = pendingResult.copy(
+        metadata = pendingResult.metadata - AgentTeamParentRecoveryPolicy.PAUSED)
     if (!recordTaskBudgetUsage(
             inputTokens = inputTokens,
             outputTokens = outputTokens,
@@ -1829,7 +1832,8 @@ internal fun MobileNativeAgent.canAcceptConnectorTransport(sourceMessageId: Long
     if (sourceMessageId <= 0L) return false
     val pendingResult = lastActionResult ?: return false
     if (phase != AgentPhase.WAITING_RESPONSE &&
-        !isRecoverableConnectorTimeout(pendingResult, sourceMessageId)
+        !isRecoverableConnectorTimeout(pendingResult, sourceMessageId) &&
+        !AgentTeamParentRecoveryPolicy.acceptsLateResult(phase, pendingResult.metadata, sourceMessageId)
     ) return false
     if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) {
         return false
@@ -1891,6 +1895,7 @@ internal fun MobileNativeAgent.recoverStrandedConnectorHandoff(
     val pending = lastActionResult ?: return null
     if (pending.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
     val plan = currentPlan ?: return null
+    if (AgentTeamParentRecoveryPolicy.isTeamWait(phase, pending.metadata)) return reconcileSavedAgentTeam()
     val action = plan.actions.firstOrNull { candidate ->
         candidate.id == pending.actionId && candidate.kind == AgentActionKind.CALL_CONNECTOR
     } ?: return null

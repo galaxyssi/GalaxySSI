@@ -1481,7 +1481,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         preparedContextCache.invalidateTranscriptMutation(conversationId, role)
         previous?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
         if (role != AgentTranscriptRole.PROCESS) {
-            synchronized(this) { touchConversation(eventEntry, timestampMillis) }
+            synchronized(this) { touchConversation(eventEntry, eventEntry.timestampMillis) }
             if (role == AgentTranscriptRole.ASSISTANT) scheduleContextCompaction(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 captureCoreMemory(conversation, eventEntry)
@@ -1648,7 +1648,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return synchronized(conversationDatabase) {
         val persisted = conversationDatabase.read(id)
         if (persisted == null) (conversationDatabase.readWindowDraft(id) ?: draftConversation?.takeIf { it.id == id })?.let { previous ->
-            val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
+            val transformed = transform(previous)
+            val current = transformed.copy(updatedAt = AgentConversationActivityPolicy.messageTime(transformed))
+            if (current == previous) return@synchronized true
             conversationDatabase.saveWindowDraft(current)
             if (draftConversation?.id == id) {
                 draftConversation = current
@@ -1657,7 +1659,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             return@synchronized true
         }
         val previous = persisted ?: return@synchronized false
-        val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
+        val transformed = transform(previous)
+        val current = transformed.copy(updatedAt = AgentConversationActivityPolicy.messageTime(transformed))
+        if (current == previous) return@synchronized true
         check(conversationDatabase.upsert(current)) { "Agent conversation update failed" }
         GlobalConversationEventBus.publishConversationUpdated(appContext, previous, current)
         AgentConversationWindows.changed()
@@ -1715,7 +1719,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val previous = conversationDatabase.read(conversationId) ?: return
         val entry = latestDialogueEntry(conversationId)
         val current = previous.copy(
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = entry?.timestampMillis ?: previous.createdAt,
             latestMessageIndexed = true,
             latestMessageEntryId = entry?.id.orEmpty(),
             latestMessagePreview = entry?.text?.let(::messagePreview).orEmpty(),
