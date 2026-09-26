@@ -1428,3 +1428,13 @@ button:disabled { cursor: default; opacity: 0.48; }
   .memory-comparison b { transform: rotate(90deg); }
   .memory-source-evidence > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+.conversation-unread-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  border-radius: 50%;
+  background: #16b78b;
+  flex: 0 0 6px;
+  align-self: center;
+}

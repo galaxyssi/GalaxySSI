@@ -667,7 +667,52 @@ function renderConversationSelectionBar() {
   $("#cancelConversationSelectionButton").disabled = state.deletingConversationIds.size > 0;
 }
 
+const unreadStorageKey = "galaxyssi-conversation-unread-v1";
+const unreadPolicy = window.galaxyssiConversationUnread;
+const conversationUnread = new unreadPolicy.ConversationUnread((() => {
+  try { return JSON.parse(localStorage.getItem(unreadStorageKey) || "{}"); }
+  catch { return {}; }
+})());
+
+function saveConversationUnread() {
+  try { localStorage.setItem(unreadStorageKey, JSON.stringify(conversationUnread.serialize())); }
+  catch (error) { console.warn("Could not persist unread markers", error); }
+}
+
+function observeConversationUnread(scope, records, snapshot = true) {
+  const events = scope === "tasks" ? unreadPolicy.taskEvents(records) : unreadPolicy.messageEvents(records);
+  if (conversationUnread.observe(scope, events, snapshot)) saveConversationUnread();
+}
+
+function readVisibleConversation() {
+  if (document.hidden || !document.hasFocus() || elements.drawer.classList.contains("open")) return;
+  const key = state.activePeerRouteId ? `device:${state.activePeerRouteId}` : `agent:${state.currentConversationId}`;
+  const events = state.activePeerRouteId
+    ? unreadPolicy.messageEvents(peerMessagesFor()) : unreadPolicy.taskEvents(conversationTasks());
+  if (conversationUnread.read(key, events)) saveConversationUnread();
+}
+
+let lastNativeUnread;
+function syncConversationUnreadIndicator() {
+  const unread = conversationUnread.pending.size;
+  if (unread === lastNativeUnread || !window.galaxyssi.setConversationUnread) return;
+  lastNativeUnread = unread;
+  Promise.resolve(window.galaxyssi.setConversationUnread(unread, unreadPolicy.badgeRepresentations(unread, document))).then((accepted) => {
+    if (accepted === false && lastNativeUnread === unread) lastNativeUnread = undefined;
+  }).catch((error) => {
+    if (lastNativeUnread === unread) lastNativeUnread = undefined;
+    console.warn("Could not update unread indicator", error);
+  });
+}
+
+window.addEventListener("focus", () => { renderConversation(); renderHistory(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { renderConversation(); renderHistory(); }
+});
+
 function renderHistory() {
+  readVisibleConversation();
+  syncConversationUnreadIndicator();
   const groups = unifiedConversationGroups();
   const runningCount = groups.filter((group) =>
     group.kind !== "device" && group.running
@@ -713,7 +758,7 @@ function renderHistory() {
     html.push(`<div class="history-item-shell ${selecting ? "selecting" : ""}">
       ${selecting ? `<button class="history-select ${selected ? "selected" : ""}" data-select-conversation="${escapeHtml(group.id)}" aria-label="${escapeHtml(t("Select conversation"))}"></button>` : ""}
       <button class="history-item ${active ? "active" : ""}" ${targetAttribute}>
-        <span class="history-title-row"><strong>${escapeHtml(group.title)}</strong>${typeLabel ? `<i>${escapeHtml(typeLabel)}</i>` : ""}<time>${escapeHtml(latestLabel)}</time></span>
+        <span class="history-title-row"><strong>${escapeHtml(group.title)}</strong>${conversationUnread.has(`${group.kind === "device" ? "device" : "agent"}:${group.id}`) ? `<span class="conversation-unread-dot" role="img" aria-label="${escapeHtml(t("Unread"))}"></span>` : ""}${typeLabel ? `<i>${escapeHtml(typeLabel)}</i>` : ""}<time>${escapeHtml(latestLabel)}</time></span>
         <span class="history-preview ${running ? "running" : ""}">${escapeHtml(group.preview)}</span>
       </button>
       ${!selecting ? `<button class="history-more" data-conversation-menu="${escapeHtml(group.id)}" aria-label="${escapeHtml(t("Conversation actions"))}"></button>` : ""}
@@ -1003,6 +1048,7 @@ async function refreshPeerMessages() {
   try {
     const response = await window.galaxyssi.listPeerMessages("", 2000);
     state.peerMessages = Array.isArray(response.messages) ? response.messages : [];
+    observeConversationUnread("messages", state.peerMessages);
     renderHistory();
     if (state.activePeerRouteId) renderPeerConversation();
   } catch (error) {
@@ -1401,6 +1447,7 @@ async function refreshTasks(force = false) {
   try {
     const payload = await window.galaxyssi.listDesktopTasks(200);
     state.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    observeConversationUnread("tasks", state.tasks);
     selectActiveEvolutionTask();
     renderHistory();
     renderConversation(force);
@@ -1421,6 +1468,7 @@ function selectActiveEvolutionTask() {
 
 function mergeTaskUpdate(task) {
   if (!task?.task_id) return;
+  observeConversationUnread("tasks", [task], false);
   const currentConversationHadTasks = conversationTasks().length > 0;
   const optimisticIndex = state.tasks.findIndex((item) =>
     String(item.task_id || "").startsWith("pending-")
@@ -1484,12 +1532,15 @@ async function connectTaskStream() {
       if (payload.type === "desktop_tasks_snapshot" && Array.isArray(payload.tasks)) {
         state.tasks = payload.tasks;
         state.peerMessages = Array.isArray(payload.peer_messages) ? payload.peer_messages : [];
+        observeConversationUnread("tasks", state.tasks);
+        observeConversationUnread("messages", state.peerMessages);
         selectActiveEvolutionTask();
         renderHistory();
         renderConversation();
       } else if (payload.type === "desktop_task_update") {
         mergeTaskUpdate(payload.task);
       } else if (payload.type === "desktop_peer_message" && payload.message?.message_id) {
+        observeConversationUnread("messages", [payload.message], false);
         const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);
         if (index >= 0) state.peerMessages[index] = mergePeerDelivery(state.peerMessages[index], payload.message);
         else state.peerMessages.push(payload.message);
@@ -4557,7 +4608,7 @@ function closePanel() {
   window.GalaxySSIBlobSettings?.clearSensitive();
   elements.drawer.classList.remove("open");
   elements.drawer.setAttribute("aria-hidden", "true");
-  window.setTimeout(() => { elements.backdrop.hidden = true; }, 180);
+  window.setTimeout(() => { elements.backdrop.hidden = true; renderHistory(); }, 180);
 }
 
 function latestTask() {

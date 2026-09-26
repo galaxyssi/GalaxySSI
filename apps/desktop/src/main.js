@@ -8,6 +8,8 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
 const { buildTextContextMenuTemplate } = require("./text_context_menu");
+const { createConversationUnreadIndicator } = require("./conversation_unread_indicator");
+const { WindowsTaskbarBadge } = require("./windows_taskbar_badge");
 
 const requestedBackendPort = Number.parseInt(process.env.GALAXYSSI_BACKEND_PORT || "8765", 10);
 const BACKEND_PORT = requestedBackendPort >= 1024 && requestedBackendPort <= 65535
@@ -29,6 +31,9 @@ if (UI_SMOKE) {
 }
 
 let mainWindow;
+const windowsTaskbarBadge = process.platform === "win32" ? new WindowsTaskbarBadge() : null;
+const conversationUnreadIndicator = createConversationUnreadIndicator({ getWindow: () => mainWindow, nativeImage,
+  setNativeOverlay: windowsTaskbarBadge ? (window, count) => windowsTaskbarBadge.update(window, count) : undefined });
 let backendProcess;
 let backendRestartTimer;
 let appIsQuitting = false;
@@ -147,6 +152,7 @@ function createWindow() {
   mainWindow.on("focus", () => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send("sensitive-state:resume");
   });
+  mainWindow.on("move", () => windowsTaskbarBadge?.refresh(mainWindow));
   if (UI_SMOKE) {
     mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
       console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
@@ -2855,6 +2861,11 @@ async function revealTaskWorkspace(taskId) {
 }
 
 ipcMain.handle("app:version", () => app.getVersion());
+ipcMain.handle("conversations:unread", (event, count, representations) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || event.senderFrame !== mainWindow.webContents.mainFrame) return false;
+  return conversationUnreadIndicator.update(count, representations);
+});
 ipcMain.handle("tts:synthesize", (_event, payload) => synthesizeSpeech(payload));
 ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
@@ -3023,6 +3034,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   appIsQuitting = true;
+  windowsTaskbarBadge?.dispose();
   clearPeerRuntimeFiles();
   if (backendRestartTimer) {
     clearTimeout(backendRestartTimer);
