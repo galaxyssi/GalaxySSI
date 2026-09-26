@@ -18,6 +18,7 @@ internal class BilingualSpeech(
     private val context: Context,
     private val chineseModel: Model,
     private val englishModel: Model,
+    private val isAwake: () -> Boolean,
     private val onLevel: (Int) -> Unit,
     private val onPartial: (String) -> Unit,
     private val onFinal: (String) -> Unit,
@@ -52,15 +53,27 @@ internal class BilingualSpeech(
         var chinese: Recognizer? = null
         var english: Recognizer? = null
         try {
-            chinese = Recognizer(chineseModel, 16000f)
-            english = Recognizer(englishModel, 16000f)
-            chinese.setWords(true); english.setWords(true)
+            var decodingAwake = isAwake()
+            fun openRecognizers(awake: Boolean) {
+                chinese?.close(); english?.close()
+                chinese = if (awake) Recognizer(chineseModel, 16000f) else null
+                english = if (awake) Recognizer(englishModel, 16000f)
+                    else Recognizer(englishModel, 16000f, "[\"hello hello\", \"hello\", \"[unk]\"]")
+                chinese?.setWords(true)
+                english?.setWords(true)
+                decodingAwake = awake
+            }
+            openRecognizers(decodingAwake)
             val buffer = ByteArray(4096)
             var previousPartial = ""
             var lastPartialAt = 0L
             var badReads = 0
             var lastLevelAt = 0L
             while (running.get()) {
+                if (isAwake() != decodingAwake) {
+                    openRecognizers(isAwake())
+                    previousPartial = ""
+                }
                 val size = capture.read(buffer, 0, buffer.size)
                 if (size <= 0) {
                     if (size < 0 || ++badReads >= 10) error("麦克风读取中断（$size）")
@@ -79,19 +92,19 @@ internal class BilingualSpeech(
                     val level = if (count == 0) 0 else ((total / count) / 120).toInt().coerceIn(0, 100)
                     main.post { if (running.get()) onLevel(level) }
                 }
-                val cnDone = chinese.acceptWaveForm(buffer, size)
-                val enDone = english.acceptWaveForm(buffer, size)
+                val cnDone = chinese?.acceptWaveForm(buffer, size) ?: false
+                val enDone = english!!.acceptWaveForm(buffer, size)
                 if (cnDone || enDone) {
-                    val cn = if (cnDone) chinese.result else chinese.partialResult
-                    val en = if (enDone) english.result else english.partialResult
-                    val chosen = choose(cn, en)
+                    val cn = if (cnDone) chinese!!.result else chinese?.partialResult.orEmpty()
+                    val en = if (enDone) english!!.result else english!!.partialResult
+                    val chosen = if (chinese == null) JSONObject(en).optString("text") else choose(cn, en)
                     if (chosen.isNotBlank()) main.post { if (running.get()) onFinal(chosen) }
-                    chinese.reset(); english.reset()
+                    chinese?.reset(); english!!.reset()
                     previousPartial = ""
                 } else if (System.currentTimeMillis() - lastPartialAt > 250) {
                     lastPartialAt = System.currentTimeMillis()
-                    val cn = JSONObject(chinese.partialResult).optString("partial")
-                    val en = JSONObject(english.partialResult).optString("partial")
+                    val cn = chinese?.partialResult?.let { JSONObject(it).optString("partial") }.orEmpty()
+                    val en = JSONObject(english!!.partialResult).optString("partial")
                     val partial = chooseText(cn, en)
                     if (partial.isNotBlank() && partial != previousPartial) {
                         previousPartial = partial
