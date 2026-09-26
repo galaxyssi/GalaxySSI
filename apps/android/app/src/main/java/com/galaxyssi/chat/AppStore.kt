@@ -1289,7 +1289,7 @@ object AppStore {
             addFriendRequest(context, request)
         }
         val sessionRecovery = PeerSignalBundlePolicy.replacesExistingSession(
-            payload.optString("type")
+            payload.optString("type"), payload.optBoolean("session_recovery")
         )
         return applySignalBundleResponse(
             context,

@@ -309,6 +309,7 @@ object GalaxySSICrypto {
                 b64d(bundleJson.getString("kyberPreKeySignature"))
             )
             val address = SignalProtocolAddress(remoteName, deviceId)
+            if (!replaceExisting && store.containsSession(address)) return true
             if (replaceExisting) store.deleteSession(address)
             SessionBuilder(store, address).process(bundle)
             Log.i(

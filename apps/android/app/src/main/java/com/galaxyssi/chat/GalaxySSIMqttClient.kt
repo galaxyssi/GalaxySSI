@@ -26,7 +26,6 @@ import org.json.JSONArray
 import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -66,14 +65,6 @@ object GalaxySSIMqttClient {
         val queuedAtMillis: Long
     )
 
-    private data class PendingOpaquePacket(
-        val topic: String,
-        val wirePayload: String,
-        val purpose: String,
-        val expiresAtMillis: Long,
-        val receiveTopics: Set<String>
-    )
-
     private data class OutboundFragmentTransfer(
         val key: String,
         val durableMessageId: String?,
@@ -89,7 +80,7 @@ object GalaxySSIMqttClient {
         val publications: List<MqttPoolTransport.Publication> = emptyList()
     )
 
-    private val approvedPhoneDecisionReplayScheduled = AtomicBoolean(false)
+    private val phonePairingFlushRunning = AtomicBoolean(false)
     private val initialOutboxRecoveryPrepared = AtomicBoolean(false)
     private val inboundReplayScheduled = AtomicBoolean(false)
     private val inboundReplayTimerLock = Any()
@@ -157,8 +148,8 @@ object GalaxySSIMqttClient {
         }
     }
     private val pairingClaimRetryRunnable = Runnable { flushPendingPairingClaim() }
+    private val phonePairingRetryRunnable = Runnable { flushPendingOpaquePackets() }
     private val listeners = CopyOnWriteArraySet<Listener>()
-    private val pendingOpaquePackets = CopyOnWriteArrayList<PendingOpaquePacket>()
     private val deliveryMessageIds = ConcurrentHashMap<Int, String>()
     private val attachmentRetryRunnables = ConcurrentHashMap<String, Runnable>()
     private val outboxDispatchLock = Any()
@@ -1014,6 +1005,8 @@ object GalaxySSIMqttClient {
                 return false
             }
         synchronized(pairingClaimLock) {
+            DesktopPairingClaimStore.save(context, link.desktopId, pairingQr.getString("pairing_topic"),
+                encryptedClaim, System.currentTimeMillis())
             pendingPairingClaim = PendingPairingClaim(
                 desktopId = link.desktopId,
                 topic = pairingQr.getString("pairing_topic"),
@@ -1058,40 +1051,77 @@ object GalaxySSIMqttClient {
         payload: JSONObject,
         purpose: String
     ): Boolean {
+        if (!PhoneContactCard.isControlType(payload.optString("type"))) return false
+        val mqtt = client
+        val routes = AppStore.phoneRoutesForIdentity(context, payload.optString("to")) ?: return false
+        if (payload.optString("type") != PhoneContactCard.RECEIPT_TYPE) {
+            if (!PhonePairingDelivery.ledger(context).enqueue(topic, secret, payload, routes.remoteFingerprint)) return false
+            flushPendingOpaquePackets()
+            if (mqtt?.isConnected != true) connect(context)
+            return true
+        }
         val sealed = runCatching {
             GalaxySSILinkProtocol.sealWirePacket(payload.toString(), secret)
         }.onFailure { Log.w(TAG, "Opaque packet encryption failed purpose=$purpose", it) }
             .getOrNull() ?: return false
-        val mqtt = client
-        val routes = AppStore.phoneRoutesForIdentity(context, payload.optString("to")) ?: return false
         if (mqtt?.isConnected == true && publishBootstrap(mqtt, topic, sealed, routes.receiveWindow)) return true
-        pendingOpaquePackets += PendingOpaquePacket(
-            topic,
-            sealed,
-            purpose,
-            System.currentTimeMillis() + PhoneContactCard.CONTROL_MAX_AGE_MILLIS,
-            routes.receiveWindow
-        )
-        connect(context)
-        return true
+        // Receipts do not request receipts. The original control retries if this reply is lost.
+        return false
     }
 
     private fun flushPendingOpaquePackets() {
-        val mqtt = client ?: return
-        if (!mqtt.isConnected) return
-        val now = System.currentTimeMillis()
-        pendingOpaquePackets.toList().forEach { pending ->
-            if (pending.expiresAtMillis < now ||
-                publishBootstrap(mqtt, pending.topic, pending.wirePayload, pending.receiveTopics)
-            ) pendingOpaquePackets.remove(pending)
+        if (phonePairingFlushRunning.compareAndSet(false, true)) {
+            outboxDispatchExecutor.execute {
+                try {
+                    val context = appContext ?: return@execute
+                    val ledger = PhonePairingDelivery.ledger(context)
+                    val mqtt = client
+                    if (mqtt?.isConnected == true) ledger.takeDue().forEach { item ->
+                        val routes = AppStore.phoneRoutesForIdentity(context, item.getString("peer"))
+                            ?: return@forEach
+                        if (routes.remoteFingerprint != item.getString("fingerprint")) return@forEach
+                        val payload = item.getJSONObject("payload")
+                        if (payload.optString("from") != GalaxySSICrypto.localGalaxySSIId()) return@forEach
+                        if (payload.optString("type") == PhoneContactCard.APPROVAL_TYPE &&
+                            !AppStore.canCommunicateWith(context, item.getString("peer"))
+                        ) return@forEach
+                        val claim = payload.optString("type") == PhoneContactCard.REQUEST_TYPE
+                        val topic = if (claim) item.getString("topic") else routes.up
+                        val secret = if (claim) item.getString("secret") else routes.linkSecret
+                        val sealed = GalaxySSILinkProtocol.sealWirePacket(payload.toString(), secret)
+                        publishBootstrap(mqtt, topic, sealed, routes.receiveWindow)
+                    }
+                    retryHandler.removeCallbacks(phonePairingRetryRunnable)
+                    ledger.nextDelay()?.let { delay ->
+                        retryHandler.postDelayed(phonePairingRetryRunnable, if (mqtt?.isConnected == true) delay else 30_000L)
+                    }
+                } catch (error: Exception) {
+                    Log.w(TAG, "Phone pairing retry deferred type=${error.javaClass.simpleName}")
+                    retryHandler.postDelayed(phonePairingRetryRunnable, 30_000L)
+                } finally {
+                    phonePairingFlushRunning.set(false)
+                }
+            }
         }
     }
 
     private fun flushPendingPairingClaim() {
-        val pending = synchronized(pairingClaimLock) { pendingPairingClaim } ?: return
+        val context = appContext ?: return
+        val pending = synchronized(pairingClaimLock) {
+            if (pendingPairingClaim == null) {
+                DesktopPairingClaimStore.restore(context)?.let {
+                    pendingPairingClaim = PendingPairingClaim(it.getString("desktop_id"),
+                        it.getString("topic"), it.getString("wire"), it.getLong("created_at"))
+                }
+            }
+            pendingPairingClaim
+        } ?: return
         if (System.currentTimeMillis() - pending.queuedAtMillis > PAIRING_CLAIM_MAX_AGE_MILLIS) {
             synchronized(pairingClaimLock) {
-                if (pendingPairingClaim == pending) pendingPairingClaim = null
+                if (pendingPairingClaim == pending) {
+                    DesktopPairingClaimStore.clear(context, pending.desktopId)
+                    pendingPairingClaim = null
+                }
             }
             Log.w(TAG, "Discarded expired pending pairing claim")
             notifyPairingFailure(pending.desktopId, "timeout")
@@ -1945,11 +1975,13 @@ object GalaxySSIMqttClient {
         val type = payload.optString("type")
         if (!PhoneContactCard.isControlType(type) ||
             !PhoneContactCard.isAddressedToLocalIdentity(payload, GalaxySSICrypto.localGalaxySSIId()) ||
-            !PhoneContactCard.isFreshControlPayload(payload)
+            !PhoneContactCard.isFreshControlPayload(payload) ||
+            runCatching { UUID.fromString(payload.getString("control_id")) }.isFailure
         ) return
         if ((rendezvous != null) != (type == PhoneContactCard.REQUEST_TYPE)) return
         if ((relationship != null) != (type != PhoneContactCard.REQUEST_TYPE)) return
         val card = PhoneContactCard.cardFromControlPayload(payload) ?: return
+        if (payload.optString("from") != card.optString("galaxyssi_id")) return
         if (!GalaxySSICrypto.verifyPublicIdentitySignature(
                 card.optString("identity_public_key"),
                 card.optString("identity_fingerprint"),
@@ -1963,7 +1995,7 @@ object GalaxySSIMqttClient {
         if (rendezvous != null) {
             val session = rendezvous ?: return
             if (payload.optString("pairing_token") != session.optString("token")) return
-            val claim = PhoneContactCard.claimSession(
+            PhoneContactCard.claimSession(
                 context,
                 session.getString("topic"),
                 payload.getString("pairing_token"),
@@ -1981,13 +2013,6 @@ object GalaxySSIMqttClient {
             if (existingRoutes != null &&
                 !existingRoutes.remoteFingerprint.equals(remoteFingerprint, ignoreCase = true)
             ) return
-            if (claim.alreadyClaimed && existingRoutes != null &&
-                existingRoutes.linkSecret == derivedRoutes.linkSecret &&
-                existingRoutes.clientRouteId == derivedRoutes.clientRouteId
-            ) {
-                publishPhoneContactBundle(card)
-                return
-            }
             localRouteId = derivedRoutes.clientRouteId
         } else {
             val routes = relationship?.let {
@@ -2004,7 +2029,19 @@ object GalaxySSIMqttClient {
             relationshipSecret = routes.linkSecret
             localRouteId = routes.clientRouteId
         }
-        if (!PhoneContactCard.acceptControlMessage(context, payload)) return
+        if (type == PhoneContactCard.RECEIPT_TYPE) {
+            if (PhonePairingDelivery.ledger(context).acknowledge(
+                    card.optString("galaxyssi_id"), remoteFingerprint, payload
+                )) {
+                Log.i(TAG, "Phone pairing control confirmed by peer")
+                flushPendingOpaquePackets()
+            }
+            return
+        }
+        if (PhoneContactCard.wasControlAccepted(context, payload)) {
+            publishPhonePairingReceipt(context, payload, card)
+            return
+        }
         if (!AppStore.importPhoneContactRequest(
                 context,
                 payload,
@@ -2022,6 +2059,7 @@ object GalaxySSIMqttClient {
             )
         }
         if (type == PhoneContactCard.APPROVAL_TYPE &&
+            !AppStore.canCommunicateWith(context, contactId) &&
             !AppStore.approveFriendRequestForGalaxySSIId(context, contactId)
         ) return
         if (type == PhoneContactCard.REJECTION_TYPE) {
@@ -2038,9 +2076,9 @@ object GalaxySSIMqttClient {
         if (type == PhoneContactCard.REQUEST_TYPE) {
             if (!publishPhoneContactBundle(card)) return
         } else if (type == PhoneContactCard.BUNDLE_REFRESH_TYPE) {
-            if (!publishPhoneContactBundle(card)) return
+            if (!GalaxySSIMqttMessagePublisher.publishPhoneContactBundle(card, sessionRecovery = true)) return
         }
-        if (PeerSignalBundlePolicy.replacesExistingSession(type)) {
+        if (PeerSignalBundlePolicy.replacesExistingSession(type, payload.optBoolean("session_recovery"))) {
             val recovered = PeerSignalSessionRecoveryCoordinator.reencryptPendingMessages(
                 context,
                 contactId
@@ -2050,6 +2088,8 @@ object GalaxySSIMqttClient {
                 scheduleOutboxRetries()
             }
         }
+        PhoneContactCard.acceptControlMessage(context, payload)
+        publishPhonePairingReceipt(context, payload, card)
         notifyMessageListeners(
             JSONObject()
                 .put(
@@ -2065,6 +2105,16 @@ object GalaxySSIMqttClient {
                 .put("contact_id", contactId)
                 .put("name", card.optString("name"))
         )
+    }
+
+    private fun publishPhonePairingReceipt(context: Context, payload: JSONObject, card: JSONObject) {
+        val peer = card.optString("galaxyssi_id")
+        val routes = AppStore.phoneRoutesForIdentity(context, peer) ?: return
+        val receipt = PhoneContactCard.controlPayload(
+            PhoneContactCard.RECEIPT_TYPE, peer, PhoneContactCard.identityCard(context)
+        ).put("ack_control_id", payload.optString("control_id"))
+            .put("ack_payload_hash", PhonePairingDeliveryLedger.payloadHash(payload))
+        publishOpaqueRelationshipOrConnect(context, routes.up, routes.linkSecret, receipt, "phone_pairing_receipt")
     }
 
     private fun handleIncomingDecoded(
@@ -2086,6 +2136,7 @@ object GalaxySSIMqttClient {
             val removed = synchronized(pairingClaimLock) {
                 if (pendingPairingClaim?.desktopId != link.desktopId) false else {
                     pendingPairingClaim = null
+                    DesktopPairingClaimStore.clear(context, link.desktopId)
                     true
                 }
             }
@@ -2612,6 +2663,7 @@ object GalaxySSIMqttClient {
         }
         if (!sessionReady) return
         synchronized(pairingClaimLock) {
+            DesktopPairingClaimStore.clear(context, desktopId)
             if (pendingPairingClaim?.desktopId == desktopId) pendingPairingClaim = null
         }
         retryHandler.removeCallbacks(pairingClaimRetryRunnable)
@@ -3082,23 +3134,13 @@ object GalaxySSIMqttClient {
                 outboxDispatchExecutor.execute {
                     appContext?.let { AndroidAgentRecoveryWake.connectionChanged(it, isRequestReplyReady()) }
                     appContext?.let(::requestMissingSignalSessions)
-                    replayApprovedPhoneContactDecisionsOnce()
+                    flushPendingOpaquePackets()
                 }
                 Log.i(TAG, "Subscribed to rotating opaque relationship mailboxes")
             }
             MqttSubscriptionAttemptOutcome.RETRY -> {
                 setSecureReady(isRequestReplyReady())
                 scheduleSubscriptionRetry()
-            }
-        }
-    }
-
-    private fun replayApprovedPhoneContactDecisionsOnce() {
-        if (!approvedPhoneDecisionReplayScheduled.compareAndSet(false, true)) return
-        val context = appContext ?: return
-        retryHandler.post {
-            AppStore.approvedIncomingPhoneContactIds(context).forEach { contactId ->
-                publishPhoneContactDecision(contactId, approved = true)
             }
         }
     }

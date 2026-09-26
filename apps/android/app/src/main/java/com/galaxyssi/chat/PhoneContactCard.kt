@@ -19,6 +19,7 @@ internal object PhoneContactCard {
     const val BUNDLE_REFRESH_TYPE = "opaque_bundle_refresh"
     const val APPROVAL_TYPE = "opaque_contact_accept"
     const val REJECTION_TYPE = "opaque_contact_reject"
+    const val RECEIPT_TYPE = "opaque_contact_receipt"
     const val CONTROL_MAX_AGE_MILLIS = 10L * 60L * 1_000L
     private const val PREFS = "opaque_phone_pairing_v2"
     private const val KEY_SESSIONS = "sessions"
@@ -30,7 +31,8 @@ internal object PhoneContactCard {
         BUNDLE_RESPONSE_TYPE,
         BUNDLE_REFRESH_TYPE,
         APPROVAL_TYPE,
-        REJECTION_TYPE
+        REJECTION_TYPE,
+        RECEIPT_TYPE
     )
     private val controlTypes = relationshipControlTypes + REQUEST_TYPE
     private val signedFields = listOf(
@@ -230,6 +232,17 @@ internal object PhoneContactCard {
     fun isFreshControlPayload(payload: JSONObject, nowMillis: Long = System.currentTimeMillis()): Boolean {
         val sentAt = payload.optLong("time", payload.optLong("created_at"))
         return sentAt in (nowMillis - CONTROL_MAX_AGE_MILLIS)..(nowMillis + 60_000L)
+    }
+
+    @Synchronized
+    fun wasControlAccepted(context: Context, payload: JSONObject): Boolean {
+        val stored = JSONArray(AgentEncryptedPreferences(context.applicationContext, PREFS)
+            .readString(KEY_ACCEPTED_CONTROLS, "[]"))
+        return (0 until stored.length()).any { index ->
+            val item = stored.optJSONObject(index)
+            item?.optString("id") == payload.optString("control_id") &&
+                item.optLong("expires_at") >= System.currentTimeMillis()
+        }
     }
 
     @Synchronized

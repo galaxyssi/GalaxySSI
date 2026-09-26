@@ -34,10 +34,9 @@ internal object PeerSignalSessionRecoveryGate {
 }
 
 internal object PeerSignalBundlePolicy {
-    fun replacesExistingSession(controlType: String): Boolean = controlType in setOf(
-        PhoneContactCard.BUNDLE_REFRESH_TYPE,
-        PhoneContactCard.BUNDLE_RESPONSE_TYPE
-    )
+    fun replacesExistingSession(controlType: String, sessionRecovery: Boolean = false): Boolean =
+        controlType == PhoneContactCard.BUNDLE_REFRESH_TYPE ||
+            (controlType == PhoneContactCard.BUNDLE_RESPONSE_TYPE && sessionRecovery)
 }
 
 internal object PeerSignalSessionRecoveryCoordinator {

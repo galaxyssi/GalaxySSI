@@ -40,9 +40,12 @@ class PeerSignalSessionRecoveryTest {
         assertTrue(
             PeerSignalBundlePolicy.replacesExistingSession(PhoneContactCard.BUNDLE_REFRESH_TYPE)
         )
-        assertTrue(
+        assertFalse(
             PeerSignalBundlePolicy.replacesExistingSession(PhoneContactCard.BUNDLE_RESPONSE_TYPE)
         )
+        assertTrue(PeerSignalBundlePolicy.replacesExistingSession(
+            PhoneContactCard.BUNDLE_RESPONSE_TYPE, sessionRecovery = true
+        ))
     }
 
     @Test
