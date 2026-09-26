@@ -1683,7 +1683,9 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
             }
         }
     }
-    val activeRunIds = (AgentTaskRuntime.supervisor(this).activeWorkspaces().map { it.workspaceId } +
+    val activeWorkspaceIds = AgentTaskRuntime.supervisor(this).activeWorkspaces().map { it.workspaceId }
+    AgentDeliveryFailureRecorder.reconcileKnownFailures(this, (activeWorkspaceIds + liveRuntimeWorkspaceIds).toSet())
+    val activeRunIds = (activeWorkspaceIds +
         liveRuntimeWorkspaceIds)
         .distinct()
         .mapNotNull { workspaceId -> EncryptedAgentWorkspaceStore(this).find(workspaceId) }
@@ -1721,7 +1723,11 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
             },
             adapterResolver = directory::resolveAdapter,
             markInterrupted = { runId, reason -> agentRunRecorder.markInterrupted(runId, reason) },
-            markRemoteTerminal = agentRunRecorder::reconcileRemoteTerminal
+            markRemoteTerminal = agentRunRecorder::reconcileRemoteTerminal,
+            localDeliveryFailure = { workspace ->
+                AgentDeliveryFailureRecorder.terminalFailure(this@reconcileRecoverableAgentRuns, workspace)
+                    ?.text?.ifBlank { "terminal_delivery_failure" }
+            }
         ).recover(excludedRunIds = activeRunIds)
     }
     results.filter { it.outcome in setOf(

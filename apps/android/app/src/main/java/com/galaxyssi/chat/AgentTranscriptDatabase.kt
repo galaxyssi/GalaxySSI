@@ -400,6 +400,11 @@ internal class AgentTranscriptEntryDatabase(
             "sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
 
+    internal fun workspacePreviews(conversationId: String, turnId: String, taskId: String): List<AgentTranscriptEntry> =
+        readableDatabase.query(TABLE_ENTRIES, PAYLOAD_COLUMNS,
+            "conversation_id = ? AND (turn_id = ? OR task_id = ?)",
+            arrayOf(conversationId, turnId, taskId), null, null, "sequence ASC").use(::decodeEntries)
+
     fun findById(entryId: String): AgentTranscriptEntry? =
         querySingle("entry_id = ?", arrayOf(entryId))
 

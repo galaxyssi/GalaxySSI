@@ -42,7 +42,8 @@ internal object AgentTaskTerminalReplyPolicy {
 
     fun isTerminalReply(entry: AgentTranscriptEntry): Boolean =
         entry.role == AgentTranscriptRole.ASSISTANT &&
-            terminalDedupePrefixes.any(entry.dedupeKey::startsWith)
+            (terminalDedupePrefixes.any(entry.dedupeKey::startsWith) ||
+                AgentDeliveryFailurePolicy.sourceMessageId(entry) != null)
 
     fun hasTerminalReply(entries: List<AgentTranscriptEntry>, turnId: String): Boolean {
         val cleanTurnId = turnId.trim()
