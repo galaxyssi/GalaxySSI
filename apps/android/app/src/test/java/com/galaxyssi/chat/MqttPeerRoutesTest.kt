@@ -53,6 +53,48 @@ class MqttPeerRoutesTest {
         routes.handleVerified(ours.scope, payload, rig.ingress(broker), ours.identity)
     private fun sentCount() = rig.clients.values.flatten().sumOf { it.sent.size }
 
+    @Test fun localApprovalEnablesExistingHandshakeAndWakesPendingDeliveryOnce() {
+        val pending = binding.copy(enabled = false)
+        val second = binding.copy(scope = "second", receiver = "d".repeat(64), secret = "e".repeat(43),
+            sendTopic = "second-out", sendTopics = setOf("second-out"), receiveTopics = setOf("second-in"))
+        start(listOf(pending, second))
+        receive(ack(), pending)
+        receive(ack(second), second)
+        assertFalse(routes.ready(binding.scope))
+        assertEquals("inactive_binding", routes.blockedReasonForTopic(binding.sendTopic))
+        assertNull(routes.prepareDelivery(binding.sendTopic, wire(), "pending", MqttMultipathPolicy.Traffic.MESSAGE))
+        val local = store.issued.getValue(binding.scope)
+        val otherLocal = store.issued.getValue(second.scope)
+        notifications.clear()
+
+        routes.replace(listOf(binding, second))
+
+        assertTrue(routes.ready(binding.scope))
+        assertNotNull(routes.prepareDelivery(binding.sendTopic, wire(), "pending", MqttMultipathPolicy.Traffic.MESSAGE))
+        assertEquals(listOf(binding.scope), notifications)
+        assertEquals(local, store.issued.getValue(binding.scope))
+        assertEquals(otherLocal, store.issued.getValue(second.scope))
+        assertTrue(routes.ready(second.scope))
+        assertTrue(store.forgotten.isEmpty())
+        routes.replace(listOf(binding, second))
+        assertEquals(listOf(binding.scope), notifications)
+    }
+
+    @Test fun approvalWithoutVerifiedHandshakeDoesNotAuthorizeDelivery() {
+        start(listOf(binding.copy(enabled = false)))
+        notifications.clear()
+        routes.replace(listOf(binding))
+        assertFalse(routes.ready(binding.scope))
+        assertNull(routes.prepareDelivery(binding.sendTopic, wire(), "pending", MqttMultipathPolicy.Traffic.MESSAGE))
+        assertTrue(notifications.isEmpty())
+        receive(ack())
+        assertTrue(routes.ready(binding.scope))
+        assertEquals(listOf(binding.scope), notifications)
+        routes.replace(listOf(binding.copy(enabled = false)))
+        assertFalse(routes.ready(binding.scope))
+        assertNull(routes.prepareDelivery(binding.sendTopic, wire(), "pending", MqttMultipathPolicy.Traffic.MESSAGE))
+    }
+
     @Test fun routineLeaseRenewalsDoNotRestartApplicationRecovery() {
         start()
         receive(ack())
