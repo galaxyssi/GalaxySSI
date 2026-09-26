@@ -58,17 +58,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
           .accessibilityLabel(mergedSource)
       }
-      MessageBubble(
-        message: message,
-        onActionWithMessage: { message, action in
-          onRichAction(message, action)
-        },
-        onFormSubmit: onFormSubmit,
-        onParagraphDoubleTap: paragraphSpeechAction(message)
-      )
       if !message.isMine, !message.isSystem {
         messageExecutionFooter(message)
       }
+      agentMessageContent(message)
       if let target = AgentReplySpeechPresentationPolicy.target(message),
          latestSpeechTarget?.responseId == target.responseId || replySpeech.isActive(target) {
         HStack {
@@ -128,6 +121,59 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         onRetryMessage(message)
       }
     }
+  }
+
+  @ViewBuilder
+  private func agentMessageContent(_ message: ChatMessage) -> some View {
+    if message.isSystem {
+      Text(message.content)
+        .font(.caption)
+        .foregroundColor(.galaxySSITextSecondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    } else if message.isMine {
+      VStack(alignment: .trailing, spacing: 4) {
+        richContent(message)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 10)
+          .background(Color.galaxySSISentBubble)
+          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        if !message.voiceTranscript.isBlank {
+          Text(message.voiceTranscript)
+            .font(.system(size: 14))
+            .foregroundColor(.galaxySSITextSecondary)
+            .multilineTextAlignment(.trailing)
+        }
+      }
+      .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .trailing)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.vertical, 3)
+    } else {
+      richContent(message)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, hasExecutionFooter(message) ? 9 : 3)
+        .padding(.bottom, 4)
+    }
+  }
+
+  private func richContent(_ message: ChatMessage) -> some View {
+    GalaxySSIRichContentView(
+      content: message.content,
+      richOutputJson: message.richOutputJson,
+      isOutgoing: message.isMine,
+      expansionStorageKey: "agent-message:\(message.id.uuidString)",
+      onAction: { action in
+        onRichAction(message, action)
+      },
+      onFormSubmit: onFormSubmit
+    )
+    .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
+    .foregroundColor(.galaxySSITextPrimary)
+  }
+
+  private func hasExecutionFooter(_ message: ChatMessage) -> Bool {
+    agentTask(message) != nil || remoteAgentTask(message) != nil || voiceAgentRun(message) != nil
   }
 
   private var latestSpeechTarget: AgentReplySpeechTarget? {

@@ -55,11 +55,11 @@ struct GalaxySSIAgentExecutionFooterView: View {
         executionControls
       }
     }
-    .padding(.horizontal, 9)
-    .padding(.vertical, 7)
+    .padding(.vertical, 8)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.galaxySSISurface.opacity(0.72))
-    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .overlay(alignment: .bottom) {
+      Divider()
+    }
     .accessibilityElement(children: .contain)
   }
 
