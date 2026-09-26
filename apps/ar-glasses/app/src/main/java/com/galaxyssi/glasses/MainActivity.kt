@@ -13,10 +13,15 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.Gravity
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -38,6 +43,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
+import kotlin.math.abs
 
 /** Landscape, voice-first conversation surface for the VENUS 640×360 dp optical display. */
 class MainActivity : ComponentActivity() {
@@ -45,6 +51,7 @@ class MainActivity : ComponentActivity() {
     private val dim = Color.rgb(68, 104, 126)
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+    private val speechWorker = Executors.newSingleThreadExecutor()
     private val client = ChatClient()
     private lateinit var secure: SecureStore
     private lateinit var state: JSONObject
@@ -79,8 +86,8 @@ class MainActivity : ComponentActivity() {
     }
     private var requestGeneration = 0
     private var currentSession = ""
-    private var chineseModel: Model? = null
     private var englishModel: Model? = null
+    private var speechGeneration = 0
     private var recognizer: BilingualSpeech? = null
     private var systemTts: TextToSpeech? = null
     private var systemTtsReady = false
@@ -93,6 +100,21 @@ class MainActivity : ComponentActivity() {
     private var statusLabel: TextView? = null
     private var settingsFeedback: TextView? = null
     private var wifiScanButton: Button? = null
+    private val touchControls = mutableListOf<Button>()
+    private var touchStarted = false
+    private var touchStartedAt = 0L
+    private var touchStartX = 0f
+    private var touchStartY = 0f
+    private var touchLastX = 0f
+    private var touchLastY = 0f
+    private var touchPointerCount = 0
+    private var relativeLastX = Float.NaN
+    private var relativeTravelX = 0f
+    private var relativeLastAt = 0L
+    private var relativeGestureHandled = false
+    private val touchTapSlop by lazy { maxOf(dp(10), ViewConfiguration.get(this).scaledTouchSlop).toFloat() }
+    private val touchSwipeThreshold by lazy { dp(24).toFloat() }
+    private val relativeSwipeThreshold by lazy { dp(12).toFloat() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -152,11 +174,19 @@ class MainActivity : ComponentActivity() {
     private fun label(text: String, size: Float = 16f, color: Int = Color.WHITE) = TextView(this).apply {
         this.text = text; textSize = size; setTextColor(color); gravity = Gravity.CENTER_VERTICAL
     }
+    private fun buttonBackground(primary: Boolean, focused: Boolean) = shape(when {
+        focused -> Color.rgb(15, 111, 158)
+        primary -> green
+        else -> Color.rgb(35, 42, 40)
+    }).apply { if (focused) setStroke(dp(3), Color.WHITE) }
     private fun button(text: String, primary: Boolean = false, action: () -> Unit) = Button(this).apply {
         this.text = text; textSize = 15f; isAllCaps = false
         setTextColor(Color.WHITE)
-        background = shape(if (primary) green else Color.rgb(35, 42, 40))
+        isFocusable = true; isFocusableInTouchMode = true; defaultFocusHighlightEnabled = false
+        background = buttonBackground(primary, false)
+        setOnFocusChangeListener { _, focused -> background = buttonBackground(primary, focused) }
         setOnClickListener { action() }
+        touchControls.add(this)
     }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -172,6 +202,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun render() {
+        touchControls.clear()
         statusLabel = null; settingsFeedback = null; wifiScanButton = null
         mainText = null; subText = null; replyText = null; replyScroll = null; waveBars.clear()
         val root = column().apply {
@@ -186,6 +217,7 @@ class MainActivity : ComponentActivity() {
             else -> renderVoiceHome(root)
         }
         setContentView(root)
+        root.post { touchControls.firstOrNull { it.isShown && it.isEnabled }?.requestFocus() }
     }
 
     private fun header(root: LinearLayout, title: String, back: Boolean = false) {
@@ -491,19 +523,17 @@ class MainActivity : ComponentActivity() {
             return
         }
         stopSpeaking()
-        if (chineseModel == null || englishModel == null) {
-            loadingModel = true; setStatus("正在加载中英文离线语音模型…")
+        if (englishModel == null) {
+            loadingModel = true; setStatus("正在加载 Whisper Tiny 和唤醒词模型…")
             worker.execute {
                 val loaded = runCatching {
-                    val cn = Model(unpackModel("vosk-model-small-cn-0.22").absolutePath)
-                    val en = try { Model(unpackModel("vosk-model-small-en-us-0.15").absolutePath) }
-                        catch (error: Exception) { cn.close(); throw error }
-                    cn to en
+                    WhisperTinyNative.load(WhisperTinyNative.prepareModel(this))
+                    Model(unpackModel("vosk-model-small-en-us-0.15").absolutePath)
                 }
                 runOnUiThread {
                     loadingModel = false
-                    loaded.onSuccess { (cn, en) ->
-                        chineseModel = cn; englishModel = en
+                    loaded.onSuccess { en ->
+                        englishModel = en
                         if (resumed) startListening()
                     }
                         .onFailure { setStatus("语音模型加载失败：${it.message}") }
@@ -512,7 +542,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         try {
-            recognizer = BilingualSpeech(this, chineseModel!!, englishModel!!, isAwake = { awake },
+            recognizer = BilingualSpeech(this, englishModel!!, isAwake = { awake },
                 onLevel = { level -> if (listening) {
                     waveBars.forEachIndexed { i, bar -> bar.alpha = (0.3f + ((level + i * 13) % 70) / 100f).coerceAtMost(1f) }
                     if (page == "chat" && status in setOf(
@@ -526,33 +556,38 @@ class MainActivity : ComponentActivity() {
                 onPartial = { partial -> if (listening) {
                     lastHeard = partial
                     if (!awake && wakePhrase.containsMatchIn(partial)) {
-                        awake = true; replyVisible = false; firstHelloAt = 0L; updateConversationView()
-                    }
-                    if (awake) {
-                        val words = stripSpokenWake(wakePhrase.replaceFirst(partial, ""))
-                        if (words.isNotBlank() && !singleHello.matches(words) && words != livePartial) {
-                            livePartial = words
-                            if (isDeviceCommand(words)) cancelAutoSend()
-                            else setStatus("正在识别 · 等待识别完成")
-                            updateConversationView()
-                        }
+                        awake = true; lastHeard = ""; replyVisible = false; firstHelloAt = 0L; updateConversationView()
                     }
                 } },
                 onFinal = { result -> if (listening) {
                     lastHeard = ""
-                    val fallback = livePartial
-                    val before = draft
                     livePartial = ""
                     recognized(result)
-                    if (awake && draft == before && fallback.isNotBlank() &&
-                        (singleHello.matches(result) || wakePhrase.containsMatchIn(result))) {
-                        if (!executeDeviceCommand(fallback)) {
-                            draft = addWords(draft, fallback)
-                            setStatus("已识别 · 1.5 秒后发送")
-                            updateConversationView(); scheduleAutoSend()
+                } },
+                onUtterance = { pcm, done ->
+                    val generation = speechGeneration
+                    setStatus("正在识别…")
+                    speechWorker.execute {
+                        val started = SystemClock.elapsedRealtime()
+                        val result = runCatching { WhisperTinyNative.transcribe(pcm) }
+                        Log.d("GalaxySpeech", "Whisper decode ms=${SystemClock.elapsedRealtime() - started} success=${result.isSuccess} chars=${result.getOrNull()?.length ?: 0}")
+                        runOnUiThread {
+                            done()
+                            if (listening && generation == speechGeneration) {
+                                result.onSuccess { text ->
+                                    val cleaned = text.trim().trim('。', '.', '!', '！', '?', '？', '，', ',')
+                                    if (cleaned.isNotBlank()) {
+                                        lastHeard = ""
+                                        recognized(cleaned)
+                                    } else setStatus("没有识别到语音 · 请再说一次")
+                                }.onFailure {
+                                    setStatus(if (it.message?.contains("timed out") == true)
+                                        "识别超时 · 请再说一次" else "Whisper Tiny 识别失败：${it.message}")
+                                }
+                            }
                         }
                     }
-                } },
+                },
                 onError = { reason ->
                     stopListening(); setStatus("语音识别失败：$reason")
                     if (resumed) main.postDelayed({ if (resumed) startListening() }, 1200)
@@ -592,6 +627,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopListening() {
         if (!listening && recognizer == null) return
+        speechGeneration++
         listening = false
         recognizer?.stop(); recognizer = null
         setStatus("语音输入已停止")
@@ -601,24 +637,6 @@ class MainActivity : ComponentActivity() {
     private val singleHello = Regex("(?i)^hello[\\s,，。.!?]*$")
     private val spokenChineseWake = Regex("^(哈喽|哈罗|你好|海螺)[\\s,，。]*(哈喽|哈罗|你好|海螺)")
     private fun stripSpokenWake(text: String) = spokenChineseWake.replaceFirst(text.trim(), "").trim()
-    private fun normalizedCommand(text: String): String {
-        val normalized = text.trim().replace(" ", "")
-            .trim('。', '.', '!', '！', '?', '？', '，', ',').lowercase(Locale.ROOT)
-        return when (normalized) {
-            // The bundled Mandarin model repeatedly transcribes 几点了 as 级别了 on VENUS.
-            "级别了", "几点啊", "现在几点了", "现在几点啊" -> "几点了"
-            else -> normalized
-        }
-    }
-    private fun isDeviceCommand(text: String) = normalizedCommand(text) in setOf(
-        "发送", "提交", "确认发送", "取消", "清空", "朗读", "读出来", "停止朗读", "别读了", "新对话",
-        "设置", "打开设置", "手机配置", "确认配对", "配对确认", "取消配对", "返回", "打开对话", "对话",
-        "会话", "最近对话", "打开相机", "启动相机", "打开拍照", "拍照", "拍一张", "照相", "扫描配网", "扫描配网码", "连接wifi", "确认联网", "取消联网",
-        "开始录像", "启动录像", "录像", "停止录像", "结束录像", "打开相册", "查看照片",
-        "回到桌面", "返回桌面", "打开wifi设置", "打开无线设置", "打开蓝牙设置", "音量加", "调大音量",
-        "音量减", "调小音量", "电量", "查看电量", "几点了", "现在几点", "帮助", "有什么命令",
-        "takephoto", "startrecording", "stoprecording", "scanwifi", "confirmwifi", "cancelwifi", "back", "home"
-    )
     private fun confirmWifi() {
         val wifi = pendingWifi
         if (wifi == null) { setStatus("请先扫描手机配网码"); return }
@@ -636,9 +654,8 @@ class MainActivity : ComponentActivity() {
         navigate("camera")
     }
     private fun executeDeviceCommand(text: String): Boolean {
-        val command = normalizedCommand(text)
-        if (!isDeviceCommand(command)) return false
-        if (command in setOf("发送", "提交", "确认发送")) {
+        val command = VoiceCommandCatalog.resolve(text) ?: return false
+        if (command == VoiceCommand.SEND) {
             if (draft.isBlank() && livePartial.isNotBlank()) draft = livePartial
             livePartial = ""
             sendDraft()
@@ -646,38 +663,46 @@ class MainActivity : ComponentActivity() {
         }
         cancelAutoSend(); draft = ""; livePartial = ""; awake = false
         when (command) {
-            "取消", "清空" -> setStatus("已清空 · 正在听")
-            "朗读", "读出来" -> latestAnswer()?.let(::speak) ?: setStatus("没有可朗读的回复")
-            "停止朗读", "别读了" -> { stopSpeaking(); setStatus("已停止播报") }
-            "新对话" -> { newSession(); render() }
-            "设置", "打开设置", "手机配置" -> navigate("settings")
-            "确认配对", "配对确认" -> {
+            VoiceCommand.CLEAR -> setStatus("已清空 · 正在听")
+            VoiceCommand.SPEAK_REPLY -> latestAnswer()?.let(::speak) ?: setStatus("没有可朗读的回复")
+            VoiceCommand.STOP_SPEAKING -> { stopSpeaking(); setStatus("已停止播报") }
+            VoiceCommand.NEW_CHAT -> { newSession(); render() }
+            VoiceCommand.OPEN_SETTINGS -> navigate("settings")
+            VoiceCommand.STOP_CONFIGURATION -> {
+                pendingWifi = null
+                setupServer?.confirm(false)
+                stopPhoneSetup()
+                navigate("chat")
+                setStatus("已停止配置")
+            }
+            VoiceCommand.CONFIRM_PAIRING -> {
                 if (setupPhase == "confirm") { setupServer?.confirm(true); setupPhase = "transferring"; setStatus("配对已确认") }
                 else setStatus("当前没有待确认的配对")
             }
-            "取消配对" -> { setupServer?.confirm(false); setStatus("已取消配对") }
-            "返回", "打开对话", "对话", "back" -> navigate("chat")
-            "会话", "最近对话" -> navigate("sessions")
-            "打开相机", "启动相机", "打开拍照" -> openCamera()
-            "扫描配网", "扫描配网码", "连接wifi", "scanwifi" -> {
+            VoiceCommand.CANCEL_PAIRING -> { setupServer?.confirm(false); setStatus("已取消配对") }
+            VoiceCommand.OPEN_CHAT -> navigate("chat")
+            VoiceCommand.OPEN_SESSIONS -> navigate("sessions")
+            VoiceCommand.OPEN_CAMERA -> openCamera()
+            VoiceCommand.SCAN_WIFI -> {
                 if (page != "camera") openCamera("scan") else camera?.scanWifi()
             }
-            "确认联网", "confirmwifi" -> confirmWifi()
-            "取消联网", "cancelwifi" -> { pendingWifi = null; wifiScanButton?.text = "扫描配网码"; setStatus("已取消联网") }
-            "拍照", "拍一张", "照相", "takephoto" -> { if (page != "camera") openCamera("photo") else camera?.takePhoto() }
-            "开始录像", "启动录像", "录像", "startrecording" -> { if (page != "camera") openCamera("video") else camera?.startVideo() }
-            "停止录像", "结束录像", "stoprecording" -> camera?.stopVideo() ?: setStatus("当前没有录像")
-            "打开相册", "查看照片" -> runCatching {
+            VoiceCommand.CONFIRM_WIFI -> confirmWifi()
+            VoiceCommand.CANCEL_WIFI -> { pendingWifi = null; wifiScanButton?.text = "扫描配网码"; setStatus("已取消联网") }
+            VoiceCommand.TAKE_PHOTO -> { if (page != "camera") openCamera("photo") else camera?.takePhoto() }
+            VoiceCommand.START_RECORDING -> { if (page != "camera") openCamera("video") else camera?.startVideo() }
+            VoiceCommand.STOP_RECORDING -> camera?.stopVideo() ?: setStatus("当前没有录像")
+            VoiceCommand.OPEN_GALLERY -> runCatching {
                 startActivity(Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply { type = "image/*" })
             }.onFailure { setStatus("无法打开相册") }
-            "回到桌面", "返回桌面", "home" -> startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
-            "打开wifi设置", "打开无线设置" -> startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-            "打开蓝牙设置" -> startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-            "音量加", "调大音量" -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); setStatus("音量已调大") }
-            "音量减", "调小音量" -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0); setStatus("音量已调小") }
-            "电量", "查看电量" -> setStatus("电量 ${getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%")
-            "几点了", "现在几点" -> setStatus(java.text.SimpleDateFormat("HH:mm", Locale.CHINA).format(java.util.Date()))
-            "帮助", "有什么命令" -> setStatus("可说：拍照、开始录像、停止录像、返回、音量、电量、设置")
+            VoiceCommand.HOME -> startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
+            VoiceCommand.OPEN_WIFI_SETTINGS -> startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+            VoiceCommand.OPEN_BLUETOOTH_SETTINGS -> startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            VoiceCommand.VOLUME_UP -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); setStatus("音量已调大") }
+            VoiceCommand.VOLUME_DOWN -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0); setStatus("音量已调小") }
+            VoiceCommand.BATTERY -> setStatus("电量 ${getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%")
+            VoiceCommand.TIME -> setStatus(java.text.SimpleDateFormat("HH:mm", Locale.CHINA).format(java.util.Date()))
+            VoiceCommand.HELP -> setStatus("可说：拍照、录像、停止录像、扫描配网、停止配置、返回、音量、电量、时间")
+            VoiceCommand.SEND -> Unit
         }
         updateConversationView()
         return true
@@ -730,6 +755,148 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun availableTouchControls() = touchControls.filter { it.isShown && it.isEnabled }
+
+    private fun moveTouchFocus(next: Boolean) {
+        val controls = availableTouchControls()
+        if (controls.isEmpty()) return
+        val current = controls.indexOfFirst { it.hasFocus() }
+        val target = when {
+            current < 0 -> controls.first()
+            next -> controls[(current + 1) % controls.size]
+            else -> controls[(current - 1 + controls.size) % controls.size]
+        }
+        target.requestFocus()
+        target.requestRectangleOnScreen(android.graphics.Rect(0, 0, target.width, target.height), true)
+    }
+
+    private fun activateTouchFocus() {
+        val controls = availableTouchControls()
+        if (controls.isEmpty()) return
+        val target = controls.firstOrNull { it.hasFocus() } ?: controls.first().also { it.requestFocus() }
+        target.performClick()
+    }
+
+    private fun performTouchpadBack() {
+        if (page != "chat") navigate("chat") else onBackPressedDispatcher.onBackPressed()
+    }
+
+    private fun performTouchpadAction(action: TouchpadAction): Boolean {
+        when (action) {
+            TouchpadAction.ACTIVATE -> activateTouchFocus()
+            TouchpadAction.BACK -> performTouchpadBack()
+            TouchpadAction.NEXT -> moveTouchFocus(true)
+            TouchpadAction.PREVIOUS -> moveTouchFocus(false)
+            TouchpadAction.NONE -> return false
+        }
+        return true
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchStarted = true
+                touchStartedAt = event.eventTime
+                touchStartX = event.x; touchStartY = event.y
+                touchLastX = event.x; touchLastY = event.y
+                touchPointerCount = event.pointerCount
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_POINTER_UP -> {
+                if (touchStarted) {
+                    touchPointerCount = maxOf(touchPointerCount, event.pointerCount)
+                    touchLastX = event.x; touchLastY = event.y
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (touchStarted) {
+                    touchLastX = event.x; touchLastY = event.y
+                    val action = TouchpadGestureClassifier.classify(
+                        touchPointerCount,
+                        event.eventTime - touchStartedAt,
+                        touchLastX - touchStartX,
+                        touchLastY - touchStartY,
+                        touchTapSlop,
+                        touchSwipeThreshold
+                    )
+                    Log.d("GalaxyTouchpad", "pointers=$touchPointerCount duration=${event.eventTime - touchStartedAt} dx=${touchLastX - touchStartX} dy=${touchLastY - touchStartY} action=$action")
+                    touchStarted = false
+                    performTouchpadAction(action)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                touchStarted = false
+                return true
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(InputDevice.SOURCE_CLASS_POINTER)) {
+            if (event.actionMasked == MotionEvent.ACTION_SCROLL) {
+                val horizontal = event.getAxisValue(MotionEvent.AXIS_HSCROLL)
+                if (abs(horizontal) >= 0.1f) {
+                    moveTouchFocus(next = horizontal < 0f)
+                    return true
+                }
+            }
+            if (event.actionMasked == MotionEvent.ACTION_HOVER_MOVE || event.actionMasked == MotionEvent.ACTION_MOVE) {
+                val now = event.eventTime
+                if (now - relativeLastAt > 140) {
+                    relativeTravelX = 0f
+                    relativeGestureHandled = false
+                }
+                val relativeAxis = event.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
+                val delta = when {
+                    abs(relativeAxis) > 0.01f -> relativeAxis
+                    relativeLastX.isNaN() -> 0f
+                    else -> event.x - relativeLastX
+                }
+                relativeTravelX += delta
+                relativeLastX = event.x
+                relativeLastAt = now
+                if (!relativeGestureHandled && abs(relativeTravelX) >= relativeSwipeThreshold) {
+                    moveTouchFocus(next = relativeTravelX < 0f)
+                    Log.d("GalaxyTouchpad", "relative dx=$relativeTravelX")
+                    relativeGestureHandled = true
+                    return true
+                }
+            }
+            if (event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE) {
+                when (event.actionButton) {
+                    MotionEvent.BUTTON_PRIMARY -> { activateTouchFocus(); return true }
+                    MotionEvent.BUTTON_SECONDARY -> { performTouchpadBack(); return true }
+                }
+            }
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        Log.d("GalaxyTouchpad", "key code=${event.keyCode} action=${event.action}")
+        val handled = event.keyCode in setOf(
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F12,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK
+        )
+        if (!handled) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_UP) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F12 -> activateTouchFocus()
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> moveTouchFocus(true)
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> moveTouchFocus(false)
+                KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK -> performTouchpadBack()
+            }
+        }
+        return true
+    }
+
     override fun onBackPressed() {
         if (page != "chat") navigate("chat") else super.onBackPressed()
     }
@@ -753,7 +920,8 @@ class MainActivity : ComponentActivity() {
         cancelAutoSend(); stopPhoneSetup()
         camera?.close(); camera = null
         stopSpeaking(); systemTts?.shutdown(); edgeTts?.shutdown()
-        chineseModel?.close(); englishModel?.close(); worker.shutdownNow()
+        englishModel?.close(); worker.shutdownNow()
+        speechWorker.execute { WhisperTinyNative.close() }; speechWorker.shutdown()
         super.onDestroy()
     }
 }

@@ -8,24 +8,27 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
-/** One microphone stream feeds Mandarin and English decoders; no system ASR service is needed. */
+/** Vosk detects the wake phrase; after wake, PCM utterances go to multilingual Whisper Tiny. */
 internal class BilingualSpeech(
     private val context: Context,
-    private val chineseModel: Model,
     private val englishModel: Model,
     private val isAwake: () -> Boolean,
     private val onLevel: (Int) -> Unit,
     private val onPartial: (String) -> Unit,
     private val onFinal: (String) -> Unit,
+    private val onUtterance: (ShortArray, () -> Unit) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val main = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(false)
+    private val transcribing = AtomicBoolean(false)
     private var audio: AudioRecord? = null
     private var thread: Thread? = null
 
@@ -50,73 +53,68 @@ internal class BilingualSpeech(
     }
 
     private fun decode(capture: AudioRecord) {
-        var chinese: Recognizer? = null
-        var english: Recognizer? = null
+        var wake: Recognizer? = null
         try {
-            var decodingAwake = isAwake()
-            fun openRecognizers(awake: Boolean) {
-                chinese?.close(); english?.close()
-                chinese = if (awake) Recognizer(chineseModel, 16000f) else null
-                english = if (awake) Recognizer(englishModel, 16000f)
-                    else Recognizer(englishModel, 16000f, "[\"hello hello\", \"hello\", \"[unk]\"]")
-                chinese?.setWords(true)
-                english?.setWords(true)
-                decodingAwake = awake
-            }
-            openRecognizers(decodingAwake)
             val buffer = ByteArray(4096)
+            val segmenter = SpeechSegmenter()
             var previousPartial = ""
             var lastPartialAt = 0L
-            var badReads = 0
             var lastLevelAt = 0L
+            var badReads = 0
             while (running.get()) {
-                if (isAwake() != decodingAwake) {
-                    openRecognizers(isAwake())
-                    previousPartial = ""
-                }
                 val size = capture.read(buffer, 0, buffer.size)
                 if (size <= 0) {
                     if (size < 0 || ++badReads >= 10) error("麦克风读取中断（$size）")
                     continue
                 }
                 badReads = 0
-                if (System.currentTimeMillis() - lastLevelAt > 500) {
-                    lastLevelAt = System.currentTimeMillis()
-                    var total = 0L
-                    var count = 0
-                    for (i in 0 until size - 1 step 16) {
-                        val sample = ((buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 0xff)).toShort().toInt()
-                        total += kotlin.math.abs(sample).toLong()
-                        count++
-                    }
-                    val level = if (count == 0) 0 else ((total / count) / 120).toInt().coerceIn(0, 100)
-                    main.post { if (running.get()) onLevel(level) }
+                var total = 0L
+                var count = 0
+                for (i in 0 until size - 1 step 16) {
+                    val sample = ((buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 0xff)).toShort().toInt()
+                    total += abs(sample).toLong(); count++
                 }
-                val cnDone = chinese?.acceptWaveForm(buffer, size) ?: false
-                val enDone = english!!.acceptWaveForm(buffer, size)
-                if (cnDone || enDone) {
-                    val cn = if (cnDone) chinese!!.result else chinese?.partialResult.orEmpty()
-                    val en = if (enDone) english!!.result else english!!.partialResult
-                    val chosen = if (chinese == null) JSONObject(en).optString("text") else choose(cn, en)
-                    if (chosen.isNotBlank()) main.post { if (running.get()) onFinal(chosen) }
-                    chinese?.reset(); english!!.reset()
-                    previousPartial = ""
-                } else if (System.currentTimeMillis() - lastPartialAt > 250) {
-                    lastPartialAt = System.currentTimeMillis()
-                    val cn = chinese?.partialResult?.let { JSONObject(it).optString("partial") }.orEmpty()
-                    val en = JSONObject(english!!.partialResult).optString("partial")
-                    val partial = chooseText(cn, en)
-                    if (partial.isNotBlank() && partial != previousPartial) {
-                        previousPartial = partial
-                        main.post { if (running.get()) onPartial(partial) }
+                val amplitude = if (count == 0) 0 else (total / count).toInt()
+                val now = System.currentTimeMillis()
+                if (now - lastLevelAt > 500) {
+                    lastLevelAt = now
+                    if (isAwake()) Log.d("GalaxySpeech", "amplitude=$amplitude")
+                    main.post { if (running.get()) onLevel((amplitude / 120).coerceIn(0, 100)) }
+                }
+                if (!isAwake()) {
+                    segmenter.reset()
+                    if (wake == null) wake = Recognizer(englishModel, 16000f,
+                        "[\"hello hello\", \"hello\", \"[unk]\"]").also { it.setWords(true) }
+                    val done = wake.acceptWaveForm(buffer, size)
+                    if (done) {
+                        val result = JSONObject(wake.result).optString("text")
+                        if (result.isNotBlank()) main.post { if (running.get()) onFinal(result) }
+                        wake.reset(); previousPartial = ""
+                    } else if (now - lastPartialAt > 250) {
+                        lastPartialAt = now
+                        val partial = JSONObject(wake.partialResult).optString("partial")
+                        if (partial.isNotBlank() && partial != previousPartial) {
+                            previousPartial = partial
+                            main.post { if (running.get()) onPartial(partial) }
+                        }
+                    }
+                    continue
+                }
+                wake?.close(); wake = null
+                if (transcribing.get()) continue
+                val pcm = segmenter.accept(buffer, size, amplitude)
+                if (pcm != null && transcribing.compareAndSet(false, true)) {
+                    Log.d("GalaxySpeech", "utterance samples=${pcm.size}")
+                    main.post {
+                        if (running.get()) onUtterance(pcm) { transcribing.set(false) }
+                        else transcribing.set(false)
                     }
                 }
             }
         } catch (error: Exception) {
             main.post { if (running.get()) onError(error.message ?: "语音识别失败") }
         } finally {
-            chinese?.close(); english?.close()
-            capture.release()
+            wake?.close(); capture.release()
             if (audio === capture) audio = null
         }
     }
@@ -128,34 +126,4 @@ internal class BilingualSpeech(
         runCatching { thread?.join(1000) }
         thread = null
     }
-
-    private fun choose(cnJson: String, enJson: String): String {
-        val cn = JSONObject(cnJson)
-        val en = JSONObject(enJson)
-        val cnText = cn.optString("text", cn.optString("partial")).trim()
-        val enText = en.optString("text", en.optString("partial")).trim()
-        if (enText.isBlank()) return cnText
-        if (cnText.isBlank()) return enText
-        // The English decoder may hear the wake phrase while Mandarin hears the command.
-        if (wakePhrase.containsMatchIn(enText) && cnText.count(::isHan) >= 2)
-            return "$enText $cnText"
-        val enConfidence = confidence(en)
-        val cnConfidence = confidence(cn)
-        return if (enText.contains(Regex("(?i)\\b(hello|hi|hey)\\b")) ||
-            enConfidence > cnConfidence + 0.12) enText else cnText
-    }
-
-    private fun confidence(json: JSONObject): Double {
-        val words = json.optJSONArray("result") ?: return 0.0
-        if (words.length() == 0) return 0.0
-        return (0 until words.length()).sumOf { words.optJSONObject(it)?.optDouble("conf") ?: 0.0 } / words.length()
-    }
-
-    private fun chooseText(cn: String, en: String): String {
-        if (wakePhrase.containsMatchIn(en) && cn.count(::isHan) >= 2) return "$en $cn"
-        if (en.contains(Regex("(?i)\\b(hello|hi|hey)\\b"))) return en
-        return if (cn.isNotBlank()) cn else en
-    }
-    private fun isHan(char: Char) = char.code in 0x4e00..0x9fff
-    private val wakePhrase = Regex("(?i)\\bhello[\\s,，。.!?]*hello\\b")
 }
