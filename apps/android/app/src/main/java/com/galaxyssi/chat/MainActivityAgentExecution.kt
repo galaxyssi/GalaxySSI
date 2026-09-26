@@ -861,7 +861,6 @@ internal fun MainActivity.executeDirectSystemAction(
         val outcome = runCatching {
             if (contextualAction.kind == AgentActionKind.CALL_NATIVE_TOOL) {
                 val notifications = AgentActionNotificationCenter(this@executeDirectSystemAction)
-                notifications.showRunning(contextualAction)
                 mobileNativeAgent.executeDirectAction(contextualAction, conversationId, turnId).also { result ->
                     notifications.showResult(contextualAction, result)
                 }

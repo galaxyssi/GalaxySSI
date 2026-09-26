@@ -561,7 +561,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     internal fun publishMutation(before: List<AgentMemoryItem>, after: List<AgentMemoryItem>) {
         if (suppressObservations || before == after) return
-        GlobalConversationEventBus.publishMemoryMutations(appContext, before, after)
+        GlobalConversationEventBus.publishMemoryMutationsAsync(appContext, before, after)
     }
 
     internal fun encodeMemoryItem(item: AgentMemoryItem): JSONObject = AgentMemoryItemCodec.encode(item)
