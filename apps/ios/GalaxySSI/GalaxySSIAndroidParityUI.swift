@@ -194,29 +194,6 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil || !activeVoiceAgentRuns.isEmpty {
-          GalaxySSIAgentHomeSafetyStrip(
-            permissionMode: store.agentSafetySettings.permissionMode,
-            highRiskGuard: store.agentSafetySettings.highRiskGuard,
-            memoryCapture: store.agentSafetySettings.memoryCapture,
-            taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
-            executionPaused: store.agentSafetySettings.executionPaused,
-            onCyclePermissionMode: cycleAgentPermissionMode,
-            onToggleHighRiskGuard: {
-              store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
-            },
-            onToggleMemoryCapture: {
-              store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
-            },
-            onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
-            onToggleExecutionPaused: {
-              store.updateAgentSafetySettings { $0.executionPaused.toggle() }
-            },
-            t: t
-          )
-          .padding(.horizontal, 10)
-          .padding(.top, 6)
-        }
         agentOutput
         agentComposer
       }

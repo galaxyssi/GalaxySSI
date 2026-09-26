@@ -97,53 +97,6 @@ extension AgentHomeView {
               activeRemoteAgentTask != nil ||
               !activeVoiceAgentRuns.isEmpty ||
               !recoverableAgentTasksFromOtherSessions.isEmpty {
-            GalaxySSIAgentExecutionOverviewView(
-              activeRemoteAgentTask: activeRemoteAgentTask,
-              activeExecutionTask: activeExecutionTask,
-              actionQueueItems: agentActionQueueItems,
-              screen: agentScreenSnapshot.screen,
-              screenSections: agentScreenSnapshot.sections,
-              t: t,
-              remoteTimelineLine: remoteAgentTimelineLine,
-              executionDuration: { startedAtMillis, updatedAtMillis in
-                executionDuration(
-                  startedAtMillis: startedAtMillis,
-                  updatedAtMillis: updatedAtMillis
-                )
-              },
-              liveExecutionDuration: { elapsedMillis in
-                executionDuration(elapsedMillis: elapsedMillis)
-              },
-              timelineActions: { task in agentTimelineActions(for: task) },
-              timelineActionTitle: agentTimelineActionTitle,
-              timelineActionIcon: agentTimelineActionIcon,
-              isRemoteTaskCancelling: { taskID in
-                cancellingRemoteTaskIDs.contains(taskID)
-              },
-              remoteCancellationTitle: { isCancelling in
-                isCancelling
-                  ? t("galaxyssi.agent.remote_status.cancelling", "Cancelling...")
-                  : t("galaxyssi.agent.remote_status.cancel", "Cancel task")
-              },
-              onCancelRemoteTask: cancelRemoteAgentTask,
-              onCancelExecutionTask: cancelActiveAgentTask,
-              onTimelineAction: { action, task in
-                runAgentTimelineAction(action, task: task)
-              },
-              onEditAction: { item in
-                homeActionEditorSelection = GalaxySSIAgentRuntimeActionSelection(
-                  task: item.task,
-                  action: item.action
-                )
-              },
-              onScreenCommand: prefillAgentScreenCommand,
-              onRefreshScreen: refreshAgentScreenContext,
-              onChangeAgent: {
-                modelSelection = AgentModelSelectionSettings.selection(
-                  for: store.activeAgentConversationId
-                )
-              }
-            )
             GalaxySSIAgentTranscriptMessagesView(
               messages: transcriptMessages,
               waitingMessageIDs: waitingMessageIDs,

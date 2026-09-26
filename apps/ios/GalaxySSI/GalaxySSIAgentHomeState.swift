@@ -87,17 +87,26 @@ extension AgentHomeView {
   }
 
   var messages: [ChatMessage] {
-    let allMessages = store.messages(for: contact.id)
+    let allMessages = store.messages(for: contact.id).filter {
+      !isLegacyDesktopPairingPrompt($0)
+    }
     guard let session = activeAgentSession else {
       return allMessages
     }
-    let scopedMessages = store.agentSessionMessages(session.id)
+    let scopedMessages = store.agentSessionMessages(session.id).filter {
+      !isLegacyDesktopPairingPrompt($0)
+    }
     guard scopedMessages.isEmpty else {
       return scopedMessages
     }
     return allMessages.filter {
       $0.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+  }
+
+  private func isLegacyDesktopPairingPrompt(_ message: ChatMessage) -> Bool {
+    message.isSystem &&
+      message.content == "Pair GalaxySSI Desktop to start a trusted Link conversation."
   }
 
   static let agentTranscriptPageSize = 24
