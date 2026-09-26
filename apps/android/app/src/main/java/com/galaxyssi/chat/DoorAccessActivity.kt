@@ -46,7 +46,7 @@ class DoorAccessActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        restoredConfiguration = savedInstanceState?.getString(EXTRA_CONFIGURATION)
+        restoredConfiguration = if (isWatch) null else savedInstanceState?.getString(EXTRA_CONFIGURATION)
         val scroll = ScrollView(this)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -70,7 +70,7 @@ class DoorAccessActivity : Activity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        configuration?.let { outState.putString(EXTRA_CONFIGURATION, it.json) }
+        if (!isWatch) configuration?.let { outState.putString(EXTRA_CONFIGURATION, it.json) }
         super.onSaveInstanceState(outState)
     }
 
