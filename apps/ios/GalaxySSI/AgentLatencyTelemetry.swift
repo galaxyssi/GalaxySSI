@@ -130,7 +130,7 @@ enum AgentLatencyContract {
     ("phone_model_reuse_ms", .phoneModelReuseStarted, .phoneModelReuseFinished),
     ("phone_model_generate_ms", .phoneModelGenerateStarted, .phoneModelGenerateFinished),
     ("phone_model_first_token_ms", .phoneModelFirstTokenStarted, .phoneModelFirstTokenFinished),
-    ("phone_model_release_ms", .phoneModelReleaseStarted, .phoneModelReleaseFinished)
+    ("phone_model_release_ms", .phoneModelReleaseStarted, .phoneModelReleaseFinished),
     ("phone_planning_total_ms", .phonePlanningTotalStarted, .phonePlanningTotalFinished),
     ("phone_planning_progress_ms", .phonePlanningProgressStarted, .phonePlanningProgressFinished),
     ("phone_planning_inventory_ms", .phonePlanningInventoryStarted, .phonePlanningInventoryFinished),
