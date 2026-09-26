@@ -41,6 +41,7 @@ internal class AgentActionNotificationCenter(baseContext: Context) {
         manager.notify(
             notificationId(action),
             builder(action)
+                .setSilent(true)
                 .setContentTitle(operationTitle(action))
                 .setContentText(context.getString(R.string.agent_operation_status_running))
                 .setProgress(0, 0, true)
@@ -52,12 +53,12 @@ internal class AgentActionNotificationCenter(baseContext: Context) {
     }
 
     fun showResult(action: AgentAction, result: AgentActionResult) {
-        ensureChannel()
-        val detail = if (result.success) {
-            context.getString(R.string.agent_operation_status_success)
-        } else {
-            result.message.trim().ifBlank { context.getString(R.string.agent_operation_status_failure) }
+        if (result.success) {
+            manager.cancel(notificationId(action))
+            return
         }
+        ensureChannel()
+        val detail = result.message.trim().ifBlank { context.getString(R.string.agent_operation_status_failure) }
         manager.notify(
             notificationId(action),
             builder(action, result.success)
