@@ -21,6 +21,35 @@ class AgentTranscriptProjectionInstrumentedTest {
         val answer = store.list(id).single { it.role == AgentTranscriptRole.ASSISTANT }
         assertEquals(1000L, answer.timestampMillis)
         assertEquals("Final answer with verified citation", answer.text)
+        assertEquals(1000L, store.conversation(id)?.updatedAt)
+    }
+
+    @Test fun repeatedModelAndRecoveryProjectionDoNotChangeMessageActivity() = withConversation { store, id, turn ->
+        store.upsert(AgentTranscriptRole.ASSISTANT, "Saved answer", "assistant-final:$turn", 2000L, id, turn)
+        val before = requireNotNull(store.conversation(id))
+        repeat(20) { store.setSelectedModelOrAgent(id, "Codex") }
+        val after = requireNotNull(store.conversation(id))
+        assertEquals("Codex", after.selectedModelOrAgent)
+        assertEquals(before.updatedAt, after.updatedAt)
+        assertEquals(before.latestMessageTimestampMillis, after.latestMessageTimestampMillis)
+        assertEquals(2000L, ConversationHubModels.messageActivityAt(after))
+    }
+
+    @Test fun inspectLiveScreenTaskMetadataOnly() {
+        val args = androidx.test.platform.app.InstrumentationRegistry.getArguments()
+        org.junit.Assume.assumeTrue(args.getString("inspect_screen_session") == "true")
+        val id = requireNotNull(args.getString("conversation_id"))
+        val store = AgentTranscriptStore(context, "screen-session-audit")
+        val conversation = requireNotNull(store.conversation(id))
+        android.util.Log.i("ScreenSessionAudit", "messageAt=${conversation.latestMessageTimestampMillis} updatedAt=${conversation.updatedAt}")
+        val workspaces = EncryptedAgentWorkspaceStore(context).list().filter { it.conversationId == id }
+        for (workspace in workspaces) {
+            val session = SharedPreferencesAgentSessionStore(context, "task:${workspace.workspaceId}").load()
+            val meta = session?.lastActionResult?.metadata.orEmpty()
+            android.util.Log.i("ScreenSessionAudit", "workspace=${workspace.workspaceId} task=${workspace.taskId} status=${workspace.status} phase=${session?.phase} updatedAt=${session?.updatedAtMillis} " +
+                "source=${meta["source_message_id"]} location=${meta["resource_location"]} remoteStatus=${meta["remote_task_status"]} awaiting=${meta["awaiting_response"]} recoveryAttempt=${meta["handoff_recovery_attempt"]} " +
+                "actionKind=${session?.currentPlan?.actions?.lastOrNull()?.kind} actionStatus=${session?.currentPlan?.actions?.lastOrNull()?.status}")
+        }
     }
 
     @Test fun applicationContextPersistsFinalAndImageMetadataIdempotently() = withConversation { store, id, turn ->
@@ -73,6 +102,18 @@ class AgentTranscriptProjectionInstrumentedTest {
         assertFalse(store.list(id).any { it.role == AgentTranscriptRole.ASSISTANT })
         assertEquals(1, store.list(id).count { it.dedupeKey.startsWith("audit:") })
         assertEquals(1, store.list(id).count { it.dedupeKey == "connector-turn:$turn" })
+    }
+
+    @Test fun interruptedTeamPauseDoesNotOverwriteTheSavedAnswer() = withConversation { store, id, turn ->
+        store.upsert(AgentTranscriptRole.ASSISTANT, "Saved answer", AgentFinalResponseIdentity.dedupeKey(turn),
+            2000L, id, turn, "task")
+        val paused = state(AgentPhase.PAUSED, "Previous team is interrupted", metadata = mapOf(
+            "awaiting_response" to "true", "source_message_id" to "904",
+            AgentTeamParentRecoveryPolicy.PAUSED to "true"))
+        repeat(2) { context.persistAgentTranscript(paused, id, turn, store) }
+        val answer = store.list(id).single { it.role == AgentTranscriptRole.ASSISTANT }
+        assertEquals("Saved answer", answer.text)
+        assertEquals(2000L, store.conversation(id)?.updatedAt)
     }
 
     @Test fun confirmationRemainsAnApprovalCardWithoutExecutingAnAction() = withConversation { store, id, turn ->

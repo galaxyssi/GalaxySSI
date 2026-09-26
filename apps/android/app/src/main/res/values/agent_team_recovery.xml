@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_team_recovery_paused">The previous Agent team was interrupted or is unavailable. The task is paused; existing replies can still arrive. No new team was started.</string>
+</resources>

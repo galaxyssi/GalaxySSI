@@ -167,6 +167,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     fun retryPending() {
+        if (closed || !ScreenAssistantSettings.enabled(service)) return
         val (file, question) = ScreenAssistantSettings.pending(service) ?: return
         if (AgentConversationWindows.screenAssistantRunner() != null) submit(file, question)
     }

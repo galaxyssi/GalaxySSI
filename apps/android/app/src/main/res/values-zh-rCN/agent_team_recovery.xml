@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_team_recovery_paused">之前的多 Agent 团队已中断或无法恢复。任务已暂停，仍可接收原任务的迟到结果，没有重新创建团队。</string>
+</resources>

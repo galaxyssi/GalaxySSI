@@ -7,6 +7,24 @@ import org.junit.Test
 
 class AgentLongTaskRecoveryPolicyTest {
     @Test
+    fun oldTeamWaitUsesSavedTeamInsteadOfLivenessOrRedispatch() {
+        val saved = session(AgentPhase.WAITING_RESPONSE, plan(AgentActionStatus.RUNNING),
+            AgentActionResult("action", true, "Awaiting team", metadata = mapOf(
+                "resource_location" to "distributed", "team_run_id" to "original",
+                "source_message_id" to "123")))
+        assertEquals(AgentLongTaskRecoveryMode.TEAM_RECONCILIATION,
+            AgentLongTaskRecoveryPolicy.decide(workspace(AgentWorkspaceStatus.RUNNING), saved)?.mode)
+    }
+
+    @Test
+    fun interruptedTeamPauseIsNotAutomaticallyResumed() {
+        val saved = session(AgentPhase.PAUSED, plan(AgentActionStatus.RUNNING),
+            AgentActionResult("action", false, "Team interrupted", metadata = mapOf(
+                AgentTeamParentRecoveryPolicy.PAUSED to "true")))
+        assertNull(AgentLongTaskRecoveryPolicy.decide(workspace(AgentWorkspaceStatus.PAUSED), saved))
+    }
+
+    @Test
     fun interruptedMutationIsRecoveredThroughObservationAndReplanning() {
         val plan = plan(
             AgentActionStatus.FAILED,

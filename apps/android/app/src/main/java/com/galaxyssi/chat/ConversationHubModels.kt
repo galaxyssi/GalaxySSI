@@ -123,6 +123,9 @@ internal object ConversationHubPreviewPolicy {
 }
 
 internal object ConversationHubModels {
+    internal fun messageActivityAt(conversation: AgentConversation): Long =
+        AgentConversationActivityPolicy.messageTime(conversation)
+
     fun clearContactUnread(
         source: List<ConversationHubContactSummary>,
         contactId: String
@@ -145,7 +148,7 @@ internal object ConversationHubModels {
                 kind = ConversationHubItemKind.AGENT,
                 title = conversation.title,
                 subtitle = conversation.summary,
-                updatedAt = conversation.updatedAt,
+                updatedAt = messageActivityAt(conversation),
                 pinned = conversation.pinned,
                 archived = conversation.status == AgentConversationStatus.ARCHIVED,
                 searchableMetadata = conversation.selectedModelOrAgent

@@ -32,7 +32,8 @@ internal enum class AgentLongTaskRecoveryMode {
     REPLANNING,
     INTERRUPTED_EXECUTION,
     LIVENESS_ASSESSMENT,
-    REMOTE_SILENCE
+    REMOTE_SILENCE,
+    TEAM_RECONCILIATION
 }
 
 internal data class AgentLongTaskRecoveryDecision(
@@ -65,9 +66,14 @@ internal object AgentLongTaskRecoveryPolicy {
         if (workspace.workspaceId in activeWorkspaceIds || workspace.status.isTerminal ||
             workspace.cancellationRequested || session == null ||
             session.phase in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) ||
-            session.lastActionResult?.actionId == "agent-paused"
+            session.lastActionResult?.actionId == "agent-paused" ||
+            session.lastActionResult?.metadata?.get(AgentTeamParentRecoveryPolicy.PAUSED) == "true"
         ) {
             return null
+        }
+        if (AgentTeamParentRecoveryPolicy.isTeamWait(session.phase, session.lastActionResult?.metadata.orEmpty())) {
+            return AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.TEAM_RECONCILIATION,
+                "Reconcile the original local Agent team without redispatch")
         }
         if (AgentReplanningRecoveryPolicy.belongsTo(workspace, session) &&
             (session.lastActionResult?.actionId == "agent-interrupted" || AgentSessionInterruptionPolicy.wasInterrupted(session))) {
@@ -218,7 +224,8 @@ class AgentLongTaskRecoveryWorker(
                         AgentRecoveryTranscript.state(saved)
                     } else {
                         val runtime = MobileNativeAgent(context, sessionStore = sessionStore)
-                        if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
+                        if (decision.mode in setOf(AgentLongTaskRecoveryMode.REMOTE_SILENCE,
+                                AgentLongTaskRecoveryMode.TEAM_RECONCILIATION)) {
                             AgentTranscriptStore(context).conversation(workspace.conversationId)?.let { conversation ->
                                 runtime.activeConversationContext = AgentConversationContext(workspace.conversationId,
                                     "", emptyList(), conversation.privateMode, trackingPaused = conversation.trackingPaused)
@@ -229,7 +236,9 @@ class AgentLongTaskRecoveryWorker(
                             taskContext.persistExecutionLoop(event)
                         })
                         // The runtime owns dispatch and permission waits; recovery never grants consent.
-                        val recovered = if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
+                        val recovered = if (decision.mode == AgentLongTaskRecoveryMode.TEAM_RECONCILIATION) {
+                            runtime.reconcileSavedAgentTeam() ?: runtime.snapshot()
+                        } else if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
                             val current = runtime.pendingConnectorMetadata(savedSource)
                             if (AndroidAgentRemoteSilence.expired(context, savedSource, current)) {
                                 runtime.handleConnectorTimeout(savedSource, AgentConnectorTimeoutStage.NOT_ACCEPTED,

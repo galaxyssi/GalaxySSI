@@ -5,6 +5,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationHubModelsTest {
+    @Test fun messageTimeIgnoresLaterBackgroundMetadataUpdates() {
+        val conversation = AgentConversation("screen", "Screen", 100L, 99_000L,
+            latestMessageIndexed = true, latestMessageTimestampMillis = 200L)
+        assertEquals(200L, ConversationHubModels.messageActivityAt(conversation))
+        assertEquals(100L, ConversationHubModels.messageActivityAt(conversation.copy(latestMessageTimestampMillis = 0L)))
+        assertEquals(99_000L, ConversationHubModels.messageActivityAt(conversation.copy(
+            latestMessageIndexed = false, latestMessageTimestampMillis = 0L)))
+    }
+
     @Test
     fun hiddenAgentConversationHubCanBeRestoredOnlyOnce() {
         val state = ConversationHubReturnState()
