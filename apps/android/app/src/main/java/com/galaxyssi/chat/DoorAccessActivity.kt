@@ -141,7 +141,7 @@ class DoorAccessActivity : Activity() {
                 .setPositiveButton(text("uninstall_action")) { _, _ ->
                     credentials.clear(); session = null; doors = emptyList()
                     DoorAccessConfigurationStore(this).clear()
-                    skillPreferences.edit().putBoolean("installed", false).apply(); recreate()
+                    skillPreferences.edit().putBoolean("installed", false).putBoolean("enabled", false).apply(); recreate()
                 }.show()
         }
     }
@@ -182,7 +182,7 @@ class DoorAccessActivity : Activity() {
                     .setPositiveButton(text("import_enable")) { _, _ ->
                         val saved = runCatching {
                             DoorAccessConfigurationStore(this).save(inspected.configuration)
-                            check(skillPreferences.edit().putBoolean("installed", true).commit())
+                            check(skillPreferences.edit().putBoolean("installed", true).putBoolean("enabled", true).commit())
                         }.isSuccess
                         if (saved) recreate() else status.text = text("save_failed")
                     }.show()

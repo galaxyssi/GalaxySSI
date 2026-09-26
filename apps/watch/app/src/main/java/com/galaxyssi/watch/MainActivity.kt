@@ -19,7 +19,6 @@ import android.view.*
 import android.widget.*
 import android.window.OnBackInvokedDispatcher
 import androidx.wear.widget.SwipeDismissFrameLayout
-import com.galaxyssi.chat.DoorAccessConfigurationStore
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -95,7 +94,7 @@ class MainActivity : Activity() {
     private val updated: () -> Unit = {
         if (page == "home") refreshConversation()
         else if (page !in setOf("home-menu", "task", "session-search", "compose", "pair", "pair-review", "api-edit", "api-review",
-                "settings", "settings-connection", "settings-voice", "settings-wake", "settings-web", "settings-feedback",
+                "settings", "settings-connection", "settings-voice", "settings-wake", "settings-web", "settings-feedback", "settings-skills", "settings-skill-door",
                 "about", "location-settings", "web-sources", "web-credential", "api-providers", "api-models")) render(true)
 
     }
@@ -157,6 +156,10 @@ class MainActivity : Activity() {
             setTurnScreenOn(true)
         }
         intent.getStringExtra("task_id")?.takeIf { it.isNotBlank() }?.let { selectedTask = it; repo.saveActiveTask(it); page = "home" }
+        if (intent.getBooleanExtra("open_skills", false)) {
+            history.clear(); history.add("home-menu"); history.add("settings"); page = "settings-skills"
+            intent.removeExtra("open_skills")
+        }
         // adb provisioning writes a one-time offer to private app storage. It still
         // requires an on-watch identity review and confirmation before trust changes.
         val offer = File(filesDir, "pairing-offer.json")
@@ -338,6 +341,8 @@ class MainActivity : Activity() {
             "settings-voice" -> settingsVoice()
             "settings-wake" -> settingsWake()
             "settings-web" -> settingsWeb()
+            "settings-skills" -> settingsSkills()
+            "settings-skill-door" -> settingsDoorSkill()
             "settings-feedback" -> settingsFeedback()
             "location-settings" -> locationSettings()
             "about" -> {
@@ -516,12 +521,14 @@ class MainActivity : Activity() {
     }
     private fun sendFromHome(prompt: String = draft) {
         if (busy || prompt.isBlank()) return
-        if (DoorAccessConfigurationStore(this).load()?.parse(prompt) != null) {
+        val doorPlan = WatchDoorAccess.prepare(this, prompt)
+        if (doorPlan is WatchDoorAccess.Plan.Panel) {
             draft = ""
             repo.saveDraft("")
             conversationView?.setDraft("")
             startActivity(Intent(this, com.galaxyssi.chat.DoorAccessActivity::class.java)
                 .putExtra(com.galaxyssi.chat.DoorAccessActivity.EXTRA_REQUEST, prompt)
+                .putExtra(com.galaxyssi.chat.DoorAccessActivity.EXTRA_CONFIGURATION, doorPlan.configuration.json)
                 .putExtra(com.galaxyssi.chat.DoorAccessActivity.EXTRA_COMMAND_ID, UUID.randomUUID().toString()))
             return
         }
@@ -533,18 +540,18 @@ class MainActivity : Activity() {
             return
         }
         val previous = repo.store.cachedTask(selectedTask)
-        if (!locationRequest && repo.selectedModel(previous) == null) { navigate("switch-model"); return }
+        if (!locationRequest && doorPlan !is WatchDoorAccess.Plan.Open && repo.selectedModel(previous) == null) { navigate("switch-model"); return }
         busy = true; conversationView?.sending(true); updateScreenAwake()
         val composer = conversationView?.input
         composer?.clearFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(composer?.windowToken, 0)
         conversationView?.requestFocus()
-        repo.send(prompt, previous) { sent ->
+        val done: (WatchTask?) -> Unit = letDone@ { sent ->
             busy = false
-            if (isDestroyed || isFinishing) return@send
+            if (isDestroyed || isFinishing) return@letDone
             if (sent == null) {
                 draft = prompt; repo.saveDraft(prompt); conversationView?.setDraft(prompt)
-                toast(if (repo.errorResource != 0) repo.errorResource else R.string.send_failed); refreshConversation(); return@send
+                toast(if (repo.errorResource != 0) repo.errorResource else R.string.send_failed); refreshConversation(); return@letDone
             }
             selectedTask = sent.id; repo.saveActiveTask(sent.id); followUpId = ""
             draft = ""; repo.saveDraft(""); page = "home"; history.clear()
@@ -552,6 +559,8 @@ class MainActivity : Activity() {
             refreshConversation(true)
             runCatching { startForegroundService(Intent(this, WatchConnectionService::class.java)) }
         }
+        if (doorPlan is WatchDoorAccess.Plan.Open) repo.sendDoorAccess(prompt, previous, doorPlan, done)
+        else repo.send(prompt, previous, done)
     }
     private fun devices() {
         title(R.string.devices)
@@ -828,10 +837,44 @@ class MainActivity : Activity() {
         settingsRow(R.string.settings_voice, R.string.settings_voice_summary) { navigate("settings-voice") }
         settingsRow(R.string.settings_wake, R.string.settings_wake_summary) { navigate("settings-wake") }
         settingsRow(R.string.settings_web, R.string.settings_web_summary) { navigate("settings-web") }
-        settingsRow(R.string.settings_door_skill, R.string.settings_door_skill_summary) {
+        settingsRow(R.string.settings_skills, R.string.settings_skills_summary) { navigate("settings-skills") }
+        settingsRow(R.string.settings_feedback, R.string.settings_feedback_summary) { navigate("settings-feedback") }
+    }
+    private fun settingsSkills() {
+        settingsHeader(R.string.settings_skills)
+        val skills = WatchSkillManager(this)
+        if (skills.installed()) {
+            settingsRow(R.string.skill_door_title,
+                if (skills.enabled()) R.string.skill_enabled else R.string.skill_disabled) { navigate("settings-skill-door") }
+        } else {
+            label(getString(R.string.skills_empty), 16, Color.WHITE)
+            settingsNote(R.string.skills_empty_help)
+        }
+        button(R.string.skills_import, true) { importSkill() }
+    }
+    private fun settingsDoorSkill() {
+        settingsHeader(R.string.skill_door_title)
+        val skills = WatchSkillManager(this)
+        if (!skills.installed()) { settingsNote(R.string.skills_empty); return }
+        settingsToggle(R.string.skill_enable, R.string.skill_enable_summary, skills.enabled()) { enabled ->
+            runCatching { skills.setEnabled(enabled) }.onFailure { toast(R.string.skills_save_failed); render(true) }
+        }
+        settingsRow(R.string.skill_setup, R.string.skill_setup_summary) {
             startActivity(Intent(this, com.galaxyssi.chat.DoorAccessActivity::class.java))
         }
-        settingsRow(R.string.settings_feedback, R.string.settings_feedback_summary) { navigate("settings-feedback") }
+        button(R.string.skills_update) { importSkill() }
+        button(R.string.skills_uninstall) {
+            android.app.AlertDialog.Builder(this).setMessage(R.string.skill_uninstall_confirm)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.skills_uninstall) { _, _ ->
+                    runCatching { skills.uninstall() }.onSuccess { back() }
+                        .onFailure { toast(R.string.skills_save_failed) }
+                }.show()
+        }
+    }
+    private fun importSkill() {
+        startActivity(Intent(this, WatchPhoneSetupActivity::class.java)
+            .putExtra(WatchPhoneSetupActivity.EXTRA_IMPORT_SKILL, true))
     }
     private fun settingsConnection() {
         settingsHeader(R.string.settings_connection)

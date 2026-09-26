@@ -51,6 +51,10 @@ class WatchSetupActivity : Activity() {
     private var page = "discover"
     private var connected = false
     private var scanning = false
+    private var pickingSkill = false
+    private var skillBytes: ByteArray? = null
+    private var skillVersion = ""
+    private var skillTransferComplete = false
     private var code = ""
     private var host = ""
     private var port = ""
@@ -97,7 +101,7 @@ class WatchSetupActivity : Activity() {
     override fun onStop() {
         super.onStop(); stopDiscovery(); stopWifiScan()
         // The scanner is an app-owned foreground step, and does not receive credentials.
-        if (!scanning && !isChangingConfigurations) {
+        if (!scanning && !pickingSkill && !isChangingConfigurations) {
             disconnect()
             if (page !in setOf("success", "discover", "manual", "wifi")) { page = "offline"; render() }
         }
@@ -121,7 +125,7 @@ class WatchSetupActivity : Activity() {
             "discover", "success" -> finish()
             "confirm", "connecting", "offline", "manual" -> { disconnect(); go("discover"); discover() }
             "edit", "preview" -> go("cloud")
-            "cloud", "remote" -> go("hub")
+            "cloud", "remote", "skills" -> go("hub")
             "waiting", "agents" -> { disconnect(); go("offline") }
             else -> { disconnect(); go("discover"); discover() }
         }
@@ -169,6 +173,7 @@ class WatchSetupActivity : Activity() {
         toolbar.findViewById<TextView>(R.id.watchSetupTitle).text = when (page) {
             "manual" -> tr("手动连接", "Manual connection"); "confirm" -> tr("核对连接", "Verify connection")
             "wifi" -> tr("眼镜 Wi-Fi 配网", "Glasses Wi-Fi setup")
+            "skills" -> tr("导入手表 Skill", "Import watch Skill")
             "cloud" -> tr("云端 API Key", "Cloud API Key"); "edit" -> tr("编辑云端配置", "Edit cloud configuration")
             "preview" -> tr("确认同步", "Confirm transfer"); "remote" -> tr("添加远端电脑", "Add remote computer")
             "waiting", "agents" -> tr("远端 Agent", "Remote Agent"); "success" -> tr("同步完成", "Transfer complete")
@@ -240,10 +245,21 @@ class WatchSetupActivity : Activity() {
                 text(tr("对话方式", "Conversation mode"), true)
                 card(device("云端 API Key", "云端 Agent 与大模型", "Cloud API Key", "Cloud Agent and model"), device("手表直接连接模型服务", "从手机选择已有 Agent 或新增云端模型，眼镜将直接连接模型服务", "Connect the watch directly to a model provider", "Choose a phone Agent or add a model; the glasses connect to the provider directly")) { go("cloud") }
                 if (!glassesMode) card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
+                if (!glassesMode) card(tr("导入 Skill", "Import Skill"), tr("选择 .gskill 包，传输后由手表确认安装", "Choose a .gskill package, then confirm installation on the watch")) { go("skills") }
                 if (glassesMode && !connected) card(tr("连接眼镜以同步", "Connect glasses to transfer"),
                     tr("眼镜和手机需处于同一 Wi-Fi；连接时两端核对六位数字。", "Use the same Wi-Fi and compare the six-digit code on both devices.")) { go("discover"); discover() }
                 if (glassesMode) text(tr("云端配置在手机选择和测试，传送后由眼镜直接调用；电脑远端 Agent 仍需要眼镜端连接能力。", "Choose and test cloud settings on the phone; the glasses call the provider after transfer. Desktop Agent needs a glasses connection runtime."), true)
                 else text(tr("配置任意一种方式即可开始", "Configure either option to start."), true)
+            }
+            "skills" -> {
+                card(deviceName, if (connected) tr("● 已连接", "● Connected") else tr("连接已断开", "Disconnected"))
+                text(tr("在手表打开 Skill 管理 → 导入 Skill。手机与手表需连接同一个 Wi-Fi。", "Open Skill management → Import Skill on the watch. Both devices must use the same Wi-Fi."), true)
+                if (skillBytes == null) text(tr("尚未选择 Skill 包", "No Skill package selected"), true)
+                else card(tr("门禁 Skill", "Door access Skill"), "v$skillVersion")
+                card(tr("选择 .gskill 文件", "Choose .gskill file")) { chooseSkillFile() }
+                text(tr("当前支持门禁 Skill 包。只传输到手表，不会安装到手机。", "Door access packages are currently supported. This sends the package to the watch without installing it on the phone."), true)
+                button(if (busy) tr("正在传输，请在手表确认…", "Transferring; confirm on the watch…") else tr("发送到手表", "Send to watch"),
+                    enabled = connected && skillBytes != null && !busy) { sendSkill() }
             }
             "cloud" -> {
                 text(device("使用手机已有配置", "选择手机已有云端 Agent", "Use a phone configuration", "Choose a cloud Agent on the phone"), true)
@@ -304,7 +320,7 @@ class WatchSetupActivity : Activity() {
                     exchange(JSONObject().put("type", "configure").put("kind", "select_agent").put("agent_id", selectedAgent)) { result -> require(result.optString("status") == "saved"); detail = desktopName + " · " + result.optString("agent_name"); disconnect(); go("success") }
                 }
             }
-            "success" -> { card(device("✓ 手表已确认接收", "✓ 眼镜已确认接收", "✓ Watch confirmed receipt", "✓ Glasses confirmed receipt"), detail); text(device("现在可以在手表开始对话", "现在可以在眼镜说 Hello Hello 开始对话", "You can now chat on the watch.", "Say Hello Hello on the glasses to start chatting."), true); button(tr("完成", "Done")) { finish() } }
+            "success" -> { card(device("✓ 手表已确认接收", "✓ 眼镜已确认接收", "✓ Watch confirmed receipt", "✓ Glasses confirmed receipt"), detail); text(if (skillTransferComplete) tr("已安装到手表，可在 Skill 管理中查看、启用或卸载。", "Installed on the watch. Manage, enable, or uninstall it in Skill management.") else device("现在可以在手表开始对话", "现在可以在眼镜说 Hello Hello 开始对话", "You can now chat on the watch.", "Say Hello Hello on the glasses to start chatting."), true); button(tr("完成", "Done")) { finish() } }
             "offline" -> {
                 card(device("尚未收到手表确认", "尚未收到眼镜确认", "No watch acknowledgment", "No glasses acknowledgment"), tr("本次配置草稿仍保留在当前页面", "Your draft remains available in this screen."))
                 text(device("请保持同一 Wi-Fi，并在手表重新打开配置页。重新连接后需再次核对数字。", "请保持同一 Wi-Fi，并在眼镜重新打开手机配置页。重新连接后需再次核对数字。", "Use the same Wi-Fi and reopen watch setup. Compare the new code when reconnecting.", "Use the same Wi-Fi and reopen glasses setup. Compare the new code when reconnecting."), true)
@@ -314,6 +330,68 @@ class WatchSetupActivity : Activity() {
         setContentView(root)
     }
     private fun invalid() { Toast.makeText(this, tr("请检查完整 HTTPS 地址、模型和密钥", "Check the full HTTPS endpoint, model and key."), Toast.LENGTH_LONG).show() }
+    private fun chooseSkillFile() {
+        if (busy || pickingSkill) return
+        pickingSkill = true
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+            }, 94)
+        } catch (_: android.content.ActivityNotFoundException) {
+            pickingSkill = false
+            Toast.makeText(this, tr("手机没有可用的文件选择器", "No file picker is available on the phone."), Toast.LENGTH_LONG).show()
+        }
+    }
+    private fun readSkillFile(uri: android.net.Uri) {
+        busy = true; go("skills"); val owner = generation
+        worker.execute {
+            val result = runCatching {
+                val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        require(output.size() + count <= DoorAccessSkillPackage.MAX_PACKAGE_BYTES)
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } ?: error("Cannot read Skill")
+                bytes to DoorAccessSkillPackage.inspect(bytes).version
+            }
+            main.post {
+                if (owner != generation || isDestroyed) return@post
+                busy = false
+                result.onSuccess { (bytes, version) -> skillBytes = bytes; skillVersion = version }
+                    .onFailure { Toast.makeText(this, tr("包无效或此 Skill 暂不支持；原配置未改变", "Invalid or unsupported Skill; existing configuration was not changed."), Toast.LENGTH_LONG).show() }
+                render()
+            }
+        }
+    }
+    private fun sendSkill() {
+        val bytes = skillBytes ?: return
+        val connection = client
+        if (!connected || connection == null) { go("offline"); return }
+        busy = true; render(); val owner = generation
+        worker.execute {
+            val result = runCatching { WatchSkillTransfer.send(bytes) { payload ->
+                connection.exchange(payload, if (payload.getString("kind") == "skill_finish") 90000 else 30000)
+            } }
+            main.post {
+                if (owner != generation || isDestroyed) return@post
+                busy = false
+                result.onSuccess { response ->
+                    if (response.optString("status") == "saved") {
+                        detail = tr("门禁 Skill", "Door access Skill") + " · v$skillVersion"
+                        skillTransferComplete = true; skillBytes = null; disconnect(); go("success")
+                    } else {
+                        render()
+                        Toast.makeText(this, tr("手表未安装，请在手表确认后重试", "Not installed. Confirm on the watch and try again."), Toast.LENGTH_LONG).show()
+                    }
+                }.onFailure { disconnect(); go("offline") }
+            }
+        }
+    }
     private fun chooseProvider() {
         val names = CLOUD_MODEL_PRESETS.map { it.provider }.distinct()
         AlertDialog.Builder(this).setTitle(tr("选择服务商", "Select provider")).setItems(names.toTypedArray()) { _, n ->
@@ -385,6 +463,11 @@ class WatchSetupActivity : Activity() {
     }
     @Deprecated("Scanner activity result") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 94) {
+            pickingSkill = false
+            if (resultCode == RESULT_OK) data?.data?.let { readSkillFile(it) }
+            return
+        }
         val result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data) ?: return
         scanning = false; result.contents?.let { pair(it) }
     }

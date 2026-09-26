@@ -63,8 +63,9 @@ internal class WatchSetupClient : AutoCloseable {
     }
 
     fun confirm() { accepted = true; decision.countDown() }
-    fun exchange(config: JSONObject): JSONObject {
+    fun exchange(config: JSONObject, timeoutMillis: Int = 30000): JSONObject {
         check(accepted && !stopped)
+        socket?.soTimeout = timeoutMillis
         write(config); return read()
     }
     private fun write(value: JSONObject) {
