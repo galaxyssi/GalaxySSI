@@ -3,7 +3,6 @@ import Foundation
 struct GalaxySSIAgentHomeHeaderPresentation {
   let sessionTitle: String
   let modelStatusLabel: String
-  let modelLogoLabel: String
 
   static func make(
     session: AgentConversation?,
@@ -30,22 +29,22 @@ struct GalaxySSIAgentHomeHeaderPresentation {
     if hasManualSelection(selection) {
       // Match Android: a manual choice is already explicit in the selected model name.
       modelStatusLabel = modelLogoLabel
-    } else if modelLogoLabel.caseInsensitiveCompare(automaticLabel) == .orderedSame {
-      modelStatusLabel = automaticLabel
     } else {
+      let automaticRouteLabel = modelLogoLabel.caseInsensitiveCompare(automaticLabel) == .orderedSame
+        ? "Codex"
+        : modelLogoLabel
       modelStatusLabel = String(
         format: localized(
           "galaxyssi.agent.header.routing.auto",
           fallback: "Auto · %@",
           language: language
         ),
-        modelLogoLabel
+        automaticRouteLabel
       )
     }
     return GalaxySSIAgentHomeHeaderPresentation(
       sessionTitle: sessionTitle(session, language: language),
-      modelStatusLabel: modelStatusLabel,
-      modelLogoLabel: modelLogoLabel
+      modelStatusLabel: modelStatusLabel
     )
   }
 

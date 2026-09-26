@@ -5,7 +5,6 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
 
   var sessionTitle: String
   var modelStatusLabel: String
-  var modelLogoLabel: String
   var brandSubtitle: String
   var newConversationLabel: String
   var settingsNavigationLabel: String
@@ -105,7 +104,6 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         HStack(spacing: 3) {
           Image(systemName: "chevron.left")
             .font(.system(size: 8, weight: .bold))
-          GalaxySSIAgentRouteLogo(label: modelLogoLabel, size: 16)
           Text(modelStatusLabel)
             .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
             .truncationMode(.tail)
@@ -142,9 +140,9 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
 
   private var headerHeight: CGFloat {
     if usesAccessibilityDynamicType {
-      return 124
+      return 108
     }
-    return 88
+    return 72
   }
 
   private var usesAccessibilityDynamicType: Bool {
@@ -160,23 +158,23 @@ struct GalaxySSIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     let scale: CGFloat
     switch dynamicTypeSize {
     case .xSmall:
-      scale = 0.82
+      scale = 0.85
     case .small:
       scale = 0.90
     case .medium:
-      scale = 1.00
+      scale = 0.95
     case .large:
-      scale = 1.10
+      scale = 1.00
     case .xLarge:
-      scale = 1.20
+      scale = 1.10
     case .xxLarge:
-      scale = 1.30
+      scale = 1.20
     case .xxxLarge:
-      scale = 1.40
+      scale = 1.30
     default:
-      scale = 1.45
+      scale = 1.40
     }
-    return min(64, max(40, 48 * scale))
+    return min(56, max(36, 40 * scale))
   }
 
   private var compactHeaderTypography: Bool {
