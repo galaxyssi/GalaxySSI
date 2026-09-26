@@ -512,7 +512,6 @@ struct AgentHomeView: View {
     return GalaxySSIAgentHomeHeaderView(
       sessionTitle: presentation.sessionTitle,
       modelStatusLabel: presentation.modelStatusLabel,
-      modelLogoLabel: presentation.modelLogoLabel,
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
       newConversationLabel: t("new_conversation", "New conversation"),
       settingsNavigationLabel: t("galaxyssi.tab.settings", "Settings"),
