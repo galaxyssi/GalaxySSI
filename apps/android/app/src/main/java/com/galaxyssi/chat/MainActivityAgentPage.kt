@@ -1585,6 +1585,30 @@ internal fun MainActivity.continueAgentGoalSubmission(
         originalGoal.ifBlank { goal }
     )
     val localAgentControlCommand = AgentLocalControlCommandPolicy.matches(goal)
+    val doorRequest = originalGoal.takeIf {
+        !hasRequestedMembers && !explicitMultiAgentRequest &&
+            it.length <= 80 && AgentTurnAttachmentRegistry.get(turnId).isEmpty()
+    }
+    val doorConfiguration = doorRequest?.let { DoorAccessNativeTool.configuration(this, agentSkillRuntime) }
+    val doorCommand = doorRequest?.let { doorConfiguration?.parse(it) }
+    if (doorRequest != null && doorCommand != null) {
+        val listOnly = taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY && doorCommand is DoorAccessCommand.Open
+        val configuration = requireNotNull(doorConfiguration)
+        val action = requireNotNull(DoorAccessNativeTool.actionFor(doorRequest, turnId, configuration, this))
+        agentContextBeforeTurn.remove(turnId)
+        AgentTurnMentionRegistry.remove(turnId)
+        AgentTurnAttachmentRegistry.remove(turnId)
+        selectVoiceCoordinatorRoute(voiceTraceId, VoiceRouteKind.LOCAL_ACTION, "galaxyssi-mobile")
+        voiceCoordinatorSession(voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
+            dispatchVoiceCoordinator(VoiceInteractionEvent.LocalActionCompleted(sessionId))
+            voiceCoordinatorIdsByTurn.remove(turnId)
+        }
+        val run = agentRunRecorder.begin(conversationId, originalGoal, activeSkillId = DoorAccessNativeTool.SKILL_ID)
+        agentRunIdsByTurn[turnId] = run.runId
+        DoorAccessNativeTool.authorize(conversationId, turnId, doorRequest, configuration, listOnly)
+        executeDirectSystemAction(action, conversationId, turnId)
+        return
+    }
     if (
         !hasRequestedMembers &&
         !explicitMultiAgentRequest &&
@@ -1804,7 +1828,17 @@ internal fun MainActivity.continueAgentGoalSubmission(
         ) {
             null
         } else {
-            agentSkillMatcher.match(executionGoal)
+            val doorSkill = agentSkillRuntime.list(enabledOnly = true)
+                .filter { installation ->
+                    installation.id == DoorAccessNativeTool.SKILL_ID &&
+                        installation.autoInvoke &&
+                        DoorAccessNativeTool.configuration(installation.manifest)?.parse(executionGoal) != null
+                }.maxByOrNull { it.installedAtMillis }
+            if (doorSkill != null) {
+                AgentSkillMatch(doorSkill, 1.0, mapOf("request" to executionGoal), explicit = true)
+            } else {
+                agentSkillMatcher.match(executionGoal)
+            }
         }
         Log.i(
             "GalaxySSILatency",
@@ -1832,7 +1866,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
             hasRequestedMembers ||
             explicitMultiAgentRequest ||
             localAgentControlCommand ||
-            modelExecutionSiteDecisionRequired
+            modelExecutionSiteDecisionRequired ||
+            (resolvedForcedAction == null && skillMatch?.installation?.id == DoorAccessNativeTool.SKILL_ID)
         ) {
             null
         } else {

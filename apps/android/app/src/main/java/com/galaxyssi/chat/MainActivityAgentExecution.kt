@@ -942,6 +942,11 @@ internal fun MainActivity.executeMatchedSkill(
     goal: String,
     conversationContext: AgentConversationContext
 ): Boolean {
+    if (match.installation.id == DoorAccessNativeTool.SKILL_ID) {
+        DoorAccessNativeTool.configuration(match.installation.manifest)?.let { configuration ->
+            DoorAccessNativeTool.authorize(conversationId, turnId, goal, configuration)
+        }
+    }
     if (AGENT_ORCHESTRATION_TOOL_ID in match.installation.manifest.nativeTools) {
         agentSkillRuntime.recordUse(match.installation.id, match.installation.version)
         val savedRequest = match.installation.manifest.triggerExamples.firstOrNull().orEmpty()

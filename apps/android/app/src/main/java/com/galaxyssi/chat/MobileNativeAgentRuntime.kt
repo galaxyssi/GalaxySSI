@@ -754,6 +754,7 @@ internal fun MobileNativeAgent.renderNativeToolResult(
     if (toolId == AgentOnDeviceRuntimeTools.EXECUTE) return renderRuntimeExecution(output, message, zh)
     if (toolId == AgentOnDeviceRuntimeTools.INSTALL_PACK) return renderRuntimePackInstallation(output, zh)
     if (toolId in AgentDesktopRemoteNativeTools.toolIds) return renderDesktopNativeToolResult(toolId, message, output, zh)
+    if (toolId == DoorAccessNativeTool.ID) return message
     renderAndroidSystemSummary(toolId, output, zh)?.let { return it }
     if (zh) return renderNativeToolResultChinese(toolId, message, output)
     fun bool(name: String) = output[name] as? Boolean ?: false
