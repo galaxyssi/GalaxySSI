@@ -330,6 +330,16 @@ jobs:
             SWIFT_COMPILATION_CONDITIONS+=' GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER GALAXYSSI_OFFLINE_BUNDLE'
           fi
           xcodebuild \
+            -resolvePackageDependencies \
+            -project apps/ios/GalaxySSI.xcodeproj \
+            -scheme GalaxySSI \
+            -derivedDataPath "$DERIVED_DATA"
+          NUMKONG_DIR="$(find "$DERIVED_DATA/SourcePackages/checkouts" -maxdepth 1 -type d -name NumKong -print -quit)"
+          test -n "$NUMKONG_DIR"
+          if [[ ! -f "$NUMKONG_DIR/include/cnumkong_module.c" ]]; then
+            git -C "$NUMKONG_DIR" apply "$GITHUB_WORKSPACE/apps/ios/patches/numkong-spm-xcode.patch"
+          fi
+          xcodebuild \
             -jobs 1 \
             -project apps/ios/GalaxySSI.xcodeproj \
             -scheme GalaxySSI \
@@ -337,6 +347,7 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA" \
+            -disableAutomaticPackageResolution \
             "${SIGNING_SETTINGS[@]}" \
             "${RELEASE_SETTINGS[@]}" \
             "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$SWIFT_COMPILATION_CONDITIONS" \
