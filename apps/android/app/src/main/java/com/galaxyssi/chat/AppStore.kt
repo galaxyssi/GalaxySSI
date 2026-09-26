@@ -288,6 +288,7 @@ object AppStore {
             upsertContact(contacts, contact)
             writeArray(context, KEY_FRIEND_REQUESTS, requests)
             writeArray(context, KEY_CONTACTS, contacts)
+            GalaxySSIMqttClient.refreshOpaqueSubscriptions(context)
             ChatHistoryStore.appendSystemNotification(
                 context,
                 context.getString(

@@ -63,6 +63,7 @@ internal class MqttPeerRoutes(
                 binding.sendTopic in binding.sendTopics && binding.sendTopics.size <= 16 &&
                 (binding.sendTopics + binding.receiveTopics).all { it.isNotEmpty() && it.length <= 512 && it.none { c -> c in "#+\u0000" } })
         }
+        val newlyEnabled = mutableListOf<String>()
         synchronized(lock) {
             val retained = bindings.associate { binding ->
                 var peer = peers[binding.scope]
@@ -72,6 +73,7 @@ internal class MqttPeerRoutes(
                 }
                 if (peer == null) peer = Peer(binding)
                 else peer.lock.withLock {
+                    if (!peer.binding.enabled && binding.enabled) newlyEnabled.add(binding.scope)
                     if (peer.binding.receiveTopics != binding.receiveTopics) {
                         peer.local = null
                         peer.confirmedEpoch = 0
@@ -89,6 +91,8 @@ internal class MqttPeerRoutes(
             outgoing = retained.values.flatMap { p -> p.binding.sendTopics.map { it to p } }.toMap()
             urgent.retainAll(retained.keys)
         }
+        // Approval can enable a route whose authenticated handshake already completed.
+        newlyEnabled.filter(::ready).forEach(onReady)
     }
 
     private fun retire(peer: Peer) = peer.lock.withLock {
