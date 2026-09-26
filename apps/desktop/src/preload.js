@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("galaxyssi", {
   getAppVersion: () => ipcRenderer.invoke("app:version"),
+  setConversationUnread: (count, representations) => ipcRenderer.invoke("conversations:unread", count, representations),
   synthesizeSpeech: (payload) => ipcRenderer.invoke("tts:synthesize", payload),
   startBackend: () => ipcRenderer.invoke("backend:start"),
   backendStatus: () => ipcRenderer.invoke("backend:status"),
