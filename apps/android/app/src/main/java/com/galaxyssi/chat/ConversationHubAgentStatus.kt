@@ -18,6 +18,11 @@ internal object ConversationHubAgentStatusPolicy {
             .maxWithOrNull(compareBy<AgentWorkspace> { it.createdAtMillis }.thenBy { it.updatedAtMillis })
 
     fun resolve(workspace: AgentWorkspace?, latest: AgentTranscriptEntry?, unread: Boolean): ConversationHubAgentStatus {
+        if (latest != null && AgentDeliveryFailurePolicy.sourceMessageId(latest) != null &&
+            (workspace == null || ((workspace.status in ACTIVE_STATUSES || workspace.status == AgentWorkspaceStatus.COMPLETED) &&
+                AgentDeliveryFailurePolicy.matches(workspace, latest)))) {
+            return ConversationHubAgentStatus.FAILED
+        }
         val finalReply = latest?.role == AgentTranscriptRole.ASSISTANT &&
             !AgentTranscriptRenderPolicy.isLiveStream(latest) &&
             !latest.dedupeKey.startsWith("approval:") && !latest.dedupeKey.startsWith("remote-approval:")
@@ -55,7 +60,8 @@ internal object ConversationHubAgentStatusPolicy {
         }
     }
 
-    private fun hasDeliveredReply(workspace: AgentWorkspace, reply: AgentTranscriptEntry): Boolean {
+    internal fun hasDeliveredReply(workspace: AgentWorkspace, reply: AgentTranscriptEntry): Boolean {
+        if (AgentDeliveryFailurePolicy.sourceMessageId(reply) != null) return false
         if (workspace.cancellationRequested || !AgentTaskTerminalReplyPolicy.isTerminalReply(reply)) return false
         if (reply.conversationId.isBlank() || reply.conversationId != workspace.conversationId) return false
         val sameTask = if (reply.taskId.isNotBlank()) {

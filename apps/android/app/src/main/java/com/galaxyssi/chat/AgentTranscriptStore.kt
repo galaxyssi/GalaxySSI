@@ -1177,6 +1177,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return if (cleanTaskId.isBlank()) emptyList() else entryDatabase.listTask(cleanTaskId)
     }
 
+    internal fun workspacePreviews(workspace: AgentWorkspace): List<AgentTranscriptEntry> =
+        entryDatabase.workspacePreviews(workspace.conversationId, workspace.workspaceId, workspace.taskId)
+
     internal fun fullEntry(entryId: String): AgentTranscriptEntry? {
         val cleanEntryId = entryId.trim()
         return if (cleanEntryId.isBlank()) null else entryDatabase.findById(cleanEntryId)

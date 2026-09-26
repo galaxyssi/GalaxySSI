@@ -4,10 +4,40 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRunRecoveryCoordinatorTest {
+    @Test fun durableDeliveryFailurePreventsRemoteRecoveryAndReplay(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }
+        var resolved = false
+        var marked = false
+        val result = AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() },
+            { _, _ -> durableRegistration() }, { resolved = true; error("Must not query a terminal delivery") },
+            markRemoteTerminal = { _, status, _ -> marked = status == AgentRecordedRunStatus.FAILED },
+            localDeliveryFailure = { "terminal_delivery_failure" }).recover().single()
+        assertEquals(AgentRunRecoveryOutcome.IGNORED_TERMINAL, result.outcome)
+        assertFalse(resolved)
+        assertTrue(marked)
+        assertEquals(AgentWorkspaceStatus.FAILED, workspaces.find("turn-1")!!.status)
+        assertEquals(AgentRunControlEventType.RUN_FAILED, store.appended.single().type)
+    }
+
+    @Test fun deliveryFailureCommittedDuringRemoteQueryWinsOverLateRunningObservation(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }
+        var terminal = false
+        val result = AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() },
+            { _, _ -> durableRegistration() }, {
+                terminal = true
+                RecoveryAgentAdapter(durableRegistration(), listOf(remote()))
+            }, localDeliveryFailure = { if (terminal) "terminal_delivery_failure" else null }).recover().single()
+        assertEquals(AgentRunRecoveryOutcome.IGNORED_TERMINAL, result.outcome)
+        assertEquals(AgentWorkspaceStatus.FAILED, workspaces.find("turn-1")!!.status)
+        assertEquals(AgentRunControlEventType.RUN_FAILED, store.appended.single().type)
+    }
     private fun remote(status: String = "running") = AgentRecoverableRun(
         AgentRunHandle("run-1", "turn-1", "codex", "remote-1"), 0,
         observation = AgentRemoteRecoveryObservation("conversation-1", "desktop-1", status, "remote-task", "remote-1", 7)

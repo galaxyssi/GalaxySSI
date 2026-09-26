@@ -32,6 +32,7 @@ internal fun MainActivity.finishAgentDeliveryFailure(
         )
     }
     AgentPendingDeliveryStore.remove(this, sourceMessageId)
+    AgentDeliveryFailureRecorder.reconcileWorkspace(this, delivery)
     runOnUiThread { finishAgentDeliveryFailureUi(delivery) }
 }
 

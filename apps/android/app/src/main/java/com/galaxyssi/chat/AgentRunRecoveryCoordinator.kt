@@ -28,7 +28,8 @@ class AgentRunRecoveryCoordinator(
     private val registration: (String, String) -> AgentRegistration?,
     private val adapterResolver: suspend (String) -> AgentAdapter?,
     private val markInterrupted: (String, String) -> Unit = { _, _ -> },
-    private val markRemoteTerminal: (String, AgentRecordedRunStatus, String) -> Unit = { _, _, _ -> }
+    private val markRemoteTerminal: (String, AgentRecordedRunStatus, String) -> Unit = { _, _, _ -> },
+    private val localDeliveryFailure: (AgentWorkspace) -> String? = { null }
 ) {
     suspend fun recover(excludedRunIds: Set<String> = emptySet()): List<AgentRunRecoveryResult> =
         runStore.recoverableRuns()
@@ -37,6 +38,7 @@ class AgentRunRecoveryCoordinator(
 
     private suspend fun recover(snapshot: AgentRunControlSnapshot): AgentRunRecoveryResult {
         currentCoroutineContext().ensureActive()
+        reconcileLocalDeliveryFailure(snapshot)?.let { return it }
         val run = recordedRun(snapshot.runId)
         val decision = AgentRunRecoveryPolicy.decide(
             snapshot,
@@ -129,6 +131,7 @@ class AgentRunRecoveryCoordinator(
                 }
         }
         currentCoroutineContext().ensureActive()
+        reconcileLocalDeliveryFailure(snapshot)?.let { return it }
         if (remote == null) {
             val remoteSequence = priorWorkspace?.lastRemoteEventSequence ?: 0L
             if (snapshot.lastEvent.type == AgentRunControlEventType.WAITING_FOR_DEVICE) {
@@ -218,6 +221,25 @@ class AgentRunRecoveryCoordinator(
                     (workspace.agentId.isBlank() || workspace.agentId == snapshot.agentId) &&
                     (workspace.deviceId.isBlank() || workspace.deviceId == snapshot.deviceId)
             }
+
+    private fun reconcileLocalDeliveryFailure(snapshot: AgentRunControlSnapshot): AgentRunRecoveryResult? {
+        val workspace = workspaceFor(snapshot) ?: return null
+        if (workspace.cancellationRequested || workspace.status in setOf(AgentWorkspaceStatus.COMPLETED,
+                AgentWorkspaceStatus.CANCELLED, AgentWorkspaceStatus.PAUSED,
+                AgentWorkspaceStatus.WAITING_CONFIRMATION, AgentWorkspaceStatus.BLOCKED)) return null
+        val reason = localDeliveryFailure(workspace) ?: return null
+        val committed = runStore.appendRecoveryIfCurrent(snapshot.lastEvent.copy(
+            eventId = UUID.randomUUID().toString(), idempotencyKey = UUID.randomUUID().toString(),
+            timestampMillis = System.currentTimeMillis(), type = AgentRunControlEventType.RUN_FAILED,
+            sequence = 0L, payload = snapshot.lastEvent.payload +
+                mapOf("reason" to reason, "replay_safe" to false, "recovery_source" to "terminal_delivery")
+        ), snapshot.lastSequence) ?: return staleResult(snapshot)
+        markRemoteTerminal(snapshot.runId, AgentRecordedRunStatus.FAILED, reason)
+        restoreWorkspace(snapshot, AgentWorkspaceStatus.FAILED, AgentTaskEventKinds.FAILED,
+            "", null, committed.sequence, reason)
+        return AgentRunRecoveryResult(snapshot.runId, AgentRunRecoveryOutcome.IGNORED_TERMINAL,
+            committed.sequence, reason)
+    }
 
     private suspend fun <T> recoverOrNull(block: suspend () -> T): T? = try {
         block()
