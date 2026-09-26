@@ -13,6 +13,7 @@ object GlobalConversationContextJournalPolicy {
         val journal = existing
             .filter { eligible(it) || it.isJournalControlMarker() }
             .associateByTo(linkedMapOf(), GlobalConversationEvent::id)
+        var controls = controlState(journal.values)
         incoming.sortedWith(compareBy<GlobalConversationEvent>(GlobalConversationEvent::timestampMillis)
             .thenBy(::eventOrderPriority)
             .thenBy(GlobalConversationEvent::id)).forEach { event ->
@@ -29,6 +30,7 @@ object GlobalConversationContextJournalPolicy {
                 journal.clear()
                 rebound.forEach { journal[it.id] = it }
                 storeControlMarker(journal, event)
+                controls = controlState(journal.values)
                 return@forEach
             }
             if (event.isConversationLifecycleEvent()) {
@@ -40,11 +42,15 @@ object GlobalConversationContextJournalPolicy {
                         !stored.isJournalControlMarker() && stored.conversationId == event.conversationId
                     }
                 }
+                controls = controlState(journal.values)
                 return@forEach
             }
-            if (retractions.isNotEmpty()) storeControlMarker(journal, event)
-            if (event.evidenceRoots().any(activeRetractions(journal.values)::contains)) return@forEach
-            if (conversationExcluded(journal.values, event.conversationId)) return@forEach
+            if (retractions.isNotEmpty()) {
+                storeControlMarker(journal, event)
+                controls = controlState(journal.values)
+            }
+            if (event.evidenceRoots().any(controls.retractions::contains)) return@forEach
+            if (event.conversationId in controls.excludedConversations) return@forEach
             if (!eligible(event)) return@forEach
             journal[event.id] = compactEvent(event)
         }
@@ -106,11 +112,11 @@ object GlobalConversationContextJournalPolicy {
         val globalLimit = maximumEvents.coerceIn(1, MAXIMUM_EVENTS_LIMIT)
         val conversationLimit = maximumEventsPerConversation.coerceIn(1, MAXIMUM_EVENTS_PER_CONVERSATION_LIMIT)
         val controls = compactControlMarkers(events)
-        val retractions = activeRetractions(controls)
+        val controlState = controlState(controls)
         val semantic = events.asSequence()
             .filter(::eligible)
-            .filterNot { event -> event.evidenceRoots().any(retractions::contains) }
-            .filterNot { event -> conversationExcluded(controls, event.conversationId) }
+            .filterNot { event -> event.evidenceRoots().any(controlState.retractions::contains) }
+            .filterNot { event -> event.conversationId in controlState.excludedConversations }
             .distinctBy(GlobalConversationEvent::id)
             .sortedWith(compareByDescending<GlobalConversationEvent>(GlobalConversationEvent::timestampMillis)
                 .thenByDescending(GlobalConversationEvent::id))
@@ -192,29 +198,34 @@ object GlobalConversationContextJournalPolicy {
             .compareTo(right.id.removePrefix(CONTROL_MARKER_PREFIX))
     }
 
-    private fun activeRetractions(events: Collection<GlobalConversationEvent>): Set<String> = events.asSequence()
-        .filter { it.isJournalControlMarker() }
-        .flatMap { it.effectiveRetractions().asSequence() }
-        .filter(String::isNotBlank)
-        .toSet()
+    private data class ControlState(val retractions: Set<String>, val excludedConversations: Set<String>)
 
-    private fun conversationExcluded(
-        events: Collection<GlobalConversationEvent>,
-        conversationId: String
-    ): Boolean {
-        if (conversationId.isBlank()) return false
-        val latestLifecycle = events.asSequence()
-            .filter { it.isJournalControlMarker() }
-            .filter { it.isConversationLifecycleEvent() && it.conversationId == conversationId }
-            .maxWithOrNull(compareBy<GlobalConversationEvent>(GlobalConversationEvent::timestampMillis)
-                .thenBy(GlobalConversationEvent::id))
-        if (latestLifecycle?.type == GlobalConversationEventType.CONVERSATION_DELETED ||
-            latestLifecycle?.excludesConversationFromGlobalModel() == true
-        ) return true
-        return events.asSequence()
-            .filter { it.isJournalControlMarker() }
-            .filter { it.type == GlobalConversationEventType.CONVERSATION_MERGED }
-            .any { GlobalConversationMergeLifecycle.sourceConversationId(it) == conversationId }
+    private fun controlState(events: Collection<GlobalConversationEvent>): ControlState {
+        val latestLifecycle = mutableMapOf<String, GlobalConversationEvent>()
+        val excluded = mutableSetOf<String>()
+        val retractions = mutableSetOf<String>()
+        val order = compareBy<GlobalConversationEvent>(GlobalConversationEvent::timestampMillis)
+            .thenBy(GlobalConversationEvent::id)
+        // Durable controls can greatly outnumber prompt events; scan them once per mutation.
+        events.forEach { event ->
+            if (!event.isJournalControlMarker()) return@forEach
+            retractions.addAll(event.effectiveRetractions().filter(String::isNotBlank))
+            if (event.isConversationLifecycleEvent()) {
+                val current = latestLifecycle[event.conversationId]
+                if (current == null || order.compare(event, current) > 0) {
+                    latestLifecycle[event.conversationId] = event
+                }
+            }
+            if (event.type == GlobalConversationEventType.CONVERSATION_MERGED) {
+                excluded.add(GlobalConversationMergeLifecycle.sourceConversationId(event))
+            }
+        }
+        latestLifecycle.forEach { (conversationId, event) ->
+            if (event.type == GlobalConversationEventType.CONVERSATION_DELETED ||
+                event.excludesConversationFromGlobalModel()) excluded.add(conversationId)
+        }
+        excluded.removeAll { it.isBlank() }
+        return ControlState(retractions, excluded)
     }
 
     private fun GlobalConversationEvent.isConversationLifecycleEvent(): Boolean = type in setOf(

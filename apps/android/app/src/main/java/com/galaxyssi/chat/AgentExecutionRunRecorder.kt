@@ -7,10 +7,11 @@ import org.json.JSONObject
 
 /** Persistent run projection shared by page-owned and background connector execution. */
 internal class AgentExecutionRunRecorder(
-    private val context: Context,
+    context: Context,
     private val runtime: MobileNativeAgent,
     private val recordedRunId: String = ""
 ) {
+    private val context = context.applicationContext
     private val agentRunRecorder = AgentRunRecorder.get(context)
     private val agentRunEventStore = AgentRunEventStore(context)
     private val agentTranscriptStore by lazy { AgentTranscriptStore(context) }
@@ -120,12 +121,17 @@ internal class AgentExecutionRunRecorder(
             )
         )
         val privateMode = agentTranscriptStore.context(run.conversationId).privateMode
-        agentLearningEngine.observeCompletedRun(
-            run = run,
-            recentRuns = agentRunRecorder.recentRuns(),
-            privateMode = privateMode,
-            memoryCaptureEnabled = runtime.safetySettings().memoryCapture
-        )
+        val memoryCaptureEnabled = runtime.safetySettings().memoryCapture
+        // Learning must never hold the UI completion path behind world-model work.
+        AgentCompletedRunLearning.enqueue(run.runId) {
+            val conversation = agentTranscriptStore.conversation(run.conversationId) ?: return@enqueue
+            agentLearningEngine.observeCompletedRun(
+                run = run,
+                recentRuns = agentRunRecorder.recentRuns(),
+                privateMode = privateMode || conversation.privateMode || conversation.trackingPaused,
+                memoryCaptureEnabled = memoryCaptureEnabled && runtime.safetySettings().memoryCapture
+            )
+        }
     }
 
     fun ensureRecordedRunTimeline(

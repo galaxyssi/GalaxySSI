@@ -3729,6 +3729,21 @@ object GlobalConversationEventBus {
         return enqueued
     }
 
+    fun publishMemoryMutationsAsync(
+        context: Context,
+        before: List<AgentMemoryItem>,
+        after: List<AgentMemoryItem>,
+        timestampMillis: Long = System.currentTimeMillis()
+    ) {
+        if (before == after) return
+        val appContext = context.applicationContext
+        val beforeSnapshot = before.toList()
+        val afterSnapshot = after.toList()
+        EVENT_PUBLISH_EXECUTOR.execute {
+            publishMemoryMutations(appContext, beforeSnapshot, afterSnapshot, timestampMillis)
+        }
+    }
+
     fun publishMemoryMutations(
         context: Context,
         before: List<AgentMemoryItem>,
