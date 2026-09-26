@@ -19,7 +19,6 @@ class NotifyingAgentActionExecutor(
 
     override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
         if (!action.shouldPublishPhoneNotification()) return delegate.execute(action, screen)
-        notifications.showRunning(action)
         val result = delegate.execute(action, screen)
         notifications.showResult(action, result)
         return result
@@ -35,22 +34,6 @@ class NotifyingAgentActionExecutor(
 internal class AgentActionNotificationCenter(baseContext: Context) {
     private val context = AppLanguage.wrap(baseContext)
     private val manager = context.getSystemService(NotificationManager::class.java)
-
-    fun showRunning(action: AgentAction) {
-        ensureChannel()
-        manager.notify(
-            notificationId(action),
-            builder(action)
-                .setSilent(true)
-                .setContentTitle(operationTitle(action))
-                .setContentText(context.getString(R.string.agent_operation_status_running))
-                .setProgress(0, 0, true)
-                .setOngoing(true)
-                .setAutoCancel(false)
-                .setCategory(Notification.CATEGORY_PROGRESS)
-                .build()
-        )
-    }
 
     fun showResult(action: AgentAction, result: AgentActionResult) {
         if (result.success) {
