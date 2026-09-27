@@ -419,8 +419,10 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     conversationId: String,
     turnId: String,
     deterministicAction: AgentAction? = null,
-    executionMode: AgentTaskExecutionMode? = null
+    executionMode: AgentTaskExecutionMode? = null,
+    isSubmissionCancelled: () -> Boolean = { false }
 ) {
+    if (isSubmissionCancelled()) return
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val supervisedProject = AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
@@ -471,6 +473,10 @@ internal fun MainActivity.executeConcurrentAgentGoal(
         AgentTaskLane.READ_REASONING,
         AgentTaskPriority.FOREGROUND
     ) {
+        if (isSubmissionCancelled()) {
+            cancellationSource.cancel("User stopped screen analysis before execution")
+            return@submit
+        }
         Log.i(
             "GalaxySSILatency",
             "agent_runtime stage=task_started turn=${turnId.take(8)} " +
@@ -531,6 +537,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE
                 ) {
+                    cancellationSource.throwIfCancellationRequested()
                     state = runtime.approveNextAction(highRiskConfirmed = true)
                 }
                 check(
@@ -544,14 +551,17 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             }
         }
         var state = outcome.getOrElse { failure ->
-            Log.e(
-                "GalaxySSIAgent",
-                "agent_submission_failed turn=${turnId.take(8)}",
-                failure
-            )
-            runtime.failSubmission(
-                failure.message.orEmpty().ifBlank { "Agent submission failed" }
-            )
+            if (cancellationSource.isCancellationRequested || isSubmissionCancelled()) {
+                runtime.snapshot()
+            } else {
+                Log.e("GalaxySSIAgent", "agent_submission_failed turn=${turnId.take(8)}", failure)
+                runtime.failSubmission(failure.message.orEmpty().ifBlank { "Agent submission failed" })
+            }
+        }
+        if (cancellationSource.isCancellationRequested || isSubmissionCancelled()) {
+            publishRemoteAgentTaskCancellation(state)
+            AgentCloudDispatchRegistry.cancel(state.lastActionResult)
+            state = runtime.cancelCurrentTask()
         }
         state = finalizeAgentExecutionLoop(runtime, turnId, state)
         val coordinatorSessionId = voiceCoordinatorIdsByTurn[turnId]
@@ -666,7 +676,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             renderAgentState(state, conversationId, turnId)
             requestMissingAgentNativePermissions(state)
             consumePendingAgentConnectorResponses()
-            outcome.exceptionOrNull()?.let { error ->
+            outcome.exceptionOrNull()?.takeUnless { state.phase == AgentPhase.CANCELLED }?.let { error ->
                 provisionalAgentTasks.remove(runtime)
                 Toast.makeText(this@executeConcurrentAgentGoal, error.message ?: "Agent operation failed", Toast.LENGTH_LONG).show()
             }
