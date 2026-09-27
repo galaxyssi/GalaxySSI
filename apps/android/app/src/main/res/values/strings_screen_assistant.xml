@@ -25,6 +25,8 @@
     <string name="screen_assistant_unavailable">Open another app to capture its screen</string>
     <string name="screen_assistant_capture_failed">This screen could not be captured</string>
     <string name="screen_assistant_analyzing">Analyzing screen</string>
+    <string name="screen_assistant_preparing">Preparing screen analysis</string>
+    <string name="screen_assistant_submit_failed">Could not start the task. Please try again.</string>
     <string name="screen_assistant_delayed">Waiting for Agent</string>
     <string name="screen_assistant_delayed_detail">No final result has arrived yet. Check the Screen analysis conversation in GalaxySSI for task details.</string>
     <string name="screen_assistant_completed">Analysis complete</string>

@@ -25,6 +25,8 @@
     <string name="screen_assistant_unavailable">请打开其他应用后再截图</string>
     <string name="screen_assistant_capture_failed">当前页面无法截图</string>
     <string name="screen_assistant_analyzing">正在分析屏幕</string>
+    <string name="screen_assistant_preparing">正在准备屏幕分析</string>
+    <string name="screen_assistant_submit_failed">任务未能启动，请重试。</string>
     <string name="screen_assistant_delayed">等待 Agent 回复</string>
     <string name="screen_assistant_delayed_detail">尚未收到最终结果。可在 GalaxySSI 的「屏幕分析」会话查看任务详情。</string>
     <string name="screen_assistant_completed">分析完成</string>

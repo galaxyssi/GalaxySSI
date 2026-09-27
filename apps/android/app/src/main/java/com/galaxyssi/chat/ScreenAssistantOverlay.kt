@@ -198,7 +198,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         if (closed || !ScreenAssistantSettings.enabled(service)) return
         if (capturePending || stopping || request?.turnId?.isNotBlank() == true) return
         val (file, question) = ScreenAssistantSettings.pending(service) ?: return
-        if (AgentConversationWindows.screenAssistantRunner() != null) {
+        if (AgentConversationWindows.screenAssistantRunner(allowInitializing = true) != null) {
             val attempt = request?.takeUnless { it.isCancelled } ?: newRequest()
             submit(file, question, attempt)
         }
@@ -262,6 +262,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     private fun updateBubbleBadge() {
         val color = when (currentStatus) {
             service.getString(R.string.screen_assistant_ready) -> null
+            service.getString(R.string.screen_assistant_preparing),
             service.getString(R.string.screen_assistant_analyzing),
             service.getString(R.string.screen_assistant_executing),
             service.getString(R.string.screen_assistant_delayed) -> 0xFFE2A430.toInt()
@@ -316,9 +317,13 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     handler.removeCallbacks(openMenu)
                     if (moved) ScreenAssistantSettings.saveBubblePosition(service, layout.x, layout.y)
                     else if (!longPressed) {
-                        if (ScreenAssistantPromptActivity.dismissIfOpen()) Unit
-                        else if (panel != null) dismissPanel()
-                        else if (canStopAnalysis() || stopping) showPanel() else analyzeCurrentScreen()
+                        when (ScreenAssistantBubbleTapPolicy.action(ScreenAssistantPromptActivity.isOpen(),
+                            panel != null, canStopAnalysis() || stopping)) {
+                            ScreenAssistantBubbleTap.DISMISS_PROMPT -> ScreenAssistantPromptActivity.dismissIfOpen()
+                            ScreenAssistantBubbleTap.COLLAPSE -> dismissPanel()
+                            ScreenAssistantBubbleTap.SHOW_PROGRESS -> showPanel()
+                            ScreenAssistantBubbleTap.ANALYZE -> analyzeCurrentScreen()
+                        }
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(openMenu)
@@ -408,8 +413,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
 
     private fun analyzeCurrentScreen(question: String = "") {
         if (canStopAnalysis() || stopping) { showPanel(); return }
-        val attempt = newRequest()
-        dismissMenu(); dismissPanel()
+        val attempt = startAnalysisPreparation()
         worker.execute {
             val snapshot = runCatching { GalaxySSIAccessibilityService.readTargetUi() }.getOrNull()
             handler.post {
@@ -425,6 +429,13 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                 }
             }
         }
+    }
+
+    private fun startAnalysisPreparation(): ScreenAssistantAnalysisRequest {
+        val attempt = newRequest()
+        dismissMenu(); dismissPanel()
+        update(service.getString(R.string.screen_assistant_preparing), "", true)
+        return attempt
     }
 
     private fun showFollowUpInput() = showPrompt(R.string.screen_assistant_follow_up_send) { question ->
@@ -550,77 +561,73 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         if (stopping) { showPanel(); return }
         // A second goal cannot concurrently own the same physical phone task.
         if (request?.automation == true && canStopAnalysis()) { showPanel(); return }
-        val runner = AgentConversationWindows.screenAssistantRunner()
-        val conversationId = ScreenAssistantSettings.conversation(service)
-        if (runner == null || conversationId.isBlank() || runner.agentTranscriptStore.conversation(conversationId) == null) {
-            update(service.getString(R.string.screen_assistant_open_app), "", true)
-            return
-        }
         val attempt = request?.takeUnless { it.isCancelled } ?: newRequest()
-        activeRunner = WeakReference(runner)
-        runCatching {
-            runner.submitAgentGoal(
-                pendingVoiceConversationId = conversationId,
-                goalOverride = question,
-                onTurnCreated = { turn ->
-                    attempt.turnId = turn
-                    PhoneAssistantTaskControl.bind(turn, attempt)
-                    activeTurn = turn
-                    ScreenAssistantSettings.saveLastTurn(service, turn)
-                    currentText = ""
-                    update(service.getString(R.string.screen_assistant_analyzing), "", true)
-                    beginPolling(turn)
-                },
-                isSubmissionCancelled = { attempt.isCancelled }
-            )
-        }.onFailure {
-            if (attempt.turnId.isBlank()) request = null
-            update(service.getString(R.string.screen_assistant_open_app), "", true)
-        }
+        submit(null, question, attempt)
     }
 
-    private fun submit(file: File?, question: String, attempt: ScreenAssistantAnalysisRequest) {
-        if (!accepts(attempt)) return
+    private fun submit(file: File?, question: String, attempt: ScreenAssistantAnalysisRequest,
+        readyDeadline: Long = SystemClock.elapsedRealtime() + 15_000L) {
+        if (!accepts(attempt) || attempt.preparingSubmission) return
         val runner = AgentConversationWindows.screenAssistantRunner()
         if (runner == null) {
+            if (AgentConversationWindows.screenAssistantRunner(allowInitializing = true) != null &&
+                SystemClock.elapsedRealtime() < readyDeadline) {
+                update(service.getString(R.string.screen_assistant_preparing), "", panel == null)
+                handler.postDelayed({ submit(file, question, attempt, readyDeadline) }, 100L)
+                return
+            }
             if (attempt.turnId.isBlank() && file != null) ScreenAssistantSettings.savePending(service, file, question)
             request = null
             update(service.getString(R.string.screen_assistant_open_app), "", true)
             return
         }
+        attempt.preparingSubmission = true
+        worker.execute {
+            val outcome = runCatching {
+                val sourceId = runner.agentTranscriptStore.activeConversation().id
+                val targets = AppStoreAgentConnectorRegistry(service).availableTargets()
+                ScreenAssistantHomeRouting.capture(service, sourceId, targets) to targets
+            }
+            handler.post {
+                attempt.preparingSubmission = false
+                if (!accepts(attempt)) return@post
+                if (runner.isDestroyed || runner.isFinishing) {
+                    submit(file, question, attempt, readyDeadline)
+                    return@post
+                }
+                outcome.onSuccess { (route, targets) ->
+                    if (route.manualTargetId.isNotBlank() && targets.none {
+                            it.id == route.manualTargetId && AgentConnectorRouteSelector.isDeliverable(it)
+                        }) {
+                        if (file != null) ScreenAssistantSettings.savePending(service, file, question)
+                        if (attempt.turnId.isBlank()) request = null
+                        update(service.getString(R.string.screen_assistant_target_unavailable), "", true)
+                    } else submitPrepared(runner, file, question, attempt, route)
+                }.onFailure {
+                    Log.e("ScreenAssistant", "Home route preparation failed", it)
+                    if (attempt.turnId.isBlank()) request = null
+                    update(service.getString(R.string.screen_assistant_submit_failed), "", true)
+                }
+            }
+        }
+    }
+
+    private fun submitPrepared(runner: MainActivity, file: File?, question: String,
+        attempt: ScreenAssistantAnalysisRequest, route: ScreenAssistantHomeRoute) {
         activeRunner = WeakReference(runner)
         val store = runner.agentTranscriptStore
-        val homeSelection = AgentModelSelectionSettings.defaultSelection(service)
-        val selectedTarget = homeSelection.targetId.takeIf {
-            homeSelection.mode == AgentModelSelectionMode.MANUAL && it.isNotBlank()
-        }
-        if (selectedTarget != null && runner.mobileNativeAgent.snapshot().callableTargets.none {
-            it.id == selectedTarget && AgentConnectorRouteSelector.isDeliverable(it)
-        }) {
-            if (file != null) ScreenAssistantSettings.savePending(service, file, question)
-            request = null
-            update(service.getString(R.string.screen_assistant_target_unavailable), "", true)
-            return
-        }
         runCatching {
             val conversationId = ScreenAssistantSettings.conversation(service)
                 .takeIf { it.isNotBlank() && store.conversation(it) != null }
                 ?: store.createAgentConversation(service.getString(R.string.screen_assistant_conversation)).id.also {
                     ScreenAssistantSettings.saveConversation(service, it)
                 }
-            if (selectedTarget == null) {
-                AgentModelSelectionSettings.selectAutoForConversation(service, conversationId)
-                store.setSelectedModelOrAgent(conversationId,
-                    service.getString(R.string.agent_model_selection_automatic))
-            } else {
-                AgentModelSelectionSettings.selectManual(
-                    service, conversationId, selectedTarget, homeSelection.modelId,
-                    homeSelection.displayName, homeSelection.reasoningEffort,
-                    rememberAsDefault = false
-                )
-                store.setSelectedModelOrAgent(conversationId,
-                    homeSelection.displayName.ifBlank { selectedTarget })
-            }
+            ScreenAssistantHomeRouting.apply(service, conversationId, route)
+            store.setSelectedModelOrAgent(conversationId, if (route.manualTargetId.isBlank())
+                service.getString(R.string.agent_model_selection_automatic)
+            else route.selection.displayName.ifBlank { route.manualTargetId })
+            Log.i("ScreenAssistant", "Home route inherited mode=${route.selection.mode} " +
+                "target=${route.manualTargetId.ifBlank { route.autoTargetId }}")
             val name = service.getString(R.string.screen_assistant_attachment)
             val attachment = file?.let { image -> AgentInputAttachment(
                 id = UUID.randomUUID().toString(),
@@ -641,15 +648,16 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     activeTurn = turn
                     ScreenAssistantSettings.saveLastTurn(service, turn)
                     currentText = ""
-                    update(service.getString(if (attempt.automation) R.string.screen_assistant_executing else R.string.screen_assistant_analyzing), "", false)
+                    update(service.getString(if (attempt.automation) R.string.screen_assistant_executing else R.string.screen_assistant_analyzing), "", true)
                     beginPolling(turn)
                 },
                 isSubmissionCancelled = { attempt.isCancelled }
             )
         }.onFailure {
+            Log.e("ScreenAssistant", "Task submission failed", it)
             if (attempt.turnId.isBlank() && file != null) ScreenAssistantSettings.savePending(service, file, question)
             if (attempt.turnId.isBlank()) request = null
-            update(service.getString(R.string.screen_assistant_open_app), "", true)
+            update(service.getString(R.string.screen_assistant_submit_failed), "", true)
         }
     }
 

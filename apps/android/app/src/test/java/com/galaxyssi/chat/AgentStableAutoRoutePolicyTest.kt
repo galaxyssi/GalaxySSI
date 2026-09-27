@@ -11,6 +11,17 @@ class AgentStableAutoRoutePolicyTest {
         assertEquals(codex, AgentStableAutoRoutePolicy.displayedTarget(listOf(cloud, codex), ""))
     }
 
+    @Test fun newAutoConversationPrefersRecoverableCodexOverCloud() {
+        val disconnected = codex.copy(status = AgentConnectorStatus.DISCONNECTED)
+        assertEquals(disconnected, AgentStableAutoRoutePolicy.displayedTarget(listOf(cloud, disconnected), ""))
+    }
+
+    @Test fun unconfiguredOrUnavailableCodexDoesNotBlockConfiguredCloud() {
+        assertEquals(cloud, AgentStableAutoRoutePolicy.displayedTarget(listOf(cloud), ""))
+        assertEquals(cloud, AgentStableAutoRoutePolicy.displayedTarget(
+            listOf(cloud, codex.copy(status = AgentConnectorStatus.NEEDS_SETUP)), ""))
+    }
+
     @Test fun rememberedCloudIsNotReplacedByCodexDefault() {
         assertEquals(cloud, AgentStableAutoRoutePolicy.displayedTarget(listOf(codex, cloud), cloud.id))
     }

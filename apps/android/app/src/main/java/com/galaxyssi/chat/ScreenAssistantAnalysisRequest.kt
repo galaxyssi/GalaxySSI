@@ -9,6 +9,7 @@ internal class ScreenAssistantAnalysisRequest {
     private val submittedTurns = CopyOnWriteArraySet<String>()
     private val pauseMonitor = Object()
     @Volatile var automation = false
+    var preparingSubmission = false
     @Volatile var approvalDescription: String = ""
         private set
     @Volatile var isPaused = false

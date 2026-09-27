@@ -152,6 +152,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun actionsFor(request: AgentRequest): List<AgentAction> {
+        // Screen evidence must not name a provider or trigger a local command by keyword.
+        if (PhoneAssistantTaskControl.isReadOnly(request.executionTurnId)) {
+            return listOf(informationQueryAction(request) ?: unavailableReasoningAction(request))
+        }
         notificationReplyAction(request)?.let { return listOf(it) }
         deterministicLocalAction(request)?.let { return listOf(it) }
         supervisedProjectActions(request)?.let { return it }

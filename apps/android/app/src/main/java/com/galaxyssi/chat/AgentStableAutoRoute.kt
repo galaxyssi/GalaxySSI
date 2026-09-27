@@ -5,6 +5,9 @@ import android.content.Context
 internal object AgentStableAutoRoutePolicy {
     fun displayedTarget(targets: List<AgentCallableTarget>, rememberedId: String): AgentCallableTarget? =
         targets.firstOrNull { it.id == rememberedId && it.kind != AgentConnectorKind.DEVICE }
+            ?: targets.firstOrNull {
+                (it.id == "codex" || it.id.endsWith(":codex")) && AgentConnectorRouteSelector.isDeliverable(it)
+            }
             ?: AgentConnectorRouteSelector.select(targets, null)?.target
 
     fun usablePrimary(candidate: AgentResourceCandidate?): AgentResourceCandidate? =
@@ -41,6 +44,16 @@ internal object AgentStableAutoRouteStore {
         if (conversationId.isBlank() || turnId.isBlank()) return
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
             .putString("$conversationId.turn", turnId).apply()
+    }
+
+    /** Copy a displayed Auto preference, not a dispatch or permission to bypass routing checks. */
+    @Synchronized
+    fun inheritPreferredTarget(context: Context, conversationId: String, targetId: String) {
+        if (conversationId.isBlank()) return
+        val editor = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+        if (targetId.isBlank()) editor.remove("$conversationId.target")
+        else editor.putString("$conversationId.target", targetId)
+        editor.apply()
     }
 
     @Synchronized

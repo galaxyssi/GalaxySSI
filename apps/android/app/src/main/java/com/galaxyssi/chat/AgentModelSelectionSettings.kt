@@ -187,9 +187,8 @@ object AgentContactNavigationPolicy {
 }
 
 object AgentModelSelectionSettings {
-    fun defaultSelection(context: Context): AgentModelSelection = readSelection(
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE), ::defaultKey
-    )
+    // New sessions start in Auto; manual choices belong to their existing conversation.
+    fun defaultSelection(context: Context): AgentModelSelection = AgentModelSelection()
 
     fun selection(context: Context, conversationId: String): AgentModelSelection {
         val scope = normalizedConversationId(conversationId)
