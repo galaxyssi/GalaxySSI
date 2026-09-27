@@ -1,0 +1,4 @@
+<resources>
+    <dimen name="screen_assistant_bubble_icon_size">46.4dp</dimen>
+    <dimen name="screen_assistant_bubble_badge_size">9.6dp</dimen>
+</resources>
