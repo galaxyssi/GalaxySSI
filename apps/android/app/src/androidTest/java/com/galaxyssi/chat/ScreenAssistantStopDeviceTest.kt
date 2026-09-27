@@ -3,10 +3,14 @@ package com.galaxyssi.chat
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.ImageView
+import android.view.WindowManager
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,6 +18,24 @@ import org.junit.runner.RunWith
 /** Isolated overlay and request; never captures a screen or submits a real Agent task. */
 @RunWith(AndroidJUnit4::class)
 class ScreenAssistantStopDeviceTest {
+    @Test fun bubbleUsesSmallerTranslucentControlAndKeepsStatusBadge() = withOverlay { overlay, _, service ->
+        invoke(overlay, "ensureBubble")
+        val bubble = field(overlay, "bubble") as ViewGroup
+        val layout = field(overlay, "bubbleParams") as WindowManager.LayoutParams
+        val icon = bubble.getChildAt(0) as ImageView
+        val density = service.resources.displayMetrics.density
+        assertEquals(0.5f, bubble.alpha, 0.001f)
+        assertEquals((48 * density + 0.5f).toInt(), layout.width)
+        assertEquals(layout.width, layout.height)
+        assertEquals((46.4f * density + 0.5f).toInt(), icon.layoutParams.width)
+        assertEquals(icon.layoutParams.width, icon.layoutParams.height)
+        assertNotNull(icon.drawable)
+        assertEquals(View.VISIBLE, bubble.getChildAt(1).visibility)
+        set(overlay, "currentStatus", service.getString(R.string.screen_assistant_ready))
+        invoke(overlay, "updateBubbleBadge")
+        assertEquals(View.GONE, bubble.getChildAt(1).visibility)
+    }
+
     @Test fun stopButtonCancelsRequestAndPreservesPartialOutput() = withOverlay { overlay, request, service ->
         invoke(overlay, "showPanel")
         val panel = field(overlay, "panel") as ViewGroup

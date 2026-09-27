@@ -201,18 +201,20 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
 
     private fun ensureBubble() {
         if (bubble != null) return
-        val size = dp(58)
+        val size = dp(48)
+        val iconSize = service.resources.getDimensionPixelSize(R.dimen.screen_assistant_bubble_icon_size)
         val logo = ImageView(service).apply {
-            setImageResource(R.drawable.galaxyssi_mark_large)
+            setImageResource(R.drawable.screen_assistant_bubble_02)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = service.getString(R.string.screen_assistant_capture)
         }
         val root = FrameLayout(service).apply {
-            background = rounded(Color.WHITE, 29, 0xFFD9E5E1.toInt())
-            elevation = dp(8).toFloat()
-            addView(logo, FrameLayout.LayoutParams(dp(43), dp(43), Gravity.CENTER))
+            alpha = 0.5f
+            // Keep a 48dp touch target around the smaller visual icon.
+            addView(logo, FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER))
             val badge = View(service)
-            addView(badge, FrameLayout.LayoutParams(dp(12), dp(12), Gravity.TOP or Gravity.END).apply {
+            val badgeSize = service.resources.getDimensionPixelSize(R.dimen.screen_assistant_bubble_badge_size)
+            addView(badge, FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
                 topMargin = dp(2)
                 rightMargin = dp(2)
             })
@@ -221,8 +223,10 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         }
         val (savedX, savedY) = ScreenAssistantSettings.bubblePosition(service)
         val layout = params(size, size, Gravity.TOP or Gravity.START).apply {
-            x = savedX.takeIf { it >= 0 } ?: (screenWidth() - size - dp(12))
-            y = savedY.takeIf { it >= 0 } ?: screenHeight() / 2
+            x = (savedX.takeIf { it >= 0 } ?: (screenWidth() - size - dp(12)))
+                .coerceIn(0, max(0, screenWidth() - size))
+            y = (savedY.takeIf { it >= 0 } ?: screenHeight() / 2)
+                .coerceIn(dp(24), max(dp(24), screenHeight() - dp(100)))
         }
         if (add(root, layout)) {
             bubble = root
@@ -244,7 +248,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             if (color != null) background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(color)
-                setStroke(dp(2), Color.WHITE)
+                setStroke(dp(1), Color.WHITE)
             }
         }
         bubble?.contentDescription = "${service.getString(R.string.screen_assistant_title)}: $currentStatus"
@@ -278,7 +282,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                         dismissMenu()
                     }
                     if (moved) {
-                        layout.x = (windowX + dx.toInt()).coerceIn(0, max(0, screenWidth() - dp(58)))
+                        layout.x = (windowX + dx.toInt()).coerceIn(0, max(0, screenWidth() - layout.width))
                         layout.y = (windowY + dy.toInt()).coerceIn(dp(24), max(dp(24), screenHeight() - dp(100)))
                         runCatching { windowManager.updateViewLayout(view, layout) }
                     }
