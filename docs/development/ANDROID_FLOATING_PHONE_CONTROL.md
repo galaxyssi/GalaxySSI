@@ -29,6 +29,12 @@ Screen recording uses a fresh Android MediaProjection consent dialog, a mediaPro
 - Paused/approval state is process-local. Process death must not silently authorize or resume phone mutations; a new explicit task is required.
 - Google Play distribution and OEM accessibility/background restrictions need separate policy/device validation.
 
+## Floating Composer
+
+Question, follow-up and phone-task prompts reuse the home composer's text selection, typography, voice-wave and send-plane assets. The window remains above the IME and system navigation bar. Its height follows the input rather than using the old fixed 180dp surface; long drafts scroll inside the editor while both actions stay visible. Close/back never submits, blank input cannot submit, and recording/recognition disables submission.
+
+Voice input shares the existing home PCM audio hub and configured online/QNN/Whisper ASR. It does not create another model runtime or invoke Android's unrelated speech recognizer. A visible prompt temporarily claims the home QNN client's foreground state and releases it after capture/finalization. Closing or backgrounding the prompt stops its microphone session. Recognized text returns to the draft only, without command classification, tool execution or an automatic Agent submission.
+
 ## Validation
 
 Unit coverage: target selection, overlay/IME exclusion, split screen, stale revisions, bounded pages, sensitive-action confirmation, read-only authorization, pause/resume and cancellation during approval.
@@ -40,3 +46,5 @@ The configured home-Agent acceptance test also completed a real inspect/click/ty
 Acceptance cleanup follows its own request's turn IDs, not the shared last-turn preference. Leaving the disposable fixture aborts that test; cleanup does not cancel a newer user task or overwrite newer screen-assistant selections.
 
 Device coverage uses a separate test-APK fixture with no user data: underlying UI with a visible assistant panel, password redaction, screenshot capture, click/input observations, stale-action rejection, and panel pause/continue/stop. Real Chrome login flows, each camera/microphone/location permission and recording consent remain additional acceptance scenarios, not implied by unit tests.
+
+The v1.3.8 composer update passes 18 focused unit tests and 12 controlled S26U device tests. Added cases cover a 20-paragraph Chinese draft, fully visible voice/send hit targets, blank submission rejection and closing a populated draft without dispatch. Actual long-press-menu entry and two-line keyboard input were checked over the existing public Chrome page. QNN dictation capture and no-speech shutdown were observed. In the separate live acceptance check, the user confirmed that spoken text appeared in the draft; logs confirm QNN capture stopped after approximately four seconds. After submission, a real page-analysis reply appeared in the floating panel with the completed state. The reply distinguished observed screen content from unverified external information. This functional sample does not establish low latency: the cloud request took approximately 92 seconds and performed additional external research. Broader menu coverage and research-latency optimization remain separate acceptance work.

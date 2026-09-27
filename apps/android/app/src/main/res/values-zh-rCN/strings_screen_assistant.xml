@@ -17,6 +17,9 @@
     <string name="screen_assistant_pause">暂停悬浮入口</string>
     <string name="screen_assistant_question_hint">你想问屏幕上的什么？</string>
     <string name="screen_assistant_send">截图并发送</string>
+    <string name="screen_assistant_voice_input">语音输入</string>
+    <string name="screen_assistant_voice_finish">结束语音输入</string>
+    <string name="screen_assistant_voice_busy">麦克风正被占用，请先结束当前录音。</string>
     <string name="screen_assistant_crop_hint">拖动选择要分析的区域</string>
     <string name="screen_assistant_ready">屏幕助手已就绪</string>
     <string name="screen_assistant_unavailable">请打开其他应用后再截图</string>

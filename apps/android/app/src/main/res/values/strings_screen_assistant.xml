@@ -17,6 +17,9 @@
     <string name="screen_assistant_pause">Pause floating button</string>
     <string name="screen_assistant_question_hint">What would you like to know?</string>
     <string name="screen_assistant_send">Capture and send</string>
+    <string name="screen_assistant_voice_input">Voice input</string>
+    <string name="screen_assistant_voice_finish">Finish voice input</string>
+    <string name="screen_assistant_voice_busy">Microphone is busy. Finish the current recording first.</string>
     <string name="screen_assistant_crop_hint">Drag to select an area</string>
     <string name="screen_assistant_ready">Screen assistant ready</string>
     <string name="screen_assistant_unavailable">Open another app to capture its screen</string>
