@@ -631,7 +631,8 @@ internal fun MobileNativeAgent.executeActionUntraced(
     val richOutput = when {
         toolId == AgentOnDeviceRuntimeTools.EXECUTE ->
             AgentRuntimeArtifactUi.artifactOutput(result.output, developmentFile, zh)
-        toolId in AgentVisibleCaptureNativeTools.toolIds && result.isSuccess ->
+        result.isSuccess && (toolId in AgentVisibleCaptureNativeTools.toolIds ||
+            toolId in setOf(AgentPhoneUiNativeTools.CAPTURE, AgentPhoneUiNativeTools.RECORD)) ->
             captureArtifactRichOutput(toolId, result.output, zh)
         else -> ""
     }
@@ -1430,14 +1431,20 @@ internal fun MobileNativeAgent.captureArtifactRichOutput(
 ): String {
     val uri = output["content_uri"]?.toString().orEmpty()
     if (uri.isBlank()) return ""
-    val isPhoto = toolId == AgentVisibleCaptureNativeTools.CAMERA_CAPTURE
+    val isScreenshot = toolId == AgentPhoneUiNativeTools.CAPTURE
+    val isVideo = toolId == AgentPhoneUiNativeTools.RECORD
+    val isPhoto = toolId == AgentVisibleCaptureNativeTools.CAMERA_CAPTURE || isScreenshot
     val title = when {
+        isScreenshot -> if (zh) "\u5c4f\u5e55\u622a\u56fe" else "Screen capture"
+        isVideo -> if (zh) "\u5c4f\u5e55\u5f55\u50cf" else "Screen recording"
         isPhoto && zh -> "\u5df2\u62cd\u6444\u7167\u7247"
         isPhoto -> "Captured photo"
         zh -> "\u5df2\u5f55\u5236\u8bed\u97f3"
         else -> "Recorded audio"
     }
     val message = when {
+        isScreenshot -> if (zh) "\u5df2\u622a\u53d6\u5c4f\u5e55\u3002" else "Screen captured."
+        isVideo -> if (zh) "\u5df2\u5b8c\u6210\u5c4f\u5e55\u5f55\u50cf\u3002" else "Screen recording completed."
         isPhoto && zh -> "\u5df2\u62cd\u6444\u7167\u7247\u5e76\u6dfb\u52a0\u5230\u5f53\u524d\u4f1a\u8bdd\u3002"
         isPhoto -> "Photo captured and attached."
         zh -> "\u5df2\u5f55\u5236\u8bed\u97f3\u5e76\u6dfb\u52a0\u5230\u5f53\u524d\u4f1a\u8bdd\u3002"
@@ -1445,7 +1452,7 @@ internal fun MobileNativeAgent.captureArtifactRichOutput(
     }
     val mediaBlock = AgentRichBlock(
         id = "visible-capture:${AgentNativeJsonCodec.sha256(uri).take(24)}",
-        type = if (isPhoto) AgentRichBlockType.IMAGE else AgentRichBlockType.AUDIO,
+        type = when { isPhoto -> AgentRichBlockType.IMAGE; isVideo -> AgentRichBlockType.VIDEO; else -> AgentRichBlockType.AUDIO },
         title = title,
         uri = uri,
         mimeType = output["mime_type"]?.toString().orEmpty(),

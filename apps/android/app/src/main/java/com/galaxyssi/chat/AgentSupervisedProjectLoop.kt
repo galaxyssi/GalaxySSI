@@ -367,7 +367,8 @@ internal object AgentSupervisedProjectLoop {
                     evidenceExpected = evidenceExpected,
                     maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
-                    detailedToolIds = progress.detailedToolIds
+                    detailedToolIds = progress.detailedToolIds,
+                    phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId)
                 )
             },
             goal = AgentPlanningTiming.measure("goal") { compileGoal(request.goal) },
@@ -489,7 +490,8 @@ internal object AgentSupervisedProjectToolInventory {
         val executableToolIds: Set<String>,
         val maximumSchemaCharacters: Int,
         val temporarilyBlockedToolIds: Set<String>,
-        val detailedToolIds: Set<String>?
+        val detailedToolIds: Set<String>?,
+        val phoneControl: Boolean
     ) {
         override fun equals(other: Any?): Boolean =
             other is ManifestKey &&
@@ -497,7 +499,7 @@ internal object AgentSupervisedProjectToolInventory {
                 other.executableToolIds == executableToolIds &&
                 other.maximumSchemaCharacters == maximumSchemaCharacters &&
                 other.temporarilyBlockedToolIds == temporarilyBlockedToolIds &&
-                other.detailedToolIds == detailedToolIds
+                other.detailedToolIds == detailedToolIds && other.phoneControl == phoneControl
 
         override fun hashCode(): Int {
             var result = System.identityHashCode(tools)
@@ -505,6 +507,7 @@ internal object AgentSupervisedProjectToolInventory {
             result = 31 * result + maximumSchemaCharacters
             result = 31 * result + temporarilyBlockedToolIds.hashCode()
             result = 31 * result + detailedToolIds.hashCode()
+            result = 31 * result + phoneControl.hashCode()
             return result
         }
     }
@@ -520,7 +523,8 @@ internal object AgentSupervisedProjectToolInventory {
         context: AgentRuntimeContext,
         maximumSchemaCharacters: Int,
         temporarilyBlockedToolIds: Set<String> = emptySet(),
-        detailedToolIds: Set<String>? = null
+        detailedToolIds: Set<String>? = null,
+        phoneControl: Boolean = false
     ): String {
         val tools = context.nativeTools
         val executableToolIds = if (context.capabilityMatrix.entries.isEmpty()) {
@@ -538,14 +542,16 @@ internal object AgentSupervisedProjectToolInventory {
             executableToolIds,
             maximumSchemaCharacters,
             temporarilyBlockedToolIds,
-            detailedToolIds
+            detailedToolIds,
+            phoneControl
         )
         return renderedManifestCache.getOrCompute(key) {
             ordered(tools).asSequence()
                 .filter { tool ->
                     tool.id in executableToolIds &&
                         tool.id !in temporarilyBlockedToolIds &&
-                        AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
+                        (if (phoneControl) PhoneAssistantToolPolicy.allowsRemotePhoneTool(tool.id)
+                            else AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id))
                 }
                 .joinToString(separator = "") { tool ->
                     buildString {
@@ -1073,7 +1079,8 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
     val rawParsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
         ?.takeIf { candidate ->
-            AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, candidate.actions)
+            AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, candidate.actions,
+                phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId))
         }
         ?: run {
             logSupervisedPlanRejection("action_plan", normalizedResponse)
@@ -1273,7 +1280,8 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
         targets = request.targets,
-        registrations = request.registrations
+        registrations = request.registrations,
+        requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal)
     )
     val routeSelection = AgentConnectorRouteSelector.select(
         targets = request.targets,
@@ -1549,7 +1557,7 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
         conversationContext = activeConversationContext,
         history = plan.historyForReplan(),
         continuation = continuation
-    ).copy(completionRequirements = plan.completionRequirements)
+    ).copy(completionRequirements = plan.completionRequirements, executionTurnId = activeConversationTurnId)
 }
 
 private fun MobileNativeAgent.reviewSupervisedProjectPlan(

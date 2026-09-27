@@ -764,9 +764,9 @@ class AgentResourceRouter(context: Context) {
         goal: String,
         targets: List<AgentCallableTarget>,
         registrations: List<AgentRegistration>? = null,
-        preferredTargetId: String = ""
+        preferredTargetId: String = "",
+        requirements: AgentTaskRequirements = AgentTaskRequirementAnalyzer.analyze(goal)
     ): AgentRoutingDecision {
-        val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val environment = AgentRuntimeEnvironmentProbe.probe(appContext)
         val taskBudget = taskBudgetStore.load()
         val effectiveRegistrations = resolveAgentRoutingRegistrations(registrations) {

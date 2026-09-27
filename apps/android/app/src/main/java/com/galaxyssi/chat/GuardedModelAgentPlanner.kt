@@ -259,6 +259,12 @@ internal object AgentModelPlanningPrompt {
         val maxBatchActions = settings.maxActions.coerceIn(1, 12)
         return buildString {
         append("Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
+        if (PhoneAssistantTaskControl.isBound(request.executionTurnId)) {
+            append("Floating phone task: operate this Android phone, never the Desktop screen. ")
+            append("Use galaxyssi.phone.ui.inspect then galaxyssi.phone.ui.act with the exact current revision and node_path. ")
+            append("Do not use coordinate TAP/SWIPE/TYPE_TEXT actions. Verify each result before continuing. ")
+            append("A read-only analysis cannot mutate the phone. System permission/security dialogs require the user.\n")
+        }
         append("User goal: ").append(request.goal.take(2_000)).append("\n")
         if (request.replanReason.isNotBlank()) {
             append("Replan reason: ")
@@ -391,7 +397,9 @@ internal object AgentModelPlanningPrompt {
         val tools = request.runtimeContext.nativeTools.filter { tool ->
             request.runtimeContext.isNativeToolExecutable(tool.id)
         }
-        val priority = DEVELOPMENT_TOOL_PRIORITY.mapIndexed { index, id -> id to index }.toMap()
+        val order = if (AgentTaskIntentClassifier.classify(request.goal).intent == AgentTaskIntent.PHONE_CONTROL ||
+            PhoneAssistantTaskControl.isBound(request.executionTurnId)) PHONE_TOOL_PRIORITY else DEVELOPMENT_TOOL_PRIORITY
+        val priority = order.mapIndexed { index, id -> id to index }.toMap()
         return tools.sortedWith(
             compareBy<AgentNativeToolDescriptor> { priority[it.id] ?: Int.MAX_VALUE }
                 .thenBy { it.id }
@@ -413,6 +421,7 @@ internal object AgentModelPlanningPrompt {
                 .append(" | origin=").append(it.origin.name)
                 .append(" | role=").append(it.visualRole.name)
                 .append(" | confidence=").append("%.2f".format(Locale.US, it.confidence))
+                .append(" | enabled=").append(it.enabled).append(" | checked=").append(it.checked)
                 .append("\n")
         }
         append("Input fields:\n")
@@ -422,12 +431,32 @@ internal object AgentModelPlanningPrompt {
                 .append(" | bounds=").append(it.bounds)
                 .append(" | origin=").append(it.origin.name)
                 .append(" | confidence=").append("%.2f".format(Locale.US, it.confidence))
+                .append(" | enabled=").append(it.enabled).append(" | password=").append(it.password)
                 .append("\n")
         }
     }
 
     private const val MAX_PROMPT_CHARACTERS = 24_000
     private const val COMPACT_PROMPT_CHARACTERS = 12_000
+    private val PHONE_TOOL_PRIORITY = listOf(
+        AgentPhoneUiNativeTools.INSPECT,
+        AgentPhoneUiNativeTools.ACT,
+        AgentPhoneUiNativeTools.BROWSER,
+        AgentPhoneUiNativeTools.CAPTURE,
+        AgentPhoneUiNativeTools.RECORD,
+        AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.OPEN_APP),
+        AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.BACK),
+        AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.HOME),
+        AgentHardwareNativeTools.INSTALLED_APPS_LIST,
+        AgentHardwareNativeTools.PACKAGE_DETAIL,
+        AgentHardwareNativeTools.BATTERY_STATUS,
+        AgentHardwareNativeTools.NETWORK_STATUS,
+        AgentHardwareNativeTools.LOCATION_FOREGROUND_READ,
+        AgentNotificationNativeTools.NOTIFICATIONS_LIST,
+        AgentNotificationNativeTools.NOTIFICATION_REPLY,
+        AgentVisibleCaptureNativeTools.CAMERA_CAPTURE,
+        AgentVisibleCaptureNativeTools.MICROPHONE_RECORD
+    )
     private val DEVELOPMENT_TOOL_PRIORITY = listOf(
         AgentMobileProjectArchiveTools.IMPORT_PROJECT,
         AgentMobileProjectArchiveTools.IMPORT_GRADLE_CACHE,

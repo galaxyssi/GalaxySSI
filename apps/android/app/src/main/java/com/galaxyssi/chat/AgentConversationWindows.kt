@@ -24,6 +24,7 @@ internal object AgentConversationWindows {
     private val main = Handler(Looper.getMainLooper())
     private var changePosted = false
     private var statusChangePosted = false
+    private var lastForegroundWindowKey = "main"
 
     fun statusChanged() {
         main.post {
@@ -39,9 +40,16 @@ internal object AgentConversationWindows {
     }
 
     fun register(controller: AgentConversationWindowController) { windows[controller.key] = WeakReference(controller) }
-    fun screenAssistantRunner(): MainActivity? = listOfNotNull(windows["main"]?.get()?.activity).asSequence()
-        .plus(windows.values.asSequence().mapNotNull { it.get()?.activity })
-        .firstOrNull { !it.isDestroyed && !it.isFinishing && !it.initialAgentHydrationPending }
+    fun screenAssistantForeground(controller: AgentConversationWindowController) {
+        lastForegroundWindowKey = controller.key
+    }
+    fun screenAssistantRunner(allowInitializing: Boolean = false): MainActivity? {
+        val host = listOfNotNull(windows[lastForegroundWindowKey]?.get()?.activity,
+            windows["main"]?.get()?.activity).asSequence()
+            .plus(windows.values.asSequence().mapNotNull { it.get()?.activity })
+            .firstOrNull { !it.isDestroyed && !it.isFinishing }
+        return host?.takeIf { allowInitializing || !it.initialAgentHydrationPending }
+    }
     fun unregister(controller: AgentConversationWindowController) {
         if (windows[controller.key]?.get() === controller) windows.remove(controller.key)
     }
@@ -277,6 +285,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
 
     fun resume() {
         visible = true
+        AgentConversationWindows.screenAssistantForeground(this)
         if (conversationId.isNotBlank()) pendingScroll = states.load(key, conversationId)
         onDataChanged()
         AgentConversationWindows.readyWindow(this)

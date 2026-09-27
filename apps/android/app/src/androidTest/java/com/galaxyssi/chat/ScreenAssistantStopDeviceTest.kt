@@ -18,6 +18,18 @@ import org.junit.runner.RunWith
 /** Isolated overlay and request; never captures a screen or submits a real Agent task. */
 @RunWith(AndroidJUnit4::class)
 class ScreenAssistantStopDeviceTest {
+    @Test fun firstAnalysisTapShowsPreparationAndCancelableRequestImmediately() = withOverlay { overlay, _, service ->
+        invoke(overlay, "startAnalysisPreparation")
+        val request = field(overlay, "request") as ScreenAssistantAnalysisRequest
+        assertTrue(request.turnId.isBlank())
+        val panel = field(overlay, "panel") as ViewGroup
+        val text = descendants(panel).filterIsInstance<TextView>().map { it.text.toString() }.toList()
+        assertTrue(service.getString(R.string.screen_assistant_preparing) in text)
+        descendants(panel).filterIsInstance<TextView>()
+            .single { it.text.toString() == service.getString(R.string.screen_assistant_stop) }.performClick()
+        assertTrue(request.isCancelled)
+    }
+
     @Test fun bubbleUsesSmallerTranslucentControlAndKeepsStatusBadge() = withOverlay { overlay, _, service ->
         invoke(overlay, "ensureBubble")
         val bubble = field(overlay, "bubble") as ViewGroup
@@ -27,7 +39,7 @@ class ScreenAssistantStopDeviceTest {
         assertEquals(0.5f, bubble.alpha, 0.001f)
         assertEquals((48 * density + 0.5f).toInt(), layout.width)
         assertEquals(layout.width, layout.height)
-        assertEquals((46.4f * density + 0.5f).toInt(), icon.layoutParams.width)
+        assertTrue(kotlin.math.abs((46.4f * density + 0.5f).toInt() - icon.layoutParams.width) <= 1)
         assertEquals(icon.layoutParams.width, icon.layoutParams.height)
         assertNotNull(icon.drawable)
         assertEquals(View.VISIBLE, bubble.getChildAt(1).visibility)

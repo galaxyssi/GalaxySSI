@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="screenPromptSend" type="id" />
+    <item name="screenPromptVoice" type="id" />
+    <item name="screenPromptCancel" type="id" />
+</resources>

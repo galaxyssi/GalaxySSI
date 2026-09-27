@@ -85,6 +85,10 @@ internal object AgentInstalledAppLaunchPolicy {
 class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner {
     override fun recoverySpec() = AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.RULE_BASED)
     override fun plan(request: AgentRequest): AgentPlan {
+        if (PhoneAssistantTaskControl.isAutomation(request.executionTurnId)) {
+            return AgentPlanFactory.actions(request,
+                supervisedProjectActions(request) ?: listOf(unavailableReasoningAction(request)))
+        }
         AgentSpecializedAppPlanner.plan(request)?.let { specialized ->
             return AgentPlanFactory.actions(request, specialized.actions).copy(
                 plannerProfile = "specialized-adapter:${specialized.profile}",
@@ -148,6 +152,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun actionsFor(request: AgentRequest): List<AgentAction> {
+        // Screen evidence must not name a provider or trigger a local command by keyword.
+        if (PhoneAssistantTaskControl.isReadOnly(request.executionTurnId)) {
+            return listOf(informationQueryAction(request) ?: unavailableReasoningAction(request))
+        }
         notificationReplyAction(request)?.let { return listOf(it) }
         deterministicLocalAction(request)?.let { return listOf(it) }
         supervisedProjectActions(request)?.let { return it }
@@ -161,7 +169,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun supervisedProjectActions(request: AgentRequest): List<AgentAction>? {
-        if (!AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
+        val phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId)
+        if (!phoneControl && !AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
                 request.goal,
                 request.conversationContext
             )
@@ -174,12 +183,16 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 registrations = request.registrations,
                 preferredTargetId = AgentStableAutoRouteStore.target(
                     appContext, request.conversationContext.conversationId, request.targets
-                )?.id.orEmpty()
+                )?.id.orEmpty(),
+                requirements = PhoneAssistantTaskControl.reasoningRequirements(request.executionTurnId, request.goal)
             )
         } else null
         val routedSelection = if (selected == null) {
             AgentStableAutoRoutePolicy.select(request.targets, routing)
         } else null
+        if (phoneControl && selected == null && routedSelection == null) {
+            return listOf(unavailableReasoningAction(request))
+        }
         if (selected == null && routing != null && routedSelection == null) {
             return listOf(unavailableReasoningAction(request))
         }

@@ -1039,7 +1039,8 @@ internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentActio
         goal = currentGoal,
         targets = targets,
         registrations = connectorSnapshot.registrations,
-        preferredTargetId = action.parameters["connector_id"].orEmpty()
+        preferredTargetId = action.parameters["connector_id"].orEmpty(),
+        requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal)
     )
     val selection = AgentStableAutoRoutePolicy.select(
         targets = targets,
@@ -1098,7 +1099,8 @@ internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
         goal = currentGoal,
         targets = request.targets,
         registrations = request.registrations,
-        preferredTargetId = connector.parameters["connector_id"].orEmpty()
+        preferredTargetId = connector.parameters["connector_id"].orEmpty(),
+        requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal)
     )
     val routeSelection = AgentStableAutoRoutePolicy.select(
         targets = request.targets,
