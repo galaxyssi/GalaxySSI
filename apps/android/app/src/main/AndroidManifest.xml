@@ -91,6 +91,7 @@
         <activity android:name=".NfcWatchContactActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".WatchSetupActivity" android:exported="false" android:configChanges="orientation|screenSize|uiMode" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".DoorAccessActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".PhoneScreenRecordingActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity
             android:name=".ScreenAssistantPromptActivity"
             android:exported="false"
@@ -175,6 +176,10 @@
             android:authorities="${applicationId}.local-attachments"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <service
+            android:name=".PhoneScreenRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <service
             android:name=".AgentScreenCaptureService"
             android:exported="false"

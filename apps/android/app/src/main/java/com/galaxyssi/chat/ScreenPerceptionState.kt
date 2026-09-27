@@ -236,5 +236,8 @@ data class ScreenElement(
     val origin: AgentElementOrigin = AgentElementOrigin.ACCESSIBILITY,
     val confidence: Float = 1f,
     val visualRole: AgentVisualRole = AgentVisualRole.UNKNOWN,
-    val actionable: Boolean = true
+    val actionable: Boolean = true,
+    val enabled: Boolean = true,
+    val checked: Boolean? = null,
+    val password: Boolean = false
 )

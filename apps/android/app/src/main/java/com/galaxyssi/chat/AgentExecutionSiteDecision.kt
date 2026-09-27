@@ -47,14 +47,16 @@ internal object AgentExecutionSiteDecisionCodec {
 
     fun acceptsActions(
         decision: AgentExecutionSiteDecision,
-        actions: List<AgentAction>
+        actions: List<AgentAction>,
+        phoneControl: Boolean = false
     ): Boolean = when (decision.site) {
         AgentRequestedExecutionSite.PHONE -> actions.all { action ->
             action.isTaskCompleteMarker() ||
                 (action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
-                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(
-                        action.parameters["tool_id"].orEmpty()
-                    ))
+                    if (phoneControl) PhoneAssistantToolPolicy.allowsRemotePhoneTool(
+                        action.parameters["tool_id"].orEmpty())
+                    else AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(
+                        action.parameters["tool_id"].orEmpty()))
         }
 
         AgentRequestedExecutionSite.DESKTOP -> actions.size == 1 &&

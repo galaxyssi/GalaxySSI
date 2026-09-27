@@ -7,6 +7,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun phoneControlUsesPhoneUiToolsNotLinuxProjectContract() {
+        val original = context()
+        val inspect = original.nativeTools.first().copy(id = AgentPhoneUiNativeTools.INSPECT)
+        val act = inspect.copy(id = AgentPhoneUiNativeTools.ACT)
+        val tools = original.nativeTools + listOf(inspect, act)
+        val phone = original.copy(goal = "open phone app Settings", nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        val prompt = AgentSupervisedProjectPromptTemplate.render(phone, false, 240, phoneControl = true)
+        assertTrue(prompt.contains("galaxyssi.phone.ui.inspect |"))
+        assertTrue(prompt.contains("galaxyssi.phone.ui.act |"))
+        assertTrue(prompt.contains("exact observed window_id/revision/node_path"))
+        assertFalse(prompt.contains("galaxyssi.project.repository.clone |"))
+        assertFalse(prompt.contains("Persistent phone Linux uses Debian"))
+        val project = AgentSupervisedProjectPromptTemplate.render(phone, false, 240, phoneControl = false)
+        assertTrue(project.contains("galaxyssi.project.repository.clone |"))
+        assertFalse(project.contains("galaxyssi.phone.ui.act |"))
+    }
     @Test fun `completion obligations come from model interpreted intent without implicit publication`() {
         for (continuation in listOf(false, true)) {
             val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240)

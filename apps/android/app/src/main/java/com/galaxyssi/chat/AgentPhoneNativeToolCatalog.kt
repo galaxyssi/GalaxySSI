@@ -130,6 +130,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentAndroidSystemNativeTools.toolIds)
             add(DoorAccessNativeTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
+            addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
             addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
@@ -184,6 +185,8 @@ object AgentPhoneNativeToolCatalog {
             DoorAccessNativeTool.definitions(context.applicationContext)
         ).registerAll(
             AgentSystemEvidenceNativeTools.definitions(context.applicationContext)
+        ).registerAll(
+            AgentPhoneUiNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentMcpNativeTools.definitions(context.applicationContext)
         ).registerAll(

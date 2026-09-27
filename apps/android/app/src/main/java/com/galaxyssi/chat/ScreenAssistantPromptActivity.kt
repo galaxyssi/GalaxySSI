@@ -32,7 +32,7 @@ class ScreenAssistantPromptActivity : Activity() {
         fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
         val input = EditText(this).apply {
             id = android.R.id.edit
-            hint = getString(R.string.screen_assistant_question_hint)
+            hint = getString(if (request.sendLabel == R.string.screen_assistant_execute) R.string.screen_assistant_task_hint else R.string.screen_assistant_question_hint)
             textSize = 15f
             minLines = 2
             maxLines = 4
@@ -104,6 +104,8 @@ class ScreenAssistantPromptActivity : Activity() {
         private data class Request(val id: String, val sendLabel: Int, val onSubmit: (String) -> Unit)
         private var pending: Request? = null
         private var current: WeakReference<ScreenAssistantPromptActivity>? = null
+
+        internal fun isOpen(): Boolean = pending != null || current?.get() != null
 
         internal fun show(context: Context, sendLabel: Int, onSubmit: (String) -> Unit) {
             dismissIfOpen()

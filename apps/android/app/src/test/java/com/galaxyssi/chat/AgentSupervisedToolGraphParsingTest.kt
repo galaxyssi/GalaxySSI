@@ -6,6 +6,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentSupervisedToolGraphParsingTest {
+    @Test fun `real phone inspect plan parses without being admitted as a code project tool`() {
+        val tool = descriptor(AgentPhoneUiNativeTools.INSPECT, AgentNativeToolConcurrency.SERIAL)
+        val screen = ScreenContext("test.fixture", pageTitle = "Fixture")
+        val request = AgentRequest("Inspect the current phone App", screen, emptyList(), memories = emptyList(),
+            runtimeContext = AgentRuntimeContextBuilder.build(sessionId = "phone-parser", goal = "Inspect the current phone App",
+                screen = screen, permissionMode = PermissionMode.FULL_ACCESS, highRiskGuard = false, memoryCapture = false,
+                callableTargets = emptyList(), memories = emptyList(), nativeTools = listOf(tool)))
+        val source = """{"execution_location":"phone","actions":[{"kind":"CALL_NATIVE_TOOL","target":"galaxyssi.phone.ui.inspect","parameters":{"tool_id":"galaxyssi.phone.ui.inspect","arguments":{"offset":0,"limit":80}}}]}"""
+        val plan = requireNotNull(AgentModelPlanParser.parse(request, source, settings))
+        val site = AgentExecutionSiteDecision(AgentRequestedExecutionSite.PHONE)
+        assertFalse(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions))
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions, phoneControl = true))
+    }
     private val write = descriptor(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT, AgentNativeToolConcurrency.SERIAL)
     private val read = descriptor(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, AgentNativeToolConcurrency.PARALLEL_READ_ONLY)
     private val descriptors = listOf(write, read).associateBy { it.id }

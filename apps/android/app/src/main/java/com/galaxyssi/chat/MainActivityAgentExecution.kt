@@ -411,7 +411,11 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
 
 internal fun MainActivity.finalizeAgentExecutionLoop(
     runtime: MobileNativeAgent, turnId: String, state: AgentUiState
-): AgentUiState = finalizeAgentExecution(runtime, turnId, state, ::recordAgentRunFromState)
+): AgentUiState = finalizeAgentExecution(runtime, turnId, state, ::recordAgentRunFromState).also {
+    if (it.phase in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) {
+        PhoneAssistantTaskControl.finish(turnId)
+    }
+}
 
 internal fun MainActivity.executeConcurrentAgentGoal(
     goal: String,
@@ -424,7 +428,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
 ) {
     if (isSubmissionCancelled()) return
     val submissionStartedAt = SystemClock.elapsedRealtime()
-    val supervisedProject = AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+    val phoneControl = PhoneAssistantTaskControl.isAutomation(turnId)
+    val supervisedProject = phoneControl || AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
         conversationContext = conversationContext,
         selectedAction = deterministicAction
@@ -489,19 +494,26 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
         )
         lateinit var runtime: MobileNativeAgent
+        val phoneExecutor = PhoneAssistantTaskControl.executor(turnId, directAgentActionExecutor)
         val sharedNativeToolRegistry by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             AgentPhoneNativeToolCatalog.defaultRegistry(
                 context = this@executeConcurrentAgentGoal,
-                screenProvider = { runtime.currentScreen },
-                actionExecutor = directAgentActionExecutor
-            )
+                screenProvider = { if (PhoneAssistantTaskControl.isBound(turnId)) AndroidScreenPerceptionProvider(applicationContext).capture() else runtime.currentScreen },
+                actionExecutor = phoneExecutor
+            ).let { registry ->
+                if (!PhoneAssistantTaskControl.isReadOnly(turnId)) registry
+                else registry.subset { tool ->
+                    tool.id in setOf(AgentPhoneUiNativeTools.INSPECT, AgentPhoneUiNativeTools.CAPTURE, AgentPhoneUiNativeTools.BROWSER) ||
+                        tool.risk == AgentNativeToolRisk.LOW && tool.idempotency == AgentNativeToolIdempotency.IDEMPOTENT
+                }
+            }
         }
         runtime = MobileNativeAgent(
             this@executeConcurrentAgentGoal,
             planner = when {
-                selectedReasoningProvider != null ->
+                selectedReasoningProvider != null && !phoneControl ->
                     AgentPhoneReasoningProviderPlanner(selectedReasoningProvider)
-                deterministicAction != null -> AgentSelectedNativeActionPlanner(deterministicAction)
+                deterministicAction != null && !phoneControl -> AgentSelectedNativeActionPlanner(deterministicAction)
                 else -> GuardedModelAgentPlanner(
                     context = this@executeConcurrentAgentGoal,
                     modelToolLoopEventSink = AgentModelToolLoopEventSink { event ->
@@ -512,7 +524,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                     nativeToolRegistryProvider = { sharedNativeToolRegistry }
                 )
             },
-            actionExecutor = directAgentActionExecutor,
+            actionExecutor = phoneExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
             screenObservationOverride = deterministicAction?.let { selectedAction ->

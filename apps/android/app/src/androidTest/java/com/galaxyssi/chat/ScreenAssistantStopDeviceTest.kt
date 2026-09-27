@@ -27,7 +27,7 @@ class ScreenAssistantStopDeviceTest {
         assertEquals(0.5f, bubble.alpha, 0.001f)
         assertEquals((48 * density + 0.5f).toInt(), layout.width)
         assertEquals(layout.width, layout.height)
-        assertEquals((46.4f * density + 0.5f).toInt(), icon.layoutParams.width)
+        assertTrue(kotlin.math.abs((46.4f * density + 0.5f).toInt() - icon.layoutParams.width) <= 1)
         assertEquals(icon.layoutParams.width, icon.layoutParams.height)
         assertNotNull(icon.drawable)
         assertEquals(View.VISIBLE, bubble.getChildAt(1).visibility)

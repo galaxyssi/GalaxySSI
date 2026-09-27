@@ -6,12 +6,28 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.os.Build
 import android.graphics.Path
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
 class GalaxySSIAccessibilityService : AccessibilityService() {
     private var lastVisualCaptureRequestAt = 0L
     private var screenAssistant: ScreenAssistantOverlay? = null
+    private val targetReader by lazy { PhoneUiTargetReader(this) }
+
+    internal fun targetRoot(): AccessibilityNodeInfo? {
+        val externalOnly = ScreenAssistantPromptActivity.isOpen() ||
+            !AppForegroundTracker.isForeground() || PhoneAssistantTaskControl.hasActiveTask()
+        return if (externalOnly) targetReader.targetWindow(true)?.root else rootInActiveWindow
+    }
+
+    internal fun captureWithoutAssistant(capture: () -> Unit) {
+        screenAssistant?.hideForCapture(capture) ?: capture()
+    }
+    internal fun restoreAssistantAfterCapture() { screenAssistant?.restoreAfterCapture() }
 
     override fun onCreate() {
         super.onCreate()
@@ -21,12 +37,12 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString().orEmpty()
         screenAssistant?.onForegroundPackage(packageName)
-        val root = rootInActiveWindow ?: return
+        val root = targetRoot() ?: return
         val className = event?.className?.toString().orEmpty()
         ScreenPerceptionState.update(
             AccessibilityTreeReader.snapshot(
                 root = root,
-                packageName = packageName,
+                packageName = root.packageName?.toString().orEmpty(),
                 className = className
             )
         )
@@ -46,7 +62,7 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
             it.onForegroundPackage(rootInActiveWindow?.packageName?.toString().orEmpty())
             it.retryPending()
         }
-        rootInActiveWindow?.let { root ->
+        targetRoot()?.let { root ->
             ScreenPerceptionState.update(
                 AccessibilityTreeReader.snapshot(
                     root = root,
@@ -67,7 +83,7 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     private fun captureScreen(defaultApp: String, defaultTitle: String): ScreenContext? {
-        val root = rootInActiveWindow ?: return null
+        val root = targetRoot() ?: return null
         val snapshot = AccessibilityTreeReader.snapshot(
             root = root,
             packageName = root.packageName?.toString().orEmpty(),
@@ -82,12 +98,10 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         val path = Path().apply {
             moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
         }
-        return dispatchGesture(
+        return completedGesture(
             GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
                 .build(),
-            null,
-            null
         )
     }
 
@@ -96,12 +110,10 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         val path = Path().apply {
             moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
         }
-        return dispatchGesture(
+        return completedGesture(
             GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, 650))
                 .build(),
-            null,
-            null
         )
     }
 
@@ -110,59 +122,70 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
             moveTo(fromX.toFloat(), fromY.toFloat())
             lineTo(toX.toFloat(), toY.toFloat())
         }
-        return dispatchGesture(
+        return completedGesture(
             GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, 320))
                 .build(),
-            null,
-            null
         )
     }
 
     private fun typeIntoFocusedField(text: String): Boolean {
-        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        val node = targetRoot()?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
         return setNodeText(node, text)
     }
 
     private fun typeIntoField(bounds: String, text: String): Boolean {
         val targetBounds = parseBounds(bounds) ?: return false
-        val node = findNodeByBounds(rootInActiveWindow, targetBounds) ?: return false
+        val node = findNodeByBounds(targetRoot(), targetBounds) ?: return false
         return setNodeText(node, text)
     }
 
     private fun tapThenType(bounds: String, text: String): Boolean {
         val rect = parseBounds(bounds) ?: return false
         val path = Path().apply { moveTo(rect.centerX().toFloat(), rect.centerY().toFloat()) }
-        return dispatchGesture(
+        return completedGesture(
             GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
                 .build(),
-            object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription) {
-                    val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                    if (focused != null) setNodeText(focused, text)
-                }
-            },
-            null
+            onCompleted = {
+                targetRoot()?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { setNodeText(it, text) } == true
+            }
         )
     }
 
     private fun clearFocusedField(): Boolean {
-        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        val node = targetRoot()?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
         return setNodeText(node, "")
     }
 
     private fun clearField(bounds: String): Boolean {
         val targetBounds = parseBounds(bounds) ?: return false
-        val node = findNodeByBounds(rootInActiveWindow, targetBounds) ?: return false
+        val node = findNodeByBounds(targetRoot(), targetBounds) ?: return false
         return setNodeText(node, "")
     }
 
     private fun setNodeText(node: AccessibilityNodeInfo, text: String): Boolean {
+        if (!node.isEnabled || node.isPassword) return false
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    private fun completedGesture(gesture: GestureDescription, onCompleted: () -> Boolean = { true }): Boolean {
+        val completion = CountDownLatch(1)
+        var completed = false
+        val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription) {
+                completed = onCompleted()
+                completion.countDown()
+            }
+            override fun onCancelled(gestureDescription: GestureDescription) { completion.countDown() }
+        }, Handler(Looper.getMainLooper()))
+        if (!accepted) return false
+        // Legacy foreground commands must not wait on the callback's own looper.
+        if (Looper.myLooper() == Looper.getMainLooper()) return accepted
+        return completion.await(3, TimeUnit.SECONDS) && completed
     }
 
     private fun findNodeByBounds(node: AccessibilityNodeInfo?, targetBounds: Rect): AccessibilityNodeInfo? {
@@ -190,6 +213,14 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         private const val VISUAL_CAPTURE_THROTTLE_MILLIS = 2_500L
 
         fun isActive(): Boolean = activeService != null
+
+        internal fun targetService(): GalaxySSIAccessibilityService? = activeService
+        internal fun readTargetUi(): PhoneUiSnapshot? = activeService?.targetReader?.snapshot()
+        internal fun targetWindowId(): Int? = activeService?.targetReader?.targetWindow(true)?.id
+        internal fun actOnTargetUi(windowId: Int, revision: String, path: String,
+            operation: String, text: String): Map<String, Any?> =
+            requireNotNull(activeService) { "Screen access is not enabled" }.targetReader
+                .act(windowId, revision, path, operation, text)
 
         fun refreshScreenAssistant() {
             activeService?.screenAssistant?.refresh()
@@ -289,8 +320,8 @@ private object AccessibilityTreeReader {
                 packageCounts[nodePackage] = (packageCounts[nodePackage] ?: 0) + 1
             }
 
-            val label = node.text?.toString()?.trim().orEmpty()
-            val description = node.contentDescription?.toString()?.trim().orEmpty()
+            val label = if (node.isPassword) "[password]" else node.text?.toString()?.trim().orEmpty()
+            val description = if (node.isPassword) "" else node.contentDescription?.toString()?.trim().orEmpty()
             val displayLabel = label.ifBlank { description }
             if (displayLabel.isNotBlank()) {
                 if (firstTitle.isBlank()) firstTitle = displayLabel
@@ -303,7 +334,10 @@ private object AccessibilityTreeReader {
                 label = displayLabel.ifBlank { node.className?.toString().orEmpty() },
                 viewId = node.viewIdResourceName.orEmpty(),
                 className = node.className?.toString().orEmpty(),
-                bounds = boundsOf(node)
+                bounds = boundsOf(node),
+                enabled = node.isEnabled,
+                checked = node.isChecked.takeIf { node.isCheckable },
+                password = node.isPassword
             )
             if (node.isClickable) addLimited(clickableElements, element, MAX_ELEMENT_ITEMS)
             if (node.isEditable) {
