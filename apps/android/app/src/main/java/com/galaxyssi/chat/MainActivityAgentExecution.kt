@@ -432,7 +432,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     val supervisedProject = phoneControl || AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
         conversationContext = conversationContext,
-        selectedAction = deterministicAction
+        selectedAction = deterministicAction,
+        independentRequest = PhoneAssistantTaskControl.isReadOnly(turnId)
     )
     val selectedReasoningProvider = deterministicAction?.takeIf { action ->
         supervisedProject &&

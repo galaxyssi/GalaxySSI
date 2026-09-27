@@ -168,6 +168,11 @@ class AgentSystemToolPlannerTest {
                 selectedAction = directConnector
             )
         )
+        assertFalse(AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+            request.goal, request.conversationContext, directConnector, independentRequest = true))
+        assertFalse(AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+            request.goal, request.conversationContext,
+            directConnector.copy(parameters = directConnector.parameters + ("request_kind" to "screen_analysis"))))
     }
 
     @Test

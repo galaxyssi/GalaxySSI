@@ -19,7 +19,7 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     private val targetReader by lazy { PhoneUiTargetReader(this) }
 
     internal fun targetRoot(): AccessibilityNodeInfo? {
-        val externalOnly = ScreenAssistantPromptActivity.isOpen() ||
+        val externalOnly = ScreenAssistantChatActivity.isOpen() ||
             !AppForegroundTracker.isForeground() || PhoneAssistantTaskControl.hasActiveTask()
         return if (externalOnly) targetReader.targetWindow(true)?.root else rootInActiveWindow
     }
@@ -36,6 +36,8 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString().orEmpty()
+        screenAssistant?.onTargetInteraction(packageName, event?.eventType ?: 0)
+        if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) return
         screenAssistant?.onForegroundPackage(packageName)
         val root = targetRoot() ?: return
         val className = event?.className?.toString().orEmpty()
@@ -217,6 +219,10 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         internal fun targetService(): GalaxySSIAccessibilityService? = activeService
         internal fun readTargetUi(): PhoneUiSnapshot? = activeService?.targetReader?.snapshot()
         internal fun targetWindowId(): Int? = activeService?.targetReader?.targetWindow(true)?.id
+        internal fun trackScreenAssistantTurn(runner: MainActivity, conversationId: String,
+            turnId: String, request: ScreenAssistantAnalysisRequest) {
+            activeService?.screenAssistant?.trackChatTurn(runner, conversationId, turnId, request)
+        }
         internal fun actOnTargetUi(windowId: Int, revision: String, path: String,
             operation: String, text: String): Map<String, Any?> =
             requireNotNull(activeService) { "Screen access is not enabled" }.targetReader

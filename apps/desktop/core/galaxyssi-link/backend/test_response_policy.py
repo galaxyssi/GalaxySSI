@@ -3,8 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from research_quality import research_quality_prompt
 
 from response_policy import (
+    BRIEF_ANSWER_POLICY,
     CODEX_STYLE_RESPONSE_POLICY,
     apply_response_policy,
     attachment_clarification,
@@ -117,6 +119,14 @@ def _evaluate(case: dict) -> dict:
 
 
 class ResponsePolicyTest(unittest.TestCase):
+    def test_full_and_existing_codex_turns_share_concise_answer_rules(self):
+        for prompt in (apply_response_policy("Analyze this screen", "zh-CN"),
+                       compact_codex_turn_prompt("Analyze this screen", "zh-CN")):
+            self.assertIn(BRIEF_ANSWER_POLICY, prompt)
+            self.assertIn("direct conclusion", prompt)
+            self.assertIn("user requests detail or completeness", prompt)
+            self.assertIn("supporting citations", prompt)
+
     def test_clarification_questions_follow_the_configured_language(self):
         self.assertEqual(
             "What topic or question should I research?",
@@ -135,7 +145,7 @@ class ResponsePolicyTest(unittest.TestCase):
         result = compact_codex_turn_prompt(prompt, "en-US")
         self.assertTrue(result.startswith("GalaxySSI turn policy: Turn language: English (en-US)."))
         self.assertTrue(result.endswith("Read report.xlsx"))
-        self.assertIn("GalaxySSI research quality (galaxyssi.research-quality/1.0)", result)
+        self.assertIn(research_quality_prompt(), result)
         self.assertNotIn("old request", result)
         self.assertNotIn("old result", result)
 

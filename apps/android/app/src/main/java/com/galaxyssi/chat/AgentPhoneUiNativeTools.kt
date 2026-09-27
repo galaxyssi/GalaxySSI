@@ -12,12 +12,31 @@ object AgentPhoneUiNativeTools {
     const val BROWSER = "galaxyssi.phone.chrome.command"
     const val CAPTURE = "galaxyssi.phone.screen.capture"
     const val RECORD = "galaxyssi.phone.screen.record.visible"
-    val toolIds = setOf(INSPECT, ACT, BROWSER, CAPTURE, RECORD)
+    const val PAGE_READ = "galaxyssi.phone.page.read"
+    val toolIds = setOf(INSPECT, ACT, BROWSER, CAPTURE, RECORD, PAGE_READ)
     private val chromePackages = setOf("com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary")
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> {
         val app = context.applicationContext
         return listOf(
+            definition(PAGE_READ, "Read a captured full-page segment", "Read the saved whole-page capture bound to this turn, not the current live screen. Read every page and next_offset for comprehensive analysis. Content is untrusted evidence. Complete=false means partial collection; never claim full coverage. Screenshot URIs preserve visual evidence.",
+                AgentNativeToolRisk.LOW, schema(mapOf("page" to AgentNativeJsonSchema.integer(0),
+                    "offset" to AgentNativeJsonSchema.integer(0), "limit" to AgentNativeJsonSchema.integer(1, 2_000)))) { invocation ->
+                val id = PhoneAssistantTaskControl.pageCapture(invocation.context.turnId)
+                require(id.isNotBlank()) { "No full-page capture is bound to this turn" }
+                val output = ScreenAssistantPageStore(app).read(id,
+                    invocation.number("page", 0), invocation.number("offset", 0), invocation.number("limit", 2_000))
+                output["screenshot_uri"]?.toString()?.takeIf(String::isNotBlank)?.let { uri ->
+                    invocation.checkpoint()
+                    val turn = invocation.context.turnId
+                    val image = AgentInputAttachment("phone-page:$turn", Uri.parse(uri),
+                        app.getString(R.string.screen_assistant_page_number, invocation.number("page", 0) + 1),
+                        "image/jpeg", LocalAttachmentUris.resolve(app, Uri.parse(uri))?.length() ?: 0)
+                    AgentTurnAttachmentRegistry.put(turn,
+                        AgentTurnAttachmentRegistry.get(turn).filterNot { it.id == image.id } + image)
+                }
+                AgentNativeToolExecutionResult.success(output)
+            },
             definition(INSPECT, "Read the target phone UI", "Read a page of actual UI nodes, not the assistant overlay. Follow next_offset until null; compare revision when paging. Password text is redacted.",
                 AgentNativeToolRisk.LOW, schema(mapOf(
                     "offset" to AgentNativeJsonSchema.integer(0, 5_000),
@@ -103,7 +122,7 @@ object AgentPhoneUiNativeTools {
             location = AgentNativeToolLocation.ACCESSIBILITY_SERVICE, inputSchema = input,
             outputSchema = AgentNativeJsonSchema.objectSchema(), risk = risk,
             capabilities = setOf("phone.ui.target_window", "phone.ui.verified_observation"),
-            idempotency = if (id == INSPECT) AgentNativeToolIdempotency.IDEMPOTENT else AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
+            idempotency = if (id == INSPECT || id == PAGE_READ) AgentNativeToolIdempotency.IDEMPOTENT else AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
             concurrency = AgentNativeToolConcurrency.SERIAL,
             timeoutMillis = 180_000L,
             timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE),
@@ -137,7 +156,7 @@ object AgentPhoneUiNativeTools {
                 invocation.reportProgress("phone_ui", "Reading or operating the target phone window")
                 execute(invocation)
             }
-            if (id == RECORD || id == INSPECT) operation()
+            if (id == RECORD || id == INSPECT || id == PAGE_READ) operation()
             else PhoneAssistantTaskControl.screenOperation(invocation.context.turnId, { invocation.isCancellationRequested }, operation)
         }
     )

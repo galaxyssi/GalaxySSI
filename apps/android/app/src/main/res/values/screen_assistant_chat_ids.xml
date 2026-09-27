@@ -1,0 +1,7 @@
+<resources>
+    <item name="screenAssistantChatHeader" type="id" />
+    <item name="screenAssistantChatStop" type="id" />
+    <item name="screenAssistantChatCapture" type="id" />
+    <item name="screenAssistantChatResize" type="id" />
+    <item name="screenAssistantChatCollapse" type="id" />
+</resources>

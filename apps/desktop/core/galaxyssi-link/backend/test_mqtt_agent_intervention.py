@@ -153,6 +153,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
         task_budget: dict | None = None,
         connector_task_mode: str = "",
         execution_policy_prompt: str = "",
+        request_kind: str = "",
     ):
         manager = _TaskManager()
         provider = _Provider()
@@ -184,12 +185,26 @@ class MqttAgentInterventionTests(unittest.TestCase):
                     "task_budget": task_budget or {},
                     "connector_task_mode": connector_task_mode,
                     "execution_policy_prompt": execution_policy_prompt,
+                    "request_kind": request_kind,
                 },
                 trace=[],
                 content=content,
                 msg_type="text",
             )
         return manager, provider, published
+
+    def test_screen_analysis_is_not_steered_into_a_running_operation(self):
+        manager, provider, _ = self._dispatch(
+            "Continue: analyze this screenshot of the installed Android App",
+            request_kind="screen_analysis",
+        )
+        self.assertEqual([], manager.cancelled)
+        self.assertEqual([], provider.cancelled)
+        self.assertEqual("", manager.created.supersedes_task_id)
+        self.assertEqual("", manager.created.merged_into_task_id)
+        self.assertFalse(manager.created_execution_policy["requires_artifact"])
+        self.assertFalse(manager.created_execution_policy["verify_installation"])
+        self.assertEqual("chat", manager.created_execution_policy["task_kind"])
 
     def test_non_steerable_provider_is_superseded_with_both_prompts(self):
         manager, provider, _published = self._dispatch(

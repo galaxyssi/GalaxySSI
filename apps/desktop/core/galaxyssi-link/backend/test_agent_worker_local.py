@@ -235,6 +235,16 @@ class WorkerJournalTest(LocalWorkerFixture):
 
 
 class WorkerImageTest(WorkerFixture):
+    def test_screen_analysis_keeps_its_kind_in_the_worker_adapter(self):
+        policy = policy_for_job(dict(
+            prompt="Analyze the installed Android App shown in this screenshot",
+            options={"request_kind": "screen_analysis", "attachments": [png_attachment()]},
+        ))
+        self.assertEqual("chat", policy.task_kind.value)
+        self.assertFalse(policy.requires_artifact)
+        self.assertFalse(policy.verify_installation)
+        self.assertIn("screen_analysis", policy.task_intent_signals)
+
     def test_remote_execution_options_do_not_relax_user_policy(self):
         job = dict(prompt="Review this design", options={"execution_mode": "plan_only", "agent_invocation": {"reasoning_effort": "high"}})
         policy = policy_for_job(job)

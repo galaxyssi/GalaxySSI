@@ -7,6 +7,32 @@ import org.junit.Test
 
 class CodexStyleResponsePolicyTest {
     @Test
+    fun concisePolicyPreservesExplicitDetailsAndEvidence() {
+        val policy = CodexStyleResponsePolicy.PROMPT
+        assertTrue(policy.contains("direct conclusion"))
+        assertTrue(policy.contains("at most three short key points"))
+        assertTrue(policy.contains("each key point to one sentence"))
+        assertTrue(policy.contains("not a hard truncation limit"))
+        assertTrue(policy.contains("user requests detail or completeness"))
+        assertTrue(policy.contains("uncertainty, safety caveats, requested items and supporting citations"))
+    }
+
+    @Test
+    fun screenPolicyDoesNotResumeOperationsOrForceWebResearch() {
+        val policy = CodexStyleResponsePolicy.SCREEN_ANALYSIS_PROMPT
+        assertTrue(policy.contains("read-only analysis"))
+        assertTrue(policy.contains("Do not install, launch or change anything"))
+        assertTrue(policy.contains("not invent unreadable text"))
+        assertTrue(policy.contains("not a mandatory step"))
+        assertTrue(policy.contains("Prefer primary sources for the exact subject"))
+        assertTrue(policy.contains("what the main subject is"))
+        assertTrue(policy.contains("Never substitute a related model"))
+        assertTrue(policy.contains("promotional claims"))
+        assertTrue(policy.contains("not the surrounding viewer controls"))
+        assertTrue(policy.contains("outside research does not by itself"))
+    }
+
+    @Test
     fun policyCoversLanguageActionClarificationAndFailures() {
         val policy = CodexStyleResponsePolicy.PROMPT
         assertTrue(policy.contains("Simplified Chinese"))

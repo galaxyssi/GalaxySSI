@@ -558,7 +558,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             action.copy(parameters = action.parameters + (INTERNAL_TURN_ID to effectiveTurnId))
         } else {
             action
-        }).let(AgentConnectorFallbackAction::forDispatch)
+        }).let { PhoneAssistantTaskControl.bindReadOnlyScope(it, effectiveTurnId) }
+            .let(AgentConnectorFallbackAction::forDispatch)
         val responseRequested = deliveryMode(preparedAction) == AgentDeliveryMode.RESPOND
         val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }
         val recentUserMessages = if (
@@ -1114,7 +1115,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             ChatHistoryStore.reserveMessageId(context)
         }
         traceDispatchStage("message_id_reserved")
-        val observed = observationContextStore.peek(observationTargetId, conversationId)
+        val observed = if (PhoneAssistantTaskControl.isIndependentReadOnlyRequest(action)) emptyList()
+            else observationContextStore.peek(observationTargetId, conversationId)
         traceDispatchStage("observed_context_loaded")
         val clientConversationId = AgentTaskIdentityPolicy.conversationId(
             contactId,
@@ -1193,6 +1195,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             ),
             connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
             executionPolicyPrompt = action.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER].orEmpty(),
+            requestKind = action.parameters["request_kind"].orEmpty(),
             agentModelId = action.parameters["agent_model_id"].orEmpty(),
             agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
                 action.parameters["agent_reasoning_effort"]
@@ -1386,7 +1389,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         } else {
             null
         }
-        val observed = observationContextStore.peek(observationTargetId, conversationId)
+        val observed = if (PhoneAssistantTaskControl.isIndependentReadOnlyRequest(action)) emptyList()
+            else observationContextStore.peek(observationTargetId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
         val attemptIdentity = AgentProviderAttemptReport(messageId, conversationId, connectorTurnId,
             connectorTaskId, action.id)
@@ -1507,7 +1511,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             readTimeoutMillis = attemptProfile.readTimeoutMillis,
                             allowExternalTools = action.parameters["connector_task_mode"] !=
                                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
-                            systemPromptOverride = supervisedEnvelope?.systemPrompt.orEmpty(),
+                            systemPromptOverride = supervisedEnvelope?.systemPrompt
+                                ?: if (PhoneAssistantTaskControl.isReadOnlyRequest(connectorTurnId, action))
+                                    CodexStyleResponsePolicy.prompt(appContext) + "\n" + CodexStyleResponsePolicy.SCREEN_ANALYSIS_PROMPT
+                                else "",
                             citationPreviewEnabled = !managedTeamAction,
                             recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
                                 AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
@@ -1830,7 +1837,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 } else {
                     "${CodexStyleResponsePolicy.prompt(context)}\n\n$RICH_RESPONSE_CONTRACT"
                 },
-                optionalSections = listOf(
+                optionalSections = if (PhoneAssistantTaskControl.isIndependentReadOnlyRequest(action)) emptyList() else listOf(
                     contextBlock,
                     memoryBlock.takeIf(String::isNotBlank)?.let { "Relevant personal memory:\n$it" }.orEmpty(),
                     knowledgeBlock.takeIf(String::isNotBlank)?.let { "Authorized knowledge results:\n$it" }.orEmpty(),
@@ -1941,7 +1948,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
     }
 
     internal fun displayPromptForAction(action: AgentAction, prompt: String): String =
-        if (action.id == "knowledge-answer") {
+        if (action.parameters["request_kind"] == PhoneAssistantTaskControl.SCREEN_ANALYSIS_REQUEST_KIND &&
+            !action.parameters["screen_analysis_question"].isNullOrBlank()) {
+            action.parameters.getValue("screen_analysis_question")
+        } else if (action.id == "knowledge-answer") {
             val query = action.parameters["knowledge_query"].orEmpty().take(500)
             val count = action.parameters["knowledge_source_count"].orEmpty().ifBlank { "0" }
             "Knowledge question: $query [$count sources shared after confirmation]"

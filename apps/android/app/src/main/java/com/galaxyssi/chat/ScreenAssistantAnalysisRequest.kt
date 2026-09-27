@@ -9,8 +9,13 @@ internal class ScreenAssistantAnalysisRequest {
     private val submittedTurns = CopyOnWriteArraySet<String>()
     private val pauseMonitor = Object()
     @Volatile var automation = false
+    @Volatile var displayQuestion = ""
+    @Volatile var followUp = false
+    @Volatile var pageCaptureId = ""
     var preparingSubmission = false
     @Volatile var approvalDescription: String = ""
+        private set
+    @Volatile var approvalRevision: Long = 0
         private set
     @Volatile var isPaused = false
         private set
@@ -34,6 +39,7 @@ internal class ScreenAssistantAnalysisRequest {
         if (isCancelled) throw AgentNativeToolCancelledException()
     }
     fun requireApproval(description: String, checkCancelled: () -> Unit) = synchronized(pauseMonitor) {
+        approvalRevision++
         approvalDescription = description
         try {
             while (approvalDescription.isNotBlank() && !isCancelled) {

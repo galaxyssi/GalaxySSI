@@ -6,6 +6,24 @@ import org.junit.Test
 
 class AgentSupervisedProjectContinuationPolicyTest {
     @Test
+    fun readOnlyScreenAnalysisDoesNotRestoreAnEarlierPhoneOperation() {
+        val context = AgentConversationContext(
+            conversationId = "conversation",
+            summary = "",
+            turns = listOf(
+                entry(AgentTranscriptRole.USER, "Open the installed alarm App on this Android phone and verify its window"),
+                entry(AgentTranscriptRole.ASSISTANT, "The action was cancelled")
+            ),
+            privateMode = false
+        )
+        assertNull(AgentSupervisedProjectContinuationPolicy.mergedGoal(
+            "Analyze this screenshot and explain its important content",
+            context,
+            independentRequest = true
+        ))
+    }
+
+    @Test
     fun continuationRestoresTheLatestPhoneProjectGoal() {
         val context = AgentConversationContext(
             conversationId = "conversation",

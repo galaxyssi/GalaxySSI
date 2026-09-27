@@ -7,13 +7,40 @@ import java.util.concurrent.TimeUnit
 
 /** One physical display is shared by all conversations, not one per model or window. */
 internal object PhoneAssistantTaskControl {
+    const val SCREEN_ANALYSIS_REQUEST_KIND = "screen_analysis"
     private val requests = ConcurrentHashMap<String, ScreenAssistantAnalysisRequest>()
+    private data class AnalysisScope(val question: String, val followUp: Boolean)
+    private val analysisScopes = ConcurrentHashMap<String, AnalysisScope>()
     private val screenLock = ReentrantLock(true)
-    fun bind(turnId: String, request: ScreenAssistantAnalysisRequest) { requests[turnId] = request }
-    fun finish(turnId: String) { requests.remove(turnId)?.cancel() }
+    fun bind(turnId: String, request: ScreenAssistantAnalysisRequest) {
+        requests[turnId] = request
+        if (!request.automation) analysisScopes[turnId] = AnalysisScope(request.displayQuestion, request.followUp)
+        else analysisScopes.remove(turnId)
+    }
+    fun finish(turnId: String) { analysisScopes.remove(turnId); requests.remove(turnId)?.cancel() }
+    fun cancel(turnId: String) { requests[turnId]?.cancel() }
+    fun release(turnId: String, request: ScreenAssistantAnalysisRequest) {
+        if (requests.remove(turnId, request)) analysisScopes.remove(turnId)
+    }
+    fun pageCapture(turnId: String): String = requests[turnId]?.pageCaptureId.orEmpty()
     fun isBound(turnId: String): Boolean = requests.containsKey(turnId)
     fun isAutomation(turnId: String): Boolean = requests[turnId]?.let { it.automation && !it.isCancelled } == true
     fun isReadOnly(turnId: String): Boolean = requests[turnId]?.automation == false
+    fun requestKind(turnId: String): String = if (isReadOnly(turnId)) SCREEN_ANALYSIS_REQUEST_KIND else ""
+    fun isReadOnlyRequest(turnId: String, action: AgentAction): Boolean =
+        isReadOnly(turnId) || action.parameters["request_kind"] == SCREEN_ANALYSIS_REQUEST_KIND
+    fun bindReadOnlyScope(action: AgentAction, turnId: String): AgentAction {
+        if (!isReadOnly(turnId)) return action
+        return action.copy(parameters = action.parameters + buildMap {
+            put("request_kind", SCREEN_ANALYSIS_REQUEST_KIND)
+            val scope = analysisScopes[turnId]
+            put("screen_analysis_context", if (scope?.followUp == true) "follow_up" else "current")
+            scope?.question?.takeIf(String::isNotBlank)?.let { put("screen_analysis_question", it) }
+        })
+    }
+    fun isIndependentReadOnlyRequest(action: AgentAction): Boolean =
+        action.parameters["request_kind"] == SCREEN_ANALYSIS_REQUEST_KIND &&
+            action.parameters["screen_analysis_context"] != "follow_up"
     fun reasoningRequirements(turnId: String, goal: String): AgentTaskRequirements {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         // The provider plans; authorized local tools supply navigation capabilities.

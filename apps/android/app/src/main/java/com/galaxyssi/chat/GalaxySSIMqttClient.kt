@@ -520,7 +520,8 @@ object GalaxySSIMqttClient {
         agentInstanceId: String = "",
         teamId: String = "",
         agentTeamMessage: Boolean = false,
-        trustedBackgroundCognition: Boolean = false
+        trustedBackgroundCognition: Boolean = false,
+        requestKind: String = ""
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -540,7 +541,8 @@ object GalaxySSIMqttClient {
         agentInstanceId = agentInstanceId,
         teamId = teamId,
         agentTeamMessage = agentTeamMessage,
-        trustedBackgroundCognition = trustedBackgroundCognition
+        trustedBackgroundCognition = trustedBackgroundCognition,
+        requestKind = requestKind
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -562,7 +564,8 @@ object GalaxySSIMqttClient {
         agentInstanceId: String = "",
         teamId: String = "",
         agentTeamMessage: Boolean = false,
-        trustedBackgroundCognition: Boolean = false
+        trustedBackgroundCognition: Boolean = false,
+        requestKind: String = ""
     ): MqttPublishResult {
         val publishStartedAt = SystemClock.elapsedRealtime()
         val publishStartedNs = SystemClock.elapsedRealtimeNanos()
@@ -625,6 +628,10 @@ object GalaxySSIMqttClient {
         }
         boundedExecutionPolicyPrompt.takeIf(String::isNotBlank)?.let {
             payload.put("execution_policy_prompt", it)
+        }
+        (requestKind.takeIf { it == PhoneAssistantTaskControl.SCREEN_ANALYSIS_REQUEST_KIND }
+            ?: PhoneAssistantTaskControl.requestKind(resolvedTurnId)).takeIf(String::isNotBlank)?.let {
+            payload.put("request_kind", it)
         }
         AgentInvocationRequestJsonCodec.encode(agentModelId, agentReasoningEffort)?.let {
             payload.put("agent_invocation", it)

@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -44,6 +43,7 @@ internal object ScreenAssistantSettings {
     private const val PENDING_FILE = "pending_file"
     private const val PENDING_QUESTION = "pending_question"
     private const val LAST_CAPTURE = "last_capture"
+    private const val LAST_PAGE_CAPTURE = "last_page_capture"
     private const val BUBBLE_X = "bubble_x"
     private const val BUBBLE_Y = "bubble_y"
 
@@ -57,6 +57,8 @@ internal object ScreenAssistantSettings {
     fun saveConversation(context: Context, id: String) = prefs(context).edit().putString(CONVERSATION, id).apply()
     fun lastTurn(context: Context): String = prefs(context).getString(LAST_TURN, "").orEmpty()
     fun saveLastTurn(context: Context, id: String) = prefs(context).edit().putString(LAST_TURN, id).apply()
+    fun lastPageCapture(context: Context): String = prefs(context).getString(LAST_PAGE_CAPTURE, "").orEmpty()
+    fun saveLastPageCapture(context: Context, id: String) = prefs(context).edit().putString(LAST_PAGE_CAPTURE, id).apply()
     fun saveLastCapture(context: Context, file: File) = prefs(context).edit()
         .putString(LAST_CAPTURE, file.canonicalPath).apply()
     fun lastCapture(context: Context): File? = validatedCaptureFile(
@@ -111,9 +113,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     private var menu: View? = null
     private var panel: View? = null
     private var crop: View? = null
-    private var panelText: TextView? = null
     private var panelTitle: TextView? = null
-    private var expanded = false
     private var capturePending = false
     private var request: ScreenAssistantAnalysisRequest? = null
     private var activeRunner: WeakReference<MainActivity>? = null
@@ -128,10 +128,14 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     private var observationHidden = false
     private var pauseAction: TextView? = null
     private var approvalAction: TextView? = null
-    private var displayedApproval = ""
+    private var displayedApproval = 0L
+    private var pageCollection: ScreenAssistantPageCollection? = null
+    private var pageCaptureId = ScreenAssistantSettings.lastPageCapture(service)
+    private val pageWorker = Executors.newSingleThreadExecutor { task -> Thread(task, "screen-assistant-page") }
 
     internal fun hideForCapture(capture: () -> Unit) {
         observationHidden = true
+        ScreenAssistantChatActivity.hideForCapture()
         captureHiddenViews = listOfNotNull(bubble, menu, panel, crop).map { it to it.visibility }
         captureHiddenViews.forEach { it.first.visibility = View.INVISIBLE }
         Choreographer.getInstance().postFrameCallback {
@@ -140,6 +144,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     internal fun restoreAfterCapture() {
+        ScreenAssistantChatActivity.restoreAfterCapture()
         captureHiddenViews.forEach { (view, visibility) -> if (view.isAttachedToWindow) view.visibility = visibility }
         captureHiddenViews = emptyList()
         observationHidden = false
@@ -170,6 +175,15 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         refresh()
     }
 
+    fun onTargetInteraction(packageName: String, eventType: Int) {
+        if (packageName == foregroundPackage && packageName != service.packageName &&
+            eventType in setOf(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED,
+                android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED)) pageCollection?.interrupted = true
+        if (packageName == foregroundPackage && pageCollection != null &&
+            eventType == android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SCROLLED &&
+            SystemClock.elapsedRealtime() > (pageCollection?.ownScrollUntil ?: 0)) pageCollection?.interrupted = true
+    }
+
     fun refresh() {
         if (closed) return
         if (observationHidden) return
@@ -186,12 +200,14 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     fun close() {
+        pageCollection?.request?.cancel()
         if (request?.automation == true) stopAnalysis()
         closed = true
-        ScreenAssistantPromptActivity.dismissIfOpen()
+        ScreenAssistantChatActivity.collapseIfOpen()
         pollGeneration++
         hideAll()
         worker.shutdown()
+        pageWorker.shutdown()
     }
 
     fun retryPending() {
@@ -218,7 +234,6 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         remove(bubble); bubble = null
         bubbleBadge = null
         bubbleParams = null
-        panelText = null
         panelTitle = null
         stopAction = null
     }
@@ -260,7 +275,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     private fun updateBubbleBadge() {
-        val color = when (currentStatus) {
+        val color = if (pageCollection != null) 0xFFE2A430.toInt() else when (currentStatus) {
             service.getString(R.string.screen_assistant_ready) -> null
             service.getString(R.string.screen_assistant_preparing),
             service.getString(R.string.screen_assistant_analyzing),
@@ -317,13 +332,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     handler.removeCallbacks(openMenu)
                     if (moved) ScreenAssistantSettings.saveBubblePosition(service, layout.x, layout.y)
                     else if (!longPressed) {
-                        when (ScreenAssistantBubbleTapPolicy.action(ScreenAssistantPromptActivity.isOpen(),
-                            panel != null, canStopAnalysis() || stopping)) {
-                            ScreenAssistantBubbleTap.DISMISS_PROMPT -> ScreenAssistantPromptActivity.dismissIfOpen()
-                            ScreenAssistantBubbleTap.COLLAPSE -> dismissPanel()
-                            ScreenAssistantBubbleTap.SHOW_PROGRESS -> showPanel()
-                            ScreenAssistantBubbleTap.ANALYZE -> analyzeCurrentScreen()
-                        }
+                        if (panel != null) dismissPanel()
+                        openChat(capture = !canStopAnalysis() && !stopping)
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(openMenu)
@@ -349,6 +359,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             background = rounded(Color.WHITE, 16, 0xFFE0E8E5.toInt())
             elevation = dp(10).toFloat()
             addView(action(R.string.screen_assistant_capture) { analyzeCurrentScreen() })
+            addView(action(R.string.screen_assistant_full_page) { analyzeFullPage() })
             addView(action(R.string.screen_assistant_ask) { showQuestionInput() })
             addView(action(R.string.screen_assistant_execute) { showPhoneTaskInput() })
             addView(action(R.string.screen_assistant_open_target) { showPhoneTaskInput(R.string.screen_assistant_open_target_goal) })
@@ -372,14 +383,14 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
 
     private fun dismissMenu() { remove(menu); menu = null }
 
-    private fun showQuestionInput() = showPrompt(R.string.screen_assistant_send) { question ->
-        handler.postDelayed({ analyzeCurrentScreen(question) }, 180L)
-    }
+    private fun showQuestionInput() = openChat(capture = true)
 
     private fun showPhoneTaskInput(template: Int = R.string.screen_assistant_phone_goal) =
-        showPrompt(R.string.screen_assistant_execute) { question ->
-            if (question.isNotBlank()) handler.postDelayed({ startPhoneTask(service.getString(template, question)) }, 180L)
-        }
+        openChat(draft = when (template) {
+            R.string.screen_assistant_open_target_goal -> service.getString(R.string.screen_assistant_open_target)
+            R.string.screen_assistant_chrome_goal -> service.getString(R.string.screen_assistant_chrome)
+            else -> ""
+        }, automation = true)
 
     private fun showDeviceTools() {
         dismissMenu()
@@ -418,13 +429,17 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             val snapshot = runCatching { GalaxySSIAccessibilityService.readTargetUi() }.getOrNull()
             handler.post {
                 if (!accepts(attempt)) return@post
-                if (snapshot == null || snapshot.nodes.none { it.text.isNotBlank() || it.description.isNotBlank() }) {
+                if (ScreenAssistantEvidencePolicy.shouldCaptureImage(snapshot)) {
                     request = null
-                    captureScreen(question)
+                    captureScreen(question, snapshot = snapshot)
                 } else {
+                    val protectedSnapshot = requireNotNull(snapshot)
+                    attempt.displayQuestion = ScreenAssistantEvidencePolicy.displayedQuestion(question,
+                        service.getString(R.string.screen_assistant_default_goal))
                     val goal = service.getString(R.string.screen_assistant_structured_goal,
-                        question.ifBlank { service.getString(R.string.screen_assistant_default_goal) },
-                        AgentUntrustedEvidenceBoundary.wrapText("phone_ui", snapshot.packageName, AgentNativeJsonCodec.stringify(snapshot.page())))
+                        attempt.displayQuestion,
+                        AgentUntrustedEvidenceBoundary.wrapText("phone_ui", protectedSnapshot.packageName,
+                            ScreenAssistantEvidencePolicy.supplementaryText(protectedSnapshot)))
                     submit(null, goal, attempt)
                 }
             }
@@ -438,15 +453,89 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         return attempt
     }
 
-    private fun showFollowUpInput() = showPrompt(R.string.screen_assistant_follow_up_send) { question ->
-        submitFollowUp(question)
+    private fun analyzeFullPage() {
+        if (canStopAnalysis() || stopping) { showPanel(); return }
+        if (AgentConversationWindows.screenAssistantRunner(allowInitializing = true) == null) {
+            update(service.getString(R.string.screen_assistant_open_app), "", true); return
+        }
+        val attempt = startAnalysisPreparation()
+        attempt.displayQuestion = service.getString(R.string.screen_assistant_page_question)
+        val session = ScreenAssistantPageCollection(attempt)
+        pageCollection = session
+        update(service.getString(R.string.screen_assistant_page_collecting, 0), "", true)
+        pageWorker.execute {
+            val outcome = runCatching { ScreenAssistantPageCollector(service).collect(session) { count, top ->
+                handler.post {
+                    if (accepts(attempt) && pageCollection === session) update(service.getString(
+                        if (top) R.string.screen_assistant_page_top else R.string.screen_assistant_page_collecting, count), "", false)
+                }
+            } }
+            handler.post {
+                if (pageCollection === session) pageCollection = null
+                if (!accepts(attempt)) return@post
+                outcome.onSuccess { id ->
+                    pageCaptureId = id
+                    attempt.pageCaptureId = id
+                    ScreenAssistantSettings.saveLastPageCapture(service, id)
+                    val store = ScreenAssistantPageStore(service)
+                    val meta = store.manifest(id)
+                    if (meta.optInt("pages") == 0 || session.interrupted) {
+                        request = null
+                        update(store.status(meta), "", true)
+                    } else {
+                        update(service.getString(R.string.screen_assistant_analyzing), store.status(meta), true)
+                        submit(null, service.getString(R.string.screen_assistant_page_goal, store.status(meta),
+                            meta.optInt("pages")), attempt)
+                    }
+                }.onFailure {
+                    request = null
+                    Log.e("ScreenAssistant", "Whole-page collection failed", it)
+                    update(service.getString(R.string.screen_assistant_page_failed), "", true)
+                }
+            }
+        }
     }
 
-    private fun showPrompt(sendLabel: Int, onSubmit: (String) -> Unit) {
+    private fun openChat(capture: Boolean = false, draft: String = "", automation: Boolean = false,
+        reveal: Boolean = false) {
+        dismissMenu()
         dismissPanel()
-        ScreenAssistantPromptActivity.show(service, sendLabel) { question ->
-            if (!closed && ScreenAssistantSettings.enabled(service)) onSubmit(question)
+        worker.execute {
+            val prepared = runCatching {
+                val id = ScreenAssistantSettings.conversation(service)
+                    .takeIf { transcriptStore.conversation(it) != null }
+                    ?: transcriptStore.createAgentConversation(service.getString(R.string.screen_assistant_conversation)).id
+                ScreenAssistantSettings.saveConversation(service, id)
+                val home = AgentConversationWindows.screenAssistantRunner(allowInitializing = true)
+                val sourceId = home?.agentTranscriptStore?.activeConversation()?.id
+                    ?: transcriptStore.activeConversation().id
+                val route = ScreenAssistantHomeRouting.capture(service, sourceId,
+                    AppStoreAgentConnectorRegistry(service).availableTargets())
+                ScreenAssistantHomeRouting.apply(service, id, route)
+                AgentWindowStateStore(service).select(ScreenAssistantChatActivity.WINDOW_KEY, id)
+                id
+            }
+            handler.post {
+                if (closed || !ScreenAssistantSettings.enabled(service)) return@post
+                prepared.onSuccess { id ->
+                    runCatching { ScreenAssistantChatActivity.open(service, id, reveal, capture, draft, automation) }
+                        .onFailure { Log.e("ScreenAssistant", "Could not open Agent window", it) }
+                }.onFailure { Log.e("ScreenAssistant", "Could not prepare Agent window", it) }
+            }
         }
+    }
+
+    internal fun trackChatTurn(runner: MainActivity, conversationId: String, turnId: String,
+        attempt: ScreenAssistantAnalysisRequest) {
+        activeRunner = WeakReference(runner)
+        ScreenAssistantSettings.saveConversation(service, conversationId)
+        ScreenAssistantSettings.saveLastTurn(service, turnId)
+        request = attempt
+        displayedApproval = 0L
+        activeTurn = turnId
+        currentText = ""
+        currentStatus = service.getString(R.string.screen_assistant_analyzing)
+        beginPolling(turnId)
     }
 
     private fun showCrop() {
@@ -459,7 +548,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         if (add(view, layout)) crop = view
     }
 
-    private fun captureScreen(question: String = "", region: Rect? = null) {
+    private fun captureScreen(question: String = "", region: Rect? = null, snapshot: PhoneUiSnapshot? = null) {
         if (canStopAnalysis() || stopping) { showPanel(); return }
         if (ScreenAssistantSettings.pending(service) != null) {
             update(service.getString(R.string.screen_assistant_open_app), "", true)
@@ -472,6 +561,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         }
         capturePending = true
         val attempt = newRequest()
+        attempt.displayQuestion = ScreenAssistantEvidencePolicy.displayedQuestion(question,
+            service.getString(R.string.screen_assistant_default_goal))
         dismissMenu(); dismissPanel()
         remove(bubble); bubble = null; bubbleParams = null
         bubbleBadge = null
@@ -498,7 +589,11 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                             return
                         }
                         update(service.getString(R.string.screen_assistant_analyzing), "", true)
-                        persistAndSubmit(bitmap, region, question, attempt)
+                        val goal = if (snapshot == null) attempt.displayQuestion else service.getString(
+                            R.string.screen_assistant_structured_goal, attempt.displayQuestion,
+                            AgentUntrustedEvidenceBoundary.wrapText("phone_ui", snapshot.packageName,
+                                ScreenAssistantEvidencePolicy.supplementaryText(snapshot)))
+                        persistAndSubmit(bitmap, region, goal, attempt)
                     }
                     override fun onFailure(errorCode: Int) {
                         if (!accepts(attempt)) return
@@ -511,6 +606,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                 }
             runCatching {
                 val targetWindow = GalaxySSIAccessibilityService.targetWindowId()
+                check(snapshot == null || targetWindow == snapshot.windowId) { "Target window changed before capture" }
                 if (Build.VERSION.SDK_INT >= 34 && targetWindow != null)
                     service.takeScreenshotOfWindow(targetWindow, { task -> handler.post(task) }, callback)
                 else service.takeScreenshot(Display.DEFAULT_DISPLAY, { task -> handler.post(task) }, callback)
@@ -557,14 +653,6 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         }
     }
 
-    private fun submitFollowUp(question: String) {
-        if (stopping) { showPanel(); return }
-        // A second goal cannot concurrently own the same physical phone task.
-        if (request?.automation == true && canStopAnalysis()) { showPanel(); return }
-        val attempt = request?.takeUnless { it.isCancelled } ?: newRequest()
-        submit(null, question, attempt)
-    }
-
     private fun submit(file: File?, question: String, attempt: ScreenAssistantAnalysisRequest,
         readyDeadline: Long = SystemClock.elapsedRealtime() + 15_000L) {
         if (!accepts(attempt) || attempt.preparingSubmission) return
@@ -576,7 +664,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                 handler.postDelayed({ submit(file, question, attempt, readyDeadline) }, 100L)
                 return
             }
-            if (attempt.turnId.isBlank() && file != null) ScreenAssistantSettings.savePending(service, file, question)
+            if (attempt.turnId.isBlank() && file != null) ScreenAssistantSettings.savePending(service, file,
+                attempt.displayQuestion.ifBlank { question })
             request = null
             update(service.getString(R.string.screen_assistant_open_app), "", true)
             return
@@ -599,7 +688,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     if (route.manualTargetId.isNotBlank() && targets.none {
                             it.id == route.manualTargetId && AgentConnectorRouteSelector.isDeliverable(it)
                         }) {
-                        if (file != null) ScreenAssistantSettings.savePending(service, file, question)
+                        if (file != null) ScreenAssistantSettings.savePending(service, file,
+                            attempt.displayQuestion.ifBlank { question })
                         if (attempt.turnId.isBlank()) request = null
                         update(service.getString(R.string.screen_assistant_target_unavailable), "", true)
                     } else submitPrepared(runner, file, question, attempt, route)
@@ -637,10 +727,12 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                 sizeBytes = image.length()
             ) }
             val goal = question.ifBlank { service.getString(R.string.screen_assistant_default_goal) }
+            if (attempt.displayQuestion.isBlank()) attempt.displayQuestion = goal
             runner.submitAgentGoal(
                 pendingVoiceConversationId = conversationId,
                 goalOverride = goal,
-                attachmentsOverride = listOfNotNull(attachment),
+                displayGoalOverride = attempt.displayQuestion.ifBlank { goal },
+                attachmentsOverride = listOfNotNull(attachment) + pageAttachments(attempt.pageCaptureId),
                 onTurnCreated = { turn ->
                     attempt.turnId = turn
                     PhoneAssistantTaskControl.bind(turn, attempt)
@@ -655,7 +747,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             )
         }.onFailure {
             Log.e("ScreenAssistant", "Task submission failed", it)
-            if (attempt.turnId.isBlank() && file != null) ScreenAssistantSettings.savePending(service, file, question)
+            if (attempt.turnId.isBlank() && file != null) ScreenAssistantSettings.savePending(service, file,
+                attempt.displayQuestion.ifBlank { question })
             if (attempt.turnId.isBlank()) request = null
             update(service.getString(R.string.screen_assistant_submit_failed), "", true)
         }
@@ -688,9 +781,9 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                         request = null
                     }
                     val approval = request?.approvalDescription.orEmpty()
-                    if (approval.isNotBlank() && approval != displayedApproval) {
-                        displayedApproval = approval
-                        showPanel()
+                    val approvalRevision = request?.approvalRevision ?: 0L
+                    if (approval.isNotBlank() && approvalRevision != displayedApproval) {
+                        if (ScreenAssistantChatActivity.showPhoneApproval(request)) displayedApproval = approvalRevision
                     }
                     when {
                         workspace?.status == AgentWorkspaceStatus.CANCELLED ->
@@ -737,9 +830,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             else -> status
         }
         pauseAction?.text = service.getString(if (request?.isPaused == true) R.string.screen_assistant_resume_task else R.string.screen_assistant_pause_task)
-        pauseAction?.visibility = if (request?.automation == true && canStopAnalysis()) View.VISIBLE else View.GONE
+        pauseAction?.visibility = if ((request?.automation == true || pageCollection != null) && canStopAnalysis()) View.VISIBLE else View.GONE
         approvalAction?.visibility = if (request?.approvalDescription?.isNotBlank() == true) View.VISIBLE else View.GONE
-        panelText?.text = currentText
         stopAction?.visibility = if (canStopAnalysis()) View.VISIBLE else View.GONE
         updateBubbleBadge()
         if (reveal) showPanel()
@@ -747,6 +839,14 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
 
     private fun showPanel() {
         dismissPanel()
+        if (pageCollection == null) {
+            if (request != null && activeTurn.isBlank()) {
+                android.widget.Toast.makeText(service, currentStatus, android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+            openChat(reveal = true)
+            return
+        }
         if (currentText.isBlank() && activeTurn.isNotBlank() &&
             ScreenAssistantSettings.pending(service) == null &&
             currentStatus == service.getString(R.string.screen_assistant_ready)) {
@@ -754,45 +854,35 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             beginPolling(activeTurn)
         }
         val title = TextView(service).apply {
-            text = currentStatus
+            text = if (request?.isPaused == true) service.getString(R.string.screen_assistant_task_paused) else currentStatus
             textSize = 17f
             setTextColor(0xFF1D2923.toInt())
             setPadding(dp(4), dp(8), dp(4), dp(8))
         }
-        val body = TextView(service).apply {
-            text = currentText.ifBlank { service.getString(R.string.screen_assistant_waiting) }
-            textSize = 15f
-            setTextColor(0xFF35473E.toInt())
-            setLineSpacing(dp(4).toFloat(), 1f)
-            setTextIsSelectable(true)
-        }
         panelTitle = title
-        panelText = body
         val controls = LinearLayout(service).apply {
             gravity = Gravity.END
             addView(action(R.string.screen_assistant_approve) {
                 request?.approve()
-                displayedApproval = ""
+                displayedApproval = 0L
                 update(currentStatus, currentText, false)
             }.apply {
                 visibility = if (request?.approvalDescription?.isNotBlank() == true) View.VISIBLE else View.GONE
                 approvalAction = this
             })
-            if (request?.automation == true && canStopAnalysis()) addView(action(R.string.screen_assistant_pause_task) {
+            if ((request?.automation == true || pageCollection != null) && canStopAnalysis()) addView(action(R.string.screen_assistant_pause_task) {
                 request?.let { it.setPaused(!it.isPaused) }
                 update(currentStatus, currentText, false)
             }.also { pauseAction = it })
-            addView(action(R.string.screen_assistant_stop) { stopAnalysis() }.apply {
+            if (pageCollection != null) addView(action(R.string.screen_assistant_page_finish) {
+                pageCollection?.finish()
+            })
+            addView(action(if (pageCollection != null) R.string.screen_assistant_page_cancel else R.string.screen_assistant_stop) { stopAnalysis() }.apply {
                 setTextColor(0xFFB33636.toInt())
                 visibility = if (canStopAnalysis()) View.VISIBLE else View.GONE
                 stopAction = this
             })
             addView(action(R.string.screen_assistant_collapse) { dismissPanel() })
-            addView(action(R.string.screen_assistant_follow_up) { showFollowUpInput() })
-            addView(action(if (expanded) R.string.screen_assistant_shrink else R.string.screen_assistant_expand) {
-                expanded = !expanded
-                showPanel()
-            })
             for (index in 0 until childCount) getChildAt(index).apply {
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
                 setPadding(dp(4), 0, dp(4), 0)
@@ -805,36 +895,15 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             background = rounded(Color.WHITE, 18, 0xFFE1E8E4.toInt())
             elevation = dp(12).toFloat()
             addView(title)
-            if (expanded) {
-                val preview = ImageView(service).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    background = rounded(0xFFE9F1EE.toInt(), 6)
-                    contentDescription = service.getString(R.string.screen_assistant_attachment)
-                }
-                addView(preview, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(10) })
-                ScreenAssistantSettings.lastCapture(service)?.let { file ->
-                    worker.execute {
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(file.path, bounds)
-                        var sample = 1
-                        while (bounds.outWidth / sample > 720 || bounds.outHeight / sample > 400) sample *= 2
-                        val image = BitmapFactory.decodeFile(file.path,
-                            BitmapFactory.Options().apply { inSampleSize = sample })
-                        handler.post { if (panel === this) preview.setImageBitmap(image) else image?.recycle() }
-                    }
-                }
-            }
-            addView(ScrollView(service).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
             addView(controls)
         }
-        val height = if (expanded) screenHeight() - dp(36) else minOf(dp(340), screenHeight() / 2)
+        val height = dp(145)
         if (add(content, params(-1, height, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))) panel = content
     }
 
     private fun dismissPanel() {
         remove(panel)
         panel = null
-        panelText = null
         panelTitle = null
         stopAction = null
         pauseAction = null
@@ -842,7 +911,9 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     private fun newRequest(): ScreenAssistantAnalysisRequest = ScreenAssistantAnalysisRequest().also {
+        pageCaptureId = ""
         request = it
+        displayedApproval = 0L
         activeTurn = ""
         pollGeneration++
         currentText = ""
@@ -859,10 +930,10 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         if (!canStopAnalysis()) return
         val attempt = request
         attempt?.cancel()
+        pageCollection = null
         pollGeneration++
         capturePending = false
         ScreenAssistantSettings.clearPending(service)
-        ScreenAssistantPromptActivity.dismissIfOpen()
         val turns = attempt?.turnIds.orEmpty()
         val conversation = ScreenAssistantSettings.conversation(service)
         val runner = activeRunner?.get() ?: AgentConversationWindows.screenAssistantRunner()
@@ -895,6 +966,17 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                 }
             }
         }, "screen-assistant-cancel").start()
+    }
+
+    private fun pageAttachments(id: String): List<AgentInputAttachment> {
+        if (id.isBlank()) return emptyList()
+        val directory = ScreenAssistantPageStore(service).directory(id)
+        return listOf("page.html" to "text/html", "page.txt" to "text/plain").mapNotNull { (name, mime) ->
+            val file = File(directory, name).takeIf(File::isFile) ?: return@mapNotNull null
+            val label = service.getString(R.string.screen_assistant_page_attachment) + "." + file.extension
+            AgentInputAttachment(UUID.randomUUID().toString(), LocalAttachmentUris.forFile(service, file, label, mime),
+                label, mime, file.length())
+        }
     }
 
     private inner class CropSelectionView(

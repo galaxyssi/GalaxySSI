@@ -1259,6 +1259,7 @@ internal fun MainActivity.submitAgentGoal(
     pendingVoiceConversationId: String = "",
     goalOverride: String? = null,
     attachmentsOverride: List<AgentInputAttachment>? = null,
+    displayGoalOverride: String? = null,
     onTurnCreated: ((String) -> Unit)? = null,
     isSubmissionCancelled: () -> Boolean = { false }
 ) {
@@ -1266,6 +1267,7 @@ internal fun MainActivity.submitAgentGoal(
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val goal = goalOverride?.trim()
         ?: agentGoalInput.text?.toString()?.trim().orEmpty()
+    val displayGoal = displayGoalOverride?.trim()?.takeIf(String::isNotBlank) ?: goal
     val requestedMembers = if (goalOverride == null) {
         (agentGoalInput.text as? Spanned)?.let(AgentMentionText::selections).orEmpty()
     } else {
@@ -1285,6 +1287,7 @@ internal fun MainActivity.submitAgentGoal(
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
+    onAgentTurnSubmitted(conversation.id, turnId, goal, attachments)
     onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
@@ -1350,11 +1353,11 @@ internal fun MainActivity.submitAgentGoal(
         }
     }
     val baseGoal = goal.ifBlank { getString(R.string.agent_attachment_default_goal) }
-    agentTurnGoals[turnId] = goal.ifBlank { attachmentLabel }.ifBlank { baseGoal }
+    agentTurnGoals[turnId] = displayGoal.ifBlank { attachmentLabel }.ifBlank { baseGoal }
     if (agentTurnGoals.size > 2_000) {
         agentTurnGoals.keys.take(400).forEach(agentTurnGoals::remove)
     }
-    val submittedText = goal.ifBlank { attachmentLabel }
+    val submittedText = displayGoal.ifBlank { attachmentLabel }
     val richOutputJson = AgentRichContentCodec.encode(attachments.map(AgentInputAttachment::richBlock))
     agentSubmissionExecutor.execute {
         if (pendingVoiceDedupeKey.isNotBlank()) {
@@ -1431,7 +1434,7 @@ internal fun MainActivity.submitAgentGoal(
             refreshAgentConversationHeader()
             refreshAgentTranscriptWindow(conversation.id)
         }
-        AgentLearningAnalyzer.correctionFeedback(goal)?.let { feedback ->
+        AgentLearningAnalyzer.correctionFeedback(displayGoal)?.let { feedback ->
             agentRunRecorder.addFeedback(conversation.id, feedback)?.let { correctedRun ->
                 agentLearningEngine.observeFeedback(correctedRun, agentRunRecorder.recentRuns())
             }
@@ -1526,14 +1529,16 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 executionGoal,
                 conversation.id,
                 turnId,
-                forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal, conversation.id) else null,
+                forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal, conversation.id)
+                    ?.let { PhoneAssistantTaskControl.bindReadOnlyScope(it, turnId) } else null,
                 originalGoal = goal,
                 isSubmissionCancelled = isSubmissionCancelled
             )
         }
         if (goal.isNotBlank() && !conversation.privateMode && !conversation.trackingPaused) {
             executionAttachments.filterNot { attachment ->
-                attachment.mimeType.startsWith("image/") ||
+                ScreenAssistantPageStore(applicationContext).owns(attachment.uri) ||
+                    attachment.mimeType.startsWith("image/") ||
                     attachment.mimeType.startsWith("video/") ||
                     attachment.mimeType.startsWith("audio/")
             }.forEach { attachment ->
@@ -1704,7 +1709,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
         }
         AgentSupervisedProjectContinuationPolicy.mergedGoal(
             latestRequest = originalGoal.ifBlank { executionGoal },
-            conversationContext = localConversationContext
+            conversationContext = localConversationContext,
+            independentRequest = PhoneAssistantTaskControl.isReadOnly(turnId)
         )?.let { resumedGoal ->
             executionGoal = resumedGoal
             clearSupersededAgentFailureEntries(conversationId)
@@ -1713,7 +1719,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "restored supervised phone project context turn=${turnId.take(8)}"
             )
         }
-        val activeTurn = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+        val activeTurn = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY ||
+            PhoneAssistantTaskControl.isReadOnly(turnId)) {
             null
         } else {
             activeAgentTurnForConversation(conversationId, turnId)
@@ -1767,6 +1774,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         }
         val modelExecutionSiteDecisionRequired =
             !hasRequestedMembers &&
+            !PhoneAssistantTaskControl.isReadOnly(turnId) &&
             AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
                 executionGoal,
                 localConversationContext

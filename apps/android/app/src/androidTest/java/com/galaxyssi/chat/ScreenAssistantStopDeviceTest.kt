@@ -18,15 +18,11 @@ import org.junit.runner.RunWith
 /** Isolated overlay and request; never captures a screen or submits a real Agent task. */
 @RunWith(AndroidJUnit4::class)
 class ScreenAssistantStopDeviceTest {
-    @Test fun firstAnalysisTapShowsPreparationAndCancelableRequestImmediately() = withOverlay { overlay, _, service ->
-        invoke(overlay, "startAnalysisPreparation")
-        val request = field(overlay, "request") as ScreenAssistantAnalysisRequest
+    @Test fun preparingRequestCanBeStoppedBeforeAnyTurnIsSubmitted() = withOverlay { overlay, request, _ ->
         assertTrue(request.turnId.isBlank())
-        val panel = field(overlay, "panel") as ViewGroup
-        val text = descendants(panel).filterIsInstance<TextView>().map { it.text.toString() }.toList()
-        assertTrue(service.getString(R.string.screen_assistant_preparing) in text)
-        descendants(panel).filterIsInstance<TextView>()
-            .single { it.text.toString() == service.getString(R.string.screen_assistant_stop) }.performClick()
+        set(overlay, "pageCollection", ScreenAssistantPageCollection(request))
+        invoke(overlay, "showPanel")
+        invoke(overlay, "stopAnalysis")
         assertTrue(request.isCancelled)
     }
 
@@ -48,26 +44,16 @@ class ScreenAssistantStopDeviceTest {
         assertEquals(View.GONE, bubble.getChildAt(1).visibility)
     }
 
-    @Test fun stopButtonCancelsRequestAndPreservesPartialOutput() = withOverlay { overlay, request, service ->
-        invoke(overlay, "showPanel")
-        val panel = field(overlay, "panel") as ViewGroup
-        val stop = descendants(panel).filterIsInstance<TextView>()
-            .single { it.text.toString() == service.getString(R.string.screen_assistant_stop) }
-        assertTrue(stop.visibility == View.VISIBLE)
-        stop.performClick()
+    @Test fun stopCancelsRequestAndPreservesPartialOutput() = withOverlay { overlay, request, service ->
+        invoke(overlay, "stopAnalysis")
         assertTrue(request.isCancelled)
-        val stoppedPanel = field(overlay, "panel") as ViewGroup
-        val text = descendants(stoppedPanel).filterIsInstance<TextView>().map { it.text.toString() }.toList()
-        assertTrue(service.getString(R.string.screen_assistant_cancelled) in text)
-        assertTrue("Test partial response" in text)
+        assertEquals(service.getString(R.string.screen_assistant_cancelled), field(overlay, "currentStatus"))
+        assertEquals("Test partial response", field(overlay, "currentText"))
         assertFalse(accepts(overlay, request))
     }
 
     @Test fun collapseKeepsAnalysisRunningAndMenuStillOffersStop() = withOverlay { overlay, request, service ->
-        invoke(overlay, "showPanel")
-        val panel = field(overlay, "panel") as ViewGroup
-        descendants(panel).filterIsInstance<TextView>()
-            .single { it.text.toString() == service.getString(R.string.screen_assistant_collapse) }.performClick()
+        invoke(overlay, "dismissPanel")
         assertFalse(request.isCancelled)
         invoke(overlay, "showMenu")
         val menu = field(overlay, "menu") as ViewGroup

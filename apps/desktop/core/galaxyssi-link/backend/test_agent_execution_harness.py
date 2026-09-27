@@ -33,6 +33,29 @@ from task_workspace import task_workspace
 
 
 class AgentExecutionHarnessTests(unittest.TestCase):
+    def test_host_screen_analysis_does_not_inherit_install_or_artifact_requirements(self):
+        prompt = (
+            "Original request: Open the installed alarm App on the Android phone.\n"
+            "Latest instruction: Analyze this screenshot and give the key points."
+        )
+        policy = execution_policy_for(prompt, attachments=["screen.jpg"], request_kind="screen_analysis")
+        self.assertEqual(AgentTaskKind.CHAT, policy.task_kind)
+        self.assertEqual(AgentTaskIntent.CHAT, policy.task_intent)
+        self.assertEqual(("screen_analysis",), policy.task_intent_signals)
+        self.assertFalse(policy.requires_artifact)
+        self.assertFalse(policy.verify_installation)
+        self.assertEqual("", policy.target_platform)
+        contract = execution_contract(policy)
+        self.assertIn("read-only", contract.lower())
+        self.assertIn("text answer is the deliverable", contract)
+        self.assertEqual(policy, AgentExecutionPolicy.from_public(policy.public()))
+
+    def test_screen_kind_does_not_weaken_ordinary_install_tasks(self):
+        for kind in ("", "unknown"):
+            policy = execution_policy_for("Install the Android APK and verify installation", request_kind=kind)
+            self.assertTrue(policy.requires_artifact)
+            self.assertTrue(policy.verify_installation)
+
     def test_missing_required_details_ask_one_targeted_question(self):
         cases = {
             "Help me": AgentClarificationQuestion.TASK_GOAL,

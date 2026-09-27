@@ -34,7 +34,7 @@ public class PhoneUiFixtureActivity extends Activity {
         password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         password.setContentDescription("Fixture private field");
         password.setText("test-secret-never-export");
-        content.addView(password);
+        if (!getIntent().getBooleanExtra("page_capture", false)) content.addView(password);
         for (int index = 1; index <= 80; index++) {
             TextView row = new TextView(this);
             row.setText("Fixture row " + index);

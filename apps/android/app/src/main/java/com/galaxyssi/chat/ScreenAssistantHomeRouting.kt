@@ -2,17 +2,6 @@ package com.galaxyssi.chat
 
 import android.content.Context
 
-internal enum class ScreenAssistantBubbleTap { DISMISS_PROMPT, COLLAPSE, SHOW_PROGRESS, ANALYZE }
-
-internal object ScreenAssistantBubbleTapPolicy {
-    fun action(promptOpen: Boolean, panelOpen: Boolean, running: Boolean): ScreenAssistantBubbleTap = when {
-        promptOpen -> ScreenAssistantBubbleTap.DISMISS_PROMPT
-        running && panelOpen -> ScreenAssistantBubbleTap.COLLAPSE
-        running -> ScreenAssistantBubbleTap.SHOW_PROGRESS
-        else -> ScreenAssistantBubbleTap.ANALYZE
-    }
-}
-
 internal data class ScreenAssistantHomeRoute(
     val selection: AgentModelSelection,
     val autoTargetId: String = ""

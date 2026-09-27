@@ -40,7 +40,7 @@ class PhoneUiControlDeviceTest {
         try {
             instrumentation.runOnMainSync {
                 ScreenAssistantOverlay::class.java.getDeclaredField("currentText").apply { isAccessible = true }.set(overlay, "Assistant panel must not be observed")
-                invoke(overlay, "ensureBubble"); invoke(overlay, "showPanel")
+                invoke(overlay, "ensureBubble")
             }
             val snapshot = requireNotNull(GalaxySSIAccessibilityService.readTargetUi())
             assertEquals(instrumentation.context.packageName, snapshot.packageName)
@@ -89,13 +89,15 @@ class PhoneUiControlDeviceTest {
             instrumentation.runOnMainSync {
                 ScreenAssistantOverlay::class.java.getDeclaredField("request").apply { isAccessible = true }.set(overlay, request)
                 ScreenAssistantOverlay::class.java.getDeclaredField("activeTurn").apply { isAccessible = true }.set(overlay, "")
+                ScreenAssistantOverlay::class.java.getDeclaredField("pageCollection").apply { isAccessible = true }
+                    .set(overlay, ScreenAssistantPageCollection(request))
                 invoke(overlay, "showPanel")
                 val panel = ScreenAssistantOverlay::class.java.getDeclaredField("panel").apply { isAccessible = true }.get(overlay) as View
                 descendants(panel).filterIsInstance<TextView>().single { it.text == service.getString(R.string.screen_assistant_pause_task) }.performClick()
                 assertTrue(request.isPaused)
                 descendants(panel).filterIsInstance<TextView>().single { it.text == service.getString(R.string.screen_assistant_resume_task) }.performClick()
                 assertFalse(request.isPaused)
-                descendants(panel).filterIsInstance<TextView>().single { it.text == service.getString(R.string.screen_assistant_stop) }.performClick()
+                descendants(panel).filterIsInstance<TextView>().single { it.text == service.getString(R.string.screen_assistant_page_cancel) }.performClick()
                 assertTrue(request.isCancelled)
             }
         } finally { instrumentation.runOnMainSync { overlay.close() } }

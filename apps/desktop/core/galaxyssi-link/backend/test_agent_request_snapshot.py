@@ -14,6 +14,49 @@ import mqtt_bridge as bridge
 
 
 class RequestSnapshotTest(unittest.TestCase):
+    def test_screen_analysis_kind_survives_private_snapshot_recovery(self):
+        policy = execution_policy_for("Analyze the screenshot", request_kind="screen_analysis")
+        value = build_request_snapshot({"request_kind": "screen_analysis"}, model_id="gpt-6-astra",
+                                       reasoning_effort="low", policy=policy.public())
+        self.assertEqual("screen_analysis", restore_request_options(snapshot_copy(value))["request_kind"])
+
+    def test_recovered_screen_analysis_uses_fresh_read_only_codex_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "tasks.db"
+            policy = execution_policy_for("Analyze the installed Android App", request_kind="screen_analysis")
+            snapshot = build_request_snapshot({"request_kind": "screen_analysis", "response_language": "zh-CN"},
+                model_id="gpt-6-astra", reasoning_effort="low", policy=policy.public())
+            manager = self.manager(path)
+            self.create(manager, snapshot)
+            manager = self.manager(path)
+            server = Mock()
+            server.process = SimpleNamespace(pid=1)
+
+            def start(task_id, prompt, cwd, **kwargs):
+                manager.update(task_id, "completed", result="fixture complete")
+                return SimpleNamespace(thread_id="fresh-screen-thread")
+
+            server.start_task.side_effect = start
+            with patch.object(bridge, "agent_task_manager", manager), \
+                    patch.object(bridge, "_codex_server", return_value=server), \
+                    patch.object(bridge, "_enqueue_task_event"), \
+                    patch.object(bridge, "get_client", return_value=None), \
+                    patch("agent_gateway._find_codex_desktop_cli", return_value="codex"), \
+                    patch("task_workspace.task_workspace", return_value=root):
+                bridge._resume_recovered_remote_task(SimpleNamespace(), manager.drain_recovered()[0])
+                self.assertTrue(manager._work_pool.wait_idle(5))
+            server.start_task.assert_called_once()
+            invocation = server.start_task.call_args.kwargs
+            self.assertEqual("read-only", invocation["sandbox"])
+            self.assertEqual("", invocation["conversation_id"])
+            self.assertFalse(invocation["execution_policy"].requires_artifact)
+            prompt = server.start_task.call_args.args[1]
+            self.assertIn("Read-only screen/page analysis", prompt)
+            self.assertIn("direct conclusion", prompt)
+            with bridge.codex_task_callbacks_lock:
+                bridge.codex_task_callbacks.pop("test-queued", None)
+
     def snapshot(self, attachments=None):
         return build_request_snapshot(
             {"response_language": "zh-CN", "attachments": attachments or [],

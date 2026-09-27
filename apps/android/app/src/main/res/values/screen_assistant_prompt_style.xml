@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.GalaxySSI.ScreenPrompt" parent="android:style/Theme.Material.Light.Dialog.NoActionBar">
+    <style name="Theme.GalaxySSI.ScreenChat" parent="Theme.GalaxySSI.Main">
+        <item name="android:windowIsFloating">true</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowCloseOnTouchOutside">false</item>
         <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowSoftInputMode">adjustResize|stateAlwaysVisible</item>
+        <item name="android:windowSoftInputMode">adjustResize|stateAlwaysHidden</item>
     </style>
 </resources>
