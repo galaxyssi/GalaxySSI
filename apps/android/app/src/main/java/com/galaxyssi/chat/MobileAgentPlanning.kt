@@ -1004,6 +1004,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 put("connector_id", connectorId)
                 put("auto_reroute_on_failure", "true")
                 put("prompt", request.goal)
+                PhoneAssistantTaskControl.requestKind(request.executionTurnId).takeIf(String::isNotBlank)?.let {
+                    put("request_kind", it)
+                }
                 target?.let { callable ->
                     put("connector_kind", callable.kind.name.lowercase(Locale.ROOT))
                     put("connector_adapter_type", callable.adapterType)

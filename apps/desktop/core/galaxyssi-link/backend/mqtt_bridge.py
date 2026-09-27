@@ -4541,7 +4541,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     connector_task_mode = normalize_connector_task_mode(payload.get("connector_task_mode"))
     structured_connector_response = is_structured_connector_task_mode(connector_task_mode)
     active_conversation_task = None
-    if payload.get("_recovered_task") is not True:
+    read_only_screen_analysis = payload.get("request_kind") == "screen_analysis"
+    if payload.get("_recovered_task") is not True and not read_only_screen_analysis:
         active_conversation_task = agent_task_manager.active_for_conversation(
             backend_conversation_id,
             agent_id=agent_id,
@@ -4583,6 +4584,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
     execution_policy = execution_policy_for(
         execution_policy_prompt,
+        request_kind=payload.get("request_kind", ""),
         attachments=(
             str(item.get("name") or "")
             for item in attachments
@@ -4621,7 +4623,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     from video_generation_policy import video_creation_requested
     programmatic_video_requested = (
-        not plan_only and not structured_connector_response
+        not plan_only and not structured_connector_response and not read_only_screen_analysis
         and video_creation_requested(current_user_request)
     )
     fast_chat_delivery = (
@@ -4630,13 +4632,15 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         and not mobile_context.attachments
         and not plan_only
     )
-    if plan_only:
+    if plan_only or read_only_screen_analysis:
         active_conversation_task = None
         active_turn_decision = None
         supersedes_active_task_id = ""
         effective_content = content
         image_artifact_required = False
-    codex_security = remote_agent_security_policy(plan_only=plan_only)
+    codex_security = remote_agent_security_policy(
+        plan_only=plan_only or read_only_screen_analysis
+    )
     codex_approval_policy = codex_security.approval_policy
     codex_sandbox = codex_security.sandbox
     image_artifact_repair_attempts = 0
@@ -5226,7 +5230,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         raw_result = str(task.get("result") or "")
         from remote_reply_images import PreparedReplyImages, prepare_reply_images
         remote_images = PreparedReplyImages(raw_result)
-        if not plan_only and not structured_connector_response:
+        if not plan_only and not structured_connector_response and not read_only_screen_analysis:
             remote_images = prepare_reply_images(task_id, raw_result, scope={
                 "task_id": task_id, "client_route_id": client_route_id,
                 "conversation_id": task.get("client_conversation_id") or client_conversation_id,
@@ -5276,10 +5280,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     output_files=(),
                     verification={
                         "status": "not_required",
-                        "reason": AgentExecutionMode.PLAN_ONLY.value,
+                        "reason": "screen_analysis" if read_only_screen_analysis else AgentExecutionMode.PLAN_ONLY.value,
                     },
                 )
-                if plan_only
+                if plan_only or read_only_screen_analysis
                 else finalize_task_artifacts(
                     task_id,
                     current_user_request,
@@ -5554,8 +5558,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     if agent_id == "codex" and not programmatic_video_requested:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
         codex_conversation_id = backend_conversation_id
-        codex_run_conversation_id = "" if plan_only else codex_conversation_id
-        parallel_codex_task = plan_only
+        codex_run_conversation_id = "" if plan_only or read_only_screen_analysis else codex_conversation_id
+        parallel_codex_task = plan_only or read_only_screen_analysis
         if payload.get("_recovered_task") is True:
             active_conversation_task = None
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
@@ -6346,7 +6350,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 sessions = agent_conversation_sessions()
                 session_binding = (
                     None
-                    if plan_only
+                    if plan_only or read_only_screen_analysis
                     else sessions.get("codex", codex_conversation_id)
                 )
                 restored_context_paths: list[Path] = []
@@ -6465,7 +6469,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 if restored_context_note and not structured_connector_response:
                     task_prompt += restored_context_note
                 fresh_task_prompt = full_turn
-                if not fast_chat_delivery and not structured_connector_response:
+                if (not fast_chat_delivery or read_only_screen_analysis) and not structured_connector_response:
                     task_prompt += f"\n\n{execution_contract(execution_policy)}"
                     fresh_task_prompt += f"\n\n{execution_contract(execution_policy)}"
                 input_paths = (
@@ -6527,7 +6531,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         current_step="Preparing task",
                     )
                 fast_result = None
-                if not plan_only and input_paths:
+                if not plan_only and not read_only_screen_analysis and input_paths:
                     add_task_trace("desktop_file_tool_checked", f"inputs={len(input_paths)}")
                     try:
                         fast_result = try_execute_explicit_file_task(

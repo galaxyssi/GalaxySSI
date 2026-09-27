@@ -11,13 +11,14 @@ internal data class PhoneUiNode(
     val path: String, val text: String, val description: String, val viewId: String,
     val className: String, val bounds: String, val clickable: Boolean, val longClickable: Boolean,
     val editable: Boolean, val scrollable: Boolean, val enabled: Boolean,
-    val checked: Boolean?, val password: Boolean
+    val checked: Boolean?, val password: Boolean, val textTruncated: Boolean = false
 ) {
     fun json(): Map<String, Any?> = linkedMapOf(
         "node_path" to path, "text" to text, "description" to description, "view_id" to viewId,
         "class_name" to className, "bounds" to bounds, "clickable" to clickable,
         "long_clickable" to longClickable, "editable" to editable, "scrollable" to scrollable,
-        "enabled" to enabled, "checked" to checked, "password" to password
+        "enabled" to enabled, "checked" to checked, "password" to password,
+        "text_truncated" to textTruncated
     )
 }
 
@@ -76,7 +77,7 @@ internal class PhoneUiTargetReader(private val service: GalaxySSIAccessibilitySe
             if (children < node.childCount) truncated = true
             for (index in children - 1 downTo 0) node.getChild(index)?.let { stack.add(it to "$path/$index") }
         }
-        if (stack.isNotEmpty()) truncated = true
+        if (stack.isNotEmpty() || nodes.any { it.textTruncated }) truncated = true
         val digest = MessageDigest.getInstance("SHA-256").digest(
             (window.id.toString() + root.packageName + nodes.joinToString("\n")).toByteArray(Charsets.UTF_8)
         ).joinToString("") { "%02x".format(it) }
@@ -144,6 +145,7 @@ internal class PhoneUiTargetReader(private val service: GalaxySSIAccessibilitySe
             node.viewIdResourceName.orEmpty(), node.className?.toString().orEmpty(),
             "${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}",
             node.isClickable, node.isLongClickable, node.isEditable, node.isScrollable,
-            node.isEnabled, node.isChecked.takeIf { node.isCheckable }, secret)
+            node.isEnabled, node.isChecked.takeIf { node.isCheckable }, secret,
+            !secret && (node.text?.length ?: 0) > 1_000 || !secret && (node.contentDescription?.length ?: 0) > 500)
     }
 }

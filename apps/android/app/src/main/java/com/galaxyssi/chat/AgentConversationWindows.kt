@@ -41,13 +41,14 @@ internal object AgentConversationWindows {
 
     fun register(controller: AgentConversationWindowController) { windows[controller.key] = WeakReference(controller) }
     fun screenAssistantForeground(controller: AgentConversationWindowController) {
+        if (controller.activity is ScreenAssistantChatActivity) return
         lastForegroundWindowKey = controller.key
     }
     fun screenAssistantRunner(allowInitializing: Boolean = false): MainActivity? {
         val host = listOfNotNull(windows[lastForegroundWindowKey]?.get()?.activity,
             windows["main"]?.get()?.activity).asSequence()
             .plus(windows.values.asSequence().mapNotNull { it.get()?.activity })
-            .firstOrNull { !it.isDestroyed && !it.isFinishing }
+            .firstOrNull { it !is ScreenAssistantChatActivity && !it.isDestroyed && !it.isFinishing }
         return host?.takeIf { allowInitializing || !it.initialAgentHydrationPending }
     }
     fun unregister(controller: AgentConversationWindowController) {
@@ -201,7 +202,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
             return
         }
         selected(activity.agentTranscriptStore.activeConversation().id)
-        if (activity is ConversationWindowActivity) {
+        if (activity is ConversationWindowActivity || activity is ScreenAssistantChatActivity) {
             activity.findViewById<View>(R.id.startupConnectingView).apply {
                 animate().cancel()
                 visibility = View.GONE

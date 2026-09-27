@@ -439,6 +439,7 @@ internal object AgentModelPlanningPrompt {
     private const val MAX_PROMPT_CHARACTERS = 24_000
     private const val COMPACT_PROMPT_CHARACTERS = 12_000
     private val PHONE_TOOL_PRIORITY = listOf(
+        AgentPhoneUiNativeTools.PAGE_READ,
         AgentPhoneUiNativeTools.INSPECT,
         AgentPhoneUiNativeTools.ACT,
         AgentPhoneUiNativeTools.BROWSER,

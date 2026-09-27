@@ -7,6 +7,83 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhoneAssistantTaskControlTest {
+    @Test fun explicitCancellationReleasesPausedRequestWithoutCancellingAnotherTurn() {
+        val request = ScreenAssistantAnalysisRequest().apply { setPaused(true) }
+        val other = ScreenAssistantAnalysisRequest()
+        PhoneAssistantTaskControl.bind("paused-mini-turn", request)
+        PhoneAssistantTaskControl.bind("other-mini-turn", other)
+        try {
+            PhoneAssistantTaskControl.cancel("paused-mini-turn")
+            assertTrue(request.isCancelled)
+            assertFalse(other.isCancelled)
+        } finally {
+            PhoneAssistantTaskControl.finish("paused-mini-turn")
+            PhoneAssistantTaskControl.finish("other-mini-turn")
+        }
+    }
+    @Test fun forcedImageConnectorRetainsReadOnlyScopeAndPublicQuestionOnFallback() {
+        val turn = "forced-screen-attachment"
+        val original = AgentAction("attachment-codex", AgentActionKind.CALL_CONNECTOR, "Codex", AgentRisk.LOW,
+            AgentActionStatus.PROPOSED, "Analyze", parameters = mapOf("prompt" to "Internal evidence"))
+        PhoneAssistantTaskControl.bind(turn, ScreenAssistantAnalysisRequest().apply { displayQuestion = "What is this?" })
+        val scoped = try { PhoneAssistantTaskControl.bindReadOnlyScope(original, turn) }
+            finally { PhoneAssistantTaskControl.finish(turn) }
+        val fallback = AgentConnectorFallbackAction.prepare(scoped,
+            AgentConnectorFallbackSelection("deepseek", emptyList(), emptyList(), emptySet()), null)
+        assertEquals("screen_analysis", fallback.parameters["request_kind"])
+        assertEquals("What is this?", fallback.parameters["screen_analysis_question"])
+        assertTrue(PhoneAssistantTaskControl.isIndependentReadOnlyRequest(fallback))
+        assertEquals(original, PhoneAssistantTaskControl.bindReadOnlyScope(original, "unrelated"))
+        assertEquals("Internal evidence", original.parameters["prompt"])
+    }
+
+    @Test fun explicitFollowUpKeepsHistoryWithoutChangingOriginalTurnScope() {
+        val first = "screen-first"
+        val second = "screen-follow-up"
+        val request = ScreenAssistantAnalysisRequest().apply { displayQuestion = "What is this?" }
+        val action = AgentAction("screen", AgentActionKind.CALL_CONNECTOR, "Codex", AgentRisk.LOW,
+            AgentActionStatus.PROPOSED, "Analyze")
+        PhoneAssistantTaskControl.bind(first, request)
+        request.followUp = true
+        request.displayQuestion = "Compare the two versions"
+        PhoneAssistantTaskControl.bind(second, request)
+        try {
+            val initial = PhoneAssistantTaskControl.bindReadOnlyScope(action, first)
+            val followUp = PhoneAssistantTaskControl.bindReadOnlyScope(action, second)
+            assertTrue(PhoneAssistantTaskControl.isIndependentReadOnlyRequest(initial))
+            assertEquals("What is this?", initial.parameters["screen_analysis_question"])
+            assertFalse(PhoneAssistantTaskControl.isIndependentReadOnlyRequest(followUp))
+            assertEquals("Compare the two versions", followUp.parameters["screen_analysis_question"])
+            assertFalse(PhoneAssistantTaskControl.isIndependentReadOnlyRequest(action))
+        } finally { PhoneAssistantTaskControl.finish(first); PhoneAssistantTaskControl.finish(second) }
+    }
+
+    @Test fun readOnlyKindSurvivesFallbackAndProcessLocalBindingRelease() {
+        val action = AgentAction("screen", AgentActionKind.CALL_CONNECTOR, "Codex", AgentRisk.LOW,
+            AgentActionStatus.PROPOSED, "Analyze", parameters = mapOf(
+                "connector_id" to "codex", "request_kind" to "screen_analysis"))
+        val fallback = AgentConnectorFallbackAction.prepare(action,
+            AgentConnectorFallbackSelection("deepseek", emptyList(), emptyList(), emptySet()), null)
+        assertEquals("screen_analysis", fallback.parameters["request_kind"])
+        assertTrue(PhoneAssistantTaskControl.isReadOnlyRequest("no-process-binding", fallback))
+        assertFalse(PhoneAssistantTaskControl.isReadOnlyRequest("no-process-binding",
+            fallback.copy(parameters = fallback.parameters - "request_kind")))
+    }
+
+    @Test fun requestKindIsHostBoundAndCannotLeakToAnotherOrFinishedTurn() {
+        val turn = "screen-analysis-kind-test"
+        assertEquals("", PhoneAssistantTaskControl.requestKind(turn))
+        PhoneAssistantTaskControl.bind(turn, ScreenAssistantAnalysisRequest())
+        try {
+            assertEquals("screen_analysis", PhoneAssistantTaskControl.requestKind(turn))
+            assertEquals("", PhoneAssistantTaskControl.requestKind("unrelated-turn"))
+        } finally { PhoneAssistantTaskControl.finish(turn) }
+        assertEquals("", PhoneAssistantTaskControl.requestKind(turn))
+        PhoneAssistantTaskControl.bind(turn, ScreenAssistantAnalysisRequest().apply { automation = true })
+        try { assertEquals("", PhoneAssistantTaskControl.requestKind(turn)) }
+        finally { PhoneAssistantTaskControl.finish(turn) }
+    }
+
     @Test fun readOnlyScreenEvidenceCannotChooseCloudByItsNameOrExecutePageCommands() {
         val turn = "screen-evidence-provider-test"
         val codex = AgentCallableTarget("desktop:codex", "Codex", AgentConnectorKind.AGENT,
@@ -26,6 +103,7 @@ class PhoneAssistantTaskControlTest {
                 val action = RuleBasedAgentPlanner().actionsFor(request).single()
                 assertEquals(AgentActionKind.CALL_CONNECTOR, action.kind)
                 assertEquals(codex.id, action.parameters["connector_id"])
+                assertEquals("screen_analysis", action.parameters["request_kind"])
             }
         } finally { PhoneAssistantTaskControl.finish(turn) }
     }

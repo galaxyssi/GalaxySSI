@@ -15,11 +15,12 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal object PhoneUiScreenshot {
-    fun capture(context: Context): File {
+    fun capture(context: Context, expectedWindowId: Int? = null): File {
         check(Looper.myLooper() != Looper.getMainLooper())
         check(Build.VERSION.SDK_INT >= 30) { "Screen capture requires Android 11 or newer" }
         val service = requireNotNull(GalaxySSIAccessibilityService.targetService()) { "Screen access is not enabled" }
         val window = requireNotNull(GalaxySSIAccessibilityService.targetWindowId()) { "No target App window" }
+        check(expectedWindowId == null || window == expectedWindowId) { "Target window changed before capture" }
         val result = AtomicReference<Bitmap?>()
         val error = AtomicReference<String?>()
         val done = CountDownLatch(1)

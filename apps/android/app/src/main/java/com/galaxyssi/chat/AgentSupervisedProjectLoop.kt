@@ -652,13 +652,16 @@ internal object AgentPhoneAgentLoopRoutingPolicy {
     fun shouldUseSupervisedLoop(
         goal: String,
         conversationContext: AgentConversationContext,
-        selectedAction: AgentAction?
+        selectedAction: AgentAction?,
+        independentRequest: Boolean = false
     ): Boolean =
-        selectedAction?.isSupervisedProjectConnector() == true ||
+        !independentRequest &&
+            selectedAction?.parameters?.get("request_kind") != PhoneAssistantTaskControl.SCREEN_ANALYSIS_REQUEST_KIND &&
+            (selectedAction?.isSupervisedProjectConnector() == true ||
             AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
                 goal,
                 conversationContext
-            )
+            ))
 }
 
 /**
@@ -703,8 +706,10 @@ internal class AgentPhoneReasoningProviderPlanner(
 internal object AgentSupervisedProjectContinuationPolicy {
     fun mergedGoal(
         latestRequest: String,
-        conversationContext: AgentConversationContext
+        conversationContext: AgentConversationContext,
+        independentRequest: Boolean = false
     ): String? {
+        if (independentRequest) return null
         val request = latestRequest.trim()
         if (!AgentActiveTurnPolicy.continuesPriorTask(request)) return null
         val priorGoal = conversationContext.turns.asReversed()

@@ -11,6 +11,7 @@ internal object ScreenAssistantTaskCancellation {
         require(workspace == null || workspace.conversationId == conversationId) {
             "Screen analysis task identity does not match"
         }
+        PhoneAssistantTaskControl.cancel(turnId)
         if (workspace?.status in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.FAILED)) return true
         val runtime = runner?.let { activity ->
             (activity.activeAgentTasks.values + activity.provisionalAgentTasks + activity.mobileNativeAgent)

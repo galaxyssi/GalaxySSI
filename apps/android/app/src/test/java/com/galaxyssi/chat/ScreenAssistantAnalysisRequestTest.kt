@@ -52,6 +52,35 @@ class ScreenAssistantAnalysisRequestTest {
         assertEquals("running-screen-turn", request.turnId)
     }
 
+    @Test fun repeatedApprovalTextHasDistinctRevisionAndWaitsForEachDecision() {
+        val request = ScreenAssistantAnalysisRequest()
+        val first = java.util.concurrent.CountDownLatch(1)
+        val second = java.util.concurrent.CountDownLatch(1)
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val worker = kotlin.concurrent.thread {
+            runCatching {
+                request.requireApproval("Same sensitive action") { first.countDown() }
+                request.requireApproval("Same sensitive action") { second.countDown() }
+            }.onFailure(failure::set)
+        }
+        try {
+            assertTrue(first.await(3, java.util.concurrent.TimeUnit.SECONDS))
+            val revision = request.approvalRevision
+            request.approve()
+            assertTrue(second.await(3, java.util.concurrent.TimeUnit.SECONDS))
+            assertTrue(request.approvalRevision > revision)
+            assertEquals("Same sensitive action", request.approvalDescription)
+            assertTrue(worker.isAlive)
+            request.approve()
+            worker.join(3_000)
+            assertFalse(worker.isAlive)
+            assertEquals(null, failure.get())
+        } finally {
+            request.cancel()
+            worker.join(3_000)
+        }
+    }
+
     @Test fun stoppingScreenWorkspaceDoesNotStopOtherConversation() = runBlocking {
         val store = InMemoryAgentWorkspaceStore()
         val supervisor = AgentTaskSupervisor(store, maxConcurrentReadReasoningTasks = 2)

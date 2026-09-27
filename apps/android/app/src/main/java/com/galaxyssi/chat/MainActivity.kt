@@ -1435,6 +1435,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
 
+    internal open fun onAgentTurnSubmitted(conversationId: String, turnId: String,
+        goal: String, attachments: List<AgentInputAttachment>) = Unit
+
     override fun onBackPressed() {
         if (SystemClock.elapsedRealtime() - agentComposerKeyboardClosedAt < 700L) {
             agentComposerKeyboardClosedAt = 0L
