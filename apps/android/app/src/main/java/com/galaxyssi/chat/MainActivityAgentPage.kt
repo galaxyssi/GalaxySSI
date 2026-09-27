@@ -1259,8 +1259,10 @@ internal fun MainActivity.submitAgentGoal(
     pendingVoiceConversationId: String = "",
     goalOverride: String? = null,
     attachmentsOverride: List<AgentInputAttachment>? = null,
-    onTurnCreated: ((String) -> Unit)? = null
+    onTurnCreated: ((String) -> Unit)? = null,
+    isSubmissionCancelled: () -> Boolean = { false }
 ) {
+    if (isSubmissionCancelled()) return
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val goal = goalOverride?.trim()
         ?: agentGoalInput.text?.toString()?.trim().orEmpty()
@@ -1392,6 +1394,7 @@ internal fun MainActivity.submitAgentGoal(
         }
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
+            if (isSubmissionCancelled()) return@runOnUiThread
             if (pendingVoiceDedupeKey.isNotBlank() &&
                 agentTranscriptWindow.conversationId == conversation.id
             ) {
@@ -1405,7 +1408,8 @@ internal fun MainActivity.submitAgentGoal(
                     goal = baseGoal,
                     conversationId = conversation.id,
                     turnId = turnId,
-                    originalGoal = goal
+                    originalGoal = goal,
+                    isSubmissionCancelled = isSubmissionCancelled
                 )
             } else {
                 stageAgentGoalAttachments(
@@ -1414,7 +1418,8 @@ internal fun MainActivity.submitAgentGoal(
                     conversation = conversation,
                     turnId = turnId,
                     attachments = attachments,
-                    priorVisualReference = priorVisualReference
+                    priorVisualReference = priorVisualReference,
+                    isSubmissionCancelled = isSubmissionCancelled
                 )
             }
             Log.i(
@@ -1440,9 +1445,11 @@ internal fun MainActivity.stageAgentGoalAttachments(
     conversation: AgentConversation,
     turnId: String,
     attachments: List<AgentInputAttachment>,
-    priorVisualReference: AgentConversationVisualReference? = null
+    priorVisualReference: AgentConversationVisualReference? = null,
+    isSubmissionCancelled: () -> Boolean = { false }
 ) {
     thread(name = "galaxyssi-agent-attachments") {
+        if (isSubmissionCancelled()) return@thread
         val executionAttachments = if (attachments.isNotEmpty()) {
             attachments
         } else {
@@ -1457,11 +1464,13 @@ internal fun MainActivity.stageAgentGoalAttachments(
         }
         if (executionAttachments.isEmpty()) {
             runOnUiThread {
+                if (isSubmissionCancelled()) return@runOnUiThread
                 continueAgentGoalSubmission(
                     goal = baseGoal,
                     conversationId = conversation.id,
                     turnId = turnId,
-                    originalGoal = goal
+                    originalGoal = goal,
+                    isSubmissionCancelled = isSubmissionCancelled
                 )
             }
             return@thread
@@ -1512,12 +1521,14 @@ internal fun MainActivity.stageAgentGoalAttachments(
             )
         }
         runOnUiThread {
+            if (isSubmissionCancelled()) return@runOnUiThread
             continueAgentGoalSubmission(
                 executionGoal,
                 conversation.id,
                 turnId,
                 forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal, conversation.id) else null,
-                originalGoal = goal
+                originalGoal = goal,
+                isSubmissionCancelled = isSubmissionCancelled
             )
         }
         if (goal.isNotBlank() && !conversation.privateMode && !conversation.trackingPaused) {
@@ -1565,8 +1576,10 @@ internal fun MainActivity.continueAgentGoalSubmission(
     turnId: String,
     forcedAction: AgentAction? = null,
     originalGoal: String = goal,
-    executionModeOverride: AgentTaskExecutionMode? = null
+    executionModeOverride: AgentTaskExecutionMode? = null,
+    isSubmissionCancelled: () -> Boolean = { false }
 ) {
+    if (isSubmissionCancelled()) return
     val routingStartedAt = SystemClock.elapsedRealtime()
     val voiceTraceId = voiceTraceIdsByTurn[turnId].orEmpty()
     VoiceLatencyTelemetry.record(
@@ -1617,6 +1630,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         handleAgentSkillCommand(goal, conversationId, turnId)
     ) return
     agentRoutingExecutor.execute {
+        if (isSubmissionCancelled()) return@execute
         Log.i("GalaxySSILatency", "agent_route stage=worker_started turn=${turnId.take(8)} " +
             "queue_ms=${SystemClock.elapsedRealtime() - routingStartedAt}")
         if (initialAgentHydrationPending) {
@@ -1629,6 +1643,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             )
         }
         val contextReadStartedAt = SystemClock.elapsedRealtime()
+        if (isSubmissionCancelled()) return@execute
         val baseConversationContext = agentContextBeforeTurn.remove(turnId)
             ?: agentTranscriptStore.context(
                 conversationId = conversationId,
@@ -1893,6 +1908,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "model_execution_site=$modelExecutionSiteDecisionRequired " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
+        if (isSubmissionCancelled()) return@execute
         val run = agentRunRecorder.begin(
             conversationId = conversationId,
             request = executionGoal,
@@ -1991,6 +2007,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             "GalaxySSIAgent",
             "run_recorded turn=${turnId.take(8)} elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
+        if (isSubmissionCancelled()) return@execute
         when {
             backgroundDirectAction != null -> Unit
             resolvedForcedAction != null -> {
@@ -2004,7 +2021,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     conversationId,
                     turnId,
                     resolvedForcedAction,
-                    taskExecutionMode
+                    taskExecutionMode,
+                    isSubmissionCancelled
                 )
             }
             deterministicAction != null && deterministicAction.canBypassAgentReasoningLoop() -> {
@@ -2045,7 +2063,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     conversationId,
                     turnId,
                     deterministicAction,
-                    taskExecutionMode
+                    taskExecutionMode,
+                    isSubmissionCancelled
                 )
             }
             skillMatch != null &&
@@ -2061,7 +2080,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 conversationContext,
                 conversationId,
                 turnId,
-                executionMode = taskExecutionMode
+                executionMode = taskExecutionMode,
+                isSubmissionCancelled = isSubmissionCancelled
             )
         }
     }
