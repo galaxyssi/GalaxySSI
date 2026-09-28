@@ -47,6 +47,18 @@ class AgentPendingDeliveryJournalDeviceTest {
         assertEquals(9L, page.nextBeforeSource)
     }
 
+    @Test fun unknownChildIsDistinctFromARetiredOrdinarySource() {
+        journal.put(value(1))
+        val child = 6525707100557638604L
+        assertEquals(AgentPendingSourceState.UNREGISTERED, journal.sourceState(child, "conversation", "turn-1"))
+        assertTrue(journal.isSuperseded(child, "conversation", "turn-1"))
+        reopen()
+        assertEquals(AgentPendingSourceState.UNREGISTERED, journal.sourceState(child, "conversation", "turn-1"))
+        assertEquals(value(1), journal.find(1))
+        journal.remove(child)
+        assertTrue(journal.isSuperseded(child, "conversation", "turn-1"))
+    }
+
     @Test fun failedHeadWriteRollsBackBodyInSameTransaction() {
         journal.page()
         sql("CREATE TRIGGER fail_head BEFORE INSERT ON pending_turn_heads BEGIN SELECT RAISE(ABORT,'injected'); END")

@@ -42,6 +42,18 @@ class AgentResultReceiptDeviceTest {
         }
     }
 
+    @Test fun managedReplyReceiptSurvivesWithoutBecomingAUserReply() = isolated { name ->
+        inbox(name).use { assertTrue(it.append(response(), receipt(), handled = true)) }
+        inbox(name).use {
+            assertTrue(it.wasRecorded(response()))
+            assertTrue(it.page().responses.isEmpty())
+            assertEquals(receipt(), it.dueReceipts(0).single().receipt)
+            assertFalse(it.append(response(), receipt(), handled = true))
+            assertTrue(it.page().responses.isEmpty())
+            assertEquals(1, it.dueReceipts(0).size)
+        }
+    }
+
     @Test fun receiptWriteFailureRollsBackReplyAndExecutionObservation() = isolated { name ->
         inbox(name).use { it.highWatermark() }
         sql(name, "CREATE TRIGGER fail_receipt BEFORE INSERT ON result_receipts BEGIN SELECT RAISE(ABORT,'test full disk'); END")
@@ -179,6 +191,16 @@ class AgentResultReceiptDeviceTest {
 
     @Test fun versionTwoDatabaseMigratesWithoutChangingReply() = isolated { name ->
         inbox(name).use { it.append(response()) }
+        // Rebuild the historical schema; lowering user_version alone leaves v4-only columns behind.
+        sql(name, "CREATE TABLE inbox_v2(sequence INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "identity_key TEXT NOT NULL UNIQUE,turn_key TEXT NOT NULL,handled INTEGER NOT NULL DEFAULT 0," +
+            "encrypted_value TEXT,scope_key TEXT NOT NULL DEFAULT '',execution_generation INTEGER NOT NULL DEFAULT 1)")
+        sql(name, "INSERT INTO inbox_v2 SELECT sequence,identity_key,turn_key,handled,encrypted_value,scope_key,execution_generation FROM inbox")
+        sql(name, "DROP TABLE inbox")
+        sql(name, "ALTER TABLE inbox_v2 RENAME TO inbox")
+        sql(name, "CREATE INDEX inbox_pending ON inbox(handled,sequence)")
+        sql(name, "CREATE INDEX inbox_turn ON inbox(turn_key,handled)")
+        sql(name, "CREATE INDEX inbox_execution ON inbox(scope_key,execution_generation,handled)")
         sql(name, "DROP TABLE result_receipts")
         sql(name, "PRAGMA user_version=2")
         inbox(name).use {

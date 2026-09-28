@@ -2,6 +2,19 @@ package com.galaxyssi.chat
 
 /** Keeps model-authored control payloads out of the user-facing transcript. */
 object AgentSupervisedProjectPresentationPolicy {
+    internal fun ownsResponse(plan: AgentPlan?, result: AgentActionResult?, response: AgentConnectorResponse): Boolean {
+        val action = plan?.actions?.firstOrNull { it.id == result?.actionId } ?: return false
+        if (!action.isSupervisedProjectConnector()) return false
+        val metadata = result?.metadata.orEmpty()
+        return response.sourceMessageId > 0 &&
+            metadata["source_message_id"]?.toLongOrNull() == response.sourceMessageId &&
+            metadata["contact_id"] == response.contactId &&
+            action.parameters[INTERNAL_CONVERSATION_ID] == response.conversationId &&
+            action.parameters[INTERNAL_TURN_ID] == response.turnId &&
+            response.conversationId.isNotBlank() && response.turnId.isNotBlank() &&
+            (metadata["remote_task_id"].isNullOrBlank() || metadata["remote_task_id"] == response.taskId)
+    }
+
     fun shouldShowFailureRecovery(
         pendingAction: AgentAction?,
         isSupervisedSource: Boolean,

@@ -111,6 +111,12 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
 class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedResponseLedger {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
+    internal fun ownsRecordedSource(source: Long, conversation: String, turn: String): Boolean = synchronized(PROCESS_LOCK) {
+        source > 0 && conversation.isNotBlank() && turn.isNotBlank() && load().any {
+            it.sourceMessageId == source && it.conversationId == conversation && it.turnId == turn
+        }
+    }
+
     override fun register(record: AgentManagedResponseRecord) = synchronized(PROCESS_LOCK) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
         val next = load().filterNot { it.ownerRunId == record.ownerRunId }
