@@ -44,7 +44,8 @@ internal class MqttBrokerPool(
     data class PathSnapshot(val generation: Long, val connected: Boolean, val activeSubscriptions: Int,
                             val pendingSubscriptions: Int, val pendingPublishes: Int, val lastError: String,
                             val state: PathState, val reconnectAttempts: Long)
-    private data class PendingPublish(val logicalId: Long, val attemptId: String, val startedAt: Long, var packetId: Int = 0)
+    private data class PendingPublish(val logicalId: Long, val attemptId: String, val startedAt: Long,
+                                      val timeoutMs: Long, var packetId: Int = 0)
     private class Path(val brokerId: String) {
         val lock = Any()
         var generation = 0L
@@ -79,7 +80,10 @@ internal class MqttBrokerPool(
         check(!closed.get()) { "Broker pool is closed" }
         if (!started.compareAndSet(false, true)) return
         paths.values.shuffled().forEach { path -> executor.execute { connect(path) } }
-        executor.scheduleWithFixedDelay({ refreshSubscriptions() }, 10, 10, TimeUnit.SECONDS)
+        executor.scheduleWithFixedDelay({
+            refreshSubscriptions()
+            repairStalledPublishes()
+        }, 10, 10, TimeUnit.SECONDS)
     }
 
     private fun connect(path: Path) {
@@ -271,12 +275,17 @@ internal class MqttBrokerPool(
         val path = paths[broker] ?: return null
         val logicalId = sequence.incrementAndGet()
         val client: IMqttAsyncClient
-        val pending = PendingPublish(logicalId, attemptId, now())
+        val pending = PendingPublish(logicalId, attemptId, now(),
+            if (payload.size <= MqttBrokerCatalog.SMALL_PACKET_BYTES) 30_000 else 120_000)
         synchronized(path.lock) {
             client = path.client ?: return null
             if (!current(path, client, generation) || !path.connected ||
                 path.publications.size >= MqttBrokerCatalog.INFLIGHT_PACKETS) return null
             path.publications[logicalId] = pending
+        }
+        if (!client.isConnected) {
+            lost(path, client, generation, "publish_client_disconnected")
+            return null
         }
         fun finish(token: IMqttToken?, accepted: Boolean) {
             synchronized(path.lock) {
@@ -292,8 +301,9 @@ internal class MqttBrokerPool(
                 override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) { finish(asyncActionToken, false) }
             })
             synchronized(path.lock) { pending.packetId = token.messageId }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             synchronized(path.lock) { path.publications.remove(logicalId) }
+            if (!client.isConnected) lost(path, client, generation, "publish_client_disconnected")
             return null
         }
         return logicalId
@@ -334,7 +344,7 @@ internal class MqttBrokerPool(
         if (closed.get()) return
         paths.values.forEach { path ->
             val stalled = synchronized(path.lock) {
-                if (path.publications.values.any { now() - it.startedAt >= timeoutMs })
+                if (path.publications.values.any { now() - it.startedAt >= maxOf(timeoutMs, it.timeoutMs) })
                     path.client?.let { it to path.generation } else null
             }
             stalled?.let { lost(path, it.first, it.second, "publish_timeout") }
