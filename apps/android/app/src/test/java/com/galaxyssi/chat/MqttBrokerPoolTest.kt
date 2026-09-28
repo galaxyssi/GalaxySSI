@@ -210,6 +210,42 @@ class MqttBrokerPoolTest {
         assertEquals(1, pool.snapshot().getValue("hivemq").pendingPublishes)
     }
 
+    @Test fun silentlyDisconnectedClientIsReplacedBeforePublishing() {
+        ready()
+        client("emqx").connected = false
+        assertNull(pool.publish("emqx", 1, "outbox", byteArrayOf(1), "stale"))
+        assertTrue(client("emqx").published.isEmpty())
+        waitFor { clients.getValue("emqx").size == 2 &&
+            pool.snapshot().getValue("emqx").state == MqttBrokerPool.PathState.RECEIVE_READY }
+        assertEquals(0, pool.snapshot().getValue("emqx").pendingPublishes)
+        assertEquals(MqttBrokerPool.PathState.RECEIVE_READY, pool.snapshot().getValue("hivemq").state)
+    }
+
+    @Test fun stalledPublicationRepairsOnlyItsBroker() {
+        ready()
+        pool.publish("emqx", 1, "outbox", byteArrayOf(1), "stalled")
+        clock.set(31_000)
+        pool.repairStalledPublishes()
+        waitFor { clients.getValue("emqx").size == 2 &&
+            pool.snapshot().getValue("emqx").state == MqttBrokerPool.PathState.RECEIVE_READY }
+        assertEquals(listOf("stalled"), receipts.map { it.attemptId })
+        assertFalse(receipts.single().brokerAcked)
+        assertEquals(MqttBrokerPool.PathState.RECEIVE_READY, pool.snapshot().getValue("mosquitto").state)
+    }
+
+    @Test fun largePublicationGetsTimeToFinishBeforePathRepair() {
+        ready()
+        pool.publish("emqx", 1, "outbox", ByteArray(MqttBrokerCatalog.SMALL_PACKET_BYTES + 1), "large")
+        clock.set(31_000)
+        pool.repairStalledPublishes()
+        assertEquals(1, pool.snapshot().getValue("emqx").pendingPublishes)
+        clock.set(121_000)
+        pool.repairStalledPublishes()
+        waitFor { clients.getValue("emqx").size == 2 &&
+            pool.snapshot().getValue("emqx").state == MqttBrokerPool.PathState.RECEIVE_READY }
+        assertEquals(listOf("large"), receipts.map { it.attemptId })
+    }
+
     @Test fun staleCallbacksCannotCompleteNewGenerationPackets() {
         ready()
         val old = client("emqx")

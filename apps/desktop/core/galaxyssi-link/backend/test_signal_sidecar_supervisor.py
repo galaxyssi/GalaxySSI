@@ -117,11 +117,11 @@ class SignalSupervisorTest(unittest.TestCase):
         self.assertFalse(runtime.snapshot()["supervised"])
         self.assertEqual([], recoveries)
 
-    def test_sidecar_probe_has_short_timeout_but_crypto_requests_keep_existing_budget(self):
+    def test_sidecar_probe_allows_local_startup_without_changing_crypto_budget(self):
         import galaxyssi_client
         with patch.object(galaxyssi_client, "_request", return_value={}) as request:
             self.assertFalse(galaxyssi_client._is_healthy())
-        request.assert_called_once_with("GET", "/health", timeout=.5)
+        request.assert_called_once_with("GET", "/health", timeout=2.0)
 
     def test_handoff_cleanup_failure_does_not_mark_crypto_offline(self):
         calls = []

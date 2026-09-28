@@ -100,6 +100,7 @@ object GalaxySSIMqttClient {
         onFailure = { Log.e(TAG, "MQTT inbound handler failed type=${it.javaClass.simpleName}") }
     )
     private val inboundAdmissionLogAt = java.util.concurrent.atomic.AtomicLong()
+    private val resumeFailureLogAt = AtomicLong()
     private val attachmentTransferExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "galaxyssi-link-attachments").apply { isDaemon = true }
     }
@@ -403,7 +404,14 @@ object GalaxySSIMqttClient {
         }, classify = { topic, payload -> peerRoutes?.classify(topic, payload) })
         val routes = MqttPeerRoutes(mqtt, MqttRouteState(context.applicationContext), GalaxySSILinkProtocol::sealWirePacket,
             onReady = { schedulePoolStateRefresh(recover = true) },
-            onFailure = { Log.w(TAG, "MQTT resume deferred type=${it.javaClass.simpleName}") },
+            onFailure = { error ->
+                val at = SystemClock.elapsedRealtime()
+                val previous = resumeFailureLogAt.get()
+                if (at - previous >= 30_000 && resumeFailureLogAt.compareAndSet(previous, at)) {
+                    val reason = (error as? org.eclipse.paho.client.mqttv3.MqttException)?.reasonCode
+                    Log.w(TAG, "MQTT resume deferred type=${error.javaClass.simpleName} reason=$reason")
+                }
+            },
             onChanged = { schedulePoolStateRefresh() })
         client = mqtt
         peerRoutes = routes

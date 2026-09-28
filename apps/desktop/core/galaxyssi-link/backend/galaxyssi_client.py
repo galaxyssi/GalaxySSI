@@ -39,6 +39,7 @@ _process: subprocess.Popen | None = None
 _startup_lock = threading.RLock()
 _peer_locks: dict[tuple[str, int], threading.RLock] = {}
 _peer_locks_guard = threading.Lock()
+_loopback_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class SignalSidecarError(RuntimeError):
@@ -156,8 +157,8 @@ def start_signal_sidecar() -> None:
             process = subprocess.Popen([str(sidecar_script)], **popen_kwargs)
             _process = process
 
-        deadline = time.time() + 15
-        while time.time() < deadline:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
             if process.poll() is not None:
                 break
             if _is_healthy():
@@ -365,7 +366,7 @@ def remove_peer_signal_session(remote_name: str, remote_device_id: int = 1) -> d
 
 def _is_healthy() -> bool:
     try:
-        status = _request("GET", "/health", timeout=0.5)
+        status = _request("GET", "/health", timeout=2.0)
         return bool(
             status.get("ok")
             and status.get("protocol") == "galaxyssi-link"
@@ -400,7 +401,7 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None, *, t
         headers={"Content-Type": "application/json; charset=utf-8"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with _loopback_opener.open(req, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
