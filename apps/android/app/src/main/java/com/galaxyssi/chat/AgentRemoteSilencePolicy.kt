@@ -4,6 +4,10 @@ internal object AgentRemoteSilencePolicy {
     const val PROBE_INTERVAL = 30_000L
     const val SILENCE_LIMIT = 5 * 60_000L
     const val MIN_PROBES = 3
+    const val TERMINAL_DELIVERY_LIMIT = 15 * 60_000L
+
+    fun terminalDeliveryExpired(completedAt: Long, now: Long): Boolean =
+        completedAt > 0 && now >= completedAt && now - completedAt >= TERMINAL_DELIVERY_LIMIT
 
     fun expired(startedAt: Long, lastResponseAt: Long, misses: Int, now: Long): Boolean {
         val anchor = maxOf(startedAt, lastResponseAt)

@@ -20,6 +20,42 @@ class PeerChatStoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_delete_one_message_is_local_route_scoped_and_replay_safe(self) -> None:
+        first = self.store.append(client_route_id="phone-a", direction="inbound", content="hello",
+                                  remote_message_id="remote-one")
+        second = self.store.append(client_route_id="phone-a", direction="inbound", content="keep")
+        other = self.store.append(client_route_id="phone-b", direction="inbound", content="other")
+        self.assertFalse(self.store.delete_message("phone-b", first["message_id"]))
+        self.assertTrue(self.store.delete_message("phone-a", first["message_id"]))
+        self.assertFalse(self.store.delete_message("phone-a", first["message_id"]))
+        self.assertIsNone(self.store.get_message(first["message_id"]))
+        self.assertEqual([second["message_id"]],
+                         [row["message_id"] for row in self.store.list_messages("phone-a")])
+        self.assertEqual([other["message_id"]],
+                         [row["message_id"] for row in self.store.list_messages("phone-b")])
+        with self.assertRaisesRegex(ValueError, "peer_message_deleted"):
+            self.store.append(client_route_id="phone-a", direction="inbound", content="hello",
+                              remote_message_id="remote-one")
+
+    def test_delete_removes_only_this_messages_imported_attachment(self) -> None:
+        source = Path(self.temporary.name) / "photo.jpg"
+        source.write_bytes(b"test-photo")
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        first_attachment = self.store.import_attachment(client_route_id="phone-a", message_id="remote-one",
+            source=source, name="photo.jpg", mime_type="image/jpeg", sha256=digest)
+        second_attachment = self.store.import_attachment(client_route_id="phone-a", message_id="remote-two",
+            source=source, name="photo.jpg", mime_type="image/jpeg", sha256=digest)
+        first = self.store.append(client_route_id="phone-a", direction="inbound", attachments=[first_attachment],
+                                  remote_message_id="remote-one")
+        second = self.store.append(client_route_id="phone-a", direction="inbound", attachments=[second_attachment],
+                                   remote_message_id="remote-two")
+        first_file = Path(self.store.attachment_record(first["message_id"], 0)["local_path"])
+        second_file = Path(self.store.attachment_record(second["message_id"], 0)["local_path"])
+        self.assertTrue(self.store.delete_message("phone-a", first["message_id"]))
+        self.assertFalse(first_file.exists())
+        self.assertTrue(second_file.exists())
+        self.assertIsNotNone(self.store.attachment_record(second["message_id"], 0))
+
     def test_text_and_file_messages_are_isolated_by_phone_route(self) -> None:
         source = Path(self.temporary.name) / "report.txt"
         source.write_text("verified peer content", encoding="utf-8")

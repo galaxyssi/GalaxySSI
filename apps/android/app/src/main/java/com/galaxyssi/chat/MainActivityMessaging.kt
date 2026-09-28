@@ -302,6 +302,7 @@ internal fun MainActivity.configureMessages() {
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
+        onDeleteMessage = { messageId -> deleteMessageById(messageId) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.apply {
         layoutManager = LinearLayoutManager(this@configureMessages).apply {

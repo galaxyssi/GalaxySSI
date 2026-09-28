@@ -327,6 +327,14 @@ internal fun MainActivity.showMessageActions(position: Int) {
         .show()
 }
 
+internal fun MainActivity.deleteMessageById(messageId: Long) {
+    val contact = selectedContact ?: return
+    val position = messages[contact.id]?.indexOfFirst { it.id == messageId } ?: -1
+    if (position < 0) return
+    deleteMessageAt(contact.id, position)
+    Toast.makeText(this, getString(R.string.toast_deleted), Toast.LENGTH_SHORT).show()
+}
+
 internal fun MainActivity.refreshVisibleMessages(contactId: String) {
     if (chatPage.visibility != View.VISIBLE || selectedContact?.id != contactId) return
     messageList.post {

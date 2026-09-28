@@ -205,7 +205,8 @@ internal object AndroidAgentRemoteRecovery {
             if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
                 firstPage = result.optJSONObject("result_page"))
         }
-        AndroidAgentRemoteSilence.observed(context, identity.sourceMessageId)
+        if (terminal) AndroidAgentRemoteSilence.terminalObserved(context, identity.sourceMessageId)
+        else AndroidAgentRemoteSilence.observed(context, identity.sourceMessageId)
         return observation
     }
 

@@ -687,6 +687,14 @@ def api_send_peer_message(req: PeerMessageReq, request: Request):
     )
 
 
+@app.delete("/api/peer/messages/{message_id}")
+def api_delete_peer_message(message_id: str, request: Request, client_route_id: str = Query(...)):
+    require_desktop_api_token(request)
+    from peer_chat_store import peer_chat_store
+
+    return {"deleted": peer_chat_store().delete_message(client_route_id, message_id)}
+
+
 @app.delete("/api/peer/conversations/{client_route_id}")
 def api_delete_peer_conversation(client_route_id: str, request: Request):
     require_desktop_api_token(request)

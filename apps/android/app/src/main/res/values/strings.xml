@@ -1209,6 +1209,8 @@
     <string name="section_actions">Actions</string>
     <string name="section_details">Details</string>
     <string name="message_delete_title">Delete Message</string>
+    <string name="agent_desktop_result_unavailable">Desktop finished the task, but the reply could not be delivered. Please retry.</string>
+    <string name="agent_desktop_status_unavailable">Desktop is unreachable. This task has stopped; please retry when connected.</string>
     <string name="peer_voice_transcribing">Transcribing…</string>
     <string name="peer_voice_transcription_failed">Could not transcribe this voice message</string>
     <string name="delivery_status_sending">Sending</string>
