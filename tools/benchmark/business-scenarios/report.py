@@ -44,6 +44,8 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
                 reasons.append("timer_stop_not_observed")
             if not turn.get("within_latency_target"):
                 reasons.append("latency_target")
+            if turn.get("visual_capture_stable") is False:
+                reasons.append("visual_capture_unstable")
         if reasons:
             failed.append({"case_id": case_id, "turn": turn["index"], "reasons": reasons})
     planned_turns = sum(len(case["turns"]) for case in planned.values())
@@ -55,6 +57,8 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         "correct_turns": sum(bool(t.get("assessment", {}).get("correct")) for _, t in complete),
         "rendered_turns": sum(bool(t.get("rendered")) for _, t in complete),
         "timer_stopped_turns": sum(bool(t.get("timer_stopped")) for _, t in complete),
+        "stable_capture_turns": sum(t.get("visual_capture_stable") is True for _, t in complete),
+        "capture_stability_unobserved": sum("visual_capture_stable" not in t for _, t in complete),
         "human_review_pending": sum(bool(t.get("assessment", {}).get("requires_human_review")) for _, t in complete),
         "latency": {"samples": len(durations), "p50_ms": statistics.median(durations) if durations else None,
                     "p95_ms": durations[math.ceil(len(durations) * .95) - 1] if len(durations) >= 30 else None,
@@ -66,6 +70,7 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
             "USB charging temperature/level is not an energy-consumption measurement.",
             "This suite does not replace browser, audio/video, device-control, or adversarial security evals.",
             "Different data records are workload variants, not different intelligence capabilities.",
+            "Stable screenshots still need human review; view-model rendering alone is not pixel verification.",
         ],
     }
 

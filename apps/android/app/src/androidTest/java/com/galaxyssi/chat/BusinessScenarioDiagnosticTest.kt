@@ -1,12 +1,10 @@
 package com.galaxyssi.chat
 
-import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
-import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,7 +15,7 @@ class BusinessScenarioDiagnosticTest {
     @Test fun inspectCheckpoint() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("business_inspect") == "true")
-        assertEquals("SM-S9480", Build.MODEL)
+        requireBusinessDevice(args.getString("business_device_model", "SM-S9480"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val run = requireNotNull(args.getString("business_run"))
         val case = requireNotNull(args.getString("business_case"))

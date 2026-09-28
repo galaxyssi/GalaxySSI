@@ -21,7 +21,9 @@ covered by these fixtures.
 
 ## Safety and Evidence
 
-- Only an explicitly selected S26U (`SM-S9480`) can run the live test.
+- Only the explicitly selected S26U (`SM-S9480`) or Active3 (`SM-T575`) can run
+  the live test. Set `business_device_model` to the selected model; it defaults
+  to S26U for existing commands. Always select the same device's ADB serial.
 - Data and attachments are synthetic. Conversations are private test records.
 - No door access, payments, contact messages or production file changes.
 - Use the configured real model and transport; never inject expected replies.
@@ -35,6 +37,8 @@ covered by these fixtures.
 - JSON assertions do not establish the quality of all prose. Review screenshots
   and answers separately. USB battery/temperature samples are not energy usage.
 - The transcript `rendered` check is a view-model check, not pixel verification.
+- Driver schema 2 records focused, stable output captures separately. Missing
+  stability fields in older reports remain unobserved, not passing evidence.
 
 ## Generate and Check
 
@@ -134,3 +138,31 @@ complete task identity match the originally dropped reply, with no ordinary UI
 inbox entry. This is one recovery sample, not a p95 or a business-suite pass.
 The initial pilot's missing child reply was also recovered into its managed
 ledger; its parent remains paused and the historical pilot remains failed.
+
+## Live Campaign Checkpoint
+
+The S26U v2 campaign completed 34 turns with correct numeric/format assertions,
+then stopped on B004 turn 1 after the 240-second observation window. B001-B003
+each completed eleven turns. Completed-turn p50 was 19,580 ms and p95 was
+52,057 ms; these exclude the timed-out observation and are not an overall
+success claim. The catalog still has 100 cases and 1,100 planned turns.
+
+For the failed turn, Desktop stored its image but had not created the associated
+model task. Attachment packets share task timing identifiers, so a decrypt trace
+alone does not prove that the complete model request arrived. The attachment
+receipt/dependency release path remains under investigation. The checkpoint is
+retained without resubmitting the turn.
+
+Testing was then moved by user request to Active3 with a separate run ID and
+explicit `business_device_model=SM-T575`. Device results must remain separate;
+an Active3 pass does not relabel the historical S26U failure. The app is upgraded
+in place, preserving existing user settings and conversations.
+
+Active3 v1.3.18 initial validation completed nine real Codex turns: B001, B004
+and B005, three turns each (text, line chart and paired images). All nine numeric
+checks, focused stable captures and stopped-timer checks passed, including three
+background turns. Completed-turn p50 was 20,913 ms and maximum 34,647 ms; nine
+samples are insufficient for the report's p95 threshold. This is a partial
+functional checkpoint, not completion of the 100-case campaign or a claim that
+all prose and rendering are correct. Six host catalog/report tests and the
+Android instrumentation build also passed.

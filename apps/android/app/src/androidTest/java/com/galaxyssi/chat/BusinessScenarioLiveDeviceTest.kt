@@ -11,10 +11,7 @@ import android.os.Debug
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -52,7 +49,7 @@ class BusinessScenarioLiveDeviceTest {
 
     @Test fun realBusinessConversations() {
         assumeTrue(args.getString("business_live") == "true")
-        assertEquals("Only the explicitly selected S26U may run this suite", "SM-S9480", Build.MODEL)
+        requireBusinessDevice(args.getString("business_device_model", "SM-S9480"))
         check(!context.getSystemService(KeyguardManager::class.java).isDeviceLocked) {
             "Unlock the test phone before running visible composer and output checks"
         }
@@ -80,6 +77,15 @@ class BusinessScenarioLiveDeviceTest {
         } finally {
             GalaxySSIMqttClient.removeListener(listener)
         }
+    }
+
+    @Test fun configuredTargetPreflight() {
+        assumeTrue(args.getString("business_preflight") == "true")
+        requireBusinessDevice(args.getString("business_device_model", "SM-S9480"))
+        val provider = args.getString("business_provider", "codex")
+        val target = selectBusinessTarget(AppStoreAgentConnectorRegistry(context).availableTargets(), provider)
+        println("BUSINESS_PREFLIGHT device=${Build.MODEL} provider=$provider available=${target != null}")
+        assertNotNull("Configure a paired $provider target before the live suite", target)
     }
 
     private fun runCase(directory: File, catalog: JSONObject, case: JSONObject,
@@ -121,6 +127,7 @@ class BusinessScenarioLiveDeviceTest {
                 val fixtures = if (index == 0) (0 until case.getJSONArray("fixtures").length())
                     .map { BusinessScenarioFixtures.image(directory, case, it) } else emptyList()
                 val result = JSONObject().put("index", index).put("kind", turn.getString("kind"))
+                    .put("driver_schema", 2).put("capture_method", "focused_output_three_matching_frames")
                     .put("state", "prepared").put("prompt", turn.getString("prompt"))
                     .put("input_images", fixtures.size).put("started_at", System.currentTimeMillis())
                     .put("sample_before", sample())
@@ -197,12 +204,13 @@ class BusinessScenarioLiveDeviceTest {
                         visible
                     }
                     result.put("rendered", rendered)
-                    var visibleText = ""
-                    instrumentation.runOnMainSync { visibleText = texts(window.agentOutputList).joinToString("\n") }
-                    result.put("visible_text", visibleText)
-                        .put("timer_stopped", visibleText.contains("已处理") && !visibleText.contains("处理中"))
+                    val capture = captureBusinessOutput(instrumentation, window, File(directory, "$caseId-$index.png"))
+                    result.put("visible_text", capture.text)
+                        .put("visual_capture_stable", capture.stable)
+                        .put("visual_window_focused", capture.focused)
+                        .put("timer_stopped", capture.stable && capture.focused &&
+                            capture.text.contains("已处理") && !capture.text.contains("处理中"))
                         .put("within_latency_target", result.getLong("elapsed_ms") <= case.getLong("latency_target_ms"))
-                    capture(directory, "$caseId-$index.png")
                 } else {
                     fatal = true
                     report.put("status", "blocked_on_turn")
@@ -266,17 +274,12 @@ class BusinessScenarioLiveDeviceTest {
             java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     }
 
-    private fun capture(directory: File, name: String) {
-        val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: return
-        File(directory, name).outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
-    }
-
-    private fun texts(view: View): List<String> = if (view is ViewGroup) {
-        (0 until view.childCount).flatMap { texts(view.getChildAt(it)) }
-    } else if (view is TextView && view.isShown) listOf(view.text.toString()) else emptyList()
-
     private fun JSONArray.containsInt(value: Int): Boolean = (0 until length()).any { optInt(it, -1) == value }
+}
+
+internal fun requireBusinessDevice(expected: String) {
+    require(expected in setOf("SM-S9480", "SM-T575")) { "Unsupported business test device" }
+    assertEquals("Only the explicitly selected business test device may run this suite", expected, Build.MODEL)
 }
 
 internal fun selectBusinessTarget(targets: List<AgentCallableTarget>, provider: String): AgentCallableTarget? {

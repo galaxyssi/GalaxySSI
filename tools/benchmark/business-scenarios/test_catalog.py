@@ -56,6 +56,8 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(1099, result["unobserved_turns"])
         self.assertIsNone(result["latency"]["p95_ms"])
         self.assertEqual(1, result["human_review_pending"])
+        self.assertEqual(1, result["capture_stability_unobserved"])
+        self.assertEqual(0, result["stable_capture_turns"])
         bad = copy.deepcopy(sample)
         bad["catalog_sha256"] = "different"
         with self.assertRaises(ValueError):
@@ -66,6 +68,18 @@ class CatalogTest(unittest.TestCase):
         repeated["turns"].append(copy.deepcopy(repeated["turns"][0]))
         with self.assertRaises(ValueError):
             summarize(plan, [repeated])
+
+    def test_transient_capture_is_not_stable_visual_evidence(self):
+        plan = catalog()
+        turn = {"index": 0, "state": "completed", "elapsed_ms": 1000,
+                "assessment": {"correct": True}, "rendered": True,
+                "timer_stopped": True, "within_latency_target": True, "visual_capture_stable": False}
+        sample = {"case_id": "B001", "catalog_sha256": plan["catalog_sha256"], "turns": [turn]}
+        result = summarize(plan, [sample])
+        self.assertEqual(0, result["stable_capture_turns"])
+        self.assertIn("visual_capture_unstable", result["failures"][0]["reasons"])
+        turn["visual_capture_stable"] = True
+        self.assertEqual(1, summarize(plan, [sample])["stable_capture_turns"])
 
 
 if __name__ == "__main__":
