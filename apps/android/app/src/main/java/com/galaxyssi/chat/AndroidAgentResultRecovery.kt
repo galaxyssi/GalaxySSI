@@ -90,7 +90,10 @@ internal object AndroidAgentResultRecovery {
         if (!paired(context, desktop, fields) || GalaxySSITransportPrivacyPolicy.isLocalOnly(fields)) return false
         val source = fields.optString("source_message_id").toLongOrNull() ?: return false
         if (AgentTerminalDeliveryStore.isTerminal(context, source)) return false
-        val pending = AgentPendingDeliveryStore.find(context, source, fields.optString("contact_id")) ?: return false
+        val ordinary = AgentPendingDeliveryStore.find(context, source, fields.optString("contact_id"))
+        val pending = ordinary ?: EncryptedAgentManagedResponseLedger(context).pendingRecoveryDelivery(
+            source, fields.optString("contact_id"), fields.optString("conversation_id"),
+            fields.optString("turn_id"), fields.optString("task_id")) ?: return false
         if (!AgentTaskIdentityStore.matchesRegistered(context, fields)) return false
         val observation = AgentRemoteOutcomeCodec.observation(fields) ?: return false
         // Discovery has no generation yet. Only a verified observation pins a body transfer.
@@ -107,7 +110,8 @@ internal object AndroidAgentResultRecovery {
             return false
         }
         return !AgentPendingDeliveryStore.isSuperseded(context, source, pending.conversationId, pending.turnId) &&
-            !AgentConnectorResponseStore.containsTurn(context, pending.conversationId, pending.turnId)
+            // Other children can share a parent turn; their replies do not satisfy this child's request.
+            (ordinary == null || !AgentConnectorResponseStore.containsTurn(context, pending.conversationId, pending.turnId))
     }
 
     private fun paired(context: Context, desktop: String, payload: JSONObject): Boolean {

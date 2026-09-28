@@ -101,3 +101,36 @@ Android build. Their end-to-end visual verification still requires an unlocked
 test phone. The live runner rejects a locked phone before sending, and selects
 configured DeepSeek cloud models by provider identity rather than an Agent-only
 filter or display-name guesses.
+
+## Managed Reply Recovery Follow-Up
+
+Cold-start discovery previously enumerated only ordinary pending deliveries.
+Managed child tasks have a separate durable ledger, so a lost child result could
+remain missing even after the supersession check was repaired. Discovery now
+includes pending managed identities without writing them into the parent turn's
+journal. Each task still uses its own authenticated query, existing pacing and
+generation fence. Completed, cancelled, mismatched and retired tasks are not
+eligible. A sibling's response does not satisfy another child sharing the turn.
+
+Device regression also exposed a retirement check that depended on a turn head
+still existing. Explicit retirement is now checked first, including a child that
+never had an ordinary head and a head cleared on completion or cancellation.
+
+The opt-in `AgentLiveFinalRecoveryDeviceTest` supports `live_final_managed=true`
+on `submitAndDropOnlyTestFinal`, followed by a real process stop and
+`restartAutomaticallyFetchesManagedChildBody`. It requests a harmless real Codex
+reply once, drops its initial delivery, then requires normal connection readiness
+to discover and fetch the archived body. It does not resubmit the model request
+or insert a synthetic reply. A setup checkpoint must be inspected before retrying.
+Installing an APK between phases can itself restart the app and recover the
+reply before the assertion begins; preserve that evidence rather than relabelling
+the strict test as passed.
+
+Validation on S26U: 52 targeted JVM tests and 35 device regressions passed,
+including a 10,000-row encrypted pending journal. A fresh controlled real-Codex
+case passed both setup and post-force-stop recovery phases: 1,927 ms connection
+setup plus 2,671 ms after readiness, 4,598 ms total. Its recovered content and
+complete task identity match the originally dropped reply, with no ordinary UI
+inbox entry. This is one recovery sample, not a p95 or a business-suite pass.
+The initial pilot's missing child reply was also recovered into its managed
+ledger; its parent remains paused and the historical pilot remains failed.

@@ -59,6 +59,18 @@ class AgentPendingDeliveryJournalDeviceTest {
         assertTrue(journal.isSuperseded(child, "conversation", "turn-1"))
     }
 
+    @Test fun retirementSurvivesAbsentOrClearedTurnHeadsAndReopen() {
+        journal.remove(42)
+        assertTrue(journal.isSuperseded(42, "no-parent", "no-turn"))
+        journal.put(value(1))
+        journal.remove(1)
+        reopen()
+        assertTrue(journal.isSuperseded(42, "no-parent", "no-turn"))
+        assertTrue(journal.isSuperseded(1, "conversation", "turn-1"))
+        journal.put(value(2))
+        assertFalse(journal.isSuperseded(2, "conversation", "turn-2"))
+    }
+
     @Test fun failedHeadWriteRollsBackBodyInSameTransaction() {
         journal.page()
         sql("CREATE TRIGGER fail_head BEFORE INSERT ON pending_turn_heads BEGIN SELECT RAISE(ABORT,'injected'); END")

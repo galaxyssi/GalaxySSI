@@ -79,6 +79,10 @@ internal class AgentPendingDeliveryJournal(
     @Synchronized fun sourceState(source: Long, conversation: String, turn: String): AgentPendingSourceState {
         if (source <= 0 || conversation.isBlank() || turn.isBlank()) return AgentPendingSourceState.CURRENT
         return transaction { db ->
+            // A managed child may never have owned a turn head. Retirement is still authoritative.
+            val retired = db.rawQuery("SELECT 1 FROM pending_deliveries WHERE source_id=? AND encrypted_value IS NULL",
+                arrayOf(source.toString())).use { it.moveToFirst() }
+            if (retired) return@transaction AgentPendingSourceState.SUPERSEDED
             val current = readHead(db, conversation, turn) ?: return@transaction AgentPendingSourceState.CURRENT
             if (current == source) return@transaction AgentPendingSourceState.CURRENT
             val delivery = readSource(db, source)
