@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.app.ActivityManager
+import android.app.KeyguardManager
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
@@ -52,6 +53,9 @@ class BusinessScenarioLiveDeviceTest {
     @Test fun realBusinessConversations() {
         assumeTrue(args.getString("business_live") == "true")
         assertEquals("Only the explicitly selected S26U may run this suite", "SM-S9480", Build.MODEL)
+        check(!context.getSystemService(KeyguardManager::class.java).isDeviceLocked) {
+            "Unlock the test phone before running visible composer and output checks"
+        }
         val runId = requireNotNull(args.getString("business_run"))
         require(runId.matches(Regex("[A-Za-z0-9_-]{1,64}")))
         val catalog = JSONObject(File(root, "plan.json").readText())
@@ -60,10 +64,8 @@ class BusinessScenarioLiveDeviceTest {
         val timeout = args.getString("business_turn_timeout_ms", "240000").toLong().also { require(it in 30000..900000) }
         val provider = args.getString("business_provider", "codex")
         require(provider in setOf("codex", "deepseek"))
-        val target = AppStoreAgentConnectorRegistry(context).availableTargets().filter {
-            it.kind == AgentConnectorKind.AGENT && it.status == AgentConnectorStatus.AVAILABLE &&
-                (provider in it.id.lowercase() || provider in it.title.lowercase())
-        }.sortedBy { if (it.id == provider) 1 else 0 }.firstOrNull() ?: error("Configured $provider unavailable")
+        val target = selectBusinessTarget(AppStoreAgentConnectorRegistry(context).availableTargets(), provider)
+            ?: error("Configured $provider unavailable")
         val directory = File(root, runId).apply { mkdirs() }
         val snapshot = File(directory, "catalog.json")
         if (snapshot.exists()) {
@@ -275,4 +277,15 @@ class BusinessScenarioLiveDeviceTest {
     } else if (view is TextView && view.isShown) listOf(view.text.toString()) else emptyList()
 
     private fun JSONArray.containsInt(value: Int): Boolean = (0 until length()).any { optInt(it, -1) == value }
+}
+
+internal fun selectBusinessTarget(targets: List<AgentCallableTarget>, provider: String): AgentCallableTarget? {
+    require(provider in setOf("codex", "deepseek"))
+    return targets.filter { target ->
+        target.status == AgentConnectorStatus.AVAILABLE && when (provider) {
+            "codex" -> target.kind == AgentConnectorKind.AGENT && target.id.endsWith(":codex")
+            else -> target.kind == AgentConnectorKind.MODEL && target.adapterType == "cloud-model-api" &&
+                (target.providerProfile?.providerId == "deepseek" || target.failureDomain == "cloud:deepseek")
+        }
+    }.sortedBy { it.id }.firstOrNull()
 }

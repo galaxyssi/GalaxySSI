@@ -80,7 +80,13 @@ The initial two-turn text pilot exposed the following, not a passing result:
 4. Managed replies bypassed the normal application-receipt journal, leaving
    the Desktop archive unacknowledged even when the supervisor consumed them.
 5. A business JSON `code` field was classified as coding work. Task-intent
-   classification still needs a separate regression and correction.
+   classification, capability routing and phone code execution now ignore
+   quoted property names and embedded English keyword substrings. Real code
+   requests remain covered by positive regressions.
+6. The conversation renderer excluded public tool events. It now includes
+   concrete connector activity (such as Stockfish or image inspection) while
+   keeping internal audit scaffolding and generic heartbeats hidden. UI and
+   render signatures use the same visibility policy.
 
 The first four have targeted changes with passing regression checks: 16 JVM
 tests, 35 device tests, and two receipt persistence tests run in separate
@@ -89,3 +95,9 @@ fixture test rendered 100 synthetic images; representative table, bar, line and
 paired-image outputs were visually inspected. These are not real-model passes.
 The initial pilot remains failed evidence and must not be silently relabelled
 after a code change. The full live campaign remains incomplete.
+
+The additional intent and public-progress changes passed 83 JVM tests and an
+Android build. Their end-to-end visual verification still requires an unlocked
+test phone. The live runner rejects a locked phone before sending, and selects
+configured DeepSeek cloud models by provider identity rather than an Agent-only
+filter or display-name guesses.

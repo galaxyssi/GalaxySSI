@@ -385,6 +385,26 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
+    fun showsPublicToolProgressWithoutInternalScaffoldingOrHeartbeat() {
+        val entries = listOf(
+            entry("I will analyze the position.", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 1L, "connector-event:task:REASONING_SUMMARY:commentary"),
+            entry("Running Stockfish", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 2L, "connector-event:task:TOOL_EVENT:command"),
+            entry("Working", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 3L, "connector-event:task:TOOL_EVENT:heartbeat"),
+            entry("Running Codex", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 4L, "audit:4:TOOL_STARTED:codex"),
+            entry("Observing", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 5L, "agent-loop:turn:OBSERVE:5")
+        )
+        assertEquals(listOf("I will analyze the position.", "Running Stockfish"),
+            AgentTranscriptPresentationPolicy.visibleProcessSegments(entries)
+                .flatMap { it.entries }.map { it.text })
+        assertTrue(AgentTranscriptPresentationPolicy.visibleProcessSegments(entries.drop(2)).isEmpty())
+    }
+
+    @Test
     fun hidesLegacyAggregatedToolStepSummariesFromStoredConversations() {
         val entries = listOf(
             entry("user", AgentTranscriptRole.USER, "conversation", "turn", 1L),

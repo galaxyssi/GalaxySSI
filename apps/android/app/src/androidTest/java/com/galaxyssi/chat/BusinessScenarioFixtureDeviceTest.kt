@@ -14,6 +14,20 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class BusinessScenarioFixtureDeviceTest {
+    @Test fun selectsConfiguredCloudModelsAndPairedAgentsByIdentity() {
+        val cloud = AgentCallableTarget("model-test", "Renamed model", AgentConnectorKind.MODEL,
+            AgentConnectorStatus.AVAILABLE, listOf(AgentCapability.CHAT),
+            failureDomain = "cloud:deepseek", adapterType = "cloud-model-api")
+        val paired = AgentCallableTarget("desktop-test:codex", "Renamed agent", AgentConnectorKind.AGENT,
+            AgentConnectorStatus.AVAILABLE, listOf(AgentCapability.CHAT))
+        val targets = listOf(cloud, paired) + StaticAgentConnectorRegistry().availableTargets()
+        assertEquals(cloud, selectBusinessTarget(targets, "deepseek"))
+        assertEquals(paired, selectBusinessTarget(targets, "codex"))
+        assertNull(selectBusinessTarget(listOf(cloud.copy(status = AgentConnectorStatus.DISCONNECTED)), "deepseek"))
+        assertNull(selectBusinessTarget(listOf(cloud.copy(failureDomain = "cloud:other", title = "DeepSeek")), "deepseek"))
+        assertNull(selectBusinessTarget(StaticAgentConnectorRegistry().availableTargets(), "codex"))
+    }
+
     @Test fun renderSyntheticImagesWithoutCallingModels() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("business_render") == "true")
         assertEquals("SM-S9480", Build.MODEL)
