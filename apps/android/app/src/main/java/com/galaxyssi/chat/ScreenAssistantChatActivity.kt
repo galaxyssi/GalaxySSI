@@ -109,6 +109,7 @@ class ScreenAssistantChatActivity : MainActivity() {
         current = WeakReference(this)
         visible = true
         if (attached) updateContainer()
+        GalaxySSIAccessibilityService.refreshScreenAssistant()
     }
 
     override fun onPause() {

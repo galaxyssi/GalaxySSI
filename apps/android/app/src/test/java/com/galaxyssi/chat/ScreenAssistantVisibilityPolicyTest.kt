@@ -11,9 +11,11 @@ class ScreenAssistantVisibilityPolicyTest {
         appForeground: Boolean = false,
         locked: Boolean = false,
         capturing: Boolean = false,
-        foregroundPackage: String = "com.example.other"
+        foregroundPackage: String = "com.example.other",
+        assistantChatOpen: Boolean = false
     ) = ScreenAssistantVisibilityPolicy.shouldShow(
-        enabled, sdk, appForeground, locked, capturing, foregroundPackage, "com.galaxyssi.chat"
+        enabled, sdk, appForeground, locked, capturing, foregroundPackage, "com.galaxyssi.chat",
+        assistantChatOpen
     )
 
     @Test fun onlyShowsOverAnotherUnlockedAppWhenEnabled() {
@@ -26,6 +28,16 @@ class ScreenAssistantVisibilityPolicyTest {
 
     @Test fun screenshotCannotIncludeOurOwnBubble() {
         assertFalse(visible(capturing = true))
+        assertFalse(visible(capturing = true, appForeground = true,
+            foregroundPackage = "com.galaxyssi.chat", assistantChatOpen = true))
+    }
+
+    @Test fun floatingChatKeepsBubbleVisibleWhileAppIsForeground() {
+        assertTrue(visible(appForeground = true, foregroundPackage = "com.galaxyssi.chat",
+            assistantChatOpen = true))
+        assertFalse(visible(appForeground = true, foregroundPackage = "com.galaxyssi.chat"))
+        assertFalse(visible(appForeground = true, foregroundPackage = "com.galaxyssi.chat",
+            assistantChatOpen = true, locked = true))
     }
 
     @Test fun requiresAccessibilityScreenshotApi() {

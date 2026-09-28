@@ -93,9 +93,10 @@ internal object ScreenAssistantVisibilityPolicy {
         locked: Boolean,
         capturing: Boolean,
         foregroundPackage: String,
-        ownPackage: String
-    ): Boolean = enabled && sdk >= Build.VERSION_CODES.R && !appForeground && !locked &&
-        !capturing && foregroundPackage != ownPackage
+        ownPackage: String,
+        assistantChatOpen: Boolean
+    ): Boolean = enabled && sdk >= Build.VERSION_CODES.R && !locked && !capturing &&
+        (assistantChatOpen || (!appForeground && foregroundPackage != ownPackage))
 }
 
 /** The accessibility overlay is small; the other app stays touchable outside its bounds. */
@@ -194,7 +195,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             locked = keyguard.isKeyguardLocked,
             capturing = capturePending,
             foregroundPackage = foregroundPackage,
-            ownPackage = service.packageName
+            ownPackage = service.packageName,
+            assistantChatOpen = ScreenAssistantChatActivity.isOpen()
         )
         if (visible) ensureBubble() else hideAll()
     }
@@ -222,6 +224,24 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
 
     private fun add(view: View, params: WindowManager.LayoutParams): Boolean =
         runCatching { windowManager.addView(view, params) }.isSuccess
+
+    private fun bringBubbleToFront() {
+        val view = bubble ?: return
+        val layout = bubbleParams ?: return
+        if (observationHidden || capturePending || !view.isAttachedToWindow) return
+        runCatching {
+            windowManager.removeViewImmediate(view)
+            windowManager.addView(view, layout)
+        }.onFailure { error ->
+            Log.w("ScreenAssistant", "Could not raise floating icon", error)
+            if (!view.isAttachedToWindow) {
+                bubble = null
+                bubbleBadge = null
+                bubbleParams = null
+                ensureBubble()
+            }
+        }
+    }
 
     private fun remove(view: View?) {
         if (view != null) runCatching { windowManager.removeViewImmediate(view) }
@@ -375,13 +395,29 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         val height = minOf(dp(list.childCount * 48), screenHeight() - dp(100))
         val scroll = ScrollView(service).apply { addView(list) }
         val layout = params(dp(235), height, Gravity.TOP or Gravity.START).apply {
-            x = (bubbleParams?.x ?: 0).coerceAtMost(max(0, screenWidth() - dp(225)))
+            x = menuX(width)
             y = ((bubbleParams?.y ?: 0) - height - dp(10)).coerceAtLeast(dp(30))
         }
-        if (add(scroll, layout)) menu = scroll
+        if (add(scroll, layout)) {
+            menu = scroll
+            bringBubbleToFront()
+        }
     }
 
     private fun dismissMenu() { remove(menu); menu = null }
+
+    private fun menuX(width: Int): Int {
+        val iconX = bubbleParams?.x ?: 0
+        val iconWidth = bubbleParams?.width ?: dp(48)
+        val gap = dp(8)
+        val left = iconX - width - gap
+        val right = iconX + iconWidth + gap
+        return when {
+            left >= 0 -> left
+            right + width <= screenWidth() -> right
+            else -> iconX.coerceIn(0, max(0, screenWidth() - width))
+        }
+    }
 
     private fun showQuestionInput() = openChat(capture = true)
 
@@ -408,10 +444,13 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         val height = minOf(dp(list.childCount * 48), screenHeight() - dp(100))
         val scroll = ScrollView(service).apply { addView(list) }
         val layout = params(dp(235), height, Gravity.TOP or Gravity.START).apply {
-            x = (bubbleParams?.x ?: 0).coerceIn(0, max(0, screenWidth() - dp(235)))
+            x = menuX(width)
             y = ((bubbleParams?.y ?: 0) - height - dp(10)).coerceAtLeast(dp(30))
         }
-        if (add(scroll, layout)) menu = scroll
+        if (add(scroll, layout)) {
+            menu = scroll
+            bringBubbleToFront()
+        }
     }
 
     private fun startPhoneTask(goal: String) {
@@ -545,7 +584,10 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             if (region != null) captureScreen(region = region)
         }
         val layout = params(-1, -1, Gravity.TOP or Gravity.START)
-        if (add(view, layout)) crop = view
+        if (add(view, layout)) {
+            crop = view
+            bringBubbleToFront()
+        }
     }
 
     private fun captureScreen(question: String = "", region: Rect? = null, snapshot: PhoneUiSnapshot? = null) {
@@ -898,7 +940,10 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             addView(controls)
         }
         val height = dp(145)
-        if (add(content, params(-1, height, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))) panel = content
+        if (add(content, params(-1, height, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))) {
+            panel = content
+            bringBubbleToFront()
+        }
     }
 
     private fun dismissPanel() {
