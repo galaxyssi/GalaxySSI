@@ -14,6 +14,7 @@ internal fun MainActivity.myAgentHomeRow(route: ControlCenterRoute): ControlCent
         ControlCenterRoute.MODEL_HUB -> R.string.my_agent_models to R.drawable.ic_settings_model
         ControlCenterRoute.DEVICE_HUB -> R.string.my_agent_devices to R.drawable.ic_device_node
         ControlCenterRoute.VOICE -> R.string.my_agent_voice to R.drawable.ic_settings_voice
+        ControlCenterRoute.SCREEN_ASSISTANT -> R.string.screen_assistant_title to R.drawable.ic_agent_screen
         ControlCenterRoute.MEMORY_HUB -> R.string.my_agent_memory to R.drawable.ic_agent_memory
         ControlCenterRoute.PROACTIVE_HUB -> R.string.my_agent_proactive to R.drawable.ic_agent_node
         ControlCenterRoute.SKILLS_HUB -> R.string.my_agent_skills to R.drawable.ic_agent_skill
