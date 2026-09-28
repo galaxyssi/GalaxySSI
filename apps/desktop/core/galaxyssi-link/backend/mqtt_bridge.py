@@ -3139,6 +3139,8 @@ def _peer_attachment_descriptors(
     task_id = str(payload.get("task_id") or "")
     turn_id = str(payload.get("turn_id") or "")
     message_id = str(payload.get("message_id") or payload.get("source_message_id") or "")
+    if peer_chat_store().remote_message_was_deleted(client_route_id, message_id):
+        return True
     result: list[dict] = []
     for item in (payload.get("attachments") or [])[:12]:
         if not isinstance(item, dict):
@@ -3186,21 +3188,26 @@ def _route_peer_message_payload(
     )
     raw_time = float(payload.get("time") or time.time())
     created_at_ms = int(raw_time if raw_time >= 100_000_000_000 else raw_time * 1000)
-    peer_chat_store().append(
-        client_route_id=client_route_id,
-        direction="inbound",
-        sender_name=str(
-            paired_client.get("profile_name")
-            or paired_client.get("display_name")
-            or paired_client.get("device_name")
-            or "GalaxySSI phone"
-        ),
-        content=str(payload.get("content") or ""),
-        attachments=attachments,
-        remote_message_id=message_id,
-        created_at_ms=created_at_ms,
-        delivery_status="received",
-    )
+    try:
+        peer_chat_store().append(
+            client_route_id=client_route_id,
+            direction="inbound",
+            sender_name=str(
+                paired_client.get("profile_name")
+                or paired_client.get("display_name")
+                or paired_client.get("device_name")
+                or "GalaxySSI phone"
+            ),
+            content=str(payload.get("content") or ""),
+            attachments=attachments,
+            remote_message_id=message_id,
+            created_at_ms=created_at_ms,
+            delivery_status="received",
+        )
+    except ValueError as error:
+        if str(error) == "peer_message_deleted":
+            return True
+        raise
     log.info(
         "MQTT accepted direct peer message client=%s attachments=%s chars=%s",
         client_route_id[-8:],

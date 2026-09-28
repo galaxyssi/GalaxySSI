@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentRemoteSilencePolicyTest {
+    @Test fun completedTaskWithoutDeliveredReplyEventuallyExpires() {
+        val completedAt = 1_000L
+        assertFalse(AgentRemoteSilencePolicy.terminalDeliveryExpired(completedAt, completedAt + 60_000L))
+        assertTrue(AgentRemoteSilencePolicy.terminalDeliveryExpired(
+            completedAt, completedAt + AgentRemoteSilencePolicy.TERMINAL_DELIVERY_LIMIT))
+    }
     @Test fun shortDisconnectDoesNotExpire() {
         assertFalse(AgentRemoteSilencePolicy.expired(1000, 0, 10, 240000))
     }

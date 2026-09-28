@@ -69,6 +69,11 @@ class PeerChatStore:
                 CREATE INDEX IF NOT EXISTS peer_messages_route_time
                   ON peer_messages(client_route_id, created_at_ms, message_id);
                 CREATE TABLE IF NOT EXISTS peer_message_tombstones (message_id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS peer_message_remote_tombstones (
+                    client_route_id TEXT NOT NULL,
+                    remote_message_id TEXT NOT NULL,
+                    PRIMARY KEY (client_route_id, remote_message_id)
+                );
                 """
             )
             connection.execute(
@@ -130,6 +135,11 @@ class PeerChatStore:
                         raise ValueError("peer_message_conflict")
                     return self._public(existing)
             if remote_message_id:
+                if connection.execute(
+                    "SELECT 1 FROM peer_message_remote_tombstones WHERE client_route_id=? AND remote_message_id=?",
+                    (stored_route_id, stored_remote_message_id),
+                ).fetchone():
+                    raise ValueError("peer_message_deleted")
                 existing = connection.execute(
                     """
                     SELECT * FROM peer_messages
@@ -193,6 +203,15 @@ class PeerChatStore:
             return connection.execute("SELECT 1 FROM peer_message_tombstones WHERE message_id=?",
                                       (str(message_id),)).fetchone() is not None
 
+    def remote_message_was_deleted(self, client_route_id: str, remote_message_id: str) -> bool:
+        if not client_route_id or not remote_message_id:
+            return False
+        with self._lock, closing(self._connect()) as connection:
+            return connection.execute(
+                "SELECT 1 FROM peer_message_remote_tombstones WHERE client_route_id=? AND remote_message_id=?",
+                (self._seal_route(client_route_id), self._seal_remote(remote_message_id)),
+            ).fetchone() is not None
+
     def mark_outbound_stored(self, client_route_id: str, message_id: str) -> dict | None:
         """Only call after validating a durable peer receipt against its outbox proof."""
         with self._lock, closing(self._connect()) as connection:
@@ -238,6 +257,45 @@ class PeerChatStore:
                 (str(message_id or ""),),
             ).fetchone()
         return self._public(row) if row is not None else None
+
+    def delete_message(self, client_route_id: str, message_id: str) -> bool:
+        route_id = str(client_route_id or "").strip()
+        local_id = str(message_id or "").strip()
+        if not route_id or not local_id:
+            raise ValueError("client_route_id and message_id are required")
+        stored_route_id = self._seal_route(route_id)
+        with self._lock, closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT remote_message_id,attachments_json FROM peer_messages WHERE message_id=? AND client_route_id=?",
+                (local_id, stored_route_id),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                return False
+            attachments = self._decrypt_attachments(row["attachments_json"])
+            connection.execute("INSERT OR IGNORE INTO peer_message_tombstones(message_id) VALUES (?)", (local_id,))
+            if row["remote_message_id"]:
+                connection.execute(
+                    "INSERT OR IGNORE INTO peer_message_remote_tombstones(client_route_id,remote_message_id) VALUES (?,?)",
+                    (stored_route_id, row["remote_message_id"]),
+                )
+            connection.execute("DELETE FROM peer_messages WHERE message_id=? AND client_route_id=?",
+                               (local_id, stored_route_id))
+            connection.commit()
+        route_directory = self._route_directory(route_id).resolve()
+        directories: set[Path] = set()
+        for attachment in attachments:
+            file_path = self._validated_attachment_path(attachment)
+            if file_path is not None and file_path.parent.parent == route_directory:
+                file_path.unlink(missing_ok=True)
+                directories.add(file_path.parent)
+        for directory in directories:
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+        return True
 
     def list_messages(self, client_route_id: str = "", limit: int = 500) -> list[dict]:
         bounded_limit = max(1, min(int(limit or 500), 2_000))

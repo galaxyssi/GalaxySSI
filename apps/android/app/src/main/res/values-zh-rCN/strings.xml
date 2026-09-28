@@ -963,6 +963,8 @@
     <string name="section_actions">操作</string>
     <string name="section_details">详情</string>
     <string name="message_delete_title">删除消息</string>
+    <string name="agent_desktop_result_unavailable">Desktop 已完成任务，但回复未能送达。请重试。</string>
+    <string name="agent_desktop_status_unavailable">Desktop 暂时无法连接，任务已停止。连接恢复后请重试。</string>
     <string name="peer_voice_transcribing">正在转写…</string>
     <string name="peer_voice_transcription_failed">这条语音暂时无法转写</string>
     <string name="delivery_status_sending">发送中</string>

@@ -284,6 +284,7 @@ internal class MessageAdapter(
     initialMessages: List<ChatMessage>,
     internal val onPlayVoiceMessage: ((Long) -> Unit)? = null,
     internal val onMessageActions: ((Int) -> Unit)? = null,
+    internal val onDeleteMessage: ((Long) -> Unit)? = null,
     internal val onOpenAttachment: ((PeerChatAttachment) -> Unit)? = null
 ) : RecyclerView.Adapter<MessageAdapter.VH>() {
 
@@ -361,7 +362,8 @@ internal class MessageAdapter(
         } else {
             holder.bubble.setOnClickListener(null)
             holder.bubble.attachPeerTextSelectionActions(
-                onMessageActions?.let { { showCurrentMessageActions(message.id) } }
+                onMessageActions?.let { { showCurrentMessageActions(message.id) } },
+                onDeleteMessage?.let { { it(message.id) } }
             )
         }
 
@@ -492,7 +494,8 @@ internal class MessageAdapter(
                 addView(com.galaxyssi.chat.ui.ParagraphSelectingTextView(context).apply {
                     text = transcript
                     attachPeerTextSelectionActions(
-                        onMessageActions?.let { { showCurrentMessageActions(message.id) } }
+                        onMessageActions?.let { { showCurrentMessageActions(message.id) } },
+                        onDeleteMessage?.let { { it(message.id) } }
                     )
                     textSize = 14f
                     maxWidth = holder.messageMaxWidth()

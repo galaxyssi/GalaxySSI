@@ -31,6 +31,7 @@ if (UI_SMOKE) {
 }
 
 let mainWindow;
+let peerContextTarget = null;
 const windowsTaskbarBadge = process.platform === "win32" ? new WindowsTaskbarBadge() : null;
 const conversationUnreadIndicator = createConversationUnreadIndicator({ getWindow: () => mainWindow, nativeImage,
   setNativeOverlay: windowsTaskbarBadge ? (window, count) => windowsTaskbarBadge.update(window, count) : undefined });
@@ -140,6 +141,27 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow.webContents.on("context-menu", (event, params) => {
+    const peer = peerContextTarget;
+    peerContextTarget = null;
+    if (peer && Date.now() - peer.at < 1_000 && Math.abs(peer.x - params.x) <= 2 &&
+        Math.abs(peer.y - params.y) <= 2 && !params.isEditable) {
+      event.preventDefault();
+      Menu.buildFromTemplate([
+        { label: peer.copyLabel, enabled: Boolean(params.selectionText || peer.copyText),
+          click: () => clipboard.writeText(String(params.selectionText || peer.copyText)) },
+        { label: peer.deleteLabel, click: async () => {
+          try {
+            const result = await deletePeerMessage(peer.routeId, peer.messageId);
+            if (result.deleted && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send("peer-message:deleted", peer.messageId);
+            }
+          } catch (error) {
+            if (!mainWindow.isDestroyed()) mainWindow.webContents.send("peer-message:delete-failed", String(error.message || error));
+          }
+        } }
+      ]).popup({ window: mainWindow });
+      return;
+    }
     const template = buildTextContextMenuTemplate(params);
     if (!template.length || mainWindow.isDestroyed()) return;
     event.preventDefault();
@@ -2199,6 +2221,12 @@ async function deletePeerConversation(clientRouteId) {
   });
 }
 
+async function deletePeerMessage(clientRouteId, messageId) {
+  await startBackend();
+  return fetchJson(`/api/peer/messages/${encodeURIComponent(messageId)}?client_route_id=${encodeURIComponent(clientRouteId)}`,
+    { method: "DELETE" });
+}
+
 async function fetchPeerAttachment(messageId, attachmentIndex) {
   await startBackend();
   const endpoint = `${BACKEND_ORIGIN}/api/peer/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentIndex)}`;
@@ -2904,6 +2932,19 @@ ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
   listPeerMessages(clientRouteId, limit));
 ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
+ipcMain.on("peer-messages:context-target", (_event, payload) => {
+  if (!mainWindow || _event.sender !== mainWindow.webContents || !payload?.routeId || !payload?.messageId) return;
+  peerContextTarget = {
+    routeId: String(payload?.routeId || ""),
+    messageId: String(payload?.messageId || ""),
+    copyText: String(payload?.copyText || ""),
+    copyLabel: String(payload?.copyLabel || "Copy").slice(0, 40),
+    deleteLabel: String(payload?.deleteLabel || "Delete Message").slice(0, 40),
+    x: Number(payload?.x),
+    y: Number(payload?.y),
+    at: Date.now()
+  };
+});
 ipcMain.handle("peer-voice:send", (_event, payload) => sendPeerVoice(payload));
 ipcMain.handle("peer-voice:load", (_event, messageId, attachmentIndex) =>
   loadPeerVoice(messageId, attachmentIndex));

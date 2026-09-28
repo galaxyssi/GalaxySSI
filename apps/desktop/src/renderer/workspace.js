@@ -1011,7 +1011,7 @@ function renderPeerConversation(force = false) {
     const timeDivider = shouldShowPeerTimeDivider(messages, index)
       ? `<div class="peer-time-divider"><time datetime="${new Date(createdAt).toISOString()}">${escapeHtml(peerTimeLabel(createdAt))}</time></div>`
       : "";
-    return `${timeDivider}<article class="peer-message-row ${message.direction}">
+    return `${timeDivider}<article class="peer-message-row ${message.direction}" data-peer-message-id="${escapeHtml(message.message_id)}">
     <div class="peer-message-bubble${voiceOnly ? " voice-only" : ""}${imageOnly ? " image-only" : ""}">
       ${message.content ? `<p>${escapeHtml(message.content)}</p>` : ""}
       ${renderPeerAttachments(message)}
@@ -5331,6 +5331,29 @@ function bindEvents() {
       await window.galaxyssi.openExternal(link.dataset.externalLink);
     }
   });
+  elements.messages.addEventListener("pointerdown", (event) => {
+    if (event.button !== 2 || !state.activePeerRouteId) return;
+    const row = event.target.closest(".peer-message-row[data-peer-message-id]");
+    if (!row) return;
+    const message = peerMessagesFor().find((item) => item.message_id === row.dataset.peerMessageId);
+    if (!message) return;
+    window.galaxyssi.preparePeerMessageContext({
+      routeId: state.activePeerRouteId,
+      messageId: message.message_id,
+      copyText: message.content || (message.attachments || []).map((file) => file.name).join("\n"),
+      copyLabel: t("Copy"),
+      deleteLabel: t("Delete Message"),
+      x: event.clientX,
+      y: event.clientY
+    });
+  });
+  window.galaxyssi.onPeerMessageDeleted?.((messageId) => {
+    state.peerMessages = state.peerMessages.filter((message) => message.message_id !== messageId);
+    state.renderingSignature = "";
+    renderHistory();
+    if (state.activePeerRouteId) renderPeerConversation(true);
+  });
+  window.galaxyssi.onPeerMessageDeleteFailed?.((message) => showToast(message));
   elements.attachments.addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-attachment]");
     if (!button) return;

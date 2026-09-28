@@ -103,6 +103,23 @@ class PeerTextSelectionDeviceTest {
         }
     }
 
+    @Test fun selectionOffersDirectDeleteWithoutLosingNativeCopy() = withActivity { activity ->
+        instrumentation.runOnMainSync {
+            val message = ChatMessage(7L, text, false, contact)
+            var deletedId = -1L
+            val adapter = MessageAdapter(listOf(message), onMessageActions = {},
+                onDeleteMessage = { deletedId = it })
+            val holder = adapter.onCreateViewHolder(FrameLayout(activity), 0)
+            adapter.onBindViewHolder(holder, 0)
+            val callback = requireNotNull(holder.bubble.customSelectionActionModeCallback)
+            val mode = requireNotNull(activity.startActionMode(callback))
+            val delete = requireNotNull(mode.menu.findItem(R.id.peer_selection_delete))
+            assertTrue(holder.bubble.isTextSelectable)
+            assertTrue(callback.onActionItemClicked(mode, delete))
+            assertEquals(7L, deletedId)
+        }
+    }
+
     private fun longPress(view: ParagraphSelectingTextView, offset: Int) {
         var x = 0f
         var y = 0f

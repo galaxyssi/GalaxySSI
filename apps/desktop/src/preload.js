@@ -38,6 +38,17 @@ contextBridge.exposeInMainWorld("galaxyssi", {
   listPeerMessages: (clientRouteId = "", limit = 500) =>
     ipcRenderer.invoke("peer-messages:list", clientRouteId, limit),
   sendPeerMessage: (payload) => ipcRenderer.invoke("peer-messages:send", payload),
+  preparePeerMessageContext: (payload) => ipcRenderer.send("peer-messages:context-target", payload),
+  onPeerMessageDeleted: (callback) => {
+    const listener = (_event, messageId) => callback(messageId);
+    ipcRenderer.on("peer-message:deleted", listener);
+    return () => ipcRenderer.removeListener("peer-message:deleted", listener);
+  },
+  onPeerMessageDeleteFailed: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on("peer-message:delete-failed", listener);
+    return () => ipcRenderer.removeListener("peer-message:delete-failed", listener);
+  },
   sendPeerVoice: (payload) => ipcRenderer.invoke("peer-voice:send", payload),
   deletePeerConversation: (clientRouteId) => ipcRenderer.invoke("peer-conversations:delete", clientRouteId),
   openPeerAttachment: (messageId, attachmentIndex) =>

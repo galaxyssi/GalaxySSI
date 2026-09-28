@@ -272,6 +272,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
+        onDeleteMessage = { messageId -> deleteMessageById(messageId) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.adapter = messageAdapter
     (messageList.layoutManager as? LinearLayoutManager)?.let { layout ->

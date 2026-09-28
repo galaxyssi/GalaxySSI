@@ -9,6 +9,21 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AgentRemoteSilenceDeviceTest {
+    @Test fun completedStatusDoesNotKeepAnUndeliveredReplyAliveForever() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = 973_205_001L
+        AndroidAgentRemoteSilence.retire(context, source)
+        try {
+            AndroidAgentRemoteSilence.terminalObserved(context, source, 1_000L)
+            AndroidAgentRemoteSilence.terminalObserved(context, source, 300_000L)
+            assertFalse(AndroidAgentRemoteSilence.expired(context, source, emptyMap(),
+                1_000L + AgentRemoteSilencePolicy.TERMINAL_DELIVERY_LIMIT - 1))
+            assertTrue(AndroidAgentRemoteSilence.expired(context, source, emptyMap(),
+                1_000L + AgentRemoteSilencePolicy.TERMINAL_DELIVERY_LIMIT))
+        } finally {
+            AndroidAgentRemoteSilence.retire(context, source)
+        }
+    }
     @Test fun probesAreCoalescedAndAuthenticatedResponseRenewsLease() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val source = Long.MAX_VALUE - 70
