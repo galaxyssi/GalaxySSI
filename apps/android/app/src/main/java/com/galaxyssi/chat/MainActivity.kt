@@ -1306,6 +1306,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             chatPage.visibility == View.VISIBLE
         }
         AppForegroundTracker.onActivityForeground(this, resumedConversationId)
+        ScreenAssistantSettings.reconcileSystemAccess(this)
         GalaxySSIAccessibilityService.refreshScreenAssistant()
         GalaxySSIAccessibilityService.retryPendingScreenAssistant()
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)

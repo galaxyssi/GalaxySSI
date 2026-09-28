@@ -71,7 +71,7 @@ class ScreenAssistantChatActivity : MainActivity() {
         (summary.parent as ViewGroup).removeView(summary)
         header.addView(summary, LinearLayout.LayoutParams(0, dp(48), 1f))
         listOf(R.id.agentSessionTitleTap, R.id.agentModelSelectionTap).forEach { id ->
-            findViewById<View>(id).let { target ->
+            summary.findViewById<View>(id).let { target ->
                 target.layoutParams = target.layoutParams.apply { height = dp(24) }
             }
         }

@@ -4,6 +4,9 @@
     <string name="screen_assistant_settings_summary">Analyze the screen without leaving another app</string>
     <string name="screen_assistant_disclosure">When you request analysis or a phone task, GalaxySSI reads the target App UI and uses screenshots only when needed. The selected home-screen Agent may process this content on a configured cloud model or paired computer. Phone operations run only for an explicit execution task. Recording, camera, microphone and location require their Android permissions. Opening another App alone does not start analysis or execution.</string>
     <string name="screen_assistant_enable">Floating screen assistant</string>
+    <string name="screen_assistant_enabled_summary">On. The floating button is shown at the screen edge.</string>
+    <string name="screen_assistant_disabled_summary">Off</string>
+    <string name="screen_assistant_privacy_note">Screen content is shared with the selected Agent only when you request analysis or a phone task. Android access approval is needed the first time.</string>
     <string name="screen_assistant_enable_summary">Show a draggable button while GalaxySSI is in the background</string>
     <string name="screen_assistant_permission">Screen access</string>
     <string name="screen_assistant_permission_summary">Enable GalaxySSI accessibility service in system settings</string>

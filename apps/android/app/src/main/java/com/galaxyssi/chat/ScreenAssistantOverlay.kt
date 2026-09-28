@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
+import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -14,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.Display
 import android.view.Gravity
@@ -53,6 +55,16 @@ internal object ScreenAssistantSettings {
         prefs(context).edit().putBoolean(ENABLED, value).apply()
         GalaxySSIAccessibilityService.refreshScreenAssistant()
     }
+    fun systemAccessEnabled(context: Context): Boolean {
+        if (GalaxySSIAccessibilityService.isActive()) return true
+        val component = ComponentName(context, GalaxySSIAccessibilityService::class.java)
+        val services = Settings.Secure.getString(context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        return services.split(':').any { ComponentName.unflattenFromString(it) == component }
+    }
+    fun reconcileSystemAccess(context: Context) {
+        if (enabled(context) && !systemAccessEnabled(context)) setEnabled(context, false)
+    }
     fun conversation(context: Context): String = prefs(context).getString(CONVERSATION, "").orEmpty()
     fun saveConversation(context: Context, id: String) = prefs(context).edit().putString(CONVERSATION, id).apply()
     fun lastTurn(context: Context): String = prefs(context).getString(LAST_TURN, "").orEmpty()
@@ -89,14 +101,9 @@ internal object ScreenAssistantVisibilityPolicy {
     fun shouldShow(
         enabled: Boolean,
         sdk: Int,
-        appForeground: Boolean,
         locked: Boolean,
-        capturing: Boolean,
-        foregroundPackage: String,
-        ownPackage: String,
-        assistantChatOpen: Boolean
-    ): Boolean = enabled && sdk >= Build.VERSION_CODES.R && !locked && !capturing &&
-        (assistantChatOpen || (!appForeground && foregroundPackage != ownPackage))
+        capturing: Boolean
+    ): Boolean = enabled && sdk >= Build.VERSION_CODES.R && !locked && !capturing
 }
 
 /** The accessibility overlay is small; the other app stays touchable outside its bounds. */
@@ -191,12 +198,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         val visible = ScreenAssistantVisibilityPolicy.shouldShow(
             enabled = ScreenAssistantSettings.enabled(service),
             sdk = Build.VERSION.SDK_INT,
-            appForeground = AppForegroundTracker.isForeground(),
             locked = keyguard.isKeyguardLocked,
-            capturing = capturePending,
-            foregroundPackage = foregroundPackage,
-            ownPackage = service.packageName,
-            assistantChatOpen = ScreenAssistantChatActivity.isOpen()
+            capturing = capturePending
         )
         if (visible) ensureBubble() else hideAll()
     }
@@ -323,6 +326,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         private var windowY = 0
         private var moved = false
         private var longPressed = false
+        private var dismissedMenuOnDown = false
         private val openMenu = Runnable { longPressed = true; showMenu() }
 
         override fun onTouch(view: View, event: MotionEvent): Boolean {
@@ -332,7 +336,9 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     startX = event.rawX; startY = event.rawY
                     windowX = layout.x; windowY = layout.y
                     moved = false; longPressed = false
-                    handler.postDelayed(openMenu, ViewConfiguration.getLongPressTimeout().toLong())
+                    dismissedMenuOnDown = menu != null
+                    if (dismissedMenuOnDown) dismissMenu()
+                    else handler.postDelayed(openMenu, ViewConfiguration.getLongPressTimeout().toLong())
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - startX
@@ -351,7 +357,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                 MotionEvent.ACTION_UP -> {
                     handler.removeCallbacks(openMenu)
                     if (moved) ScreenAssistantSettings.saveBubblePosition(service, layout.x, layout.y)
-                    else if (!longPressed) {
+                    else if (!longPressed && !dismissedMenuOnDown) {
                         if (panel != null) dismissPanel()
                         openChat(capture = !canStopAnalysis() && !stopping)
                     }

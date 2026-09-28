@@ -601,25 +601,12 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         })
         "general.appearance" -> startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS))
         "general.text_size" -> openExistingControlCenterPage { showTextSizeSettingsPage() }
-        "general.screen_assistant" -> openExistingControlCenterPage { showScreenAssistantSettingsPage() }
-        "screen_assistant.accessibility" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         "screen_assistant.toggle" -> {
-            if (ScreenAssistantSettings.enabled(this)) {
-                ScreenAssistantSettings.setEnabled(this, false)
-                showScreenAssistantSettingsPage()
-            } else {
-                android.app.AlertDialog.Builder(this)
-                    .setTitle(R.string.screen_assistant_enable)
-                    .setMessage(R.string.screen_assistant_disclosure)
-                    .setPositiveButton(R.string.screen_assistant_enable) { _, _ ->
-                        ScreenAssistantSettings.setEnabled(this, true)
-                        showScreenAssistantSettingsPage()
-                        if (!GalaxySSIAccessibilityService.isActive()) {
-                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        }
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+            val enabled = !ScreenAssistantSettings.enabled(this)
+            ScreenAssistantSettings.setEnabled(this, enabled)
+            showScreenAssistantSettingsPage()
+            if (enabled && !ScreenAssistantSettings.systemAccessEnabled(this)) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
         }
         "general.about" -> openExistingControlCenterPage { showAboutGalaxySSIPage() }
@@ -778,6 +765,7 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
             ControlCenterRoute.PRIVACY -> renderControlCenterPrivacyPage(destination.payload)
             ControlCenterRoute.PERMISSIONS_AUDIT -> renderControlCenterPermissionsPage()
             ControlCenterRoute.VOICE -> renderControlCenterVoicePage()
+            ControlCenterRoute.SCREEN_ASSISTANT -> showScreenAssistantSettingsPage()
             ControlCenterRoute.DATA_BACKUP -> renderControlCenterDataPage()
             ControlCenterRoute.GENERAL -> renderControlCenterGeneralPage()
             ControlCenterRoute.ADVANCED -> renderControlCenterAdvancedPage()

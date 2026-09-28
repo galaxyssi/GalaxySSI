@@ -3,7 +3,10 @@
     <string name="screen_assistant_title">屏幕助手</string>
     <string name="screen_assistant_settings_summary">不离开当前应用即可分析屏幕</string>
     <string name="screen_assistant_disclosure">屏幕访问服务可在本机读取界面；仅在你请求分析或执行手机任务后，才向首页所选 Agent 发送目标 App 的界面内容，必要时截图。Agent 通过已配置的云模型或配对电脑处理。只有明确的执行任务才允许操作手机；录屏、相机、麦克风和定位仍需 Android 授权。打开其他 App 不会自动开始分析或操作。</string>
-    <string name="screen_assistant_enable">开启悬浮屏幕助手</string>
+    <string name="screen_assistant_enable">悬浮屏幕助手</string>
+    <string name="screen_assistant_enabled_summary">已开启，悬浮图标显示在屏幕边缘</string>
+    <string name="screen_assistant_disabled_summary">已关闭</string>
+    <string name="screen_assistant_privacy_note">仅在你主动发起分析或手机任务时，才向首页所选 Agent 提供屏幕内容。首次开启需完成 Android 系统授权。</string>
     <string name="screen_assistant_enable_summary">GalaxySSI 在后台时显示可拖动入口</string>
     <string name="screen_assistant_permission">屏幕访问权限</string>
     <string name="screen_assistant_permission_summary">在系统设置中启用 GalaxySSI 无障碍服务</string>

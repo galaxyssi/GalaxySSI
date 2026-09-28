@@ -264,8 +264,6 @@ internal fun MainActivity.renderControlCenterGeneralPage() {
         )),
         ControlCenterSectionSpec("", listOf(
             myAgentRow(routeAction(ControlCenterRoute.NOTIFICATIONS_HUB), R.string.my_agent_notifications, R.drawable.ic_settings_notification),
-            myAgentRow("general.screen_assistant", R.string.screen_assistant_title, R.drawable.ic_agent_screen,
-                subtitle = getString(R.string.screen_assistant_settings_summary)),
             myAgentRow("general.about", R.string.settings_about_galaxyssi, R.drawable.ic_info_outline)
         ))
     )))
@@ -273,33 +271,21 @@ internal fun MainActivity.renderControlCenterGeneralPage() {
 
 internal fun MainActivity.showScreenAssistantSettingsPage() {
     val available = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+    val enabled = ScreenAssistantSettings.enabled(this)
     showControlCenterFeature(getString(R.string.screen_assistant_title), ControlCenterPageSpec(
-        banner = ControlCenterBannerSpec(
-            getString(R.string.screen_assistant_title),
-            getString(R.string.screen_assistant_disclosure),
-            R.drawable.ic_agent_screen,
-            ControlCenterTone.GREEN
-        ),
         sections = listOf(ControlCenterSectionSpec("", listOf(
             ControlCenterRowSpec(
                 actionId = "screen_assistant.toggle",
                 title = getString(R.string.screen_assistant_enable),
-                subtitle = getString(R.string.screen_assistant_enable_summary),
+                subtitle = getString(if (enabled) R.string.screen_assistant_enabled_summary
+                    else R.string.screen_assistant_disabled_summary),
                 iconRes = R.drawable.ic_agent_screen,
-                switchValue = ScreenAssistantSettings.enabled(this),
+                switchValue = enabled,
                 showChevron = false,
                 enabled = available
-            ),
-            ControlCenterRowSpec(
-                actionId = "screen_assistant.accessibility",
-                title = getString(R.string.screen_assistant_permission),
-                subtitle = getString(R.string.screen_assistant_permission_summary),
-                iconRes = R.drawable.ic_security_shield,
-                status = getString(if (GalaxySSIAccessibilityService.isActive())
-                    R.string.screen_assistant_connected else R.string.screen_assistant_not_connected)
             )
         ))),
-        footer = getString(R.string.screen_assistant_footer)
+        footer = getString(R.string.screen_assistant_privacy_note)
     ))
 }
 

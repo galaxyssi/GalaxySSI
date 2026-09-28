@@ -60,6 +60,7 @@ enum class ControlCenterRoute(
     PRIVACY("privacy", isAvailable = false),
     PERMISSIONS_AUDIT("permissions_audit", isAvailable = false),
     VOICE("voice"),
+    SCREEN_ASSISTANT("screen_assistant"),
     DATA_BACKUP("data_backup"),
     GENERAL("general"),
     ADVANCED("advanced"),
@@ -79,7 +80,7 @@ object ControlCenterHomeGrouping {
     private val routesByGroup = linkedMapOf(
         ControlCenterHomeGroup.COMMON to listOf(
             ControlCenterRoute.MODEL_HUB, ControlCenterRoute.DEVICE_HUB,
-            ControlCenterRoute.VOICE, ControlCenterRoute.MEMORY_HUB,
+            ControlCenterRoute.VOICE, ControlCenterRoute.SCREEN_ASSISTANT, ControlCenterRoute.MEMORY_HUB,
             ControlCenterRoute.PROACTIVE_HUB, ControlCenterRoute.SKILLS_HUB
         ),
         ControlCenterHomeGroup.SETTINGS to listOf(
