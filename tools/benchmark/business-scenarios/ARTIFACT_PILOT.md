@@ -171,6 +171,40 @@ is not green. Device regressions cover durable ingress, identity rejection,
 idempotence, result recovery and targeted stable-row invalidation.
 
 These repairs do not establish that every earlier timeout had the same cause.
+### Office retry and presentation follow-up
+
+Run `active3-artifacts-v2-20260929-office2` used Active3 v1.3.20 and Desktop
+v1.3.16, with a 600-second observation window and two turns per Office case.
+The instrumentation driver ended normally, but none of its four turns passed
+the strict business acceptance checks:
+
+- A002 create returned a terminal failure in 221,733 ms with no file. Missing
+  Python libraries and a Windows PowerShell script-encoding error consumed the
+  outer replan budget even though they were different failures.
+- A002 revise completed in 376,206 ms, delivering the XLSX plus three actual
+  Excel previews. All four saved download hashes match. The visible calculation
+  preview contains quantities 12/29/17, amounts 144/232/170 and total 546;
+  chart title/value overlap remains a layout defect. Preview download names lost
+  the requested version prefix, so the strict delivery result remains failed.
+- A003 create completed in 530,374 ms with the PPTX and four previews received.
+  The task timer stopped. Full content/fidelity and UI-button acceptance have
+  not been established; the strict filename check failed.
+- A003 revise returned `Requested phone attachment is unavailable` in 36,595 ms,
+  with no artifact and a non-stopped timer in the captured UI. This continuation
+  recovery defect is still open; do not count the terminal error as success.
+
+Desktop v1.3.17 preserves original image download filenames separately from
+friendly captions, omits raw command paths/bodies from both public progress
+formats, and lets Codex handle a first native command failure in the same turn.
+The native failure fingerprint includes the observed error, duplicate item
+events count once, and repeated identical failures still stop the task. Durable
+failure counts, no-progress watchdogs and other replan limits remain enabled.
+These changes passed 176 isolated Desktop regressions. Their real-model rerun
+is pending; the older observations above are not relabeled as repaired passes.
+Image-review guidance also requires source-region grounding and reopening the
+actual output to check corrections, retained content, uncertainty and undo state;
+this is not proof of improved grading accuracy.
+
 The 100-case / 1,100-turn real-model campaign remains incomplete. Long-form
 Office conversion, true human handwriting, ten-turn artifact revisions, and
 full UI open/save acceptance still require further real-device evidence.

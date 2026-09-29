@@ -69,7 +69,7 @@ class CodexConversationThreadTests(unittest.TestCase):
         command = events[0][1]
         reasoning = events[1][1]
         self.assertEqual("command", command["event_kind"])
-        self.assertEqual("python verify.py", command["event_detail"])
+        self.assertEqual("", command["event_detail"])
         self.assertEqual("reasoning", reasoning["event_kind"])
         self.assertEqual("", reasoning["event_detail"])
         self.assertNotIn("private internal reasoning", str(reasoning))
@@ -611,7 +611,20 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual("gpt-5.6-sol", turn["model"])
             self.assertEqual("xhigh", turn["effort"])
 
-    def test_same_tool_failure_replans_once_then_exhausts_the_budget(self):
+    def test_command_progress_does_not_publish_paths_or_script_bodies(self):
+        item = {"id": "private-command", "type": "commandExecution",
+                "command": r'C:\Users\someone\runtime\pwsh.exe -Command "python private_script.py"'}
+        for completed in (False, True):
+            progress = codex_app_server.CodexAppServer._tool_progress_event(item, completed)
+            legacy = codex_app_server.CodexAppServer._item_event(
+                item, "completed" if completed else "running",
+            )
+            self.assertEqual("", progress["detail"])
+            self.assertEqual("", legacy["event_detail"])
+            self.assertNotIn("private_script", str(progress) + str(legacy))
+            self.assertIn("private_script", codex_app_server.CodexAppServer._item_detail(item, "commandExecution"))
+
+    def test_same_native_failure_recovers_in_turn_then_exhausts_the_budget(self):
         server, run, _events = self._event_server()
         started = []
 
@@ -632,12 +645,47 @@ class CodexConversationThreadTests(unittest.TestCase):
         }
         with patch.object(codex_app_server.threading, "Thread", ImmediateThread):
             server._record_failed_item(run, failed_item)
-            server._record_failed_item(run, failed_item)
+            self.assertEqual([], started)
+            server._record_failed_item(run, dict(failed_item, id="command-retry"))
 
-        self.assertEqual(2, len(started))
-        self.assertEqual(server._attempt_replan, started[0][0])
-        self.assertEqual("tool_failure", started[0][2]["source"])
-        self.assertEqual(server._stop_repeated_failure, started[1][0])
+        self.assertEqual(1, len(started))
+        self.assertEqual(server._stop_repeated_failure, started[0][0])
+
+    def test_native_failure_uses_error_not_just_script_command(self):
+        server, run, _events = self._event_server()
+        with patch.object(codex_app_server.threading, "Thread") as thread:
+            for index, error in enumerate((
+                "ModuleNotFoundError: No module named 'xlsxwriter'",
+                "ModuleNotFoundError: No module named 'openpyxl'",
+                "SyntaxError: unexpected token in create_excel.ps1",
+                "TypeError: cannot convert string to double",
+            )):
+                server._record_failed_item(run, {
+                    "id": f"command-{index}", "type": "commandExecution",
+                    "status": "failed", "command": ["python", "create_excel.py"],
+                    "aggregatedOutput": error,
+                })
+        thread.assert_not_called()
+        self.assertEqual([1, 1, 1, 1], list(run.failure_counts.values()))
+
+    def test_duplicate_native_failure_is_counted_once(self):
+        server, run, _events = self._event_server()
+        failed = {"id": "command-1", "type": "commandExecution",
+                  "status": "failed", "command": ["python", "verify.py"]}
+        with patch.object(codex_app_server.threading, "Thread") as thread:
+            server._record_failed_item(run, failed)
+            server._record_failed_item(run, failed)
+        thread.assert_not_called()
+        self.assertEqual([1], list(run.failure_counts.values()))
+
+    def test_non_native_failure_still_requests_outer_replan(self):
+        server, run, _events = self._event_server()
+        with patch.object(codex_app_server.threading, "Thread") as thread:
+            server._record_failed_item(run, {
+                "id": "mcp-failure", "type": "mcpToolCall", "status": "failed",
+                "server": "test", "tool": "verify",
+            })
+        self.assertEqual(server._attempt_replan, thread.call_args.kwargs["target"])
 
     def test_dynamic_search_failure_stays_in_the_current_model_turn(self):
         server, run, _events = self._event_server()

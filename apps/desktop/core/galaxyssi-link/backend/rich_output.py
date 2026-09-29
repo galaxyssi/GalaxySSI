@@ -247,7 +247,7 @@ def _artifact_block(raw: dict, task_id: str, inline_artifacts: bool = True) -> d
     block = {
         "id": f"artifact-{original_digest[:24]}",
         "type": block_type,
-        "title": name,
+        "title": str(raw.get("display_title") or name)[:500],
         "text": f"{category} · {_human_size(original_size)}",
         "uri": f"galaxyssi-artifact://{safe_task}/{safe_path}",
         "mime_type": mime_type,

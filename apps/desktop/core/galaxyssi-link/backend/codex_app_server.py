@@ -168,6 +168,7 @@ class CodexRun:
     )
     stall_replans: int = 0
     failure_counts: dict[str, int] = field(default_factory=dict)
+    observed_failure_items: set[tuple[str, str]] = field(default_factory=set)
     replan_inflight: bool = False
     finished: bool = False
     prefers_chinese: bool = False
@@ -935,6 +936,8 @@ class CodexAppServer:
         )
 
     def _record_failed_item(self, run: CodexRun, item: dict) -> None:
+        if run.finished:
+            return
         raw_status = str(item.get("status") or "").lower()
         if "fail" not in raw_status and raw_status != "declined":
             return
@@ -945,18 +948,38 @@ class CodexAppServer:
             # Steering an additional replan here
             # duplicates context and delays the model's native recovery path.
             return
+        item_id = str(item.get("id") or "")
+        if item_id:
+            identity = (run.turn_id, item_id)
+            if identity in run.observed_failure_items:
+                return
+            run.observed_failure_items.add(identity)
         detail = self._item_detail(item, item_type) or raw_status or item_type
+        native_recovery = item_type == "commandExecution"
+        if native_recovery:
+            output = str(item.get("aggregatedOutput") or item.get("stderr") or "").strip()
+            # A repaired script can use the same command but fail differently.
+            # Put the error tail before the command so fingerprint truncation
+            # does not conflate distinct native recovery attempts.
+            if output:
+                detail = f"{output[-400:]}\nCommand: {detail}"
         signature = failure_fingerprint(item_type, detail)
         count = run.failure_counts.get(signature, 0) + 1
         run.failure_counts[signature] = count
         can_replan = count < run.execution_policy.max_same_failure_attempts
         if run.execution_harness is not None:
-            can_replan, count = run.execution_harness.record_failure(
-                item_type,
-                detail,
-            )
+            if native_recovery:
+                can_replan, count = run.execution_harness.record_failure(
+                    item_type, detail, native_recovery=True,
+                )
+            else:
+                can_replan, count = run.execution_harness.record_failure(item_type, detail)
             run.failure_counts[signature] = count
         if can_replan:
+            if native_recovery:
+                # Codex already receives command output. Let that turn repair
+                # it without an extra steer or consuming the stall-replan budget.
+                return
             threading.Thread(
                 target=self._attempt_replan,
                 args=(run, f"{item_type} failed: {detail}"),
@@ -2427,7 +2450,7 @@ class CodexAppServer:
             "dynamicToolCall": "tool",
             "webSearch": "network",
         }.get(item_type, "tool")
-        detail = cls._item_detail(item, item_type)
+        detail = "" if item_type == "commandExecution" else cls._item_detail(item, item_type)
         item_id = str(item.get("id") or "").strip()
         return {
             "event_id": f"codex:{item_id}" if item_id else "",
@@ -2504,7 +2527,7 @@ class CodexAppServer:
         metadata: dict[str, object] = {"source": "codex_app_server", "item_type": item_type}
         if item_type == "commandExecution":
             code, started_title, completed_title = "command", "Running command", "Ran command"
-            detail = cls._clean_visible_text(item.get("command"))
+            # Commands remain in Codex's execution receipt, not chat prose.
         elif item_type == "fileChange":
             code, started_title, completed_title = "file_change", "Updating files", "Updated files"
             metadata["count"] = len(item.get("changes") or [])

@@ -1302,7 +1302,9 @@ class AgentExecutionHarness:
             self.ensure_budget()
         return max(minimum, min(requested, remaining))
 
-    def record_failure(self, kind: str, message: str) -> tuple[bool, int]:
+    def record_failure(
+        self, kind: str, message: str, *, native_recovery: bool = False,
+    ) -> tuple[bool, int]:
         with self._state_lock:
             signature = failure_fingerprint(kind, message)
             count = self.checkpoint.failure_counts.get(signature, 0) + 1
@@ -1310,11 +1312,14 @@ class AgentExecutionHarness:
             self.checkpoint.last_failure = str(message or "")[:2_000]
             can_replan = (
                 count < self.policy.max_same_failure_attempts
-                and self.checkpoint.replans < self.policy.max_replans
+                and (native_recovery or self.checkpoint.replans < self.policy.max_replans)
             )
             if can_replan:
-                self.checkpoint.replans += 1
-                self.progress("replan")
+                if native_recovery:
+                    self.progress("observe")
+                else:
+                    self.checkpoint.replans += 1
+                    self.progress("replan")
             else:
                 self.progress("failed")
             return can_replan, count

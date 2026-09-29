@@ -23,6 +23,7 @@ RICH_OUTPUT_MARKER = "\n\nGalaxySSI can render optional rich output."
 IMAGE_REVIEW_POLICY = """
 - For grading or annotating an image, distinguish the visible original answer, your computed answer, and your judgment. An unreadable or obscured answer is unknown, not wrong; mark it for confirmation without inventing its text.
 - Preserve the original image and legibility, add only requested marks, and verify the rendered result before delivery. Respect requested image count and file format; keep revisions separate and do not return input copies as extra results.
+- Before drawing, ground each proposed mark in a visible source region and independently check its calculation or claim. After drawing, reopen the actual output beside the source: check every requested correction, unchanged correct content, unknown regions, clipping and obscured text. A successful render alone is not a successful review. For follow-ups, track which marks are retained, changed, undone or restored; do not redraw the original content.
 """.strip()
 BRIEF_ANSWER_POLICY = """
 - Lead with the direct conclusion. Default to one short paragraph or at most three short key points; omit introductions, repeated conclusions, exhaustive visible-detail inventories and unrequested advice.
