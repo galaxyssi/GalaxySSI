@@ -20,6 +20,21 @@ def timer_visibly_verified(turn: dict) -> bool:
                 and turn.get("timer_stopped"))
 
 
+def artifact_delivery_verified(expected: dict, assessment: dict) -> bool:
+    if not assessment.get("correct"):
+        return False
+    if expected.get("text_only"):
+        return assessment.get("unexpected_file_count") == 0
+    items = assessment.get("artifacts", [])
+    # Older collectors could mark partial preview delivery as correct. Recheck
+    # the recorded evidence without modifying the original observations.
+    fields = ("received", "container_valid", "version_name_matches",
+              "save_api_pass", "download_hash_matches")
+    return bool(assessment.get("all_artifacts_present") is True
+                and assessment.get("all_artifacts_verified") is True
+                and items and all(item.get(field) is True for item in items for field in fields))
+
+
 def summarize(plan: dict, reports: list[dict]) -> dict:
     planned = {case["id"]: case for case in plan["cases"]}
     seen = set()
@@ -50,6 +65,9 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         else:
             if not turn.get("assessment", {}).get("correct"):
                 reasons.append("answer_or_format")
+            expected = planned[case_id]["turns"][turn["index"]].get("artifact_expectations")
+            if expected is not None and not artifact_delivery_verified(expected, turn.get("assessment", {})):
+                reasons.append("artifact_delivery_incomplete_or_unverified")
             if not reply_visibly_verified(turn):
                 reasons.append("current_reply_visibility_unverified")
             if not timer_visibly_verified(turn):
@@ -66,7 +84,9 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
     def content_correct(case_id, turn):
         assessment = turn.get("assessment", {})
         if "artifact_expectations" in planned[case_id]["turns"][turn["index"]]:
-            return bool(assessment.get("correct") and assessment.get("content_verified"))
+            return bool(artifact_delivery_verified(
+                planned[case_id]["turns"][turn["index"]]["artifact_expectations"], assessment)
+                and assessment.get("content_verified"))
         return bool(assessment.get("correct"))
     return {
         "suite": plan["suite"], "catalog_sha256": plan["catalog_sha256"],
@@ -74,7 +94,9 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         "planned_turns": planned_turns, "observed_turns": len(observed), "completed_turns": len(complete),
         "unobserved_turns": planned_turns - len(observed),
         "correct_turns": sum(content_correct(c, t) for c, t in complete),
-        "artifact_delivery_checks_passed": sum(bool(t.get("assessment", {}).get("correct")) for _, t in artifact_turns),
+        "artifact_delivery_checks_passed": sum(artifact_delivery_verified(
+            planned[c]["turns"][t["index"]]["artifact_expectations"], t.get("assessment", {}))
+            for c, t in artifact_turns),
         "artifact_content_unverified": sum(not t.get("assessment", {}).get("content_verified") for _, t in artifact_turns),
         "rendered_turns": sum(reply_visibly_verified(t) for _, t in complete),
         "timer_stopped_turns": sum(timer_visibly_verified(t) for _, t in complete),

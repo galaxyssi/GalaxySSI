@@ -71,9 +71,46 @@ the final envelope at 1790682206920. Cross-device wall-clock skew prevents an
 exact network-only duration, but the evidence exposes a material post-completion
 delivery delay. Its cause remains unproven; do not blame a specific public broker.
 
-Continue turns 3..10 on this same checkpoint, preserving all previous versions.
-Investigate delayed delivery, collect source/preview provenance, and broaden to
-the remaining cases. No full A005 or whole-campaign completion claim is made.
+The same checkpoint subsequently completed turns 3..10 without resubmission.
+The original records and every old version remain unchanged.
+
+| Turn | Request | Phone terminal ms | Attachment presence wait ms | Observed result |
+| --- | --- | ---: | ---: | --- |
+| 3 | Add item D, 5 x 20 | 148496 | 593 | Native total 736, quantity 72 |
+| 4 | Audit unknown claims | 136890 | 31 | Owner, date and benefit remain pending |
+| 5 | Remove item C | 148420 | 29 | Native total 536, quantity 52 |
+| 6 | Restore original data | 147068 | 66066 | A/B/C restored, total 580, quantity 60 |
+| 7 | Add English summary | 145241 | 90441 | FAIL: first two declared PNG pages unavailable at deadline |
+| 8 | Check consistency | 110358 | 35666 | DOCX and three PNG pages delivered |
+| 9 | Export PDF, keep original format | 162294 | 38 | FAIL: three PNG pages and PDF delivered, DOCX missing |
+| 10 | Deliver current original, PDF and previews | 111016 | 33 | DOCX, PDF and three PNG pages delivered |
+
+All eleven timers stopped and target reply captures were focused/stable. Nine
+turns satisfy the recorded artifact delivery checks, not ten: checking only the
+files that arrived misses the missing required DOCX in turn 9. Reply p50 is
+147,068 ms and maximum 190,759 ms; eleven samples still do not establish p95.
+All model requests ended, but this is not a full successful case.
+
+Native DOCX text and tables through turn 8 and turn 10 were inspected; the
+restored values and the new English summary agree. PDF text in turns 9 and 10
+also retains the restored values and pending claims. The final three delivered
+PNG pages were visually inspected: Chinese text, table values and English
+summary are readable with no observed clipping. This does not establish faithful
+independent rendering of every version. The two missing turn-7 images cannot
+be visually accepted. Automatic `content_verified` remains false, and no source
+report is relabelled as a semantic pass.
+
+Desktop monotonic trace review narrows, but does not resolve, delayed delivery.
+For turn 1 all four wire messages were dispatched and broker-acknowledged within
+about 4.2 seconds of Desktop completion, followed by retries and much later phone
+receipts. Phone final consumption/rendering took about three seconds after
+ingress. This is not evidence of a 70-second UI render or a blocked Desktop
+send queue. Cross-device clocks and incomplete ingress tracing still prevent
+attributing the remainder to a specific broker or network segment.
+
+Investigate delayed delivery and missing editable-original delivery, collect
+source/preview provenance, and broaden to the remaining cases. The full frozen
+100-case / 1,100-turn campaign remains incomplete.
 
 Screenshots, native files and raw logs remain local and are not committed.
 
@@ -84,3 +121,19 @@ and 5 reply-identity guards. Cleanup rejects mismatched run/case/catalog,
 conversation, task, goal and non-timeout records. The opt-in cleanup test is not
 part of ordinary runs. The 18 host catalog/timing tests also pass. These checks
 validate test isolation, not model quality or the remaining business turns.
+
+## Complete attachment verification follow-up
+
+The collector now requires presence and verification of every declared attachment
+before delivery success, including version name, container, save and readback
+hash. The report independently rechecks those recorded fields; a legacy
+`correct=true` alone cannot establish success. Text-only turns retain their
+separate no-file check. Existing records are never rewritten.
+
+Turn 7 was already rejected by its format check, so this repair must not be
+claimed to have discovered a historical passing result in that particular turn.
+It closes a separate latent gap where missing FILE blocks or failed save checks
+could otherwise be masked by another valid file of the required extension.
+The rebuilt instrumentation APK passed eleven Active3 tests (three artifact
+format/completeness, five reply identity, three cleanup scope). Twenty-one host
+catalog/report/timing tests passed. No production app or version changed.

@@ -1,11 +1,57 @@
 import unittest
+import copy
 from collections import Counter
 
 from artifact_catalog import catalog
-from report import summarize
+from report import artifact_delivery_verified, summarize
 
 
 class ArtifactCatalogTest(unittest.TestCase):
+    @staticmethod
+    def delivery_assessment():
+        return {"correct": True, "content_verified": False, "requires_human_review": True,
+                "all_artifacts_present": True, "all_artifacts_verified": True,
+                "artifacts": [{field: True for field in ("received", "container_valid",
+                    "version_name_matches", "save_api_pass", "download_hash_matches")} for _ in range(4)]}
+
+    def test_partial_delivery_cannot_pass_using_a_legacy_correct_flag(self):
+        complete = self.delivery_assessment()
+        self.assertTrue(artifact_delivery_verified({}, complete))
+        for field in ("received", "container_valid", "version_name_matches",
+                      "save_api_pass", "download_hash_matches"):
+            for value in (False, None):
+                with self.subTest(field=field, value=value):
+                    partial = copy.deepcopy(complete)
+                    partial["artifacts"][1][field] = value
+                    self.assertFalse(artifact_delivery_verified({}, partial))
+        for field in ("all_artifacts_present", "all_artifacts_verified"):
+            partial = copy.deepcopy(complete)
+            partial[field] = False
+            self.assertFalse(artifact_delivery_verified({}, partial))
+            del partial[field]
+            self.assertFalse(artifact_delivery_verified({}, partial))
+        self.assertFalse(artifact_delivery_verified({}, {**complete, "artifacts": []}))
+
+    def test_partial_delivery_is_a_failure_even_when_content_was_reviewed(self):
+        plan = catalog()
+        assessment = self.delivery_assessment()
+        assessment.update(content_verified=True, all_artifacts_present=False)
+        report = {"case_id": "A005", "catalog_sha256": plan["catalog_sha256"], "turns": [
+            {"index": 7, "state": "completed", "elapsed_ms": 145241, "assessment": assessment}]}
+        original = copy.deepcopy(report)
+        result = summarize(plan, [report])
+        self.assertEqual(0, result["correct_turns"])
+        self.assertEqual(0, result["artifact_delivery_checks_passed"])
+        self.assertIn("artifact_delivery_incomplete_or_unverified", result["failures"][0]["reasons"])
+        self.assertEqual(original, report)
+
+    def test_text_only_does_not_require_files_but_rejects_unexpected_files(self):
+        expected = {"text_only": True}
+        self.assertTrue(artifact_delivery_verified(expected, {"correct": True, "unexpected_file_count": 0}))
+        self.assertFalse(artifact_delivery_verified(expected, {"correct": True, "unexpected_file_count": 1}))
+        self.assertFalse(artifact_delivery_verified(expected, {"correct": True}))
+        self.assertFalse(artifact_delivery_verified(expected, {"correct": False, "unexpected_file_count": 0}))
+
     def test_inventory_covers_one_hundred_deliverables(self):
         plan = catalog()
         self.assertEqual(100, len(plan["cases"]))
@@ -56,7 +102,7 @@ class ArtifactCatalogTest(unittest.TestCase):
         plan = catalog()
         report = {"case_id": "A001", "catalog_sha256": plan["catalog_sha256"], "turns": [
             {"index": 0, "state": "completed", "elapsed_ms": 1000,
-             "assessment": {"correct": True, "content_verified": False, "requires_human_review": True},
+             "assessment": self.delivery_assessment(),
              "rendered": True, "timer_stopped": True, "within_latency_target": True}]}
         result = summarize(plan, [report])
         self.assertEqual(0, result["correct_turns"])
@@ -70,7 +116,7 @@ class ArtifactCatalogTest(unittest.TestCase):
             {"index": 0, "state": "observation_timeout", "elapsed_ms": 600356,
              "late_receipt": {"correct": True, "visible": True}},
             {"index": 1, "state": "completed", "elapsed_ms": 151263,
-             "assessment": {"correct": True, "content_verified": False},
+             "assessment": self.delivery_assessment(),
              "driver_schema": 3, "visual_entry_id": "revision-reply", "rendered": True,
              "visual_window_focused": True, "visual_capture_stable": True,
              "timer_observed": True, "timer_stopped": True, "within_latency_target": True}]}

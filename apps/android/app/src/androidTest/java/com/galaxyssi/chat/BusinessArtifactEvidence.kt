@@ -91,15 +91,14 @@ internal object BusinessArtifactEvidence {
             images.isNotEmpty() && images.all { it.optInt("image_width") == dimensions.getInt(0) &&
                 it.optInt("image_height") == dimensions.getInt(1) }
         }
-        return JSONObject().put("correct", missing.isEmpty() &&
+        val allVerified = allArtifactsVerified(items)
+        return JSONObject().put("correct", allPresent && allVerified && missing.isEmpty() &&
                 (!expected.optBoolean("preview_required", true) || preview) && imageCountOk && imageFormatOk && dimensionsOk)
             .put("check_scope", "containers_delivery_and_save_only")
             .put("artifact_wait_ms", SystemClock.elapsedRealtime() - start)
             .put("artifact_presence_wait_ms", presenceWaitMs)
             .put("all_artifacts_present", allPresent)
-            .put("all_artifacts_verified", items.isNotEmpty() && items.all {
-                it.optBoolean("received") && it.optBoolean("container_valid") &&
-                    it.optBoolean("save_api_pass") && it.optBoolean("download_hash_matches") })
+            .put("all_artifacts_verified", allVerified)
             .put("save_verification_ms", saveVerificationMs)
             .put("artifacts", records).put("missing_extensions", JSONArray(missing)).put("preview_received", preview)
             .put("image_count", imageCount).put("image_count_ok", imageCountOk)
@@ -107,6 +106,12 @@ internal object BusinessArtifactEvidence {
             .put("content_verified", false).put("preview_fidelity_verified", false)
             .put("ui_open_save_verified", false).put("requires_human_review", true)
     }
+
+    internal fun allArtifactsVerified(items: List<JSONObject>): Boolean =
+        items.isNotEmpty() && items.all { item ->
+            listOf("received", "container_valid", "version_name_matches", "save_api_pass",
+                "download_hash_matches").all { item.optBoolean(it) }
+        }
 
     internal fun imageFormatsMatch(expected: JSONObject, items: List<JSONObject>): Boolean {
         val allowed = expected.optJSONArray("image_extensions")?.let { list ->
