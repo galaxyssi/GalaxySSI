@@ -517,6 +517,12 @@ class CodexConversationThreadTests(unittest.TestCase):
                 "the specific missing fact, date or unresolved conflict",
                 "Do not duplicate that delivery work with shell downloads",
                 "Explicit editing, visual analysis and file-creation requests still use the required tools",
+                "review every visible item",
+                "the observed original answer, and the independently computed answer separate",
+                "Never infer the written answer from the expected result",
+                "reopen the actual exported image",
+                "every confirmed error has the intended correction",
+                "honor text-only or single-image delivery constraints",
             ):
                 self.assertIn(instruction, thread_start["developerInstructions"])
             self.assertIn(
@@ -1180,6 +1186,9 @@ class CodexConversationThreadTests(unittest.TestCase):
 
             self.assertEqual(2, first["resumed"])
             self.assertEqual(0, second["resumed"])
+            for method, params, _ in calls:
+                self.assertEqual("thread/resume", method)
+                self.assertEqual(codex_app_server.CODEX_TASK_POLICY.strip(), params["developerInstructions"])
             self.assertEqual(
                 ["thread-3", "thread-2"],
                 [params["threadId"] for method, params, _ in calls if method == "thread/resume"],
@@ -1497,6 +1506,7 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertTrue(run.finished)
             self.assertEqual("Recovered final answer", run.final_text)
             self.assertEqual(["thread/resume"], [method for method, _, _ in calls])
+            self.assertEqual(codex_app_server.CODEX_TASK_POLICY.strip(), calls[0][1]["developerInstructions"])
             self.assertEqual({"web_search": "live"}, calls[0][1]["config"])
             self.assertEqual("completed", events[-1][1]["status"])
             self.assertEqual("Recovered final answer", events[-1][1]["result"])

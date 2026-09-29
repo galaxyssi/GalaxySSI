@@ -215,6 +215,10 @@ deliveries, grading errors, Office delivery/preview gaps, and the format-oracle 
 image request does not specify a format and verifies original image dimensions.
 Do not replace a frozen run's catalog to make its historical assertions pass.
 
+See `HANDWRITING_ACCEPTANCE.md` for the A044 eleven-turn baseline, preserved
+first-answer grading failure, and the generic item-review/resume-policy repair.
+Successful artifact delivery is recorded separately from grading correctness.
+
 Run Desktop unit tests through the existing isolated launcher, never by importing
 the default task manager against a running user's state directory:
 
