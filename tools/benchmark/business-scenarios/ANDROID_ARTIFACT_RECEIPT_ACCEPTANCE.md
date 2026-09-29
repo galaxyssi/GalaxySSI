@@ -63,3 +63,26 @@ remain incomplete.
   The corrected fixture redirects both. Its three synthetic leftover artifacts
   were identified by exact fixture IDs and removed, not by clearing user storage.
   The successful rerun above is separate from that failed attempt.
+
+## Real-model A008 follow-up
+
+Run `active3-warehouse-image-20260930-v1326` ran frozen A008 turns 0 and 1
+through the actual composer, remote Codex and existing Desktop 1.3.23 process.
+Both replies settled and their timers stopped. Instrumentation finished in
+347.664 seconds; that runner success does not mean the business checks passed.
+
+| Turn | Reply terminal | Observed total | Result |
+| --- | ---: | ---: | --- |
+| 0: create PNG | 116.178 s | 231.575 s | Artifact audit has no records; stable reply capture was not verified |
+| 1: revise B quantity | 81.387 s | 112.564 s | Actual 1200x1600 PNG received; saved-download hash matched; stable capture verified |
+
+A separately captured live screen showed turn 0's thumbnail. Its delivery ledger
+later recorded a stored receipt. The original audit remains failed/unverified;
+investigate reply-row identity and delivery timing before calling it pure packet
+loss or rewriting that observation as a success.
+
+The received turn 1 PNG was visually reviewed. Arithmetic and supplied values are
+correct, but the response and image invented the currency unit "yuan" from an
+unspecified monetary unit. Its source-bound content review is therefore a fail,
+separate from the passing file delivery check. A grounded generation policy and
+new-run regression are still required. Nine further A008 turns remain untested.
