@@ -1,7 +1,6 @@
 package com.galaxyssi.chat
 
 import android.graphics.BitmapFactory
-import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -29,29 +28,35 @@ class BusinessScenarioFixtureDeviceTest {
     }
 
     @Test fun renderSyntheticImagesWithoutCallingModels() {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("business_render") == "true")
-        assertEquals("SM-S9480", Build.MODEL)
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("business_render") == "true")
+        requireBusinessDevice(args.getString("business_device_model", "SM-S9480"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = File(context.getExternalFilesDir(null), "business-eval")
         val plan = JSONObject(File(root, "plan.json").readText())
         val directory = File(root, "fixtures-preview").apply { mkdirs() }
         val results = JSONArray()
         val cases = plan.getJSONArray("cases")
+        assertEquals(100, cases.length())
+        var expectedImages = 0
         for (i in 0 until cases.length()) {
             val case = cases.getJSONObject(i)
+            expectedImages += case.getJSONArray("fixtures").length()
             for (index in 0 until case.getJSONArray("fixtures").length()) {
-                BusinessScenarioFixtures.image(directory, case, index)
-                val file = File(directory, case.getString("id") + "-$index.png")
+                val attachment = BusinessScenarioFixtures.image(directory, case, index)
+                val file = File(requireNotNull(attachment.uri.path))
+                assertEquals(case.getString("id") + "-input-$index.png", file.name)
                 val image = requireNotNull(BitmapFactory.decodeFile(file.path))
                 try {
                     assertEquals(1200, image.width)
-                    assertEquals(1000, image.height)
+                    assertEquals(if (case.optString("fixture_style") == "annotation_sheet") 1600 else 1000, image.height)
                     assertTrue(file.length() > 1000)
                     results.put(JSONObject().put("case", case.getString("id")).put("file", file.name).put("bytes", file.length()))
                 } finally { image.recycle() }
             }
         }
-        assertEquals(100, results.length())
+        assertTrue(expectedImages > 0)
+        assertEquals(expectedImages, results.length())
         File(directory, "images.json").writeText(JSONObject().put("catalog_sha256", plan.getString("catalog_sha256"))
             .put("images", results).toString(2))
     }

@@ -150,7 +150,7 @@ class BusinessScenarioLiveDeviceTest {
                 val fixtures = if (index == 0) (0 until case.getJSONArray("fixtures").length())
                     .map { BusinessScenarioFixtures.image(directory, case, it) } else emptyList()
                 val result = JSONObject().put("index", index).put("kind", turn.getString("kind"))
-                    .put("driver_schema", 3).put("capture_method", "target_reply_and_process_rows_three_matching_frames")
+                    .put("driver_schema", 4).put("capture_method", "target_reply_and_process_rows_three_matching_frames")
                     .put("state", "prepared").put("prompt", turn.getString("prompt"))
                     .put("input_images", fixtures.size).put("started_at", System.currentTimeMillis())
                     .put("sample_before", sample())
@@ -216,12 +216,14 @@ class BusinessScenarioLiveDeviceTest {
                 if (completed) {
                     val final = requireNotNull(reply)
                     result.put("task_id", final.taskId).put("reply", final.text).put("rich_output", final.richOutputJson)
+                    val assessmentStartedMs = SystemClock.elapsedRealtime() - start
                     val assessment = if (turn.has("artifact_expectations")) {
                         BusinessArtifactEvidence.collect(context, turn.getJSONObject("artifact_expectations"),
                             File(directory, "$caseId-$index-artifacts")) {
                             store.list(conversation).lastOrNull { it.id == final.id }
                         }
                     } else BusinessScenarioFixtures.assess(turn, final.text)
+                    val assessmentFinishedMs = SystemClock.elapsedRealtime() - start
                     result.put("assessment", assessment)
                     val rendered = await(15000) {
                         var visible = false
@@ -244,6 +246,9 @@ class BusinessScenarioLiveDeviceTest {
                         .put("timer_observed", timer?.targetVisible == true && timer.focused)
                         .put("timer_stopped", timerStopped(window, timer))
                         .put("within_latency_target", result.getLong("elapsed_ms") <= case.getLong("latency_target_ms"))
+                    result.put("phase_timing", businessPhaseTiming(result.getLong("elapsed_ms"),
+                        assessmentStartedMs, assessmentFinishedMs, SystemClock.elapsedRealtime() - start,
+                        turn.has("artifact_expectations"), assessment))
                 } else {
                     fatal = true
                     report.put("status", "blocked_on_turn")
