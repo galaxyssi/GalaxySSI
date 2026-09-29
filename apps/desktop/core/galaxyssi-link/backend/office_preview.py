@@ -46,9 +46,12 @@ def _validated_source(root: Path, raw: str) -> Path:
             raise ValueError("Office container exceeds preview expansion limits")
         if _MAIN[source.suffix.lower()] not in names or "[Content_Types].xml" not in names:
             raise ValueError("Invalid Office container")
+        from office_chart_safety import passive_chart_workbooks
+        passive_workbooks = passive_chart_workbooks(archive, source.suffix.lower())
         for name in names:
             lowered = name.lower()
-            if any(x in lowered for x in ("vbaproject", "/activex/", "/embeddings/")) or lowered == "xl/connections.xml":
+            if (any(x in lowered for x in ("vbaproject", "/activex/")) or lowered == "xl/connections.xml"
+                    or ("/embeddings/" in lowered and name not in passive_workbooks)):
                 raise ValueError("Active or connected Office content is not supported by the preview worker")
             if lowered.endswith(".rels"):
                 if archive.getinfo(name).file_size > 2 * 1024 * 1024:
