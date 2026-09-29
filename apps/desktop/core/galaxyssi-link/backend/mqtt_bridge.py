@@ -6799,8 +6799,10 @@ decrypt_backoff = DecryptBackoff()
 
 
 def _process_message(mqttc, userdata, msg):
+    phase = "admission"
     try:
         if isinstance(msg, _StoredInboxMessage):
+            phase = "stored_dispatch"
             _process_stored_message(mqttc, msg)
             return
         handler_started_ns = timing_now_ns()
@@ -6809,6 +6811,7 @@ def _process_message(mqttc, userdata, msg):
         if len(msg.payload) > MAX_MQTT_WIRE_BYTES:
             log.warning("MQTT message rejected: envelope exceeds size limit")
             return
+        phase = "route_lookup"
         resolved = _resolve_inbound_topic(str(msg.topic or ""))
         if resolved is None:
             log.warning("MQTT message rejected: unknown opaque mailbox")
@@ -6825,6 +6828,7 @@ def _process_message(mqttc, userdata, msg):
             if claim.get("pairing_token") != token:
                 log.warning("MQTT pairing ciphertext rejected: token binding mismatch")
                 return
+            phase = "pairing_commit"
             handle_pairing_claim(mqttc, claim, ingress_broker=getattr(msg, "broker_id", ""))
             return
         paired_client = route_data
@@ -6838,6 +6842,7 @@ def _process_message(mqttc, userdata, msg):
             log.warning("MQTT opaque packet rejected client=%s error=%s", client_route_id[-8:], exc)
             return
         wire_open_finished_ns = timing_now_ns()
+        phase = "peer_control"
         if isinstance(mqttc, MqttPoolClient) and mqttc.peer_routes.handle_verified(
                 client_route_id, wire_payload, broker_id=getattr(msg, "broker_id", ""),
                 generation=getattr(msg, "broker_generation", 0), authenticated_identity=(
@@ -6845,6 +6850,7 @@ def _process_message(mqttc, userdata, msg):
                     str(paired_client.get("identity_fingerprint") or ""), str(paired_client.get("link_secret") or ""))):
             return
         if isinstance(mqttc, MqttPoolClient):
+            phase = "delivery_receipt"
             from mqtt_delivery_envelope import stored_receipt
             handled, accepted = mqttc.peer_routes.accept_delivery_receipt(
                 client_route_id, wire_payload, broker_id=getattr(msg, "broker_id", ""),
@@ -6860,6 +6866,7 @@ def _process_message(mqttc, userdata, msg):
                     transport_timing.received(client_route_id, message_id)
                     outbound_retry_wake_event.set()
                 return
+        phase = "chunk_recovery"
         delivery_frame = None
         chunk_transfer = None
         chunk_query = None
@@ -6881,12 +6888,14 @@ def _process_message(mqttc, userdata, msg):
                 return
             chunk_transfer = (scope, chunk_query.transfer)
             wire_payload = json.loads(assembled)
+        phase = "delivery_frame"
         from mqtt_delivery_envelope import FIELD, parse_verified_frame
         if FIELD in wire_payload:
             delivery_frame = parse_verified_frame(wire_payload,
                 sender=str(paired_client.get("identity_fingerprint") or ""),
                 receiver=str(paired_client.get("local_identity_fingerprint") or ""), ingress_broker=getattr(msg, "broker_id", ""))
         if is_mqtt_chunk(wire_payload):
+            phase = "chunk_assembly"
             local_id = desktop_id()
             source = str(wire_payload.get("from") or "")
             target = str(wire_payload.get("to") or "")
@@ -6926,6 +6935,7 @@ def _process_message(mqttc, userdata, msg):
                 len(assembled.encode("utf-8")),
                 client_route_id[-8:],
             )
+        phase = "signal_validation"
         wire_payload["_client_route_id"] = client_route_id
         if wire_payload.get("scheme") != "signal":
             log.warning("Rejected unencrypted MQTT message: scheme != signal")
@@ -6945,12 +6955,14 @@ def _process_message(mqttc, userdata, msg):
             from mqtt_ingress_admission import failure_key as decrypt_failure_key
             failure_key = decrypt_failure_key(paired_client, ciphertext_digest)
             replay_lookup_started_ns = timing_now_ns()
+            phase = "replay_lookup"
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             decrypt_started_at = int(time.time() * 1000)
             decrypt_started_ns = timing_now_ns()
             from signal_receive_compaction import completed_envelope, CompletedReceiveReplay
             from mqtt_completed_receive import acknowledge_completed
             try:
+                phase = "signal_decrypt_or_replay"
                 if replay_message_id:
                     completed = completed_envelope(client_route_id, replay_message_id)
                     if completed is not None:
@@ -6984,6 +6996,7 @@ def _process_message(mqttc, userdata, msg):
                     message_id=ciphertext_digest, detail_code=getattr(exc, "diagnostic_code", exc.__class__.__name__),
                 )
                 raise
+            phase = "application_validation"
             validate_envelope(application_envelope)
             if (application_envelope["source_id"] != paired_client["signal_name"]
                     or application_envelope["target_id"] != desktop_id()):
@@ -6993,6 +7006,7 @@ def _process_message(mqttc, userdata, msg):
             if delivery_frame is not None and delivery_frame.message.message_id != message_id:
                 raise ValueError("Delivery attempt does not match the authenticated application message")
             try:
+                phase = "content_binding"
                 bind_message_content(client_route_id, message_id, application_envelope)
             except InboundContentConflict:
                 link_transport_diagnostics().record(
@@ -7014,6 +7028,7 @@ def _process_message(mqttc, userdata, msg):
                 ("desktop_signal_decrypt_finished", signal_decrypt_finished_ns),
                 ("desktop_decrypt_started", decrypt_started_ns),
             ]
+            phase = "client_touch"
             touch_client(client_route_id)
             trace = _delivery_trace(
                 payload,
@@ -7022,13 +7037,20 @@ def _process_message(mqttc, userdata, msg):
                 _trace_event("desktop_decrypted", "GalaxySSI Link"),
             )
 
+        phase = "application_store_dispatch"
         _deliver_stored_application(mqttc, paired_client, wire_payload, application_envelope, payload, trace,
                                     timings=timings, ciphertext_digest=ciphertext_digest, delivery_frame=delivery_frame,
                                     chunk_transfer=chunk_transfer)
+        phase = "chunk_receipt"
         _publish_chunk_state(mqttc, paired_client, chunk_query, msg)
     except Exception as e:
-        log.error("MQTT message handling error (%s:%s)", getattr(e, "diagnostic_code", type(e).__name__),
-                  getattr(e, "diagnostic_reason", "unspecified"))
+        # OS exception text can contain private filenames; log only numeric error codes.
+        errno = getattr(e, "errno", None)
+        winerror = getattr(e, "winerror", None)
+        log.error("MQTT message handling error (%s:%s) phase=%s errno=%s winerror=%s",
+                  getattr(e, "diagnostic_code", type(e).__name__),
+                  getattr(e, "diagnostic_reason", "unspecified"), phase,
+                  errno if type(errno) is int else None, winerror if type(winerror) is int else None)
         return False
 
 
