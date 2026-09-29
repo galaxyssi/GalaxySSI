@@ -3,12 +3,42 @@ import os
 import tempfile
 from unittest.mock import patch
 
-from agent_execution_harness import AgentTaskIntent, AgentTaskKind, classify_task_intent, execution_policy_for, finalize_task_artifacts
-from artifact_request_policy import keep_office_outputs_separate, office_artifact_requested, positive_term
+from agent_execution_harness import AgentTaskIntent, AgentTaskKind, classify_task_intent, execution_contract, execution_policy_for, finalize_task_artifacts
+from artifact_request_policy import keep_office_outputs_separate, office_artifact_requested, pdf_artifact_requested, positive_term
 from task_workspace import task_workspace
 
 
 class ArtifactRequestPolicyTests(unittest.TestCase):
+    def test_pdf_export_requires_artifact_delivery_not_research(self):
+        prompts = (
+            "Generate a downloadable PDF and PNG previews, preserve the editable original.",
+            "Convert this document to PDF",
+            "Export the current content as PDF",
+            "\u57fa\u4e8e\u5f53\u524d\u5185\u5bb9\uff0c\u518d\u751f\u6210\u4e00\u4efd\u53ef\u4e0b\u8f7d\u7684PDF\u53ca\u5176PNG\u9884\u89c8\uff0c\u4fdd\u7559\u539f\u683c\u5f0f\uff0c\u4e0d\u8981\u53ea\u6539\u6587\u4ef6\u6269\u5c55\u540d\u3002",
+            "\u8f6c\u6210PDF\u6587\u4ef6",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertTrue(pdf_artifact_requested(prompt))
+                policy = execution_policy_for(prompt)
+                self.assertEqual(AgentTaskKind.ARTIFACT, policy.task_kind)
+                self.assertTrue(policy.requires_artifact)
+                contract = execution_contract(policy)
+                self.assertIn("current native source alongside the export", contract)
+                self.assertIn("PDF-only or preview-only", contract)
+                self.assertIn("reconcile all requested formats", contract)
+
+    def test_pdf_negation_boundaries_and_read_only_are_preserved(self):
+        for prompt in ("Do not generate a PDF", "\u4e0d\u8981\u751f\u6210PDF", "Explain PDF",
+                       "Generate pdfkit code", "Create a notpdf report"):
+            self.assertFalse(pdf_artifact_requested(prompt), prompt)
+        self.assertTrue(pdf_artifact_requested("Do not generate Word; export PDF instead."))
+        policy = execution_policy_for("Generate PDF", request_kind="screen_analysis")
+        self.assertEqual(AgentTaskKind.CHAT, policy.task_kind)
+        self.assertFalse(policy.requires_artifact)
+        policy = execution_policy_for("Generate PDF", requested_execution_mode="plan_only")
+        self.assertFalse(policy.requires_artifact)
+
     def test_office_deliverables_are_artifacts_not_code_or_research(self):
         for format_name in ("DOCX", "XLSX", "PPTX"):
             with self.subTest(format=format_name):

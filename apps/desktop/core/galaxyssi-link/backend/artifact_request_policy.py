@@ -21,6 +21,12 @@ _OFFICE_REQUEST = re.compile(
     r"(?<![a-z0-9_])(?:docx|word|xlsx|excel|pptx|ppt|powerpoint)(?![a-z0-9_])",
     re.IGNORECASE,
 )
+_PDF_REQUEST = re.compile(
+    r"(?:\b(?:create|generate|export|produce|convert)\b|\u751f\u6210|\u5236\u4f5c|\u521b\u5efa|\u5bfc\u51fa|\u8f6c\u6362|\u8f6c\u6210)"
+    r"[^\u3002\uff01\uff1f.!?;\uff1b\n]{0,60}?"
+    r"(?<![a-z0-9_])pdf(?![a-z0-9_])",
+    re.IGNORECASE,
+)
 
 
 def positive_term(text: str, term: str) -> bool:
@@ -44,6 +50,11 @@ def positive_term(text: str, term: str) -> bool:
 def office_artifact_requested(text: str) -> bool:
     return any(not _NEGATIVE_PREFIX.search(text[max(0, m.start() - 80):m.start()])
                for m in _OFFICE_REQUEST.finditer(text))
+
+
+def pdf_artifact_requested(text: str) -> bool:
+    return any(not _NEGATIVE_PREFIX.search(text[max(0, m.start() - 80):m.start()])
+               for m in _PDF_REQUEST.finditer(text))
 
 
 def keep_office_outputs_separate(prompt: str, artifacts: list[dict]) -> bool:

@@ -923,7 +923,7 @@ def execution_policy_for(
     requested_task_budget: Mapping[str, Any] | None = None,
     request_kind: str = "",
 ) -> AgentExecutionPolicy:
-    from artifact_request_policy import office_artifact_requested, positive_term
+    from artifact_request_policy import office_artifact_requested, pdf_artifact_requested, positive_term
 
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
@@ -938,6 +938,7 @@ def execution_policy_for(
     has_artifact_request = (
         _contains_any(normalized, _ARTIFACT_TERMS)
         or has_office_request
+        or pdf_artifact_requested(str(prompt or ""))
         or video_creation_requested(normalized)
     )
     has_research = any(positive_term(str(prompt or ""), term) for term in _RESEARCH_TERMS)
@@ -1047,6 +1048,8 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         "- Put every final deliverable in the task workspace outputs directory. "
         "A single deliverable stays as its native file; a directory or multi-file project must be packaged as ZIP. "
         "Office documents and their previews are separate deliverables, not a code project; keep them individually accessible unless ZIP is requested. "
+        "When an export request also retains the original or editable format, deliver that current native source alongside the export and previews; keeping it only in the workspace is not delivery. "
+        "For explicit PDF-only or preview-only requests, do not attach an unrequested editable source. Before finalizing, reconcile all requested formats against the actual files and final attachment links; report any missing deliverable instead of claiming complete delivery. "
         "Render previews from the saved originals. Prefer galaxyssi_office_preview when available; it preserves native files and returns actual PDF/PNG pages. Check available converters (including Microsoft Office on Windows and LibreOffice) before claiming none is available; text extraction is not visual verification."
         if policy.requires_artifact else
         "- Only create files when they are useful to the requested result."
