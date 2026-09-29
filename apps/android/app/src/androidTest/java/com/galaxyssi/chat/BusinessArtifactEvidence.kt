@@ -74,14 +74,12 @@ internal object BusinessArtifactEvidence {
                 it.optBoolean("version_name_matches") && it.optBoolean("download_hash_matches") }
         }
         val preview = items.any { it.optString("extension") in setOf("png", "jpg", "jpeg") &&
+            it.optBoolean("container_valid") &&
             it.optInt("image_width") >= 128 && it.optInt("image_height") >= 128 &&
             it.optBoolean("version_name_matches") && it.optBoolean("download_hash_matches") }
         val imageCount = items.count { it.optString("extension") in setOf("png", "jpg", "jpeg") }
         val imageCountOk = !expected.has("max_image_count") || imageCount <= expected.getInt("max_image_count")
-        val imageExtensions = expected.optJSONArray("image_extensions")
-        val imageFormatOk = imageExtensions == null || (0 until imageExtensions.length()).any { index ->
-            items.any { it.optString("extension") == imageExtensions.getString(index) && it.optBoolean("container_valid") }
-        }
+        val imageFormatOk = imageFormatsMatch(expected, items)
         val dimensions = expected.optJSONArray("expected_dimensions")
         val dimensionsOk = dimensions == null || items.filter { it.has("image_width") }.let { images ->
             images.isNotEmpty() && images.all { it.optInt("image_width") == dimensions.getInt(0) &&
@@ -98,7 +96,22 @@ internal object BusinessArtifactEvidence {
             .put("ui_open_save_verified", false).put("requires_human_review", true)
     }
 
-    private fun validContainer(file: File, extension: String): Boolean = runCatching {
+    internal fun imageFormatsMatch(expected: JSONObject, items: List<JSONObject>): Boolean {
+        val allowed = expected.optJSONArray("image_extensions")?.let { list ->
+            (0 until list.length()).map(list::getString).toSet()
+        }
+        val images = items.filter { it.optString("type") == AgentRichBlockType.IMAGE.name ||
+            it.optString("extension") in setOf("png", "jpg", "jpeg") }
+        // Frozen Office prompts explicitly request PNG previews, even though the
+        // original catalog did not repeat that constraint as image_extensions.
+        return images.all { item ->
+            item.optBoolean("container_valid") &&
+                (!expected.optBoolean("editable_office") || item.optString("extension") == "png") &&
+                (allowed == null || item.optString("extension") in allowed)
+        } && (allowed == null || images.isNotEmpty())
+    }
+
+    internal fun validContainer(file: File, extension: String): Boolean = runCatching {
         when (extension) {
             "docx", "xlsx", "pptx" -> ZipFile(file).use { zip ->
                 val main = mapOf("docx" to "word/document.xml", "xlsx" to "xl/workbook.xml", "pptx" to "ppt/presentation.xml")
@@ -110,7 +123,8 @@ internal object BusinessArtifactEvidence {
             }
             "png", "jpg", "jpeg" -> BitmapFactory.Options().apply { inJustDecodeBounds = true }.let {
                 BitmapFactory.decodeFile(file.path, it)
-                it.outWidth > 0 && it.outHeight > 0
+                val expectedMime = if (extension == "png") "image/png" else "image/jpeg"
+                it.outWidth > 0 && it.outHeight > 0 && it.outMimeType == expectedMime
             }
             else -> false
         }

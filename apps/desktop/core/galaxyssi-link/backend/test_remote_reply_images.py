@@ -276,7 +276,7 @@ class RemoteReplyImagesTest(unittest.TestCase):
                                  ("avif", "image/avif"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg")):
                 self.assertEqual(mime, _guess_mime_type("image." + suffix))
         self.assertEqual("image/webp", artifacts[0].mime_type)
-        self.assertEqual(output.getvalue(), artifacts[0].transport_bytes)
+        self.assertEqual(output.getvalue(), b"".join(data for _, data in artifacts[0].chunks()))
 
 
 class ImageTransportTest(unittest.TestCase):
