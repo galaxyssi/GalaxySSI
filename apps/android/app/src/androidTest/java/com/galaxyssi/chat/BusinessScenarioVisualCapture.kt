@@ -10,12 +10,14 @@ import android.widget.TextView
 import java.io.File
 
 internal data class BusinessVisualCapture(
-    val stable: Boolean, val focused: Boolean, val text: String, val targetVisible: Boolean
+    val stable: Boolean, val focused: Boolean, val text: String, val targetVisible: Boolean,
+    val entryId: String = ""
 )
 
 /** Sample only the output region for stability; the status-bar clock and composer cursor may keep changing. */
 internal fun captureBusinessOutput(
-    instrumentation: Instrumentation, window: MainActivity, file: File, entryId: String
+    instrumentation: Instrumentation, window: MainActivity, file: File, entryId: String,
+    resolveEntryId: (() -> String?)? = null
 ): BusinessVisualCapture {
     val deadline = SystemClock.elapsedRealtime() + 8_000L
     var previous: Bitmap? = null
@@ -23,6 +25,7 @@ internal fun captureBusinessOutput(
     var focused = false
     var text = ""
     var targetVisible = false
+    var currentEntryId = entryId
     instrumentation.runOnMainSync {
         window.agentTranscriptAutoFollow = false
         val position = window.agentTranscriptAdapter.indexOfEntry(entryId)
@@ -31,20 +34,33 @@ internal fun captureBusinessOutput(
     try {
         do {
             val bounds = Rect()
+            var identityChanged = false
             instrumentation.runOnMainSync {
+                val resolved = if (resolveEntryId == null) entryId else resolveEntryId().orEmpty()
+                if (resolved != currentEntryId) {
+                    currentEntryId = resolved
+                    identityChanged = true
+                    val position = window.agentTranscriptAdapter.indexOfEntry(currentEntryId)
+                    if (position >= 0) window.agentOutputLayout.scrollToPositionWithOffset(position, 0)
+                }
                 focused = !window.isFinishing && !window.isDestroyed && window.hasWindowFocus()
                 targetVisible = false
                 text = ""
                 if (focused) {
                     window.agentOutputList.getGlobalVisibleRect(bounds)
-                    val position = window.agentTranscriptAdapter.indexOfEntry(entryId)
+                    val position = window.agentTranscriptAdapter.indexOfEntry(currentEntryId)
                     val holder = window.agentOutputList.findViewHolderForAdapterPosition(position)
                     val visible = Rect()
                     targetVisible = position >= 0 && holder != null &&
-                        window.agentTranscriptAdapter.entryIdAt(holder.adapterPosition) == entryId &&
+                        currentEntryId.isNotBlank() && window.agentTranscriptAdapter.entryIdAt(holder.adapterPosition) == currentEntryId &&
                         holder.itemView.getGlobalVisibleRect(visible) && visible.intersect(bounds)
                     if (targetVisible) text = businessVisibleText(requireNotNull(holder).itemView).joinToString("\n")
                 }
+            }
+            if (identityChanged) {
+                previous?.recycle()
+                previous = null
+                matchingFrames = 0
             }
             if (!focused || !targetVisible || bounds.isEmpty) {
                 previous?.recycle()
@@ -67,12 +83,16 @@ internal fun captureBusinessOutput(
                 previous = region
                 if (matchingFrames >= 2 || SystemClock.elapsedRealtime() >= deadline) {
                     file.outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    return BusinessVisualCapture(matchingFrames >= 2, focused, text, targetVisible)
+                    return BusinessVisualCapture(matchingFrames >= 2, focused, text, targetVisible, currentEntryId)
                 }
             } finally { screenshot.recycle() }
             SystemClock.sleep(250)
         } while (SystemClock.elapsedRealtime() < deadline)
-        return BusinessVisualCapture(false, focused, text, targetVisible)
+        instrumentation.uiAutomation.takeScreenshot()?.let { screenshot ->
+            try { file.outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            finally { screenshot.recycle() }
+        }
+        return BusinessVisualCapture(false, focused, text, targetVisible, currentEntryId)
     } finally { previous?.recycle() }
 }
 
