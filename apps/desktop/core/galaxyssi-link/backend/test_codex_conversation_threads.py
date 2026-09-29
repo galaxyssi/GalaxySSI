@@ -832,6 +832,36 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertNotIn("_galaxyssi_evidence_pack", responses[0][1])
         self.assertEqual("cited evidence", responses[0][1]["contentItems"][0]["text"])
 
+    def test_office_preview_is_scoped_to_active_run_and_not_search_telemetry(self):
+        server, run, events = self._event_server()
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append(result)
+        result = {"success": True, "contentItems": [{"type": "inputText", "text": "rendered"}]}
+        with patch.object(codex_app_server, "execute_office_preview", return_value=result) as execute:
+            server._execute_dynamic_tool_call(run.task_id, {"id": "preview"},
+                {"tool": codex_app_server.OFFICE_PREVIEW_TOOL, "arguments": {"path": "outputs/report.docx"}}, {})
+        execute.assert_called_once_with({"path": "outputs/report.docx"}, run.task_id)
+        self.assertTrue(responses[0]["success"])
+        self.assertEqual("office_preview_completed", events[-1][1]["trace_stage"])
+        self.assertFalse(run.research_observed)
+
+    def test_office_preview_rejects_finished_and_read_only_runs(self):
+        for mode in ("finished", "screen_analysis", "plan_only"):
+            with self.subTest(mode=mode):
+                server, run, _ = self._event_server()
+                run.finished = mode == "finished"
+                if mode == "screen_analysis":
+                    run.execution_policy = execution_policy_for("Create Word", request_kind="screen_analysis")
+                elif mode == "plan_only":
+                    run.execution_policy = execution_policy_for("plan only: Create Word")
+                responses = []
+                server._write_server_response = lambda request_id, result: responses.append(result)
+                with patch.object(codex_app_server, "execute_office_preview") as execute:
+                    server._execute_dynamic_tool_call(run.task_id, {"id": "preview"},
+                        {"tool": codex_app_server.OFFICE_PREVIEW_TOOL, "arguments": {"path": "outputs/report.docx"}}, {})
+                execute.assert_not_called()
+                self.assertFalse(responses[0]["success"])
+
     def test_missing_citation_starts_one_repair_turn_and_valid_answer_completes(self):
         server, run, events = self._event_server()
         pack = build_evidence_pack(

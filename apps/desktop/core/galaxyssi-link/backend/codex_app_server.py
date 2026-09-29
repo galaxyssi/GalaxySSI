@@ -43,6 +43,7 @@ from web_evidence_pack import (
 from research_quality import assess_answer, quality_repair_prompt, research_quality_prompt, research_stage
 from research_audit import ResearchEvidenceAudit, TOOL as RESEARCH_AUDIT_TOOL, tool_spec as research_audit_tool_spec
 from research_trace import search_receipt
+from office_preview import TOOL as OFFICE_PREVIEW_TOOL, tool_spec as office_preview_tool_spec, execute as execute_office_preview
 
 
 log = logging.getLogger("galaxyssi.codex")
@@ -209,7 +210,7 @@ class CodexAppServer:
         self._loaded_thread_access_sequence = 0
         self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
-        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec()]
+        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec(), office_preview_tool_spec()]
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -1994,6 +1995,12 @@ class CodexAppServer:
                 self._write_server_response(message.get("id"), {"success": audit.get("status") == "recorded",
                     "contentItems": [{"type": "inputText", "text": json.dumps(audit, ensure_ascii=False)}]})
                 return
+            elif tool_name == OFFICE_PREVIEW_TOOL:
+                with self._lock:
+                    run = self._runs.get(task_id)
+                    if run is None or run.finished or "screen_analysis" in run.execution_policy.task_intent_signals or run.execution_policy.execution_mode.value == "plan_only":
+                        raise ValueError("This task is not allowed to create Office previews")
+                result = execute_office_preview(arguments if isinstance(arguments, Mapping) else {}, task_id)
             elif tool_name == CODEX_DYNAMIC_SEARCH_TOOL:
                 result = execute_codex_dynamic_search(
                     arguments if isinstance(arguments, Mapping) else {},
@@ -2041,6 +2048,15 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
+        if tool_name == OFFICE_PREVIEW_TOOL:
+            with self._lock:
+                active_run = self._runs.get(task_id)
+                if active_run is None or active_run.finished:
+                    return
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Office preview rendered" if result.get("success") else "Office preview unavailable",
+                "trace_stage": "office_preview_completed", "telemetry_only": True})
+            return
         direct_fetch = tool_name == CODEX_DYNAMIC_FETCH_TOOL
         direct_urls = arguments.get("urls") if isinstance(arguments, Mapping) else []
         self.on_event(task_id, {

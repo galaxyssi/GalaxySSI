@@ -5334,6 +5334,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 deliverable_output_files,
                 task_id,
                 inline_artifacts=False,
+                artifact_selection_content=raw_result,
             )
         add_task_trace(
             "agent_replied",
@@ -9232,6 +9233,7 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
         output_files,
         task_id,
         inline_artifacts=False,
+        artifact_selection_content=raw_result,
     )
     trace = _desktop_trace(
         _trace_event("desktop_task_result_replay", task_id),

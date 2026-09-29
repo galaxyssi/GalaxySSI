@@ -87,6 +87,69 @@ These changes have unit coverage, not a new successful Office live run.
 
 ## Repairs and Validation
 
+### Office Renderer Follow-Up
+
+Desktop v1.3.16 adds the task-scoped `galaxyssi_office_preview` dynamic tool.
+It converts the saved Office original to PDF and PNG through an installed
+LibreOffice or Windows Microsoft Office renderer, and reports source hashes,
+page coverage and failures to the model. It does not reconstruct a look-alike
+preview from extracted text. Poppler must be available on PATH. No dependency
+is silently installed. Only one Office conversion runs at a time; existing
+interactive Windows Office processes cause a busy failure rather than takeover.
+Macros, embedded active content, external resources and ambiguous ZIP entries
+are rejected before conversion. This is input hardening, not a sandbox for
+arbitrary hostile documents.
+
+A real previously generated DOCX rendered into two readable pages with its
+original hash unchanged. A native Excel fixture also rendered; the earlier
+model-generated XLSX was rejected by Excel itself. These component checks are
+not business quality passes, and the LibreOffice branch remains unverified on
+a real installation.
+
+The Active3 run `active3-artifacts-v2-20260929-word11` then returned real Word
+page previews. Its first two turns completed in 270,828 and 229,281 ms, but
+neither delivered the DOCX card. Desktop retained the original in `output_files`:
+the rich-output builder selected artifacts again after visible-text cleanup
+had removed the original's local link. The repair selects from raw model output
+while displaying sanitized text, for both normal delivery and result replay.
+DOCX/XLSX/PPTX-plus-preview regression cases preserve both intended artifacts
+and still exclude an unlinked draft. The running device campaign predates that
+repair's deployment and must not be described as a verified delivery fix.
+
+The third turn hit the 360-second observation timeout after an unisolated host
+test imported the default task manager while Desktop was running. Desktop logs
+recorded task storage revision conflicts and the task changed to restart
+recovery despite the Desktop process not restarting. This is a contaminated
+test run, not evidence of a model-quality failure. The checkpoint was retained;
+Desktop was subsequently restarted with only that synthetic task active. Its
+existing recovery path stopped it as failed after repeated recovery attempts;
+it was not resubmitted under the same test identity. Future host regressions
+use `tools/dev/test-run-kernel.py` to isolate state before module imports.
+
+Run `active3-artifacts-v2-20260929-word-delivery-fix` then completed A001 in
+229,748 ms on Android v1.3.19 and the repaired Desktop v1.3.16. The phone received
+the native DOCX and two page images, with a stopped timer and stable capture.
+The screenshot shows the DOCX download card and inline preview. OOXML inspection
+confirmed editable paragraphs/tables, three sections, amounts 132/168/160 and
+total 460, with missing fields marked pending.
+
+Its strict report remains failed: preview labels lose the requested version
+prefix, and save read-back selected earlier files because `saveToDownloads`
+returned the requested filename instead of the name assigned by Android after
+a collision. The actual files named `... (1).docx` and `... (2).jpg` were inspected
+separately; all three download hashes match the received originals. Android
+v1.3.20 reads the assigned display name from the returned MediaStore URI, with a
+dedicated two-save regression. This does not rewrite the older report or prove
+full UI-button, ten-follow-up, or 100-case acceptance.
+
+The Office/rich-output follow-up passed 201 isolated Desktop Python regressions
+and 11 host catalog/report tests. Expected mocked failure logs are not live
+task failures; tests must not use the user's state directories.
+Android v1.3.20 (1064) app and instrumentation APKs compiled and were installed
+in place on Active3. All three `AgentDesktopArtifactStoreTest` device tests
+passed, including repeated-save actual filenames, separate download identities,
+read-back hashes, chunk reassembly and rejection of mismatched artifact versions.
+
 1. Exclude negated code-delivery instructions and quoted business fields from
    phone-development routing, while retaining affirmative programming requests.
 2. Persist authenticated final replies before Activity presentation can acknowledge

@@ -60,6 +60,7 @@ def build_rich_output(
     task_id: str = "",
     *,
     inline_artifacts: bool = True,
+    artifact_selection_content: str | None = None,
 ) -> tuple[str, dict | None]:
     """Return accessible fallback text and an optional validated rich document."""
     source = str(content or "")
@@ -87,7 +88,10 @@ def build_rich_output(
     from task_workspace import select_reply_artifacts
     blocks.extend(
         _artifact_block(item, task_id, inline_artifacts)
-        for item in (select_reply_artifacts(source, output_files, task_id) if output_files else [])
+        for item in (select_reply_artifacts(
+            source if artifact_selection_content is None else artifact_selection_content,
+            output_files, task_id,
+        ) if output_files else [])
         if isinstance(item, dict) and not is_input_artifact(item)
     )
     if clean_content and not _contains_equivalent_text(blocks, clean_content):

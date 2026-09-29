@@ -210,3 +210,15 @@ deliveries, grading errors, Office delivery/preview gaps, and the format-oracle 
 100-case artifact campaign is not complete. Revision 2 accepts PNG/JPEG when the
 image request does not specify a format and verifies original image dimensions.
 Do not replace a frozen run's catalog to make its historical assertions pass.
+
+Run Desktop unit tests through the existing isolated launcher, never by importing
+the default task manager against a running user's state directory:
+
+```powershell
+python tools/dev/test-run-kernel.py test_office_preview test_office_preview_worker test_rich_output test_artifact_request_policy test_codex_conversation_threads
+```
+
+An accidental unisolated import can mark live tasks as restart-recovery records
+and fence the real worker's writes. Such a run is environment-contaminated, not
+a valid measurement of model quality. Preserve its checkpoint and resolve the
+same scoped task; do not silently resend it under the same run ID.

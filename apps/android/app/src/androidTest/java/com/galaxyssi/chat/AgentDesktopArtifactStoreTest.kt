@@ -118,6 +118,44 @@ class AgentDesktopArtifactStoreTest {
         }
     }
 
+    @Test
+    fun repeatedDownloadReturnsActualSystemRenamedFile() {
+        val name = "download-regression-${java.util.UUID.randomUUID()}.bin"
+        val bytes = "same filename does not mean same download".toByteArray()
+        val digest = sha256(bytes)
+        val uri = "galaxyssi-artifact://test-${java.util.UUID.randomUUID()}/outputs/$name"
+        val id = sha256("$uri\u0000$digest".toByteArray())
+        fixtures[uri] = id
+        AgentDesktopArtifactStore.ingest(context,
+            payload(id, uri, digest, bytes.size, 0, 1, bytes).put("name", name))
+        val block = AgentRichBlock(id = "duplicate-save", type = AgentRichBlockType.FILE,
+            uri = uri, mimeType = "application/octet-stream",
+            metadata = mapOf("artifact_id" to id, "sha256" to digest))
+        val destinations = mutableListOf<android.net.Uri>()
+        val names = mutableListOf<String>()
+        try {
+            repeat(2) {
+                val reported = AgentDesktopArtifactStore.saveToDownloads(context, block).getOrThrow()
+                val metadata = java.io.File(context.filesDir,
+                    "desktop-artifacts-v2/metadata/${sha256(uri.toByteArray())}.json")
+                val destination = android.net.Uri.parse(JSONObject(metadata.readText()).getString("saved_uri"))
+                destinations += destination
+                val actual = context.contentResolver.query(destination,
+                    arrayOf(android.provider.MediaStore.Downloads.DISPLAY_NAME), null, null, null)!!.use {
+                    assertTrue(it.moveToFirst())
+                    it.getString(0)
+                }
+                names += actual
+                assertEquals(actual, reported.substringAfterLast('/'))
+                assertEquals(digest, context.contentResolver.openInputStream(destination)!!.use { sha256(it.readBytes()) })
+            }
+            assertEquals(2, destinations.distinct().size)
+            assertEquals(2, names.distinct().size)
+        } finally {
+            destinations.forEach { context.contentResolver.delete(it, null, null) }
+        }
+    }
+
     private fun payload(
         artifactId: String,
         artifactUri: String,

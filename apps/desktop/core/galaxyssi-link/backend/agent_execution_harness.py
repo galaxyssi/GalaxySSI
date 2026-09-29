@@ -1045,7 +1045,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         "- Put every final deliverable in the task workspace outputs directory. "
         "A single deliverable stays as its native file; a directory or multi-file project must be packaged as ZIP. "
         "Office documents and their previews are separate deliverables, not a code project; keep them individually accessible unless ZIP is requested. "
-        "Render previews from the saved originals. Check available converters (including Microsoft Office on Windows and LibreOffice) before claiming none is available; text extraction is not visual verification."
+        "Render previews from the saved originals. Prefer galaxyssi_office_preview when available; it preserves native files and returns actual PDF/PNG pages. Check available converters (including Microsoft Office on Windows and LibreOffice) before claiming none is available; text extraction is not visual verification."
         if policy.requires_artifact else
         "- Only create files when they are useful to the requested result."
     )
