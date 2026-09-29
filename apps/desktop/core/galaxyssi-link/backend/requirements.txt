@@ -13,3 +13,7 @@ agent-client-protocol>=0.11,<1
 edge-tts>=7.2.7,<8
 tzdata>=2025.2
 markdown-it-py>=4.0,<5
+python-docx>=1.2,<2
+python-pptx>=1.0.2,<2
+openpyxl>=3.1.5,<4
+XlsxWriter>=3.2,<4
