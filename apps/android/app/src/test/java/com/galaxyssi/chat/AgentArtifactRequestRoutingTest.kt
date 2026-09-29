@@ -44,4 +44,32 @@ class AgentArtifactRequestRoutingTest {
         assertTrue(AgentCodeKeywordPolicy.contains("不要输出代码。运行代码来验证结果", "代码"))
         assertTrue(AgentCodeKeywordPolicy.contains("not only write code but also run tests", "code"))
     }
+
+    @Test fun businessWarehouseAndProjectDocumentsAreNotSoftwareDevelopment() {
+        listOf(
+            "请制作仓库盘点作业规范。生成可编辑的 DOCX，包含三个章节和原始数据表。不能只给本机路径、代码或制作方法。",
+            "生成仓库库存 XLSX，核算数量和金额，项目包括甲和乙。",
+            "创建项目进度 PPTX，负责人待确认。",
+            "Create a project status DOCX with three chapters. Do not return code."
+        ).forEach { goal ->
+            assertFalse(goal, AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
+            assertFalse(goal, AgentCapability.TASK_EXECUTION in AgentTaskRequirementAnalyzer.analyze(goal).capabilities)
+            assertFalse(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+        }
+    }
+
+    @Test fun officeDeliveryDoesNotHideExplicitSoftwareWork() {
+        listOf(
+            "克隆仓库并生成 DOCX 代码审查报告",
+            "编译这个项目，然后生成 DOCX 测试报告",
+            "Write a Python script to generate an XLSX file",
+            "Clone the project and create a DOCX report",
+            "生成 DOCX，不能只给代码。编写并运行 Python 脚本。",
+            "不要生成 DOCX，创建项目",
+            "Do not create a DOCX. Create a project."
+        ).forEach { goal ->
+            assertTrue(goal, AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
+            assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+        }
+    }
 }

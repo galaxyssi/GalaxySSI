@@ -216,11 +216,12 @@ class BusinessScenarioLiveDeviceTest {
                 if (completed) {
                     val final = requireNotNull(reply)
                     result.put("task_id", final.taskId).put("reply", final.text).put("rich_output", final.richOutputJson)
+                        .put("initial_entry_id", final.id).put("reply_identity_schema", 1)
                     val assessmentStartedMs = SystemClock.elapsedRealtime() - start
                     val assessment = if (turn.has("artifact_expectations")) {
                         BusinessArtifactEvidence.collect(context, turn.getJSONObject("artifact_expectations"),
                             File(directory, "$caseId-$index-artifacts")) {
-                            store.list(conversation).lastOrNull { it.id == final.id }
+                            resolveBusinessReply(store.list(conversation), final)
                         }
                     } else BusinessScenarioFixtures.assess(turn, final.text)
                     val assessmentFinishedMs = SystemClock.elapsedRealtime() - start
@@ -228,20 +229,20 @@ class BusinessScenarioLiveDeviceTest {
                     val rendered = await(15000) {
                         var visible = false
                         instrumentation.runOnMainSync {
-                            visible = window.agentTranscriptWindow.entries.any {
-                                it.turnId == turnId && it.role == AgentTranscriptRole.ASSISTANT && it.text == final.text
-                            }
+                            visible = resolveBusinessReply(window.agentTranscriptWindow.entries, final) != null
                         }
                         visible
                     }
                     result.put("transcript_loaded", rendered)
-                    val capture = captureBusinessOutput(instrumentation, window, File(directory, "$caseId-$index.png"), final.id)
+                    val capture = captureBusinessOutput(instrumentation, window, File(directory, "$caseId-$index.png"), final.id) {
+                        resolveBusinessReply(window.agentTranscriptWindow.entries, final)?.id
+                    }
                     val timer = captureProcess(window, turnId, File(directory, "$caseId-$index-process.png"))
                     result.put("rendered", rendered && capture.targetVisible && capture.focused)
                     result.put("visible_text", capture.text)
                         .put("visual_capture_stable", capture.stable)
                         .put("visual_window_focused", capture.focused)
-                        .put("visual_entry_id", final.id)
+                        .put("visual_entry_id", capture.entryId)
                         .put("process_visible_text", timer?.text.orEmpty())
                         .put("timer_observed", timer?.targetVisible == true && timer.focused)
                         .put("timer_stopped", timerStopped(window, timer))
@@ -373,9 +374,14 @@ class BusinessScenarioLiveDeviceTest {
                 val turn = turns.getJSONObject(index)
                 if (turn.optString("state") != "completed") continue
                 if (selectedTurn != null && index != selectedTurn) continue
-                val reply = store.list(report.getString("conversation")).last {
-                    it.turnId == turn.getString("turn_id") && it.role == AgentTranscriptRole.ASSISTANT &&
-                        it.text == turn.getString("reply") && !AgentTranscriptRenderPolicy.isLiveStream(it)
+                val reference = AgentTranscriptEntry(
+                    id = turn.optString("initial_entry_id", turn.optString("visual_entry_id")),
+                    role = AgentTranscriptRole.ASSISTANT, text = turn.getString("reply"), timestampMillis = 0L,
+                    conversationId = report.getString("conversation"), turnId = turn.getString("turn_id"),
+                    taskId = turn.getString("task_id"), richOutputJson = turn.optString("rich_output")
+                )
+                val reply = requireNotNull(resolveBusinessReply(store.list(reference.conversationId), reference)) {
+                    "Recorded turn/task/content identity does not match a current final reply"
                 }
                 check(await(15000) {
                     var loaded = false
@@ -388,6 +394,7 @@ class BusinessScenarioLiveDeviceTest {
                 val capture = captureBusinessOutput(instrumentation, window, File(auditDirectory, "$index.png"), reply.id)
                 val timer = captureProcess(window, reply.turnId, File(auditDirectory, "$index-process.png"))
                 audit.put(JSONObject().put("index", index).put("entry_id", reply.id)
+                    .put("original_entry_id", reference.id).put("task_id", reply.taskId).put("reply_identity_schema", 1)
                     .put("target_visible", capture.targetVisible).put("stable", capture.stable)
                     .put("focused", capture.focused).put("visible_text", capture.text)
                     .put("process_visible_text", timer?.text.orEmpty()).put("timer_stopped", timerStopped(window, timer)))

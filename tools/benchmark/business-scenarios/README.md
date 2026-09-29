@@ -219,6 +219,14 @@ See `HANDWRITING_ACCEPTANCE.md` for the A044 eleven-turn baseline, preserved
 first-answer grading failure, and the generic item-review/resume-policy repair.
 Successful artifact delivery is recorded separately from grading correctness.
 
+See `REPLY_IDENTITY_ACCEPTANCE.md` for strict hydrated-reply matching and a
+read-only audit of the retained turn-9 capture failure. Later successful audits
+do not replace original observations.
+
+See `WAREHOUSE_ROUTING_ACCEPTANCE.md` for A005's retained 15-minute failure and
+the ambiguous warehouse/project routing repair. Its repaired live acceptance is
+separate from unit-test success.
+
 Run Desktop unit tests through the existing isolated launcher, never by importing
 the default task manager against a running user's state directory:
 
