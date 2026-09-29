@@ -123,6 +123,23 @@ class BusinessScenarioLiveDeviceTest {
             for (index in 0 until minOf(turnLimit, turns.length())) {
                 if (index < results.length() && results.getJSONObject(index).optString("state") == "completed") continue
                 if (index < results.length()) {
+                    val recorded = results.getJSONObject(index)
+                    if (args.getString("business_continue_after_late") == "true" &&
+                        recorded.optString("state") == "observation_timeout") {
+                        val receipt = JSONObject(File(directory, "$caseId-$index-late.json").readText())
+                        require(receipt.getString("catalog_sha256") == catalog.getString("catalog_sha256"))
+                        require(receipt.getString("conversation") == conversation)
+                        require(receipt.getString("turn_id") == recorded.getString("turn_id"))
+                        require(receipt.getJSONObject("assessment").getBoolean("correct"))
+                        require(receipt.getBoolean("visible"))
+                        val lateTurn = recorded.getString("turn_id")
+                        require(EncryptedAgentWorkspaceStore(context).find(lateTurn)?.status?.isTerminal == true)
+                        require(lateTurn !in AgentTaskRuntime.supervisor(context).activeTaskIds())
+                        require(store.list(conversation).any { it.id == receipt.getString("entry_id") &&
+                            it.turnId == lateTurn && it.role == AgentTranscriptRole.ASSISTANT &&
+                            !AgentTranscriptRenderPolicy.isLiveStream(it) })
+                        continue
+                    }
                     error("Unresolved checkpoint $caseId/$index; inspect recorded turn before retrying with a new run ID")
                 }
                 if (case.getJSONArray("restore_turns").containsInt(index)) {
@@ -262,6 +279,68 @@ class BusinessScenarioLiveDeviceTest {
         val processing = window.getString(R.string.agent_trace_processing, "", "").trim()
         return capture != null && capture.stable && capture.focused && capture.targetVisible &&
             capture.text.contains(processed) && !capture.text.contains(processing)
+    }
+
+    @Test fun observeLateCompletedArtifact() {
+        assumeTrue(args.getString("business_observe_late") == "true")
+        requireBusinessDevice(args.getString("business_device_model", "SM-T575"))
+        check(!context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
+        val runId = requireNotNull(args.getString("business_run"))
+        val caseId = requireNotNull(args.getString("business_cases"))
+        require(runId.matches(Regex("[A-Za-z0-9_-]{1,64}")) && caseId.matches(Regex("A[0-9]{3}")))
+        val index = requireNotNull(args.getString("business_capture_turn")).toInt()
+        val directory = File(root, runId)
+        val report = JSONObject(File(directory, "$caseId.json").readText())
+        val recorded = report.getJSONArray("turns").getJSONObject(index)
+        require(recorded.getString("state") == "observation_timeout")
+        val catalog = JSONObject(File(directory, "catalog.json").readText())
+        require(catalog.getString("catalog_sha256") == report.getString("catalog_sha256"))
+        val cases = catalog.getJSONArray("cases")
+        val case = (0 until cases.length()).map(cases::getJSONObject).single { it.getString("id") == caseId }
+        val turn = case.getJSONArray("turns").getJSONObject(index)
+        val conversation = report.getString("conversation")
+        val turnId = recorded.getString("turn_id")
+        val store = AgentTranscriptStore(context, report.getString("window_key"))
+        val window = launch(report.getString("window_key"))
+        val auditDirectory = File(directory, "$caseId-$index-late-${System.currentTimeMillis()}").apply { mkdirs() }
+        try {
+            var reply: AgentTranscriptEntry? = null
+            check(await(30000) {
+                reply = store.list(conversation).lastOrNull { it.turnId == turnId &&
+                    it.role == AgentTranscriptRole.ASSISTANT && !AgentTranscriptRenderPolicy.isLiveStream(it) &&
+                    !it.dedupeKey.startsWith("remote-approval:") }
+                reply != null && EncryptedAgentWorkspaceStore(context).find(turnId)?.status?.isTerminal == true &&
+                    turnId !in AgentTaskRuntime.supervisor(context).activeTaskIds()
+            }) { "Original task has not settled on the phone; no resend or continuation is allowed" }
+            val final = requireNotNull(reply)
+            val assessment = BusinessArtifactEvidence.collect(context, turn.getJSONObject("artifact_expectations"),
+                File(auditDirectory, "artifacts")) { store.list(conversation).lastOrNull { it.id == final.id } }
+            val audit = JSONObject().put("catalog_sha256", catalog.getString("catalog_sha256"))
+                .put("conversation", conversation).put("turn_id", turnId).put("entry_id", final.id)
+                .put("observed_at", System.currentTimeMillis()).put("original_state", recorded.getString("state"))
+                .put("reply", final.text).put("rich_output", final.richOutputJson).put("assessment", assessment)
+                .put("visible", false).put("timer_stopped", false).put("audit_directory", auditDirectory.name)
+            File(auditDirectory, "audit.json").writeText(audit.toString(2))
+            require(assessment.getBoolean("correct")) { "Late artifact delivery did not pass; original timeout retained" }
+            check(await(15000) {
+                var loaded = false
+                instrumentation.runOnMainSync {
+                    loaded = window.agentTranscriptAdapter.indexOfEntry(final.id) >= 0
+                    if (!loaded) window.loadOlderAgentTranscriptEntries()
+                }
+                loaded
+            }) { "Late final reply exists in storage but is not loaded in this conversation window" }
+            val capture = captureBusinessOutput(instrumentation, window, File(auditDirectory, "reply.png"), final.id)
+            val timer = captureProcess(window, turnId, File(auditDirectory, "process.png"))
+            audit.put("visible", capture.targetVisible && capture.focused && capture.stable)
+                .put("timer_stopped", timerStopped(window, timer))
+            File(auditDirectory, "audit.json").writeText(audit.toString(2))
+            require(audit.getBoolean("visible")) { "Late final reply is not visibly verified" }
+            File(directory, "$caseId-$index-late.json").writeText(audit.toString(2))
+            println("BUSINESS_LATE_AUDIT ${auditDirectory.absolutePath}")
+        } finally {
+            instrumentation.runOnMainSync { if (!window.isDestroyed) window.finishAndRemoveTask() }
+        }
     }
 
     @Test fun recaptureCompletedTurns() {
