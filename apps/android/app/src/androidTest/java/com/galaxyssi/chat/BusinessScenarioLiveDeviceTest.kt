@@ -289,7 +289,10 @@ class BusinessScenarioLiveDeviceTest {
                 }
                 check(await(15000) {
                     var loaded = false
-                    instrumentation.runOnMainSync { loaded = window.agentTranscriptAdapter.indexOfEntry(reply.id) >= 0 }
+                    instrumentation.runOnMainSync {
+                        loaded = window.agentTranscriptAdapter.indexOfEntry(reply.id) >= 0
+                        if (!loaded) window.loadOlderAgentTranscriptEntries()
+                    }
                     loaded
                 }) { "Recorded final reply is not loaded" }
                 val capture = captureBusinessOutput(instrumentation, window, File(auditDirectory, "$index.png"), reply.id)

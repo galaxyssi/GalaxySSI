@@ -247,3 +247,38 @@ as verified current-reply visibility.
 The 100-case / 1,100-turn real-model campaign remains incomplete. Long-form
 Office conversion, true human handwriting, ten-turn artifact revisions, and
 full UI open/save acceptance still require further real-device evidence.
+
+### Active3 Phone-Recovery Probe
+
+Run `active3-artifacts-v2-20260929-phone-recovery` used Android v1.3.21 and the
+still-running Desktop v1.3.16. A003 creation failed after 256,759 ms on Desktop's
+old repeated-command rule. Its second turn completed in 315,670 ms and delivered
+a 53,709-byte editable PPTX and four 1600 x 900 previews. All five Downloads
+read-back hashes match. OOXML text and the data-page preview show quantities
+13/30/18, amounts 156/240/180, quantity total 61 and amount total 576. The initial
+turn never delivered a native file, so this is not proof of revising a previously
+delivered PPTX. Both strict business results remain failed; the second retains
+the old Desktop preview-name defect. Full content and preview-fidelity approval
+is not claimed from checking a single data page.
+
+Driver schema 3 captured both actual final replies and both stopped process
+timers. The failed first reply nevertheless exposed the raw command through the
+terminal error field, despite progress sanitization in newer source. Desktop
+v1.3.19 returns the concise stopped/repeated-failure explanation in that field
+instead of command/output details. Eighty-one isolated Codex/harness regressions
+pass, including terminal-event privacy and preserved failure termination.
+
+The existing Agent image and gallery thumbnails use center-crop, which cuts off
+the sides of a 16:9 page in the fixed thumbnail frame. Android v1.3.22 changes
+only their image scale mode to fit-center. Frame dimensions, filenames, source
+bytes, enlargement and save behavior are unchanged. The app/test APKs compiled
+and were installed on Active3. Seven device tests pass: rendered screenshot
+pixels retain all four colored markers on landscape, portrait, square and gallery
+images; the five artifact integrity/save/recovery regressions also pass.
+
+Real-PPT recapture first failed because the prior turn was outside the initial
+history page. The audit now uses the existing load-older-message UI path before
+looking for its exact row. The rerun captured both real replies successfully;
+visual inspection confirms the visible PPT previews retain their full page
+width. It does not claim that all pages fit on one phone screen or that the
+older filename/failure-recovery business defects have passed.

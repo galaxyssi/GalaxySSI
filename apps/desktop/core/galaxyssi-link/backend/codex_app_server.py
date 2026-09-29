@@ -1034,7 +1034,7 @@ class CodexAppServer:
             "status": "failed",
             "current_step": "",
             "result": message,
-            "error": f"Repeated {item_type} failure: {detail[:500]}",
+            "error": message,
         })
         try:
             self._request(

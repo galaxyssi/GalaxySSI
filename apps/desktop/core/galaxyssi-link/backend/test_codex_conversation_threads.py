@@ -651,6 +651,20 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual(1, len(started))
         self.assertEqual(server._stop_repeated_failure, started[0][0])
 
+    def test_terminal_failure_does_not_publish_command_or_output_details(self):
+        server, run, events = self._event_server()
+        detail = r'C:\Users\private-person\runtime\pwsh.exe -Command private_script.ps1 secret-token'
+        with patch.object(server, "_request", return_value={}) as request:
+            server._stop_repeated_failure(run, "commandExecution", detail, 2)
+        terminal = next(event for _, event in events if event.get("status") == "failed" and "error" in event)
+        self.assertEqual(terminal["result"], terminal["error"])
+        self.assertIn("repeated 2 times", terminal["error"])
+        self.assertTrue(run.finished)
+        self.assertNotIn("private-person", str(events))
+        self.assertNotIn("private_script", str(events))
+        self.assertNotIn("secret-token", str(events))
+        request.assert_called_once_with("turn/interrupt", {"threadId": run.thread_id, "turnId": run.turn_id}, timeout=10)
+
     def test_native_failure_uses_error_not_just_script_command(self):
         server, run, _events = self._event_server()
         with patch.object(codex_app_server.threading, "Thread") as thread:
