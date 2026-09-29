@@ -80,6 +80,19 @@ internal object AndroidAgentResultRecovery {
         return consumed
     }
 
+    /** Called on the authenticated transport worker, before any Activity can acknowledge its envelope. */
+    internal fun persistAuthenticatedFinal(context: Context, payload: JSONObject) {
+        require(payload.optString("type") == "text" && !payload.optBoolean("peer_chat") &&
+            AgentTaskIdentityStore.matchesRegistered(context, payload))
+        val response = requireNotNull(AgentRemoteOutcomeCodec.decode(payload,
+            AgentRemoteOutcomeCodec.content(context, payload),
+            CodexStyleResponsePolicy.filterAssistantRichOutput(AgentRichContentCodec.fromEnvelope(payload))))
+        val consumed = publishResult(context, payload, response)
+        check(consumed || AgentConnectorResponseStore.wasRecorded(context, response)) {
+            "Final Agent reply is not durable; keep the transport envelope for replay"
+        }
+    }
+
     fun acknowledge(context: Context, payload: JSONObject, response: AgentConnectorResponse) {
         val digest = payload.optJSONObject("result_recovery")?.optString("sha256") ?: return
         if (!Regex("[a-f0-9]{64}").matches(digest)) return

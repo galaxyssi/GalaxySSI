@@ -7,6 +7,15 @@ import org.junit.Test
 
 class CodexStyleResponsePolicyTest {
     @Test
+    fun imageReviewSeparatesUnknownAnswersFromErrors() {
+        val policy = CodexStyleResponsePolicy.PROMPT
+        assertTrue(policy.contains("visible original answer, your computed answer, and your judgment"))
+        assertTrue(policy.contains("unknown, not wrong"))
+        assertTrue(policy.contains("verify the rendered result"))
+        assertTrue(policy.contains("requested image count and file format"))
+    }
+
+    @Test
     fun concisePolicyPreservesExplicitDetailsAndEvidence() {
         val policy = CodexStyleResponsePolicy.PROMPT
         assertTrue(policy.contains("direct conclusion"))

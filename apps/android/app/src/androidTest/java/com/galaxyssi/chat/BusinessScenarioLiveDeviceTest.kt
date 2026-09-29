@@ -42,6 +42,12 @@ class BusinessScenarioLiveDeviceTest {
                 .put("type", envelope.optString("type")).put("status", envelope.optString("task_status"))
                 .put("task", envelope.optString("task_id")).put("turn", envelope.optString("turn_id"))
                 .put("agent", envelope.optString("agent_id")).put("background", background)
+                .put("source", envelope.optString("source_message_id"))
+                .put("registered_identity", AgentTaskIdentityStore.matchesRegistered(context, envelope))
+                .put("foreground", AppForegroundTracker.isForeground())
+                .put("content_chars", envelope.optString("content").length)
+                .put("rich_chars", AgentRichContentCodec.fromEnvelope(envelope).length)
+                .put("final_decodable", AgentRemoteOutcomeCodec.decode(envelope, "probe") != null)
                 .put("kind", progress?.optString("kind").orEmpty())
                 .put("title", progress?.optString("title").orEmpty())
         }
@@ -193,7 +199,13 @@ class BusinessScenarioLiveDeviceTest {
                 if (completed) {
                     val final = requireNotNull(reply)
                     result.put("task_id", final.taskId).put("reply", final.text).put("rich_output", final.richOutputJson)
-                        .put("assessment", BusinessScenarioFixtures.assess(turn, final.text))
+                    val assessment = if (turn.has("artifact_expectations")) {
+                        BusinessArtifactEvidence.collect(context, turn.getJSONObject("artifact_expectations"),
+                            File(directory, "$caseId-$index-artifacts")) {
+                            store.list(conversation).lastOrNull { it.id == final.id }
+                        }
+                    } else BusinessScenarioFixtures.assess(turn, final.text)
+                    result.put("assessment", assessment)
                     val rendered = await(15000) {
                         var visible = false
                         instrumentation.runOnMainSync {

@@ -166,3 +166,47 @@ samples are insufficient for the report's p95 threshold. This is a partial
 functional checkpoint, not completion of the 100-case campaign or a claim that
 all prose and rendering are correct. Six host catalog/report tests and the
 Android instrumentation build also passed.
+
+## Artifact and Image-Editing Extension
+
+`artifact_catalog.py` produces a separate A001-A100 catalog with 1,100 turns.
+Do not combine its results with the numeric B-series catalog. Each of the 25
+domains has Word, Excel, PowerPoint and image deliverables; ten of the image
+slots exercise correction, annotations, synthetic handwriting, image summaries
+and two-image comparison. See `ARTIFACT_SCENARIOS.md` for the complete inventory.
+
+```powershell
+python tools/benchmark/business-scenarios/artifact_catalog.py --output C:/Temp/artifact-eval/plan.json --inventory C:/Temp/artifact-eval/inventory.md
+```
+
+Use the existing opt-in device runner with the artifact plan and a new run ID.
+For example, select `business_cases=A001,A044`, `business_turn_limit=1` and
+`business_device_model=SM-T575` for an initial Word/image-edit pilot. An eleven-turn
+run adds ten follow-ups. Only use the device explicitly authorized by the user.
+
+Office originals must be downloadable and editable. Preview images must come
+from the actual Office artifact, not an independently reconstructed page. Image
+editing preserves the original input, uses minimal marks, distinguishes wrong
+answers from unreadable input, supports selective undo/restore, and returns only
+one requested final image. One follow-up explicitly requests text only.
+
+The device collector copies only returned test artifacts, checks container
+signatures, versioned filenames, preview presence and the normal Downloads save
+API, then reads the saved bytes back and compares hashes. These checks do not
+prove document contents, accurate annotations, faithful previews or successful
+UI-button interactions. Reports expose delivery checks separately and do not
+count them as content-correct turns without explicit content verification.
+Synthetic digit strokes are reproducible fixtures, not real-human handwriting
+accuracy evidence. Visual review and real handwriting remain necessary.
+
+The first Active3 artifact pilot on v1.3.18 timed out on A001 after a 300-second
+observation window; A044 was not reached. The task incorrectly entered phone
+development because a negated code-output mention and a quoted business field
+were treated as development hints. This failure is retained under
+`active3-artifacts-v1-20260929-r1`; corrected runs must use a new run ID.
+
+See `ARTIFACT_PILOT.md` for subsequent real-model failures, two post-repair image
+deliveries, grading errors, Office delivery/preview gaps, and the format-oracle correction. The
+100-case artifact campaign is not complete. Revision 2 accepts PNG/JPEG when the
+image request does not specify a format and verifies original image dimensions.
+Do not replace a frozen run's catalog to make its historical assertions pass.

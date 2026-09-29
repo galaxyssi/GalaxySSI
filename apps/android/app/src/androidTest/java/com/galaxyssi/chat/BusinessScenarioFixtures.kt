@@ -12,6 +12,9 @@ import org.json.JSONTokener
 
 internal object BusinessScenarioFixtures {
     fun image(directory: File, case: JSONObject, index: Int): AgentInputAttachment {
+        if (case.optString("fixture_style") == "annotation_sheet") {
+            return BusinessAnnotationFixture.image(directory, case, index)
+        }
         val fixture = case.getJSONArray("fixtures").getJSONObject(index)
         val bitmap = Bitmap.createBitmap(1200, 1000, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

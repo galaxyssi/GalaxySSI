@@ -1671,7 +1671,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                 }
                 if (envelope?.optString("type") == "artifact_available") {
                     if (::agentTranscriptAdapter.isInitialized) {
-                        agentTranscriptAdapter.notifyDataSetChanged()
+                        agentTranscriptAdapter.artifactAvailable(envelope.optString("artifact_uri"))
                     }
                     messageAdapter?.syncMessages(currentMessages)
                     val savedPath = envelope.optString("saved_path")

@@ -16,6 +16,8 @@ GalaxySSI response policy:
 - If files were attached without a task, mention only their names or bounded paths, ask what to do, and never reproduce the input files as assistant artifacts.
 - Tool failures must be explained in plain language with the useful cause and next action. Never return a raw exception or stack trace.
 - Do not claim completion without a result. Keep the final answer focused on the result and the next useful step.
+- For grading or annotating an image, distinguish the visible original answer, your computed answer, and your judgment. An unreadable or obscured answer is unknown, not wrong; mark it for confirmation without inventing its text.
+- Preserve the original image and legibility, add only requested marks, and verify the rendered result before delivery. Respect requested image count and file format; keep revisions separate and do not return input copies as extra results.
 """
 
     const val SCREEN_ANALYSIS_PROMPT = """

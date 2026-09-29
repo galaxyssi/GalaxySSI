@@ -630,7 +630,7 @@ _INTENT_RULES = (
         "\u67e5\u627e\u6765\u6e90",
     )),
     (AgentTaskIntent.FILE, 2, (
-        "file", "pdf", "spreadsheet", "xlsx", "csv", "docx", "image",
+        "file", "pdf", "spreadsheet", "xlsx", "csv", "docx", "pptx", "image",
         "screenshot", "audio", "video", "archive", "zip", "extract text",
         "convert this", "summarize this document",
         "\u6587\u4ef6", "\u8868\u683c", "\u56fe\u7247", "\u622a\u56fe",
@@ -797,12 +797,14 @@ def classify_task_intent(
     *,
     has_attachments: bool = False,
 ) -> AgentTaskIntentClassification:
+    from artifact_request_policy import positive_term
+
     normalized = " ".join(str(prompt or "").lower().split())
     scores: dict[AgentTaskIntent, int] = {}
     signals: dict[AgentTaskIntent, list[str]] = {}
     for intent, weight, terms in _INTENT_RULES:
         for term in terms:
-            if term in normalized:
+            if term in normalized and (intent != AgentTaskIntent.CODE or positive_term(str(prompt or ""), term)):
                 scores[intent] = scores.get(intent, 0) + weight
                 signals.setdefault(intent, []).append(term)
     if has_attachments:
@@ -921,6 +923,8 @@ def execution_policy_for(
     requested_task_budget: Mapping[str, Any] | None = None,
     request_kind: str = "",
 ) -> AgentExecutionPolicy:
+    from artifact_request_policy import office_artifact_requested, positive_term
+
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
     intent = classify_task_intent(
@@ -928,13 +932,14 @@ def execution_policy_for(
         has_attachments=has_attachment_context,
     )
     has_install = _contains_any(normalized, _INSTALL_TERMS)
-    has_build = _contains_any(normalized, _BUILD_TERMS)
+    has_build = any(positive_term(str(prompt or ""), term) for term in _BUILD_TERMS)
     from video_generation_policy import video_creation_requested
     has_artifact_request = (
         _contains_any(normalized, _ARTIFACT_TERMS)
+        or office_artifact_requested(str(prompt or ""))
         or video_creation_requested(normalized)
     )
-    has_research = _contains_any(normalized, _RESEARCH_TERMS)
+    has_research = any(positive_term(str(prompt or ""), term) for term in _RESEARCH_TERMS)
     has_device = _contains_any(normalized, _DEVICE_TERMS)
     target_platform = "android" if _contains_any(normalized, _ANDROID_TERMS) else ""
     read_only_analysis = request_kind == "screen_analysis"
@@ -1038,7 +1043,9 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
     target = policy.target_platform or "the requested platform"
     artifact_line = (
         "- Put every final deliverable in the task workspace outputs directory. "
-        "A single deliverable stays as its native file; a directory or multi-file project must be packaged as ZIP."
+        "A single deliverable stays as its native file; a directory or multi-file project must be packaged as ZIP. "
+        "Office documents and their previews are separate deliverables, not a code project; keep them individually accessible unless ZIP is requested. "
+        "Render previews from the saved originals. Check available converters (including Microsoft Office on Windows and LibreOffice) before claiming none is available; text extraction is not visual verification."
         if policy.requires_artifact else
         "- Only create files when they are useful to the requested result."
     )
@@ -1492,6 +1499,7 @@ def finalize_task_artifacts(
     *,
     allow_device_install: bool = False,
 ) -> ArtifactFinalization:
+    from artifact_request_policy import keep_office_outputs_separate
     from task_workspace import task_artifacts, task_workspace
 
     policy = execution_policy_for(prompt)
@@ -1501,7 +1509,8 @@ def finalize_task_artifacts(
     packaged = False
 
     current = task_artifacts(task_id)
-    if policy.requires_artifact:
+    separate_office = policy.task_kind == AgentTaskKind.ARTIFACT and keep_office_outputs_separate(prompt, current)
+    if policy.requires_artifact and not separate_office:
         candidates = _workspace_candidates(root)
         selected_apk = _newest_file(candidates, ".apk")
         if selected_apk is not None:

@@ -2422,6 +2422,7 @@ object GalaxySSIMqttClient {
                 payload.put("content", AgentRemoteOutcomeCodec.content(context, payload))
             }
             AgentResearchTraceStore.receiveAuthenticated(context, payload)
+            if (finalReply) AndroidAgentResultRecovery.persistAuthenticatedFinal(context, payload)
         }
         if (payload.optString("type") == "agent_task_result_receipt_confirmed") {
             AndroidAgentResultReceipts.receive(context, payload, sourceDesktopId)

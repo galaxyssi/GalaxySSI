@@ -7,6 +7,7 @@ from research_quality import research_quality_prompt
 
 from response_policy import (
     BRIEF_ANSWER_POLICY,
+    IMAGE_REVIEW_POLICY,
     CODEX_STYLE_RESPONSE_POLICY,
     apply_response_policy,
     attachment_clarification,
@@ -182,6 +183,13 @@ class ResponsePolicyTest(unittest.TestCase):
         self.assertEqual(prompt, apply_response_policy(prompt, "en-US"))
         for phrase in ("Simplified Chinese", "execute it", "most important question", "stack trace"):
             self.assertIn(phrase, CODEX_STYLE_RESPONSE_POLICY)
+
+    def test_image_review_policy_survives_initial_and_followup_prompts(self):
+        for prompt in (apply_response_policy("Grade this image", "en-US"),
+                       compact_codex_turn_prompt("Revise those annotations", "en-US")):
+            self.assertIn(IMAGE_REVIEW_POLICY, prompt)
+            self.assertIn("unknown, not wrong", prompt)
+            self.assertIn("verify the rendered result", prompt)
 
     def test_sanitizer_hides_internal_process(self):
         raw = "preparing mcp_fetch\nUseful result\nat com.galaxyssi.Internal.run(Internal.kt:10)"
