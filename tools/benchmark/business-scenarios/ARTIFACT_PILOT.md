@@ -282,3 +282,23 @@ looking for its exact row. The rerun captured both real replies successfully;
 visual inspection confirms the visible PPT previews retain their full page
 width. It does not claim that all pages fit on one phone screen or that the
 older filename/failure-recovery business defects have passed.
+
+### Real Preview Open and Save
+
+An opt-in audit reopens one explicit completed turn without sending another
+model request. It locates the delivered image in that exact transcript row,
+clicks its actual thumbnail, checks the fullscreen image and save control, and
+clicks Save. Only newly created GalaxySSI Download rows are candidates for the
+SHA-256 read-back comparison. The audit requires an explicit valid turn index
+and fails if no completed turn was exercised.
+
+On Active3 v1.3.22, the first real PPT preview from the phone-recovery run passed
+this UI flow. Visual inspection of the fullscreen capture confirms the full
+landscape page, Chinese title, quantity total 61 and amount total 576 are visible.
+The new saved image matches the received image byte-for-byte. This is one actual
+preview open/save acceptance, not proof of all four pages, external Office-app
+opening, prior-PPT revision recovery, or the full 100-case campaign. Test evidence
+and screenshots remain local; no private artifacts are added to the repository.
+The rebuilt instrumentation repeated the positive flow successfully in 8.483
+seconds. An intentional out-of-range index (999) was rejected before opening a
+conversation; this negative probe is expected failure evidence, not a model run.

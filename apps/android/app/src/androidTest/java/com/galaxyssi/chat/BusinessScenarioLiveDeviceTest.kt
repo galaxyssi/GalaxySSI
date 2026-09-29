@@ -274,15 +274,21 @@ class BusinessScenarioLiveDeviceTest {
         require(caseId.matches(Regex("[AB][0-9]{3}")))
         val directory = File(root, runId)
         val report = JSONObject(File(directory, "$caseId.json").readText())
+        val turns = report.getJSONArray("turns")
+        val selectedTurn = args.getString("business_capture_turn")?.toInt()
+        require(selectedTurn == null || selectedTurn in 0 until turns.length()) { "Capture turn is out of range" }
+        require(args.getString("business_artifact_ui") != "true" || selectedTurn != null) {
+            "Artifact UI audit requires one explicit capture turn"
+        }
         val auditDirectory = File(directory, "capture-audit-${System.currentTimeMillis()}").apply { mkdirs() }
         val store = AgentTranscriptStore(context, report.getString("window_key"))
         val window = launch(report.getString("window_key"))
         val audit = JSONArray()
         try {
-            val turns = report.getJSONArray("turns")
             for (index in 0 until turns.length()) {
                 val turn = turns.getJSONObject(index)
                 if (turn.optString("state") != "completed") continue
+                if (selectedTurn != null && index != selectedTurn) continue
                 val reply = store.list(report.getString("conversation")).last {
                     it.turnId == turn.getString("turn_id") && it.role == AgentTranscriptRole.ASSISTANT &&
                         it.text == turn.getString("reply") && !AgentTranscriptRenderPolicy.isLiveStream(it)
@@ -303,7 +309,11 @@ class BusinessScenarioLiveDeviceTest {
                     .put("process_visible_text", timer?.text.orEmpty()).put("timer_stopped", timerStopped(window, timer)))
                 File(auditDirectory, "audit.json").writeText(audit.toString(2))
                 assertTrue("Current reply was not visible", capture.targetVisible && capture.focused && capture.stable)
+                if (args.getString("business_artifact_ui") == "true") {
+                    auditBusinessImageUi(instrumentation, window, reply, auditDirectory)
+                }
             }
+            assertTrue("No completed turn was audited", audit.length() > 0)
             println("BUSINESS_CAPTURE_AUDIT ${auditDirectory.absolutePath}")
         } finally {
             instrumentation.runOnMainSync { window.finishAndRemoveTask() }
