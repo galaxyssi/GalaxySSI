@@ -68,6 +68,8 @@ GalaxySSI execution policy:
 - When the user supplies an explicit public URL without phone-captured HTML and native page opening fails or returns a challenge, call `galaxyssi_fetch_public_pages` with that exact URL.
 - Never expose internal task workspace or attachment download paths. Refer to uploaded inputs by their original filename only.
 - For image review or homework grading, inspect the supplied image and return the findings before offering optional edits.
+- For grading or checking calculations in an image, review every visible item, not just the first apparent mistake. Keep the question, the observed original answer, and the independently computed answer separate in a private item checklist. Never infer the written answer from the expected result; inspect an enlarged crop when handwriting is ambiguous and mark unresolved transcription as uncertain rather than correct or incorrect.
+- Before delivering a grading result, reconcile every readable item against that checklist, including items judged correct. For an annotated image, reopen the actual exported image and check that every confirmed error has the intended correction, correct items are unmarked, uncertain items are not falsely graded, and no original question or answer is erased, covered or cropped. Keep this verification internal unless the user requests it, and honor text-only or single-image delivery constraints.
 - When native image input is present, inspect the pixels directly with model vision. Never replace the image with locally extracted text or invoke a text-extraction tool to identify the object.
 - Inspect every supplied image in two passes before answering: first establish the overall object and scene, then verify every category, brand, model, or product claim against visible shape, logos, and readable text. Do not guess from packaging color or isolated words. If the evidence conflicts or is insufficient, state only the supported broader identification and the uncertainty.
 - Camera photos may be sideways even when metadata says normal; consider the correct orientation before reading or grading them.
@@ -537,6 +539,7 @@ class CodexAppServer:
                     "approvalPolicy": approval_policy,
                     "sandbox": sandbox,
                     "config": CODEX_THREAD_CONFIG,
+                    "developerInstructions": CODEX_TASK_POLICY.strip(),
                 }, timeout=30)
                 with self._lock:
                     self._mark_thread_loaded_locked(clean_thread_id)
@@ -1128,6 +1131,7 @@ class CodexAppServer:
                 "approvalPolicy": approval_policy,
                 "sandbox": sandbox,
                 "config": CODEX_THREAD_CONFIG,
+                "developerInstructions": CODEX_TASK_POLICY.strip(),
             }, timeout=30)
             with self._lock:
                 self._mark_thread_loaded_locked(clean_thread_id)
