@@ -22,7 +22,7 @@ _MAIN = {".docx": "word/document.xml", ".xlsx": "xl/workbook.xml", ".pptx": "ppt
 
 def tool_spec():
     return {"type": "function", "name": TOOL,
-            "description": "Render a saved DOCX/XLSX/PPTX in this task to PDF and PNG pages using an installed Office renderer. By default also publishes the unchanged editable original in outputs. Returns deliverable paths, hashes and page coverage. Use instead of writing ad-hoc Office export scripts. Never describes an unavailable render as verified.",
+            "description": "Render a saved DOCX/XLSX/PPTX in this task to PDF and PNG pages using an installed Office renderer. By default also publishes the unchanged editable original in outputs. Returns deliverable paths, hashes, page coverage and limited XLSX layout diagnostics. Inspect layout_check issues and actual previews; successful conversion is not visual approval. Use instead of writing ad-hoc Office export scripts. Never describes an unavailable render as verified.",
             "inputSchema": {"type": "object", "properties": {
                 "path": {"type": "string", "description": "Absolute or task-relative path to the saved Office file."},
                 "max_pages": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8},
@@ -111,6 +111,8 @@ def render(task_id: str, raw_path: str, max_pages: int = 8, *, include_original:
             if _digest(copied) != before:
                 raise RuntimeError("Source changed while preparing its preview")
             _validated_source(root, str(copied))
+            from office_print_layout import inspect_print_layout
+            layout = inspect_print_layout(copied)
             pages = scratch / "rendered"
             pages.mkdir()
             pdf = pages / (output_name + ".pdf")
@@ -122,9 +124,10 @@ def render(task_id: str, raw_path: str, max_pages: int = 8, *, include_original:
                     raise RuntimeError("Office renderer returned an invalid PDF")
             page_count = None
             if info := shutil.which("pdfinfo"):
-                result = subprocess.run([info, str(pdf)], capture_output=True, text=True, timeout=15,
+                result = subprocess.run([info, str(pdf)], capture_output=True, timeout=15,
                                         env={**os.environ, "LC_ALL": "C"})
-                match = re.search(r"^Pages:\s+(\d+)", result.stdout, re.MULTILINE)
+                # Only the ASCII page-count field is needed; metadata may use a Windows code page.
+                match = re.search(rb"^Pages:\s+(\d+)", result.stdout or b"", re.MULTILINE)
                 if result.returncode == 0 and match:
                     page_count = int(match.group(1))
             subprocess.run([rasterizer, "-png", "-scale-to", "1600", "-f", "1", "-l", str(max_pages),
@@ -151,6 +154,7 @@ def render(task_id: str, raw_path: str, max_pages: int = 8, *, include_original:
             return {"status": "rendered", "renderer": renderer, "source": source.relative_to(root).as_posix(),
                     "source_sha256": before, "page_count": page_count, "preview_pages": len(images),
                     "original_included": include_original,
+                    "layout_check": layout,
                     "complete_preview": page_count is not None and len(images) == page_count,
                     "files": [{"path": str(p.relative_to(root)).replace("\\", "/"), "sha256": _digest(p),
                                "size_bytes": p.stat().st_size} for p in deliverables]}
