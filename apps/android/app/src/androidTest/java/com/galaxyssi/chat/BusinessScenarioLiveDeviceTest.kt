@@ -151,6 +151,9 @@ class BusinessScenarioLiveDeviceTest {
                     .map { BusinessScenarioFixtures.image(directory, case, it) } else emptyList()
                 val result = JSONObject().put("index", index).put("kind", turn.getString("kind"))
                     .put("driver_schema", 4).put("capture_method", "target_reply_and_process_rows_three_matching_frames")
+                    .put("execution_app_version", BuildConfig.VERSION_NAME)
+                    .put("execution_app_version_code", BuildConfig.VERSION_CODE)
+                    .put("execution_app_updated_at", context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime)
                     .put("state", "prepared").put("prompt", turn.getString("prompt"))
                     .put("input_images", fixtures.size).put("started_at", System.currentTimeMillis())
                     .put("sample_before", sample())
@@ -215,13 +218,14 @@ class BusinessScenarioLiveDeviceTest {
                 background = false
                 if (completed) {
                     val final = requireNotNull(reply)
+                    val completedWorkspace = workspaces.find(final.turnId)
                     result.put("task_id", final.taskId).put("reply", final.text).put("rich_output", final.richOutputJson)
                         .put("initial_entry_id", final.id).put("reply_identity_schema", 1)
                     val assessmentStartedMs = SystemClock.elapsedRealtime() - start
                     val assessment = if (turn.has("artifact_expectations")) {
                         BusinessArtifactEvidence.collect(context, turn.getJSONObject("artifact_expectations"),
                             File(directory, "$caseId-$index-artifacts")) {
-                            resolveBusinessReply(store.list(conversation), final)
+                            resolveBusinessReply(store.list(conversation), final, completedWorkspace)
                         }
                     } else BusinessScenarioFixtures.assess(turn, final.text)
                     val assessmentFinishedMs = SystemClock.elapsedRealtime() - start
@@ -229,13 +233,15 @@ class BusinessScenarioLiveDeviceTest {
                     val rendered = await(15000) {
                         var visible = false
                         instrumentation.runOnMainSync {
-                            visible = resolveBusinessReply(window.agentTranscriptWindow.entries, final) != null
+                            visible = resolveBusinessReply(window.agentTranscriptWindow.entries, final,
+                                completedWorkspace) != null
                         }
                         visible
                     }
                     result.put("transcript_loaded", rendered)
                     val capture = captureBusinessOutput(instrumentation, window, File(directory, "$caseId-$index.png"), final.id) {
-                        resolveBusinessReply(window.agentTranscriptWindow.entries, final)?.id
+                        resolveBusinessReply(window.agentTranscriptWindow.entries, final,
+                            completedWorkspace)?.id
                     }
                     val timer = captureProcess(window, turnId, File(directory, "$caseId-$index-process.png"))
                     result.put("rendered", rendered && capture.targetVisible && capture.focused)
@@ -380,7 +386,8 @@ class BusinessScenarioLiveDeviceTest {
                     conversationId = report.getString("conversation"), turnId = turn.getString("turn_id"),
                     taskId = turn.getString("task_id"), richOutputJson = turn.optString("rich_output")
                 )
-                val reply = requireNotNull(resolveBusinessReply(store.list(reference.conversationId), reference)) {
+                val reply = requireNotNull(resolveBusinessReply(store.list(reference.conversationId), reference,
+                    EncryptedAgentWorkspaceStore(context).find(reference.turnId))) {
                     "Recorded turn/task/content identity does not match a current final reply"
                 }
                 check(await(15000) {
