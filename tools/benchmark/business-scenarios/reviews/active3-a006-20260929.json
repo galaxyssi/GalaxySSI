@@ -1,0 +1,100 @@
+[
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 0,
+    "source_sha256": "2873530a7e81dca846ed92b53191d2403adad8a9eff2220d9e49f7ac8bb8d36e",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "Currency was not supplied, but the reply and calculation preview use yuan. The initial column chart starts its value axis at 180 and visually exaggerates differences.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "2268a55c33bcf2e9fbdde019594d202b11d532915991aaa7d874274d520791ea"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 1,
+    "source_sha256": "2d13bc0278c5f442ac3beeafbea6037e98b59b0db82458e2adc61d3249d95ee1",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "The revised values and chart cache agree at total 666, but unsupported yuan currency remains in the reply and calculation preview.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "3d12efe195223db4b82f84e5426a7b88be8e7572dbd7f6a11990aaf5d8062a19"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 2,
+    "source_sha256": "72283a470f04fbd603365f6479563b46ce0ebf4f303129fff561f34612649ad2",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "The revised data remain at total 666. Unsupported yuan currency remains, and the calculation preview clips the right chart frame despite the no-clipping completion claim.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "e2eb39d63acd77bbeaefbaeb249bdf9827a2020c98351dbc1da97192b59aabf8"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 3,
+    "source_sha256": "4e5b32c9579c083e2488f205ad6d4d9002d0e4cf1e4c7629ef7563710955ecaf",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "The added item has amount 100 and total 766, but the calculation preview still invents yuan currency and clips the right chart frame. This failure does not certify the other files.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "3c4aa78f184d11a946619d968a5ab2877da05faceef151c718dc2344079b2b56"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 4,
+    "source_sha256": "14d966ef08ba8db8161eb2fed6e2bff5bbdbc6ba2452a1062e3479990f64f3df",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "The notes preview correctly marks missing owner, actual date and real returns as unconfirmed. However, the calculation preview is byte-identical to turn 3 and retains unsupported currency and the clipped chart frame.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "3c4aa78f184d11a946619d968a5ab2877da05faceef151c718dc2344079b2b56"
+      },
+      {
+        "evidence_file": "artifact-3.png",
+        "sha256": "2854da110a837df0e08d90c1d8b2e4954b0e45c75d6f4fb4bba0c92a92959b5f"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 5,
+    "source_sha256": "cfb2c94f0cb5e4a6dc86ba297db3de00541de5c73d8649f88be5dd1113dadfd0",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "The received native workbook removes the requested item and computes 192+264+100=556 with matching chart caches. The calculation preview still invents yuan and clips the right edge, now truncating the last column. The missing notes preview remains a separate delivery failure; no claim is made about its rendering.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.xlsx",
+        "sha256": "2faf0063962db4b44661803d69bbf11f505c8eb92a3de179ad0c395aeaf57e80"
+      },
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "4a63212be8068f0d0e9f9acf38cf7b1d45a73943c845ab3de69df64b20d5364d"
+      }
+    ]
+  }
+]

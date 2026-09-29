@@ -5,6 +5,10 @@ The requested end state is 100 business scenarios with text, images and charts,
 up to ten follow-up questions, measured on the real product, with fixes and PRs.
 Generating the catalog does not satisfy that end state.
 
+Explicit evaluator content reviews can be attached without rewriting raw runs;
+see [evidence-bound content review](CONTENT_REVIEW.md). A successful download is
+not a semantic pass, and a content approval does not clear latency or delivery failures.
+
 ## Current Coverage
 
 The initial catalog has 100 workload records across 20 business contexts and

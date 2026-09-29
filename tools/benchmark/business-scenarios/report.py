@@ -7,6 +7,7 @@ import math
 import statistics
 from pathlib import Path
 from phase_timing import summarize_phases
+from content_review import validate_reviews
 
 
 def reply_visibly_verified(turn: dict) -> bool:
@@ -35,7 +36,7 @@ def artifact_delivery_verified(expected: dict, assessment: dict) -> bool:
                 and items and all(item.get(field) is True for item in items for field in fields))
 
 
-def summarize(plan: dict, reports: list[dict]) -> dict:
+def summarize(plan: dict, reports: list[dict], reviews: list[dict] | None = None) -> dict:
     planned = {case["id"]: case for case in plan["cases"]}
     seen = set()
     observed, complete = [], []
@@ -56,6 +57,7 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
             observed.append((case_id, turn))
             if turn["state"] == "completed":
                 complete.append((case_id, turn))
+    content_reviews = validate_reviews(plan, reports, [] if reviews is None else reviews)
     durations = sorted(turn["elapsed_ms"] for _, turn in complete)
     failed = []
     for case_id, turn in observed:
@@ -68,6 +70,8 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
             expected = planned[case_id]["turns"][turn["index"]].get("artifact_expectations")
             if expected is not None and not artifact_delivery_verified(expected, turn.get("assessment", {})):
                 reasons.append("artifact_delivery_incomplete_or_unverified")
+            if content_reviews.get((case_id, turn["index"]), {}).get("verdict") == "fail":
+                reasons.append("artifact_content_review_failed")
             if not reply_visibly_verified(turn):
                 reasons.append("current_reply_visibility_unverified")
             if not timer_visibly_verified(turn):
@@ -83,10 +87,11 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
                       if "artifact_expectations" in planned[c]["turns"][t["index"]]]
     def content_correct(case_id, turn):
         assessment = turn.get("assessment", {})
+        review = content_reviews.get((case_id, turn["index"]))
         if "artifact_expectations" in planned[case_id]["turns"][turn["index"]]:
             return bool(artifact_delivery_verified(
                 planned[case_id]["turns"][turn["index"]]["artifact_expectations"], assessment)
-                and assessment.get("content_verified"))
+                and (review["verdict"] == "pass" if review else assessment.get("content_verified")))
         return bool(assessment.get("correct"))
     return {
         "suite": plan["suite"], "catalog_sha256": plan["catalog_sha256"],
@@ -97,13 +102,17 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         "artifact_delivery_checks_passed": sum(artifact_delivery_verified(
             planned[c]["turns"][t["index"]]["artifact_expectations"], t.get("assessment", {}))
             for c, t in artifact_turns),
-        "artifact_content_unverified": sum(not t.get("assessment", {}).get("content_verified") for _, t in artifact_turns),
+        "artifact_content_unverified": sum(not t.get("assessment", {}).get("content_verified")
+            and (c, t["index"]) not in content_reviews for c, t in artifact_turns),
+        "artifact_content_review_passed": sum(r["verdict"] == "pass" for r in content_reviews.values()),
+        "artifact_content_review_failed": sum(r["verdict"] == "fail" for r in content_reviews.values()),
         "rendered_turns": sum(reply_visibly_verified(t) for _, t in complete),
         "timer_stopped_turns": sum(timer_visibly_verified(t) for _, t in complete),
         "legacy_visual_evidence_unverified": sum(t.get("driver_schema", 0) < 3 for _, t in complete),
         "stable_capture_turns": sum(t.get("visual_capture_stable") is True for _, t in complete),
         "capture_stability_unobserved": sum("visual_capture_stable" not in t for _, t in complete),
-        "human_review_pending": sum(bool(t.get("assessment", {}).get("requires_human_review")) for _, t in complete),
+        "human_review_pending": sum(bool(t.get("assessment", {}).get("requires_human_review"))
+            and (c, t["index"]) not in content_reviews for c, t in complete),
         "latency": {"samples": len(durations), "p50_ms": statistics.median(durations) if durations else None,
                     "p95_ms": durations[math.ceil(len(durations) * .95) - 1] if len(durations) >= 30 else None,
                     "maximum_ms": max(durations) if durations else None},
@@ -119,6 +128,7 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
             "Stable screenshots still need human review; view-model rendering alone is not pixel verification.",
             "Driver schemas before 3 did not bind captures to the current reply and cannot prove its visibility or timer state.",
             "Artifact container, delivery and save checks do not prove content accuracy, preview fidelity or UI open/save.",
+            "Explicit content reviews are evaluator judgments bound to original evidence, not automated semantic proof or a replacement for delivery/performance checks.",
             "Phase times are observations with test overhead, not isolated network latency; pre-schema-4 phases are unmeasured.",
         ],
     }
@@ -129,10 +139,12 @@ def main():
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--reports", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reviews", type=Path, help="Explicit evaluator review JSON; never auto-discovered from artifacts")
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text(encoding="utf-8"))
     reports = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(args.reports.glob("[AB][0-9][0-9][0-9].json"))]
-    output = summarize(plan, reports)
+    reviews = json.loads(args.reviews.read_text(encoding="utf-8")) if args.reviews else []
+    output = summarize(plan, reports, reviews)
     args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: output[k] for k in ("observed_cases", "completed_turns", "correct_turns", "latency", "overall_status")}))
 
