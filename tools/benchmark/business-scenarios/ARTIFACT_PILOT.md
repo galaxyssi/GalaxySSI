@@ -190,8 +190,10 @@ the strict business acceptance checks:
   The task timer stopped. Full content/fidelity and UI-button acceptance have
   not been established; the strict filename check failed.
 - A003 revise returned `Requested phone attachment is unavailable` in 36,595 ms,
-  with no artifact and a non-stopped timer in the captured UI. This continuation
-  recovery defect is still open; do not count the terminal error as success.
+  with no artifact. Its capture shows the preceding reply, not the current turn;
+  the false timer result does not prove that a running timer remained on screen.
+  This continuation recovery defect is still open; do not count the terminal
+  error as success.
 
 Desktop v1.3.17 preserves original image download filenames separately from
 friendly captions, omits raw command paths/bodies from both public progress
@@ -204,6 +206,43 @@ is pending; the older observations above are not relabeled as repaired passes.
 Image-review guidance also requires source-region grounding and reopening the
 actual output to check corrections, retained content, uncertainty and undo state;
 this is not proof of improved grading accuracy.
+
+### Delivered-Output Recovery and Capture Audit
+
+The failing PPT continuation explicitly requested the preceding assistant's PPTX
+artifact ID. Android's old recovery lookup only searched user-input manifests.
+The preceding Desktop task still has output metadata, but its original workspace
+file no longer exists; local Desktop lookup alone cannot repair this case.
+
+Android v1.3.21 (1065) adds an on-demand lookup of assistant artifact blocks in the
+same conversation, including older transcript pages. It accepts only locally
+delivered, version-matched artifact records and verifies actual size and SHA-256
+before offering the content URI for the existing authenticated transfer. It does
+not fetch arbitrary links or borrow files from another conversation. Desktop
+v1.3.18 first restores a retained, hash-matching output from the same authenticated
+conversation/turn, then requests any remaining IDs from the phone. Both paths
+bound their scan/hash work; ordinary chat does not perform these recovery scans.
+
+The application and instrumentation APKs compiled and were installed in place
+on Active3. Five artifact-store device tests passed, including cross-page output
+recovery, original filename retention, cross-conversation rejection, user-input
+rejection and mismatched versions. The Desktop repair passed 200 isolated
+regressions, including nine local recovery cases. These component results do not
+establish a successful real-model PPT revision. The Desktop source changes have
+not yet been loaded in the running process.
+
+Driver schema 3 separately targets the exact final reply and the same turn's
+process row. A loaded view model no longer proves visible rendering. Captures
+check the attached RecyclerView holder identity and visible bounds; process
+timing has its own screenshot. Re-captures are separate timestamped audit files,
+not rewrites of the original run or its model/latency results.
+
+The A003 two-turn recapture passed on Active3. The second turn's exact error row
+is now visible; its separate process capture reads "processed 34 seconds".
+The first turn's process row was not captured, so its timer is still unobserved
+in this audit. Neither capture changes the failed artifact result. Twelve host
+catalog/report tests pass, including rejection of legacy view-model-only evidence
+as verified current-reply visibility.
 
 The 100-case / 1,100-turn real-model campaign remains incomplete. Long-form
 Office conversion, true human handwriting, ten-turn artifact revisions, and

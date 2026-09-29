@@ -4815,6 +4815,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         nonlocal image_artifact_required
         if decision.action != ModelRecoveryAction.REQUEST_ATTACHMENT:
             return []
+        from conversation_artifact_recovery import restore_delivered_outputs
+        local_outputs = restore_delivered_outputs(
+            mobile_context, agent_task_manager.list(limit=500), decision.attachment_ids,
+            conversation_id=backend_conversation_id, current_task_id=task_id,
+        )
+        missing_ids = tuple(value for value in decision.attachment_ids if value not in local_outputs)
         agent_task_manager.add_event(
             task_id,
             "observe",
@@ -4827,7 +4833,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         agent_task_manager.add_event(
             task_id,
             "replan",
-            "Restoring required context from the paired phone",
+            "Restoring required conversation attachments",
             event_id=f"recovery-request:{task_id}:{decision.attachment_ids}",
             status="running",
             metadata={"attachment_count": len(decision.attachment_ids)},
@@ -4840,14 +4846,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             turn_id=client_turn_id,
             contact_id=contact_id,
             source_message_id=source_message_id,
-            attachment_ids=decision.attachment_ids,
+            attachment_ids=missing_ids,
             reason=decision.reason,
             publish=lambda request_payload: _publish_phone_payload(
                 mqttc,
                 wire_payload,
                 request_payload,
             ),
-        )
+        ) if missing_ids else []
         with recovery_lock:
             known_transfers = {
                 str(item.get("transfer_id") or "")
@@ -4875,6 +4881,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         ]
         if len(paths) != len(descriptors):
             raise RuntimeError("Restored phone attachment did not pass task-scope verification")
+        paths = [str(path) for path in local_outputs.values()] + paths
         if any(Path(path).suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES for path in paths):
             image_artifact_required = _current_request_needs_returned_image(content)
         agent_task_manager.add_event(

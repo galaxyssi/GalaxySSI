@@ -17,9 +17,11 @@ class AgentDesktopArtifactStoreTest {
     private val context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val fixtures = mutableMapOf<String, String>()
+    private val recoveryConversations = mutableListOf<String>()
 
     @After
     fun cleanUp() {
+        recoveryConversations.forEach { AgentTranscriptStore(context).deleteConversation(it) }
         val root = java.io.File(context.filesDir, "desktop-artifacts-v2")
         fixtures.forEach { (uri, id) ->
             java.io.File(root, "metadata/${sha256(uri.toByteArray())}.json").delete()
@@ -154,6 +156,58 @@ class AgentDesktopArtifactStoreTest {
         } finally {
             destinations.forEach { context.contentResolver.delete(it, null, null) }
         }
+    }
+
+    @Test
+    fun deliveredArtifactCanBeRecoveredOnlyFromItsConversation() {
+        val suffix = java.util.UUID.randomUUID().toString()
+        val store = AgentTranscriptStore(context, "artifact-recovery-$suffix")
+        val conversation = store.createConversation("Artifact recovery fixture").id
+        recoveryConversations += conversation
+        val bytes = "verified Office output $suffix".toByteArray()
+        val digest = sha256(bytes)
+        val uri = "galaxyssi-artifact://test-$suffix/outputs/report-v02.bin"
+        val id = sha256("$uri\u0000$digest".toByteArray())
+        fixtures[uri] = id
+        AgentDesktopArtifactStore.ingest(context,
+            payload(id, uri, digest, bytes.size, 0, 1, bytes).put("name", "report-v02.bin"))
+        val block = AgentRichBlock(id = "artifact-${digest.take(24)}", type = AgentRichBlockType.FILE,
+            title = "Friendly caption", uri = uri, mimeType = "application/octet-stream",
+            metadata = mapOf("artifact_id" to id, "sha256" to digest))
+        store.upsert(AgentTranscriptRole.ASSISTANT, "Completed", "recovery-$suffix",
+            conversationId = conversation, richOutputJson = AgentRichContentCodec.encode(listOf(block)))
+        // Exercise a later page without modifying any user conversations.
+        repeat(105) { index -> store.upsert(AgentTranscriptRole.PROCESS, "Fixture $index",
+            "recovery-$suffix-$index", conversationId = conversation) }
+        val restored = AgentDeliveredAttachmentRecovery.restore(context, conversation, listOf(block.id))
+        assertEquals(1, restored.size)
+        assertEquals("report-v02.bin", restored.single().displayName)
+        assertEquals(digest, context.contentResolver.openInputStream(restored.single().uri)!!.use { sha256(it.readBytes()) })
+        assertTrue(AgentDeliveredAttachmentRecovery.restore(context, "other-$suffix", listOf(block.id)).isEmpty())
+        assertTrue(AgentDeliveredAttachmentRecovery.restore(context, conversation, listOf("missing-$suffix")).isEmpty())
+    }
+
+    @Test
+    fun deliveredRecoveryRejectsUserBlocksAndMismatchedVersions() {
+        val suffix = java.util.UUID.randomUUID().toString()
+        val store = AgentTranscriptStore(context, "artifact-recovery-$suffix")
+        val conversation = store.createConversation("Artifact recovery rejection fixture").id
+        recoveryConversations += conversation
+        val bytes = "verified bytes".toByteArray()
+        val digest = sha256(bytes)
+        val uri = "galaxyssi-artifact://test-$suffix/outputs/report.bin"
+        val id = sha256("$uri\u0000$digest".toByteArray())
+        fixtures[uri] = id
+        AgentDesktopArtifactStore.ingest(context, payload(id, uri, digest, bytes.size, 0, 1, bytes))
+        val block = AgentRichBlock(id = "artifact-${digest.take(24)}", type = AgentRichBlockType.FILE,
+            uri = uri, metadata = mapOf("artifact_id" to id, "sha256" to digest))
+        store.upsert(AgentTranscriptRole.USER, "Input", "user-$suffix", conversationId = conversation,
+            richOutputJson = AgentRichContentCodec.encode(listOf(block)))
+        assertTrue(AgentDeliveredAttachmentRecovery.restore(context, conversation, listOf(block.id)).isEmpty())
+        val invalid = block.copy(metadata = block.metadata + ("sha256" to sha256("different version".toByteArray())))
+        store.upsert(AgentTranscriptRole.ASSISTANT, "Invalid", "invalid-$suffix", conversationId = conversation,
+            richOutputJson = AgentRichContentCodec.encode(listOf(invalid)))
+        assertTrue(AgentDeliveredAttachmentRecovery.restore(context, conversation, listOf(block.id)).isEmpty())
     }
 
     private fun payload(

@@ -8,6 +8,17 @@ import statistics
 from pathlib import Path
 
 
+def reply_visibly_verified(turn: dict) -> bool:
+    return bool(turn.get("driver_schema", 0) >= 3 and turn.get("visual_entry_id")
+                and turn.get("rendered") and turn.get("visual_window_focused")
+                and turn.get("visual_capture_stable"))
+
+
+def timer_visibly_verified(turn: dict) -> bool:
+    return bool(turn.get("driver_schema", 0) >= 3 and turn.get("timer_observed")
+                and turn.get("timer_stopped"))
+
+
 def summarize(plan: dict, reports: list[dict]) -> dict:
     planned = {case["id"]: case for case in plan["cases"]}
     seen = set()
@@ -38,9 +49,9 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         else:
             if not turn.get("assessment", {}).get("correct"):
                 reasons.append("answer_or_format")
-            if not turn.get("rendered"):
-                reasons.append("transcript_not_rendered")
-            if not turn.get("timer_stopped"):
+            if not reply_visibly_verified(turn):
+                reasons.append("current_reply_visibility_unverified")
+            if not timer_visibly_verified(turn):
                 reasons.append("timer_stop_not_observed")
             if not turn.get("within_latency_target"):
                 reasons.append("latency_target")
@@ -64,8 +75,9 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         "correct_turns": sum(content_correct(c, t) for c, t in complete),
         "artifact_delivery_checks_passed": sum(bool(t.get("assessment", {}).get("correct")) for _, t in artifact_turns),
         "artifact_content_unverified": sum(not t.get("assessment", {}).get("content_verified") for _, t in artifact_turns),
-        "rendered_turns": sum(bool(t.get("rendered")) for _, t in complete),
-        "timer_stopped_turns": sum(bool(t.get("timer_stopped")) for _, t in complete),
+        "rendered_turns": sum(reply_visibly_verified(t) for _, t in complete),
+        "timer_stopped_turns": sum(timer_visibly_verified(t) for _, t in complete),
+        "legacy_visual_evidence_unverified": sum(t.get("driver_schema", 0) < 3 for _, t in complete),
         "stable_capture_turns": sum(t.get("visual_capture_stable") is True for _, t in complete),
         "capture_stability_unobserved": sum("visual_capture_stable" not in t for _, t in complete),
         "human_review_pending": sum(bool(t.get("assessment", {}).get("requires_human_review")) for _, t in complete),
@@ -80,6 +92,7 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
             "This suite does not replace browser, audio/video, device-control, or adversarial security evals.",
             "Different data records are workload variants, not different intelligence capabilities.",
             "Stable screenshots still need human review; view-model rendering alone is not pixel verification.",
+            "Driver schemas before 3 did not bind captures to the current reply and cannot prove its visibility or timer state.",
             "Artifact container, delivery and save checks do not prove content accuracy, preview fidelity or UI open/save.",
         ],
     }

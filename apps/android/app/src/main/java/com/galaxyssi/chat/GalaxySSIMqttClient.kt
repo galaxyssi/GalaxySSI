@@ -2943,11 +2943,13 @@ object GalaxySSIMqttClient {
             AppStore.desktopIdForContact(context, request.contactId) != sourceDesktopId
         ) return
         val restored = runCatching {
-            AgentAttachmentWorkspaceStager.restoreByIds(
+            val inputs = AgentAttachmentWorkspaceStager.restoreByIds(
                 context,
                 request.conversationId,
                 request.attachmentIds
             )
+            inputs + AgentDeliveredAttachmentRecovery.restore(context, request.conversationId,
+                request.attachmentIds.filterNot { id -> inputs.any { it.id == id } })
         }.onFailure {
             Log.w(TAG, "Requested attachment recovery lookup failed", it)
         }.getOrElse {

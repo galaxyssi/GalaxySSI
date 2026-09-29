@@ -133,7 +133,7 @@ class BusinessScenarioLiveDeviceTest {
                 val fixtures = if (index == 0) (0 until case.getJSONArray("fixtures").length())
                     .map { BusinessScenarioFixtures.image(directory, case, it) } else emptyList()
                 val result = JSONObject().put("index", index).put("kind", turn.getString("kind"))
-                    .put("driver_schema", 2).put("capture_method", "focused_output_three_matching_frames")
+                    .put("driver_schema", 3).put("capture_method", "target_reply_and_process_rows_three_matching_frames")
                     .put("state", "prepared").put("prompt", turn.getString("prompt"))
                     .put("input_images", fixtures.size).put("started_at", System.currentTimeMillis())
                     .put("sample_before", sample())
@@ -215,13 +215,17 @@ class BusinessScenarioLiveDeviceTest {
                         }
                         visible
                     }
-                    result.put("rendered", rendered)
-                    val capture = captureBusinessOutput(instrumentation, window, File(directory, "$caseId-$index.png"))
+                    result.put("transcript_loaded", rendered)
+                    val capture = captureBusinessOutput(instrumentation, window, File(directory, "$caseId-$index.png"), final.id)
+                    val timer = captureProcess(window, turnId, File(directory, "$caseId-$index-process.png"))
+                    result.put("rendered", rendered && capture.targetVisible && capture.focused)
                     result.put("visible_text", capture.text)
                         .put("visual_capture_stable", capture.stable)
                         .put("visual_window_focused", capture.focused)
-                        .put("timer_stopped", capture.stable && capture.focused &&
-                            capture.text.contains("已处理") && !capture.text.contains("处理中"))
+                        .put("visual_entry_id", final.id)
+                        .put("process_visible_text", timer?.text.orEmpty())
+                        .put("timer_observed", timer?.targetVisible == true && timer.focused)
+                        .put("timer_stopped", timerStopped(window, timer))
                         .put("within_latency_target", result.getLong("elapsed_ms") <= case.getLong("latency_target_ms"))
                 } else {
                     fatal = true
@@ -238,6 +242,69 @@ class BusinessScenarioLiveDeviceTest {
             observedConversation = ""
         }
         assertFalse("Test turn timed out; retained checkpoint prevents duplicate sends", fatal)
+    }
+
+    private fun captureProcess(window: MainActivity, turnId: String, file: File): BusinessVisualCapture? {
+        var entryId: String? = null
+        instrumentation.runOnMainSync {
+            entryId = AgentTranscriptPresentationPolicy.collapseProcessGroups(
+                window.renderedAgentTranscriptSourceEntries
+            ).lastOrNull {
+                it.turnId == turnId && it.role == AgentTranscriptRole.PROCESS &&
+                    window.agentTranscriptAdapter.indexOfEntry(it.id) >= 0
+            }?.id
+        }
+        return entryId?.let { captureBusinessOutput(instrumentation, window, file, it) }
+    }
+
+    private fun timerStopped(window: MainActivity, capture: BusinessVisualCapture?): Boolean {
+        val processed = window.getString(R.string.agent_trace_processed, "", "").trim()
+        val processing = window.getString(R.string.agent_trace_processing, "", "").trim()
+        return capture != null && capture.stable && capture.focused && capture.targetVisible &&
+            capture.text.contains(processed) && !capture.text.contains(processing)
+    }
+
+    @Test fun recaptureCompletedTurns() {
+        assumeTrue(args.getString("business_recapture") == "true")
+        requireBusinessDevice(args.getString("business_device_model", "SM-S9480"))
+        check(!context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
+        val runId = requireNotNull(args.getString("business_run"))
+        require(runId.matches(Regex("[A-Za-z0-9_-]{1,64}")))
+        val caseId = requireNotNull(args.getString("business_cases"))
+        require(caseId.matches(Regex("[AB][0-9]{3}")))
+        val directory = File(root, runId)
+        val report = JSONObject(File(directory, "$caseId.json").readText())
+        val auditDirectory = File(directory, "capture-audit-${System.currentTimeMillis()}").apply { mkdirs() }
+        val store = AgentTranscriptStore(context, report.getString("window_key"))
+        val window = launch(report.getString("window_key"))
+        val audit = JSONArray()
+        try {
+            val turns = report.getJSONArray("turns")
+            for (index in 0 until turns.length()) {
+                val turn = turns.getJSONObject(index)
+                if (turn.optString("state") != "completed") continue
+                val reply = store.list(report.getString("conversation")).last {
+                    it.turnId == turn.getString("turn_id") && it.role == AgentTranscriptRole.ASSISTANT &&
+                        it.text == turn.getString("reply") && !AgentTranscriptRenderPolicy.isLiveStream(it)
+                }
+                check(await(15000) {
+                    var loaded = false
+                    instrumentation.runOnMainSync { loaded = window.agentTranscriptAdapter.indexOfEntry(reply.id) >= 0 }
+                    loaded
+                }) { "Recorded final reply is not loaded" }
+                val capture = captureBusinessOutput(instrumentation, window, File(auditDirectory, "$index.png"), reply.id)
+                val timer = captureProcess(window, reply.turnId, File(auditDirectory, "$index-process.png"))
+                audit.put(JSONObject().put("index", index).put("entry_id", reply.id)
+                    .put("target_visible", capture.targetVisible).put("stable", capture.stable)
+                    .put("focused", capture.focused).put("visible_text", capture.text)
+                    .put("process_visible_text", timer?.text.orEmpty()).put("timer_stopped", timerStopped(window, timer)))
+                File(auditDirectory, "audit.json").writeText(audit.toString(2))
+                assertTrue("Current reply was not visible", capture.targetVisible && capture.focused && capture.stable)
+            }
+            println("BUSINESS_CAPTURE_AUDIT ${auditDirectory.absolutePath}")
+        } finally {
+            instrumentation.runOnMainSync { window.finishAndRemoveTask() }
+        }
     }
 
     private fun launch(key: String): MainActivity {

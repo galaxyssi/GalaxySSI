@@ -81,6 +81,25 @@ class CatalogTest(unittest.TestCase):
         turn["visual_capture_stable"] = True
         self.assertEqual(1, summarize(plan, [sample])["stable_capture_turns"])
 
+    def test_only_current_row_captures_prove_reply_and_timer_visibility(self):
+        plan = catalog()
+        turn = {"index": 0, "state": "completed", "elapsed_ms": 1000,
+                "assessment": {"correct": True}, "rendered": True, "timer_stopped": True,
+                "within_latency_target": True, "visual_capture_stable": True, "visual_window_focused": True}
+        sample = {"case_id": "B001", "catalog_sha256": plan["catalog_sha256"], "turns": [turn]}
+        old = summarize(plan, [sample])
+        self.assertEqual(0, old["rendered_turns"])
+        self.assertEqual(0, old["timer_stopped_turns"])
+        self.assertEqual(1, old["legacy_visual_evidence_unverified"])
+        turn.update(driver_schema=3, visual_entry_id="actual-final-row", timer_observed=True)
+        current = summarize(plan, [sample])
+        self.assertEqual(1, current["rendered_turns"])
+        self.assertEqual(1, current["timer_stopped_turns"])
+        turn["visual_entry_id"] = ""
+        turn["timer_observed"] = False
+        self.assertEqual(0, summarize(plan, [sample])["rendered_turns"])
+        self.assertEqual(0, summarize(plan, [sample])["timer_stopped_turns"])
+
 
 if __name__ == "__main__":
     unittest.main()
