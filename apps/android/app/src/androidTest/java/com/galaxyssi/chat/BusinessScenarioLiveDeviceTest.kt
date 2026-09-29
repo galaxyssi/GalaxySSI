@@ -408,7 +408,8 @@ class BusinessScenarioLiveDeviceTest {
                 File(auditDirectory, "audit.json").writeText(audit.toString(2))
                 assertTrue("Current reply was not visible", capture.targetVisible && capture.focused && capture.stable)
                 if (args.getString("business_artifact_ui") == "true") {
-                    auditBusinessImageUi(instrumentation, window, reply, auditDirectory)
+                    auditBusinessImageUi(instrumentation, window, reply, auditDirectory,
+                        allImages = args.getString("business_artifact_ui_all") == "true")
                 }
             }
             assertTrue("No completed turn was audited", audit.length() > 0)
