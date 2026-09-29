@@ -302,3 +302,14 @@ and screenshots remain local; no private artifacts are added to the repository.
 The rebuilt instrumentation repeated the positive flow successfully in 8.483
 seconds. An intentional out-of-range index (999) was rejected before opening a
 conversation; this negative probe is expected failure evidence, not a model run.
+
+Read-only inspection of the previously downloaded native packages confirms the
+Word sample contains 47 real paragraphs and two tables; its data amounts are
+132/168/160 with total 460. The Excel follow-up contains the three requested
+worksheets, 15 formula cells with cached results, and a chart referencing the
+calculation sheet with cached values 144/232/170 (total 546). The PPT follow-up
+contains four slide XML documents with editable text, including the revised
+13/30/18 quantities and total 576. All three ZIP CRC checks pass. These are
+structural/content observations of actual received files, not renamed images;
+they do not establish rendering fidelity of every page or a passing business
+result for the earlier failed runs.
