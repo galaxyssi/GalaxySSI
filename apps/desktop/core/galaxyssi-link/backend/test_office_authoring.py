@@ -33,6 +33,31 @@ class OfficeAuthoringContractTests(unittest.TestCase):
         with patch("office_authoring.importlib.util.find_spec", return_value=None):
             self.assertEqual("", office_authoring_contract())
 
+    def test_artifact_quality_rules_do_not_depend_on_installed_office_modules(self):
+        from agent_execution_harness import execution_contract, execution_policy_for
+
+        for prompt in ("Create an XLSX inventory workbook", "Create a PPTX budget report",
+                       "Export a PDF report", "Create a downloadable PNG column chart"):
+            with self.subTest(prompt=prompt), \
+                    patch("office_authoring.office_authoring_contract", return_value=""):
+                contract = execution_contract(execution_policy_for(prompt))
+            self.assertIn("do not infer them from language, locale", contract)
+            self.assertIn("neutral numeric formats", contract)
+            self.assertIn("including chart axes and cached labels", contract)
+            self.assertIn("use a zero baseline", contract)
+            self.assertIn("explicit user/template requirement", contract)
+            self.assertIn("line, scatter, or logarithmic charts", contract)
+            self.assertIn("full chart/drawing bounds inside the print area", contract)
+            self.assertIn("saved file and actual preview agree", contract)
+
+    def test_artifact_quality_rules_do_not_turn_read_only_work_into_authoring(self):
+        from agent_execution_harness import execution_contract, execution_policy_for
+
+        for prompt, kwargs in (("Hello", {}), ("Create a PPTX report, plan only", {}),
+                               ("Analyze the current chart", {"request_kind": "screen_analysis"})):
+            with self.subTest(prompt=prompt):
+                self.assertNotIn("neutral numeric formats", execution_contract(execution_policy_for(prompt, **kwargs)))
+
     def test_partial_installation_and_probe_errors_are_safe(self):
         with patch("office_authoring.importlib.util.find_spec",
                    side_effect=[object(), ImportError(), None, ValueError()]), \

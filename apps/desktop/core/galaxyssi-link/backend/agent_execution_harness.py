@@ -1050,7 +1050,11 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         "Office documents and their previews are separate deliverables, not a code project; keep them individually accessible unless ZIP is requested. "
         "When an export request also retains the original or editable format, deliver that current native source alongside the export and previews; keeping it only in the workspace is not delivery. "
         "For explicit PDF-only or preview-only requests, do not attach an unrequested editable source. Before finalizing, reconcile all requested formats against the actual files and final attachment links; report any missing deliverable instead of claiming complete delivery. "
-        "Render previews from the saved originals. Prefer galaxyssi_office_preview when available; it preserves native files and returns actual PDF/PNG pages. Check available converters (including Microsoft Office on Windows and LibreOffice) before claiming none is available; text extraction is not visual verification."
+        "Render previews from the saved originals. Prefer galaxyssi_office_preview when available; it preserves native files and returns actual PDF/PNG pages. Check available converters (including Microsoft Office on Windows and LibreOffice) before claiming none is available; text extraction is not visual verification. "
+        "Preserve source units and currency; do not infer them from language, locale, or the word amount. When unspecified, use neutral numeric formats and label the unit or currency as unspecified, including chart axes and cached labels. "
+        "For bar or column charts that encode magnitude by length, use a zero baseline (include zero for mixed signs); only depart for an explicit user/template requirement and visibly disclose the scale. Do not apply this rule blindly to line, scatter, or logarithmic charts. "
+        "For paginated Office previews, fit the full chart/drawing bounds inside the print area while keeping text legible; visible data labels alone do not prove that the chart is unclipped. "
+        "Verify the saved file and actual preview agree on units, labels, formulas, totals, and chart scale before reporting completion."
         if policy.requires_artifact else
         "- Only create files when they are useful to the requested result."
     )
