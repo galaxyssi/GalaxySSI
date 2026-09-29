@@ -73,7 +73,7 @@ class PreparedArtifact:
     original_sha256: str
     chunk_count: int
     source_path: Path
-    compress_images: bool = True
+    compress_images: bool = False
     transport_bytes: bytes | None = None
 
     def chunks(self):
@@ -94,10 +94,12 @@ def prepare_artifacts(
     task_id: str,
     output_files: list[dict] | None,
     *,
-    compress_images: bool = True,
+    compress_images: bool = False,
     maximum_bytes: int = MAX_ARTIFACT_BYTES,
     strict: bool = False,
 ) -> list[PreparedArtifact]:
+    # Downloadable deliverables preserve their bytes; inline thumbnails have a
+    # separate policy. Persisted receipts still replay their recorded policy.
     if type(maximum_bytes) is not int or maximum_bytes not in {MAX_ARTIFACT_BYTES, MAX_FILE_BYTES}:
         raise ValueError("Invalid artifact preparation limit")
     prepared: list[PreparedArtifact] = []
@@ -393,7 +395,7 @@ def _prepare_artifact(
     relative_path: str,
     metadata: dict,
     *,
-    compress_images: bool = True,
+    compress_images: bool = False,
     maximum_bytes: int = MAX_ARTIFACT_BYTES,
 ) -> PreparedArtifact | None:
     name = str(metadata.get("name") or source.name).strip() or source.name

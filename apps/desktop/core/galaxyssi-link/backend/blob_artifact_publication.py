@@ -11,7 +11,7 @@ _SCOPE = ("task_id", "turn_id", "execution_generation", "conversation_id", "clie
           "desktop_id", "contact_id", "source_message_id")
 
 
-def prepare_for_route(bridge, route: str, task_id: str, output_files: list, *, compress_images=True) -> list:
+def prepare_for_route(bridge, route: str, task_id: str, output_files: list, *, compress_images=False) -> list:
     import sqlite3
     from artifact_delivery import prepare_artifacts, MAX_ARTIFACT_BYTES
     from blob_pair_configuration import can_receive_artifacts, private_settings
