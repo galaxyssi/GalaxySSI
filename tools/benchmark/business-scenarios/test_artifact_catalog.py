@@ -64,6 +64,26 @@ class ArtifactCatalogTest(unittest.TestCase):
         self.assertEqual(1, result["artifact_content_unverified"])
         self.assertEqual("incomplete", result["overall_status"])
 
+    def test_late_receipt_does_not_replace_timeout_or_latency(self):
+        plan = catalog()
+        report = {"case_id": "A003", "catalog_sha256": plan["catalog_sha256"], "turns": [
+            {"index": 0, "state": "observation_timeout", "elapsed_ms": 600356,
+             "late_receipt": {"correct": True, "visible": True}},
+            {"index": 1, "state": "completed", "elapsed_ms": 151263,
+             "assessment": {"correct": True, "content_verified": False},
+             "driver_schema": 3, "visual_entry_id": "revision-reply", "rendered": True,
+             "visual_window_focused": True, "visual_capture_stable": True,
+             "timer_observed": True, "timer_stopped": True, "within_latency_target": True}]}
+        result = summarize(plan, [report])
+        self.assertEqual(2, result["observed_turns"])
+        self.assertEqual(1, result["completed_turns"])
+        self.assertEqual(0, result["correct_turns"])
+        self.assertEqual(1, result["artifact_delivery_checks_passed"])
+        self.assertEqual(151263, result["latency"]["p50_ms"])
+        self.assertIsNone(result["latency"]["p95_ms"])
+        self.assertIn({"case_id": "A003", "turn": 0, "reasons": ["observation_timeout"]}, result["failures"])
+        self.assertEqual("incomplete", result["overall_status"])
+
 
 if __name__ == "__main__":
     unittest.main()
