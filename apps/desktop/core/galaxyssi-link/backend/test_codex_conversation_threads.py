@@ -245,6 +245,62 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("Checking the visible worksheet fields.", progress[0]["detail"])
         self.assertNotIn("hidden chain", progress[0]["detail"])
 
+    def test_internal_recovery_markers_are_not_visible_reasoning_summaries(self):
+        for summary in (
+            '["GALAXYSSI_RECOVERY_ACTION_V1"]',
+            '[GALAXYSSI_RECOVERY_ACTION_V1]\n{"action":"retry"}\n[/GALAXYSSI_RECOVERY_ACTION_V1]',
+            '```json\n["GALAXYSSI_RECOVERY_ACTION_V1"]\n```',
+            '[/GALAXYSSI_RECOVERY_ACTION_V1]',
+        ):
+            with self.subTest(summary=summary):
+                server, run, events = self._event_server()
+                server._handle_event({
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": run.thread_id, "turnId": run.turn_id,
+                        "item": {"id": "internal-recovery", "type": "reasoning",
+                                 "summary": [summary], "content": ["private raw reasoning"]},
+                    },
+                })
+                self.assertFalse(any("progress_event" in event for _, event in events))
+                self.assertNotIn("GALAXYSSI_RECOVERY_ACTION_V1", str(events))
+                self.assertNotIn("private raw reasoning", str(events))
+                self.assertTrue(events, "Generic task liveness must remain observable")
+
+    def test_buffered_recovery_summary_is_discarded_and_buffer_cleared(self):
+        server, run, events = self._event_server()
+        for delta in ('[GALAXYSSI_RECOVERY_', 'ACTION_V1]'):
+            server._handle_event({
+                "method": "item/reasoning/summaryTextDelta",
+                "params": {"threadId": run.thread_id, "turnId": run.turn_id,
+                           "itemId": "buffered-recovery", "summaryIndex": 0, "delta": delta},
+            })
+        server._handle_event({
+            "method": "item/completed",
+            "params": {"threadId": run.thread_id, "turnId": run.turn_id,
+                       "item": {"id": "buffered-recovery", "type": "reasoning", "summary": []}},
+        })
+        self.assertNotIn("buffered-recovery", run.reasoning_summary_deltas)
+        self.assertFalse(any("progress_event" in event for _, event in events))
+        self.assertNotIn("GALAXYSSI_RECOVERY_ACTION_V1", str(events))
+
+    def test_recovery_filter_does_not_change_normal_summary_or_actual_control_reply(self):
+        server, run, events = self._event_server()
+        self.assertEqual("Checking the saved slides.", server._reasoning_summary(
+            run, "normal", {"summary": ["Checking the saved slides."]}))
+        protocol = ('[GALAXYSSI_RECOVERY_ACTION_V1]\n'
+                    '{"version":1,"action":"retry","reason":"temporary converter failure"}\n'
+                    '[/GALAXYSSI_RECOVERY_ACTION_V1]')
+        server._handle_event({
+            "method": "item/completed",
+            "params": {"threadId": run.thread_id, "turnId": run.turn_id,
+                       "item": {"id": "control-reply", "type": "agentMessage",
+                                "phase": "final_answer", "text": protocol}},
+        })
+        self.assertEqual(protocol, run.final_text)
+        from model_recovery import ModelRecoveryAction, parse_model_recovery
+        self.assertEqual(ModelRecoveryAction.RETRY, parse_model_recovery(run.final_text).decision.action)
+
     def test_first_agent_output_emits_one_telemetry_milestone(self):
         server, run, events = self._event_server()
 

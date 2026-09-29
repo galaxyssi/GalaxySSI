@@ -2603,6 +2603,10 @@ class CodexAppServer:
                 if cls._clean_visible_text(buffered[index])
             ]
         run.reasoning_summary_deltas.pop(item_id, None)
+        # Recovery control text is not a user-facing progress summary. Keep the
+        # actual reply untouched so the recovery controller can still decode it.
+        if any("GALAXYSSI_RECOVERY_ACTION_V1" in value for value in summaries):
+            return ""
         return "\n\n".join(summaries)[:MAX_VISIBLE_PROGRESS_TEXT]
 
     @staticmethod
