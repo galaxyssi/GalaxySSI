@@ -227,6 +227,10 @@ See `WAREHOUSE_ROUTING_ACCEPTANCE.md` for A005's retained 15-minute failure and
 the ambiguous warehouse/project routing repair. Its repaired live acceptance is
 separate from unit-test success.
 
+See `WAREHOUSE_LIVE_ACCEPTANCE.md` for the first three repaired A005 turns on
+Active3, native DOCX/preview review, background receipt, UI open/save and the
+remaining post-completion delivery delay. Eight follow-ups remain for that case.
+
 Run Desktop unit tests through the existing isolated launcher, never by importing
 the default task manager against a running user's state directory:
 
