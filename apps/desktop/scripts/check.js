@@ -46,6 +46,10 @@ const required = [
   "core/galaxyssi-link/backend/agent_file_access_ledger.py",
   "core/galaxyssi-link/backend/agent_performance_lab.py",
   "core/galaxyssi-link/backend/provider_profiles.py",
+  "core/galaxyssi-link/backend/web_source_sites.tsv",
+  "core/galaxyssi-link/backend/research_contract/research-quality.json",
+  "core/galaxyssi-link/backend/research_contract/research-audit-tool.json",
+  "core/galaxyssi-link/backend/research_contract/quality-cases.json",
   "core/galaxyssi-link/backend/response_self_check.py",
   "core/galaxyssi-link/backend/run_timeline.py",
   "scripts/package-win.js",
@@ -810,7 +814,7 @@ for (const packageDiscoveryContract of [
   '!entry.name.startsWith("test_")',
   "entry.isDirectory()",
   '"__init__.py"',
-  'const backendDataEntries = ["web_source_sites.tsv"]',
+  'const backendDataEntries = ["web_source_sites.tsv", "research_contract"]',
   "...backendDataEntries",
   "for (const entry of backendEntries)"
 ]) {
