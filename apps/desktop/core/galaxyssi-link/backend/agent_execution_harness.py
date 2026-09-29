@@ -934,9 +934,10 @@ def execution_policy_for(
     has_install = _contains_any(normalized, _INSTALL_TERMS)
     has_build = any(positive_term(str(prompt or ""), term) for term in _BUILD_TERMS)
     from video_generation_policy import video_creation_requested
+    has_office_request = office_artifact_requested(str(prompt or ""))
     has_artifact_request = (
         _contains_any(normalized, _ARTIFACT_TERMS)
-        or office_artifact_requested(str(prompt or ""))
+        or has_office_request
         or video_creation_requested(normalized)
     )
     has_research = any(positive_term(str(prompt or ""), term) for term in _RESEARCH_TERMS)
@@ -946,6 +947,7 @@ def execution_policy_for(
     if read_only_analysis:
         # Captured page text and historical operation words do not request an artifact.
         has_install = has_build = has_artifact_request = has_research = has_device = False
+        has_office_request = False
         target_platform = ""
         intent = AgentTaskIntentClassification(AgentTaskIntent.CHAT, 100, ("screen_analysis",))
     execution_mode, _execution_mode_signal = resolve_execution_mode(
@@ -1001,7 +1003,7 @@ def execution_policy_for(
         ),
         task_intent=intent.intent,
         task_intent_confidence=intent.confidence,
-        task_intent_signals=intent.matched_signals,
+        task_intent_signals=intent.matched_signals + (("office_artifact",) if has_office_request else ()),
         execution_mode=execution_mode,
         task_budget=AgentTaskBudget.from_public(requested_task_budget),
     )
@@ -1049,6 +1051,10 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         if policy.requires_artifact else
         "- Only create files when they are useful to the requested result."
     )
+    if policy.requires_artifact and "office_artifact" in policy.task_intent_signals:
+        from office_authoring import office_authoring_contract
+        if authoring_hint := office_authoring_contract():
+            artifact_line += "\n" + authoring_hint
     install_line = (
         f"- The target is {target}. Build the native installable artifact, verify its format, "
         "and only claim installation or launch after an execution receipt confirms it."

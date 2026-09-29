@@ -97,8 +97,53 @@ class OfficePreviewTests(unittest.TestCase):
         self.assertEqual(3, result["page_count"])
         self.assertEqual(1, result["preview_pages"])
         self.assertEqual(before, self.source.read_bytes())
-        self.assertEqual(2, len(result["files"]))
+        self.assertEqual(3, len(result["files"]))
+        self.assertTrue(result["original_included"])
+        self.assertEqual("outputs/report.docx", result["files"][0]["path"])
         self.assertTrue(all((self.root / item["path"]).is_file() for item in result["files"]))
+
+    def test_input_original_is_published_without_mutation(self):
+        source = self.root / "input" / "original.docx"
+        source.parent.mkdir(exist_ok=True)
+        self.source.rename(source)
+        before = source.read_bytes()
+        with patch.object(preview.shutil, "which", side_effect=lambda name: name), \
+             patch.object(preview, "_convert", self.fake_convert), \
+             patch.object(preview.subprocess, "run", self.fake_run):
+            result = preview.render("preview-test", str(source), 1)
+        originals = [self.root / item["path"] for item in result["files"] if item["path"].endswith(".docx")]
+        self.assertEqual(1, len(originals))
+        self.assertTrue(originals[0].is_relative_to(self.root / "outputs"))
+        self.assertEqual(before, originals[0].read_bytes())
+        self.assertEqual(before, source.read_bytes())
+
+    def test_preview_only_does_not_publish_an_input_original(self):
+        source = self.root / "temp" / "input.docx"
+        self.source.rename(source)
+        with patch.object(preview.shutil, "which", side_effect=lambda name: name), \
+             patch.object(preview, "_convert", self.fake_convert), \
+             patch.object(preview.subprocess, "run", self.fake_run):
+            result = preview.render("preview-test", str(source), 1, include_original=False)
+        self.assertFalse(result["original_included"])
+        self.assertEqual(2, len(result["files"]))
+        self.assertTrue(source.is_file())
+        self.assertEqual([], list((self.root / "outputs").rglob("*.docx")))
+
+    def test_invalid_original_flag_rejected_before_conversion(self):
+        for value in (None, "false", 0, 1):
+            with self.subTest(value=value), patch.object(preview, "_convert") as convert, self.assertRaises(ValueError):
+                preview.render("preview-test", str(self.source), include_original=value)
+            convert.assert_not_called()
+
+    def test_converter_cannot_modify_the_original_copy(self):
+        def mutate(source, pdf, scratch):
+            source.write_bytes(b"modified")
+            return self.fake_convert(source, pdf, scratch)
+        with patch.object(preview.shutil, "which", side_effect=lambda name: name), \
+             patch.object(preview, "_convert", mutate), \
+             patch.object(preview.subprocess, "run", self.fake_run), self.assertRaisesRegex(RuntimeError, "Source changed"):
+            preview.render("preview-test", str(self.source), 1)
+        self.assertEqual([self.source], list((self.root / "outputs").iterdir()))
 
     def test_failed_conversion_does_not_publish_or_replace_original(self):
         before = self.source.read_bytes()

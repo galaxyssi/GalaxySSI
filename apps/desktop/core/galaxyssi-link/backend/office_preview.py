@@ -22,10 +22,12 @@ _MAIN = {".docx": "word/document.xml", ".xlsx": "xl/workbook.xml", ".pptx": "ppt
 
 def tool_spec():
     return {"type": "function", "name": TOOL,
-            "description": "Render a saved DOCX/XLSX/PPTX in this task to PDF and PNG pages using an installed Office renderer. Preserves the editable original; returns real preview paths, hashes and page coverage. Use instead of writing ad-hoc Office export scripts. Never describes an unavailable render as verified.",
+            "description": "Render a saved DOCX/XLSX/PPTX in this task to PDF and PNG pages using an installed Office renderer. By default also publishes the unchanged editable original in outputs. Returns deliverable paths, hashes and page coverage. Use instead of writing ad-hoc Office export scripts. Never describes an unavailable render as verified.",
             "inputSchema": {"type": "object", "properties": {
                 "path": {"type": "string", "description": "Absolute or task-relative path to the saved Office file."},
-                "max_pages": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8}},
+                "max_pages": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8},
+                "include_original": {"type": "boolean", "default": True,
+                                     "description": "Keep true when native Office delivery is requested. Set false for preview-only or PDF-only output; this does not remove a source already in outputs."}},
                 "required": ["path"], "additionalProperties": False}}
 
 
@@ -84,9 +86,11 @@ def _convert(source: Path, pdf: Path, scratch: Path) -> str:
     raise RuntimeError("No supported Office renderer is installed")
 
 
-def render(task_id: str, raw_path: str, max_pages: int = 8) -> dict:
+def render(task_id: str, raw_path: str, max_pages: int = 8, *, include_original: bool = True) -> dict:
     if isinstance(max_pages, bool) or not isinstance(max_pages, int) or not 1 <= max_pages <= 20:
         raise ValueError("max_pages must be an integer from 1 to 20")
+    if type(include_original) is not bool:
+        raise ValueError("include_original must be a boolean")
     root = task_workspace(task_id).resolve()
     source = _validated_source(root, raw_path)
     rasterizer = shutil.which("pdftoppm")
@@ -129,22 +133,32 @@ def render(task_id: str, raw_path: str, max_pages: int = 8) -> dict:
                 with image.open("rb") as stream:
                     if stream.read(8) != b"\x89PNG\r\n\x1a\n":
                         raise RuntimeError("PDF renderer returned an invalid PNG")
-            if _digest(source) != before:
+            if _digest(source) != before or _digest(copied) != before:
                 raise RuntimeError("Source changed during rendering; preview was not published")
+            original_in_outputs = source.is_relative_to(root / "outputs")
+            if include_original and not original_in_outputs:
+                shutil.copyfile(copied, pages / source.name)
+                if _digest(pages / source.name) != before:
+                    raise RuntimeError("Original copy failed integrity verification")
             target = root / "outputs" / output_name
             pages.rename(target)
+            deliverables = sorted(target.iterdir())
+            if include_original and original_in_outputs:
+                deliverables.insert(0, source)
             return {"status": "rendered", "renderer": renderer, "source": source.relative_to(root).as_posix(),
                     "source_sha256": before, "page_count": page_count, "preview_pages": len(images),
+                    "original_included": include_original,
                     "complete_preview": page_count is not None and len(images) == page_count,
                     "files": [{"path": str(p.relative_to(root)).replace("\\", "/"), "sha256": _digest(p),
-                               "size_bytes": p.stat().st_size} for p in sorted(target.iterdir())]}
+                               "size_bytes": p.stat().st_size} for p in deliverables]}
     finally:
         _SLOT.release()
 
 
 def execute(arguments: dict, task_id: str) -> dict:
     try:
-        result = render(task_id, str(arguments.get("path", "")), arguments.get("max_pages", 8))
+        result = render(task_id, str(arguments.get("path", "")), arguments.get("max_pages", 8),
+                        include_original=arguments.get("include_original", True))
     except Exception as error:
         result = {"status": "unavailable", "error": type(error).__name__, "reason": str(error)[-1000:],
                   "original_preserved": True}
