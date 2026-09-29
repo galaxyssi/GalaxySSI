@@ -43,6 +43,7 @@ from web_evidence_pack import (
 from research_quality import assess_answer, quality_repair_prompt, research_quality_prompt, research_stage
 from research_audit import ResearchEvidenceAudit, TOOL as RESEARCH_AUDIT_TOOL, tool_spec as research_audit_tool_spec
 from research_trace import search_receipt
+from office_preview import TOOL as OFFICE_PREVIEW_TOOL, tool_spec as office_preview_tool_spec, execute as execute_office_preview
 
 
 log = logging.getLogger("galaxyssi.codex")
@@ -167,6 +168,7 @@ class CodexRun:
     )
     stall_replans: int = 0
     failure_counts: dict[str, int] = field(default_factory=dict)
+    observed_failure_items: set[tuple[str, str]] = field(default_factory=set)
     replan_inflight: bool = False
     finished: bool = False
     prefers_chinese: bool = False
@@ -209,7 +211,7 @@ class CodexAppServer:
         self._loaded_thread_access_sequence = 0
         self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
-        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec()]
+        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec(), office_preview_tool_spec()]
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -934,6 +936,8 @@ class CodexAppServer:
         )
 
     def _record_failed_item(self, run: CodexRun, item: dict) -> None:
+        if run.finished:
+            return
         raw_status = str(item.get("status") or "").lower()
         if "fail" not in raw_status and raw_status != "declined":
             return
@@ -944,18 +948,38 @@ class CodexAppServer:
             # Steering an additional replan here
             # duplicates context and delays the model's native recovery path.
             return
+        item_id = str(item.get("id") or "")
+        if item_id:
+            identity = (run.turn_id, item_id)
+            if identity in run.observed_failure_items:
+                return
+            run.observed_failure_items.add(identity)
         detail = self._item_detail(item, item_type) or raw_status or item_type
+        native_recovery = item_type == "commandExecution"
+        if native_recovery:
+            output = str(item.get("aggregatedOutput") or item.get("stderr") or "").strip()
+            # A repaired script can use the same command but fail differently.
+            # Put the error tail before the command so fingerprint truncation
+            # does not conflate distinct native recovery attempts.
+            if output:
+                detail = f"{output[-400:]}\nCommand: {detail}"
         signature = failure_fingerprint(item_type, detail)
         count = run.failure_counts.get(signature, 0) + 1
         run.failure_counts[signature] = count
         can_replan = count < run.execution_policy.max_same_failure_attempts
         if run.execution_harness is not None:
-            can_replan, count = run.execution_harness.record_failure(
-                item_type,
-                detail,
-            )
+            if native_recovery:
+                can_replan, count = run.execution_harness.record_failure(
+                    item_type, detail, native_recovery=True,
+                )
+            else:
+                can_replan, count = run.execution_harness.record_failure(item_type, detail)
             run.failure_counts[signature] = count
         if can_replan:
+            if native_recovery:
+                # Codex already receives command output. Let that turn repair
+                # it without an extra steer or consuming the stall-replan budget.
+                return
             threading.Thread(
                 target=self._attempt_replan,
                 args=(run, f"{item_type} failed: {detail}"),
@@ -1010,7 +1034,7 @@ class CodexAppServer:
             "status": "failed",
             "current_step": "",
             "result": message,
-            "error": f"Repeated {item_type} failure: {detail[:500]}",
+            "error": message,
         })
         try:
             self._request(
@@ -1994,6 +2018,12 @@ class CodexAppServer:
                 self._write_server_response(message.get("id"), {"success": audit.get("status") == "recorded",
                     "contentItems": [{"type": "inputText", "text": json.dumps(audit, ensure_ascii=False)}]})
                 return
+            elif tool_name == OFFICE_PREVIEW_TOOL:
+                with self._lock:
+                    run = self._runs.get(task_id)
+                    if run is None or run.finished or "screen_analysis" in run.execution_policy.task_intent_signals or run.execution_policy.execution_mode.value == "plan_only":
+                        raise ValueError("This task is not allowed to create Office previews")
+                result = execute_office_preview(arguments if isinstance(arguments, Mapping) else {}, task_id)
             elif tool_name == CODEX_DYNAMIC_SEARCH_TOOL:
                 result = execute_codex_dynamic_search(
                     arguments if isinstance(arguments, Mapping) else {},
@@ -2041,6 +2071,15 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
+        if tool_name == OFFICE_PREVIEW_TOOL:
+            with self._lock:
+                active_run = self._runs.get(task_id)
+                if active_run is None or active_run.finished:
+                    return
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Office preview rendered" if result.get("success") else "Office preview unavailable",
+                "trace_stage": "office_preview_completed", "telemetry_only": True})
+            return
         direct_fetch = tool_name == CODEX_DYNAMIC_FETCH_TOOL
         direct_urls = arguments.get("urls") if isinstance(arguments, Mapping) else []
         self.on_event(task_id, {
@@ -2411,7 +2450,7 @@ class CodexAppServer:
             "dynamicToolCall": "tool",
             "webSearch": "network",
         }.get(item_type, "tool")
-        detail = cls._item_detail(item, item_type)
+        detail = "" if item_type == "commandExecution" else cls._item_detail(item, item_type)
         item_id = str(item.get("id") or "").strip()
         return {
             "event_id": f"codex:{item_id}" if item_id else "",
@@ -2488,7 +2527,7 @@ class CodexAppServer:
         metadata: dict[str, object] = {"source": "codex_app_server", "item_type": item_type}
         if item_type == "commandExecution":
             code, started_title, completed_title = "command", "Running command", "Ran command"
-            detail = cls._clean_visible_text(item.get("command"))
+            # Commands remain in Codex's execution receipt, not chat prose.
         elif item_type == "fileChange":
             code, started_title, completed_title = "file_change", "Updating files", "Updated files"
             metadata["count"] = len(item.get("changes") or [])

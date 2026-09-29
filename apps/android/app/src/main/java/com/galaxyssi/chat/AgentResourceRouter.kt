@@ -269,7 +269,8 @@ object AgentTaskRequirementAnalyzer {
     private val codeTerms = listOf(
         "code", "python", "program", "script", "debug", "repository", "compile", "build", "codex",
         "android project", "software project", "codebase", "apk", "bug", "pull request", "git repository",
-        "function", "unit test", "test case", "test scenario", "verify the program", "test the program",
+        "function", "unit test", "unit tests", "test case", "test cases", "test scenario", "test scenarios",
+        "verify the program", "test the program",
         "\u4ee3\u7801", "\u7a0b\u5e8f", "\u811a\u672c", "\u51fd\u6570", "\u7f16\u7a0b", "\u5f00\u53d1",
         "\u5355\u5143\u6d4b\u8bd5", "\u6d4b\u8bd5\u7528\u4f8b", "\u6d4b\u8bd5\u573a\u666f",
         "\u8fd0\u884c\u9a8c\u8bc1", "\u7f16\u8bd1", "\u9879\u76ee", "\u4fee\u590d bug"
@@ -306,7 +307,7 @@ object AgentTaskRequirementAnalyzer {
         // whether current public evidence is needed; this analyzer must not infer it
         // from words such as "today", "current", "news", or "weather".
         val live = false
-        val code = lower.containsAny(codeTerms)
+        val code = codeTerms.any { AgentCodeKeywordPolicy.contains(lower, it) }
         val codeDiscussion = AgentCodeDiscussionPolicy.isInformational(lower)
         val codeExecution = code &&
             codeExecutionTerms.any { term -> lower.containsPolicyTerm(term) } &&

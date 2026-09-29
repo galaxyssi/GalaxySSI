@@ -467,7 +467,12 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
         response.taskId
     )
     if (runtime == null) {
-        if (AgentSupervisedProjectControlPayload.isControlPayload(response.content)) {
+        val saved = response.turnId.takeIf(String::isNotBlank)?.let {
+            SharedPreferencesAgentSessionStore(applicationContext, "task:$it").load()
+        }
+        if (AgentSupervisedProjectControlPayload.isControlPayload(response.content) ||
+            AgentSupervisedProjectPresentationPolicy.ownsResponse(saved?.currentPlan, saved?.lastActionResult, response)
+        ) {
             deferSupervisedProjectControlResponse(response)
             return
         }

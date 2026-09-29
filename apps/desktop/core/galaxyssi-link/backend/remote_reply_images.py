@@ -293,7 +293,7 @@ def _bind_local_images(task_id, source):
         except (ValueError, OSError):
             continue
         name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", label).strip()[:80] or "Image"
-        files.setdefault(relative, {"name": name + "." + extension, "relative_path": relative,
+        files.setdefault(relative, {"name": path.name, "display_title": name + "." + extension, "relative_path": relative,
                                    "category": relative.split("/", 1)[0], "size": path.stat().st_size,
                                    "mime_type": mime})
         edits.append((start, end, f"![Image](<{relative}>)"))

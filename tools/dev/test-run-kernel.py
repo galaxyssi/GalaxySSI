@@ -26,6 +26,11 @@ def main() -> int:
         environment = {
             **os.environ, "HOME": home, "USERPROFILE": home,
             "APPDATA": home, "GALAXYSSI_STATE_DIR": str(Path(home) / "GalaxySSI"),
+            "GALAXYSSI_DATA_DIR": str(Path(home) / "data"),
+            "GALAXYSSI_DATABASE_PATH": str(Path(home) / "messages.sqlite3"),
+            "GALAXYSSI_CONFIG_PATH": str(Path(home) / "agents.json"),
+            "GALAXYSSI_WORKSPACE_ROOT": str(Path(home) / "workspaces"),
+            "GALAXYSSI_DISABLE_EXTERNAL_SERVICES": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         if sys.argv[1:2] == ["--pytest"]:

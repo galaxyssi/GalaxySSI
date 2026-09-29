@@ -1284,7 +1284,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         }
         .sortedBy(AgentTranscriptEntry::timestampMillis)
         .distinctBy { AgentTranscriptPresentationPolicy.processNarrationIdentity(it.text) }
-    val processSegments = AgentTranscriptPresentationPolicy.narrationSegments(
+    val processSegments = AgentTranscriptPresentationPolicy.visibleProcessSegments(
         processEntries.ifEmpty { listOf(entry) }
     )
     val hasProcessDetails = processSegments.isNotEmpty()

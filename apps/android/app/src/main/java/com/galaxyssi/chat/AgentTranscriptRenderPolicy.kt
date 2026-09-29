@@ -35,7 +35,7 @@ object AgentTranscriptRenderPolicy {
                     .distinctBy { entry ->
                         AgentTranscriptPresentationPolicy.processNarrationIdentity(entry.text)
                     }
-                    .let(AgentTranscriptPresentationPolicy::narrationSegments)
+                    .let(AgentTranscriptPresentationPolicy::visibleProcessSegments)
                     .flatMap(AgentTranscriptPresentationPolicy.ProcessSegment::entries)
                 val narrationSignature = visibleNarration.fold(1) { result, entry ->
                     31 * result + sourceProcessSignature(entry)

@@ -22,6 +22,11 @@ object AgentConnectorResponseStore {
         return store(context).append(response, receipt)
     }
 
+    internal fun recordManagedReceipt(context: Context, response: AgentConnectorResponse, receipt: AgentResultReceipt?) {
+        if (superseded(context, response)) return
+        store(context).append(response, receipt, handled = true)
+    }
+
     internal fun dueReceipts(context: Context, now: Long): List<AgentResultReceiptWork> = store(context).dueReceipts(now)
     internal fun claimReceipt(context: Context, work: AgentResultReceiptWork, now: Long): Boolean = store(context).claimReceipt(work, now)
     internal fun confirmReceipt(context: Context, receipt: AgentResultReceipt): Boolean = store(context).confirmReceipt(receipt)

@@ -277,6 +277,14 @@ object AgentTranscriptPresentationPolicy {
             segment.kind == ProcessContentKind.NARRATION
         }
 
+    fun visibleProcessSegments(entries: List<AgentTranscriptEntry>): List<ProcessSegment> =
+        processSegments(entries).mapNotNull { segment ->
+            val visible = segment.entries.filter {
+                segment.kind == ProcessContentKind.NARRATION || it.dedupeKey.startsWith("connector-event:")
+            }
+            visible.takeIf { it.isNotEmpty() }?.let { segment.copy(entries = it) }
+        }
+
     fun controlMessageKind(value: String): ControlMessageKind? = when (
         value.trim().lowercase()
     ) {

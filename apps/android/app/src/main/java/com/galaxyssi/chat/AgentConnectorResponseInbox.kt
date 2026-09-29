@@ -25,7 +25,7 @@ internal class AgentConnectorResponseInbox(
     private var migrationChecked = false
 
     @Synchronized
-    fun append(response: AgentConnectorResponse, receipt: AgentResultReceipt? = null): Boolean {
+    fun append(response: AgentConnectorResponse, receipt: AgentResultReceipt? = null, handled: Boolean = false): Boolean {
         migrate()
         require(response.sourceMessageId > 0) { "Invalid connector response source identity" }
         require(response.content.isNotBlank() || response.richOutputJson.isNotBlank()) { "Empty connector response" }
@@ -36,6 +36,7 @@ internal class AgentConnectorResponseInbox(
             val inserted = insert(database, response)
             val key = AgentConnectorResponseCodec.identity(response)
             if (receipt != null && exists("identity_key=?", arrayOf(key))) receipts.insert(database, receipt, key)
+            if (handled) acknowledgeWhere("identity_key=?", arrayOf(key))
             database.setTransactionSuccessful()
             inserted
         } finally { database.endTransaction() }

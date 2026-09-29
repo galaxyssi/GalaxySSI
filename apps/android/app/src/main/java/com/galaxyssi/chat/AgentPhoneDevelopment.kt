@@ -62,12 +62,12 @@ internal object AgentPhoneDevelopmentPolicy {
             return AgentPhoneDevelopmentMode.NONE
         }
         val creation = creationTerms.any { normalized.containsPolicyTerm(it) }
-        val projectScope = projectScopeTerms.any { normalized.containsPolicyTerm(it) }
+        val projectScope = projectScopeTerms.any { AgentCodeKeywordPolicy.contains(normalized, it) }
         val projectOperation = projectOperationTerms.any { normalized.containsPolicyTerm(it) }
-        val development = (creation && developmentTerms.any { normalized.containsPolicyTerm(it) }) ||
+        val development = (creation && developmentTerms.any { AgentCodeKeywordPolicy.contains(normalized, it) }) ||
             (projectScope && (creation || projectOperation))
         if (!development) return AgentPhoneDevelopmentMode.NONE
-        val codeArtifact = implicitPhoneCodeTerms.any { normalized.containsPolicyTerm(it) }
+        val codeArtifact = implicitPhoneCodeTerms.any { AgentCodeKeywordPolicy.contains(normalized, it) }
         return if (projectScope || codeArtifact) {
             AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
         } else {

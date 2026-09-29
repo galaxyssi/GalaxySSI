@@ -517,6 +517,25 @@ class AgentExecutionHarnessTests(unittest.TestCase):
             self.assertEqual(1, restored.checkpoint.replans)
             self.assertEqual([2], list(restored.checkpoint.failure_counts.values()))
 
+    def test_native_recovery_persists_counts_without_spending_replan_budget(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {
+            "GALAXYSSI_WORKSPACE_ROOT": temporary,
+            "GALAXYSSI_STATE_DIR": str(Path(temporary) / "state"),
+        }):
+            harness = AgentExecutionHarness("native-recovery", "codex", "Create an Excel file")
+            harness.checkpoint.replans = harness.policy.max_replans
+            for error in ("missing xlsxwriter", "missing openpyxl", "invalid script encoding"):
+                self.assertEqual((True, 1), harness.record_failure(
+                    "commandExecution", error, native_recovery=True,
+                ))
+            self.assertEqual(harness.policy.max_replans, harness.checkpoint.replans)
+            self.assertEqual("observe", harness.checkpoint.phase)
+            restored = AgentExecutionHarness("native-recovery", "codex", "Create an Excel file")
+            self.assertEqual((False, 2), restored.record_failure(
+                "commandExecution", "missing xlsxwriter", native_recovery=True,
+            ))
+            self.assertEqual("failed", restored.checkpoint.phase)
+
     def test_concurrent_checkpoint_progress_keeps_valid_json(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ,

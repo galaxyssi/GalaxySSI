@@ -111,6 +111,26 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
 class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedResponseLedger {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
+    internal fun ownsRecordedSource(source: Long, conversation: String, turn: String): Boolean = synchronized(PROCESS_LOCK) {
+        source > 0 && conversation.isNotBlank() && turn.isNotBlank() && load().any {
+            it.sourceMessageId == source && it.conversationId == conversation && it.turnId == turn
+        }
+    }
+
+    internal fun pendingRecoveryDeliveries(): List<AgentPendingDelivery> = synchronized(PROCESS_LOCK) {
+        load().mapNotNull { it.pendingRecoveryDelivery() }.distinct()
+    }
+
+    internal fun pendingRecoveryDelivery(source: Long, contact: String, conversation: String,
+        turn: String, task: String): AgentPendingDelivery? = synchronized(PROCESS_LOCK) {
+        load().firstNotNullOfOrNull { record ->
+            record.pendingRecoveryDelivery()?.takeIf {
+                it.sourceMessageId == source && it.contactId == contact && it.conversationId == conversation &&
+                    it.turnId == turn && it.taskId == task
+            }
+        }
+    }
+
     override fun register(record: AgentManagedResponseRecord) = synchronized(PROCESS_LOCK) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
         val next = load().filterNot { it.ownerRunId == record.ownerRunId }
@@ -251,6 +271,12 @@ private fun AgentManagedResponseRecord.correlates(response: AgentConnectorRespon
             actualTurnId = response.turnId,
             actualTaskId = response.taskId
         )
+
+private fun AgentManagedResponseRecord.pendingRecoveryDelivery(): AgentPendingDelivery? =
+    if (state == AgentManagedResponseState.PENDING && sourceMessageId > 0 &&
+        listOf(contactId, conversationId, turnId, taskId).all { it.isNotBlank() }) {
+        AgentPendingDelivery(sourceMessageId, conversationId, turnId, taskId, contactId)
+    } else null
 
 private fun responseIdentityMatches(
     expectedConversationId: String,

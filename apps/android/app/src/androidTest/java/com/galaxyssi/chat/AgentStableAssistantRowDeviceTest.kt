@@ -18,6 +18,36 @@ import java.io.ByteArrayOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class AgentStableAssistantRowDeviceTest {
+    @Test fun lateArtifactInvalidatesOnlyItsStableRow() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val uri = "galaxyssi-artifact://late-preview-test/outputs/preview.png"
+                val image = entry("Image result").copy(richOutputJson = AgentRichContentCodec.encode(listOf(
+                    AgentRichBlock(id = "late-preview", type = AgentRichBlockType.IMAGE,
+                        title = "preview.png", uri = uri, mimeType = "image/png"))))
+                val other = entry("Unrelated reply").copy(id = "other-final", turnId = "other-turn", taskId = "other-task")
+                val adapter = AgentTranscriptRecyclerAdapter(activity)
+                adapter.replaceAll(listOf(image, other))
+                val imageHolder = adapter.onCreateViewHolder(activity.agentOutputList, 0)
+                val otherHolder = adapter.onCreateViewHolder(activity.agentOutputList, 0)
+                adapter.onBindViewHolder(imageHolder, 0)
+                adapter.onBindViewHolder(otherHolder, 1)
+                val oldImage = imageHolder.container.getChildAt(0)
+                val oldOther = otherHolder.container.getChildAt(0)
+                adapter.artifactAvailable(uri)
+                adapter.onBindViewHolder(imageHolder, 0)
+                adapter.onBindViewHolder(otherHolder, 1)
+                assertNotSame(oldImage, imageHolder.container.getChildAt(0))
+                assertSame(oldOther, otherHolder.container.getChildAt(0))
+                val refreshedImage = imageHolder.container.getChildAt(0)
+                adapter.onBindViewHolder(imageHolder, 0)
+                assertSame(refreshedImage, imageHolder.container.getChildAt(0))
+                adapter.onViewRecycled(imageHolder)
+                adapter.onViewRecycled(otherHolder)
+            }
+        }
+    }
+
     @Test fun executionMetadataIsNotAppendedDuringStreamingOrAfterCompletion() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

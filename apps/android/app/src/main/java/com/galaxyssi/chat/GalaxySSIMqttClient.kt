@@ -2422,6 +2422,7 @@ object GalaxySSIMqttClient {
                 payload.put("content", AgentRemoteOutcomeCodec.content(context, payload))
             }
             AgentResearchTraceStore.receiveAuthenticated(context, payload)
+            if (finalReply) AndroidAgentResultRecovery.persistAuthenticatedFinal(context, payload)
         }
         if (payload.optString("type") == "agent_task_result_receipt_confirmed") {
             AndroidAgentResultReceipts.receive(context, payload, sourceDesktopId)
@@ -2942,11 +2943,13 @@ object GalaxySSIMqttClient {
             AppStore.desktopIdForContact(context, request.contactId) != sourceDesktopId
         ) return
         val restored = runCatching {
-            AgentAttachmentWorkspaceStager.restoreByIds(
+            val inputs = AgentAttachmentWorkspaceStager.restoreByIds(
                 context,
                 request.conversationId,
                 request.attachmentIds
             )
+            inputs + AgentDeliveredAttachmentRecovery.restore(context, request.conversationId,
+                request.attachmentIds.filterNot { id -> inputs.any { it.id == id } })
         }.onFailure {
             Log.w(TAG, "Requested attachment recovery lookup failed", it)
         }.getOrElse {

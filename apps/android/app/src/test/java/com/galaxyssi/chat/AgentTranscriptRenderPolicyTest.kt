@@ -338,6 +338,19 @@ class AgentTranscriptRenderPolicyTest {
         )
     }
 
+    @Test
+    fun concreteToolProgressRefreshesOnlyItsOwnConversation() {
+        val tool = entry("stockfish", "Running Stockfish", role = AgentTranscriptRole.PROCESS,
+            conversationId = "conversation", turnId = "turn")
+            .copy(dedupeKey = "connector-event:task:TOOL_EVENT:command")
+        val other = tool.copy(id = "other", conversationId = "other", text = "Viewed 1 image")
+        val before = AgentTranscriptRenderPolicy.processGroupSignatures(listOf(tool, other))
+        val after = AgentTranscriptRenderPolicy.processGroupSignatures(
+            listOf(tool.copy(text = "Stockfish completed"), other))
+        assertFalse(before["turn:conversation:turn"] == after["turn:conversation:turn"])
+        assertEquals(before["turn:other:turn"], after["turn:other:turn"])
+    }
+
     private fun entry(
         id: String,
         text: String,

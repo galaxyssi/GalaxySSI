@@ -33,7 +33,8 @@ object AgentTaskIntentClassifier {
 
         RULES.forEach { rule ->
             rule.terms.forEach { term ->
-                if (normalized.contains(term)) {
+                if (if (rule.intent == AgentTaskIntent.CODE) AgentCodeKeywordPolicy.contains(normalized, term)
+                    else normalized.contains(term)) {
                     scores[rule.intent] = scores.getOrDefault(rule.intent, 0) + rule.weight
                     signals.getOrPut(rule.intent, ::mutableListOf).add(term)
                 }
@@ -112,7 +113,7 @@ object AgentTaskIntentClassifier {
             3,
             listOf(
                 "build", "compile", "implement", "develop", "code", "program",
-                "fix bug", "repository", "pull request", "unit test", "apk",
+                "fix bug", "repository", "pull request", "unit test", "unit tests", "apk",
                 "\u7f16\u8bd1", "\u6784\u5efa", "\u5f00\u53d1", "\u5b9e\u73b0",
                 "\u4ee3\u7801", "\u7a0b\u5e8f", "\u4fee\u590d bug", "\u9879\u76ee",
                 "\u4ed3\u5e93", "\u5355\u5143\u6d4b\u8bd5"

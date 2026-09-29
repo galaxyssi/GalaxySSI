@@ -40,7 +40,14 @@ internal object AgentPendingDeliveryStore {
         AndroidAgentRemoteSilence.retire(context, sourceMessageId)
     }
     fun isSuperseded(context: Context, sourceMessageId: Long, conversationId: String, turnId: String): Boolean =
-        journal(context).isSuperseded(sourceMessageId, conversationId, turnId)
+        when (journal(context).sourceState(sourceMessageId, conversationId, turnId)) {
+            AgentPendingSourceState.CURRENT -> false
+            AgentPendingSourceState.SUPERSEDED -> true
+            // Managed children use a separate ledger. A random unknown source is not exempt.
+            AgentPendingSourceState.UNREGISTERED ->
+                !AgentManagedConnectorResponseRegistry.ownsPendingSource(sourceMessageId, conversationId, turnId) &&
+                    !EncryptedAgentManagedResponseLedger(context).ownsRecordedSource(sourceMessageId, conversationId, turnId)
+        }
     internal fun page(context: Context, beforeSource: Long? = null): AgentPendingDeliveryPage = journal(context).page(beforeSource)
     internal fun close(context: Context) {
         journals.remove(context.applicationContext.getDatabasePath(AgentPendingDeliveryJournal.DATABASE_NAME).absolutePath)?.close()

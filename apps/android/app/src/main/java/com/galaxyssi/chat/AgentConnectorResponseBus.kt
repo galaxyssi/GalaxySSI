@@ -113,8 +113,12 @@ object AgentConnectorResponseBus {
         )
         if (normalized.content.isBlank() && normalized.richOutputJson.isBlank()) return false
         if (!AgentConnectorResponseStore.isCurrentExecution(context, normalized)) return false
-        if (AgentManagedConnectorResponseRegistry.consume(normalized)) return true
-        if (EncryptedAgentManagedResponseLedger(context).complete(normalized) != null) return true
+        if (AgentManagedConnectorResponseRegistry.consume(normalized) ||
+            EncryptedAgentManagedResponseLedger(context).complete(normalized) != null) {
+            // The supervisor owns the body; persist its receipt without exposing a child reply to UI recovery.
+            AgentConnectorResponseStore.recordManagedReceipt(context, normalized, receipt)
+            return true
+        }
         val durable = if (AgentConnectorResponseStore.appendWithReceipt(context, normalized, receipt)) normalized
             else AgentConnectorResponseStore.find(context, normalized)
         if (durable != null) {
@@ -197,6 +201,11 @@ internal object AgentManagedConnectorResponseRegistry {
         if (ownerId.isBlank()) return
         interceptors.entries.removeIf { it.value.ownerId == ownerId }
     }
+
+    internal fun ownsPendingSource(source: Long, conversation: String, turn: String): Boolean =
+        source > 0 && conversation.isNotBlank() && turn.isNotBlank() && interceptors.entries.any {
+            it.key.startsWith("$source:") && it.value.conversationId == conversation && it.value.turnId == turn
+        }
 
     fun clear() = interceptors.clear()
 

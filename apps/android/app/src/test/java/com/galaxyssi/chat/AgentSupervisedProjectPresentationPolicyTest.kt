@@ -6,6 +6,27 @@ import org.junit.Test
 
 class AgentSupervisedProjectPresentationPolicyTest {
     @Test
+    fun supervisedFinalEnvelopeRemainsOwnedWhileItsWindowIsRestoring() {
+        val action = supervisedConnector().copy(parameters = supervisedConnector().parameters + mapOf(
+            INTERNAL_CONVERSATION_ID to "conversation", INTERNAL_TURN_ID to "turn"))
+        val plan = AgentPlan("question", ScreenContext(foregroundApp = "test", pageTitle = "test"), emptyList(), listOf(action))
+        val result = AgentActionResult(action.id, true, "Waiting", mapOf(
+            "source_message_id" to "42", "contact_id" to "codex", "remote_task_id" to "remote"))
+        val response = AgentConnectorResponse(42, "codex", "{\"disposition\":\"respond\",\"final_response\":\"Answer\"}",
+            "conversation", "turn", "remote")
+        assertTrue(AgentSupervisedProjectPresentationPolicy.ownsResponse(plan, result, response))
+        assertTrue(AgentSupervisedProjectPresentationPolicy.ownsResponse(plan, result, response.copy(content = "Plain answer")))
+        listOf(response.copy(sourceMessageId = 43), response.copy(contactId = "other"),
+            response.copy(conversationId = "other"), response.copy(turnId = "other"),
+            response.copy(taskId = "other")).forEach {
+            assertFalse(AgentSupervisedProjectPresentationPolicy.ownsResponse(plan, result, it))
+        }
+        assertFalse(AgentSupervisedProjectPresentationPolicy.ownsResponse(
+            plan.copy(actions = listOf(action.copy(parameters = action.parameters - "connector_task_mode"))), result, response))
+        assertFalse(AgentSupervisedProjectPresentationPolicy.ownsResponse(null, result, response))
+    }
+
+    @Test
     fun `internal supervised planning failures do not create a user recovery card`() {
         assertFalse(
             AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(

@@ -13,6 +13,8 @@ internal data class AgentPendingDeliveryPage(
     val unreadableCount: Int = 0
 )
 
+internal enum class AgentPendingSourceState { CURRENT, SUPERSEDED, UNREGISTERED }
+
 /** Atomic pending bodies/turn heads. NULL bodies are durable anti-resurrection tombstones. */
 internal class AgentPendingDeliveryJournal(
     private val context: Context,
@@ -71,13 +73,23 @@ internal class AgentPendingDeliveryJournal(
         }
     }
 
-    @Synchronized fun isSuperseded(source: Long, conversation: String, turn: String): Boolean {
-        if (source <= 0 || conversation.isBlank() || turn.isBlank()) return false
+    fun isSuperseded(source: Long, conversation: String, turn: String): Boolean =
+        sourceState(source, conversation, turn) != AgentPendingSourceState.CURRENT
+
+    @Synchronized fun sourceState(source: Long, conversation: String, turn: String): AgentPendingSourceState {
+        if (source <= 0 || conversation.isBlank() || turn.isBlank()) return AgentPendingSourceState.CURRENT
         return transaction { db ->
-            val current = readHead(db, conversation, turn) ?: return@transaction false
-            if (current == source) return@transaction false
-            val delivery = readSource(db, source) ?: return@transaction true
-            !AgentPendingDeliveryCodec.sameTurn(delivery, conversation, turn) || delivery.recoverySuccessorSourceMessageId != current
+            // A managed child may never have owned a turn head. Retirement is still authoritative.
+            val retired = db.rawQuery("SELECT 1 FROM pending_deliveries WHERE source_id=? AND encrypted_value IS NULL",
+                arrayOf(source.toString())).use { it.moveToFirst() }
+            if (retired) return@transaction AgentPendingSourceState.SUPERSEDED
+            val current = readHead(db, conversation, turn) ?: return@transaction AgentPendingSourceState.CURRENT
+            if (current == source) return@transaction AgentPendingSourceState.CURRENT
+            val delivery = readSource(db, source)
+                ?: return@transaction if (exists(db, "pending_deliveries", "source_id", source.toString()))
+                    AgentPendingSourceState.SUPERSEDED else AgentPendingSourceState.UNREGISTERED
+            if (!AgentPendingDeliveryCodec.sameTurn(delivery, conversation, turn) || delivery.recoverySuccessorSourceMessageId != current)
+                AgentPendingSourceState.SUPERSEDED else AgentPendingSourceState.CURRENT
         }
     }
 

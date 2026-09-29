@@ -243,7 +243,11 @@ internal object AgentDesktopArtifactStore {
             .put("saved_uri", destination.toString())
             .put("saved_at", System.currentTimeMillis())
         writeRecord(context, sourceUri, record)
-        "${Environment.DIRECTORY_DOWNLOADS}/GalaxySSI/$displayName"
+        val savedName = resolver.query(destination, arrayOf(MediaStore.Downloads.DISPLAY_NAME),
+            null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }?.takeIf(String::isNotBlank) ?: displayName
+        "${Environment.DIRECTORY_DOWNLOADS}/GalaxySSI/$savedName"
     }
 
     fun localFile(context: Context, block: AgentRichBlock): File? {

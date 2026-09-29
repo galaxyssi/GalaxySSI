@@ -38,13 +38,19 @@ class AgentLiveFinalRecoveryDeviceTest {
             val state = load(id)
             val expected = AgentConnectorResponseCodec.decode(state.getJSONObject("response"))
             val entries = assistantEntries(state)
+            val ledger = EncryptedAgentManagedResponseLedger(context)
+            val managed = ledger.completedUnapplied().singleOrNull { it.ownerRunId == "$id-owner" }
             println("LIVE_FINAL phase=inspection case=$id checkpoint=${state.getString("phase")} " +
                 "pending=${AgentPendingDeliveryStore.find(context, expected.sourceMessageId, expected.contactId) != null} " +
                 "inbox=${AgentConnectorResponseStore.contains(context, expected)} " +
                 "terminal=${AgentTerminalDeliveryStore.isTerminal(context, expected.sourceMessageId)} " +
                 "assistant_entries=${entries.size} " +
                 "exact_transcript=${entries.size == 1 && entries.single().text == expected.content.trim()} " +
-                "entry_hashes=${entries.map { hash(it.text) }}")
+                "entry_hashes=${entries.map { hash(it.text) }} " +
+                "managed_pending=${ledger.pendingForSupervisor("$id-supervisor").size} " +
+                "managed_completed=${managed != null} managed_completed_at=${managed?.completedAtMillis} " +
+                "managed_exact=${managed?.response?.content == expected.content} " +
+                "recorded=${AgentConnectorResponseStore.wasRecorded(context, expected)}")
         }
     }
 
@@ -78,6 +84,7 @@ class AgentLiveFinalRecoveryDeviceTest {
                 turnId = turn, taskId = task))
             JSONObject().put("source", source).put("contact", contactId).put("conversation", conversation.id)
                 .put("turn", turn).put("task", task).put("previous", previous)
+                .put("managed", arguments.getString("live_final_managed") == "true")
                 .put("phase", "created").put("setup_pid", Process.myPid()).also { save(id, it) }
         }
         val final = CompletableDeferred<AgentConnectorResponse>()
@@ -119,8 +126,14 @@ class AgentLiveFinalRecoveryDeviceTest {
                 state.put("response", AgentConnectorResponseCodec.encode(response))
                     .put("content_sha256", hash(response.content)).put("phase", "dropped")
                 save(id, state)
-                AgentPendingDeliveryStore.put(context, AgentPendingDelivery(source, response.conversationId,
-                    turn, task, contactId))
+                if (state.optBoolean("managed")) {
+                    EncryptedAgentManagedResponseLedger(context).register(AgentManagedResponseRecord(
+                        "$id-owner", "$id-supervisor", "codex", AgentDeliveryMode.RESPOND,
+                        source, contactId, response.conversationId, turn, task))
+                } else {
+                    AgentPendingDeliveryStore.put(context, AgentPendingDelivery(source, response.conversationId,
+                        turn, task, contactId))
+                }
             }
             println("LIVE_FINAL phase=dropped case=$id source=$source generation=${response.executionGeneration} pid=${Process.myPid()}")
         } finally {
@@ -132,6 +145,7 @@ class AgentLiveFinalRecoveryDeviceTest {
         val id = enabledCase()
         val state = withContext(Dispatchers.IO) { load(id) }
         assertEquals("dropped", state.getString("phase"))
+        assertFalse("Use the managed recovery phase for a managed case", state.optBoolean("managed"))
         assertNotEquals("Run this phase after a real process stop", state.getInt("setup_pid"), Process.myPid())
         val expected = AgentConnectorResponseCodec.decode(state.getJSONObject("response"))
         withContext(Dispatchers.IO) {
@@ -168,6 +182,54 @@ class AgentLiveFinalRecoveryDeviceTest {
         println("LIVE_FINAL phase=inbox case=$id recovery_ms=${state.getLong("recovery_ms")} " +
             "connection_ms=${state.getLong("connection_ms")} body_after_ready_ms=${state.getLong("body_after_ready_ms")} " +
             "exact_body=true wake_burst=$wakeBurst pid=${Process.myPid()}")
+    }
+
+    @Test fun restartAutomaticallyFetchesManagedChildBody(): Unit = runBlocking {
+        val id = enabledCase()
+        val state = withContext(Dispatchers.IO) { load(id) }
+        assertTrue(state.getBoolean("managed"))
+        assertEquals("dropped", state.getString("phase"))
+        assertNotEquals("A real process restart is required", state.getInt("setup_pid"), Process.myPid())
+        val expected = AgentConnectorResponseCodec.decode(state.getJSONObject("response"))
+        val ledger = EncryptedAgentManagedResponseLedger(context)
+        withContext(Dispatchers.IO) {
+            assertNull(AgentPendingDeliveryStore.find(context, expected.sourceMessageId))
+            assertTrue(ledger.pendingForSupervisor("$id-supervisor").any { it.ownerRunId == "$id-owner" })
+            assertFalse(AgentConnectorResponseStore.wasRecorded(context, expected))
+        }
+        val start = SystemClock.elapsedRealtime()
+        connect()
+        val connectedAt = SystemClock.elapsedRealtime()
+        // Only production connection readiness triggers the query and archived-body transfer.
+        val recovered = withTimeout(60_000L) {
+            var value: AgentManagedResponseRecord? = null
+            while (value == null) {
+                value = withContext(Dispatchers.IO) {
+                    ledger.completedUnapplied().singleOrNull { it.ownerRunId == "$id-owner" }
+                }
+                if (value == null) delay(100)
+            }
+            requireNotNull(value.response)
+        }
+        assertEquals(expected.content, recovered.content)
+        assertEquals(expected.sourceMessageId, recovered.sourceMessageId)
+        assertEquals(expected.contactId, recovered.contactId)
+        assertEquals(expected.conversationId, recovered.conversationId)
+        assertEquals(expected.turnId, recovered.turnId)
+        assertEquals(expected.taskId, recovered.taskId)
+        withContext(Dispatchers.IO) {
+            assertTrue(AgentConnectorResponseStore.wasRecorded(context, expected))
+            assertFalse("Managed child must not leak into the ordinary inbox", AgentConnectorResponseStore.contains(context, expected))
+            assertTrue("Managed child must not render as a second final answer", assistantEntries(state).isEmpty())
+            state.put("phase", "managed-recovered").put("recovery_ms", SystemClock.elapsedRealtime() - start)
+                .put("connection_ms", connectedAt - start)
+                .put("body_after_ready_ms", SystemClock.elapsedRealtime() - connectedAt)
+            save(id, state)
+            ledger.markApplied("$id-owner")
+        }
+        println("LIVE_FINAL phase=managed-recovered case=$id recovery_ms=${state.getLong("recovery_ms")} " +
+            "connection_ms=${state.getLong("connection_ms")} body_after_ready_ms=${state.getLong("body_after_ready_ms")} " +
+            "exact_body=true duplicate_ui=false pid=${Process.myPid()}")
     }
 
     private suspend fun wakeDuringBodyTransfer(state: JSONObject): Int = withContext(Dispatchers.IO) {

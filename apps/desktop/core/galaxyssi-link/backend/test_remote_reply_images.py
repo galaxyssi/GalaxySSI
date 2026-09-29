@@ -135,7 +135,23 @@ class RemoteReplyImagesTest(unittest.TestCase):
                 self.assertEqual([], transport.calls)
                 self.assertEqual(["image"], [block["type"] for block in rich["blocks"]])
                 self.assertEqual("Caption.png", rich["blocks"][0]["title"])
+                self.assertEqual("one.png", prepared.files[0]["name"])
                 self.assertEqual(image_bytes(), path.read_bytes())
+
+    def test_local_preview_keeps_versioned_download_name_separate_from_caption(self):
+        from task_workspace import task_workspace
+        from artifact_delivery import prepare_artifacts
+        root = task_workspace("image-task")
+        name = "ART-001-v02-preview.png"
+        path = root / "outputs" / name
+        path.write_bytes(image_bytes())
+        prepared = self.prepare(f"![Page 1](outputs/{name})")
+        self.assertEqual(name, prepared.files[0]["name"])
+        _, rich = build_rich_output(prepared.content, list(prepared.files), "image-task", inline_artifacts=False)
+        self.assertEqual("Page 1.png", rich["blocks"][0]["title"])
+        artifacts = prepare_artifacts("image-task", list(prepared.files))
+        self.assertEqual(1, len(artifacts))
+        self.assertEqual(name, artifacts[0].name)
 
     def test_local_caption_binding_cannot_import_other_task_or_input_files(self):
         from task_workspace import task_workspace

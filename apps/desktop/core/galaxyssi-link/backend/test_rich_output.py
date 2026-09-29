@@ -9,6 +9,27 @@ from rich_output import MAX_INLINE_ARTIFACT_BYTES, MAX_TOTAL_INLINE_ARTIFACT_B64
 
 
 class RichOutputTests(unittest.TestCase):
+    def test_sanitized_text_does_not_drop_office_original_beside_preview(self):
+        from task_workspace import task_workspace
+        for extension in ("docx", "xlsx", "pptx"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as temporary, patch.dict(
+                os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}
+            ):
+                root = task_workspace("office-delivery")
+                names = [f"report.{extension}", "page-1.png", "unlinked-draft.png"]
+                outputs = [{"name": name, "relative_path": f"outputs/{name}"} for name in names]
+                for item in outputs:
+                    (root / item["relative_path"]).write_bytes(item["name"].encode())
+                raw = f"[Download](outputs/report.{extension})\n![Page](outputs/page-1.png)"
+                cleaned = "Download\n![Page](outputs/page-1.png)"
+                _, document = build_rich_output(
+                    cleaned, outputs, "office-delivery", inline_artifacts=False,
+                    artifact_selection_content=raw,
+                )
+                artifacts = [b for b in document["blocks"] if b["type"] in {"file", "image"}]
+                self.assertEqual(names[:2], [b["title"] for b in artifacts])
+                self.assertEqual(["file", "image"], [b["type"] for b in artifacts])
+
     def test_final_links_select_results_without_hiding_intended_previews(self):
         from task_workspace import select_reply_artifacts, task_workspace
         from urllib.parse import quote

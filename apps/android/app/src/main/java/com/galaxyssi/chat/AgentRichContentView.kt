@@ -656,7 +656,7 @@ class AgentRichContentView(
                 ).apply { bottomMargin = dp(5) })
             }
             val image = ImageView(activity).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = displayTitle
                 background = roundedBackground(
                     "#F4F6F8",
@@ -769,7 +769,7 @@ class AgentRichContentView(
                             return@forEachIndexed
                         }
                         addView(ImageView(activity).apply {
-                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            scaleType = ImageView.ScaleType.FIT_CENTER
                             contentDescription = itemBlock.title.ifBlank {
                                 "${activity.getString(R.string.rich_output_type_image)} ${index + 1}"
                             }

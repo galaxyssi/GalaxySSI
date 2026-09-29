@@ -11,6 +11,7 @@ internal class AgentTranscriptRecyclerAdapter(
     private val activity: MainActivity
 ) : RecyclerView.Adapter<AgentTranscriptViewHolder>() {
     private val entries = mutableListOf<AgentTranscriptEntry>()
+    private val artifactInvalidations = mutableSetOf<String>()
 
     init {
         setHasStableIds(true)
@@ -32,7 +33,8 @@ internal class AgentTranscriptRecyclerAdapter(
     override fun onBindViewHolder(holder: AgentTranscriptViewHolder, position: Int) {
         val bindStartedAt = SystemClock.elapsedRealtime()
         val entry = entries[position]
-        if ((holder.container.getChildAt(0) as? AgentStableAssistantRow)?.bind(entry) == true) {
+        val artifactChanged = artifactInvalidations.remove(AgentTranscriptRenderPolicy.identity(entry))
+        if (!artifactChanged && (holder.container.getChildAt(0) as? AgentStableAssistantRow)?.bind(entry) == true) {
             observeDraw(holder, entry)
             return
         }
@@ -175,6 +177,7 @@ internal class AgentTranscriptRecyclerAdapter(
     }
 
     fun clear() {
+        artifactInvalidations.clear()
         if (entries.isEmpty()) return
         val count = entries.size
         entries.clear()
@@ -184,6 +187,20 @@ internal class AgentTranscriptRecyclerAdapter(
     fun entryIdAt(position: Int): String? = entries.getOrNull(position)?.id
 
     fun indexOfEntry(entryId: String): Int = entries.indexOfFirst { it.id == entryId }
+
+    fun artifactAvailable(uri: String) {
+        if (!uri.startsWith("galaxyssi-artifact://")) return
+        entries.forEachIndexed { index, entry ->
+            if (AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
+                    block.uri == uri || block.metadata["artifact_source_uri"] == uri ||
+                        (block.type == AgentRichBlockType.GALLERY && block.rows.any { it.firstOrNull() == uri })
+                }) {
+                // Text is unchanged, but a pending file card can now become a local image preview.
+                artifactInvalidations.add(AgentTranscriptRenderPolicy.identity(entry))
+                notifyItemChanged(index)
+            }
+        }
+    }
 
     private fun isControlPayload(entry: AgentTranscriptEntry): Boolean =
         AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
