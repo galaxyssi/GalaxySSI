@@ -68,7 +68,8 @@ def convert(source: Path, pdf: Path, scratch: Path, powershell: str, timeout: fl
     try:
         result = subprocess.run(base + [str(script), "-InputPath", str(source), "-PdfPath", str(pdf),
                                        "-OwnerPath", str(owner)], capture_output=True, text=True,
-                                timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                errors="replace", timeout=timeout,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode:
             detail = (result.stderr or result.stdout or "Office conversion failed")[-1200:]
             raise RuntimeError(detail)

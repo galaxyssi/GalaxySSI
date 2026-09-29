@@ -1054,6 +1054,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         "Preserve source units and currency; do not infer them from language, locale, or the word amount. When unspecified, use neutral numeric formats and label the unit or currency as unspecified, including chart axes and cached labels. "
         "For bar or column charts that encode magnitude by length, use a zero baseline (include zero for mixed signs); only depart for an explicit user/template requirement and visibly disclose the scale. Do not apply this rule blindly to line, scatter, or logarithmic charts. "
         "For paginated Office previews, fit the full chart/drawing bounds inside the print area while keeping text legible; visible data labels alone do not prove that the chart is unclipped. "
+        "Inspect any layout_check issues returned by the preview tool, repair unintended clipping in the source and render again before claiming a clean layout. Page coverage is not layout approval; disclose unresolved or intentionally cropped content. "
         "Verify the saved file and actual preview agree on units, labels, formulas, totals, and chart scale before reporting completion."
         if policy.requires_artifact else
         "- Only create files when they are useful to the requested result."

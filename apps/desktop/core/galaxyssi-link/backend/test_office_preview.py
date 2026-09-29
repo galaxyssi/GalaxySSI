@@ -82,7 +82,7 @@ class OfficePreviewTests(unittest.TestCase):
     @staticmethod
     def fake_run(args, **kwargs):
         if args[0] == "pdfinfo":
-            return SimpleNamespace(returncode=0, stdout="Pages: 3\n")
+            return SimpleNamespace(returncode=0, stdout=b"Pages: 3\n")
         Path(str(args[-1]) + "-1.png").write_bytes(b"\x89PNG\r\n\x1a\nfixture")
         return SimpleNamespace(returncode=0, stdout="")
 
@@ -116,6 +116,33 @@ class OfficePreviewTests(unittest.TestCase):
         self.assertTrue(originals[0].is_relative_to(self.root / "outputs"))
         self.assertEqual(before, originals[0].read_bytes())
         self.assertEqual(before, source.read_bytes())
+
+    def test_non_utf8_metadata_cannot_break_page_count_and_publication(self):
+        def run(args, **kwargs):
+            if args[0] == "pdfinfo":
+                self.assertFalse(kwargs.get("text", False))
+                return SimpleNamespace(returncode=0, stdout=b"Title: \xd6\xd0\xce\xc4\nPages: 1\n")
+            return self.fake_run(args, **kwargs)
+        with patch.object(preview.shutil, "which", side_effect=lambda name: name), \
+             patch.object(preview, "_convert", self.fake_convert), \
+             patch.object(preview.subprocess, "run", run):
+            result = preview.render("preview-test", str(self.source))
+        self.assertEqual("rendered", result["status"])
+        self.assertTrue(result["complete_preview"])
+        self.assertEqual(1, result["page_count"])
+
+    def test_missing_pdfinfo_output_remains_unknown_coverage(self):
+        def run(args, **kwargs):
+            if args[0] == "pdfinfo":
+                return SimpleNamespace(returncode=1, stdout=None)
+            return self.fake_run(args, **kwargs)
+        with patch.object(preview.shutil, "which", side_effect=lambda name: name), \
+             patch.object(preview, "_convert", self.fake_convert), \
+             patch.object(preview.subprocess, "run", run):
+            result = preview.render("preview-test", str(self.source))
+        self.assertEqual("rendered", result["status"])
+        self.assertFalse(result["complete_preview"])
+        self.assertIsNone(result["page_count"])
 
     def test_preview_only_does_not_publish_an_input_original(self):
         source = self.root / "temp" / "input.docx"

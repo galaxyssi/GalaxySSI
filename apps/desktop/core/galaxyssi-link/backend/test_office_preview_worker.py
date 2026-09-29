@@ -38,6 +38,7 @@ class OfficePreviewWorkerTests(unittest.TestCase):
             )) as execute, self.assertRaisesRegex(RuntimeError, "office_busy"):
                 worker.convert(root / "a.xlsx", root / "a.pdf", root, "powershell")
             self.assertEqual(1, execute.call_count)
+            self.assertEqual("replace", execute.call_args.kwargs["errors"])
 
     def test_success_without_owner_does_not_run_global_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:

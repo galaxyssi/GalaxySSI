@@ -48,6 +48,8 @@ class OfficeAuthoringContractTests(unittest.TestCase):
             self.assertIn("explicit user/template requirement", contract)
             self.assertIn("line, scatter, or logarithmic charts", contract)
             self.assertIn("full chart/drawing bounds inside the print area", contract)
+            self.assertIn("Inspect any layout_check issues", contract)
+            self.assertIn("Page coverage is not layout approval", contract)
             self.assertIn("saved file and actual preview agree", contract)
 
     def test_artifact_quality_rules_do_not_turn_read_only_work_into_authoring(self):
