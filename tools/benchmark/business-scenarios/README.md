@@ -39,6 +39,10 @@ covered by these fixtures.
 - The transcript `rendered` check is a view-model check, not pixel verification.
 - Driver schema 2 records focused, stable output captures separately. Missing
   stability fields in older reports remain unobserved, not passing evidence.
+- Driver schema 4 separately measures post-reply attachment wait, verification,
+  saving and UI checks without changing historical reply latency. See
+  [phase timing and annotation acceptance](PHASE_TIMING_ACCEPTANCE.md) for the
+  measurement contract, input-evidence preservation fix and real-device limits.
 
 ## Generate and Check
 

@@ -44,7 +44,7 @@ internal object BusinessAnnotationFixture {
         paint.color = Color.DKGRAY
         paint.textSize = 25f
         canvas.drawText("合成笔迹测试，不代表真实人类手写识别能力。", 60f, 1510f, paint)
-        val file = File(directory, case.getString("id") + "-$index.png")
+        val file = File(directory, case.getString("id") + "-input-$index.png")
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
         return AgentInputAttachment(file.nameWithoutExtension, Uri.fromFile(file), file.name, "image/png", file.length())

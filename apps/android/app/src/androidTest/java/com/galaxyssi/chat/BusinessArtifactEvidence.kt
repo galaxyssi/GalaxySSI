@@ -27,13 +27,17 @@ internal object BusinessArtifactEvidence {
                 .put("requires_human_review", true)
         }
         var blocks = emptyList<AgentRichBlock>()
+        var allPresent = false
         val deadline = start + 90_000L
         do {
             blocks = latest()?.let { AgentRichContentCodec.decode(it.richOutputJson) }.orEmpty()
                 .filter { it.type in setOf(AgentRichBlockType.FILE, AgentRichBlockType.IMAGE) }
-            if (blocks.isNotEmpty() && blocks.all { AgentDesktopArtifactStore.localFile(context, it) != null }) break
+            allPresent = blocks.isNotEmpty() && blocks.all { AgentDesktopArtifactStore.localFile(context, it) != null }
+            if (allPresent) break
             SystemClock.sleep(500)
         } while (SystemClock.elapsedRealtime() < deadline)
+        val presenceWaitMs = SystemClock.elapsedRealtime() - start
+        var saveVerificationMs = 0L
         val records = JSONArray()
         val prefix = expected.getString("name_prefix")
         directory.mkdirs()
@@ -55,6 +59,7 @@ internal object BusinessArtifactEvidence {
                     BitmapFactory.decodeFile(source.path, size)
                     record.put("image_width", size.outWidth).put("image_height", size.outHeight)
                 }
+                val saveStart = SystemClock.elapsedRealtime()
                 val saved = AgentDesktopArtifactStore.saveToDownloads(context, block)
                 record.put("save_api_pass", saved.isSuccess)
                 saved.onSuccess { path ->
@@ -62,6 +67,7 @@ internal object BusinessArtifactEvidence {
                         .put("download_hash_matches", downloadedDigest(context, path.substringAfterLast('/')) == sha)
                 }
                 saved.onFailure { record.put("save_error_type", it.javaClass.simpleName) }
+                saveVerificationMs += SystemClock.elapsedRealtime() - saveStart
             }
             record.put("received", read.isSuccess)
             read.onFailure { record.put("read_error_type", it.javaClass.simpleName) }
@@ -89,6 +95,12 @@ internal object BusinessArtifactEvidence {
                 (!expected.optBoolean("preview_required", true) || preview) && imageCountOk && imageFormatOk && dimensionsOk)
             .put("check_scope", "containers_delivery_and_save_only")
             .put("artifact_wait_ms", SystemClock.elapsedRealtime() - start)
+            .put("artifact_presence_wait_ms", presenceWaitMs)
+            .put("all_artifacts_present", allPresent)
+            .put("all_artifacts_verified", items.isNotEmpty() && items.all {
+                it.optBoolean("received") && it.optBoolean("container_valid") &&
+                    it.optBoolean("save_api_pass") && it.optBoolean("download_hash_matches") })
+            .put("save_verification_ms", saveVerificationMs)
             .put("artifacts", records).put("missing_extensions", JSONArray(missing)).put("preview_received", preview)
             .put("image_count", imageCount).put("image_count_ok", imageCountOk)
             .put("image_format_ok", imageFormatOk).put("dimensions_ok", dimensionsOk)

@@ -6,6 +6,7 @@ import json
 import math
 import statistics
 from pathlib import Path
+from phase_timing import summarize_phases
 
 
 def reply_visibly_verified(turn: dict) -> bool:
@@ -84,6 +85,8 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
         "latency": {"samples": len(durations), "p50_ms": statistics.median(durations) if durations else None,
                     "p95_ms": durations[math.ceil(len(durations) * .95) - 1] if len(durations) >= 30 else None,
                     "maximum_ms": max(durations) if durations else None},
+        "latency_scope": "reply_terminal_before_artifact_audit_and_ui_checks",
+        "phase_latency": summarize_phases([turn for _, turn in complete]),
         "failures": failed,
         "overall_status": "needs_review" if len(complete) == planned_turns else "incomplete",
         "limitations": [
@@ -94,6 +97,7 @@ def summarize(plan: dict, reports: list[dict]) -> dict:
             "Stable screenshots still need human review; view-model rendering alone is not pixel verification.",
             "Driver schemas before 3 did not bind captures to the current reply and cannot prove its visibility or timer state.",
             "Artifact container, delivery and save checks do not prove content accuracy, preview fidelity or UI open/save.",
+            "Phase times are observations with test overhead, not isolated network latency; pre-schema-4 phases are unmeasured.",
         ],
     }
 
