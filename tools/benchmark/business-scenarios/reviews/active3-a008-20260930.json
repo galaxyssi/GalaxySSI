@@ -1,0 +1,62 @@
+[
+  {
+    "schema": 1,
+    "case_id": "A008",
+    "turn_index": 1,
+    "source_sha256": "309167e00aed5c89cff6a5518e83117572e294119497cfa3e211ce0964424836",
+    "verdict": "fail",
+    "reviewer": "Codex visual inspection of actual received PNG",
+    "notes": "The delivered 1200x1600 PNG is readable, with a clearly labelled schematic route. B quantity is correctly revised to 35, amounts are 216/280/230 and total is 726; the other supplied values remain unchanged. Owner, actual date and actual returns are marked unconfirmed. However, the source never specifies currency, while both the image and reply label the amounts as yuan without marking that as an assumption. Numeric correctness and delivery therefore do not establish fully grounded content. This review does not alter the first turn's missing audit evidence or prove UI open/save.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.png",
+        "sha256": "583ede9cbc28ebfd3608124ec2ea0239b4e75c85a89e24e9804d6f4bb3b2e519"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A008",
+    "turn_index": 2,
+    "source_sha256": "39c81570123857f37adc6a97d46d1a568c4de828d91cf3698e2ae30b037f94e4",
+    "verdict": "fail",
+    "reviewer": "Codex visual inspection of actual received PNG",
+    "notes": "The mobile-layout revision is readable at 1200x1600 without visible clipping or overlap. The schematic flow is labelled as such, amounts remain 216/280/230, total 726, and the unknown owner, actual date and actual returns remain unconfirmed. The unsupported yuan unit persists throughout the chart and totals although the source never supplies a currency. Delivery, background receipt and numeric/layout correctness therefore do not establish fully grounded content.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.png",
+        "sha256": "b6a752005873bb2af483fe6bc2baf733b3faf2dd5312aaef0bc5ebe9f3af76a6"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A008",
+    "turn_index": 3,
+    "source_sha256": "cc8202338fda56acaf353fce80e3c43cac5e5ff5691a2097f9bcc8530afcda24",
+    "verdict": "fail",
+    "reviewer": "Codex visual inspection of actual received PNG",
+    "notes": "The added Ding record correctly shows quantity 5, unit price 20 and amount 100 in both detail and chart; the flow now includes Ding, other records remain unchanged and the total is 826. The received image is readable without visible clipping. Unknown owner/date/returns remain unconfirmed. However, the image still claims yuan throughout without source support, so the content remains insufficiently grounded despite correct calculations and delivery.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.png",
+        "sha256": "eb419a292f21d8ce8f441e7389fa667319654cac83a5cff0cd591ed5d60babed"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A008",
+    "turn_index": 4,
+    "source_sha256": "c2b45faedbdc25fa9902e411accb12c4f32320fe89f7cf68ad31f79d6cc9a23b",
+    "verdict": "fail",
+    "reviewer": "Codex visual inspection of actual received PNG",
+    "notes": "The source-check revision correctly retains all four records and total 826. Owner, actual date and actual returns are individually marked unconfirmed, with an explicit note that the synthetic source does not provide them. The image is readable with no visible clipping. However, the unsupported yuan unit remains in all monetary values and the footer states unknowns were not fabricated; the unit assumption remains unacknowledged. This is a content-grounding failure independent of the verified delivery and saved-file hash.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.png",
+        "sha256": "63c8569dbdbc29dcd271596f8e9c1dec58cf6f2cc2e11689e8ac69986672dd62"
+      }
+    ]
+  }
+]

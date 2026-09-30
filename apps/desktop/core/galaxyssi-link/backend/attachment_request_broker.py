@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import logging
 import threading
 import time
 import uuid
@@ -16,10 +18,21 @@ REQUEST_TYPE = "input_attachment_request"
 RESULT_TYPE = "input_attachment_request_result"
 MAX_REQUESTED_ATTACHMENTS = 10
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 120.0
+log = logging.getLogger("galaxyssi.attachment_recovery")
 
 
 class AttachmentRequestError(RuntimeError):
     pass
+
+
+class AttachmentRecoveryTimeout(AttachmentRequestError):
+    def __init__(self, phase: str, received: int, expected: int):
+        self.phase = phase
+        self.received = received
+        self.expected = expected
+        detail = ("no phone recovery response confirmed" if phase == "awaiting_phone_response"
+                  else f"verified {received} of {expected} requested attachments")
+        super().__init__(f"Phone attachment recovery timed out ({detail})")
 
 
 class AttachmentTransferFailed(AttachmentRequestError):
@@ -45,10 +58,17 @@ class _PendingRequest:
     missing_ids: set[str] = field(default_factory=set)
     error: str = ""
     error_code: str = ""
+    response_received: bool = False
 
     @property
     def complete(self) -> bool:
         return set(self.expected_ids).issubset(self.receipts)
+
+    @property
+    def phase(self) -> str:
+        if self.complete:
+            return "verified"
+        return "awaiting_files" if self.response_received or self.receipts else "awaiting_phone_response"
 
 
 class AttachmentRequestBroker:
@@ -100,10 +120,16 @@ class AttachmentRequestBroker:
             "time": int(time.time() * 1000),
         }
         try:
+            _observe(pending, "request_created")
             if not publish(payload):
                 raise AttachmentRequestError("Attachment recovery request could not be delivered")
+            _observe(pending, "transport_accepted")
             if not pending.event.wait(max(1.0, float(timeout_seconds))):
-                raise AttachmentRequestError("Phone attachment recovery timed out")
+                with self._lock:
+                    # A verified receipt may win the race immediately after wait expires.
+                    if not pending.event.is_set():
+                        _observe(pending, "timed_out")
+                        raise AttachmentRecoveryTimeout(pending.phase, len(pending.receipts), len(expected))
             if pending.error_code:
                 raise AttachmentTransferFailed(pending.error_code)
             if pending.error:
@@ -113,6 +139,7 @@ class AttachmentRequestBroker:
                 raise AttachmentRequestError(f"Requested phone attachment is unavailable: {names}")
             if not pending.complete:
                 raise AttachmentRequestError("Phone attachment recovery did not complete")
+            _observe(pending, "completed")
             return [pending.receipts[value] for value in pending.expected_ids]
         finally:
             with self._lock:
@@ -127,6 +154,8 @@ class AttachmentRequestBroker:
             if pending.event.is_set():
                 return False
             status = str(payload.get("status") or "").strip().lower()
+            if status not in {"accepted", "transferring", "stored", "missing", "failed"}:
+                return False
             error_code = payload.get("error_code", "")
             if error_code and (not isinstance(error_code, str) or error_code not in TERMINAL_BLOB_ERRORS):
                 return False
@@ -136,8 +165,14 @@ class AttachmentRequestBroker:
                 return False
             if not missing.issubset(set(pending.expected_ids)):
                 return False
+            if available & missing or (status == "missing" and not missing):
+                return False
+            before = (pending.phase, frozenset(pending.available_ids), frozenset(pending.missing_ids))
+            pending.response_received = True
             pending.available_ids.update(available)
             pending.missing_ids.update(missing)
+            if before != (pending.phase, frozenset(pending.available_ids), frozenset(pending.missing_ids)):
+                _observe(pending, "phone_response")
             if status == "failed":
                 pending.error_code = error_code
                 pending.error = (failure_observation(error_code) if error_code else
@@ -145,8 +180,6 @@ class AttachmentRequestBroker:
                 pending.event.set()
             elif status == "missing" or pending.missing_ids:
                 pending.event.set()
-            elif status not in {"accepted", "transferring", "stored"}:
-                return False
             elif pending.complete:
                 pending.event.set()
             return True
@@ -179,7 +212,10 @@ class AttachmentRequestBroker:
                 pending.error_code = receipt.error_code
                 pending.event.set()
                 return True
+            is_new = attachment_id not in pending.receipts
             pending.receipts[attachment_id] = receipt.descriptor()
+            if is_new:
+                _observe(pending, "file_verified")
             if pending.complete:
                 pending.event.set()
             return True
@@ -195,6 +231,15 @@ class AttachmentRequestBroker:
             str(payload.get("contact_id") or "") == pending.contact_id,
             str(payload.get("source_message_id") or "") == pending.source_message_id,
         ))
+
+
+def _observe(pending: _PendingRequest, outcome: str) -> None:
+    # Correlate recovery phases without logging routes, names, content, or prompts.
+    log.info("request=%s task=%s outcome=%s phase=%s verified=%d expected=%d elapsed_ms=%d",
+             hashlib.sha256(pending.request_id.encode()).hexdigest()[:16],
+             hashlib.sha256(pending.task_id.encode()).hexdigest()[:16],
+             outcome, pending.phase, len(pending.receipts), len(pending.expected_ids),
+             max(0, int((time.monotonic() - pending.created_at) * 1000)))
 
 
 def _attachment_ids(values: Iterable[object]) -> tuple[str, ...]:

@@ -2463,34 +2463,31 @@ object GalaxySSIMqttClient {
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }
         if (payload.optString("type") == "artifact_chunk") {
-            val result = runCatching { AgentDesktopArtifactStore.ingest(context, payload) }
-                .onFailure { Log.w(TAG, "Rejected Desktop artifact chunk", it) }
-                .getOrNull()
-            if (result?.completed == true) {
-                val clientRouteId = payload.optString("client_route_id")
-                GalaxySSIMqttDesktopControl.publishArtifactReceipt(
-                    sourceDesktopId,
-                    clientRouteId,
-                    result
-                )
-                val requestedDownload =
-                    GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)
-                GalaxySSIMqttDesktopControl.consumePendingArtifactFetch(result.artifactUri)
-                val savedPath = if (requestedDownload) {
-                    AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
-                        .getOrNull()
-                } else null
-                notifyMessageListeners(
-                    JSONObject()
-                        .put("type", "artifact_available")
-                        .put("artifact_id", result.artifactId)
-                        .put("artifact_uri", result.artifactUri)
-                        .put("task_id", result.taskId)
-                        .put("saved_path", savedPath.orEmpty())
-                        .put("save_requested", requestedDownload)
-                )
+            processAttachmentControl(context, payload) {
+                val result = AgentDesktopArtifactReception.accept(context, payload) { stored ->
+                    GalaxySSIMqttDesktopControl.publishArtifactReceipt(
+                        sourceDesktopId, payload.optString("client_route_id"), stored
+                    )
+                }
+                if (result.completed) {
+                    val requestedDownload =
+                        GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)
+                    GalaxySSIMqttDesktopControl.consumePendingArtifactFetch(result.artifactUri)
+                    val savedPath = if (requestedDownload) {
+                        AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
+                            .getOrNull()
+                    } else null
+                    notifyMessageListeners(
+                        JSONObject()
+                            .put("type", "artifact_available")
+                            .put("artifact_id", result.artifactId)
+                            .put("artifact_uri", result.artifactUri)
+                            .put("task_id", result.taskId)
+                            .put("saved_path", savedPath.orEmpty())
+                            .put("save_requested", requestedDownload)
+                    )
+                }
             }
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "artifact_redelivery_result") {
@@ -2867,8 +2864,9 @@ object GalaxySSIMqttClient {
             publishJsonResult(
                 transfer.chunkPayload(index),
                 route.up,
-                transfer.scope.contactId
-            )
+                transfer.scope.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
         }
     }
 
@@ -2959,8 +2957,9 @@ object GalaxySSIMqttClient {
                     error = "Requested attachment could not be restored"
                 ),
                 link.routes.up,
-                request.contactId
-            )
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
             return
         }
         val availableIds = restored.map(AgentInputAttachment::id)
@@ -2972,8 +2971,9 @@ object GalaxySSIMqttClient {
                     missingAttachmentIds = missingIds
                 ),
                 link.routes.up,
-                request.contactId
-            )
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
             return
         }
         val prepared = runCatching {
@@ -3003,8 +3003,9 @@ object GalaxySSIMqttClient {
                     error = "Requested attachment could not be prepared"
                 ),
                 link.routes.up,
-                request.contactId
-            )
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
             return
         }
         publishJsonResult(
@@ -3014,22 +3015,19 @@ object GalaxySSIMqttClient {
                 missingAttachmentIds = missingIds
             ),
             link.routes.up,
-            request.contactId
-        )
-        prepared.forEach { attachment ->
-            if (AndroidBlobTransfers.register(context, attachment, immediate = true)) return@forEach
+            request.contactId,
+            queueOnly = true
+        ).requireAttachmentQueued()
+        val mqttAttachments = prepared.filterNot { attachment ->
+            AndroidBlobTransfers.register(context, attachment, immediate = true)
+        }
+        AgentAttachmentPublishOrder.initialSteps(mqttAttachments).forEach { step ->
             publishJsonResult(
-                attachment.manifestPayload(resume = false),
+                step.payload(),
                 link.routes.up,
-                request.contactId
-            )
-            for (chunkIndex in 0 until attachment.chunkCount) {
-                publishJsonResult(
-                    attachment.chunkPayload(chunkIndex),
-                    link.routes.up,
-                    request.contactId
-                )
-            }
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
         }
     }
 
