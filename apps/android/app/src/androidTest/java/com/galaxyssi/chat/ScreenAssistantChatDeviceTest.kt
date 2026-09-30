@@ -87,6 +87,72 @@ class ScreenAssistantChatDeviceTest {
         }
     }
 
+    @Test fun expandedTranscriptKeepsComposerAboveRealKeyboard() = verifyTranscriptKeyboard(expanded = true)
+
+    @Test fun compactTranscriptKeepsComposerAboveRealKeyboard() = verifyTranscriptKeyboard(expanded = false)
+
+    private fun verifyTranscriptKeyboard(expanded: Boolean) = withChat { scenario, id ->
+        val draft = "Keyboard layout fixture\nSecond line"
+        scenario.onActivity {
+            it.toggleExpanded()
+            if (!expanded) it.toggleExpanded()
+            it.agentGoalInput.setText(draft)
+        }
+        instrumentation.waitForIdleSync()
+        var originalHeight = 0
+        scenario.onActivity { originalHeight = it.window.attributes.height }
+        repeat(2) {
+            scenario.onActivity { it.enterAgentComposerTextMode() }
+            awaitKeyboard(scenario, true)
+            scenario.onActivity { activity ->
+                val metrics = activity.windowManager.currentWindowMetrics
+                val imeTop = metrics.bounds.bottom - metrics.windowInsets.getInsets(WindowInsets.Type.ime()).bottom
+                val windowPosition = IntArray(2)
+                activity.window.decorView.getLocationOnScreen(windowPosition)
+                assertEquals("Background leaks between composer and keyboard", imeTop,
+                    windowPosition[1] + activity.window.decorView.height)
+                assertEquals(0, activity.window.attributes.y)
+                listOf(activity.agentGoalInput, activity.agentSubmitButton).forEach { view ->
+                    val rect = Rect()
+                    assertTrue("Composer control is not visible", view.getGlobalVisibleRect(rect))
+                    assertEquals("Composer control is clipped", view.height, rect.height())
+                    val location = IntArray(2)
+                    view.getLocationOnScreen(location)
+                    assertTrue("Composer control is behind IME", location[1] + view.height <= imeTop)
+                }
+                assertEquals(draft, activity.agentGoalInput.text.toString())
+                assertEquals(id, activity.agentTranscriptStore.activeConversation().id)
+            }
+            val screenshot = instrumentation.uiAutomation.takeScreenshot()
+            if (screenshot != null) {
+                val file = java.io.File(instrumentation.targetContext.getExternalFilesDir(null),
+                    "floating-keyboard-${if (expanded) "expanded" else "compact"}.png")
+                file.outputStream().use { screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                screenshot.recycle()
+            }
+            scenario.onActivity { it.exitAgentComposerTextMode(hideKeyboard = true) }
+            awaitKeyboard(scenario, false)
+            scenario.onActivity {
+                assertEquals("Window height did not restore", originalHeight, it.window.attributes.height)
+                assertEquals("Floating bottom margin did not restore", it.dp(8), it.window.attributes.y)
+            }
+        }
+    }
+
+    private fun awaitKeyboard(scenario: ActivityScenario<ScreenAssistantChatActivity>, visible: Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + 10_000
+        var matched = false
+        while (!matched && SystemClock.elapsedRealtime() < deadline) {
+            scenario.onActivity {
+                matched = it.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == visible
+            }
+            SystemClock.sleep(100)
+        }
+        assertTrue("Keyboard visibility did not become $visible", matched)
+        SystemClock.sleep(500)
+        instrumentation.waitForIdleSync()
+    }
+
     @Test fun floatingWindowDoesNotBecomeTheHomeRoutingSource() = withChat { scenario, _ ->
         scenario.onActivity { activity ->
             assertNotSame(activity, AgentConversationWindows.screenAssistantRunner(allowInitializing = true))
