@@ -328,7 +328,12 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
         private var moved = false
         private var longPressed = false
         private var dismissedMenuOnDown = false
-        private val openMenu = Runnable { longPressed = true; showMenu() }
+        private val openAnalysis = Runnable {
+            longPressed = true
+            dismissMenu()
+            if (panel != null) dismissPanel()
+            openChat(capture = !canStopAnalysis() && !stopping)
+        }
 
         override fun onTouch(view: View, event: MotionEvent): Boolean {
             val layout = bubbleParams ?: return false
@@ -339,14 +344,14 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     moved = false; longPressed = false
                     dismissedMenuOnDown = menu != null
                     if (dismissedMenuOnDown) dismissMenu()
-                    else handler.postDelayed(openMenu, ViewConfiguration.getLongPressTimeout().toLong())
+                    handler.postDelayed(openAnalysis, ViewConfiguration.getLongPressTimeout().toLong())
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - startX
                     val dy = event.rawY - startY
                     if (abs(dx) > slop || abs(dy) > slop) {
                         moved = true
-                        handler.removeCallbacks(openMenu)
+                        handler.removeCallbacks(openAnalysis)
                         dismissMenu()
                     }
                     if (moved) {
@@ -356,14 +361,13 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    handler.removeCallbacks(openMenu)
+                    handler.removeCallbacks(openAnalysis)
                     if (moved) ScreenAssistantSettings.saveBubblePosition(service, layout.x, layout.y)
                     else if (!longPressed && !dismissedMenuOnDown) {
-                        if (panel != null) dismissPanel()
-                        openChat(capture = !canStopAnalysis() && !stopping)
+                        showMenu()
                     }
                 }
-                MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(openMenu)
+                MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(openAnalysis)
             }
             return true
         }

@@ -12,7 +12,7 @@
     <string name="screen_assistant_permission_summary">在系统设置中启用 GalaxySSI 无障碍服务</string>
     <string name="screen_assistant_connected">已连接</string>
     <string name="screen_assistant_not_connected">未连接</string>
-    <string name="screen_assistant_footer">单击打开 Agent 输入区，附带可移除的屏幕截图；点击发送后才执行。长按打开屏幕工具。需要 Android 11 及以上版本；受保护页面无法截图。</string>
+    <string name="screen_assistant_footer">单击打开屏幕工具。长按打开 Agent 输入区，附带可移除的屏幕截图；点击发送后才执行。需要 Android 11 及以上版本；受保护页面无法截图。</string>
     <string name="screen_assistant_capture">分析当前屏幕</string>
     <string name="screen_assistant_ask">带问题分析</string>
     <string name="screen_assistant_crop">框选区域</string>

@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.ImageView
 import android.view.WindowManager
+import android.view.MotionEvent
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +19,46 @@ import org.junit.runner.RunWith
 /** Isolated overlay and request; never captures a screen or submits a real Agent task. */
 @RunWith(AndroidJUnit4::class)
 class ScreenAssistantStopDeviceTest {
+    @Test fun tappingBubbleTogglesToolsWithoutStartingAnalysis() = withOverlay { overlay, request, _ ->
+        invoke(overlay, "ensureBubble")
+        val bubble = field(overlay, "bubble") as View
+        repeat(3) {
+            touch(bubble, MotionEvent.ACTION_DOWN)
+            touch(bubble, MotionEvent.ACTION_UP)
+            assertNotNull(field(overlay, "menu"))
+            touch(bubble, MotionEvent.ACTION_DOWN)
+            touch(bubble, MotionEvent.ACTION_UP)
+            assertEquals(null, field(overlay, "menu"))
+            assertTrue(bubble.isAttachedToWindow)
+        }
+        assertTrue(request.turnId.isBlank())
+        assertFalse(request.isCancelled)
+    }
+
+    @Test fun draggingOrCancellingDoesNotOpenTools() = withOverlay { overlay, _, _ ->
+        invoke(overlay, "ensureBubble")
+        val bubble = field(overlay, "bubble") as View
+        val layout = field(overlay, "bubbleParams") as WindowManager.LayoutParams
+        val x = layout.x
+        val y = layout.y
+        touch(bubble, MotionEvent.ACTION_DOWN)
+        touch(bubble, MotionEvent.ACTION_MOVE, 200f)
+        touch(bubble, MotionEvent.ACTION_CANCEL, 200f)
+        assertEquals(null, field(overlay, "menu"))
+        assertTrue(bubble.isAttachedToWindow)
+        layout.x = x
+        layout.y = y
+        touch(bubble, MotionEvent.ACTION_DOWN)
+        touch(bubble, MotionEvent.ACTION_CANCEL)
+        assertEquals(null, field(overlay, "menu"))
+    }
+
+    private fun touch(view: View, action: Int, x: Float = 20f) {
+        val now = SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(now, now, action, x, 20f, 0)
+        try { view.dispatchTouchEvent(event) } finally { event.recycle() }
+    }
+
     @Test fun preparingRequestCanBeStoppedBeforeAnyTurnIsSubmitted() = withOverlay { overlay, request, _ ->
         assertTrue(request.turnId.isBlank())
         set(overlay, "pageCollection", ScreenAssistantPageCollection(request))

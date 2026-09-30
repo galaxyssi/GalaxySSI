@@ -12,7 +12,7 @@
     <string name="screen_assistant_permission_summary">Enable GalaxySSI accessibility service in system settings</string>
     <string name="screen_assistant_connected">Connected</string>
     <string name="screen_assistant_not_connected">Not connected</string>
-    <string name="screen_assistant_footer">Tap to open the Agent input with a removable screen capture. Nothing is sent until you tap Send. Long press for screen tools. Android 11 or newer is required. Protected screens cannot be captured.</string>
+    <string name="screen_assistant_footer">Tap for screen tools. Long press to open the Agent input with a removable screen capture. Nothing is sent until you tap Send. Android 11 or newer is required. Protected screens cannot be captured.</string>
     <string name="screen_assistant_capture">Analyze current screen</string>
     <string name="screen_assistant_ask">Ask about this screen</string>
     <string name="screen_assistant_crop">Select an area</string>
