@@ -1,10 +1,14 @@
 package com.galaxyssi.chat
 
 internal object WechatArticleLinkPolicy {
+    fun shouldRetryCopy(menuVisible: Boolean, copyLocated: Boolean, attempts: Int) =
+        menuVisible && copyLocated && attempts in 1..2
     private fun normalized(text: String) = text.filterNot(Char::isWhitespace).lowercase()
     fun isCopy(text: String) = normalized(text) in setOf("复制链接", "複製連結", "複製鏈接", "copylink")
     fun isConfirmation(text: String) = normalized(text) in setOf(
         "已复制到剪贴板", "已複製到剪貼簿", "链接已复制", "連結已複製", "copied", "linkcopied", "copiedtoclipboard")
+    fun isSystemConfirmation(text: String) = normalized(text).trimEnd('.', '。', '!') in setOf(
+        "已复制", "巳复制", "已複製", "copied", "copiedtoclipboard")
     fun isMenu(lines: List<String>): Boolean {
         val text = lines.joinToString("", transform = ::normalized)
         return listOf("取消", "cancel").any(text::contains) &&

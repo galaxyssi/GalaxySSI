@@ -24,6 +24,8 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
     private var generation = 0
     private var running = false
     private var awaitingCopy = false
+    private var copyAttempts = 0
+    private var systemCopyConfirmed = false
     private var hidden = false
     private var closed = false
     private var addedToastEvents = false
@@ -34,6 +36,8 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
         if (!isTarget()) { toast(R.string.wechat_link_open_article); return }
         running = true
         awaitingCopy = false
+        copyAttempts = 0
+        systemCopyConfirmed = false
         val token = ++generation
         val info = service.serviceInfo
         addedToastEvents = info.eventTypes and AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED == 0
@@ -49,8 +53,15 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
     }
 
     fun onEvent(event: AccessibilityEvent?) {
-        if (!running || !awaitingCopy || event?.packageName?.toString() != PACKAGE ||
+        if (!running || !awaitingCopy || event == null ||
             event.eventType != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
+        if (event.packageName?.toString() == "com.android.systemui" && isTarget() &&
+            event.text.any { WechatArticleLinkPolicy.isSystemConfirmation(it.toString()) }) {
+            // A system copy toast is provisional until the WeChat menu has also closed.
+            systemCopyConfirmed = true
+            return
+        }
+        if (event.packageName?.toString() != PACKAGE) return
         if (event.text.any { WechatArticleLinkPolicy.isConfirmation(it.toString()) }) {
             Log.i(TAG, "WeChat confirmed clipboard copy")
             finish(R.string.wechat_link_copied)
@@ -114,7 +125,7 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                             if (!valid(token)) { bitmap?.recycle(); return }
                             if (bitmap == null) { finish(R.string.wechat_link_failed); return }
                             // Isolate the bottom sheet from article text and improve small gray labels.
-                            val cropTop = if (opened && !awaitingCopy) bitmap.height * 53 / 100 else 0
+                            val cropTop = if (opened) bitmap.height * 53 / 100 else 0
                             val cropped = if (cropTop > 0) Bitmap.createBitmap(bitmap, 0, cropTop, bitmap.width, bitmap.height - cropTop) else bitmap
                             val scale = if (cropTop > 0) 2 else 1
                             val ocrImage = if (scale == 2) Bitmap.createScaledBitmap(cropped, cropped.width * 2, cropped.height * 2, true) else cropped
@@ -124,18 +135,6 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                                     if (!isTarget()) { finish(R.string.wechat_link_interrupted); return@addOnSuccessListener }
                                     val lines = text.textBlocks.flatMap { it.lines }
                                     val labels = lines.map { it.text }
-                                    if (awaitingCopy) {
-                                        val confirmed = lines.any { line ->
-                                            (line.boundingBox?.centerY() ?: 0) > bitmap.height * .65 &&
-                                                WechatArticleLinkPolicy.isConfirmation(line.text)
-                                        }
-                                        if (confirmed && !WechatArticleLinkPolicy.isMenu(labels)) {
-                                            Log.i(TAG, "WeChat confirmed clipboard copy visually")
-                                            finish(R.string.wechat_link_copied)
-                                        } else if (retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
-                                        else finish(R.string.wechat_link_unconfirmed)
-                                        return@addOnSuccessListener
-                                    }
                                     val buttons = lines.flatMap { line ->
                                         val elements = line.elements
                                         val joined = elements.joinToString("") { it.text.filterNot(Char::isWhitespace).lowercase() }
@@ -156,15 +155,33 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                                     }
                                     val menu = WechatArticleMenuLayout.resolve(buttons, bitmap.width, bitmap.height)
                                     Log.i(TAG, "Observed ${bitmap.width}x${bitmap.height} menu=$menu buttons=$buttons swipe=$swipes")
-                                    if (WechatArticleLinkPolicy.isMenu(labels)) {
+                                    val menuVisible = WechatArticleLinkPolicy.isMenu(labels)
+                                    if (awaitingCopy) {
+                                        val confirmed = lines.any { line ->
+                                            (line.boundingBox?.centerY() ?: 0) / scale + cropTop > bitmap.height * .65 &&
+                                                WechatArticleLinkPolicy.isConfirmation(line.text)
+                                        }
+                                        val systemToast = lines.any { line ->
+                                            (line.boundingBox?.centerY() ?: 0) / scale + cropTop > bitmap.height * .65 &&
+                                                WechatArticleLinkPolicy.isSystemConfirmation(line.text)
+                                        }
+                                        if ((confirmed || systemCopyConfirmed || systemToast) && !menuVisible) {
+                                            Log.i(TAG, "WeChat confirmed clipboard copy visually")
+                                            finish(R.string.wechat_link_copied)
+                                        } else if (WechatArticleLinkPolicy.shouldRetryCopy(menuVisible,
+                                                menu?.copyX != null && menu.copyLabelY != null, copyAttempts)) {
+                                            Log.i(TAG, "Copy menu remains open; retrying freshly located label")
+                                            copy(token, requireNotNull(menu), swipes)
+                                        } else if (retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
+                                        else finish(R.string.wechat_link_unconfirmed)
+                                        return@addOnSuccessListener
+                                    }
+                                    if (menuVisible) {
                                         if (menu == null) {
                                             if (retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
                                             else finish(R.string.wechat_link_failed)
                                         } else if (menu.copyX != null) {
-                                            awaitingCopy = true
-                                            tap(token, Rect(menu.copyX - 2, menu.iconY - 2, menu.copyX + 2, menu.iconY + 2)) {
-                                                later(token) { inspect(token, swipes, true) }
-                                            }
+                                            copy(token, menu, swipes)
                                         } else if (swipes < 3) {
                                             gesture(token, bitmap.width * .80f, menu.iconY.toFloat(),
                                                 bitmap.width * .35f, menu.iconY.toFloat(), 380) {
@@ -192,18 +209,42 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
     }
 
     private fun later(token: Int, action: () -> Unit) = handler.postDelayed({ if (valid(token)) action() }, 650)
+    private fun copy(token: Int, menu: WechatArticleMenu, swipes: Int) {
+        val x = menu.copyX ?: return
+        val y = menu.copyLabelY ?: return
+        awaitingCopy = true
+        copyAttempts++
+        tap(token, Rect(x - 2, y - 2, x + 2, y + 2)) {
+            later(token) { inspect(token, swipes, true) }
+        }
+    }
     private fun tap(token: Int, rect: Rect, completed: () -> Unit) = gesture(token,
         rect.centerX().toFloat(), rect.centerY().toFloat(), rect.centerX().toFloat(), rect.centerY().toFloat(), 80, completed)
     private fun gesture(token: Int, x: Float, y: Float, endX: Float, endY: Float, duration: Long, completed: () -> Unit) {
         if (!valid(token)) return
         if (!isTarget()) { finish(R.string.wechat_link_interrupted); return }
+        // Restoring an overlay after OCR must not intercept the next injected gesture.
+        hidden = true
+        service.captureWithoutAssistant {
+            if (!valid(token)) { restore(); return@captureWithoutAssistant }
+            if (!isTarget()) { finish(R.string.wechat_link_interrupted); return@captureWithoutAssistant }
+            dispatchGesture(token, x, y, endX, endY, duration, completed)
+        }
+    }
+
+    private fun dispatchGesture(token: Int, x: Float, y: Float, endX: Float, endY: Float,
+        duration: Long, completed: () -> Unit) {
         Log.i(TAG, "Gesture from=($x,$y) to=($endX,$endY)")
         val path = Path().apply { moveTo(x, y); lineTo(endX, endY) }
         val accepted = service.dispatchGesture(GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(),
             object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription) { if (valid(token)) completed() }
-                override fun onCancelled(gestureDescription: GestureDescription) { if (valid(token)) finish(R.string.wechat_link_interrupted) }
+                override fun onCompleted(gestureDescription: GestureDescription) {
+                    if (valid(token)) { restore(); completed() }
+                }
+                override fun onCancelled(gestureDescription: GestureDescription) {
+                    if (valid(token)) finish(R.string.wechat_link_interrupted)
+                }
             }, handler)
         if (!accepted) finish(R.string.wechat_link_failed)
     }

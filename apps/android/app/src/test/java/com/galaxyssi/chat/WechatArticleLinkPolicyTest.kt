@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WechatArticleLinkPolicyTest {
+    @Test fun retriesOnlyFreshlyLocatedCopyInStillVisibleMenu() {
+        assertTrue(WechatArticleLinkPolicy.shouldRetryCopy(true, true, 1))
+        assertTrue(WechatArticleLinkPolicy.shouldRetryCopy(true, true, 2))
+        assertFalse(WechatArticleLinkPolicy.shouldRetryCopy(true, true, 3))
+        assertFalse(WechatArticleLinkPolicy.shouldRetryCopy(false, true, 1))
+        assertFalse(WechatArticleLinkPolicy.shouldRetryCopy(true, false, 1))
+        assertFalse(WechatArticleLinkPolicy.shouldRetryCopy(true, true, 0))
+    }
     private fun item(text: String, x: Int, y: Int) = WechatMenuLabel(text, x - 40, y - 14, x + 40, y + 14)
     @Test fun ignoresBackgroundArticleLabelsWhenLocatingMenuRow() {
         val items = listOf(item("听全文", 200, 700), item("取消", 540, 2120), item("收藏", 934, 1575),
@@ -16,6 +24,7 @@ class WechatArticleLinkPolicyTest {
         val items = listOf(item("复制链接", 200, 700), item("取消", 540, 2120), item("收藏", 934, 1575),
             item("星标", 730, 1575), item("复制链接", 450, 1904), item("投诉", 240, 1904))
         assertEquals(450, WechatArticleMenuLayout.resolve(items, 1080, 2340)!!.copyX)
+        assertEquals(1904, WechatArticleMenuLayout.resolve(items, 1080, 2340)!!.copyLabelY)
     }
     @Test fun doesNotSwipeWhenOnlyBackgroundTextRemains() {
         assertNull(WechatArticleMenuLayout.resolve(listOf(item("听全文", 200, 700), item("取消", 540, 2120),
@@ -39,6 +48,16 @@ class WechatArticleLinkPolicyTest {
     @Test fun confirmsOnlyCopySuccess() {
         assertTrue(WechatArticleLinkPolicy.isConfirmation("已复制到剪贴板"))
         assertFalse(WechatArticleLinkPolicy.isConfirmation("复制失败"))
+    }
+    @Test fun recognizesSamsungSystemCopyToastWithoutAcceptingOtherMessages() {
+        assertTrue(WechatArticleLinkPolicy.isSystemConfirmation("已复制。"))
+        assertTrue(WechatArticleLinkPolicy.isSystemConfirmation("巳复制。"))
+        assertTrue(WechatArticleLinkPolicy.isSystemConfirmation("已複製"))
+        assertTrue(WechatArticleLinkPolicy.isSystemConfirmation("Copied to clipboard"))
+        assertFalse(WechatArticleLinkPolicy.isSystemConfirmation("复制失败"))
+        assertFalse(WechatArticleLinkPolicy.isSystemConfirmation("尚未复制"))
+        assertFalse(WechatArticleLinkPolicy.isSystemConfirmation("正文中提到已复制"))
+        assertFalse(WechatArticleLinkPolicy.isConfirmation("已复制。"))
     }
     @Test fun findsToolbarDotsAtDifferentSizes() {
         for (width in listOf(720, 1080, 1440)) {

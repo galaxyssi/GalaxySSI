@@ -6,7 +6,7 @@ internal data class WechatMenuLabel(val text: String, val left: Int, val top: In
     val height get() = bottom - top
 }
 
-internal data class WechatArticleMenu(val iconY: Int, val copyX: Int?)
+internal data class WechatArticleMenu(val iconY: Int, val copyX: Int?, val copyLabelY: Int?)
 
 internal object WechatArticleMenuLayout {
     val labels = listOf("复制链接", "複製連結", "複製鏈接", "copylink", "浮窗", "听全文", "稍后听",
@@ -29,6 +29,6 @@ internal object WechatArticleMenuLayout {
         val iconY = rowY - font * 4
         if (iconY <= upperY + font || iconY >= rowY || iconY > cancel.top) return null
         val copy = row.singleOrNull { WechatArticleLinkPolicy.isCopy(it.text) && it.right - it.left < width / 3 }
-        return WechatArticleMenu(iconY, copy?.x)
+        return WechatArticleMenu(iconY, copy?.x, copy?.y)
     }
 }
