@@ -196,6 +196,13 @@ internal class ScreenAssistantContentController(
                     val pdf = File(store.directory(capture), "page.pdf").takeIf { it.isFile && it.length() > 0 }
                         ?: store.exportPdf(capture) { item.request.awaitRunnable() }
                     item.request.awaitRunnable()
+                    val downloadStatus = runCatching {
+                        ScreenAssistantPdfDownloads.save(activity.applicationContext, capture, pdf)
+                    }.fold(
+                        onSuccess = { activity.getString(R.string.screen_content_pdf_saved, it) },
+                        onFailure = { activity.getString(R.string.screen_content_pdf_save_failed) }
+                    )
+                    item.request.awaitRunnable()
                     val added = listOf(text to "text/plain", pdf to "application/pdf").map { (file, mime) ->
                         check(file.length() in 1..MAX_AGENT_ATTACHMENT_BYTES)
                         val name = activity.getString(R.string.screen_assistant_page_attachment) + "." + file.extension
@@ -209,7 +216,7 @@ internal class ScreenAssistantContentController(
                         meta.optBoolean("visual_traversal_finished") -> R.string.screen_content_visual_collected
                         else -> R.string.screen_content_partial
                     }, meta.optInt("pages"))
-                    saveCoverage(id, title, status + "\n" + activity.getString(R.string.screen_content_coverage_caveat))
+                    saveCoverage(id, title, status + "\n" + downloadStatus + "\n" + activity.getString(R.string.screen_content_coverage_caveat))
                     activity.agentTranscriptStore.upsert(AgentTranscriptRole.PROCESS, status,
                         "content-capture:$turn", conversationId = id, turnId = turn, taskId = turn)
                     ScreenAssistantContentPolicy.pageGoal(goal, status) to (attachments + added)

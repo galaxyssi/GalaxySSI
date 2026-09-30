@@ -1,4 +1,6 @@
 <resources>
+    <string name="screen_content_pdf_saved">PDF saved: %1$s</string>
+    <string name="screen_content_pdf_save_failed">Could not save a PDF copy to Downloads. Analysis will continue using the private attachment.</string>
     <string name="screen_content_visual_boundary">Scrolled through visible content; unchanged screens suggest a boundary, but hidden or unloaded sections are not verified.</string>
     <string name="screen_content_visual_collected">Visible page captured · %1$d screens</string>
     <string name="screen_content_scope">Analysis source</string>
