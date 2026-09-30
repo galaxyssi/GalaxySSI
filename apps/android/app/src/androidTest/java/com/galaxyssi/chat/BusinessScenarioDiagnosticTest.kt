@@ -3,6 +3,11 @@ package com.galaxyssi.chat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assume.assumeTrue
@@ -39,35 +44,59 @@ class BusinessScenarioDiagnosticTest {
         require(pending.isNotEmpty()) { "No pending synthetic checkpoint" }
         val pendingTurns = pending.map { it.turnId }.toSet()
         val monitor = instrumentation.addMonitor(ConversationWindowActivity::class.java.name, null, false)
-        val output = JSONObject().put("started_at", System.currentTimeMillis())
+        val startedAt = System.currentTimeMillis()
+        val output = JSONObject().put("started_at", startedAt)
+            .put("recovery_entrypoint", "AndroidAgentRemoteRecovery.recoverPendingReplies")
+        val evidence = File(directory, "$case-recovery-$startedAt.json")
         try {
             context.startActivity(android.content.Intent(context, ConversationWindowActivity::class.java)
                 .setData(android.net.Uri.parse("galaxyssi://conversation-window/$key"))
                 .putExtra(AgentConversationWindows.WINDOW_KEY, key)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_DOCUMENT or android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
             val window = instrumentation.waitForMonitorWithTimeout(monitor, 60000) as MainActivity
-            pending.forEach { delivery ->
-                val identity = requireNotNull(AgentTaskIdentityStore.find(context, delivery.contactId, delivery.sourceMessageId))
-                val desktop = AppStore.contactById(context, delivery.contactId)?.getString("desktop_id") ?: error("Missing Desktop")
-                val fields = JSONObject().put("client_route_id", identity.clientRouteId)
-                    .put("contact_id", delivery.contactId).put("source_message_id", delivery.sourceMessageId.toString())
-                    .put("conversation_id", identity.conversationId).put("turn_id", identity.turnId).put("task_id", identity.taskId)
-                output.put("eligible", AndroidAgentResultRecovery.eligible(context, desktop, fields))
-                AndroidAgentResultRecovery.request(context, desktop, fields)
+            val observations = JSONArray()
+            runBlocking {
+                val ready = withTimeoutOrNull(30_000L) {
+                    withContext(Dispatchers.IO) { GalaxySSIMqttClient.connect(context) }
+                    while (!GalaxySSIMqttClient.isRequestReplyReady()) delay(100)
+                    true
+                } == true
+                output.put("transport_ready", ready)
+                evidence.writeText(output.toString(2))
+                check(ready) { "Transport not ready; no archive recovery conclusion is possible" }
+                pending.forEach { delivery ->
+                    val bound = AndroidAgentRemoteRecovery.hasCurrentBinding(context, delivery)
+                    val remote = if (bound) AndroidAgentRemoteRecovery.inspectPendingReply(context, delivery) else null
+                    observations.put(JSONObject().put("source", delivery.sourceMessageId)
+                        .put("turn", delivery.turnId).put("task", delivery.taskId).put("bound", bound)
+                        .put("remote_status", remote?.status ?: "unobserved")
+                        .put("execution_generation", remote?.executionGeneration))
+                }
+                output.put("observations", observations)
+                evidence.writeText(output.toString(2))
+                // Use the same identity, Agent selection, generation and pacing as normal recovery.
+                AndroidAgentRemoteRecovery.recoverPendingReplies(context, pending)
             }
             val deadline = android.os.SystemClock.elapsedRealtime() + 90000
             val store = AgentTranscriptStore(context, key)
-            while (android.os.SystemClock.elapsedRealtime() < deadline && store.list(conversation).none {
-                    it.turnId in pendingTurns && it.role == AgentTranscriptRole.ASSISTANT }) android.os.SystemClock.sleep(500)
-            val replies = store.list(conversation).filter { it.turnId in pendingTurns && it.role == AgentTranscriptRole.ASSISTANT }
+            fun finalReplies() = store.list(conversation).filter {
+                it.turnId in pendingTurns && it.role == AgentTranscriptRole.ASSISTANT &&
+                    !AgentTranscriptRenderPolicy.isLiveStream(it) && !it.dedupeKey.startsWith("remote-approval:")
+            }
+            fun hasArtifacts(reply: AgentTranscriptEntry) = AgentRichContentCodec.decode(reply.richOutputJson).any {
+                it.type in setOf(AgentRichBlockType.IMAGE, AgentRichBlockType.FILE)
+            }
+            fun allArtifactReplies(replies: List<AgentTranscriptEntry>) = pendingTurns.all { turn ->
+                replies.any { it.turnId == turn && hasArtifacts(it) }
+            }
+            while (android.os.SystemClock.elapsedRealtime() < deadline &&
+                !allArtifactReplies(finalReplies())) android.os.SystemClock.sleep(500)
+            val replies = finalReplies()
             output.put("replies", JSONArray(replies.map { JSONObject().put("text", it.text).put("rich_output", it.richOutputJson) }))
             output.put("completed_at", System.currentTimeMillis())
-            File(directory, "$case-recovery.json").writeText(output.toString(2))
-            org.junit.Assert.assertTrue("Real archive recovery did not deliver an artifact", replies.any {
-                AgentRichContentCodec.decode(it.richOutputJson).any { block ->
-                    block.type in setOf(AgentRichBlockType.IMAGE, AgentRichBlockType.FILE)
-                }
-            })
+            evidence.writeText(output.toString(2))
+            println("BUSINESS_RECOVERY_AUDIT ${evidence.absolutePath}")
+            org.junit.Assert.assertTrue("Real archive recovery did not deliver every pending artifact reply", allArtifactReplies(replies))
             instrumentation.runOnMainSync { window.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         } finally { instrumentation.removeMonitor(monitor) }
     }
