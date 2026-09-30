@@ -3,6 +3,10 @@ package com.galaxyssi.chat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 
+internal fun MqttPublishResult.requireAttachmentQueued() {
+    check(accepted) { "Attachment control response was not durably queued" }
+}
+
 /** A durable inbox entry is complete only after its background handler commits. */
 internal class AttachmentControlInbox(private val executor: Executor) {
     private val pending = ConcurrentHashMap.newKeySet<String>()

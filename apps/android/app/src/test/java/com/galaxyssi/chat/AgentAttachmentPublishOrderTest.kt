@@ -100,5 +100,19 @@ class AgentAttachmentPublishOrderTest {
             largePeerPlan.transferSteps.map { it.type }
         )
         assertEquals(listOf(large.transferId), largePeerPlan.blockedTransferIds)
+
+        val recoveryScope = attachment.scope.copy(attachmentRequestId = "f".repeat(32))
+        val largeRecoveries = List(10) { index ->
+            large.copy(attachmentId = "restored-$index", scope = recoveryScope,
+                sizeBytes = 16L * 1024 * 1024, chunkCount = 64)
+        }
+        val recoverySteps = AgentAttachmentPublishOrder.initialSteps(largeRecoveries)
+        assertEquals(10, recoverySteps.size)
+        assertEquals(true, recoverySteps.all { it.chunkIndex == null && !it.eagerChunks })
+        assertEquals(true, recoverySteps.all { it.attachment.scope.attachmentRequestId == recoveryScope.attachmentRequestId })
+
+        val smallRecovery = AgentAttachmentPublishOrder.initialSteps(listOf(attachment.copy(scope = recoveryScope)))
+        assertEquals(listOf("input_attachment_manifest", "input_attachment_chunk"), smallRecovery.map { it.type })
+        assertEquals(true, smallRecovery.first().eagerChunks)
     }
 }

@@ -2867,8 +2867,9 @@ object GalaxySSIMqttClient {
             publishJsonResult(
                 transfer.chunkPayload(index),
                 route.up,
-                transfer.scope.contactId
-            )
+                transfer.scope.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
         }
     }
 
@@ -2959,8 +2960,9 @@ object GalaxySSIMqttClient {
                     error = "Requested attachment could not be restored"
                 ),
                 link.routes.up,
-                request.contactId
-            )
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
             return
         }
         val availableIds = restored.map(AgentInputAttachment::id)
@@ -2972,8 +2974,9 @@ object GalaxySSIMqttClient {
                     missingAttachmentIds = missingIds
                 ),
                 link.routes.up,
-                request.contactId
-            )
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
             return
         }
         val prepared = runCatching {
@@ -3003,8 +3006,9 @@ object GalaxySSIMqttClient {
                     error = "Requested attachment could not be prepared"
                 ),
                 link.routes.up,
-                request.contactId
-            )
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
             return
         }
         publishJsonResult(
@@ -3014,22 +3018,19 @@ object GalaxySSIMqttClient {
                 missingAttachmentIds = missingIds
             ),
             link.routes.up,
-            request.contactId
-        )
-        prepared.forEach { attachment ->
-            if (AndroidBlobTransfers.register(context, attachment, immediate = true)) return@forEach
+            request.contactId,
+            queueOnly = true
+        ).requireAttachmentQueued()
+        val mqttAttachments = prepared.filterNot { attachment ->
+            AndroidBlobTransfers.register(context, attachment, immediate = true)
+        }
+        AgentAttachmentPublishOrder.initialSteps(mqttAttachments).forEach { step ->
             publishJsonResult(
-                attachment.manifestPayload(resume = false),
+                step.payload(),
                 link.routes.up,
-                request.contactId
-            )
-            for (chunkIndex in 0 until attachment.chunkCount) {
-                publishJsonResult(
-                    attachment.chunkPayload(chunkIndex),
-                    link.routes.up,
-                    request.contactId
-                )
-            }
+                request.contactId,
+                queueOnly = true
+            ).requireAttachmentQueued()
         }
     }
 

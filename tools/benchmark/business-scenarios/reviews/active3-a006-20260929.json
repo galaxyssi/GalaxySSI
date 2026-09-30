@@ -96,5 +96,69 @@
         "sha256": "4a63212be8068f0d0e9f9acf38cf7b1d45a73943c845ab3de69df64b20d5364d"
       }
     ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 6,
+    "source_sha256": "c4b047b49ab4d3c6f0cf4e046821688a156938cf6a397687872d1449eac42954",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "Initial quantities and total 610 are restored in native formulas and chart caches. However, the actual calculation preview retains invented yuan, right-edge clipping and a column-chart value axis starting at 180.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "7cdb15e38505fc4eb2379f084dfa7816f8392096b6c7e2ea5a47158e566854c1"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 7,
+    "source_sha256": "2c702be41754faa181cd66b88d51b44ef3a66140ddd01306508c2c793e3d536a",
+    "verdict": "fail",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "The received notes preview preserves Chinese and adds an English summary, but that summary asserts CNY despite no supplied currency. The declared calculation preview did not arrive within the observation window and is not certified by this review.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-3.png",
+        "sha256": "1b59b5192b0cd1af95a19374a5b965febb8f8ea238f5d4ef29c6fd1dd45bc734"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 8,
+    "source_sha256": "b924851e54af9d956917e915445289037991642c422762651ab301708fb8f19a",
+    "verdict": "fail",
+    "reviewer": "Codex visual inspection",
+    "notes": "The consistency-check reply does not fix the inspected calculation preview: it is byte-identical to turn 6, retaining unsupported currency, clipped right edge and the 180-based column axis. Arithmetic agreement alone is insufficient.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "7cdb15e38505fc4eb2379f084dfa7816f8392096b6c7e2ea5a47158e566854c1"
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A006",
+    "turn_index": 9,
+    "source_sha256": "b78eac7cbf7eb3e3b981aedfe6298b7a7453129ba7c9fa8f4037747431c53c37",
+    "verdict": "fail",
+    "reviewer": "Codex PDF extraction, independent page rendering and visual inspection",
+    "notes": "PDF is genuinely three pages. Its independently rendered second page exactly matches the received preview hash, including the unsupported yuan, clipped chart and nonzero column baseline. Required editable XLSX was omitted; that remains a separate delivery failure.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.pdf",
+        "sha256": "039a185e4b06afc5b92f2916451bb8b67091b88a8513d0ec90014983ba187476"
+      },
+      {
+        "evidence_file": "artifact-2.png",
+        "sha256": "7cdb15e38505fc4eb2379f084dfa7816f8392096b6c7e2ea5a47158e566854c1"
+      }
+    ]
   }
 ]

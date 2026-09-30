@@ -36,11 +36,14 @@ model-assisted inspection. Notes should state the checked claims and limitations
   native application recalculation, every UI control or real-world correctness.
   Existing no-review report behavior remains available.
 
-The included `reviews/active3-a006-20260929.json` records six actual failed
-content reviews from the first six warehouse XLSX turns. Unsupported currency,
+The included `reviews/active3-a006-20260929.json` now records ten actual failed
+content reviews from the warehouse XLSX run. See the
+[complete eleven-turn baseline](WAREHOUSE_XLSX_FULL_BASELINE.md) for the latest
+coverage; the final error response has no received files and remains unverified.
+Unsupported currency,
 an initial misleading bar baseline and a later clipped chart frame were observed.
-Five turns had successful attachment delivery; turn 5 also had a missing notes
-preview after a 90-second observation window. None becomes a semantic pass.
+Seven turns had successful attachment delivery; four had missing files or an
+attachment recovery error. None becomes a semantic pass.
 The notes do not claim that all their other content was correct. Raw files and
 screenshots remain local. A checksum mismatch is an error to investigate, not a
 reason to regenerate a favorable review automatically.
@@ -51,7 +54,7 @@ Example from the repository root:
 python tools/benchmark/business-scenarios/report.py --plan <run>/catalog.json --reports <run> --reviews tools/benchmark/business-scenarios/reviews/active3-a006-20260929.json --output <separate-summary>.json
 ```
 
-The six-turn real summary retains 100 planned cases and 1,100 planned
+The earlier six-turn real summary retained 100 planned cases and 1,100 planned
 turns, five successful delivery checks, zero semantic passes, six explicit
 content failures and the layout turn's latency failure. It remains incomplete.
 The first three reviews validated unchanged against the six-turn checkpoint
@@ -60,7 +63,7 @@ Thirty-two host regressions pass, including eleven review-binding tests. No Andr
 or Desktop production code, version, stored conversation or returned artifact is
 changed by this host-side reporting feature.
 
-## Real continuation evidence
+## Earlier six-turn checkpoint
 
 Run `active3-warehouse-xlsx-20260929-v1324` on Active3 (SM-T575), Android
 1.3.24 (1067), still-running Desktop 1.3.23 and configured Codex gpt-5.6-sol.
@@ -83,5 +86,6 @@ pixel or every attachment-opening interaction. Native OOXML cells, formulas and
 cached chart values were inspected without changing or recalculating the files.
 The successful source checks and arithmetic do not excuse the unsupported
 currency and clipped previews. The original missing attachment remains failed
-even if it is later recovered. The remaining five A006 turns and the full
-100-case, 1100-turn suite are still incomplete.
+even if it is later recovered. At that checkpoint the remaining five A006 turns
+were unobserved; the linked eleven-turn baseline now records them separately.
+The full 100-case, 1100-turn suite remains incomplete.
