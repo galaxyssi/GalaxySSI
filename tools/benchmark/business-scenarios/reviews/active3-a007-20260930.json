@@ -1,0 +1,65 @@
+[
+  {
+    "schema": 1,
+    "case_id": "A007",
+    "turn_index": 3,
+    "source_sha256": "b238c13eb471118923158191fbc3e3b46866a06dcd0f27b853e3b0e30bf11931",
+    "verdict": "pass",
+    "reviewer": "Codex visual and OOXML relationship inspection",
+    "notes": "Received native PPTX contains four editable slides. Added Ding has quantity 5, price 20 and amount 100; quantity is 78 and total is 796. The active slide-2 chart relationship points to chart2 with 204/272/220/100 and its matching embedded workbook. The three received previews match the inspected slide text and remain readable without unsupported currency or invented owner/date/returns. Page 2 was NOT received within the observation deadline, so this content verdict covers only received artifacts and does not turn the failed delivery into a business pass. Old unused chart parts remain in the package; package sanitization is not certified.",
+    "checked_artifacts": [
+      {"evidence_file": "artifact-0.pptx", "sha256": "60dc2ec707231b7659405762d86af774d3cbe3b02262e7bb7eca238ab640235c"},
+      {"evidence_file": "artifact-1.png", "sha256": "faa1e2844df7fd1a0c908a846093708ccfa5cd0dffa864f7ef6f116fbd395903"},
+      {"evidence_file": "artifact-3.png", "sha256": "1d965b77112286a520072b764c95303e66513cd1e65c2b6fa4967230689a1513"},
+      {"evidence_file": "artifact-4.png", "sha256": "7e06d51afb6a078a16dccfd871bc826ecd1a6e59fe32580b20d4ea15b73cbcbb"}
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A007",
+    "turn_index": 4,
+    "source_sha256": "2a777a5bd21e31eba8d369257015c8dd2edec5a6ab9c212cf37c16e9ed986b57",
+    "verdict": "pass",
+    "reviewer": "Codex visual and OOXML relationship inspection",
+    "notes": "Inspected all four 1080x1920 previews and native slide text, tables, active chart relationship and editable chart workbook. Quantity 78 and total 796 are unchanged. Owner, actual date and real returns are marked pending confirmation; the risk slide explicitly states their sources were not supplied. Currency is unspecified rather than invented. The chart uses a zero baseline with values 204/272/220/100. No overlapping or clipped visible content was found. This is evaluator content review, not a replacement for actual UI open/save or latency acceptance. Old unused chart parts remain in the package.",
+    "checked_artifacts": [
+      {"evidence_file": "artifact-0.pptx", "sha256": "6744c0efcefbe98ff600674dcf8b805f3a5c71ec28564bf3d36b322742c052f9"},
+      {"evidence_file": "artifact-1.png", "sha256": "faa1e2844df7fd1a0c908a846093708ccfa5cd0dffa864f7ef6f116fbd395903"},
+      {"evidence_file": "artifact-2.png", "sha256": "05dc165e80bbf184dd06fcdd168bac8e5b0d95ba65081e53c57f3ab683707576"},
+      {"evidence_file": "artifact-3.png", "sha256": "1d965b77112286a520072b764c95303e66513cd1e65c2b6fa4967230689a1513"},
+      {"evidence_file": "artifact-4.png", "sha256": "983f264ab5467757b80e37d55a17475161491f14caa0c67c97210fe8860b5fac"}
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A007",
+    "turn_index": 5,
+    "source_sha256": "6e71b627660ca91abad735c72b8dec693e98f6a9c7ade1f0428ca09bcbe4bd21",
+    "verdict": "pass",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "Inspected native slides and all four previews (page 3 matches the previously inspected hash). Bing is removed while revised Yi and Ding remain: quantities 17/34/5, amounts 204/272/100, total quantity 56 and amount 576. The package now has one chart; its values match the table. The deleted Chinese label is absent from PPT XML and the embedded chart workbook XML. All previews are readable and match the native content. Owner/date/returns remain unknown, and no currency is invented. Delivery/save API checks passed independently; actual UI open/save remains a separate check.",
+    "checked_artifacts": [
+      {"evidence_file": "artifact-0.pptx", "sha256": "b060c695cb022d7f24b497e40f9e6f62a368b6d9959548bbd9fac3aad8c7c190"},
+      {"evidence_file": "artifact-1.png", "sha256": "c5612a9b4cdb64ae9e147ffe016ee59b3d717e205c3852afe52aa4a35c03704c"},
+      {"evidence_file": "artifact-2.png", "sha256": "7eac5bbeab5ba9f8b2919d09f7d4ed1da61758e9a7d8b53bab56ca267b78a645"},
+      {"evidence_file": "artifact-3.png", "sha256": "1d965b77112286a520072b764c95303e66513cd1e65c2b6fa4967230689a1513"},
+      {"evidence_file": "artifact-4.png", "sha256": "062d808e504218c5d1b30410640980fd89fdb78fa77d34331b05c68877c677db"}
+    ]
+  },
+  {
+    "schema": 1,
+    "case_id": "A007",
+    "turn_index": 6,
+    "source_sha256": "e93d80f762d7dac70fc60023ed104fb27dad44e3c56d708c736e6440c103e4e6",
+    "verdict": "pass",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "Native slide text, table and chart restore the initial Jia/Yi/Bing quantities 17/27/22 and prices 12/8/10, giving 204/216/220, total quantity 66 and amount 640. Ding is removed. The title and data slide identify this as a new restored version, and the four-page portrait layout is retained. Inspected all previews, with page 3 byte-identical to the reviewed prior page. No visible clipping or overlap was found; owner/date/returns and currency remain unconfirmed. This content verdict does not replace performance or actual UI open/save checks.",
+    "checked_artifacts": [
+      {"evidence_file": "artifact-0.pptx", "sha256": "65fd82df21d51363fa2ef09582d8b56c7daf4ffd61d771b955e114b79631f7fc"},
+      {"evidence_file": "artifact-1.png", "sha256": "be2f1581620918d066f000bba646ee31a16fb7cb56ba5e6058799bc9050f9bf8"},
+      {"evidence_file": "artifact-2.png", "sha256": "e0ce6423bda55d4b9f92b2cae590bb4a966bedea31d57fd90023f6d0423ba9d1"},
+      {"evidence_file": "artifact-3.png", "sha256": "1d965b77112286a520072b764c95303e66513cd1e65c2b6fa4967230689a1513"},
+      {"evidence_file": "artifact-4.png", "sha256": "d642a379b03c6b70cc6de219216f757a61d2adc9e19b0cb57cc36c72ffbba888"}
+    ]
+  }
+]
