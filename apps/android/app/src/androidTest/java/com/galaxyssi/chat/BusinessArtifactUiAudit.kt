@@ -14,20 +14,57 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.ImageView
 import java.io.File
 import java.security.MessageDigest
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Click a real delivered preview and its save control, without resending a model task. */
 internal fun auditBusinessImageUi(
-    instrumentation: Instrumentation, window: MainActivity, entry: AgentTranscriptEntry, directory: File
+    instrumentation: Instrumentation, window: MainActivity, entry: AgentTranscriptEntry, directory: File,
+    allImages: Boolean = false
 ): JSONObject {
     val context = instrumentation.targetContext
     val rawBlocks = AgentRichContentCodec.decode(entry.richOutputJson)
-    val block = AgentImagePresentation.annotate(rawBlocks,
+    val images = AgentImagePresentation.annotate(rawBlocks,
         entry.text + "\n" + rawBlocks.filter { it.type == AgentRichBlockType.TEXT }.joinToString("\n") { it.text },
         window.resources.configuration.locales[0].language == "zh",
-        window.getString(R.string.rich_output_type_image)).first {
-        it.type == AgentRichBlockType.IMAGE && AgentDesktopArtifactStore.localFile(context, it) != null
+        window.getString(R.string.rich_output_type_image)).filter { it.type == AgentRichBlockType.IMAGE }
+    val selected = if (allImages) images else listOf(images.first {
+        AgentDesktopArtifactStore.localFile(context, it) != null })
+    check(selected.isNotEmpty() && selected.all { it.id.isNotBlank() } &&
+        selected.map { it.id }.distinct().size == selected.size)
+    val results = JSONArray()
+    val audit = JSONObject().put("schema", 1).put("entry_id", entry.id)
+        .put("conversation_id", entry.conversationId).put("turn_id", entry.turnId).put("task_id", entry.taskId)
+        .put("scope", "all_declared_image_previews_ui_open_and_save")
+        .put("expected_count", selected.size).put("verified_count", 0).put("images", results)
+        .put("status", "running").put("started_at", System.currentTimeMillis())
+    fun saveAudit() { if (allImages) File(directory, "ui-audit.json").writeText(audit.toString(2)) }
+    saveAudit()
+    for ((index, block) in selected.withIndex()) {
+        try {
+            check(AgentDesktopArtifactStore.localFile(context, block) != null) { "Preview ${block.id} is missing" }
+            val target = if (allImages) File(directory, "image-$index").apply { mkdirs() } else directory
+            results.put(auditBusinessImageBlock(instrumentation, window, entry, block, target))
+            audit.put("verified_count", results.length())
+            saveAudit()
+        } catch (failure: Throwable) {
+            audit.put("status", "failed").put("failed_image_index", index)
+                .put("failure", failure.javaClass.simpleName).put("finished_at", System.currentTimeMillis())
+            saveAudit()
+            throw failure
+        }
     }
+    if (!allImages) return results.getJSONObject(0)
+    audit.put("status", "completed").put("finished_at", System.currentTimeMillis())
+    saveAudit()
+    return audit
+}
+
+private fun auditBusinessImageBlock(
+    instrumentation: Instrumentation, window: MainActivity, entry: AgentTranscriptEntry,
+    block: AgentRichBlock, directory: File
+): JSONObject {
+    val context = instrumentation.targetContext
     val resolved = AgentDesktopArtifactStore.resolveBlock(context, block)
     val expected = context.contentResolver.openInputStream(Uri.parse(resolved.uri))!!.use { input ->
         val digest = MessageDigest.getInstance("SHA-256")
@@ -36,9 +73,28 @@ internal fun auditBusinessImageUi(
         digest.digest().joinToString("") { "%02x".format(it) }
     }
     val title = AgentImagePresentation.title(resolved, window.getString(R.string.rich_output_type_image))
+    check(expected == block.metadata["sha256"].orEmpty().lowercase()) { "Preview hash differs from delivery manifest" }
     val capture = captureBusinessOutput(instrumentation, window, File(directory, "before-open.png"), entry.id)
     check(capture.targetVisible && capture.stable && capture.focused)
     var clicked = false
+    check(auditAwait {
+        var visible = false
+        instrumentation.runOnMainSync {
+            val position = window.agentTranscriptAdapter.indexOfEntry(entry.id)
+            val row = window.agentOutputList.findViewHolderForAdapterPosition(position)?.itemView
+            val image = row?.let(::auditViews)?.filterIsInstance<ImageView>()?.singleOrNull {
+                it.contentDescription == title && it.isClickable && it.drawable != null
+            }
+            if (image != null) {
+                image.requestRectangleOnScreen(Rect(0, 0, image.width, image.height), true)
+                val bounds = Rect()
+                val output = Rect()
+                visible = image.getGlobalVisibleRect(bounds) && window.agentOutputList.getGlobalVisibleRect(output) &&
+                    bounds.intersect(output) && bounds.width() > 0 && bounds.height() > 0
+            }
+        }
+        visible
+    }) { "Requested preview thumbnail was not visible or uniquely identifiable" }
     instrumentation.runOnMainSync {
         val position = window.agentTranscriptAdapter.indexOfEntry(entry.id)
         val row = window.agentOutputList.findViewHolderForAdapterPosition(position)?.itemView
@@ -49,7 +105,7 @@ internal fun auditBusinessImageUi(
     }
     check(clicked) { "Delivered image thumbnail was not clickable" }
     val result = JSONObject().put("entry_id", entry.id).put("artifact_id", block.id)
-        .put("scope", "first_delivered_preview_ui_open_and_save").put("thumbnail_clicked", true)
+        .put("scope", "selected_delivered_preview_ui_open_and_save").put("thumbnail_clicked", true)
     try {
         var save: AccessibilityNodeInfo? = null
         check(auditAwait {
