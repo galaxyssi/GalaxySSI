@@ -8599,9 +8599,10 @@ def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, s
                 timing_scope=(client_route_id, message_id),
                 transport_traffic=str(pending.get("transport_traffic") or "message"),
             )
-            # The authenticated path can change after queue selection. A
-            # deferred result owns no packet and will never receive a PUBACK.
-            if getattr(info, "deferred", False) is True:
+            # Route changes and local admission refusal own no packet and will
+            # never receive a PUBACK. Neither consumes a physical retry attempt.
+            if (getattr(info, "deferred", False) is True
+                    or info.rc == mqtt.MQTT_ERR_QUEUE_SIZE):
                 mark_outbound_deferred(client_route_id, message_id)
                 continue
             if info.rc == mqtt.MQTT_ERR_SUCCESS:
