@@ -3,8 +3,10 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -218,13 +220,29 @@ class ScreenAssistantChatActivity : MainActivity() {
         val pageHeight = if (fill) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
         if (agentPage.layoutParams.height != pageHeight) agentPage.layoutParams = agentPage.layoutParams.apply { height = pageHeight }
         val metrics = resources.displayMetrics
-        val height = ScreenAssistantChatWindowPolicy.height(metrics.heightPixels, dp(1), expanded, fill)
+        // A floating window can be clipped by the IME without remeasuring its fixed-height content.
+        // Bound the requested height to the display-space insets, not the window's own height.
+        var imeVisible = false
+        val availableHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val windowMetrics = windowManager.currentWindowMetrics
+            imeVisible = windowMetrics.windowInsets.isVisible(WindowInsets.Type.ime())
+            val insets = windowMetrics.windowInsets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+            windowMetrics.bounds.height() - insets.top - insets.bottom
+        } else {
+            val frame = Rect()
+            window.decorView.getWindowVisibleDisplayFrame(frame)
+            imeVisible = metrics.heightPixels - frame.bottom > dp(100)
+            frame.height()
+        }
+        val bottomGap = if (imeVisible) 0 else dp(8)
+        val height = ScreenAssistantChatWindowPolicy.height(metrics.heightPixels, dp(1), expanded, fill,
+            availableHeight - dp(8) - bottomGap)
         val attrs = window.attributes
-        if (attrs.height != height || attrs.width != metrics.widthPixels - dp(16)) {
+        if (attrs.height != height || attrs.width != metrics.widthPixels - dp(16) || attrs.y != bottomGap) {
             attrs.height = height
             attrs.width = metrics.widthPixels - dp(16)
             attrs.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            attrs.y = dp(8)
+            attrs.y = bottomGap
             attrs.setFitInsetsTypes(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
             attrs.setFitInsetsIgnoringVisibility(false)
             window.attributes = attrs
@@ -344,9 +362,10 @@ class ScreenAssistantChatActivity : MainActivity() {
 }
 
 internal object ScreenAssistantChatWindowPolicy {
-    fun height(screenHeight: Int, density: Int, expanded: Boolean, content: Boolean): Int = when {
+    fun height(screenHeight: Int, density: Int, expanded: Boolean, content: Boolean,
+        availableHeight: Int = screenHeight): Int = when {
         expanded -> (screenHeight - 64 * density).coerceAtLeast(240 * density)
         content -> minOf(440 * density, (screenHeight * 0.62f).toInt())
         else -> WindowManager.LayoutParams.WRAP_CONTENT
-    }
+    }.let { requested -> if (requested > 0) minOf(requested, availableHeight.coerceAtLeast(1)) else requested }
 }
