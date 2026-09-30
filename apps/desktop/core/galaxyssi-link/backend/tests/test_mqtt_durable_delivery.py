@@ -33,6 +33,76 @@ class DurableMqttClient:
 
 
 class MqttDurableDeliveryTest(unittest.TestCase):
+    def test_local_capacity_refusals_do_not_exhaust_unsent_artifact(self):
+        peer = paired_client("current")
+        wire = '{"scheme":"signal","body":"immutable-artifact-ciphertext"}'
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(link_delivery, "DB_PATH", Path(temporary) / "delivery.db"),
+            patch.object(mqtt_bridge, "list_clients", return_value=[peer]),
+            patch.object(mqtt_bridge, "get_client", return_value=peer),
+            patch.object(mqtt_bridge, "pending_outbound_acks", {}) as pending,
+            patch.object(mqtt_bridge, "pending_outbound_priorities", {}),
+            patch.object(mqtt_bridge, "outbound_publish_reservations", {}) as reservations,
+            patch.object(mqtt_bridge, "early_outbound_acks", {}),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", return_value=SimpleNamespace(
+                rc=mqtt_bridge.mqtt.MQTT_ERR_QUEUE_SIZE, mid=91)) as publish,
+            patch.object(mqtt_bridge, "encrypt_signal_payload") as encrypt,
+        ):
+            link_delivery.queue_outbound("current", "artifact-message", "topic", wire,
+                priority=mqtt_bridge.OUTBOUND_PRIORITY_ARTIFACT, transport_traffic="chunk")
+            for _ in range(link_delivery.OUTBOUND_MAX_ATTEMPTS + 2):
+                self.assertEqual({}, mqtt_bridge.flush_outbound_messages(DurableMqttClient()))
+                queued = link_delivery.pending_outbound()
+                self.assertEqual([(0, wire)], [(row["attempts"], row["wire_payload"]) for row in queued])
+                self.assertEqual([], link_delivery.fail_exhausted_outbound())
+                self.assertEqual({}, pending)
+                self.assertEqual({}, reservations)
+            publish.return_value = SimpleNamespace(rc=0, mid=92, is_published=lambda: True)
+            sent = mqtt_bridge.flush_outbound_messages(DurableMqttClient())
+            self.assertEqual([("current", "artifact-message")], list(sent))
+            self.assertEqual("published", link_delivery.outbound_status("current", "artifact-message"))
+            self.assertEqual({wire}, {call.args[2] for call in publish.call_args_list})
+            encrypt.assert_not_called()
+
+    def test_capacity_deferral_preserves_prior_attempts_and_receipt_race(self):
+        for receipt_race in (False, True):
+            with self.subTest(receipt_race=receipt_race), tempfile.TemporaryDirectory() as temporary, (
+                patch.object(link_delivery, "DB_PATH", Path(temporary) / "delivery.db")
+            ), patch.object(mqtt_bridge, "get_client", return_value=paired_client("current")):
+                link_delivery.queue_outbound("current", "message", "topic", "unchanged-ciphertext")
+                # Two actual attempts existed before this local admission try.
+                for _ in range(3):
+                    link_delivery.mark_outbound_sending("current", "message")
+                def refused(*_args, **_kwargs):
+                    if receipt_race:
+                        link_delivery.acknowledge_outbound("current", "message")
+                    return SimpleNamespace(rc=mqtt_bridge.mqtt.MQTT_ERR_QUEUE_SIZE, mid=91)
+                with patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=refused):
+                    self.assertEqual({}, mqtt_bridge._publish_reserved_outbound(DurableMqttClient(), [{
+                        "client_route_id": "current", "message_id": "message",
+                        "wire_payload": "unchanged-ciphertext", "transport_traffic": "chunk"}]))
+                if receipt_race:
+                    self.assertIsNone(link_delivery.outbound_status("current", "message"))
+                else:
+                    rows = link_delivery.pending_outbound(now=link_delivery.time.time() + 1000)
+                    self.assertEqual([2], [row["attempts"] for row in rows])
+
+    def test_non_capacity_failure_keeps_existing_retry_accounting(self):
+        peer = paired_client("current")
+        selected = [{"client_route_id": "current", "message_id": "message",
+                     "wire_payload": "immutable-ciphertext", "transport_traffic": "message"}]
+        with (
+            patch.object(mqtt_bridge, "get_client", return_value=peer),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", return_value=SimpleNamespace(
+                rc=mqtt_bridge.mqtt.MQTT_ERR_NO_CONN, mid=91)),
+            patch.object(mqtt_bridge, "mark_outbound_deferred") as deferred,
+            patch.object(mqtt_bridge, "mark_outbound_retryable") as retryable,
+        ):
+            self.assertEqual({}, mqtt_bridge._publish_reserved_outbound(DurableMqttClient(), selected))
+            deferred.assert_not_called()
+            retryable.assert_called_once_with("current", "message")
+
     def test_actual_wire_preparation_deferral_replays_same_durable_message(self):
         peer = paired_client("current")
         client = Mock(spec=mqtt_bridge.MqttPoolClient)
