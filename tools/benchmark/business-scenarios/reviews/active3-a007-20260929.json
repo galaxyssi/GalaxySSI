@@ -1,0 +1,18 @@
+[
+  {
+    "schema": 1,
+    "case_id": "A007",
+    "turn_index": 1,
+    "source_sha256": "96db94488584c70545a2c05661d1b9924198057bd7389fb1233bc6d43fce5fc8",
+    "verdict": "pass",
+    "reviewer": "Codex visual and OOXML inspection",
+    "notes": "Inspected all four delivered PNG previews and the received PPTX. The deck has four slides with editable text and a native chart. Only item B quantity changes from 27 to 34; amounts are 204, 272 and 220, total 696 and quantity total 73. Chart cache and visible labels match, with a zero value-axis baseline. Owner, actual date and actual returns remain unconfirmed; currency is not invented. The slide content and previews are consistent and readable without observed clipping. This is a content review of turn 1, not native PowerPoint editing/recalculation testing or approval of the missing original in turn 0.",
+    "checked_artifacts": [
+      { "evidence_file": "artifact-0.pptx", "sha256": "cebd8ef60c763adfe1fb03e6078ae67085ef4efbdd6322dec08545958b928459" },
+      { "evidence_file": "artifact-1.png", "sha256": "a30bc0f54eef62b326654884a3c77577bbe484f9a100df941b0f2c324f30eb3e" },
+      { "evidence_file": "artifact-2.png", "sha256": "1c21de4028e6ba7556cbe56187a71abeef9f5f1a252fc6a52aa364105d3f80ae" },
+      { "evidence_file": "artifact-3.png", "sha256": "eed4dc68f3a70a6dc22fdb1cc3fe1e2d8979a6f8ce2398082a4075bf0d4a9715" },
+      { "evidence_file": "artifact-4.png", "sha256": "17fa59d84061facda1b0b6c2b6257fe1ea267135c9856f9c0728c90f2bc505a0" }
+    ]
+  }
+]
