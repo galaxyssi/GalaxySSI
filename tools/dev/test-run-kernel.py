@@ -18,6 +18,8 @@ def main() -> int:
         "test_mqtt_agent_recovery",
         "test_mqtt_task_turn_routing",
         "test_mqtt_codex_steering",
+        "test_attachment_request_broker",
+        "test_attachment_recovery_phases",
         "tests.test_mqtt_durable_delivery",
         "tests.test_link_delivery",
         *sorted(path.stem for path in backend.glob("test_blob_*.py")),

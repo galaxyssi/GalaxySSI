@@ -240,8 +240,11 @@ def acknowledge_artifact(payload: dict, *, client_route_id: str, delivery_scope:
             or str(entry.get("sha256") or "").lower() != digest
         ):
             return False
+        if entry.get("state") == "stored" and entry.get("cleanup_done"):
+            return True
         entry["state"] = "stored"
-        entry["stored_at"] = int(time.time())
+        # Duplicate/retried receipts must not move the first durable receipt time.
+        entry.setdefault("stored_at", int(time.time()))
         task_id = str(entry.get("task_id") or "")
         task_entries = [
             item

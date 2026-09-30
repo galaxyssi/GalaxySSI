@@ -113,6 +113,66 @@ class ArtifactOwnershipTests(unittest.TestCase):
         self.assertFalse(self.root.exists())
         self.assertTrue(self.receipt("s20"))
 
+    def test_completed_duplicate_preserves_first_receipt_without_disk_rewrite(self):
+        self.register("s20", retain=True)
+        with patch.object(delivery.time, "time", return_value=100):
+            self.assertTrue(self.receipt("s20"))
+        before = delivery._ledger_path().read_bytes()
+        with patch.object(delivery.time, "time", return_value=300), \
+                patch.object(delivery, "_write_ledger") as write, \
+                patch.object(delivery, "cleanup_task_workspace") as cleanup:
+            self.assertTrue(self.receipt("s20"))
+            write.assert_not_called()
+            cleanup.assert_not_called()
+        self.assertEqual(before, delivery._ledger_path().read_bytes())
+        self.assertEqual(100, next(iter(delivery._read_ledger().values()))["stored_at"])
+
+    def test_receipt_times_remain_separate_for_each_delivery_scope(self):
+        self.register("s20", scope="a" * 64)
+        self.register("s20", scope="b" * 64)
+        with patch.object(delivery.time, "time", return_value=100):
+            self.assertTrue(self.receipt("s20", scope="a" * 64))
+        with patch.object(delivery.time, "time", return_value=200):
+            self.assertTrue(self.receipt("s20", scope="a" * 64))
+            self.assertTrue(self.source.is_file())
+            self.assertTrue(self.receipt("s20", scope="b" * 64))
+        times = {entry["delivery_scope"]: entry["stored_at"] for entry in delivery._read_ledger().values()}
+        self.assertEqual({"a" * 64: 100, "b" * 64: 200}, times)
+
+    def test_cleanup_retry_does_not_replace_receipt_time_with_cleanup_time(self):
+        self.register("s20")
+        with patch.object(delivery.time, "time", return_value=100), \
+                patch.object(delivery, "cleanup_task_workspace", return_value=False):
+            with self.assertRaises(OSError):
+                self.receipt("s20")
+        with patch.object(delivery.time, "time", return_value=300):
+            self.assertTrue(self.receipt("s20"))
+        entry = next(iter(delivery._read_ledger().values()))
+        self.assertEqual(100, entry["stored_at"])
+        self.assertEqual(300, entry["completed_at"])
+        self.assertTrue(entry["cleanup_done"])
+
+    def test_failed_first_write_cannot_claim_a_durable_receipt_timestamp(self):
+        self.register("s20")
+        with patch.object(delivery.time, "time", return_value=100), \
+                patch.object(delivery, "_write_ledger", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.receipt("s20")
+        self.assertNotIn("stored_at", next(iter(delivery._read_ledger().values())))
+        with patch.object(delivery.time, "time", return_value=300):
+            self.assertTrue(self.receipt("s20"))
+        self.assertEqual(300, next(iter(delivery._read_ledger().values()))["stored_at"])
+
+    def test_completed_fast_path_still_validates_receipt_ownership_and_hash(self):
+        self.register("s20", retain=True)
+        self.assertTrue(self.receipt("s20"))
+        with patch.object(delivery, "_write_ledger") as write:
+            self.assertFalse(self.receipt("s26"))
+            self.assertFalse(self.receipt("s20", sha256="0" * 64))
+            self.assertFalse(self.receipt("s20", status="published"))
+            self.assertFalse(self.receipt("s20", scope="a" * 64))
+            write.assert_not_called()
+
     def test_any_authorized_retention_survives_other_phone_receipt(self):
         self.register("s20", retain=True)
         self.register("s26")
