@@ -16,6 +16,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 class GalaxySSIAccessibilityService : AccessibilityService() {
     private var lastVisualCaptureRequestAt = 0L
     private var screenAssistant: ScreenAssistantOverlay? = null
+    private val articleLink by lazy { WechatArticleLinkController(this) }
+    internal fun copyWechatArticleLink() = articleLink.start()
     private val targetReader by lazy { PhoneUiTargetReader(this) }
 
     internal fun targetRoot(): AccessibilityNodeInfo? {
@@ -35,6 +37,8 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        articleLink.onEvent(event)
+        if (event?.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
         val packageName = event?.packageName?.toString().orEmpty()
         screenAssistant?.onTargetInteraction(packageName, event?.eventType ?: 0)
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) return
@@ -76,6 +80,7 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        articleLink.close()
         screenAssistant?.close()
         screenAssistant = null
         if (activeService === this) activeService = null
