@@ -2463,34 +2463,31 @@ object GalaxySSIMqttClient {
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }
         if (payload.optString("type") == "artifact_chunk") {
-            val result = runCatching { AgentDesktopArtifactStore.ingest(context, payload) }
-                .onFailure { Log.w(TAG, "Rejected Desktop artifact chunk", it) }
-                .getOrNull()
-            if (result?.completed == true) {
-                val clientRouteId = payload.optString("client_route_id")
-                GalaxySSIMqttDesktopControl.publishArtifactReceipt(
-                    sourceDesktopId,
-                    clientRouteId,
-                    result
-                )
-                val requestedDownload =
-                    GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)
-                GalaxySSIMqttDesktopControl.consumePendingArtifactFetch(result.artifactUri)
-                val savedPath = if (requestedDownload) {
-                    AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
-                        .getOrNull()
-                } else null
-                notifyMessageListeners(
-                    JSONObject()
-                        .put("type", "artifact_available")
-                        .put("artifact_id", result.artifactId)
-                        .put("artifact_uri", result.artifactUri)
-                        .put("task_id", result.taskId)
-                        .put("saved_path", savedPath.orEmpty())
-                        .put("save_requested", requestedDownload)
-                )
+            processAttachmentControl(context, payload) {
+                val result = AgentDesktopArtifactReception.accept(context, payload) { stored ->
+                    GalaxySSIMqttDesktopControl.publishArtifactReceipt(
+                        sourceDesktopId, payload.optString("client_route_id"), stored
+                    )
+                }
+                if (result.completed) {
+                    val requestedDownload =
+                        GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)
+                    GalaxySSIMqttDesktopControl.consumePendingArtifactFetch(result.artifactUri)
+                    val savedPath = if (requestedDownload) {
+                        AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
+                            .getOrNull()
+                    } else null
+                    notifyMessageListeners(
+                        JSONObject()
+                            .put("type", "artifact_available")
+                            .put("artifact_id", result.artifactId)
+                            .put("artifact_uri", result.artifactUri)
+                            .put("task_id", result.taskId)
+                            .put("saved_path", savedPath.orEmpty())
+                            .put("save_requested", requestedDownload)
+                    )
+                }
             }
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
         if (payload.optString("type") == "artifact_redelivery_result") {

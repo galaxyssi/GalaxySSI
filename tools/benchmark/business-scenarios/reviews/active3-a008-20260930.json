@@ -1,0 +1,17 @@
+[
+  {
+    "schema": 1,
+    "case_id": "A008",
+    "turn_index": 1,
+    "source_sha256": "309167e00aed5c89cff6a5518e83117572e294119497cfa3e211ce0964424836",
+    "verdict": "fail",
+    "reviewer": "Codex visual inspection of actual received PNG",
+    "notes": "The delivered 1200x1600 PNG is readable, with a clearly labelled schematic route. B quantity is correctly revised to 35, amounts are 216/280/230 and total is 726; the other supplied values remain unchanged. Owner, actual date and actual returns are marked unconfirmed. However, the source never specifies currency, while both the image and reply label the amounts as yuan without marking that as an assumption. Numeric correctness and delivery therefore do not establish fully grounded content. This review does not alter the first turn's missing audit evidence or prove UI open/save.",
+    "checked_artifacts": [
+      {
+        "evidence_file": "artifact-0.png",
+        "sha256": "583ede9cbc28ebfd3608124ec2ea0239b4e75c85a89e24e9804d6f4bb3b2e519"
+      }
+    ]
+  }
+]
