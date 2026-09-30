@@ -884,7 +884,8 @@ class AgentWebIntelligenceService(
         urls: List<String>,
         timeoutMillis: Long = 30_000L,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
-        checkpoint: () -> Unit = {}
+        checkpoint: () -> Unit = {},
+        captureSource: ((String, AgentWebIntelligenceFetched) -> Unit)? = null
     ): AgentWebEvidenceReadBatch {
         val candidates = urls.mapNotNull { url ->
             runCatching { AgentWebIntelligenceText.canonicalUrl(url) }.getOrNull()
@@ -901,6 +902,11 @@ class AgentWebIntelligenceService(
             cancellationToken = cancellationToken,
             checkpoint = checkpoint
         ) { url, requestTimeout, token, pageCheckpoint ->
+            if (captureSource != null) {
+                val (document, _, receipt) = fetchDocumentFromNetwork(url, MAX_FETCH_BYTES,
+                    requestTimeout, DEFAULT_CACHE_TTL_MILLIS, token, pageCheckpoint, captureSource)
+                return@readAgentWebEvidence AgentWebEvidenceFetchedDocument(document, receipt)
+            }
             val (document, _, receipt) = fetchDocument(
                 url = url,
                 force = false,
@@ -1540,7 +1546,8 @@ class AgentWebIntelligenceService(
         timeoutMillis: Long,
         ttlMillis: Long,
         cancellationToken: AgentNativeToolCancellationToken,
-        checkpoint: () -> Unit
+        checkpoint: () -> Unit,
+        captureSource: ((String, AgentWebIntelligenceFetched) -> Unit)? = null
     ): Triple<AgentWebIntelligenceDocument, Boolean, AgentWebIntelligenceReceipt> {
         val started = clock()
         val fetched = fetcher.fetch(
@@ -1562,6 +1569,7 @@ class AgentWebIntelligenceService(
             )
         }
         store.putDocument(document)
+        captureSource?.invoke(canonicalUrl, fetched)
         return Triple(
             document,
             false,

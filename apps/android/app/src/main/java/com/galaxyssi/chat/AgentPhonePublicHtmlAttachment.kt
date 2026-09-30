@@ -2,14 +2,18 @@ package com.galaxyssi.chat
 
 import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.InputStream
 import java.net.URI
+import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class AgentPhonePublicHtmlDocument(
     val url: String,
@@ -59,7 +63,7 @@ internal object AgentPhonePublicHtmlAttachment {
         context: Context,
         turnId: String,
         currentRequest: String,
-        saveRequested: Boolean = false
+        saveRequested: Boolean = true
     ): Result<AgentPhonePublicHtmlPreparation?> = prepareAll(
         context,
         turnId,
@@ -71,18 +75,25 @@ internal object AgentPhonePublicHtmlAttachment {
         context: Context,
         turnId: String,
         currentRequest: String,
-        saveRequested: Boolean = false
+        saveRequested: Boolean = true
     ): Result<List<AgentPhonePublicHtmlPreparation>> = runCatching {
         if (turnId.isBlank()) return@runCatching emptyList()
         val urls = explicitPublicUrls(currentRequest)
         if (urls.isEmpty()) return@runCatching emptyList()
         val startedAt = System.currentTimeMillis()
-        val batch = service(context).prefetchDocuments(urls, FETCH_TIMEOUT_MILLIS)
+        val sources = ConcurrentHashMap<String, AgentWebIntelligenceFetched>()
+        val batch = service(context).prefetchDocuments(urls, FETCH_TIMEOUT_MILLIS,
+            captureSource = if (saveRequested) { url, source -> sources[url] = source } else null)
         val preparations = batch.documents.mapNotNull { document ->
             if (document.content.isBlank() || document.metadata["challenge_detected"] == true) {
                 null
             } else {
-                stageDocument(context, turnId, document.toPhoneDocument(), saveRequested)
+                val prepared = stageDocument(context, turnId, document.toPhoneDocument(), saveRequested = false)
+                if (saveRequested) sources[document.url]?.let { source ->
+                    runCatching { AgentWebOriginalArchive.enqueue(context, prepared, source) }
+                        .onFailure { Log.w(TAG, "Could not schedule original page archive", it) }
+                }
+                prepared
             }
         }
         Log.i(
@@ -94,11 +105,11 @@ internal object AgentPhonePublicHtmlAttachment {
         preparations
     }
 
-    private fun stageDocument(
+    internal fun stageDocument(
         context: Context,
         turnId: String,
         document: AgentPhonePublicHtmlDocument,
-        saveRequested: Boolean
+        saveRequested: Boolean = false
     ): AgentPhonePublicHtmlPreparation {
         val html = render(document)
         val directory = File(context.filesDir, "agent-public-html").apply {
@@ -346,27 +357,48 @@ internal object AgentPhonePublicHtmlAttachment {
         }
     }
 
-    private fun saveToDownloads(context: Context, source: File, displayName: String): Boolean = runCatching {
+    @Synchronized
+    internal fun saveToDownloads(context: Context, source: File, displayName: String): Boolean = runCatching {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@runCatching false
+        val resolver = context.contentResolver
+        val preferences = context.getSharedPreferences("phone_html_downloads", Context.MODE_PRIVATE)
+        val previous = preferences.getString(source.name, null)?.let(Uri::parse)
+        fun digest(input: InputStream): ByteArray {
+            val hash = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) return hash.digest()
+                hash.update(buffer, 0, count)
+            }
+        }
+        // The same turn may be dispatched again during recovery; do not export another identical copy.
+        if (previous != null && runCatching {
+            resolver.openInputStream(previous)?.use { saved ->
+                source.inputStream().use { original ->
+                    digest(saved).contentEquals(digest(original))
+                }
+            } == true
+        }.getOrDefault(false)) return@runCatching true
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, displayName)
             put(MediaStore.Downloads.MIME_TYPE, "text/html")
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GalaxySSI")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
-        val resolver = context.contentResolver
         val destination = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: error("Downloads destination is unavailable")
         try {
             resolver.openOutputStream(destination, "w")?.use { output ->
                 source.inputStream().use { input -> input.copyTo(output) }
             } ?: error("Downloads output stream is unavailable")
-            resolver.update(
+            check(resolver.update(
                 destination,
                 ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) },
                 null,
                 null
-            )
+            ) == 1) { "Downloads publication failed" }
+            check(preferences.edit().putString(source.name, destination.toString()).commit())
             true
         } catch (error: Throwable) {
             resolver.delete(destination, null, null)

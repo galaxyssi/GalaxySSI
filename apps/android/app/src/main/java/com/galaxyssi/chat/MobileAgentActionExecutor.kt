@@ -585,8 +585,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             AgentPhonePublicHtmlAttachment.prepareAll(
                 context = context,
                 turnId = effectiveTurnId,
-                currentRequest = captureRequest,
-                saveRequested = AgentPhonePublicHtmlAttachment.isSaveRequest(directCaptureRequest)
+                currentRequest = captureRequest
             ).onFailure { failure ->
                 Log.w("GalaxySSIPhoneWeb", "Phone public page capture failed; continuing without HTML", failure)
             }.getOrNull().orEmpty()
