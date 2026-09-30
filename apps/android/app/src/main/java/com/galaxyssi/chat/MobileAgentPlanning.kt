@@ -708,7 +708,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 registrations = request.registrations,
                 preferredTargetId = AgentStableAutoRouteStore.target(
                     appContext, request.conversationContext.conversationId, request.targets
-                )?.id.orEmpty()
+                )?.id.orEmpty(),
+                requirements = PhoneAssistantTaskControl.reasoningRequirements(request.executionTurnId, request.goal)
             )
         }
         val selection = AgentStableAutoRoutePolicy.select(

@@ -42,7 +42,16 @@ internal object PhoneAssistantTaskControl {
         action.parameters["request_kind"] == SCREEN_ANALYSIS_REQUEST_KIND &&
             action.parameters["screen_analysis_context"] != "follow_up"
     fun reasoningRequirements(turnId: String, goal: String): AgentTaskRequirements {
-        val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+        val scope = analysisScopes[turnId]
+        val instruction = scope?.question?.takeIf(String::isNotBlank) ?: goal
+        val requirements = AgentTaskRequirementAnalyzer.analyze(instruction)
+        if (scope != null) {
+            // Reading supplied evidence does not require a separate knowledge-store connector.
+            return requirements.copy(
+                capabilities = requirements.capabilities - AgentCapability.KNOWLEDGE_SEARCH,
+                estimatedInputTokens = maxOf(requirements.estimatedInputTokens, goal.length / 3)
+            )
+        }
         // The provider plans; authorized local tools supply navigation capabilities.
         return if (isAutomation(turnId)) requirements.copy(capabilities = setOf(AgentCapability.CHAT))
             else requirements

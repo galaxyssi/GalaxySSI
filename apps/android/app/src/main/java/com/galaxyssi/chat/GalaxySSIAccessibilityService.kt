@@ -119,14 +119,14 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun swipe(fromX: Int, fromY: Int, toX: Int, toY: Int): Boolean {
+    private fun swipe(fromX: Int, fromY: Int, toX: Int, toY: Int, duration: Long = 320): Boolean {
         val path = Path().apply {
             moveTo(fromX.toFloat(), fromY.toFloat())
             lineTo(toX.toFloat(), toY.toFloat())
         }
         return completedGesture(
             GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0, 320))
+                .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build(),
         )
     }
@@ -219,6 +219,8 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
         internal fun targetService(): GalaxySSIAccessibilityService? = activeService
         internal fun readTargetUi(): PhoneUiSnapshot? = activeService?.targetReader?.snapshot()
         internal fun targetWindowId(): Int? = activeService?.targetReader?.targetWindow(true)?.id
+        internal fun targetWindowBounds(windowId: Int): Rect? = activeService?.targetReader?.targetWindow(true)
+            ?.takeIf { it.id == windowId }?.let { window -> Rect().also(window::getBoundsInScreen) }
         internal fun trackScreenAssistantTurn(runner: MainActivity, conversationId: String,
             turnId: String, request: ScreenAssistantAnalysisRequest) {
             activeService?.screenAssistant?.trackChatTurn(runner, conversationId, turnId, request)
@@ -255,6 +257,9 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
 
         fun performSwipe(fromX: Int, fromY: Int, toX: Int, toY: Int): Boolean =
             activeService?.swipe(fromX, fromY, toX, toY) == true
+
+        internal fun performReadingSwipe(fromX: Int, fromY: Int, toX: Int, toY: Int): Boolean =
+            activeService?.swipe(fromX, fromY, toX, toY, 1_600) == true
 
         fun performTextInput(text: String): Boolean = activeService?.typeIntoFocusedField(text) == true
 

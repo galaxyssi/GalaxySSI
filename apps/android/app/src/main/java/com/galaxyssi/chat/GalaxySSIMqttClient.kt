@@ -1339,7 +1339,12 @@ object GalaxySSIMqttClient {
             GalaxySSICrypto.localGalaxySSIId(),
             targetId
         )
-        val encrypted = if (usesPcConnectorTunnel(contactId)) {
+        val deferredSignalEncryption = blockedByAttachmentTransferIds.isNotEmpty()
+        check(!deferredSignalEncryption || (queueOnly && !callerRetried))
+        val encrypted = if (deferredSignalEncryption) {
+            // A non-sendable placeholder; the application envelope is encrypted at rest in the outbox.
+            JSONObject()
+        } else if (usesPcConnectorTunnel(contactId)) {
             val desktopId = AppStore.desktopIdForContact(context, contactId)
             if (desktopId.isNotBlank()) {
                 GalaxySSICrypto.encryptPayloadForDesktop(desktopId, applicationEnvelope)
@@ -1389,7 +1394,8 @@ object GalaxySSIMqttClient {
             receiptRoutes = receiptRoutes,
             transportTraffic = MqttTrafficPolicy.classify(payload),
             payloadType = payload.optString("type"),
-            recoverableEnvelope = GalaxySSILinkDeliveryStore.recoverablePeerEnvelope(
+            deferredSignalEncryption = deferredSignalEncryption,
+            recoverableEnvelope = if (deferredSignalEncryption) applicationEnvelope.toString() else GalaxySSILinkDeliveryStore.recoverablePeerEnvelope(
                 payload,
                 applicationEnvelope,
                 isDirectPhoneContact = AppStore.phoneRoutesForIdentity(context, contactId) != null &&
@@ -1492,7 +1498,7 @@ object GalaxySSIMqttClient {
         val mediaProfile = AgentMediaNetworkDetector.detect(context)
         var submitted = 0
         for (
-            pending in GalaxySSILinkDeliveryStore.pending(
+            queued in GalaxySSILinkDeliveryStore.pending(
                 context,
                 allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia,
                 maxAttempts = MAX_OUTBOX_DELIVERY_ATTEMPTS,
@@ -1500,6 +1506,7 @@ object GalaxySSIMqttClient {
                 limit = MAX_OUTBOX_RETRY_BATCH
             )
         ) {
+            var pending = queued
             if (submitted >= MAX_OUTBOX_RETRY_BATCH) break
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
             if (isFragmentTransferActive(pending.messageId) ||
@@ -1561,6 +1568,15 @@ object GalaxySSIMqttClient {
                 GalaxySSILinkDeliveryStore.waitForReceiptCredit(context, pending.messageId, creditDelay)
                 continue
             }
+            if (pending.deferredSignalEncryption) {
+                val prepared = AgentDeferredTaskEncryption.prepare(context, pending)
+                if (prepared == null) {
+                    GalaxySSILinkDeliveryStore.retryWindow.release(pending.messageId)
+                    GalaxySSILinkDeliveryStore.waitForPeerRoute(context, pending.messageId)
+                    continue
+                }
+                pending = prepared
+            }
             GalaxySSILinkDeliveryStore.markAttempt(context, pending.messageId)
             val published = publishWirePayload(
                 mqtt,
@@ -1612,7 +1628,8 @@ object GalaxySSIMqttClient {
         purpose: String,
         timing: AgentTransportTiming.Attempt? = null,
         delivery: MqttDeliveryDispatch.Delivery? = null,
-        publication: MqttPoolTransport.Publication? = null
+        publication: MqttPoolTransport.Publication? = null,
+        onBackpressure: (() -> Unit)? = null
     ): IMqttDeliveryToken? = MqttPublishGuard.attempt {
         val callback = if (timing == null) null else object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) {
@@ -1628,7 +1645,8 @@ object GalaxySSIMqttClient {
         token
     }.onFailure {
         AgentLatencyTelemetry.transport.broker(timing, "failed")
-        Log.w(TAG, "MQTT publish deferred purpose=$purpose", it)
+        if (it is MqttPoolTransport.BackpressureException) onBackpressure?.invoke()
+        else Log.w(TAG, "MQTT publish deferred purpose=$purpose", it)
     }.getOrNull()
 
     private fun publishWirePayload(
@@ -1675,7 +1693,8 @@ object GalaxySSIMqttClient {
                 mqttMessage(packets.first()),
                 purpose,
                 timing,
-                delivery?.takeIf { it.sizeBound <= MqttBrokerCatalog.SMALL_PACKET_BYTES }
+                delivery?.takeIf { it.sizeBound <= MqttBrokerCatalog.SMALL_PACKET_BYTES },
+                onBackpressure = { durableMessageId?.let { GalaxySSILinkDeliveryStore.deferUnsubmittedAttempt(context, it) } }
             ) ?: return false
             if (!durableMessageId.isNullOrBlank()) {
                 deliveryMessageIds[token.messageId] = durableMessageId

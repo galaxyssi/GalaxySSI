@@ -25,11 +25,12 @@ public class PhoneUiFixtureActivity extends Activity {
         button.setText("Fixture click");
         button.setOnClickListener(view -> status.setText("Fixture clicked"));
         button.setOnLongClickListener(view -> { status.setText("Fixture long clicked"); return true; });
-        content.addView(button);
+        boolean opaque = getIntent().getBooleanExtra("opaque_page", false);
+        if (!opaque) content.addView(button);
         EditText input = new EditText(this);
         input.setHint("Fixture input");
         input.setContentDescription("Fixture input");
-        content.addView(input);
+        if (!opaque) content.addView(input);
         EditText password = new EditText(this);
         password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         password.setContentDescription("Fixture private field");
@@ -44,6 +45,7 @@ public class PhoneUiFixtureActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
+        if (opaque) scroll.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         setContentView(scroll);
     }
 }

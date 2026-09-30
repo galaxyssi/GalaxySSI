@@ -1,0 +1,19 @@
+<resources>
+    <string name="screen_content_visual_boundary">Scrolled through visible content; unchanged screens suggest a boundary, but hidden or unloaded sections are not verified.</string>
+    <string name="screen_content_visual_collected">Visible page captured · %1$d screens</string>
+    <string name="screen_content_scope">Analysis source</string>
+    <string name="screen_content_screen">Analyze current screen</string>
+    <string name="screen_content_page">Analyze entire content</string>
+    <string name="screen_content_file">Choose files</string>
+    <string name="screen_content_link">Paste link</string>
+    <string name="screen_content_remove">Remove source</string>
+    <string name="screen_content_page_selected">Current page · Entire content</string>
+    <string name="screen_content_link_selected">Source link · Reading coverage not verified</string>
+    <string name="screen_content_invalid_link">Enter an HTTP or HTTPS link without credentials.</string>
+    <string name="screen_content_locating">Locating the beginning of the content</string>
+    <string name="screen_content_collecting">Collecting content · %1$d screens</string>
+    <string name="screen_content_complete">Entire page captured · %1$d screens</string>
+    <string name="screen_content_partial">Partial content captured · %1$d screens</string>
+    <string name="screen_content_coverage_caveat">Coverage describes the collected page, not verified model reading. Collapsed sections, linked documents and inaccessible content may be missing. The answer must disclose unread sections.</string>
+    <string name="screen_content_failed">Content collection did not finish. The page may have changed, become inaccessible, or exceeded the attachment limit. No analysis request was sent. You can retry or choose the original file or link.</string>
+</resources>

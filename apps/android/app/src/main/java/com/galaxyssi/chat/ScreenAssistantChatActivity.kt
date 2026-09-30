@@ -31,6 +31,8 @@ class ScreenAssistantChatActivity : MainActivity() {
     private val screenAttachments = hashSetOf<String>()
     private lateinit var resizeButton: ImageButton
     private lateinit var stopButton: ImageButton
+    internal lateinit var contentController: ScreenAssistantContentController
+        private set
     private val layoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
         if (attached) updateContainer()
     }
@@ -83,7 +85,7 @@ class ScreenAssistantChatActivity : MainActivity() {
             R.string.screen_assistant_expand) { toggleExpanded() }
         header.addView(stopButton)
         header.addView(button(R.id.screenAssistantChatCapture, R.drawable.ic_agent_screen,
-            R.string.screen_assistant_screenshot) { captureTarget() })
+            R.string.screen_content_scope) { contentController.showMenu(findViewById(R.id.screenAssistantChatCapture)) })
         header.addView(resizeButton)
         header.addView(button(R.id.screenAssistantChatCollapse, R.drawable.ic_chevron_down,
             R.string.screen_assistant_collapse) { collapse() })
@@ -94,6 +96,7 @@ class ScreenAssistantChatActivity : MainActivity() {
             visibility = View.GONE
         }
         agentGoalInput.clearFocus()
+        contentController = ScreenAssistantContentController(this, ::captureTarget)
         attached = true
         agentTranscriptAdapter.registerAdapterDataObserver(transcriptObserver)
         window.decorView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
@@ -132,6 +135,7 @@ class ScreenAssistantChatActivity : MainActivity() {
 
     override fun onDestroy() {
         attached = false
+        if (::contentController.isInitialized) contentController.close()
         if (isAgentTranscriptAdapterInitialized()) agentTranscriptAdapter.unregisterAdapterDataObserver(transcriptObserver)
         window.decorView.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
         if (current?.get() === this) { current = null; visible = false }
@@ -158,9 +162,16 @@ class ScreenAssistantChatActivity : MainActivity() {
             displayQuestion = goal.ifBlank { getString(R.string.screen_assistant_default_goal) }
             this.turnId = turnId
         }
-        if (screenAnalysis || automation) PhoneAssistantTaskControl.bind(turnId, attempt)
+        contentController.onSubmitted(conversationId, turnId, attempt, attachments.isNotEmpty())
+        if (screenAnalysis || automation || contentController.hasSource(turnId)) PhoneAssistantTaskControl.bind(turnId, attempt)
         GalaxySSIAccessibilityService.trackScreenAssistantTurn(this, conversationId, turnId, attempt)
         updateContainer()
+    }
+
+    internal override fun prepareAgentTurnContent(conversationId: String, turnId: String,
+        goal: String, attachments: List<AgentInputAttachment>,
+        ready: (String, List<AgentInputAttachment>, () -> Boolean) -> Unit) {
+        contentController.prepare(conversationId, turnId, goal, attachments, ready)
     }
 
     private fun consumeOpenRequest() {
@@ -202,6 +213,7 @@ class ScreenAssistantChatActivity : MainActivity() {
         if (conversationId.isNotBlank() && conversationId != lastConversation) {
             lastConversation = conversationId
             ScreenAssistantSettings.saveConversation(this, conversationId)
+            contentController.showConversation(conversationId)
         }
         val otherPage = featurePage.visibility == View.VISIBLE || chatPage.visibility == View.VISIBLE ||
             activeMainTab != PAGE_AGENT
@@ -288,6 +300,7 @@ class ScreenAssistantChatActivity : MainActivity() {
         val turn = pendingAgentReplyIndicators.values.lastOrNull { it.conversationId == conversation }?.turnId
             ?: latestTurn.takeIf { latestTurnConversation == conversation }.orEmpty()
         if (turn.isBlank()) return
+        contentController.cancel(turn)
         navigationContentExecutor.execute {
             runCatching { ScreenAssistantTaskCancellation.cancel(applicationContext, conversation, turn, this) }
                 .onFailure { runOnUiThread { Toast.makeText(this, R.string.screen_assistant_cancel_failed, Toast.LENGTH_SHORT).show() } }
@@ -322,6 +335,16 @@ class ScreenAssistantChatActivity : MainActivity() {
         private var current: WeakReference<ScreenAssistantChatActivity>? = null
         private var visible = false
         private var captureHidden = false
+        internal fun suspendForPageReading(): Int? {
+            val activity = current?.get()?.takeIf { isOpen() && !it.isFinishing } ?: return null
+            // Hiding decor does not remove Android's cross-UID ActivityRecordInputSink.
+            return activity.taskId.takeIf { activity.moveTaskToBack(true) }
+        }
+        internal fun restoreAfterPageReading(taskId: Int) {
+            val activity = current?.get()?.takeIf { it.taskId == taskId && !it.isFinishing && !it.isDestroyed } ?: return
+            activity.getSystemService(android.app.ActivityManager::class.java).appTasks
+                .firstOrNull { it.taskInfo.taskId == taskId }?.moveToFront()
+        }
         internal fun isOpen() = visible && current?.get()?.isDestroyed == false
         internal fun collapseIfOpen() { current?.get()?.takeIf { isOpen() }?.collapse() }
         internal fun hideForCapture() {

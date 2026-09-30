@@ -1407,30 +1407,35 @@ internal fun MainActivity.submitAgentGoal(
                     .map(AgentTranscriptEntry::id)
                     .forEach(agentTranscriptWindow::remove)
             }
-            if (attachments.isEmpty() && priorVisualReference == null) {
-                continueAgentGoalSubmission(
-                    goal = baseGoal,
-                    conversationId = conversation.id,
-                    turnId = turnId,
-                    originalGoal = goal,
-                    isSubmissionCancelled = isSubmissionCancelled
-                )
-            } else {
-                stageAgentGoalAttachments(
-                    goal = goal,
-                    baseGoal = baseGoal,
-                    conversation = conversation,
-                    turnId = turnId,
-                    attachments = attachments,
-                    priorVisualReference = priorVisualReference,
-                    isSubmissionCancelled = isSubmissionCancelled
+            prepareAgentTurnContent(conversation.id, turnId, baseGoal, attachments) { contentGoal, contentAttachments, contentCancelled ->
+                val cancelled = { isSubmissionCancelled() || contentCancelled() }
+                if (cancelled()) return@prepareAgentTurnContent
+                val priorReference = priorVisualReference.takeIf { contentGoal == baseGoal }
+                if (contentAttachments.isEmpty() && priorReference == null) {
+                    continueAgentGoalSubmission(
+                        goal = contentGoal,
+                        conversationId = conversation.id,
+                        turnId = turnId,
+                        originalGoal = goal,
+                        isSubmissionCancelled = cancelled
+                    )
+                } else {
+                    stageAgentGoalAttachments(
+                        goal = goal,
+                        baseGoal = contentGoal,
+                        conversation = conversation,
+                        turnId = turnId,
+                        attachments = contentAttachments,
+                        priorVisualReference = priorReference,
+                        isSubmissionCancelled = cancelled
+                    )
+                }
+                Log.i(
+                    "GalaxySSILatency",
+                    "agent_submit stage=route_scheduled turn=${turnId.take(8)} " +
+                        "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
                 )
             }
-            Log.i(
-                "GalaxySSILatency",
-                "agent_submit stage=route_scheduled turn=${turnId.take(8)} " +
-                    "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
-            )
             refreshGlobalAgentCognition()
             refreshAgentConversationHeader()
             refreshAgentTranscriptWindow(conversation.id)

@@ -15,6 +15,8 @@ internal class MqttPoolTransport(
     poolFactory: (MqttBrokerPool.Listener) -> MqttBrokerPool = { MqttBrokerPool(it) },
     private val now: () -> Long = { System.nanoTime() / 1_000_000 }
 ) : AutoCloseable {
+    /** No physical publish was attempted; waiting for a peer receipt would be incorrect. */
+    class BackpressureException : MqttException(MqttException.REASON_CODE_MAX_INFLIGHT.toInt())
     data class Publication(val peer: String, val messageId: String, val contentHash: String,
         val traffic: MqttMultipathPolicy.Traffic, val receiveTopics: Set<String>,
         val bootstrap: Boolean = false, val preferredBroker: String? = null,
@@ -200,6 +202,7 @@ internal class MqttPoolTransport(
             descriptor.receiveTopics, at, descriptor.preferredBroker, attempted = descriptor.attemptedBrokers).filter { it.delayMs == 0L }
             .filter { descriptor.authorizedPaths == null || descriptor.authorizedPaths[it.brokerId] == it.generation }
             .map { it.brokerId to it.generation }
+        var attemptedPhysicalPublish = false
         for ((broker, generation) in choices) {
             val attempt = UUID.randomUUID().toString()
             if (!policy.reserve(attempt, MqttMultipathPolicy.Attempt(descriptor.peer, descriptor.messageId,
@@ -210,11 +213,13 @@ internal class MqttPoolTransport(
             }
             synchronized(lock) { publications[attempt] = Pending(token, broker, generation, !descriptor.bootstrap) }
             descriptor.chunk?.let { policy.trackChunk(descriptor.peer, it, broker, generation, size.toInt(), at) }
+            attemptedPhysicalPublish = true
             if (pool.publish(broker, generation, topic, payload, attempt) != null) return token
             descriptor.chunk?.let { policy.discardChunk(descriptor.peer, it) }
             synchronized(lock) { publications.remove(attempt) }
             policy.discardAttempt(attempt)
         }
+        if (choices.isNotEmpty() && !attemptedPhysicalPublish) throw BackpressureException()
         throw MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED.toInt())
     }
 
