@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WechatArticleLinkPolicyTest {
+    private fun item(text: String, x: Int, y: Int) = WechatMenuLabel(text, x - 40, y - 14, x + 40, y + 14)
+    @Test fun ignoresBackgroundArticleLabelsWhenLocatingMenuRow() {
+        val items = listOf(item("听全文", 200, 700), item("取消", 540, 2120), item("收藏", 934, 1575),
+            item("星标", 730, 1575), item("浮窗", 120, 1904), item("投诉", 940, 1904))
+        val menu = WechatArticleMenuLayout.resolve(items, 1080, 2340)!!
+        assertEquals(1792, menu.iconY)
+        assertNull(menu.copyX)
+    }
+    @Test fun locatesCopyOnlyInsideSecondMenuRow() {
+        val items = listOf(item("复制链接", 200, 700), item("取消", 540, 2120), item("收藏", 934, 1575),
+            item("星标", 730, 1575), item("复制链接", 450, 1904), item("投诉", 240, 1904))
+        assertEquals(450, WechatArticleMenuLayout.resolve(items, 1080, 2340)!!.copyX)
+    }
+    @Test fun doesNotSwipeWhenOnlyBackgroundTextRemains() {
+        assertNull(WechatArticleMenuLayout.resolve(listOf(item("听全文", 200, 700), item("取消", 540, 2120),
+            item("收藏", 934, 1575), item("星标", 730, 1575)), 1080, 2340))
+    }
     @Test fun matchesOnlyExactCopyLabels() {
         assertTrue(WechatArticleLinkPolicy.isCopy("复 制 链 接"))
         assertTrue(WechatArticleLinkPolicy.isCopy("複製連結"))

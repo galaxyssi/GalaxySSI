@@ -42,7 +42,8 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
             service.serviceInfo = info
         }
         Log.i(TAG, "Copy link started")
-        toast(R.string.wechat_link_working)
+        // A progress Toast covers WeChat's second-row labels in screenshots.
+        // Keep this visual action unobstructed; report only its final outcome.
         handler.postDelayed({ if (valid(token)) finish(R.string.wechat_link_failed) }, 20_000)
         inspect(token, 0, false)
     }
@@ -91,7 +92,7 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
         toast(message)
     }
 
-    private fun inspect(token: Int, swipes: Int, opened: Boolean) {
+    private fun inspect(token: Int, swipes: Int, opened: Boolean, retries: Int = 0) {
         if (!valid(token)) return
         if (!isTarget()) { finish(R.string.wechat_link_interrupted); return }
         hidden = true
@@ -112,16 +113,33 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                             restore()
                             if (!valid(token)) { bitmap?.recycle(); return }
                             if (bitmap == null) { finish(R.string.wechat_link_failed); return }
-                            recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                            // Isolate the bottom sheet from article text and improve small gray labels.
+                            val cropTop = if (opened && !awaitingCopy) bitmap.height * 53 / 100 else 0
+                            val cropped = if (cropTop > 0) Bitmap.createBitmap(bitmap, 0, cropTop, bitmap.width, bitmap.height - cropTop) else bitmap
+                            val scale = if (cropTop > 0) 2 else 1
+                            val ocrImage = if (scale == 2) Bitmap.createScaledBitmap(cropped, cropped.width * 2, cropped.height * 2, true) else cropped
+                            recognizer.process(InputImage.fromBitmap(ocrImage, 0))
                                 .addOnSuccessListener { text ->
                                     if (!valid(token)) return@addOnSuccessListener
                                     if (!isTarget()) { finish(R.string.wechat_link_interrupted); return@addOnSuccessListener }
                                     val lines = text.textBlocks.flatMap { it.lines }
                                     val labels = lines.map { it.text }
+                                    if (awaitingCopy) {
+                                        val confirmed = lines.any { line ->
+                                            (line.boundingBox?.centerY() ?: 0) > bitmap.height * .65 &&
+                                                WechatArticleLinkPolicy.isConfirmation(line.text)
+                                        }
+                                        if (confirmed && !WechatArticleLinkPolicy.isMenu(labels)) {
+                                            Log.i(TAG, "WeChat confirmed clipboard copy visually")
+                                            finish(R.string.wechat_link_copied)
+                                        } else if (retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
+                                        else finish(R.string.wechat_link_unconfirmed)
+                                        return@addOnSuccessListener
+                                    }
                                     val buttons = lines.flatMap { line ->
                                         val elements = line.elements
                                         val joined = elements.joinToString("") { it.text.filterNot(Char::isWhitespace).lowercase() }
-                                        BUTTON_LABELS.mapNotNull { label ->
+                                        WechatArticleMenuLayout.labels.mapNotNull { label ->
                                             val start = joined.indexOf(label)
                                             if (start < 0) null else {
                                                 var offset = 0
@@ -131,25 +149,25 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                                                     if (offset < start + label.length && end > start) element.boundingBox?.let(bounds::union)
                                                     offset = end
                                                 }
-                                                if (bounds.isEmpty) null else label to bounds
+                                                if (bounds.isEmpty) null else WechatMenuLabel(label, bounds.left / scale,
+                                                    bounds.top / scale + cropTop, bounds.right / scale, bounds.bottom / scale + cropTop)
                                             }
                                         }
                                     }
-                                    Log.i(TAG, "Observed menu=${WechatArticleLinkPolicy.isMenu(labels)} article=${WechatArticleLinkPolicy.isArticle(labels)} buttons=${buttons.size} swipe=$swipes")
+                                    val menu = WechatArticleMenuLayout.resolve(buttons, bitmap.width, bitmap.height)
+                                    Log.i(TAG, "Observed ${bitmap.width}x${bitmap.height} menu=$menu buttons=$buttons swipe=$swipes")
                                     if (WechatArticleLinkPolicy.isMenu(labels)) {
-                                        val copy = buttons.firstOrNull { WechatArticleLinkPolicy.isCopy(it.first) &&
-                                            it.second.centerY() > bitmap.height / 2 }?.second
-                                        if (copy != null) {
+                                        if (menu == null) {
+                                            if (retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
+                                            else finish(R.string.wechat_link_failed)
+                                        } else if (menu.copyX != null) {
                                             awaitingCopy = true
-                                            tap(token, copy) {
-                                                handler.postDelayed({ if (valid(token)) finish(R.string.wechat_link_unconfirmed) }, 3500)
+                                            tap(token, Rect(menu.copyX - 2, menu.iconY - 2, menu.copyX + 2, menu.iconY + 2)) {
+                                                later(token) { inspect(token, swipes, true) }
                                             }
                                         } else if (swipes < 3) {
-                                            val row = buttons.filter { it.first in setOf("浮窗", "听全文", "稍后听", "保存为图片", "投诉", "刷新", "划线和留言") }
-                                                .map { it.second }.maxByOrNull { it.centerY() }
-                                            if (row == null) finish(R.string.wechat_link_failed)
-                                            else gesture(token, bitmap.width * .85f, row.centerY().toFloat(),
-                                                bitmap.width * .30f, row.centerY().toFloat(), 380) {
+                                            gesture(token, bitmap.width * .80f, menu.iconY.toFloat(),
+                                                bitmap.width * .35f, menu.iconY.toFloat(), 380) {
                                                 later(token) { inspect(token, swipes + 1, true) }
                                             }
                                         } else finish(R.string.wechat_link_failed)
@@ -159,9 +177,14 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                                         else tap(token, Rect(more.first - 2, more.second - 2, more.first + 2, more.second + 2)) {
                                             later(token) { inspect(token, 0, true) }
                                         }
-                                    } else finish(R.string.wechat_link_open_article)
+                                    } else if (opened && retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
+                                    else finish(R.string.wechat_link_open_article)
                                 }.addOnFailureListener { if (valid(token)) finish(R.string.wechat_link_failed) }
-                                .addOnCompleteListener { bitmap.recycle() }
+                                .addOnCompleteListener {
+                                    if (ocrImage !== cropped) ocrImage.recycle()
+                                    if (cropped !== bitmap) cropped.recycle()
+                                    bitmap.recycle()
+                                }
                         }
                     })
             }.onFailure { restore(); if (valid(token)) finish(R.string.wechat_link_failed) }
@@ -174,6 +197,7 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
     private fun gesture(token: Int, x: Float, y: Float, endX: Float, endY: Float, duration: Long, completed: () -> Unit) {
         if (!valid(token)) return
         if (!isTarget()) { finish(R.string.wechat_link_interrupted); return }
+        Log.i(TAG, "Gesture from=($x,$y) to=($endX,$endY)")
         val path = Path().apply { moveTo(x, y); lineTo(endX, endY) }
         val accepted = service.dispatchGesture(GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(),
@@ -187,7 +211,5 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
     companion object {
         private const val PACKAGE = "com.tencent.mm"
         private const val TAG = "WechatArticleLink"
-        private val BUTTON_LABELS = listOf("复制链接", "複製連結", "複製鏈接", "copylink", "浮窗", "听全文",
-            "稍后听", "保存为图片", "投诉", "刷新", "划线和留言")
     }
 }
