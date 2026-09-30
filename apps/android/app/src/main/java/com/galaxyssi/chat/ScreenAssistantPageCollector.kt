@@ -14,7 +14,8 @@ internal class ScreenAssistantPageCollector(
     },
     private val screenshot: (Int) -> File = { PhoneUiScreenshot.capture(context, it) }
 ) {
-    fun collect(session: ScreenAssistantPageCollection, progress: (Int, Boolean) -> Unit): String {
+    fun collect(session: ScreenAssistantPageCollection, renderHtml: Boolean = true,
+        maxBytes: Long = 128L * 1024 * 1024, progress: (Int, Boolean) -> Unit): String {
         val store = ScreenAssistantPageStore(context)
         val id = store.create()
         val request = session.request
@@ -26,8 +27,12 @@ internal class ScreenAssistantPageCollector(
         try {
             val first = requireNotNull(read()) { "No target application" }
             metadata.put("package_name", first.packageName)
+            if (ScreenAssistantPagePolicy.scrollNode(first) == null) {
+                metadata = ScreenAssistantVisualPageCollector(context, read, screenshot).collect(first, session,
+                    store, id, metadata, minOf(maxBytes, context.filesDir.usableSpace / 10), progress)
+            } else {
             val original = ScreenAssistantPagePolicy.fingerprint(ScreenAssistantPagePolicy.text(first, ScreenAssistantPagePolicy.scrollNode(first)))
-            val budget = minOf(128L * 1024 * 1024, (context.filesDir.usableSpace / 10).coerceAtLeast(0))
+            val budget = minOf(maxBytes.coerceAtLeast(1), (context.filesDir.usableSpace / 10).coerceAtLeast(0))
             var bytes = 0L
             var reason = "bottom"
             var topReached = false
@@ -123,7 +128,9 @@ internal class ScreenAssistantPageCollector(
             metadata.put("bottom_reached", reason == "bottom").put("top_verified", topReached)
             if (reason == "bottom" && !complete) reason = if (steps == 0) "no_scroll" else "coverage_incomplete"
             metadata.put("reason", reason).put("complete", complete).put("position_restored", restored)
+            }
         } catch (failure: Exception) {
+            android.util.Log.w("ScreenPageCapture", "Page capture stopped (${failure.javaClass.simpleName})", failure)
             metadata.put("reason", when {
                 request.isCancelled -> "cancelled"
                 failure is PageCaptureInterruptedException -> "target_changed"
@@ -134,7 +141,9 @@ internal class ScreenAssistantPageCollector(
             PhoneAssistantTaskControl.release(lockId, request)
             store.checkpoint(id, metadata.put("pages", session.pages).put("finished_at", System.currentTimeMillis()))
         }
-        if (!request.isCancelled) store.buildHtml(id)
+        if (!request.isCancelled) {
+            if (renderHtml) store.buildHtml(id) else store.buildText(id)
+        }
         return id
     }
     private fun contentKey(snapshot: PhoneUiSnapshot) = ScreenAssistantPagePolicy.fingerprint(

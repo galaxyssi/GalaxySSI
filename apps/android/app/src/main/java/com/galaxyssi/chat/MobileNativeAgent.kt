@@ -725,7 +725,8 @@ class MobileNativeAgent(
         val fallbackIds = if (pending.metadata["auto_reroute_on_failure"] == "true" &&
             pending.metadata["manual_target_locked"] != "true") {
             val snapshot = connectorRegistry.planningSnapshot()
-            val decision = AgentResourceRouter(appContext).route(currentGoal, snapshot.targets, snapshot.registrations)
+            val decision = AgentResourceRouter(appContext).route(currentGoal, snapshot.targets, snapshot.registrations,
+                requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal))
             AgentStableAutoRoutePolicy.select(snapshot.targets, decision)?.decision?.orderedTargetIds.orEmpty()
                 .filterNot { it == pending.metadata["resource_id"] ||
                     it in AgentConnectorFallbackAction.attempted(pending.metadata) }

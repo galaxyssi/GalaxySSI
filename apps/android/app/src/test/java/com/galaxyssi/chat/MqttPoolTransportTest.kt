@@ -79,8 +79,12 @@ class MqttPoolTransportTest {
         rig.earlyAck = false
         rig.start()
         repeat(12) { rig.publish(listOf("emqx", "hivemq", "mosquitto")[it % 3]) }
-        assertThrows(MqttException::class.java) { rig.publish("emqx") }
+        val sent = rig.clients.values.flatten().sumOf { it.sent.size }
+        assertThrows(MqttPoolTransport.BackpressureException::class.java) { rig.publish("emqx") }
+        assertEquals(sent, rig.clients.values.flatten().sumOf { it.sent.size })
         assertEquals(12, rig.transport.policy.diagnostics().inflightPackets)
+        rig.client("emqx").sent.first().let { it.listener.onSuccess(it.token) }
+        assertNotNull(rig.publish("emqx"))
     }
 
     @Test fun stalledPathRepairRetainsOtherFreshPublication() {

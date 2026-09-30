@@ -8,10 +8,21 @@ class MqttOutboxRetryWindowTest {
         val gate = MqttOutboxRetryWindow({ 0L }, capacity = 2)
         assertEquals(0L, gate.acquire("a", "one"))
         assertEquals(0L, gate.acquire("a", "two"))
-        repeat(4_000) { assertEquals(30_000L, gate.acquire("a", "old-$it")) }
+        repeat(4_000) { assertEquals(1_000L, gate.acquire("a", "old-$it")) }
         assertEquals(0L, gate.acquire("b", "other"))
         gate.release("one")
         assertEquals(0L, gate.acquire("a", "three"))
+    }
+
+    @Test fun freshWorkRechecksCreditButSentWorkKeepsItsReceiptDeadline() {
+        var now = 0L
+        val gate = MqttOutboxRetryWindow({ now }, capacity = 1)
+        assertEquals(0L, gate.acquire("route", "sent"))
+        assertEquals(30_000L, gate.acquire("route", "sent"))
+        assertEquals(1_000L, gate.acquire("route", "waiting"))
+        now = 500L
+        gate.release("sent")
+        assertEquals(0L, gate.acquire("route", "waiting"))
     }
 
     @Test fun missingReceiptEventuallyReleasesCreditWithoutMarkingDelivered() {

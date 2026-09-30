@@ -1610,7 +1610,8 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
     val currentRouting = AgentResourceRouter(appContext).route(
         goal = currentGoal,
         targets = connectorSnapshot.targets,
-        registrations = connectorSnapshot.registrations
+        registrations = connectorSnapshot.registrations,
+        requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal)
     )
     val currentFallbackIds = AgentStableAutoRoutePolicy.select(
         targets = connectorSnapshot.targets,

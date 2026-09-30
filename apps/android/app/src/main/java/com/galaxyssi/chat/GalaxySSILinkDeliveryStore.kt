@@ -18,6 +18,7 @@ object GalaxySSILinkDeliveryStore {
     private const val BLOCKED_BY_ATTACHMENT_TRANSFERS = "blocked_by_attachment_transfers"
     private const val BROKER_ACK_TIMEOUT_MILLIS = "broker_ack_timeout_millis"
     private const val ATTACHMENT_TRANSFER_ID = "attachment_transfer_id"
+    private const val DEFERRED_SIGNAL = "deferred_signal_encryption"
     private const val FILE_BACKED_WIRE_THRESHOLD_BYTES = 64 * 1024
     private const val MAX_RECOVERABLE_ENVELOPE_BYTES = 64 * 1024
     private const val OUTBOX_DIRECTORY = "opaque-link-outbox-v2"
@@ -54,7 +55,8 @@ object GalaxySSILinkDeliveryStore {
         val brokerAckTimeoutMillis: Long,
         val attachmentTransferId: String,
         val recoveryFirstAttemptMillis: Long = 0L,
-        val transportTraffic: String = "message"
+        val transportTraffic: String = "message",
+        val deferredSignalEncryption: Boolean = false
     )
 
     data class ExhaustedMessage(
@@ -108,9 +110,11 @@ object GalaxySSILinkDeliveryStore {
         recoverableEnvelope: String = "",
         receiptRoutes: GalaxySSILinkProtocol.Routes? = null,
         transportTraffic: String = "message",
-        payloadType: String = ""
+        payloadType: String = "",
+        deferredSignalEncryption: Boolean = false
     ): Boolean {
         MqttTrafficPolicy.parse(transportTraffic)
+        require(!deferredSignalEncryption || (blockedByAttachmentTransferIds.isNotEmpty() && recoverableEnvelope.isNotBlank()))
         val database = outboxDatabase(context)
         if (database.contains(messageId)) return true
         if (!database.canEnqueue(receiptRoutes?.let(::receiptBinding).orEmpty(), transportTraffic == "control")) return false
@@ -124,6 +128,7 @@ object GalaxySSILinkDeliveryStore {
             .put("contact_id", contactId)
             .put("transport_traffic", transportTraffic)
             .put("payload_type", payloadType)
+            .put(DEFERRED_SIGNAL, deferredSignalEncryption)
             .put(
                 BROKER_ACK_TIMEOUT_MILLIS,
                 MqttBrokerAckTimeoutPolicy.normalize(brokerAckTimeoutMillis)
@@ -133,7 +138,7 @@ object GalaxySSILinkDeliveryStore {
             .put("updated_at", System.currentTimeMillis())
         if (receiptRoutes != null) {
             item.put("receipt_binding", receiptBinding(receiptRoutes))
-                .put("receipt_hash", MqttDeliveryEnvelope.contentHash(JSONObject(wirePayload)))
+            if (!deferredSignalEncryption) item.put("receipt_hash", MqttDeliveryEnvelope.contentHash(JSONObject(wirePayload)))
         }
         attachmentTransferId.lowercase()
             .takeIf { it.matches(SHA256) }
@@ -159,6 +164,40 @@ object GalaxySSILinkDeliveryStore {
         }
         check(database.insert(item)) { "Encrypted outbox message could not be persisted" }
         return true
+    }
+
+    /** Seal only when the dependencies are stored: upload receipts can retire an earlier Signal chain. */
+    @Synchronized
+    internal fun prepareFirstSend(
+        context: Context,
+        pending: PendingMessage,
+        encrypt: (JSONObject) -> JSONObject?
+    ): PendingMessage? {
+        if (!pending.deferredSignalEncryption) return pending
+        var result: PendingMessage? = null
+        val updated = outboxDatabase(context).update(pending.messageId) { item ->
+            if (hasAttachmentDependencies(item) || item.optInt("attempts") != 0) return@update
+            if (!item.optBoolean(DEFERRED_SIGNAL)) {
+                result = pending.copy(wirePayload = item.optString("wire_payload").ifBlank {
+                    readWirePayload(context, item.optString(WIRE_PAYLOAD_FILE))
+                }, deferredSignalEncryption = false)
+                return@update
+            }
+            val encoded = recoveryDatabase(context).readString(recoveryKey(pending.messageId), "")
+            val envelope = runCatching { JSONObject(encoded) }.getOrNull() ?: return@update
+            if (envelope.optString("message_id") != pending.messageId) return@update
+            val wire = encrypt(envelope) ?: return@update
+            val payload = wire.toString()
+            check(GalaxySSIMqttWireChunking.permanentRejectionReason(payload) == null)
+            replaceWirePayload(context, item, pending.messageId, payload)
+            item.put("receipt_hash", MqttDeliveryEnvelope.contentHash(wire))
+                .put(DEFERRED_SIGNAL, false)
+            result = pending.copy(wirePayload = payload, deferredSignalEncryption = false)
+        }
+        if (!updated || result == null) return null
+        // The durable ciphertext is committed before sending; retries never re-encrypt it.
+        recoveryDatabase(context).remove(recoveryKey(pending.messageId))
+        return result
     }
 
     @Synchronized
@@ -333,6 +372,19 @@ object GalaxySSILinkDeliveryStore {
     internal fun waitForPeerRoute(context: Context, messageId: String) {
         updateOutbox(context, messageId) { item ->
             item.put("next_attempt_at", System.currentTimeMillis() + 5_000L)
+        }
+    }
+
+    @Synchronized
+    internal fun deferUnsubmittedAttempt(context: Context, messageId: String) {
+        updateOutbox(context, messageId) { item ->
+            if (item.optString("status") != "publishing") return@updateOutbox
+            val attempts = (item.optInt("attempts") - 1).coerceAtLeast(0)
+            item.put("attempts", attempts)
+                .put("status", if (attempts == 0) "queued" else "published")
+                .put("next_attempt_at", System.currentTimeMillis() + 1_000L)
+                .put("updated_at", System.currentTimeMillis())
+            retryWindow.release(messageId)
         }
     }
 
@@ -639,7 +691,8 @@ object GalaxySSILinkDeliveryStore {
                 ),
                 item.optString(ATTACHMENT_TRANSFER_ID).lowercase(),
                 item.optLong("first_attempt_at", item.optLong("created_at")),
-                item.optString("transport_traffic", "message")
+                item.optString("transport_traffic", "message"),
+                item.optBoolean(DEFERRED_SIGNAL)
             )
             byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)
         }

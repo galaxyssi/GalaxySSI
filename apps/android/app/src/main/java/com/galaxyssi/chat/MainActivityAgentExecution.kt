@@ -1687,7 +1687,10 @@ internal fun MainActivity.refreshAgentConversationHeader(
     conversationWindow.describe()
     agentSessionTitle.text = getString(
         R.string.agent_header_session_title,
-        agentConversationDisplayTitle(conversation)
+        agentConversationDisplayTitle(conversation).let { title ->
+            if (this is ScreenAssistantChatActivity && !conversation.createdByAgent)
+                getString(R.string.agent_session_created_by_agent, title) else title
+        }
     )
     refreshReplyUnreadDot()
     val conversationId = conversation.id

@@ -1,0 +1,19 @@
+<resources>
+    <string name="screen_content_visual_boundary">已逐屏采集可见内容；多次滑动后画面未变，推定到达边界，但不能确认隐藏或尚未加载的章节。</string>
+    <string name="screen_content_visual_collected">已逐屏采集页面 · %1$d 屏</string>
+    <string name="screen_content_scope">选择分析范围</string>
+    <string name="screen_content_screen">分析当前屏幕</string>
+    <string name="screen_content_page">分析整篇内容</string>
+    <string name="screen_content_file">选择文件</string>
+    <string name="screen_content_link">粘贴链接</string>
+    <string name="screen_content_remove">移除来源</string>
+    <string name="screen_content_page_selected">当前页面 · 整篇内容</string>
+    <string name="screen_content_link_selected">已添加链接 · 阅读范围待核实</string>
+    <string name="screen_content_invalid_link">请输入不含账号密码的 HTTP 或 HTTPS 链接。</string>
+    <string name="screen_content_locating">正在定位内容开头</string>
+    <string name="screen_content_collecting">正在采集内容 · 已获取 %1$d 屏</string>
+    <string name="screen_content_complete">已采集整页 · %1$d 屏</string>
+    <string name="screen_content_partial">已采集部分内容 · %1$d 屏</string>
+    <string name="screen_content_coverage_caveat">采集范围不代表模型已核实阅读。折叠章节、链接文件和无法访问的内容可能未包含；回答需说明未读范围。</string>
+    <string name="screen_content_failed">内容采集未完成，页面可能已变化、无法读取或超过附件大小限制。尚未发送分析请求，可以重试，或选择原文件、粘贴链接。</string>
+</resources>

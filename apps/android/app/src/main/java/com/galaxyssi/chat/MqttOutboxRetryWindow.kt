@@ -15,7 +15,8 @@ internal class MqttOutboxRetryWindow(
         entries.entries.removeAll { it.value.until <= now }
         entries[messageId]?.let { return (it.until - now).coerceAtLeast(1) }
         val lane = entries.values.filter { it.route == route }
-        if (lane.size >= capacity) return (lane.minOf { it.until } - now).coerceAtLeast(1)
+        // Another packet may be acknowledged soon. Do not park fresh work for its full timeout.
+        if (lane.size >= capacity) return (lane.minOf { it.until } - now).coerceIn(1, 1_000)
         entries[messageId] = Entry(route, now + receiptWindowMillis)
         return 0L
     }

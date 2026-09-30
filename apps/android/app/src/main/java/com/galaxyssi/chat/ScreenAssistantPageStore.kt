@@ -62,16 +62,22 @@ internal class ScreenAssistantPageStore(private val context: Context) {
         }
         return result
     }
-    fun buildHtml(id: String): File {
+    fun buildText(id: String): File {
         val meta = manifest(id)
-        val target = File(directory(id), "page.html")
-        File(directory(id), "page.txt").bufferedWriter().use { out ->
+        val target = File(directory(id), "page.txt")
+        target.bufferedWriter().use { out ->
             out.write(status(meta) + "\n")
             repeat(meta.optInt("pages")) { index ->
                 out.write(context.getString(R.string.screen_assistant_page_number, index + 1) + "\n")
                 out.write(page(id, index).optString("text") + "\n\n")
             }
         }
+        return target
+    }
+    fun buildHtml(id: String): File {
+        val meta = manifest(id)
+        val target = File(directory(id), "page.html")
+        buildText(id)
         target.bufferedWriter().use { out ->
             out.write("<!doctype html><html lang=\"${context.getString(R.string.screen_assistant_page_language)}\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${label(R.string.screen_assistant_full_page)}</title><style>body{font:16px/1.6 sans-serif;margin:16px;color:#202820}img{width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere}section{border-top:1px solid #ddd;padding:16px 0}</style><h1>${label(R.string.screen_assistant_full_page)}</h1><p>${ScreenAssistantPagePolicy.escape(status(meta))}</p>")
             repeat(meta.optInt("pages")) { index ->
@@ -93,12 +99,13 @@ internal class ScreenAssistantPageStore(private val context: Context) {
         "user_finish" -> R.string.screen_assistant_page_user_finish
         "target_changed" -> R.string.screen_assistant_page_changed
         "resource_limit" -> R.string.screen_assistant_page_resource_limit
-        "no_scroll" -> R.string.screen_assistant_page_no_scroll
+          "no_scroll" -> R.string.screen_assistant_page_no_scroll
+          "visual_boundary" -> R.string.screen_content_visual_boundary
         "coverage_incomplete" -> R.string.screen_assistant_page_incomplete
         "cancelled" -> R.string.screen_assistant_cancelled
         else -> R.string.screen_assistant_page_stalled
     })
-    fun exportPdf(id: String): File {
+    fun exportPdf(id: String, checkpoint: () -> Unit = {}): File {
         val meta = manifest(id)
         require(meta.optInt("pages") > 0) { "No captured screens to export" }
         val file = File(directory(id), "page.pdf")
@@ -114,6 +121,7 @@ internal class ScreenAssistantPageStore(private val context: Context) {
             }
             // JPEG streams are embedded directly; long captures never allocate one giant bitmap.
             repeat(meta.optInt("pages")) { index ->
+                checkpoint()
                 val imageFile = File(directory(id), "$index.jpg")
                 if (imageFile.isFile) {
                     imageFile.inputStream().use { add(JPEGFactory.createFromStream(document, it)) }

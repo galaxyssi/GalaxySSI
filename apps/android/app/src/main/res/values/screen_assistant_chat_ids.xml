@@ -4,4 +4,7 @@
     <item name="screenAssistantChatCapture" type="id" />
     <item name="screenAssistantChatResize" type="id" />
     <item name="screenAssistantChatCollapse" type="id" />
+    <item name="screenContentSource" type="id" />
+    <item name="screenContentRemove" type="id" />
+    <item name="screenContentCoverage" type="id" />
 </resources>

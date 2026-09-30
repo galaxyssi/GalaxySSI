@@ -184,6 +184,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     fun onTargetInteraction(packageName: String, eventType: Int) {
+        ScreenAssistantContentCapture.onInteraction(packageName, eventType)
         if (packageName == foregroundPackage && packageName != service.packageName &&
             eventType in setOf(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED,
                 android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED)) pageCollection?.interrupted = true
