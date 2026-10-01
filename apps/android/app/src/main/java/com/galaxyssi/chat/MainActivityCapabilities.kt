@@ -281,11 +281,11 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
     addSectionTitle(getString(R.string.agent_team_members_label))
     activeMembers.forEach { member ->
         val canMessage = member.canReceiveTeamMessage(team.state)
-        val memberTitle = if (member.memberId == member.agentId) {
+        val memberTitle = member.displayName.ifBlank { if (member.memberId == member.agentId) {
             member.agentId
         } else {
             member.memberId
-        }
+        } }
         val subtitle = listOf(
             member.role,
             agentTeamMemberStateText(member.status),

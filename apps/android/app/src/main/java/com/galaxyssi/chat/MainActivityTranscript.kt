@@ -744,6 +744,7 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
 }
 
 internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
+    refreshCollaborationStrip()
     val renderStartedAt = SystemClock.elapsedRealtime()
     val activeConversationId = agentRenderedConversationId
         .ifBlank { agentTranscriptWindow.conversationId }
@@ -1123,6 +1124,9 @@ internal fun MainActivity.isAgentApprovalStillWaiting(taskId: String): Boolean {
 }
 
 internal fun MainActivity.agentTranscriptRow(entry: AgentTranscriptEntry): View {
+    CollaborationTranscriptMetadata.decode(entry.collaborationJson)?.let { metadata ->
+        return collaborationTranscriptRow(entry, metadata)
+    }
     if (AgentReplyWaitingIndicatorPolicy.isIndicator(entry)) {
         return agentReplyWaitingTranscriptRow()
     }

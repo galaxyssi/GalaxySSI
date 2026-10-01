@@ -9,6 +9,21 @@ import org.junit.Test
 
 class AgentTeamPlanBridgeTest {
     @Test
+    fun persistentCollaborationIdentityAndModelSurviveDispatchEncoding() {
+        val resources = listOf(target("codex", AgentConnectorKind.AGENT))
+        val selected = listOf(AgentRequestedMember("codex", "Turing", roleHint = "Coordinator",
+            persistentInstanceId = "person-1", collaborationGroupId = "conversation", providerLabel = "Codex",
+            modelId = "gpt-6-sol"))
+        val result = AgentTeamPlanCompiler.compile(plan(agentAction("task", "codex")), resources,
+            enabled = false, registrations = targetRegistrations(resources), requestedMembers = selected)
+        val spec = requireNotNull(AgentTeamDispatchSpecCodec.decode(result.actions.single().parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty()))
+        assertEquals(AgentTeamVisibilityMode.VISIBLE, spec.definition.visibilityMode)
+        assertEquals("person-1", spec.definition.primaryMemberId)
+        assertEquals("gpt-6-sol", spec.definition.members.single().context["collaboration_model_id"])
+        assertEquals("Turing", spec.definition.members.single().context["collaboration_name"])
+    }
+
+    @Test
     fun `supervised phone project planner is never expanded into a desktop team`() {
         val action = AgentAction(
             id = "phone-planner",

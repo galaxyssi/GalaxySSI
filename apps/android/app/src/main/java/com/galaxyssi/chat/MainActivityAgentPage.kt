@@ -436,7 +436,10 @@ internal fun MainActivity.configureAgentPage() {
     }
     attachAgentReplySpeechStopGesture()
     findViewById<View>(R.id.agentSessionTitleTap).setOnClickListener { showAgentSessionsPage() }
-    findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener { showAgentModelSelectionPage() }
+    findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener {
+        if (collaborationHeaderLabel(agentTranscriptStore.activeConversation().id) != null) showCollaborationMembers()
+        else showAgentModelSelectionPage()
+    }
     agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }
     agentInsightBar.setOnClickListener { showGlobalInsightsDialog() }
     agentMemoryCaptureButton.setOnClickListener {
@@ -536,7 +539,7 @@ internal fun MainActivity.configureAgentPage() {
     }
 }
 
-internal fun MainActivity.maybeShowAgentMentionPicker(editable: Editable?) {
+internal fun MainActivity.maybeShowLegacyAgentMentionPicker(editable: Editable?) {
     editable ?: return
     val cursor = agentGoalInput.selectionStart
     if (cursor <= 0 || cursor > editable.length || editable[cursor - 1] != '@') return
@@ -562,6 +565,7 @@ internal fun MainActivity.maybeShowAgentMentionPicker(editable: Editable?) {
     var candidates = currentCandidates()
     if (candidates.isEmpty()) {
         Toast.makeText(this, getString(R.string.agent_mention_no_available), Toast.LENGTH_SHORT).show()
+        showCollaborationMembers()
         return
     }
     val labels = candidates.map(::label).toMutableList()
@@ -593,6 +597,8 @@ internal fun MainActivity.maybeShowAgentMentionPicker(editable: Editable?) {
         isModal = false
         inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
         setAdapter(adapter)
+        setPromptView(collaborationSettingsEntry { dismiss(); showCollaborationMembers() })
+        promptPosition = ListPopupWindow.POSITION_PROMPT_BELOW
         setOnItemClickListener { _, _, position, _ ->
             val registration = candidates.getOrNull(position) ?: return@setOnItemClickListener
             val current = agentGoalInput.text ?: return@setOnItemClickListener
@@ -705,6 +711,7 @@ internal fun MainActivity.resetAgentTranscriptRendering(conversationId: String =
     agentTranscriptAllLoaded = false
     agentRenderedConversationId = conversationId
     agentTranscriptWindow.reset(conversationId)
+    loadCollaborationGroup()
 }
 
 internal fun MainActivity.deleteAgentTranscriptByDedupeKey(
@@ -1269,7 +1276,7 @@ internal fun MainActivity.submitAgentGoal(
     val goal = goalOverride?.trim()
         ?: agentGoalInput.text?.toString()?.trim().orEmpty()
     val displayGoal = displayGoalOverride?.trim()?.takeIf(String::isNotBlank) ?: goal
-    val requestedMembers = if (goalOverride == null) {
+    val explicitMembers = if (goalOverride == null) {
         (agentGoalInput.text as? Spanned)?.let(AgentMentionText::selections).orEmpty()
     } else {
         emptyList()
@@ -1287,6 +1294,22 @@ internal fun MainActivity.submitAgentGoal(
         .takeIf(String::isNotBlank)
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
+    if (!ensureCollaborationLoaded(conversation.id) {
+        if (goalOverride != null || (agentTranscriptStore.activeConversation().id == conversation.id &&
+            agentGoalInput.text?.toString()?.trim() == goal)) {
+            submitAgentGoal(voiceTraceId, pendingVoiceDedupeKey, pendingVoiceConversationId, goalOverride,
+                attachmentsOverride, displayGoalOverride, onTurnCreated, isSubmissionCancelled)
+        }
+    }) return
+    val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
+    if (CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
+        Toast.makeText(this, R.string.collaboration_no_active_members, Toast.LENGTH_LONG).show()
+        return
+    }
+    if (requestedMembers.size > 12) {
+        Toast.makeText(this, getString(R.string.collaboration_dispatch_limit, 12), Toast.LENGTH_LONG).show()
+        return
+    }
     val turnId = UUID.randomUUID().toString()
     onAgentTurnSubmitted(conversation.id, turnId, goal, attachments)
     onTurnCreated?.invoke(turnId)
@@ -1588,9 +1611,19 @@ internal fun MainActivity.continueAgentGoalSubmission(
     forcedAction: AgentAction? = null,
     originalGoal: String = goal,
     executionModeOverride: AgentTaskExecutionMode? = null,
-    isSubmissionCancelled: () -> Boolean = { false }
+    isSubmissionCancelled: () -> Boolean = { false },
+    collaborationChecked: Boolean = false
 ) {
     if (isSubmissionCancelled()) return
+    if (!collaborationChecked && forcedAction == null &&
+        CollaborationGroupStore.cached(conversationId)?.members?.isNotEmpty() == true &&
+        AgentTurnAttachmentRegistry.get(turnId).isEmpty() && !AgentLocalControlCommandPolicy.matches(goal)) {
+        routeCollaborationFollowup(conversationId, turnId, goal, isSubmissionCancelled) {
+            continueAgentGoalSubmission(goal, conversationId, turnId, forcedAction, originalGoal,
+                executionModeOverride, isSubmissionCancelled, collaborationChecked = true)
+        }
+        return
+    }
     val routingStartedAt = SystemClock.elapsedRealtime()
     val voiceTraceId = voiceTraceIdsByTurn[turnId].orEmpty()
     VoiceLatencyTelemetry.record(

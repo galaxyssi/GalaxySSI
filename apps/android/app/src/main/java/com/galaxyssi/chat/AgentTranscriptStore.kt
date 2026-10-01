@@ -121,10 +121,25 @@ object AgentTranscriptPresentationPolicy {
         .lowercase()
 
     fun collapseProcessGroups(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
-        val retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filterNot { entry ->
+        val memberFinals = entries.filter { entry ->
+            CollaborationTranscriptMetadata.decode(entry.collaborationJson)?.let { it.result && it.primary } == true
+        }
+        val canonicalEntries = AgentFinalResponseIdentity.coalesce(entries)
+        fun sameResult(member: AgentTranscriptEntry, answer: AgentTranscriptEntry): Boolean =
+            answer.role == AgentTranscriptRole.ASSISTANT && member.conversationId == answer.conversationId &&
+                member.taskId == answer.taskId && member.text.trim() == answer.text.trim()
+        val retainedEntries = canonicalEntries.filterNot { entry ->
             isRedundantConnectorCompletion(entry) ||
                 isInternalRuntimeHandoff(entry) ||
-                isLegacyToolStepSummary(entry)
+                isLegacyToolStepSummary(entry) ||
+                (entry.role == AgentTranscriptRole.PROCESS && entry.taskId.isBlank() && entry.turnId.isBlank() &&
+                    entry.dedupeKey == "collaboration-created:${entry.conversationId}") ||
+                (entry in memberFinals && canonicalEntries.any { sameResult(entry, it) })
+        }.map { entry ->
+            memberFinals.firstOrNull { sameResult(it, entry) }?.let { member ->
+                // Keep the canonical answer's identity and rich deliverables for existing reply actions.
+                entry.copy(collaborationJson = member.collaborationJson)
+            } ?: entry
         }
         val localUserTurnIds = retainedEntries.asSequence()
             .filter { it.role == AgentTranscriptRole.USER && it.turnId.isNotBlank() }
@@ -149,7 +164,7 @@ object AgentTranscriptPresentationPolicy {
         }
         val representatives = linkedMapOf<String, AgentTranscriptEntry>()
         normalizedEntries.asSequence()
-            .filter { it.role == AgentTranscriptRole.PROCESS }
+            .filter { it.role == AgentTranscriptRole.PROCESS && it.collaborationJson.isBlank() }
             .forEach { process ->
                 val key = processGroupKey(process)
                 val representativeId = processRepresentativeId(key)
@@ -161,6 +176,10 @@ object AgentTranscriptPresentationPolicy {
         val emitted = mutableSetOf<String>()
         return buildList {
             normalizedEntries.forEach { entry ->
+                if (entry.collaborationJson.isNotBlank()) {
+                    add(entry)
+                    return@forEach
+                }
                 if (entry.role == AgentTranscriptRole.PROCESS) return@forEach
                 val key = processGroupKey(entry)
                 when (entry.role) {
@@ -380,7 +399,8 @@ data class AgentTranscriptEntry(
     val textSha256: String = "",
     val richOutputChunkCount: Int = 0,
     val richOutputLength: Int = 0,
-    val richOutputSha256: String = ""
+    val richOutputSha256: String = "",
+    val collaborationJson: String = ""
 )
 
 data class AgentConversation(
@@ -1084,6 +1104,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (loadDraftConversation()?.id == conversationId) preferences.remove(draftPreferenceKey)
         entryDatabase.deleteConversation(conversationId)
         AgentResearchTraceStore.delete(appContext, conversationId)
+        CollaborationGroupStore(appContext).remove(conversationId)
         AgentReplyUnreadStore.remove(appContext, conversationId)
         preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
@@ -1105,6 +1126,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val deleted = conversationDatabase.deleteConversations(ids)
         entryDatabase.deleteConversations(ids)
         ids.forEach { AgentResearchTraceStore.delete(appContext, it) }
+        ids.forEach { CollaborationGroupStore(appContext).remove(it) }
         ids.forEach { AgentReplyUnreadStore.remove(appContext, it) }
         ids.forEach(preparedContextCache::invalidate)
         AgentModelSelectionSettings.clearConversations(appContext, ids)
@@ -1433,7 +1455,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationId: String = activeConversation().id,
         turnId: String = "",
         taskId: String = "",
-        richOutputJson: String = ""
+        richOutputJson: String = "",
+        collaborationJson: String = ""
     ): Boolean {
         val cleanText = text.trim()
         val cleanKey = dedupeKey.trim().take(MAX_DEDUPE_KEY_CHARACTERS)
@@ -1446,6 +1469,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                 previous != null &&
                 previous.text == cleanText &&
                 previous.role == role &&
+                previous.collaborationJson == collaborationJson &&
                 (normalizedRichOutput.isBlank() || normalizedRichOutput == previous.richOutputJson)
             ) {
                 null
@@ -1459,12 +1483,14 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                         } else timestampMillis,
                         turnId = turnId.ifBlank { previous.turnId },
                         taskId = taskId.ifBlank { previous.taskId },
-                        richOutputJson = normalizedRichOutput.ifBlank { previous.richOutputJson }
+                        richOutputJson = normalizedRichOutput.ifBlank { previous.richOutputJson },
+                        collaborationJson = collaborationJson
                     )
                 } else {
                     AgentTranscriptEntry(
                         UUID.randomUUID().toString(), role, cleanText, timestampMillis, cleanKey,
-                        conversationId, turnId, taskId, normalizedRichOutput
+                        conversationId, turnId, taskId, normalizedRichOutput,
+                        collaborationJson = collaborationJson
                     )
                 }
                 val written = if (previous != null) {
@@ -1520,6 +1546,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationsMigrated = true
         entryDatabase.clear()
         AgentResearchTraceStore.clear(appContext)
+        CollaborationGroupStore(appContext).clear()
         AgentReplyUnreadStore.clear(appContext)
     }
 
@@ -1958,6 +1985,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         .put("turn_id", turnId)
         .put("task_id", taskId)
         .put("rich_output", richOutputJson)
+        .put("collaboration", collaborationJson)
         .put("source_conversation_id", sourceConversationId)
         .put("source_conversation_title", sourceConversationTitle)
         .put("source_entry_id", sourceEntryId)
@@ -2030,6 +2058,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                     conversationId = item.optString("conversation_id").ifBlank { fallbackConversationId },
                     turnId = item.optString("turn_id"), taskId = item.optString("task_id"),
                     richOutputJson = AgentRichContentCodec.normalize(item.optString("rich_output")),
+                    collaborationJson = item.optString("collaboration"),
                     sourceConversationId = item.optString("source_conversation_id"),
                     sourceConversationTitle = item.optString("source_conversation_title").take(MAX_TITLE_CHARACTERS),
                     sourceEntryId = item.optString("source_entry_id")

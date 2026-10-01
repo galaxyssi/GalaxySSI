@@ -15,10 +15,15 @@ data class AgentRequestedMember(
     val agentId: String,
     val displayName: String,
     val occurrence: Int = 1,
-    val roleHint: String = ""
+    val roleHint: String = "",
+    val persistentInstanceId: String = "",
+    val collaborationGroupId: String = "",
+    val providerLabel: String = "",
+    val receivePeerResults: Boolean = false,
+    val modelId: String = ""
 ) {
     val instanceId: String
-        get() = "$agentId:mention-$occurrence".take(96)
+        get() = persistentInstanceId.ifBlank { "$agentId:mention-$occurrence".take(96) }
 }
 
 internal object AgentMentionText {
@@ -28,12 +33,13 @@ internal object AgentMentionText {
         end: Int,
         agentId: String,
         displayName: String,
-        color: Int
+        color: Int,
+        uniqueName: Boolean = false
     ): AgentRequestedMember {
         require(start in 0..end && end <= editable.length)
         val occurrence = selections(editable).count { it.agentId == agentId } + 1
         val visibleName = displayName.trim().ifBlank { agentId }
-        val token = if (occurrence == 1) "@$visibleName" else "@$visibleName #$occurrence"
+        val token = if (uniqueName || occurrence == 1) "@$visibleName" else "@$visibleName #$occurrence"
         val styled = SpannableString("$token ").apply {
             setSpan(
                 Annotation(AGENT_MENTION_ANNOTATION_KEY, agentId),
