@@ -8,6 +8,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentTeamPlanBridgeTest {
+    @Test fun groupRolesNeverInheritTheProvidersSoftwareSpecialty() {
+        val resources = listOf(target("codex", AgentConnectorKind.AGENT))
+        val selected = listOf("Turing", "Curie", "Hopper").mapIndexed { index, name ->
+            AgentRequestedMember("codex", name, roleHint = if (index == 0) "Coordinator" else "Researcher",
+                persistentInstanceId = "person-$index", collaborationGroupId = "group", providerLabel = "Codex",
+                collaborationWorkflow = "PARALLEL")
+        }
+        val result = AgentTeamPlanCompiler.compile(plan(agentAction("task", "codex")), resources, enabled = false,
+            registrations = targetRegistrations(resources).map { it.copy(maxParallelRuns = 10) }, requestedMembers = selected)
+        val spec = requireNotNull(AgentTeamDispatchSpecCodec.decode(result.actions.single().parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty()))
+        val contributors = spec.definition.members.drop(1)
+        assertTrue(contributors.all { it.role == "Researcher" && "software" !in it.objective.substringBefore("Work within") })
+        assertTrue(contributors[0].objective.contains("primary evidence"))
+        assertTrue(contributors[1].objective.contains("independent verification"))
+        assertEquals(setOf("person-1", "person-2"), spec.definition.members.first().dependsOnAgentIds)
+    }
+
     @Test
     fun persistentCollaborationIdentityAndModelSurviveDispatchEncoding() {
         val resources = listOf(target("codex", AgentConnectorKind.AGENT))

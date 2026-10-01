@@ -7,7 +7,7 @@ import android.widget.FrameLayout
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 
-internal class AgentTranscriptRecyclerAdapter(
+internal open class AgentTranscriptRecyclerAdapter(
     private val activity: MainActivity
 ) : RecyclerView.Adapter<AgentTranscriptViewHolder>() {
     private val entries = mutableListOf<AgentTranscriptEntry>()
@@ -40,7 +40,7 @@ internal class AgentTranscriptRecyclerAdapter(
         }
         holder.container.removeAllViews()
         holder.container.addView(
-            activity.agentTranscriptRow(entry),
+            createRow(entry),
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -63,6 +63,8 @@ internal class AgentTranscriptRecyclerAdapter(
         holder.container.removeAllViews()
         super.onViewRecycled(holder)
     }
+
+    protected open fun createRow(entry: AgentTranscriptEntry): android.view.View = activity.agentTranscriptRow(entry)
 
     override fun onViewAttachedToWindow(holder: AgentTranscriptViewHolder) {
         super.onViewAttachedToWindow(holder)
@@ -145,6 +147,7 @@ internal class AgentTranscriptRecyclerAdapter(
     private fun observeAttachedReplies() {
         val list = activity.agentOutputList
         list.post {
+            if (list.adapter !== this || list !== activity.agentOutputList) return@post
             for (index in 0 until list.childCount) {
                 val holder = list.getChildViewHolder(list.getChildAt(index)) as? AgentTranscriptViewHolder ?: continue
                 entries.getOrNull(holder.adapterPosition)?.let { observeDraw(holder, it) }

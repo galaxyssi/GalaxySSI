@@ -146,10 +146,10 @@ private fun MainActivity.showCollaborationMentionPicker(group: CollaborationGrou
     }
 }
 
-internal fun MainActivity.collaborationMemberRow(member: CollaborationMember): View = LinearLayout(this).apply {
+internal fun MainActivity.collaborationMemberRow(member: CollaborationMember, compact: Boolean = false): View = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
-    setPadding(dp(12), dp(8), dp(12), dp(8))
+    setPadding(if (compact) 0 else dp(12), dp(8), if (compact) 0 else dp(12), dp(8))
     minimumHeight = dp(58)
     addView(ImageView(this@collaborationMemberRow).apply {
         setImageDrawable(GalaxySSIIdenticonDrawable(member.id))
@@ -163,7 +163,8 @@ internal fun MainActivity.collaborationMemberRow(member: CollaborationMember): V
             setTextColor(getColorCompat(R.color.text_primary))
         })
         addView(TextView(context).apply {
-            text = listOf(member.providerLabel, member.modelId, member.role).filter(String::isNotBlank).joinToString(" · ")
+            text = listOf(CollaborationLabelPolicy.provider(member.providerLabel, member.modelId), member.role)
+                .filter(String::isNotBlank).joinToString(" · ")
             textSize = 11f; maxLines = 2
             setTextColor(getColorCompat(R.color.text_secondary))
         })
@@ -179,8 +180,19 @@ internal fun MainActivity.showCollaborationMembers() {
             .setItems(options.toTypedArray()) { _, index ->
                 if (index == group.members.size) addCollaborationMember(group)
                 else showCollaborationMemberSettings(group, group.members[index])
-            }.setNegativeButton(R.string.common_cancel, null).show()
+            }.setNeutralButton(R.string.collaboration_workflow) { _, _ -> showCollaborationWorkflow(group) }
+            .setNegativeButton(R.string.common_cancel, null).show()
     }
+}
+
+private fun MainActivity.showCollaborationWorkflow(group: CollaborationGroup) {
+    val modes = CollaborationWorkflow.entries
+    val labels = listOf(R.string.collaboration_workflow_auto, R.string.collaboration_workflow_parallel,
+        R.string.collaboration_workflow_research)
+    AlertDialog.Builder(this).setTitle(R.string.collaboration_workflow)
+        .setSingleChoiceItems(labels.map { getString(it) }.toTypedArray(), modes.indexOf(group.workflow)) { dialog, index ->
+            collaborationUpdate(group.conversationId, { it.copy(workflow = modes[index]) }) { dialog.dismiss() }
+        }.setNegativeButton(R.string.common_cancel, null).show()
 }
 
 private fun MainActivity.addCollaborationMember(group: CollaborationGroup) {
@@ -319,6 +331,7 @@ internal fun MainActivity.refreshCollaborationStrip() {
     val strip = findViewById<TextView>(R.id.collaborationMemberStrip) ?: return
     val id = agentRenderedConversationId.ifBlank { agentTranscriptStore.activeConversation().id }
     val group = CollaborationGroupStore.cached(id)
+    if (isAgentTranscriptAdapterInitialized()) selectConversationOutputPage(group != null)
     strip.visibility = if (group?.members?.isNotEmpty() == true) View.VISIBLE else View.GONE
     if (group != null) {
         strip.text = getString(R.string.collaboration_member_summary, group.members.size)

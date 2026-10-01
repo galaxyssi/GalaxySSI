@@ -4,6 +4,7 @@ import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
 
 internal class CollaborationGroupStore(context: Context) {
+    private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(context.applicationContext, "galaxyssi_collaboration_groups_v1")
 
     fun load(conversationId: String): CollaborationGroup? = synchronized(LOCK) {
@@ -29,17 +30,24 @@ internal class CollaborationGroupStore(context: Context) {
             after
         }
 
-    fun remove(conversationId: String) = synchronized(LOCK) {
-        database.remove(conversationId)
-        cache.remove(conversationId)
-        loaded.remove(conversationId)
-        Unit
+    fun remove(conversationId: String) {
+        synchronized(LOCK) {
+            database.remove(conversationId)
+            cache.remove(conversationId)
+            loaded.remove(conversationId)
+        }
+        CollaborationResearchArchive.remove(appContext, conversationId)
     }
 
-    fun clear() = synchronized(LOCK) {
-        database.clear()
-        cache.clear()
-        loaded.clear()
+    fun clear() {
+        val ids = synchronized(LOCK) {
+            val ids = database.keys("")
+            database.clear()
+            cache.clear()
+            loaded.clear()
+            ids
+        }
+        ids.forEach { CollaborationResearchArchive.remove(appContext, it) }
     }
 
     companion object {

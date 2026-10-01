@@ -13,12 +13,22 @@ internal data class CollaborationTranscriptMetadata(
     val runId: String,
     val result: Boolean = false,
     val waiting: Boolean = false,
-    val primary: Boolean = false
+    val primary: Boolean = false,
+    val activity: Boolean = false,
+    val summary: String = "",
+    val eventCount: Int = 0,
+    val details: String = "",
+    val researchStage: String = "",
+    val executionMemberId: String = memberId
 ) {
     fun encode(): String = JSONObject().put("member_id", memberId).put("name", name)
         .put("provider", provider).put("role", role).put("status", status.name)
         .put("run_id", runId).put("result", result).put("waiting", waiting)
-        .put("primary", primary).toString()
+        .put("primary", primary).put("activity", activity).put("summary", summary)
+        .put("event_count", eventCount).put("details", details)
+        .put("research_stage", researchStage).put("execution_member_id", executionMemberId).toString()
+
+    val traceTurnId: String get() = "collaboration:$runId:$executionMemberId"
 
     companion object {
         fun decode(raw: String): CollaborationTranscriptMetadata? {
@@ -28,7 +38,10 @@ internal data class CollaborationTranscriptMetadata(
                 CollaborationTranscriptMetadata(json.getString("member_id"), json.getString("name"),
                     json.getString("provider"), json.getString("role"),
                     AgentSubagentStatus.valueOf(json.getString("status")), json.getString("run_id"),
-                    json.optBoolean("result"), json.optBoolean("waiting"), json.optBoolean("primary"))
+                    json.optBoolean("result"), json.optBoolean("waiting"), json.optBoolean("primary"),
+                    json.optBoolean("activity"), json.optString("summary"), json.optInt("event_count"),
+                    json.optString("details"), json.optString("research_stage"),
+                    json.optString("execution_member_id").ifBlank { json.getString("member_id") })
             }.getOrNull()
         }
     }
@@ -60,6 +73,7 @@ internal object CollaborationPeerResultPolicy {
 
 /** Public member events remain PROCESS records so they cannot acknowledge the parent task. */
 internal class CollaborationTranscriptPublisher(context: Context) {
+    private val appContext = context.applicationContext
     private val transcript by lazy { AgentTranscriptStore(context.applicationContext) }
     private val groups = CollaborationGroupStore(context.applicationContext)
     private val published = linkedMapOf<String, Pair<String, String>>()
@@ -70,18 +84,39 @@ internal class CollaborationTranscriptPublisher(context: Context) {
         if (snapshot.members.none { it.collaborationGroupId == snapshot.conversationId } ||
             groups.load(snapshot.conversationId) == null) return
         snapshot.members.filter { it.collaborationGroupId == snapshot.conversationId }.forEach { member ->
+            if (member.researchStage.isNotBlank() && member.status == AgentSubagentStatus.QUEUED) return@forEach
             val status = if (snapshot.state == AgentTeamExecutionState.INTERRUPTED && !member.status.isTerminal)
                 AgentSubagentStatus.FAILED else member.status
-            val metadata = CollaborationTranscriptMetadata(member.memberId, member.displayName,
+            val metadata = CollaborationTranscriptMetadata(member.personId, member.displayName,
                 member.providerLabel, member.role, status, snapshot.supervisorRunId,
-                waiting = member.waitingForDependencies, primary = member.memberId == snapshot.primaryMemberId)
+                waiting = member.waitingForDependencies, primary = member.memberId == snapshot.primaryMemberId,
+                researchStage = member.researchStage, executionMemberId = member.memberId)
             val key = "collaboration:${snapshot.supervisorRunId}:${member.memberId}"
-            write(snapshot, "$key:status", member.role.ifBlank { member.displayName },
+            val assignment = member.role.ifBlank { member.displayName }
+            val detail = if (status == AgentSubagentStatus.FAILED) member.errorMessage else ""
+            write(snapshot, "$key:status", listOf(assignment, detail).filter(String::isNotBlank).joinToString("\n"),
                 snapshot.createdAtMillis, metadata)
             if (member.status == AgentSubagentStatus.SUCCEEDED && member.output.isNotBlank()) {
                 // A content-addressed result is append-only; a correction never replaces previous evidence.
                 val revision = UUID.nameUUIDFromBytes(member.output.toByteArray()).toString()
-                write(snapshot, "$key:result:$revision", member.output,
+                val content = if (member.researchStage.isNotBlank()) {
+                    val requests = CollaborationResearchArtifact.decode(member.output)?.optJSONArray("requests")
+                    val questions = buildList {
+                        repeat(minOf(3, requests?.length() ?: 0)) { index ->
+                            val request = requests?.optJSONObject(index) ?: return@repeat
+                            val targets = request.optJSONArray("to") ?: return@repeat
+                            val names = (0 until minOf(3, targets.length())).mapNotNull { i ->
+                                snapshot.members.firstOrNull { it.personId == targets.optString(i) &&
+                                    it.personId != member.personId }?.displayName
+                            }.distinct().joinToString(" ") { "@$it" }
+                            if (names.isNotBlank() && request.optString("question").isNotBlank())
+                                add(appContext.getString(R.string.collaboration_directed_question, names,
+                                    request.getString("question").take(1200)))
+                        }
+                    }
+                    (listOf(CollaborationResearchArtifact.publicText(member.output)) + questions).joinToString("\n\n")
+                } else member.output
+                write(snapshot, "$key:result:$revision", content,
                     member.completedAtMillis.coerceAtLeast(snapshot.createdAtMillis), metadata.copy(result = true, waiting = false))
             }
         }

@@ -35,7 +35,8 @@ internal data class CollaborationGroup(
     val conversationId: String,
     val members: List<CollaborationMember> = emptyList(),
     val coordinatorId: String = members.firstOrNull()?.id.orEmpty(),
-    val revision: Long = 0
+    val revision: Long = 0,
+    val workflow: CollaborationWorkflow = CollaborationWorkflow.AUTO
 ) {
     fun validate(): CollaborationGroup {
         require(conversationId.isNotBlank())
@@ -49,10 +50,10 @@ internal data class CollaborationGroup(
     }
 
     fun requested(explicit: List<AgentRequestedMember>): List<AgentRequestedMember> {
-        if (explicit.isNotEmpty()) return explicit
+        if (explicit.isNotEmpty()) return explicit.map { it.copy(collaborationWorkflow = workflow.name) }
         return members.filter { it.observeMessages && it.participation != CollaborationParticipation.MENTION_ONLY }
             .sortedBy { if (it.id == coordinatorId) 0 else 1 }
-            .map { it.requested(conversationId) }
+            .map { it.requested(conversationId).copy(collaborationWorkflow = workflow.name) }
     }
 
     companion object { const val MAX_MEMBERS = 1024 }
@@ -102,6 +103,7 @@ internal object CollaborationGroupCodec {
         .put("conversation_id", group.validate().conversationId)
         .put("coordinator_id", group.coordinatorId)
         .put("revision", group.revision)
+        .put("workflow", group.workflow.name)
         .put("members", JSONArray().apply {
             group.members.forEach { member -> put(JSONObject()
                 .put("id", member.id).put("name", member.name).put("agent_id", member.agentId)
@@ -119,6 +121,7 @@ internal object CollaborationGroupCodec {
             conversationId = json.getString("conversation_id"),
             coordinatorId = json.getString("coordinator_id"),
             revision = json.optLong("revision"),
+            workflow = runCatching { CollaborationWorkflow.valueOf(json.optString("workflow")) }.getOrDefault(CollaborationWorkflow.AUTO),
             members = (0 until array.length()).map { index ->
                 val member = array.getJSONObject(index)
                 CollaborationMember(

@@ -247,6 +247,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentOutputList: RecyclerView
     internal lateinit var agentOutputLayout: LinearLayoutManager
     internal lateinit var agentTranscriptAdapter: AgentTranscriptRecyclerAdapter
+    internal lateinit var singleAgentTranscriptAdapter: AgentTranscriptRecyclerAdapter
+    internal lateinit var collaborationTranscriptAdapter: CollaborationTranscriptRecyclerAdapter
     internal lateinit var agentSettingsButton: ImageButton
     internal lateinit var agentMemoryCaptureButton: TextView
     internal lateinit var agentToolboxList: LinearLayout

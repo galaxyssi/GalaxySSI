@@ -81,6 +81,8 @@ internal object AgentResearchTraceStore {
         if (!AgentConnectorResponseStore.isCurrentExecution(context, identity) ||
             AgentPendingDeliveryStore.isSuperseded(context, identity.sourceMessageId,
                 identity.conversationId, identity.turnId)) return
+        if (CollaborationProgressStore.remote(context, identity.sourceMessageId, identity.conversationId,
+                identity.turnId, payload)) return
         var trace = AgentResearchTrace.decode(payload.optJSONObject("research_trace"))
         payload.optJSONObject("progress_event")?.let {
             trace = trace.merge(AgentResearchTrace.decode(it.optJSONObject("metadata")?.optJSONObject("research_trace")))

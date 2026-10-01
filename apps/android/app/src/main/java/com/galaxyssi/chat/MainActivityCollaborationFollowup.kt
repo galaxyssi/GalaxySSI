@@ -17,7 +17,11 @@ internal fun MainActivity.routeCollaborationFollowup(
                     snapshot.members.any { it.collaborationGroupId == conversationId }
             } ?: return@runCatching null
             val selected = AgentTurnMentionRegistry.peek(turnId).mapTo(hashSetOf()) { it.instanceId }
-            val recipients = active.members.filter { it.memberId in selected && it.canReceiveTeamMessage(active.state) }
+            val recipients = active.members.filter {
+                (it.memberId in selected || it.personId in selected) && it.canReceiveTeamMessage(active.state)
+            }.groupBy { it.personId }.values.map { stages ->
+                stages.firstOrNull { it.status == AgentSubagentStatus.RUNNING } ?: stages.first()
+            }
             var delivered = 0
             var queued = 0
             runBlocking {

@@ -20,7 +20,8 @@ data class AgentRequestedMember(
     val collaborationGroupId: String = "",
     val providerLabel: String = "",
     val receivePeerResults: Boolean = false,
-    val modelId: String = ""
+    val modelId: String = "",
+    val collaborationWorkflow: String = "AUTO"
 ) {
     val instanceId: String
         get() = persistentInstanceId.ifBlank { "$agentId:mention-$occurrence".take(96) }

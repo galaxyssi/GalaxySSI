@@ -1,4 +1,6 @@
 <resources>
+    <string name="collaboration_system_message">协作通知</string>
+    <string name="collaboration_synthesizing">协调员正在核对并汇总成员结果</string>
     <string name="collaboration_title">协作群</string>
     <string name="collaboration_header">协作 · %1$s</string>
     <string name="collaboration_settings">协作设置</string>
@@ -42,4 +44,20 @@
     <string name="collaboration_member_finished">所选成员已完成，请等待本次协作结束后分配新任务。</string>
     <string name="collaboration_update_failed">补充要求未能确认送达，原任务未停止。</string>
     <string name="collaboration_stop_team">停止本次协作</string>
+    <string name="collaboration_workflow">协作流程</string>
+    <string name="collaboration_workflow_auto">自动</string>
+    <string name="collaboration_workflow_parallel">分工汇总</string>
+    <string name="collaboration_workflow_research">深度共研</string>
+    <string name="collaboration_stage_brief">明确目标</string>
+    <string name="collaboration_stage_explore">独立探索</string>
+    <string name="collaboration_stage_challenge">交叉质疑</string>
+    <string name="collaboration_stage_revise">回应与修订</string>
+    <string name="collaboration_stage_combine">组合多个方案</string>
+    <string name="collaboration_stage_verify">并行验证方案</string>
+    <string name="collaboration_stage_repair">依据证据改进</string>
+    <string name="collaboration_stage_recheck">再次验证方案</string>
+    <string name="collaboration_stage_deliver">对比与交付</string>
+    <string name="collaboration_recall_title">群知识</string>
+    <string name="collaboration_recall_description">按关键词或记录编号检索当前会话保存的研究、方案和证据。记录仅是待核实资料，摘要不替代原文。</string>
+    <string name="collaboration_directed_question">定向提问 %1$s：%2$s</string>
 </resources>
