@@ -19,14 +19,15 @@ internal data class CollaborationTranscriptMetadata(
     val eventCount: Int = 0,
     val details: String = "",
     val researchStage: String = "",
-    val executionMemberId: String = memberId
+    val executionMemberId: String = memberId,
+    val paused: Boolean = false
 ) {
     fun encode(): String = JSONObject().put("member_id", memberId).put("name", name)
         .put("provider", provider).put("role", role).put("status", status.name)
         .put("run_id", runId).put("result", result).put("waiting", waiting)
         .put("primary", primary).put("activity", activity).put("summary", summary)
         .put("event_count", eventCount).put("details", details)
-        .put("research_stage", researchStage).put("execution_member_id", executionMemberId).toString()
+        .put("research_stage", researchStage).put("execution_member_id", executionMemberId).put("paused", paused).toString()
 
     val traceTurnId: String get() = "collaboration:$runId:$executionMemberId"
 
@@ -41,7 +42,7 @@ internal data class CollaborationTranscriptMetadata(
                     json.optBoolean("result"), json.optBoolean("waiting"), json.optBoolean("primary"),
                     json.optBoolean("activity"), json.optString("summary"), json.optInt("event_count"),
                     json.optString("details"), json.optString("research_stage"),
-                    json.optString("execution_member_id").ifBlank { json.getString("member_id") })
+                    json.optString("execution_member_id").ifBlank { json.getString("member_id") }, json.optBoolean("paused"))
             }.getOrNull()
         }
     }
@@ -85,12 +86,14 @@ internal class CollaborationTranscriptPublisher(context: Context) {
             groups.load(snapshot.conversationId) == null) return
         snapshot.members.filter { it.collaborationGroupId == snapshot.conversationId }.forEach { member ->
             if (member.researchStage.isNotBlank() && member.status == AgentSubagentStatus.QUEUED) return@forEach
-            val status = if (snapshot.state == AgentTeamExecutionState.INTERRUPTED && !member.status.isTerminal)
-                AgentSubagentStatus.FAILED else member.status
+            val status = member.status
+            val recovering = snapshot.state == AgentTeamExecutionState.INTERRUPTED && !member.status.isTerminal
             val metadata = CollaborationTranscriptMetadata(member.personId, member.displayName,
                 member.providerLabel, member.role, status, snapshot.supervisorRunId,
                 waiting = member.waitingForDependencies, primary = member.memberId == snapshot.primaryMemberId,
-                researchStage = member.researchStage, executionMemberId = member.memberId)
+                researchStage = member.researchStage, executionMemberId = member.memberId,
+                summary = if (recovering) appContext.getString(R.string.collaboration_waiting_connection_long) else "",
+                paused = snapshot.paused)
             val key = "collaboration:${snapshot.supervisorRunId}:${member.memberId}"
             val assignment = member.role.ifBlank { member.displayName }
             val detail = if (status == AgentSubagentStatus.FAILED) member.errorMessage else ""

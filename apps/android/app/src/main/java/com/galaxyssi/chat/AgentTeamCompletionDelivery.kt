@@ -17,9 +17,21 @@ internal class AgentConnectorTeamCompletionSink(
     private val ledger: AgentTeamCompletionDeliveryLedger = AgentTeamCompletionDeliveryLedger(context)
 ) : AgentTeamCompletionSink {
     private val appContext = context.applicationContext
+    private val recovery = AgentTeamParentDeliveryRecovery(appContext)
 
     override fun publish(snapshot: AgentTeamExecutionSnapshot): Boolean {
-        if (snapshot.state !in DELIVERABLE_STATES || ledger.contains(snapshot.supervisorRunId)) return false
+        if (snapshot.state !in DELIVERABLE_STATES) return false
+        if (ledger.contains(snapshot.supervisorRunId)) return false
+        if (recovery.committed(snapshot)) {
+            ledger.mark(snapshot.supervisorRunId)
+            return false
+        }
+        if (!recovery.prepare(snapshot)) return false
+        val source = AgentTeamDispatchIds.sourceMessageId(snapshot.supervisorRunId)
+        val contact = AgentTeamDispatchIds.responseContactId(snapshot.teamId)
+        if (AgentConnectorResponseStore.pending(appContext).any {
+                it.sourceMessageId == source && it.contactId == contact && it.conversationId == snapshot.conversationId &&
+                    it.turnId == snapshot.taskId }) return false
         val primaryOutput = snapshot.finalOutput.trim()
         val successful = primaryOutput.isNotBlank() && snapshot.state in setOf(
             AgentTeamExecutionState.SUCCEEDED,
@@ -52,7 +64,7 @@ internal class AgentConnectorTeamCompletionSink(
                 receivedAtMillis = snapshot.updatedAtMillis.coerceAtLeast(System.currentTimeMillis())
             )
         )
-        ledger.mark(snapshot.supervisorRunId)
+        // Publishing is not an acknowledgement. A later sweep checks the canonical transcript commit.
         return true
     }
 
@@ -107,7 +119,7 @@ internal class AgentTeamCompletionDeliveryLedger(context: Context) {
 
     private companion object {
         const val DATABASE = "galaxyssi_agent_team_completion_v1"
-        const val KEY_DELIVERED = "delivered_supervisor_runs"
+        const val KEY_DELIVERED = "committed_supervisor_runs_v2"
         const val MAX_RECORDS = 512
     }
 }

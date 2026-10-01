@@ -70,6 +70,13 @@ internal object AgentTerminalDeliveryStore {
     fun isTerminal(context: Context, sourceMessageId: Long): Boolean =
         find(context, sourceMessageId) != null
 
+    @Synchronized
+    internal fun removeExact(context: Context, expected: AgentTerminalDelivery): Boolean {
+        if (find(context, expected.sourceMessageId) != expected) return false
+        AgentEncryptedPreferences(context, PREFS).remove(key(expected.sourceMessageId))
+        return true
+    }
+
     private fun prune(preferences: AgentEncryptedPreferences) {
         val records = preferences.keys()
             .asSequence()

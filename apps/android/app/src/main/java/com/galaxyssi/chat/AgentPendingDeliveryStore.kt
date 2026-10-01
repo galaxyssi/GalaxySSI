@@ -21,6 +21,8 @@ internal object AgentPendingDeliveryStore {
     }
 
     fun put(context: Context, delivery: AgentPendingDelivery) = journal(context).put(delivery)
+    internal fun restoreTeamParent(context: Context, delivery: AgentPendingDelivery): Boolean =
+        journal(context).restoreTeamParent(delivery)
     fun find(context: Context, sourceMessageId: Long, contactId: String = ""): AgentPendingDelivery? =
         journal(context).find(sourceMessageId, contactId)
     fun markRecoveryPredecessor(context: Context, predecessorSourceMessageId: Long, successorSourceMessageId: Long): AgentPendingDelivery? =

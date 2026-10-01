@@ -121,7 +121,8 @@ data class AgentSubagentExecutionContext(
     val parentId: String,
     val depth: Int,
     val handoff: AgentSubagentContextHandoff,
-    val provenance: AgentSubagentProvenance
+    val provenance: AgentSubagentProvenance,
+    val suspendExecutionPermit: suspend (suspend () -> Unit) -> Unit = { wait -> wait() }
 ) {
     suspend fun ensureActive() {
         currentCoroutineContext().ensureActive()
@@ -242,9 +243,22 @@ class AgentSubagentRuntime(
     fun start(
         plan: AgentSubagentPlan,
         worker: AgentSubagentWorker
+    ): AgentSubagentRunHandle = resume(plan, emptyMap(), 0L, worker)
+
+    /** Terminal children are restored as dependency evidence, never executed again. */
+    fun resume(
+        plan: AgentSubagentPlan,
+        completed: Map<String, AgentSubagentChildResult>,
+        lastSequence: Long,
+        worker: AgentSubagentWorker
     ): AgentSubagentRunHandle {
         check(isActive) { "Agent subagent runtime is closed" }
         val normalized = normalizeAndValidate(plan)
+        require(lastSequence >= 0L)
+        require(completed.all { (id, result) ->
+            normalized.children.any { it.childId == id } && result.childId == id &&
+                result.supervisorId == normalized.supervisorId && result.status.isTerminal
+        }) { "Checkpoint does not belong to this supervisor plan" }
         val runJob = SupervisorJob(runtimeJob)
         val childrenJob = SupervisorJob(runJob)
         val completion = CompletableDeferred<AgentSubagentRunResult>()
@@ -252,7 +266,8 @@ class AgentSubagentRuntime(
             supervisorId = normalized.supervisorId,
             runJob = runJob,
             childrenJob = childrenJob,
-            completion = completion
+            completion = completion,
+            eventSequence = lastSequence
         )
         check(activeRuns.putIfAbsent(normalized.supervisorId, control) == null) {
             "Supervisor ${normalized.supervisorId} already has an active run"
@@ -261,7 +276,7 @@ class AgentSubagentRuntime(
         val orchestration = runtimeScope.launch(
             runJob + CoroutineName("AgentSubagentSupervisor-${normalized.supervisorId}")
         ) {
-            orchestrate(control, normalized, worker)
+            orchestrate(control, normalized, worker, completed)
         }
         control.orchestrationJob = orchestration
         return AgentSubagentRunHandle(
@@ -296,12 +311,15 @@ class AgentSubagentRuntime(
     private suspend fun orchestrate(
         control: RunControl,
         plan: NormalizedPlan,
-        worker: AgentSubagentWorker
+        worker: AgentSubagentWorker,
+        completed: Map<String, AgentSubagentChildResult>
     ) {
         val startedAt = now()
         val slots = LinkedHashMap<String, CompletableDeferred<AgentSubagentChildResult>>()
         plan.children.forEach { child ->
-            slots[child.childId] = CompletableDeferred()
+            slots[child.childId] = CompletableDeferred<AgentSubagentChildResult>().apply {
+                completed[child.childId]?.let { complete(it) }
+            }
         }
         val childJobs = mutableListOf<Job>()
         try {
@@ -312,6 +330,7 @@ class AgentSubagentRuntime(
                 provenance = plan.provenance
             )
             plan.children.forEach { child ->
+                if (child.childId in completed) return@forEach
                 emit(
                     control = control,
                     plan = plan,
@@ -322,6 +341,7 @@ class AgentSubagentRuntime(
                 )
             }
             plan.children.forEach { child ->
+                if (child.childId in completed) return@forEach
                 val job = runtimeScope.launch(
                     control.childrenJob + CoroutineName("AgentSubagent-${child.childId}")
                 ) {
@@ -405,6 +425,7 @@ class AgentSubagentRuntime(
             }
 
             executionPermits.acquire()
+            var permitHeld = true
             try {
                 currentCoroutineContext().ensureActive()
                 emit(
@@ -423,7 +444,15 @@ class AgentSubagentRuntime(
                         parentId = child.parentId,
                         depth = child.depth,
                         handoff = handoff,
-                        provenance = child.provenance
+                        provenance = child.provenance,
+                        suspendExecutionPermit = { wait ->
+                            check(permitHeld) { "Concurrent permit suspension is not supported" }
+                            permitHeld = false
+                            executionPermits.release()
+                            wait()
+                            executionPermits.acquire()
+                            permitHeld = true
+                        }
                     )
                 )
                 currentCoroutineContext().ensureActive()
@@ -445,7 +474,7 @@ class AgentSubagentRuntime(
                     slot
                 )
             } finally {
-                executionPermits.release()
+                if (permitHeld) executionPermits.release()
             }
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {

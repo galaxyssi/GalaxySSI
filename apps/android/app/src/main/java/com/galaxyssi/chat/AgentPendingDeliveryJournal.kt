@@ -40,6 +40,15 @@ internal class AgentPendingDeliveryJournal(
         }
     }
 
+    @Synchronized fun restoreTeamParent(delivery: AgentPendingDelivery): Boolean = transaction { db ->
+        require(AgentTeamParentDeliveryPolicy.isLocalTeam(delivery.contactId))
+        val head = readHead(db, delivery.conversationId, delivery.turnId)
+        if (head != null && head != delivery.sourceMessageId) return@transaction false
+        writeBody(db, delivery)
+        writeHead(db, delivery.conversationId, delivery.turnId, delivery.sourceMessageId)
+        true
+    }
+
     @Synchronized fun markRecoveryPredecessor(source: Long, successor: Long): AgentPendingDelivery? {
         if (source <= 0 || successor <= 0 || source == successor) return null
         return transaction { db ->

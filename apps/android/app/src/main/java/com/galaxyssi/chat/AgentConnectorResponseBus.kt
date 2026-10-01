@@ -117,6 +117,8 @@ object AgentConnectorResponseBus {
             EncryptedAgentManagedResponseLedger(context).complete(normalized) != null) {
             // The supervisor owns the body; persist its receipt without exposing a child reply to UI recovery.
             AgentConnectorResponseStore.recordManagedReceipt(context, normalized, receipt)
+            runCatching { AgentTeamBackgroundRecovery.enqueue(context) }
+                .onFailure { android.util.Log.w("GalaxySSICollaboration", "Team wake-up enqueue failed", it) }
             return true
         }
         val durable = if (AgentConnectorResponseStore.appendWithReceipt(context, normalized, receipt)) normalized

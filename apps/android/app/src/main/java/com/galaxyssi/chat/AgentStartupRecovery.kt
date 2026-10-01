@@ -51,6 +51,7 @@ class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters)
                 )
             },
             dispatch = {
+                AgentTeamBackgroundRecovery.enqueue(applicationContext)
                 AgentConnectorBackgroundRecovery.enqueuePending(applicationContext)
                 AgentLongTaskRecoveryScheduler.enqueueRecoverable(
                     applicationContext, "durable_startup_recovery"

@@ -24,6 +24,13 @@ class AgentTeamProcessDeathDeviceTest {
         val phase = InstrumentationRegistry.getArguments().getString(PHASE_ARGUMENT).orEmpty()
         assumeTrue("Run through tools/dev/test-android-team-process-death.js", phase in setOf(PHASE_SEED, PHASE_RECOVER))
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = context.getSharedPreferences(ACCEPTANCE_PREFERENCES, Context.MODE_PRIVATE)
+        fixtureSuffix = preferences.getString(FIXTURE_SUFFIX_KEY, "").orEmpty()
+        if (phase == PHASE_SEED) {
+            cleanupAcceptanceState(context)
+            fixtureSuffix = java.util.UUID.randomUUID().toString()
+            check(preferences.edit().putString(FIXTURE_SUFFIX_KEY, fixtureSuffix).commit())
+        }
         when (phase) {
             PHASE_SEED -> seedInterruptedTeam(context)
             PHASE_RECOVER -> recoverLateResponses(context)
@@ -168,7 +175,9 @@ class AgentTeamProcessDeathDeviceTest {
         val leakedMessages = acceptanceChatMessageCount(context)
         assertEquals(AgentTeamExecutionState.SUCCEEDED, snapshot.state)
         assertEquals(PRIMARY_OUTPUT, snapshot.finalOutput)
-        assertTrue(EncryptedAgentManagedResponseLedger(context).completedUnapplied().isEmpty())
+        assertTrue("All fixture replies must be applied without modifying other user tasks",
+            EncryptedAgentManagedResponseLedger(context).completedUnapplied()
+                .none { it.supervisorRunId == SUPERVISOR_RUN_ID })
         assertEquals(1, syntheticResponses.size)
         assertEquals(PRIMARY_OUTPUT, syntheticResponses.single().content)
         assertEquals(0, leakedMessages)
@@ -201,6 +210,9 @@ class AgentTeamProcessDeathDeviceTest {
         deliveryMode = deliveryMode,
         sourceMessageId = sourceMessageId,
         contactId = contactId,
+        conversationId = CONVERSATION_ID,
+        turnId = TURN_ID,
+        taskId = TASK_ID,
         createdAtMillis = createdAtMillis
     )
 
@@ -274,20 +286,25 @@ class AgentTeamProcessDeathDeviceTest {
         const val ACCEPTANCE_PREFERENCES = "galaxyssi_team_process_death_acceptance"
         const val SEED_PID_KEY = "seed_pid"
         const val SEED_TIME_KEY = "seed_time"
+        const val FIXTURE_SUFFIX_KEY = "fixture_suffix"
+        var fixtureSuffix = ""
         const val REPORT_FILENAME = "agent-team-process-death-report.json"
         const val TEAM_ID = "acceptance-process-death-team"
-        const val SUPERVISOR_RUN_ID = "acceptance-process-death-supervisor"
-        const val CONVERSATION_ID = "acceptance-process-death-conversation"
-        const val TURN_ID = "acceptance-process-death-turn"
-        const val TASK_ID = "acceptance-process-death-task"
+        fun fixture(base: String) = if (fixtureSuffix.isBlank()) base else "$base:$fixtureSuffix"
+        val SUPERVISOR_RUN_ID get() = fixture("acceptance-process-death-supervisor")
+        val CONVERSATION_ID get() = fixture("acceptance-process-death-conversation")
+        val TURN_ID get() = fixture("acceptance-process-death-turn")
+        val TASK_ID get() = fixture("acceptance-process-death-task")
         const val OBSERVER_AGENT_ID = "acceptance-observer"
         const val PRIMARY_AGENT_ID = "acceptance-primary"
-        const val OBSERVER_OWNER_RUN_ID = "acceptance-observer-child"
-        const val PRIMARY_OWNER_RUN_ID = "acceptance-primary-child"
+        val OBSERVER_OWNER_RUN_ID get() = fixture("acceptance-observer-child")
+        val PRIMARY_OWNER_RUN_ID get() = fixture("acceptance-primary-child")
         const val OBSERVER_CONTACT_ID = "acceptance-observer-contact"
         const val PRIMARY_CONTACT_ID = "acceptance-primary-contact"
-        const val OBSERVER_SOURCE_MESSAGE_ID = 7_100_001L
-        const val PRIMARY_SOURCE_MESSAGE_ID = 7_100_002L
+        val OBSERVER_SOURCE_MESSAGE_ID get() = if (fixtureSuffix.isBlank()) 7_100_001L else
+            AgentTeamDispatchIds.sourceMessageId(OBSERVER_OWNER_RUN_ID)
+        val PRIMARY_SOURCE_MESSAGE_ID get() = if (fixtureSuffix.isBlank()) 7_100_002L else
+            AgentTeamDispatchIds.sourceMessageId(PRIMARY_OWNER_RUN_ID)
         const val OBSERVER_OUTPUT = "durable observer evidence"
         const val PRIMARY_OUTPUT = "durable primary answer"
     }

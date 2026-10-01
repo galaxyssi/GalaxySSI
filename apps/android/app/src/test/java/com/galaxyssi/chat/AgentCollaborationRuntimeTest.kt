@@ -60,7 +60,7 @@ class AgentCollaborationRuntimeTest {
         assertTrue(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
         assertFalse(member(AgentSubagentStatus.SUCCEEDED).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
         assertFalse(member(AgentSubagentStatus.FAILED).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
-        assertFalse(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.INTERRUPTED))
+        assertTrue(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.INTERRUPTED))
         assertFalse(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.SUCCEEDED))
     }
 
@@ -656,6 +656,22 @@ class AgentCollaborationRuntimeTest {
     }
 
     @Test
+    fun offlineMemberWaitsAndStartsExactlyOnceAfterRecovery() = runBlocking {
+        val adapter = EventAgentAdapter("recovering", setOf(AgentCapability.REASONING), offlineChecks = 2)
+        val directory = AgentAdapterDirectory().apply { register(adapter) }
+        var waiting = 0
+        val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore())
+        try {
+            val result = withTimeout(10_000) { runtime.start(AgentTeamDefinition("offline-team", "recovering",
+                listOf(AgentTeamMember("recovering", AgentDeliveryMode.RESPOND))), request(),
+                AgentAdapterTeamMemberWorker(directory, onWaiting = { _, _ -> waiting++ })).await() }
+            assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
+            assertEquals(2, waiting)
+            assertEquals(1, adapter.requests.size)
+        } finally { runtime.close() }
+    }
+
+    @Test
     fun adapterWorkerProbesLivenessWithoutCancellingAHealthyLongRun() = runBlocking {
         val adapter = DelayedTerminalAgentAdapter(
             delayMillis = 0L,
@@ -910,7 +926,8 @@ class AgentCollaborationRuntimeTest {
         assertFalse(AgentManagedConnectorResponseRegistry.consume(duplicateResponse))
         val duplicate = managedResponses.complete(duplicateResponse)
         assertNotNull(duplicate)
-        assertEquals(AgentManagedResponseState.APPLIED, duplicate?.state)
+        // Transport observation is not a durable team checkpoint acknowledgement.
+        assertEquals(AgentManagedResponseState.COMPLETED, duplicate?.state)
         AgentManagedConnectorResponseRegistry.clear()
     }
 
@@ -985,7 +1002,8 @@ private class EventAgentAdapter(
     agentId: String,
     capabilities: Set<AgentCapability>,
     kind: AgentConnectorKind = AgentConnectorKind.AGENT,
-    maxParallelRuns: Int = 1
+    maxParallelRuns: Int = 1,
+    private val offlineChecks: Int = 0
 ) : AgentAdapter {
     override val registration = AgentRegistration(
         agentId = agentId,
@@ -1004,10 +1022,12 @@ private class EventAgentAdapter(
     )
     val requests = CopyOnWriteArrayList<AgentRunRequest>()
     private val events = mutableMapOf<String, MutableSharedFlow<AgentRunControlEvent>>()
+    private var statusCalls = 0
 
     override suspend fun connect() = AgentProtocolAgreement("1.0", setOf("run.events"))
     override suspend fun disconnect() = Unit
-    override suspend fun status() = registration
+    override suspend fun status() = if (++statusCalls <= offlineChecks)
+        registration.copy(status = AgentEndpointStatus.OFFLINE) else registration
     override suspend fun startRun(request: AgentRunRequest): AgentRunHandle {
         requests += request
         events.getOrPut(request.runId) { MutableSharedFlow(extraBufferCapacity = 4) }.emit(

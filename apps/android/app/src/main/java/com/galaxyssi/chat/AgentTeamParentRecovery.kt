@@ -29,6 +29,7 @@ internal fun MobileNativeAgent.reconcileSavedAgentTeam(): AgentUiState? = synchr
         ?: return@synchronized null
     val runId = pending.metadata.getValue("team_run_id")
     val team = GlobalSuperAgentRuntime.get(appContext).agentTeamSnapshot(runId)
+    if (team?.state == AgentTeamExecutionState.CANCELLED) return@synchronized cancelCurrentTask()
     val conversation = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
         .ifBlank { activeConversationContext.conversationId }
     val turn = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { activeConversationTurnId }
