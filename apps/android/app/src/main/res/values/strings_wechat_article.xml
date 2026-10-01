@@ -1,0 +1,18 @@
+<resources>
+    <string name="wechat_article_save">Save WeChat article</string>
+    <string name="wechat_article_read_clipboard">Reading the copied article link…</string>
+    <string name="wechat_article_fetch">Downloading article and images…</string>
+    <string name="wechat_article_render">Creating PDF…</string>
+    <string name="wechat_article_saved">Saved %1$d pages to Download/GalaxySSI/GongZhongHao\n%2$s</string>
+    <string name="wechat_article_failed">Could not save the complete article. Check your network and that the article is publicly accessible, then try again.</string>
+    <string name="wechat_article_clipboard_failed">Could not read a newly copied WeChat article link. Return to the article and try again.</string>
+    <string name="wechat_article_open">Open PDF</string>
+    <string name="wechat_article_close">Close</string>
+    <string name="wechat_article_cancel">Cancel</string>
+    <string name="wechat_article_no_viewer">No PDF viewer is installed.</string>
+    <string name="wechat_article_static">Static article PDF: text and images follow the original order. Interactive audio and video are not included; use the source link to view them.</string>
+    <string name="wechat_article_verification">WeChat requires verification before returning the article. Complete it yourself, then continue saving. The verification page has not been saved.</string>
+    <string name="wechat_article_verify">Open WeChat verification</string>
+    <string name="wechat_article_continue">Continue saving</string>
+    <string name="wechat_article_verify_continue_hint">Complete the verification on mp.weixin.qq.com below. When the article is visible, tap Continue saving.</string>
+</resources>

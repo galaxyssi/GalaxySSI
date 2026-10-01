@@ -14,11 +14,6 @@ internal object WechatArticleLinkPolicy {
         return listOf("取消", "cancel").any(text::contains) &&
             listOf("收藏", "转发给朋友", "轉發給朋友", "复制链接", "複製連結", "投诉", "投訴", "favorite", "sendtochat", "copylink").count(text::contains) >= 2
     }
-    fun isArticle(lines: List<String>) = lines.any { line ->
-        listOf("听全文", "聽全文", "留言", "推荐", "推薦", "原文链接", "阅读原文", "閱讀原文", "listen", "comment")
-            .any(normalized(line)::contains)
-    }
-
     // Locate the actual three-dot toolbar glyph; never tap a fixed screen coordinate.
     fun moreButton(width: Int, height: Int, pixel: (Int, Int) -> Int): Pair<Int, Int>? {
         if (width < 100 || height < 100) return null

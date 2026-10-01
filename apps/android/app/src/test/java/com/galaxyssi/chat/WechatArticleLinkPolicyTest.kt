@@ -41,7 +41,6 @@ class WechatArticleLinkPolicyTest {
         assertFalse(WechatArticleLinkPolicy.isMenu(listOf("复制链接", "文章正文")))
     }
     @Test fun acceptsMergedOcrRowsWithoutCountingOneLabelTwice() {
-        assertTrue(WechatArticleLinkPolicy.isArticle(listOf("听全文 AI摘要")))
         assertTrue(WechatArticleLinkPolicy.isMenu(listOf("转发给朋友 收藏", "浮窗 投诉", "取消")))
         assertFalse(WechatArticleLinkPolicy.isMenu(listOf("收藏", "收藏", "取消")))
     }
@@ -59,7 +58,7 @@ class WechatArticleLinkPolicyTest {
         assertFalse(WechatArticleLinkPolicy.isSystemConfirmation("正文中提到已复制"))
         assertFalse(WechatArticleLinkPolicy.isConfirmation("已复制。"))
     }
-    @Test fun findsToolbarDotsAtDifferentSizes() {
+    @Test fun findsToolbarDotsWithoutRequiringArticleTextAtDifferentSizes() {
         for (width in listOf(720, 1080, 1440)) {
             val height = width * 2
             val cy = height / 12
