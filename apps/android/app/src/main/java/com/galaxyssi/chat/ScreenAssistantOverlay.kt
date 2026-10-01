@@ -134,6 +134,8 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     private var closed = false
     private var captureHiddenViews = emptyList<Pair<View, Int>>()
     private var observationHidden = false
+    private var captureFrameGeneration = 0
+    private var captureFrameFallback: Runnable? = null
     private var pauseAction: TextView? = null
     private var approvalAction: TextView? = null
     private var displayedApproval = 0L
@@ -142,16 +144,33 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     private val pageWorker = Executors.newSingleThreadExecutor { task -> Thread(task, "screen-assistant-page") }
 
     internal fun hideForCapture(capture: () -> Unit) {
+        val generation = ++captureFrameGeneration
+        captureFrameFallback?.let(handler::removeCallbacks)
         observationHidden = true
         ScreenAssistantChatActivity.hideForCapture()
         captureHiddenViews = listOfNotNull(bubble, menu, panel, crop).map { it to it.visibility }
         captureHiddenViews.forEach { it.first.visibility = View.INVISIBLE }
+        var delivered = false
+        val ready = Runnable {
+            if (!delivered && !closed && observationHidden && generation == captureFrameGeneration) {
+                delivered = true
+                captureFrameFallback?.let(handler::removeCallbacks)
+                captureFrameFallback = null
+                capture()
+            }
+        }
+        captureFrameFallback = ready
+        // Some OEMs stop Choreographer frames when the last overlay becomes invisible.
+        handler.postDelayed(ready, 250)
         Choreographer.getInstance().postFrameCallback {
-            Choreographer.getInstance().postFrameCallback { if (!closed) capture() }
+            Choreographer.getInstance().postFrameCallback { ready.run() }
         }
     }
 
     internal fun restoreAfterCapture() {
+        captureFrameGeneration++
+        captureFrameFallback?.let(handler::removeCallbacks)
+        captureFrameFallback = null
         ScreenAssistantChatActivity.restoreAfterCapture()
         captureHiddenViews.forEach { (view, visibility) -> if (view.isAttachedToWindow) view.visibility = visibility }
         captureHiddenViews = emptyList()
@@ -206,6 +225,9 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
     }
 
     fun close() {
+        captureFrameGeneration++
+        captureFrameFallback?.let(handler::removeCallbacks)
+        captureFrameFallback = null
         pageCollection?.request?.cancel()
         if (request?.automation == true) stopAnalysis()
         closed = true
