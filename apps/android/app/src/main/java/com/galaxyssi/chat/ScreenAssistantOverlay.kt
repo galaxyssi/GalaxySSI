@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -11,6 +12,7 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -407,18 +409,26 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
 
     private fun showMenu() {
         dismissMenu()
+        val width = minOf(dp(190), screenWidth() - dp(32))
         val list = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
             background = rounded(Color.WHITE, 16, 0xFFE0E8E5.toInt())
-            elevation = dp(10).toFloat()
-            addView(action(R.string.screen_assistant_capture) { analyzeCurrentScreen() })
-            addView(action(R.string.screen_assistant_full_page) { analyzeFullPage() })
-            addView(action(R.string.wechat_link_get) { service.copyWechatArticleLink() })
-            addView(action(R.string.wechat_article_save) { service.saveWechatArticle() })
+            elevation = dp(6).toFloat()
+            setPadding(0, dp(8), 0, dp(8))
+            addView(menuAction(R.string.screen_assistant_capture, R.drawable.ic_agent_screen) { analyzeCurrentScreen() })
+            addView(menuAction(R.string.screen_assistant_full_page, R.drawable.ic_rich_copy) { analyzeFullPage() })
+            addView(View(service).apply { setBackgroundColor(0xFFE7E9EC.toInt()) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                    marginStart = dp(14)
+                    marginEnd = dp(14)
+                })
+            addView(menuAction(R.string.wechat_article_save, R.drawable.ic_rich_download) { service.saveWechatArticle() })
         }
-        val height = minOf(dp(list.childCount * 48), screenHeight() - dp(100))
+        list.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        val height = minOf(list.measuredHeight, screenHeight() - dp(100))
         val scroll = ScrollView(service).apply { addView(list) }
-        val layout = params(dp(235), height, Gravity.TOP or Gravity.START).apply {
+        val layout = params(width, height, Gravity.TOP or Gravity.START).apply {
             x = menuX(width)
             y = ((bubbleParams?.y ?: 0) - height - dp(10)).coerceAtLeast(dp(30))
         }
@@ -426,6 +436,23 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             menu = scroll
             bringBubbleToFront()
         }
+    }
+
+    private fun menuAction(label: Int, icon: Int, click: () -> Unit): TextView = action(label, click).apply {
+        textSize = 15f
+        setTextColor(0xFF20252D.toInt())
+        minHeight = dp(52)
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        compoundDrawablePadding = dp(10)
+        val drawable = service.getDrawable(icon)?.mutate()?.apply {
+            setTint(0xFF20252D.toInt())
+            setBounds(0, 0, dp(18), dp(18))
+        }
+        setCompoundDrawablesRelative(drawable, null, null, null)
+        background = RippleDrawable(ColorStateList.valueOf(0x3322B8A6), null, rounded(Color.WHITE, 8))
+        isFocusable = true
     }
 
     private fun dismissMenu() { remove(menu); menu = null }
