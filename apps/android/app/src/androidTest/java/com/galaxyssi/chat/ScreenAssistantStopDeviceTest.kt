@@ -93,7 +93,7 @@ class ScreenAssistantStopDeviceTest {
         assertFalse(accepts(overlay, request))
     }
 
-    @Test fun collapseKeepsAnalysisRunningAndMenuContainsOnlyFourActions() = withOverlay { overlay, request, service ->
+    @Test fun collapseKeepsAnalysisRunningAndMenuContainsOnlyThreeActions() = withOverlay { overlay, request, service ->
         invoke(overlay, "dismissPanel")
         assertFalse(request.isCancelled)
         invoke(overlay, "showMenu")
@@ -102,11 +102,19 @@ class ScreenAssistantStopDeviceTest {
             listOf(
                 R.string.screen_assistant_capture,
                 R.string.screen_assistant_full_page,
-                R.string.wechat_link_get,
                 R.string.wechat_article_save
             ).map { service.getString(it) },
             descendants(menu).filterIsInstance<TextView>().map { it.text.toString() }.toList()
         )
+        val density = service.resources.displayMetrics.density
+        assertEquals((190 * density + 0.5f).toInt(), menu.layoutParams.width)
+        descendants(menu).filterIsInstance<TextView>().forEach { row ->
+            assertEquals(15f * service.resources.displayMetrics.scaledDensity, row.textSize, 0.1f)
+            assertTrue(row.minHeight >= (52 * density).toInt())
+            assertNotNull(row.compoundDrawablesRelative[0])
+            assertTrue(row.isClickable)
+            assertTrue(row.isFocusable)
+        }
         invoke(overlay, "dismissMenu")
         assertFalse(request.isCancelled)
     }
