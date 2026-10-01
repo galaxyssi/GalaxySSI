@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -669,6 +670,72 @@ class AgentCollaborationRuntimeTest {
             assertEquals(2, waiting)
             assertEquals(1, adapter.requests.size)
         } finally { runtime.close() }
+    }
+
+    @Test
+    fun stopDuringConnectionCheckPreventsDispatchAfterConnectionReturns() = runBlocking {
+        val delegate = EventAgentAdapter("stopping", setOf(AgentCapability.REASONING))
+        val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
+        val adapter = object : AgentAdapter by delegate {
+            override suspend fun status(): AgentRegistration {
+                stopped.set(true)
+                return delegate.registration
+            }
+        }
+        val worker = AgentAdapterTeamMemberWorker(AgentAdapterDirectory().apply { register(adapter) },
+            beforeDispatch = { if (stopped.get()) throw kotlinx.coroutines.CancellationException("Stopped") })
+        val context = AgentTeamMemberExecutionContext(
+            AgentTeamMember("stopping", AgentDeliveryMode.RESPOND), request(),
+            AgentSubagentContextHandoff("", emptyList(), 0, 0, false), 0, AgentSubagentProvenance())
+        val outcome = runCatching { withTimeout(5_000) { worker.execute(context) } }
+        assertTrue("Stop during a network check must cancel dispatch", outcome.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+        assertTrue("No model request may be sent after stop", delegate.requests.isEmpty())
+    }
+
+    @Test
+    fun pauseDuringConnectionCheckWaitsForExplicitResume() = runBlocking {
+        val delegate = EventAgentAdapter("pausing", setOf(AgentCapability.REASONING))
+        val checked = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val resumed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val adapter = object : AgentAdapter by delegate {
+            override suspend fun status(): AgentRegistration {
+                checked.complete(Unit)
+                return delegate.registration
+            }
+        }
+        val worker = AgentAdapterTeamMemberWorker(AgentAdapterDirectory().apply { register(adapter) },
+            beforeDispatch = { if (checked.isCompleted) resumed.await() })
+        val context = AgentTeamMemberExecutionContext(
+            AgentTeamMember("pausing", AgentDeliveryMode.RESPOND), request(),
+            AgentSubagentContextHandoff("", emptyList(), 0, 0, false), 0, AgentSubagentProvenance())
+        val task = async { worker.execute(context) }
+        try {
+            withTimeout(5_000) { checked.await() }
+            kotlinx.coroutines.delay(50)
+            assertTrue("Pause must hold dispatch even when connection is ready", delegate.requests.isEmpty())
+            resumed.complete(Unit)
+            assertEquals("pausing-result", withTimeout(5_000) { task.await() }.content)
+            assertEquals(1, delegate.requests.size)
+        } finally { task.cancel() }
+    }
+
+    @Test
+    fun transientConnectionFailureRetriesWithoutDuplicateDispatch() = runBlocking {
+        val delegate = EventAgentAdapter("network-recovery", setOf(AgentCapability.REASONING))
+        val attempts = java.util.concurrent.atomic.AtomicInteger()
+        val adapter = object : AgentAdapter by delegate {
+            override suspend fun connect(): AgentProtocolAgreement {
+                if (attempts.incrementAndGet() == 1) throw java.io.IOException("Injected disconnect")
+                return delegate.connect()
+            }
+        }
+        val worker = AgentAdapterTeamMemberWorker(AgentAdapterDirectory().apply { register(adapter) })
+        val context = AgentTeamMemberExecutionContext(
+            AgentTeamMember("network-recovery", AgentDeliveryMode.RESPOND), request(),
+            AgentSubagentContextHandoff("", emptyList(), 0, 0, false), 0, AgentSubagentProvenance())
+        assertEquals("network-recovery-result", withTimeout(5_000) { worker.execute(context) }.content)
+        assertEquals(2, attempts.get())
+        assertEquals(1, delegate.requests.size)
     }
 
     @Test

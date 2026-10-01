@@ -48,15 +48,32 @@ class AgentManagedResponseRetentionPolicyTest {
     }
 
     @Test
-    fun staleRecordsExpireRegardlessOfState() {
+    fun staleAppliedHistoryExpires() {
         val stale = record(
-            ownerRunId = "stale-pending",
-            state = AgentManagedResponseState.PENDING,
+            ownerRunId = "stale-applied",
+            state = AgentManagedResponseState.APPLIED,
             index = 1,
             createdAtMillis = NOW - EIGHT_DAYS_MILLIS
         )
 
         assertTrue(AgentManagedResponseRetentionPolicy.retain(listOf(stale), nowMillis = NOW).isEmpty())
+    }
+
+    @Test
+    fun offlineTasksRetainCorrelationAfterNinetyDays() {
+        val pending = record("long-offline", AgentManagedResponseState.PENDING, 1,
+            createdAtMillis = NOW - 90L * DAY_MILLIS)
+        assertEquals(listOf(pending), AgentManagedResponseRetentionPolicy.retain(listOf(pending), nowMillis = NOW))
+    }
+
+    @Test
+    fun unappliedResultsRetainTheirBodyAfterOneYear() {
+        val completed = record("uncommitted-result", AgentManagedResponseState.COMPLETED, 2,
+            response = response(2).copy(content = "evidence awaiting journal commit"),
+            createdAtMillis = NOW - 365L * DAY_MILLIS)
+        val retained = AgentManagedResponseRetentionPolicy.retain(listOf(completed), nowMillis = NOW).single()
+        assertEquals(completed, retained)
+        assertEquals("evidence awaiting journal commit", retained.response?.content)
     }
 
     private fun record(
@@ -87,6 +104,7 @@ class AgentManagedResponseRetentionPolicyTest {
 
     private companion object {
         const val NOW = 2_000_000_000_000L
+        const val DAY_MILLIS = 24L * 60L * 60L * 1_000L
         const val EIGHT_DAYS_MILLIS = 8L * 24L * 60L * 60L * 1_000L
     }
 }
