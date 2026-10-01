@@ -332,14 +332,18 @@ internal object AgentTeamPlanCompiler {
         val primaryRequest = requested.first()
         val primary = availableAgents.getValue(primaryRequest.agentId)
         val memberIds = requested.map(AgentRequestedMember::instanceId)
-        val members = requested.mapIndexed { index, requestedMember ->
+        val baseMembers = requested.mapIndexed { index, requestedMember ->
             val target = availableAgents.getValue(requestedMember.agentId)
             val isPrimary = index == 0
             AgentTeamMember(
                 agentId = requestedMember.agentId,
                 deliveryMode = if (isPrimary) AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
                 requiredCapabilities = target.capabilities.toSet(),
-                role = requestedMember.roleHint.ifBlank { roleFor(target, isPrimary) },
+                role = requestedMember.roleHint.ifBlank {
+                    if (requestedMember.collaborationGroupId.isNotBlank()) {
+                        if (isPrimary) "coordinator" else "research contributor"
+                    } else roleFor(target, isPrimary)
+                },
                 objective = if (isPrimary) {
                     buildString {
                         append("Lead the selected Agent team, use all member results, and produce one final answer.")
@@ -350,11 +354,25 @@ internal object AgentTeamPlanCompiler {
                     }
                 } else {
                     buildString {
-                        append("Contribute as ").append(roleFor(target, false)).append('.')
+                        append("Contribute as ").append(requestedMember.roleHint.ifBlank {
+                            if (requestedMember.collaborationGroupId.isNotBlank()) "research contributor" else roleFor(target, false)
+                        }).append('.')
                         requestedMember.roleHint.takeIf(String::isNotBlank)?.let {
                             append(" Explicit role: ").append(it).append('.')
                         }
                         append(" User goal: ").append(plan.goal)
+                        if (requestedMember.collaborationGroupId.isNotBlank()) {
+                            append(" Contribution ").append(index).append(" of ").append(requested.size - 1).append(". ")
+                            append("Work within your stated role, not the software specialty of your provider. ")
+                            val peers = requested.drop(1).filter { it.instanceId != requestedMember.instanceId }
+                            if (peers.isNotEmpty()) append("Other contributions: ").append(peers.joinToString("; ") {
+                                "${it.displayName}: ${it.roleHint.ifBlank { "research contributor" }}"
+                            }).append(". Avoid duplicating their scope; state your specific scope before researching. ")
+                            if (requested.drop(1).count { it.roleHint == requestedMember.roleHint } > 1) {
+                                append(if (index % 2 == 1) "Focus on primary evidence, established methods and feasibility. "
+                                    else "Focus on independent verification, limitations, counterexamples and acceptance criteria. ")
+                            }
+                        }
                     }
                 }.take(MAX_MEMBER_OBJECTIVE_CHARACTERS),
                 dependsOnAgentIds = if (isPrimary) memberIds.drop(1).toSet() else emptySet(),
@@ -363,14 +381,16 @@ internal object AgentTeamPlanCompiler {
                     "_galaxyssi_role_hint" to requestedMember.roleHint,
                     "collaboration_group_id" to requestedMember.collaborationGroupId,
                     "collaboration_name" to requestedMember.displayName,
-                    "collaboration_provider" to listOf(requestedMember.providerLabel, requestedMember.modelId)
-                        .filter(String::isNotBlank).joinToString(" · "),
+                    "collaboration_provider" to requestedMember.providerLabel,
                     "collaboration_receive_results" to requestedMember.receivePeerResults.toString(),
                     "collaboration_model_id" to requestedMember.modelId
                 ),
                 instanceId = requestedMember.instanceId
             )
         }
+        val members = if (CollaborationResearchWorkflow.enabled(plan.goal, requested)) {
+            CollaborationResearchWorkflow.expand(baseMembers, plan.goal)
+        } else baseMembers
         val memberActions = requested.mapIndexed { index, member ->
             AgentAction(
                 id = "mention-$index-${member.agentId.hashCode().toUInt()}",
@@ -406,9 +426,9 @@ internal object AgentTeamPlanCompiler {
             risk = template.risk,
             status = AgentActionStatus.PENDING_CONFIRMATION,
             description = if (selectionSource == "user_mention") {
-                "Coordinate ${members.size} user-selected Agents"
+                "Coordinate ${requested.size} user-selected Agents"
             } else {
-                "Coordinate ${members.size} specialist Agents"
+                "Coordinate ${requested.size} specialist Agents"
             },
             parameters = template.parameters + mapOf(
                 "connector_id" to primaryRequest.agentId,
@@ -435,9 +455,9 @@ internal object AgentTeamPlanCompiler {
             route = AgentRouteResolver.resolve(synthetic, availableAgents.values.toList()),
             plannerProfile = "${plan.plannerProfile}+${if (userSelected) "user-mention" else selectionSource}-team",
             routeRationale = if (userSelected) {
-                "The user explicitly selected ${members.size} Agent instances."
+                "The user explicitly selected ${requested.size} Agent instances."
             } else {
-                "The user explicitly requested multiple Agents; ${members.size} available instances were selected."
+                "The user explicitly requested multiple Agents; ${requested.size} available instances were selected."
             }
         )
         return compiled.copy(validation = AgentPlanValidator.validate(compiled))
@@ -670,7 +690,7 @@ internal object AgentTeamDispatchSpecCodec {
             .ifBlank { primaryAgentId }
         if (runId.isBlank() || teamId.isBlank() || primaryAgentId.isBlank()) return null
         val input = json.optJSONArray("members") ?: return null
-        if (input.length() !in 1..12) return null
+        if (input.length() !in 1..CollaborationResearchWorkflow.MAX_NODES) return null
         val members = buildList {
             for (index in 0 until input.length()) {
                 val item = input.optJSONObject(index) ?: return null
@@ -694,6 +714,7 @@ internal object AgentTeamDispatchSpecCodec {
                 ))
             }
         }
+        if (members.size > 12 && !CollaborationResearchWorkflow.isResearch(members)) return null
         if (members.map { it.memberId }.distinct().size != members.size) return null
         if (members.count { it.deliveryMode == AgentDeliveryMode.RESPOND } != 1) return null
         if (members.none { it.memberId == primaryInstanceId && it.deliveryMode == AgentDeliveryMode.RESPOND }) return null

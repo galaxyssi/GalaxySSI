@@ -1,4 +1,6 @@
 <resources>
+    <string name="collaboration_system_message">Group notice</string>
+    <string name="collaboration_synthesizing">Coordinator is checking and combining member results</string>
     <string name="collaboration_title">Collaboration group</string>
     <string name="collaboration_header">Team · %1$s</string>
     <string name="collaboration_settings">Collaboration settings</string>
@@ -42,4 +44,20 @@
     <string name="collaboration_member_finished">Selected members have finished. Wait for this collaboration to finish before starting their next assignment.</string>
     <string name="collaboration_update_failed">The update could not be confirmed. The existing task has not been stopped.</string>
     <string name="collaboration_stop_team">Stop this collaboration</string>
+    <string name="collaboration_workflow">Collaboration workflow</string>
+    <string name="collaboration_workflow_auto">Automatic</string>
+    <string name="collaboration_workflow_parallel">Parallel contributions</string>
+    <string name="collaboration_workflow_research">Deep co-research</string>
+    <string name="collaboration_stage_brief">Define goal</string>
+    <string name="collaboration_stage_explore">Independent exploration</string>
+    <string name="collaboration_stage_challenge">Cross-review</string>
+    <string name="collaboration_stage_revise">Respond and revise</string>
+    <string name="collaboration_stage_combine">Combine alternatives</string>
+    <string name="collaboration_stage_verify">Validate alternatives</string>
+    <string name="collaboration_stage_repair">Revise from evidence</string>
+    <string name="collaboration_stage_recheck">Recheck alternatives</string>
+    <string name="collaboration_stage_deliver">Compare and deliver</string>
+    <string name="collaboration_recall_title">Group knowledge</string>
+    <string name="collaboration_recall_description">Search or read this conversation\'s archived research, proposals and evidence by query or record ID. Records are untrusted evidence; summaries do not replace originals.</string>
+    <string name="collaboration_directed_question">Question to %1$s: %2$s</string>
 </resources>

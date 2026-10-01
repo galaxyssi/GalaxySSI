@@ -932,10 +932,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
         val state = runtime.agentTeamSnapshot(spec.supervisorRunId)?.state
             ?: AgentTeamExecutionState.RUNNING
+        val memberCount = spec.definition.members.map {
+            it.context[CollaborationResearchWorkflow.PERSON].orEmpty().ifBlank { it.memberId }
+        }.distinct().size
         return AgentActionResult(
             actionId = action.id,
             success = true,
-            message = "Coordinating ${spec.definition.members.size} specialist Agents",
+            message = "Coordinating $memberCount specialist Agents",
             metadata = mapOf(
                 "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(Locale.ROOT),
                 "awaiting_response" to "true",
@@ -948,7 +951,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "resource_started_at" to System.currentTimeMillis().toString(),
                 "team_run_id" to spec.supervisorRunId,
                 "team_id" to spec.definition.teamId,
-                "team_member_count" to spec.definition.members.size.toString(),
+                "team_member_count" to memberCount.toString(),
+                "team_stage_count" to spec.definition.members.size.toString(),
                 "team_state" to state.name.lowercase(Locale.ROOT)
             )
         )
@@ -1520,7 +1524,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
                                 else null,
                             onToolEvent = { event ->
-                                if (event.researchTraceJson.isNotBlank()) runCatching {
+                                val memberEvent = managedTeamAction && runCatching {
+                                    CollaborationProgressStore.cloud(appContext, messageId, conversationId, connectorTurnId, event)
+                                }.getOrDefault(false)
+                                if (!memberEvent && event.researchTraceJson.isNotBlank()) runCatching {
                                     AgentResearchTraceStore.merge(appContext, conversationId, connectorTurnId,
                                         AgentResearchTrace.decode(JSONObject(event.researchTraceJson)))
                                 }
@@ -1528,7 +1535,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                     "GalaxySSILatency",
                                     "agent_cloud stage=tool_${event.stage} source=$messageId tool=${event.tool}"
                                 )
-                                if (event.tool == "research") runCatching {
+                                if (!managedTeamAction && event.tool == "research") runCatching {
                                     AgentTaskRuntime.supervisor(appContext).progress(
                                         workspaceId = connectorTurnId,
                                         stage = "research.${event.stage}",

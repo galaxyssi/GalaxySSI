@@ -749,6 +749,8 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     val activeConversationId = agentRenderedConversationId
         .ifBlank { agentTranscriptWindow.conversationId }
         .ifBlank { entries.lastOrNull()?.conversationId.orEmpty() }
+    val collaboration = CollaborationGroupStore.cached(activeConversationId) != null
+    selectConversationOutputPage(collaboration)
     val liveEntries = liveAgentConnectorStreams.values
         .filter { it.conversationId == activeConversationId }
     val hydratedEntries = AgentConnectorStreamPresentationPolicy.merge(entries, liveEntries)
@@ -770,12 +772,11 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         filteredEntries
     )
     renderedAgentTranscriptSourceEntries = filteredEntries
-    val collapsedEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(
-        filteredEntries
-    )
+    val collapsedEntries = if (collaboration) CollaborationPagePolicy.project(filteredEntries)
+        else AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
     val waitingResult = AgentReplyWaitingIndicatorPolicy.apply(
         entries = collapsedEntries,
-        pending = pendingAgentReplyIndicators.values,
+        pending = if (collaboration) emptyList() else pendingAgentReplyIndicators.values,
         conversationId = activeConversationId
     )
     waitingResult.resolvedTurnIds.forEach(pendingAgentReplyIndicators::remove)
@@ -1124,9 +1125,6 @@ internal fun MainActivity.isAgentApprovalStillWaiting(taskId: String): Boolean {
 }
 
 internal fun MainActivity.agentTranscriptRow(entry: AgentTranscriptEntry): View {
-    CollaborationTranscriptMetadata.decode(entry.collaborationJson)?.let { metadata ->
-        return collaborationTranscriptRow(entry, metadata)
-    }
     if (AgentReplyWaitingIndicatorPolicy.isIndicator(entry)) {
         return agentReplyWaitingTranscriptRow()
     }

@@ -1376,7 +1376,7 @@ internal fun MainActivity.remoteTaskEventText(
     return if (detail.isBlank()) base else "$base · $detail"
 }
 
-internal fun MainActivity.connectorProgressText(progress: JSONObject): String {
+internal fun android.content.Context.connectorProgressText(progress: JSONObject): String {
     val kind = progress.optString("kind")
     val code = progress.optString("code").ifBlank {
         progress.optJSONObject("metadata")?.optString("code").orEmpty()

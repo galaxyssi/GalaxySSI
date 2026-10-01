@@ -357,8 +357,18 @@ internal fun MainActivity.configureMainTabs() {
 }
 
 internal fun MainActivity.configureAgentPage() {
+    singleAgentTranscriptAdapter = AgentTranscriptRecyclerAdapter(this)
+    collaborationTranscriptAdapter = CollaborationTranscriptRecyclerAdapter(this)
+    configureTranscriptList(findViewById(R.id.agentOutputList), singleAgentTranscriptAdapter)
+    configureTranscriptList(findViewById(R.id.collaborationOutputList), collaborationTranscriptAdapter)
+    selectConversationOutputPage(false)
+    configureAgentPageControls()
+}
+
+private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptAdapter: AgentTranscriptRecyclerAdapter) {
+    agentOutputList = list
     agentOutputLayout = LinearLayoutManager(this)
-    agentTranscriptAdapter = AgentTranscriptRecyclerAdapter(this)
+    agentTranscriptAdapter = transcriptAdapter
     var olderPageRequestedForGesture = false
     agentOutputList.apply {
         layoutManager = agentOutputLayout
@@ -435,6 +445,9 @@ internal fun MainActivity.configureAgentPage() {
         })
     }
     attachAgentReplySpeechStopGesture()
+}
+
+private fun MainActivity.configureAgentPageControls() {
     findViewById<View>(R.id.agentSessionTitleTap).setOnClickListener { showAgentSessionsPage() }
     findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener {
         if (collaborationHeaderLabel(agentTranscriptStore.activeConversation().id) != null) showCollaborationMembers()
@@ -694,7 +707,10 @@ internal fun MainActivity.loadOlderAgentTranscriptEntries() {
 }
 
 internal fun MainActivity.clearAgentTranscriptRows() {
-    if (isAgentTranscriptAdapterInitialized()) agentTranscriptAdapter.clear()
+    if (isAgentTranscriptAdapterInitialized()) {
+        singleAgentTranscriptAdapter.clear()
+        collaborationTranscriptAdapter.clear()
+    }
     renderedAgentTranscriptIds.clear()
     renderedAgentTranscriptSignatures.clear()
     renderedAgentTranscriptSourceEntries = emptyList()

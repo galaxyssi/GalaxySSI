@@ -265,6 +265,17 @@
                         android:paddingBottom="16dp"
                         android:scrollbars="none" />
 
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/collaborationOutputList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:overScrollMode="never"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="16dp"
+                        android:scrollbars="none"
+                        android:visibility="gone" />
+
                     <LinearLayout
                         android:id="@+id/agentLegacyControls"
                         android:layout_width="0dp"

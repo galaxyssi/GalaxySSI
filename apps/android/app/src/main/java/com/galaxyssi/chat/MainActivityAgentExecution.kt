@@ -429,7 +429,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     if (isSubmissionCancelled()) return
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val phoneControl = PhoneAssistantTaskControl.isAutomation(turnId)
-    val supervisedProject = phoneControl || AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+    val groupSeed = CollaborationRoutingPolicy.seed(turnId, AgentTurnMentionRegistry.peek(turnId))
+    val supervisedProject = phoneControl || groupSeed == null && AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
         conversationContext = conversationContext,
         selectedAction = deterministicAction,
@@ -512,6 +513,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
         runtime = MobileNativeAgent(
             this@executeConcurrentAgentGoal,
             planner = when {
+                groupSeed != null && !phoneControl -> AgentSelectedNativeActionPlanner(groupSeed)
                 selectedReasoningProvider != null && !phoneControl ->
                     AgentPhoneReasoningProviderPlanner(selectedReasoningProvider)
                 deterministicAction != null && !phoneControl -> AgentSelectedNativeActionPlanner(deterministicAction)
