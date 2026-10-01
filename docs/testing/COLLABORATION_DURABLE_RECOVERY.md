@@ -50,4 +50,37 @@ Targeted JVM coverage includes checkpoint reuse, unresolved remote work, cancell
 - The application process existed before recovery instrumentation started. This observation does not independently certify unattended boot scheduling: instrumentation explicitly triggered the late-reply phase after unlock.
 - Desktop scheduling remained at zero active and zero pending tasks, with the same latest completed task before and after the test. No original research or new model request was dispatched.
 
-Production network outages, Doze, unattended boot recovery, real Desktop stop acknowledgement, permanent server-state loss and elapsed multi-day waiting still require a broader endurance matrix. Passing a checkpoint fixture does not certify all of these conditions. The execution-store 200-run retention bound also requires a separate unresolved-run retention review before claiming arbitrarily long, high-volume operation.
+Production provider/MQTT outages, unattended Doze/boot recovery, real Desktop stop acknowledgement, permanent server-state loss and elapsed multi-day waiting still require a broader endurance matrix. Passing a checkpoint fixture does not certify all of these conditions. The execution-store 200-run retention bound also requires a separate unresolved-run retention review before claiming arbitrarily long, high-volume operation.
+
+## Repeatable network and Doze acceptance
+
+Install the application and instrumentation APKs built from the same checkout, then run:
+
+```powershell
+$env:ADB = 'C:\path\to\adb.exe'
+node tools/dev/test-android-team-network-recovery.js --serial DEVICE_SERIAL --port 5037 --outage-seconds 600 --doze-seconds 180
+```
+
+This is an explicitly selected, disruptive device test. It disables Wi-Fi and mobile data, simulates unplugging, sends the selected device to the home screen and deep idle, then restores the original network settings and real battery state. Do not run it while the device is needed for other network-dependent work. It refuses an existing forced-idle or battery simulation, and attempts restoration on failure or interruption. A disconnected ADB cable can prevent restoration; reconnect and run `adb -s DEVICE_SERIAL shell dumpsys deviceidle unforce`, `adb -s DEVICE_SERIAL shell dumpsys battery reset`, and restore Wi-Fi/mobile data to their recorded baseline values. Use the original ADB port where applicable.
+
+The test uses real Android connectivity and idle state, the production member retry worker, encrypted checkpoints and durable controls, with a model-free adapter. It verifies:
+
+- A completed observer is not invoked again, and its saved evidence feeds the remaining member.
+- A queued member does not dispatch offline and dispatches exactly once after validated connectivity returns.
+- Offline retries are paced and enter the long-wait state rather than failing at five minutes.
+- Network restoration does not clear a user's pause or stop; only explicit resume permits the paused member to dispatch.
+- Only fixture-owned records are cleaned up. No user contacts, conversations or original research tasks are executed or deleted.
+
+The runner stores `host-timeline.json`, `device-report.json` and `instrumentation.log` in its printed local report directory. `--output` selects that directory. No phone logs or private conversation contents are exported. This controlled instrumentation matrix does not certify a real provider/MQTT outage, unattended OEM background survival, permanent server-state loss, or days-long endurance.
+
+### S26U result on 2026-10-02
+
+- Installed v1.4.10 (1095) over existing user data; application and instrumentation builds succeeded.
+- Actual Wi-Fi/mobile-data outage lasted 608,801 ms. The device entered deep `IDLE` for approximately 182 seconds, and the app observed the idle state.
+- The queued member recorded 16 paced waits, entered long-offline waiting, and dispatched exactly once after network recovery. Its completed observer was not invoked again, and saved dependency evidence was retained.
+- The paused member remained blocked after networking returned and dispatched once only after explicit resume. The stopped member dispatched zero times.
+- The fixture made zero model requests. The Desktop scheduler stayed at zero active and zero pending tasks with the same latest completed task.
+- Recovery completed 54,374 ms after validated connectivity returned. The remaining exponential-backoff delay explains this tail; a bounded network/transport-ready wakeup is a follow-up latency improvement, not certified by this result.
+- Four additional durable-checkpoint/control/repair device tests passed. The process-death test also passed on v1.4.10 (seed PID 23846, recovery PID 24002), with one final response, duplicate suppression, no unapplied fixture replies and no ordinary-chat leakage.
+- All 108 targeted JVM tests passed again. Source-size, JavaScript syntax and whitespace checks passed.
+- Wi-Fi and mobile data were restored to their initial enabled state. Forced idle and the simulated battery unplug were cleared. No original research task was rerun.
