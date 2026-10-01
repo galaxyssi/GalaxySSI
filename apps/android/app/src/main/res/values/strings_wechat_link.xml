@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wechat_link_get">Get WeChat article link</string>
+    <string name="wechat_link_working">Getting article link…</string>
+    <string name="wechat_link_busy">Finish or stop the current phone operation first</string>
+    <string name="wechat_link_open_article">Open a WeChat article first</string>
+    <string name="wechat_link_copied">Article link copied</string>
+    <string name="wechat_link_failed">Could not locate Copy Link. Copy it from the article menu.</string>
+    <string name="wechat_link_unconfirmed">Copy was tapped, but WeChat has not confirmed it. Check the clipboard.</string>
+    <string name="wechat_link_interrupted">Page changed or action interrupted. Stopped.</string>
+</resources>

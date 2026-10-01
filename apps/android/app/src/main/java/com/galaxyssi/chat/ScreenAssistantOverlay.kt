@@ -387,6 +387,7 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             elevation = dp(10).toFloat()
             addView(action(R.string.screen_assistant_capture) { analyzeCurrentScreen() })
             addView(action(R.string.screen_assistant_full_page) { analyzeFullPage() })
+            addView(action(R.string.wechat_link_get) { service.copyWechatArticleLink() })
             addView(action(R.string.screen_assistant_ask) { showQuestionInput() })
             addView(action(R.string.screen_assistant_execute) { showPhoneTaskInput() })
             addView(action(R.string.screen_assistant_open_target) { showPhoneTaskInput(R.string.screen_assistant_open_target_goal) })
