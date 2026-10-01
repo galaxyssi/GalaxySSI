@@ -1699,7 +1699,7 @@ internal fun MainActivity.refreshAgentConversationHeader(
             val subtitle = resolveAgentConversationModelSubtitle(conversation)
             handler.post {
                 if (!isFinishing && !isDestroyed && agentRenderedConversationId == conversationId) {
-                    agentSubtitleText.text = subtitle
+                    agentSubtitleText.text = collaborationHeaderLabel(conversationId) ?: subtitle
                 }
             }
         }
@@ -1709,6 +1709,7 @@ internal fun MainActivity.refreshAgentConversationHeader(
 private fun MainActivity.resolveAgentConversationModelSubtitle(
     conversation: AgentConversation
 ): String {
+    collaborationHeaderLabel(conversation.id)?.let { return it }
     val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
     val selection = AgentModelSelectionSettings.selection(this, conversation.id)
     val preferredTarget = AgentModelSelectionPolicy.selectedTarget(selection, targets)

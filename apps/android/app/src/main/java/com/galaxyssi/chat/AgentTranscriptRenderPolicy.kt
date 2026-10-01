@@ -84,6 +84,7 @@ object AgentTranscriptRenderPolicy {
         result = 31 * result + entry.sourceConversationId.hashCode()
         result = 31 * result + entry.sourceConversationTitle.hashCode()
         result = 31 * result + entry.sourceEntryId.hashCode()
+        result = 31 * result + entry.collaborationJson.hashCode()
         return result
     }
 

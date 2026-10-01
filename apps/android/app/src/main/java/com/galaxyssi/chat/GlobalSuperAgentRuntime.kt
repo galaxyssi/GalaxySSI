@@ -3230,6 +3230,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun agentTeamSnapshots(): List<AgentTeamExecutionSnapshot> = agentTeamController.snapshots()
 
+    fun cancelAgentTeam(supervisorRunId: String): Boolean = agentTeamController.cancel(supervisorRunId)
+
     fun agentTeamSnapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? =
         agentTeamController.snapshot(supervisorRunId)
 

@@ -196,8 +196,9 @@ internal object AgentTeamPlanCompiler {
         registrations: Collection<AgentRegistration>,
         reputation: AgentReputationSnapshotProvider
     ): AgentPlan {
-        val requested = requestedMembers.take(MAX_TEAM_MEMBERS).toMutableList()
-        if (allowsAutomaticExpansion(plan.goal)) {
+        require(requestedMembers.size <= MAX_TEAM_MEMBERS) { "Too many selected members for one execution batch" }
+        val requested = requestedMembers.toMutableList()
+        if (requested.none { it.collaborationGroupId.isNotBlank() } && allowsAutomaticExpansion(plan.goal)) {
             val explicitMemberCount = requested.size
             val currentIds = requested.mapTo(linkedSetOf(), AgentRequestedMember::agentId)
             plan.actions.asSequence()
@@ -281,7 +282,7 @@ internal object AgentTeamPlanCompiler {
                 "Selected Agent has only $availableCapacity available Run slots: ${registration.displayName}"
             }
         }
-        return if (requested.size == 1) {
+        return if (requested.size == 1 && requested.single().collaborationGroupId.isBlank()) {
             compileRequestedSingle(plan, requested.single(), availableAgents.getValue(requested.single().agentId))
         } else {
             compileRequestedTeam(plan, requested, availableAgents)
@@ -338,7 +339,7 @@ internal object AgentTeamPlanCompiler {
                 agentId = requestedMember.agentId,
                 deliveryMode = if (isPrimary) AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
                 requiredCapabilities = target.capabilities.toSet(),
-                role = roleFor(target, isPrimary),
+                role = requestedMember.roleHint.ifBlank { roleFor(target, isPrimary) },
                 objective = if (isPrimary) {
                     buildString {
                         append("Lead the selected Agent team, use all member results, and produce one final answer.")
@@ -359,7 +360,13 @@ internal object AgentTeamPlanCompiler {
                 dependsOnAgentIds = if (isPrimary) memberIds.drop(1).toSet() else emptySet(),
                 context = mapOf(
                     "_galaxyssi_selection_source" to selectionSource,
-                    "_galaxyssi_role_hint" to requestedMember.roleHint
+                    "_galaxyssi_role_hint" to requestedMember.roleHint,
+                    "collaboration_group_id" to requestedMember.collaborationGroupId,
+                    "collaboration_name" to requestedMember.displayName,
+                    "collaboration_provider" to listOf(requestedMember.providerLabel, requestedMember.modelId)
+                        .filter(String::isNotBlank).joinToString(" · "),
+                    "collaboration_receive_results" to requestedMember.receivePeerResults.toString(),
+                    "collaboration_model_id" to requestedMember.modelId
                 ),
                 instanceId = requestedMember.instanceId
             )
@@ -383,7 +390,8 @@ internal object AgentTeamPlanCompiler {
             primaryAgentId = primaryRequest.agentId,
             primaryInstanceId = primaryRequest.instanceId,
             members = members,
-            visibilityMode = AgentTeamVisibilityMode.BACKGROUND,
+            visibilityMode = if (requested.any { it.collaborationGroupId.isNotBlank() })
+                AgentTeamVisibilityMode.VISIBLE else AgentTeamVisibilityMode.BACKGROUND,
             collectiveCapabilities = requested.flatMapTo(linkedSetOf()) { member ->
                 availableAgents.getValue(member.agentId).capabilities
             }
@@ -662,7 +670,7 @@ internal object AgentTeamDispatchSpecCodec {
             .ifBlank { primaryAgentId }
         if (runId.isBlank() || teamId.isBlank() || primaryAgentId.isBlank()) return null
         val input = json.optJSONArray("members") ?: return null
-        if (input.length() !in 2..12) return null
+        if (input.length() !in 1..12) return null
         val members = buildList {
             for (index in 0 until input.length()) {
                 val item = input.optJSONObject(index) ?: return null
@@ -724,7 +732,7 @@ internal object AgentTeamDispatchSpecCodec {
         if (this == null) return emptyMap()
         return keys().asSequence()
             .mapNotNull { key ->
-                key.takeIf { it.startsWith("_galaxyssi_") }
+                key.takeIf(::isPersistedAgentTeamContextKey)
                     ?.let { it to optString(it).take(8_000) }
             }
             .toMap()

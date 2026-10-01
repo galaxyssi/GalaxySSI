@@ -693,6 +693,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentTranscriptRefreshConversationId = ""
     internal var agentTranscriptRefreshPageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
     internal var agentRenderedConversationId = ""
+    internal var collaborationSubmissionLoading = false
     internal var agentTranscriptAutoFollow = true
     internal var agentTranscriptScrollGeneration = 0L
     internal var agentTranscriptUserScrollActive = false

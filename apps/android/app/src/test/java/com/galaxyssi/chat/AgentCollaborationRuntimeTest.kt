@@ -18,6 +18,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentCollaborationRuntimeTest {
+    @Test fun managedAssignmentPromptWinsOverSharedGoalOnlyForHostManagedTeams() {
+        val action = AgentAction(id = "assignment", kind = AgentActionKind.CALL_CONNECTOR, target = "test", risk = AgentRisk.LOW,
+            status = AgentActionStatus.RUNNING, description = "test", parameters = mapOf("prompt" to "Only Curie's assignment",
+                "original_goal" to "Whole team goal", MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"))
+        assertEquals("Only Curie's assignment", action.managedTeamAssignmentPrompt())
+        assertNull(action.copy(parameters = action.parameters - MANAGED_AGENT_TEAM_ACTION_PARAMETER).managedTeamAssignmentPrompt())
+        assertNull(action.copy(parameters = action.parameters + ("prompt" to "")).managedTeamAssignmentPrompt())
+    }
+
+    @Test
+    fun visibleGroupSnapshotsKeepIdentityAndProjectionFailureDoesNotStopExecution() = runBlocking {
+        val observed = CopyOnWriteArrayList<AgentTeamExecutionSnapshot>()
+        val definition = teamDefinition().copy(members = teamDefinition().members.map { member ->
+            member.copy(context = mapOf("collaboration_group_id" to "conversation", "collaboration_name" to "Person ${member.agentId}",
+                "collaboration_provider" to "Provider", "collaboration_receive_results" to "true"))
+        })
+        val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore(), onSnapshot = { snapshot ->
+            observed += snapshot
+            error("Projection fixture failure")
+        })
+        try {
+            val result = runtime.start(definition, request()) { AgentSubagentOutput("verified") }.await()
+            assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
+            assertTrue(observed.size > 2)
+            assertTrue(result.snapshot.members.all { it.displayName.startsWith("Person ") && it.receivePeerResults })
+        } finally { runtime.close() }
+    }
+
     @Test
     fun onlyQueuedOrRunningMembersInAnActiveTeamAcceptMessages() {
         fun member(status: AgentSubagentStatus) = AgentTeamMemberSnapshot(
@@ -840,7 +868,8 @@ class AgentCollaborationRuntimeTest {
             primaryAgentId = "primary",
             members = listOf(
                 AgentTeamMember("primary", AgentDeliveryMode.RESPOND, setOf(AgentCapability.CODE)),
-                AgentTeamMember("observer", AgentDeliveryMode.OBSERVE, setOf(AgentCapability.RESEARCH))
+                AgentTeamMember("observer", AgentDeliveryMode.OBSERVE, setOf(AgentCapability.RESEARCH),
+                    context = mapOf("collaboration_group_id" to "conversation", "collaboration_model_id" to "selected-model"))
             )
         )
 
@@ -857,6 +886,12 @@ class AgentCollaborationRuntimeTest {
         val observerAction = actions.first { it.parameters["connector_id"] == "observer" }
         val primaryAction = actions.first { it.parameters["connector_id"] == "primary" }
         assertEquals("respond", observerAction.parameters["delivery_mode"])
+        assertEquals("selected-model", observerAction.parameters["agent_model_id"])
+        assertEquals("selected-model", observerAction.parameters["manual_model_id"])
+        assertEquals("true", observerAction.parameters["manual_target_locked"])
+        assertTrue(observerAction.parameters["prompt"].orEmpty().contains("Respond only as this one member"))
+        assertTrue(observerAction.parameters["prompt"].orEmpty().contains("You are not the coordinator"))
+        assertNull(primaryAction.parameters["manual_model_id"])
         assertEquals(policyPrompt, observerAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertEquals(policyPrompt, primaryAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains("verified evidence"))

@@ -163,7 +163,7 @@ internal fun MainActivity.showConversationHub(
         },
         onNewConversation = {
             dialog.dismiss()
-            createAgentConversation()
+            showNewConversationChoices()
         }
     )
     root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)))

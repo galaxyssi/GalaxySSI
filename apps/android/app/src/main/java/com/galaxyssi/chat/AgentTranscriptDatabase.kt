@@ -680,6 +680,7 @@ internal class AgentTranscriptEntryDatabase(
             turnId = item.optString("turn_id"),
             taskId = item.optString("task_id"),
             richOutputJson = AgentRichContentCodec.normalize(item.optString("rich_output")),
+            collaborationJson = item.optString("collaboration"),
             sourceConversationId = item.optString("source_conversation_id"),
             sourceConversationTitle = item.optString("source_conversation_title"),
             sourceEntryId = item.optString("source_entry_id"),
@@ -733,6 +734,7 @@ internal class AgentTranscriptEntryDatabase(
             .put("turn_id", entry.turnId)
             .put("task_id", entry.taskId)
             .put("rich_output", entry.richOutputJson)
+            .put("collaboration", entry.collaborationJson)
             .put("source_conversation_id", entry.sourceConversationId)
             .put("source_conversation_title", entry.sourceConversationTitle)
             .put("source_entry_id", entry.sourceEntryId)

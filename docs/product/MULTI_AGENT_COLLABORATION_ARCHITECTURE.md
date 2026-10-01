@@ -65,7 +65,10 @@ An explicit retry is a new attempt rather than a replay of the old supervisor. T
 
 Background teams expose only their aggregate status by default. The existing Recent Tasks page includes an Agent teams section. Opening a team now uses a full detail page rather than a text dialog. It shows the aggregate state, role-bound instances, member status, bounded team messages, and one team conclusion. While a Run is active, tapping a member opens a focused composer for constraints, questions, or new evidence.
 
-Internal orchestration, hidden reasoning, and observer-only content never appear as separate assistant replies.
+Internal orchestration and hidden reasoning never appear as separate assistant replies.
+Opt-in [Android collaboration groups](COLLABORATION_GROUP_ANDROID.md) expose concise,
+public member contributions and lifecycle rows without changing the single parent
+completion boundary. Ordinary background teams keep observer-only content internal.
 
 ## Verification
 
