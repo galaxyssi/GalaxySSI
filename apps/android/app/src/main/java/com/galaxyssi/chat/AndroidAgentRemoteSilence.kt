@@ -82,6 +82,9 @@ internal object AndroidAgentRemoteSilence {
         do {
             val page = AgentPendingDeliveryStore.page(context, cursor)
             for (delivery in page.deliveries) {
+                // Team parents are local orchestration receipts, not remote Desktop requests.
+                // A missing local team must be recovered from its journal, never probed as a contact.
+                if (AgentTeamParentDeliveryPolicy.isLocalTeam(delivery.contactId)) continue
                 val workspace = workspaces.find(delivery.turnId) ?: continue
                 if (workspace.status.isTerminal || workspace.cancellationRequested ||
                     workspace.conversationId != delivery.conversationId ||

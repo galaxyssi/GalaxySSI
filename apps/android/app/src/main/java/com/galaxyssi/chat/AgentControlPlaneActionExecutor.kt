@@ -391,14 +391,6 @@ private class ActionExecutorAgentTransport(
             )
             sourceRuns[sourceMessageId] = request.runId
             if (request.context[MANAGED_TEAM_CONTEXT_KEY]?.toString()?.toBoolean() == true) {
-                AgentManagedConnectorResponseRegistry.register(
-                    sourceMessageId = sourceMessageId,
-                    contactId = contactId,
-                    ownerId = request.runId,
-                    conversationId = responseConversationId,
-                    turnId = responseTurnId,
-                    taskId = responseTaskId
-                ) { response -> consumeResponse(request.runId, response, managedIdentityVerified = true) }
                 managedResponses.register(AgentManagedResponseRecord(
                     ownerRunId = request.runId,
                     supervisorRunId = request.parentRunId,
@@ -410,9 +402,17 @@ private class ActionExecutorAgentTransport(
                     turnId = responseTurnId,
                     taskId = responseTaskId
                 ))
-                if (!activeRuns.containsKey(request.runId)) {
-                    managedResponses.markApplied(request.runId)
-                }
+                AgentManagedConnectorResponseRegistry.register(
+                    sourceMessageId = sourceMessageId,
+                    contactId = contactId,
+                    ownerId = request.runId,
+                    conversationId = responseConversationId,
+                    turnId = responseTurnId,
+                    taskId = responseTaskId
+                ) { response -> consumeResponse(request.runId, response, managedIdentityVerified = true) }
+                // A reply may reach the durable ledger before the live listener is registered.
+                managedResponses.completedUnapplied().firstOrNull { it.ownerRunId == request.runId }
+                    ?.response?.let { consumeResponse(request.runId, it, managedIdentityVerified = true) }
             }
         }
         emit(
@@ -492,8 +492,11 @@ private class ActionExecutorAgentTransport(
         prepared.remove(runId)
         val active = removeActive(runId)
         active?.let { globalRunSlots?.releaseBySourceMessageId(it.sourceMessageId) }
-        managedResponses.markApplied(runId)
         val current = results[runId]
+        // A local cancellation is not a remote terminal acknowledgement. Keep Desktop ownership
+        // so the durable team controller can retry the exact stop after a disconnect/restart.
+        if (active?.request?.context?.get(MANAGED_TEAM_CONTEXT_KEY)?.toString()?.toBoolean() != true ||
+            current?.metadata?.get("resource_location") == "cloud") managedResponses.markApplied(runId)
         AgentCloudDispatchRegistry.cancel(current)
         results[runId] = current?.copy(
             success = false,

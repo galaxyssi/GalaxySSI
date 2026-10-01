@@ -61,8 +61,9 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
     @Synchronized
     override fun acknowledge(response: AgentConnectorResponse): AgentManagedResponseRecord? {
         val entry = records.entries.firstOrNull { (_, record) -> record.correlates(response) } ?: return null
+        if (entry.value.state != AgentManagedResponseState.PENDING) return entry.value
         val acknowledged = entry.value.copy(
-            state = AgentManagedResponseState.APPLIED,
+            state = AgentManagedResponseState.COMPLETED,
             response = response,
             completedAtMillis = response.receivedAtMillis
         )
@@ -159,8 +160,9 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
             val records = load().toMutableList()
             val index = records.indexOfFirst { it.correlates(response) }
             if (index < 0) return@synchronized null
+            if (records[index].state != AgentManagedResponseState.PENDING) return@synchronized records[index]
             val acknowledged = records[index].copy(
-                state = AgentManagedResponseState.APPLIED,
+                state = AgentManagedResponseState.COMPLETED,
                 response = response,
                 completedAtMillis = response.receivedAtMillis
             )

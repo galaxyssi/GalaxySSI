@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="collaboration_waiting_connection">Waiting for connection or available capacity; retrying automatically</string>
+    <string name="collaboration_waiting_connection_long">Member is still unavailable; progress is saved and reconnection will continue</string>
+    <string name="collaboration_pause_team">Pause after current steps</string>
+    <string name="collaboration_resume_team">Continue from checkpoint</string>
+    <string name="collaboration_team_paused">Paused; current remote steps may finish, but no new steps will be dispatched</string>
+    <string name="collaboration_team_resumed">Resumed from saved progress</string>
+</resources>

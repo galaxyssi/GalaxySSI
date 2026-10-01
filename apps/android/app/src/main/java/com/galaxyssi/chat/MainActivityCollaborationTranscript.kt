@@ -41,6 +41,7 @@ internal fun MainActivity.collaborationTranscriptRow(
         ellipsize = android.text.TextUtils.TruncateAt.END
         text = when {
             metadata.result -> getString(R.string.collaboration_view_process)
+            metadata.paused -> getString(R.string.collaboration_team_paused)
             metadata.status == AgentSubagentStatus.QUEUED -> getString(if (metadata.waiting)
                 R.string.collaboration_waiting_dependencies else R.string.collaboration_queued)
             metadata.status == AgentSubagentStatus.FAILED -> getString(R.string.collaboration_failed_status)
@@ -67,17 +68,32 @@ internal fun MainActivity.collaborationTranscriptRow(
             updateIcon(expanded)
         }
         setOnLongClickListener {
-            val choices = if (metadata.status.isTerminal) listOf(R.string.collaboration_view_process)
-                else listOf(R.string.collaboration_view_process, R.string.collaboration_stop_team)
-            AlertDialog.Builder(this@collaborationTranscriptRow)
-                .setItems(choices.map { getString(it) }.toTypedArray()) { _, index ->
-                    agentRoutingExecutor.execute {
-                        if (index == 0) {
-                            val snapshot = globalSuperAgentRuntime.agentTeamSnapshot(metadata.runId)
-                            runOnUiThread { if (!isFinishing && !isDestroyed && snapshot != null) showAgentTeamDetails(snapshot) }
-                        } else globalSuperAgentRuntime.cancelAgentTeam(metadata.runId)
+            agentRoutingExecutor.execute {
+                val snapshot = globalSuperAgentRuntime.agentTeamSnapshot(metadata.runId)
+                val actionable = snapshot != null && (!snapshot.state.isTerminal || snapshot.paused ||
+                    snapshot.state == AgentTeamExecutionState.INTERRUPTED)
+                val choices = buildList {
+                    add(R.string.collaboration_view_process)
+                    if (actionable) {
+                        add(if (snapshot?.paused == true) R.string.collaboration_resume_team else R.string.collaboration_pause_team)
+                        add(R.string.collaboration_stop_team)
                     }
-                }.show()
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    AlertDialog.Builder(this@collaborationTranscriptRow)
+                        .setItems(choices.map { getString(it) }.toTypedArray()) { _, index ->
+                            agentRoutingExecutor.execute {
+                                when (choices[index]) {
+                                    R.string.collaboration_pause_team -> globalSuperAgentRuntime.pauseAgentTeam(metadata.runId)
+                                    R.string.collaboration_resume_team -> globalSuperAgentRuntime.resumeAgentTeam(metadata.runId)
+                                    R.string.collaboration_stop_team -> globalSuperAgentRuntime.cancelAgentTeam(metadata.runId)
+                                    else -> runOnUiThread { if (!isFinishing && !isDestroyed && snapshot != null) showAgentTeamDetails(snapshot) }
+                                }
+                            }
+                        }.show()
+                }
+            }
             true
         }
     }

@@ -13,10 +13,28 @@ internal fun MainActivity.routeCollaborationFollowup(
         if (cancelled()) return@execute
         val outcome = runCatching {
             val active = globalSuperAgentRuntime.agentTeamSnapshots().firstOrNull { snapshot ->
-                snapshot.conversationId == conversationId && !snapshot.state.isTerminal &&
+                snapshot.conversationId == conversationId && (!snapshot.state.isTerminal || snapshot.paused ||
+                    snapshot.state == AgentTeamExecutionState.INTERRUPTED) &&
                     snapshot.members.any { it.collaborationGroupId == conversationId }
             } ?: return@runCatching null
+            when (AgentTeamControlIntent.parse(goal)) {
+                AgentTeamUserControl.PAUSE -> {
+                    globalSuperAgentRuntime.pauseAgentTeam(active.supervisorRunId)
+                    return@runCatching getString(R.string.collaboration_team_paused)
+                }
+                AgentTeamUserControl.STOP -> {
+                    globalSuperAgentRuntime.cancelAgentTeam(active.supervisorRunId)
+                    return@runCatching getString(R.string.collaboration_cancelled)
+                }
+                AgentTeamUserControl.RUN -> if (active.paused) {
+                    globalSuperAgentRuntime.resumeAgentTeam(active.supervisorRunId)
+                    return@runCatching getString(R.string.collaboration_team_resumed)
+                }
+                null -> Unit
+            }
             val selected = AgentTurnMentionRegistry.peek(turnId).mapTo(hashSetOf()) { it.instanceId }
+            if (selected.isEmpty()) active.members.firstOrNull { it.memberId == active.primaryMemberId }
+                ?.personId?.let(selected::add)
             val recipients = active.members.filter {
                 (it.memberId in selected || it.personId in selected) && it.canReceiveTeamMessage(active.state)
             }.groupBy { it.personId }.values.map { stages ->

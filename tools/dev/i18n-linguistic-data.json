@@ -2,6 +2,10 @@
   "schema": "galaxyssi.i18n-linguistic-data.v1",
   "files": [
     {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTeamDurableControl.kt",
+      "reason": "Exact multilingual team pause, stop and resume command corpus; not UI text"
+    },
+    {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CollaborationResearchWorkflow.kt",
       "reason": "Multilingual research-intent matching corpus, not user-facing UI text"
     },

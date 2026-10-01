@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="collaboration_waiting_connection">等待连接或空闲容量，正在自动重试</string>
+    <string name="collaboration_waiting_connection_long">成员仍不可用，进度已保存，将持续尝试重新连接</string>
+    <string name="collaboration_pause_team">当前步骤后暂停</string>
+    <string name="collaboration_resume_team">从检查点继续</string>
+    <string name="collaboration_team_paused">已暂停，远程当前步骤可能继续完成，不再派发新步骤</string>
+    <string name="collaboration_team_resumed">已从保存的进度继续</string>
+</resources>

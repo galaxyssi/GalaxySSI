@@ -8,6 +8,15 @@ internal object CollaborationProgressStore {
     private val seenEvents = linkedMapOf<String, Pair<Long, String>>()
     private fun db(context: Context) = AgentEncryptedDatabase(context.applicationContext, "collaboration_progress_bindings")
 
+    fun waiting(context: Context, execution: AgentTeamMemberExecutionContext, prolonged: Boolean) {
+        val request = execution.request
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
+        val binding = binding(context, source, request.conversationId, request.messageId) ?: return
+        write(context, binding, "connection-wait", context.getString(if (prolonged)
+            R.string.collaboration_waiting_connection_long else R.string.collaboration_waiting_connection),
+            System.currentTimeMillis())
+    }
+
     @Synchronized
     fun register(context: Context, execution: AgentTeamMemberExecutionContext) {
         val member = execution.member
