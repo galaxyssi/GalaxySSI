@@ -29,12 +29,16 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
     private var hidden = false
     private var closed = false
     private var addedToastEvents = false
+    private var saveArticle = false
+    private var copyStartedAt = 0L
 
-    fun start() {
+    fun start(saveArticle: Boolean = false) {
         if (running || closed) return
         if (PhoneAssistantTaskControl.hasActiveTask()) { toast(R.string.wechat_link_busy); return }
-        if (!isTarget()) { toast(R.string.wechat_link_open_article); return }
+        if (!isTarget()) { toast(R.string.wechat_link_interrupted); return }
         running = true
+        this.saveArticle = saveArticle
+        copyStartedAt = System.currentTimeMillis()
         awaitingCopy = false
         copyAttempts = 0
         systemCopyConfirmed = false
@@ -100,7 +104,10 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
         restoreEvents()
         restore()
         Log.i(TAG, "Copy link finished status=$message")
-        toast(message)
+        if (message == R.string.wechat_link_copied && saveArticle) {
+            WechatArticleSaveActivity.open(service, copyStartedAt)
+        } else toast(message)
+        saveArticle = false
     }
 
     private fun inspect(token: Int, swipes: Int, opened: Boolean, retries: Int = 0) {
@@ -188,14 +195,16 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
                                                 later(token) { inspect(token, swipes + 1, true) }
                                             }
                                         } else finish(R.string.wechat_link_failed)
-                                    } else if (!opened && WechatArticleLinkPolicy.isArticle(labels)) {
+                                    } else if (!opened) {
+                                        // Article controls vary with scroll position and WeChat versions.
+                                        // Inspect the actual toolbar, then validate the opened copy menu.
                                         val more = WechatArticleLinkPolicy.moreButton(bitmap.width, bitmap.height, bitmap::getPixel)
                                         if (more == null) finish(R.string.wechat_link_failed)
                                         else tap(token, Rect(more.first - 2, more.second - 2, more.first + 2, more.second + 2)) {
                                             later(token) { inspect(token, 0, true) }
                                         }
                                     } else if (opened && retries < 2) later(token) { inspect(token, swipes, true, retries + 1) }
-                                    else finish(R.string.wechat_link_open_article)
+                                    else finish(R.string.wechat_link_failed)
                                 }.addOnFailureListener { if (valid(token)) finish(R.string.wechat_link_failed) }
                                 .addOnCompleteListener {
                                     if (ocrImage !== cropped) ocrImage.recycle()

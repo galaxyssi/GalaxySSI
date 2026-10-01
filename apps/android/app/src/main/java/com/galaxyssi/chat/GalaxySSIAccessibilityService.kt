@@ -18,6 +18,7 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     private var screenAssistant: ScreenAssistantOverlay? = null
     private val articleLink by lazy { WechatArticleLinkController(this) }
     internal fun copyWechatArticleLink() = articleLink.start()
+    internal fun saveWechatArticle() = articleLink.start(saveArticle = true)
     private val targetReader by lazy { PhoneUiTargetReader(this) }
 
     internal fun targetRoot(): AccessibilityNodeInfo? {

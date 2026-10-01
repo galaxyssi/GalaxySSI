@@ -1,0 +1,18 @@
+<resources>
+    <string name="wechat_article_save">保存公众号文章</string>
+    <string name="wechat_article_read_clipboard">正在读取刚复制的文章链接…</string>
+    <string name="wechat_article_fetch">正在下载文章正文和图片…</string>
+    <string name="wechat_article_render">正在生成 PDF…</string>
+    <string name="wechat_article_saved">已保存 %1$d 页到 Download/GalaxySSI/GongZhongHao\n%2$s</string>
+    <string name="wechat_article_failed">未能保存完整文章。请检查网络及文章是否可公开访问，然后重试。</string>
+    <string name="wechat_article_clipboard_failed">未能读取刚复制的公众号文章链接，请返回文章重新操作。</string>
+    <string name="wechat_article_open">打开 PDF</string>
+    <string name="wechat_article_close">关闭</string>
+    <string name="wechat_article_cancel">取消</string>
+    <string name="wechat_article_no_viewer">手机尚未安装 PDF 阅读器。</string>
+    <string name="wechat_article_static">文章静态 PDF：按原文顺序保留文字和图片；不包含音视频交互，请通过来源链接查看。</string>
+    <string name="wechat_article_verification">微信要求验证后才能读取文章。请自行完成验证，再继续保存；验证页面不会保存成 PDF。</string>
+    <string name="wechat_article_verify">打开微信验证页面</string>
+    <string name="wechat_article_continue">继续保存</string>
+    <string name="wechat_article_verify_continue_hint">请在下方 mp.weixin.qq.com 页面自行完成验证；看到文章后，点击“继续保存”。</string>
+</resources>
