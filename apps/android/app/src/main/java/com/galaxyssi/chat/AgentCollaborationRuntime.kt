@@ -13,7 +13,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -759,6 +761,9 @@ class AgentAdapterTeamMemberWorker(
                 val terminal = async(start = CoroutineStart.UNDISPATCHED) {
                     adapter.observeEvents(context.request.runId).first { it.type in TERMINAL_EVENTS }
                 }
+                // Connection checks may suspend while the user pauses or stops this team.
+                beforeDispatch(context)
+                currentCoroutineContext().ensureActive()
                 onDispatch(context)
                 adapter.startRun(
                     context.request.copy(context = context.request.context + handoffContext(context.handoff))

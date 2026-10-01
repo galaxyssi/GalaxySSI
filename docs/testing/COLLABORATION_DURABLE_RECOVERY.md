@@ -39,4 +39,15 @@ Targeted JVM coverage includes checkpoint reuse, unresolved remote work, cancell
 - Screenshots confirmed that the selected conversation list row shows the saved final summary rather than an execution error.
 - Kotlin source-size and whitespace checks passed. The repository-wide `npm run check` remains blocked by existing i18n text-policy findings outside this change.
 
-Production network outages, phone reboot/Doze, real Desktop stop acknowledgement, permanent server-state loss and multi-day waiting require a broader endurance matrix. Passing a checkpoint fixture does not certify all of these conditions.
+### Follow-up verification on 2026-10-02
+
+- PR #3313 contains the v1.4.9 baseline above. The v1.4.10 (1095) follow-up is isolated on `test/collaboration-recovery-fault-matrix-20261002` and was not installed for this reboot test.
+- 108 targeted JVM tests passed with zero failures or errors. New fault injection exposed a dispatch race when pause or stop arrived during a connection check; both regression tests failed before the fix and passed after rechecking control state immediately before dispatch.
+- A transient connection failure test verified one retry and exactly one model dispatch. Long-offline retention tests verified that pending correlation survives 90 simulated days and an unapplied result body survives one simulated year. These are clock-based unit tests, not elapsed-time endurance claims.
+- The response retention follow-up expires only applied history. Pending and completed-but-unapplied records cannot be discarded solely because seven days elapsed.
+- S26U underwent a real authorized reboot with the installed v1.4.9 build: the boot counter increased from 14 to 15. After user unlock, the test injected isolated late replies through `MessageService` and recovered the checkpoint written before reboot.
+- The reboot fixture report recorded seed PID 22392, recovery PID 14938, a successful team, exactly one final response, zero unapplied fixture replies, zero ordinary-chat leaks and duplicate suppression. Only test-owned records were cleaned up.
+- The application process existed before recovery instrumentation started. This observation does not independently certify unattended boot scheduling: instrumentation explicitly triggered the late-reply phase after unlock.
+- Desktop scheduling remained at zero active and zero pending tasks, with the same latest completed task before and after the test. No original research or new model request was dispatched.
+
+Production network outages, Doze, unattended boot recovery, real Desktop stop acknowledgement, permanent server-state loss and elapsed multi-day waiting still require a broader endurance matrix. Passing a checkpoint fixture does not certify all of these conditions. The execution-store 200-run retention bound also requires a separate unresolved-run retention review before claiming arbitrarily long, high-volume operation.

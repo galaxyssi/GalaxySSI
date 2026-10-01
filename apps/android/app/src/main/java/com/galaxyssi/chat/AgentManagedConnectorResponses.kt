@@ -297,7 +297,8 @@ private fun responseIdentityMatches(
 }
 
 private fun AgentManagedResponseRecord.isStale(nowMillis: Long): Boolean =
-    maxOf(createdAtMillis, completedAtMillis) < nowMillis - MAX_MANAGED_RESPONSE_AGE_MILLIS
+    state == AgentManagedResponseState.APPLIED &&
+        maxOf(createdAtMillis, completedAtMillis) < nowMillis - MAX_MANAGED_RESPONSE_AGE_MILLIS
 
 private object AgentManagedResponseCodec {
     fun encode(records: List<AgentManagedResponseRecord>): JSONArray = JSONArray().apply {
