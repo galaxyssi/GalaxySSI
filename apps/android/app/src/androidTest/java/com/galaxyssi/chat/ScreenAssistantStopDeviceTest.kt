@@ -93,14 +93,22 @@ class ScreenAssistantStopDeviceTest {
         assertFalse(accepts(overlay, request))
     }
 
-    @Test fun collapseKeepsAnalysisRunningAndMenuStillOffersStop() = withOverlay { overlay, request, service ->
+    @Test fun collapseKeepsAnalysisRunningAndMenuContainsOnlyFourActions() = withOverlay { overlay, request, service ->
         invoke(overlay, "dismissPanel")
         assertFalse(request.isCancelled)
         invoke(overlay, "showMenu")
         val menu = field(overlay, "menu") as ViewGroup
-        descendants(menu).filterIsInstance<TextView>()
-            .single { it.text.toString() == service.getString(R.string.screen_assistant_stop) }.performClick()
-        assertTrue(request.isCancelled)
+        assertEquals(
+            listOf(
+                R.string.screen_assistant_capture,
+                R.string.screen_assistant_full_page,
+                R.string.wechat_link_get,
+                R.string.wechat_article_save
+            ).map { service.getString(it) },
+            descendants(menu).filterIsInstance<TextView>().map { it.text.toString() }.toList()
+        )
+        invoke(overlay, "dismissMenu")
+        assertFalse(request.isCancelled)
     }
 
     private fun withOverlay(test: (ScreenAssistantOverlay, ScreenAssistantAnalysisRequest, GalaxySSIAccessibilityService) -> Unit) {
