@@ -415,17 +415,6 @@ internal class ScreenAssistantOverlay(private val service: GalaxySSIAccessibilit
             addView(action(R.string.screen_assistant_full_page) { analyzeFullPage() })
             addView(action(R.string.wechat_link_get) { service.copyWechatArticleLink() })
             addView(action(R.string.wechat_article_save) { service.saveWechatArticle() })
-            addView(action(R.string.screen_assistant_ask) { showQuestionInput() })
-            addView(action(R.string.screen_assistant_execute) { showPhoneTaskInput() })
-            addView(action(R.string.screen_assistant_open_target) { showPhoneTaskInput(R.string.screen_assistant_open_target_goal) })
-            addView(action(R.string.screen_assistant_chrome) { showPhoneTaskInput(R.string.screen_assistant_chrome_goal) })
-            addView(action(R.string.screen_assistant_device_tools) { showDeviceTools() })
-            addView(action(R.string.screen_assistant_crop) { showCrop() })
-            addView(action(R.string.screen_assistant_last_result) { showPanel() })
-            if (canStopAnalysis()) addView(action(R.string.screen_assistant_stop) { stopAnalysis() })
-            addView(action(R.string.screen_assistant_pause) {
-                ScreenAssistantSettings.setEnabled(service, false)
-            })
         }
         val height = minOf(dp(list.childCount * 48), screenHeight() - dp(100))
         val scroll = ScrollView(service).apply { addView(list) }

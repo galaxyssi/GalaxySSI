@@ -93,7 +93,8 @@
         <activity android:name=".DoorAccessActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".PhoneScreenRecordingActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".ScreenAssistantPageViewerActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".WechatArticleSaveActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity android:name=".WechatArticleSaveActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="com.galaxyssi.chat.article.export" android:theme="@style/Theme.GalaxySSI.ArticleHandoff" />
+        <service android:name=".WechatArticleSaveService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity
             android:name=".ScreenAssistantChatActivity"
             android:exported="false"

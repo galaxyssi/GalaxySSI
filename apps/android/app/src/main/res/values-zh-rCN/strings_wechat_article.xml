@@ -1,4 +1,7 @@
 <resources>
+    <string name="wechat_article_browser_loading">正在通过后台浏览器加载文章和图片…</string>
+    <string name="wechat_article_cancelled">已取消保存文章。</string>
+    <string name="wechat_article_verification_notification">微信要求验证，请点击“保存公众号文章”通知继续处理。</string>
     <string name="wechat_article_save">保存公众号文章</string>
     <string name="wechat_article_read_clipboard">正在读取刚复制的文章链接…</string>
     <string name="wechat_article_fetch">正在下载文章正文和图片…</string>

@@ -1,4 +1,7 @@
 <resources>
+    <string name="wechat_article_browser_loading">Loading article and images in the background browser…</string>
+    <string name="wechat_article_cancelled">Article saving cancelled.</string>
+    <string name="wechat_article_verification_notification">WeChat requires verification. Tap the article saving notification to continue.</string>
     <string name="wechat_article_save">Save WeChat article</string>
     <string name="wechat_article_read_clipboard">Reading the copied article link…</string>
     <string name="wechat_article_fetch">Downloading article and images…</string>
