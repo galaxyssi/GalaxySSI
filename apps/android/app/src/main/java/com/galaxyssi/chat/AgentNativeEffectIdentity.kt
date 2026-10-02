@@ -7,19 +7,20 @@ data class AgentNativeEffectScope(
     val conversationId: String = "",
     val goalId: String = "",
     val taskId: String = "",
-    val turnId: String = ""
+    val turnId: String = "",
+    val collaborationSourceMessageId: Long? = null
 ) {
     fun toJsonValue(): Map<String, String> = linkedMapOf(
         "client_route_id" to clientRouteId, "session_id" to sessionId,
         "conversation_id" to conversationId, "goal_id" to goalId,
         "task_id" to taskId, "turn_id" to turnId
-    )
+    ).apply { collaborationSourceMessageId?.let { put("collaboration_source", it.toString()) } }
 
     companion object {
         fun from(context: AgentNativeToolInvocationContext) = AgentNativeEffectScope(
             context.attributes["client_route_id"].orEmpty(), context.sessionId,
             context.conversationId, context.attributes["goal_id"].orEmpty(),
-            context.attributes["task_id"].orEmpty(), context.turnId
+            context.attributes["task_id"].orEmpty(), context.turnId, context.collaborationSourceMessageId
         )
     }
 }

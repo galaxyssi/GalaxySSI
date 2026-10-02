@@ -770,9 +770,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             )
         }
         val historyPrompt = displayPromptForAction(action, prompt)
+        val managedTeamAction = action.parameters[MANAGED_AGENT_TEAM_ACTION_PARAMETER].toBoolean()
+        val collaborationSource = if (managedTeamAction) AgentTeamDispatchIds.sourceMessageId(
+            "member:${action.parameters["idempotency_key"].orEmpty().ifBlank { action.id }}"
+        ) else null
         val persistDedicatedHistory =
-            AgentProviderConversationPolicy.shouldPersistDedicatedHistory(conversationId)
-        val messageId = if (persistDedicatedHistory) {
+            !managedTeamAction && AgentProviderConversationPolicy.shouldPersistDedicatedHistory(conversationId)
+        val messageId = if (collaborationSource != null) collaborationSource else if (persistDedicatedHistory) {
             ChatHistoryStore.appendOutgoing(
                 context = context,
                 contactId = contactId,
@@ -800,7 +804,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     sessionId = taskId,
                     conversationId = boundConversationId,
                     turnId = turnId,
-                    taskId = taskId
+                    taskId = taskId,
+                    collaborationSourceMessageId = collaborationSource
                 )
             }
             val completion = result.getOrNull()

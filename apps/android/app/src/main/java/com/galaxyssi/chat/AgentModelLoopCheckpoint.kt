@@ -13,7 +13,9 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
         val messages = request.messages.map(::messageValue)
         val binding = mapOf("input" to request.recoveryInputIdentity.ifBlank { AgentNativeJsonCodec.sha256(messages) },
             "manifest" to manifestSha, "permissions" to request.grantedPermissions.sorted(),
-            "consents" to request.grantedConsents.sorted(), "budget" to request.budget.toString())
+            "consents" to request.grantedConsents.sorted(), "budget" to request.budget.toString()).toMutableMap().apply {
+                request.collaborationSourceMessageId?.let { put("collaboration_source", it) }
+            }
         val existing = records.read("initial")
         if (existing == null) {
             records.write("initial", encode(mapOf("binding" to binding, "messages" to messages)))

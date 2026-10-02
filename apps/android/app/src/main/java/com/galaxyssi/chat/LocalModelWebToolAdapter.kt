@@ -106,7 +106,8 @@ internal object LocalModelWebToolRunner {
         sessionId: String,
         conversationId: String,
         turnId: String,
-        taskId: String
+        taskId: String,
+        collaborationSourceMessageId: Long? = null
     ): LocalModelWebToolCompletion {
         val registry = AgentPhoneNativeToolCatalog.defaultRegistry(
             context = context.applicationContext,
@@ -132,8 +133,12 @@ internal object LocalModelWebToolRunner {
                     conversationId = conversationId,
                     turnId = turnId,
                     taskId = taskId,
+                    collaborationSourceMessageId = collaborationSourceMessageId,
                     workspaceId = conversationId,
-                    loopId = "local-web-" + AgentNativeJsonCodec.sha256(listOf(prompt, preferredProfileId, hasAttachments)),
+                    loopId = "local-web-" + AgentNativeJsonCodec.sha256(buildList {
+                        add(prompt); add(preferredProfileId); add(hasAttachments)
+                        collaborationSourceMessageId?.let { add(it) }
+                    }),
                     messages = listOf(
                         AgentModelMessage.system(CodexStyleResponsePolicy.prompt(context)),
                         AgentModelMessage.user(prompt)
