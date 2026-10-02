@@ -31,5 +31,5 @@ internal object CollaborationResearchWorkflow {
         members.all { stage(it) != null && !it.context["collaboration_group_id"].isNullOrBlank() }
 
     fun expand(members: List<AgentTeamMember>, goal: String): List<AgentTeamMember> =
-        CollaborationGoalLoop.initial(members, goal)
+        CollaborationGoalLoop.initial(members, goal).map { it.copy(context = it.context + (CollaborationLiveGraph.ENABLED to "1")) }
 }

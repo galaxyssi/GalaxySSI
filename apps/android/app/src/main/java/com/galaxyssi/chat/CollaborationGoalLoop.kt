@@ -221,6 +221,7 @@ internal object CollaborationGoalLoop {
                 objective = item.getString("assignment"), dependsOnAgentIds = CollaborationWorkGraph.dependencies(item).mapNotNullTo(linkedSetOf()) { dispatchIds[it] },
                 context = person.context + mapOf(ROSTER to "false", WORK_ID to CollaborationWorkGraph.id(item),
                     CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
+                    CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
                     CollaborationResearchWorkflow.STAGE to item.getString("stage")))
         }
@@ -250,6 +251,7 @@ internal object CollaborationGoalLoop {
                 },
                 FINISHED_WORK to JSONArray(finished.toList()).toString(),
                 FINISHED_AUTHORS to JSONObject(authors).toString(),
+                CollaborationLiveGraph.APPLIED to "[]", CollaborationLiveGraph.FEEDBACK to "",
                 RETRY_AT to (now + retryDelay).toString(), STALLED to stalled.toString())),
             events = emptyList(), interruptedAtMillis = now.coerceAtLeast(1L), updatedAtMillis = now)
     }

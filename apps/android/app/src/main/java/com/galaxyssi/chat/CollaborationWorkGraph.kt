@@ -8,6 +8,7 @@ import org.json.JSONObject
 internal object CollaborationWorkGraph {
     const val FEEDBACK = "collaboration_research_graph_feedback"
     const val POLICY = "collaboration_research_dependency_policy"
+    const val INDEPENDENT = "collaboration_research_independent_review"
     const val PREVIOUS_DEPENDENCIES = "collaboration_research_previous_dependencies"
     data class Plan(val work: List<JSONObject>, val error: String = "")
 

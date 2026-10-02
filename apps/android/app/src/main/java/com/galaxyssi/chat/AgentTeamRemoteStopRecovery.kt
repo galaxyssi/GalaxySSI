@@ -13,17 +13,38 @@ internal object AgentTeamRemoteStopPolicy {
 }
 
 /** Pending managed records are the durable stop outbox; receipt of a terminal reply retires them. */
-internal class AgentTeamRemoteStopRecovery(private val context: Context) {
-    private val attempts = AgentEncryptedDatabase(context.applicationContext, "agent_team_stop_attempts_v1")
+internal class AgentTeamRemoteStopRecovery(
+    private val isRequestReplyReady: () -> Boolean,
+    private val cancelDesktop: (AgentManagedResponseRecord) -> Unit
+) {
+    constructor(context: Context) : this(
+        { GalaxySSIMqttClient.isRequestReplyReady() }, desktopStop(context.applicationContext))
 
     fun reconcile(teams: List<AgentTeamExecutionSnapshot>, ledger: AgentManagedResponseLedger,
                   isStopped: (String) -> Boolean) {
-        if (!GalaxySSIMqttClient.isRequestReplyReady()) return
-        teams.filter { isStopped(it.supervisorRunId) }.forEach { team ->
-            ledger.pendingForSupervisor(team.supervisorRunId).forEach recordLoop@ { record ->
-                if (!AgentTeamRemoteStopPolicy.owns(team, record)) return@recordLoop
-                val contact = AppStore.contactById(context, record.contactId) ?: return@recordLoop
-                if (contact.optString("desktop_id").isBlank()) return@recordLoop
+        val pending = teams.filter { isStopped(it.supervisorRunId) }.flatMap { team ->
+            ledger.pendingForSupervisor(team.supervisorRunId).filter { AgentTeamRemoteStopPolicy.owns(team, it) }
+        }
+        // An interrupted worker may have detached while its cloud request is still running.
+        // Cancel only its exact lease; cancellation is not a terminal response acknowledgment.
+        pending.forEach { record ->
+            AgentCloudDispatchRegistry.cancelExact(AgentCloudDispatchIdentity(
+                sourceMessageId = record.sourceMessageId, contactId = record.contactId,
+                conversationId = record.conversationId, turnId = record.turnId, taskId = record.taskId,
+                actionId = "team-${record.ownerRunId}"))
+        }
+        if (!isRequestReplyReady()) return
+        pending.forEach(cancelDesktop)
+    }
+
+    private companion object {
+        val LOCK = Any()
+
+        fun desktopStop(context: Context): (AgentManagedResponseRecord) -> Unit {
+            val attempts = AgentEncryptedDatabase(context, "agent_team_stop_attempts_v1")
+            return stop@ { record ->
+                val contact = AppStore.contactById(context, record.contactId) ?: return@stop
+                if (contact.optString("desktop_id").isBlank()) return@stop
                 val now = System.currentTimeMillis()
                 val claimed = synchronized(LOCK) {
                     val last = attempts.readString(record.ownerRunId, "0").toLongOrNull() ?: 0L
@@ -41,6 +62,4 @@ internal class AgentTeamRemoteStopRecovery(private val context: Context) {
             }
         }
     }
-
-    private companion object { val LOCK = Any() }
 }

@@ -1777,8 +1777,15 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             }
             } catch (_: kotlinx.coroutines.CancellationException) {
-                attempts.cancel(System.currentTimeMillis())
-                journal?.finish(attempts.report, cancelled = true)
+                try {
+                    attempts.cancel(System.currentTimeMillis())
+                    journal?.finish(attempts.report, cancelled = true)
+                } finally {
+                    dispatchLease.acknowledgeCancellation(dispatchIdentity, managedTeamAction,
+                        appContext.getString(R.string.cloud_stream_cancelled_status), attempts.report) { receipt ->
+                        AgentConnectorResponseBus.publish(appContext, receipt)
+                    }
+                }
                 // Cancellation is terminal, not a provider failure or a new incoming answer.
                 outgoingHistoryWrite?.let { history ->
                     runCatching { history.get(10L, TimeUnit.SECONDS) }

@@ -290,6 +290,8 @@ internal class ActionExecutorAgentProvider(
 
     fun discardPrepared(agentId: String, runId: String) = transports[agentId]?.discardPrepared(runId)
 
+    fun detachRun(agentId: String, runId: String) = transports[agentId]?.detachRun(runId)
+
     fun executeDelegate(action: AgentAction, screen: ScreenContext): AgentActionResult = delegate.execute(action, screen)
 
     private fun registrationSnapshot(): List<AgentRegistration> {
@@ -356,6 +358,10 @@ private class ActionExecutorAgentTransport(
         prepared.remove(runId)
         trim(results)
         trim(events)
+    }
+
+    fun detachRun(runId: String) {
+        removeActive(runId)
     }
 
     override suspend fun open(): AgentProtocolRange = currentRegistration().protocol
@@ -493,10 +499,9 @@ private class ActionExecutorAgentTransport(
         val active = removeActive(runId)
         active?.let { globalRunSlots?.releaseBySourceMessageId(it.sourceMessageId) }
         val current = results[runId]
-        // A local cancellation is not a remote terminal acknowledgement. Keep Desktop ownership
-        // so the durable team controller can retry the exact stop after a disconnect/restart.
-        if (active?.request?.context?.get(MANAGED_TEAM_CONTEXT_KEY)?.toString()?.toBoolean() != true ||
-            current?.metadata?.get("resource_location") == "cloud") managedResponses.markApplied(runId)
+        // Only the durable team checkpoint may consume managed evidence. The callback may
+        // already have removed its live owner while its result is still uncommitted.
+        if (active == null && current != null && current.metadata["awaiting_response"] != "true") return
         AgentCloudDispatchRegistry.cancel(current)
         results[runId] = current?.copy(
             success = false,

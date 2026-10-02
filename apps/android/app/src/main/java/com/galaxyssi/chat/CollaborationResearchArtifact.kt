@@ -83,7 +83,7 @@ internal object CollaborationResearchArtifact {
             .toString()
     }
 
-    fun publicText(raw: String): String = CollaborationGoalLoop.publicText(raw) ?: decode(raw)?.optString("summary") ?: raw
+    fun publicText(raw: String): String = CollaborationLiveGraph.publicText(raw) ?: CollaborationGoalLoop.publicText(raw) ?: decode(raw)?.optString("summary") ?: raw
 
     fun memoryText(raw: String): String {
         val memory = decode(raw)?.optJSONArray("memory") ?: return ""

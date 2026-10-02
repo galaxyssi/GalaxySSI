@@ -58,6 +58,23 @@ internal class AgentCloudDispatchLease {
     fun checkActive() {
         if (isCancelled) throw CancellationException("Cloud dispatch cancelled")
     }
+
+    /** Call only after cloud execution has unwound into its cancellation catch, never when STOP is requested. */
+    fun acknowledgeCancellation(
+        identity: AgentCloudDispatchIdentity,
+        managedTeamAction: Boolean,
+        status: String,
+        providerAttempts: AgentProviderAttemptReport,
+        publish: (AgentConnectorResponse) -> Boolean
+    ): Boolean {
+        // A nested request can throw cancellation before the dispatch lease observes a STOP.
+        cancel()
+        if (!managedTeamAction || !isCancelled) return false
+        return publish(AgentConnectorResponse(
+            sourceMessageId = identity.sourceMessageId, contactId = identity.contactId,
+            content = status, conversationId = identity.conversationId, turnId = identity.turnId,
+            taskId = identity.taskId, success = false, providerAttempts = providerAttempts))
+    }
 }
 
 internal object AgentCloudDispatchRegistry {
@@ -70,7 +87,9 @@ internal object AgentCloudDispatchRegistry {
     }
 
     fun cancel(result: AgentActionResult?): Boolean = result?.let(AgentCloudDispatchIdentity::from)
-        ?.let { active[it]?.cancel() } ?: false
+        ?.let(::cancelExact) ?: false
+
+    fun cancelExact(identity: AgentCloudDispatchIdentity): Boolean = active[identity]?.cancel() ?: false
 
     fun release(identity: AgentCloudDispatchIdentity, lease: AgentCloudDispatchLease) {
         active.remove(identity, lease)
