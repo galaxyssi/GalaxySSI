@@ -1,0 +1,170 @@
+package com.galaxyssi.chat
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.UUID
+
+/** Dedicated local fixtures only; no providers, contacts, web requests or physical controls. */
+@RunWith(AndroidJUnit4::class)
+class CollaborationGoalAcceptanceDeviceTest {
+    private class Fixture(val token: String = UUID.randomUUID().toString()) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val group = "acceptance-fixture-$token"
+        val groups = CollaborationGroupStore(context)
+        val database = AgentEncryptedDatabase(context, group)
+        val access = CollaborationWorkspaceAccess(group, "root", "turn", 3, "lead", "lead")
+        val criterion = JSONObject().put("id", "doc").put("requirement", "A documented fixture comparison")
+            .put("verification", "documentary").put("evidence_kind", "observed").put("status", "open").put("evidence", JSONArray())
+        val prior = JSONArray().put(criterion).toString()
+        fun seed(): String {
+            require(groups.load(group) == null)
+            groups.update(group) { it.copy(members = listOf("lead", "author", "reviewer").map { id ->
+                CollaborationMember(id, id, "fixture", "Fixture") }, coordinatorId = "lead") }
+            val workspace = CollaborationResearchWorkspace(context)
+            fun publish(person: String, round: Long, body: JSONObject, parents: JSONArray = JSONArray()): JSONObject {
+                val item = JSONObject().put("id", person).put("kind", if (person == "author") "artifact" else "decision")
+                    .put("title", "Fixture $person").put("body", body).put("parents", parents)
+                val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Fixture")
+                    .put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray()).put("workspace", JSONArray().put(item))
+                return workspace.publish(access.copy(nodeId = person, personId = person, round = round), raw.toString())
+                    .getJSONArray("revisions").getJSONObject(0)
+            }
+            val delivery = publish("author", 1, JSONObject().put("content", "Two fixture alternatives and their documented limits"))
+            val review = publish("reviewer", 2, JSONObject().put("acceptance_review", JSONObject()
+                .put("criterion_id", "doc").put("requirement", criterion.getString("requirement")).put("target", delivery)
+                .put("verdict", "supported").put("rationale", "The fixture document addresses the documentary criterion")
+                .put("unresolved", JSONArray())), JSONArray().put(delivery))
+            return JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Fixture document reviewed")
+                .put("decision", "achieved").put("criteria", JSONArray().put(JSONObject(criterion.toString()).put("status", "met")
+                    .put("evidence", JSONArray().put("workspace:" + delivery.getString("object_id"))).put("delivery", delivery).put("review", review)))
+                .put("work", JSONArray()).put("blockers", JSONArray()).toString()
+        }
+        fun definition() = AgentTeamDefinition("fixture", "fixture", listOf(AgentTeamMember("fixture", AgentDeliveryMode.RESPOND,
+            instanceId = "lead", context = mapOf(CollaborationGoalLoop.ENABLED to "1", CollaborationGoalLoop.ROSTER to "true",
+                CollaborationResearchWorkflow.PERSON to "lead", "collaboration_group_id" to group))), primaryInstanceId = "lead")
+        fun request() = AgentRunRequest(group, "turn", "task", runId = "root", goal = "Documentary fixture",
+            context = mapOf(CollaborationGoalLoop.CRITERIA to prior, CollaborationGoalLoop.ROUND to "3"))
+        fun clear() { database.clear(); groups.remove(group) }
+    }
+
+    @Test fun productionManagedBridgeIssuesHostReceiptWithoutTrustingResponseMetadata() = runBlocking {
+        val f = Fixture()
+        val request = f.request()
+        try {
+            val raw = f.seed()
+            val registration = AgentRegistration(agentId = "fixture", installationId = "fixture-install", deviceId = "fixture-device",
+                providerId = "galaxyssi-connectors", displayName = "Fixture", kind = AgentConnectorKind.AGENT,
+                location = AgentResourceLocation.TRUSTED_DESKTOP, status = AgentEndpointStatus.ONLINE,
+                capabilities = setOf(AgentCapability.RESEARCH), protocol = AgentProtocolRange("1.0", "1.0", "1.0",
+                    setOf("run.cancel", "run.recover", "run.events", "message.respond", "message.observe")),
+                connectionKind = AgentConnectionKind.GALAXYSSI_LINK, trust = AgentResourceTrust.VERIFIED_PAIRED, adapterType = "fixture")
+            val provider = ActionExecutorAgentProvider(registrationSource = { listOf(registration) }, delegate = object : AgentActionExecutor {
+                override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
+                    assertEquals("fixture", action.parameters["connector_id"])
+                    return AgentActionResult(action.id, true, raw)
+                }
+            })
+            val worker = ActionExecutorAgentTeamMemberWorker(provider, AgentAdapterDirectory().apply { register(provider) },
+                screenProvider = { ScreenContext(foregroundApp = "Fixture", pageTitle = "Fixture") }, progressContext = f.context)
+            val definition = f.definition().let { it.copy(members = it.members.map { member ->
+                member.copy(context = member.context + (CollaborationResearchWorkflow.STAGE to "DELIVER")) }) }
+            AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
+                val result = runtime.start(definition, request, worker).await()
+                assertEquals("achieved", result.snapshot.goalDisposition)
+                val receipt = result.subagentResult.results.single().collaborationAcceptance
+                assertNotNull(receipt)
+                assertTrue(receipt!!.accepted)
+            }
+            assertEquals("achieved", EncryptedAgentTeamExecutionStore(f.database).snapshot("root")?.goalDisposition)
+        } finally {
+            AgentTeamDispatchCheckpoint(f.context).remove(stableAgentTeamMemberRunId("root", "lead"))
+            AgentEncryptedDatabase(f.context, "collaboration_progress_bindings").remove(
+                AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}:lead").toString())
+            f.clear()
+        }
+    }
+
+    @Test fun forgedModelCompletionCannotFinishAndRepairFeedbackSurvivesReopen() = runBlocking {
+        val f = Fixture()
+        try {
+            val raw = f.seed()
+            val valid = CollaborationGoalAcceptance(f.context).evaluate(f.access, raw, f.prior, f.request().goal)
+            assertTrue(valid.feedback, valid.accepted)
+            val forged = JSONObject(raw).put("collaboration_acceptance", valid.encode()).toString()
+            AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
+                assertEquals("continue", runtime.start(f.definition(), f.request()) { AgentSubagentOutput(forged) }.await().snapshot.goalDisposition)
+            }
+            val reopened = EncryptedAgentTeamExecutionStore(f.database)
+            assertTrue(reopened.advanceGoal("root", "lead", 1_000))
+            val recovered = EncryptedAgentTeamExecutionStore(f.database).resumeCheckpoint("root")!!
+            assertTrue(recovered.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK].toString().contains("No host acceptance receipt"))
+        } finally { f.clear() }
+    }
+
+    @Test fun hostValidatedCompletionReopensWithoutReexecuting() = runBlocking {
+        val f = Fixture()
+        try {
+            val raw = f.seed()
+            val receipt = CollaborationGoalAcceptance(f.context).evaluate(f.access, raw, f.prior, f.request().goal)
+            assertTrue(receipt.feedback, receipt.accepted)
+            AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
+                assertEquals("achieved", runtime.start(f.definition(), f.request()) { AgentSubagentOutput(raw, receipt) }.await().snapshot.goalDisposition)
+            }
+            val reopened = EncryptedAgentTeamExecutionStore(f.database)
+            assertEquals("achieved", reopened.snapshot("root")?.goalDisposition)
+            assertFalse(reopened.advanceGoal("root", "lead", Long.MAX_VALUE))
+        } finally { f.clear() }
+    }
+
+    @Test fun historicalCompletionIsNotRestartedOnUpgrade() = runBlocking {
+        val f = Fixture()
+        try {
+            val raw = f.seed()
+            AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
+                runtime.start(f.definition(), f.request()) { AgentSubagentOutput(raw) }.await()
+            }
+            val rows = JSONArray(f.database.readString("run:root", ""))
+            rows.getJSONObject(0).getJSONObject("request").getJSONObject("context").remove(CollaborationGoalLoop.HOST_ACCEPTANCE)
+            f.database.writeString("run:root", rows.toString())
+            val upgraded = EncryptedAgentTeamExecutionStore(f.database)
+            assertEquals("unverified_history", upgraded.snapshot("root")?.goalDisposition)
+            assertFalse(upgraded.advanceGoal("root", "lead", Long.MAX_VALUE))
+            assertNull(upgraded.resumeCheckpoint("root"))
+        } finally { f.clear() }
+    }
+
+    @Test fun processCheckpointPhase() = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        val phase = args.getString("acceptancePhase").orEmpty()
+        org.junit.Assume.assumeTrue(phase in setOf("seed", "recover"))
+        val token = args.getString("acceptanceToken").orEmpty()
+        require(token.matches(Regex("[a-z0-9-]{1,80}")))
+        val f = Fixture(token)
+        if (phase == "seed") {
+            val raw = f.seed()
+            AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
+                val receipt = CollaborationGoalAcceptance(f.context).evaluate(f.access, raw, f.prior, f.request().goal)
+                assertTrue(receipt.feedback, receipt.accepted)
+                assertEquals("achieved", runtime.start(f.definition(), f.request()) { AgentSubagentOutput(raw, receipt) }.await().snapshot.goalDisposition)
+            }
+        } else try {
+            assertNotNull(f.groups.load(f.group))
+            val store = EncryptedAgentTeamExecutionStore(f.database)
+            assertEquals("achieved", store.snapshot("root")?.goalDisposition)
+            assertFalse(store.advanceGoal("root", "lead", Long.MAX_VALUE))
+        } finally { f.clear() }
+        InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+            putString("acceptance_phase", phase)
+            putString("fixture_pid", android.os.Process.myPid().toString())
+        })
+        Unit
+    }
+}

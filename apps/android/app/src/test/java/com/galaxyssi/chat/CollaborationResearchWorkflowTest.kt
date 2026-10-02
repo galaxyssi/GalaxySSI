@@ -78,9 +78,9 @@ class CollaborationResearchWorkflowTest {
             }
             assertEquals(1001, completed.size)
             assertEquals(1002, assessments)
-            assertEquals("achieved", result.snapshot.goalDisposition)
-            assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
-            assertFalse(store.advanceGoal("research-run", result.snapshot.primaryMemberId, Long.MAX_VALUE))
+            assertEquals("continue", result.snapshot.goalDisposition)
+            assertEquals(AgentTeamExecutionState.INTERRUPTED, result.snapshot.state)
+            assertTrue("A textual success claim must schedule acceptance repair", store.advanceGoal("research-run", result.snapshot.primaryMemberId, Long.MAX_VALUE))
         }
     }
 
@@ -107,7 +107,7 @@ class CollaborationResearchWorkflowTest {
             val checkpoint = requireNotNull(store.resumeCheckpoint("research-run"))
             assertEquals(81, checkpoint.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
             val result = runtime.resume(checkpoint, worker).await()
-            assertEquals("achieved", result.snapshot.goalDisposition)
+            assertEquals("continue", result.snapshot.goalDisposition)
             assertTrue(peak.get() in 2..3)
         }
     }
@@ -115,7 +115,8 @@ class CollaborationResearchWorkflowTest {
     @Test fun cannotFinishWithoutEvidenceOrByDroppingOrWeakeningCriteria() {
         val prior = assessment().getJSONArray("criteria").toString()
         val done = assessment("achieved", 0)
-        assertEquals("achieved", CollaborationGoalLoop.disposition(done.toString(), prior))
+        assertEquals("continue", CollaborationGoalLoop.disposition(done.toString(), prior))
+        assertEquals("achieved", CollaborationGoalLoop.disposition(done.toString(), prior, acceptanceVerified = true))
         done.getJSONArray("criteria").getJSONObject(0).put("evidence", JSONArray())
         assertEquals("continue", CollaborationGoalLoop.disposition(done.toString(), prior))
         val changed = assessment("achieved", 0)

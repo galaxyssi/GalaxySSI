@@ -155,6 +155,16 @@ internal data class AgentTeamExecutionRecord(
     val updatedAtMillis: Long = request.createdAtMillis
 )
 
+internal fun AgentTeamExecutionRecord.acceptanceVerified(result: AgentSubagentChildResult?): Boolean =
+    result?.takeIf { it.status == AgentSubagentStatus.SUCCEEDED && !it.outputTruncated && it.childId == definition.primaryMemberId }
+        ?.collaborationAcceptance?.let { receipt -> receipt.accepted && receipt.matches(result.output,
+            request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]", request.goal,
+            request.runId, request.messageId, definition.primaryMemberId) } == true
+
+// Preserve historical completions on upgrade; new execution events always use the host gate.
+private fun AgentTeamExecutionRecord.activateAcceptance() = if (CollaborationGoalLoop.enrolled(this))
+    copy(request = request.copy(context = request.context + (CollaborationGoalLoop.HOST_ACCEPTANCE to "1"))) else this
+
 private fun AgentTeamExecutionRecord.pendingGoalRecruits() = definition.members.filter {
     it.context[CollaborationGoalLoop.ROSTER] == "true" && it.context[CollaborationGoalRecruitment.PUBLISHED] == "false"
 }
@@ -227,7 +237,7 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
             }
             return
         }
-        records[request.runId] = AgentTeamExecutionRecord(definition, request)
+        records[request.runId] = AgentTeamExecutionRecord(definition, request).activateAcceptance()
     }
 
     override suspend fun append(event: AgentSubagentEvent) {
@@ -241,7 +251,7 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
                 }
                 return
             }
-            records[event.supervisorId] = record.copy(
+            records[event.supervisorId] = record.activateAcceptance().copy(
                 events = retainTeamEvents(record.events + event),
                 interruptedAtMillis = if (event.kind == AgentSubagentEventKinds.SUPERVISOR_STARTED) 0L else record.interruptedAtMillis,
                 updatedAtMillis = maxOf(record.updatedAtMillis, event.timestampMillis)
@@ -290,7 +300,7 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
         val current = records[record.supervisorRunId] ?: return false
         val mutation = current.applyLateResponse(record)
         if (!mutation.accepted) return false
-        records[record.supervisorRunId] = mutation.record
+        records[record.supervisorRunId] = if (mutation.record != current) mutation.record.activateAcceptance() else current
         return true
     }
 
@@ -349,7 +359,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
             }
             return@synchronized
         }
-        write(AgentTeamExecutionRecord(definition, request))
+        write(AgentTeamExecutionRecord(definition, request).activateAcceptance())
         prune()
     }
 
@@ -364,7 +374,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
                 }) { "Agent team event sequence conflict for ${event.supervisorId}" }
                 return@synchronized
             }
-            write(record.copy(
+            write(record.activateAcceptance().copy(
                 events = retainTeamEvents(record.events + event),
                 interruptedAtMillis = if (event.kind == AgentSubagentEventKinds.SUPERVISOR_STARTED) 0L else record.interruptedAtMillis,
                 updatedAtMillis = maxOf(record.updatedAtMillis, event.timestampMillis)
@@ -431,7 +441,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         val current = record(response.supervisorRunId) ?: return@synchronized false
         val mutation = current.applyLateResponse(response)
         if (!mutation.accepted) return@synchronized false
-        if (mutation.record != current) write(mutation.record)
+        if (mutation.record != current) write(mutation.record.activateAcceptance())
         true
     }
 
@@ -1021,7 +1031,13 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                         CollaborationWorkspaceAccess.from(context), result.content)
                     if (receipt.length() > 0) artifact.put("workspace_receipt", receipt)
                 }
-                result.copy(content = CollaborationResearchArtifact.handoff(artifact?.toString() ?: result.content, stage))
+                val acceptance = if (stage == CollaborationResearchStage.DELIVER &&
+                    context.member.context[CollaborationGoalLoop.ENABLED] == "1" && progressContext != null &&
+                    CollaborationGoalLoop.decode(result.content)?.optString("decision") == "achieved")
+                    CollaborationGoalAcceptance(progressContext).evaluate(CollaborationWorkspaceAccess.from(context), result.content,
+                        context.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]", context.request.goal) else null
+                result.copy(content = CollaborationResearchArtifact.handoff(artifact?.toString() ?: result.content, stage),
+                    collaborationAcceptance = acceptance)
             } ?: result
         } finally {
             provider.discardPrepared(registration.agentId, managedRequest.runId)
@@ -1046,6 +1062,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 .append(context.request.context[CollaborationGoalLoop.CRITERIA] ?: "[]").append('\n')
             append("Host recruitment feedback: ").append(context.request.context[CollaborationGoalRecruitment.FEEDBACK]?.toString().orEmpty()).append('\n')
             append("Host dependency validation: ").append(context.request.context[CollaborationWorkGraph.FEEDBACK]?.toString().orEmpty()).append('\n')
+            append("Host acceptance feedback: ").append(context.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK]?.toString().orEmpty()).append('\n')
             append("Completed prior work dependencies (recall their original artifacts): ")
                 .append(context.member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES].orEmpty()).append('\n')
             append("Already completed work IDs (do not dispatch again; recall archived results instead): ")
@@ -1694,7 +1711,8 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
         ?.takeIf { it.status == AgentSubagentStatus.SUCCEEDED }?.output.orEmpty()
     val goalDisposition = if (CollaborationGoalLoop.enrolled(this) && terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED)
         CollaborationGoalLoop.disposition(rawOutput, request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]",
-            CollaborationGoalLoop.finishedWork(this)) else ""
+            CollaborationGoalLoop.finishedWork(this), acceptanceVerified(latestByChild[definition.primaryMemberId]?.result),
+            allowUnverifiedHistory = request.context[CollaborationGoalLoop.HOST_ACCEPTANCE] != "1") else ""
     val state = when {
         goalDisposition in setOf("continue", "blocked") -> AgentTeamExecutionState.INTERRUPTED
         interruptedAtMillis > 0L && terminal == null -> AgentTeamExecutionState.INTERRUPTED
@@ -1894,6 +1912,7 @@ private object AgentTeamExecutionCodec {
         .put("provenance", encodeProvenance(result.provenance))
         .put("started_at_millis", result.startedAtMillis)
         .put("completed_at_millis", result.completedAtMillis)
+        .put("collaboration_acceptance", result.collaborationAcceptance?.encode())
 
     private fun decodeResult(json: JSONObject?): AgentSubagentChildResult? {
         json ?: return null
@@ -1910,7 +1929,8 @@ private object AgentTeamExecutionCodec {
             errorMessage = json.optString("error_message").take(1_024),
             provenance = decodeProvenance(json.optJSONObject("provenance")),
             startedAtMillis = json.optLong("started_at_millis"),
-            completedAtMillis = json.optLong("completed_at_millis")
+            completedAtMillis = json.optLong("completed_at_millis"),
+            collaborationAcceptance = CollaborationAcceptanceReceipt.decode(json.optJSONObject("collaboration_acceptance"))
         )
     }
 
