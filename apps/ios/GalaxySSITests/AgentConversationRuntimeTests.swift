@@ -9,13 +9,13 @@ extension GalaxySSIStoreTests {
       taskId: "executor-task", status: .waitingResponse,
       eventJournal: [.init(kind: AgentTaskEventKinds.recoveryWaitingResponse)])
     XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
-      tasks: [], unread: false, workspaces: [workspace]), .reconnecting)
+      tasks: [], unread: false, workspaces: [.init(workspace)]), .reconnecting)
     workspace.eventJournal.append(.init(kind: AgentTaskEventKinds.progress))
     XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
-      tasks: [], unread: false, workspaces: [workspace]), .waitingResponse)
+      tasks: [], unread: false, workspaces: [.init(workspace)]), .waitingResponse)
     workspace.status = .paused
     XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
-      tasks: [], unread: false, workspaces: [workspace]), .paused)
+      tasks: [], unread: false, workspaces: [.init(workspace)]), .paused)
   }
 
   func testConversationExecutionIgnoresOtherTurnsAndUsesNewerStatus() {
@@ -24,16 +24,16 @@ extension GalaxySSIStoreTests {
     var workspace = AgentWorkspace(workspaceId: "old-turn", sessionId: "session", conversationId: "conversation",
       taskId: "old-task", status: .failed, updatedAtMillis: 100)
     XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
-      tasks: [], unread: false, workspaces: [workspace]), .waitingResponse)
+      tasks: [], unread: false, workspaces: [.init(workspace)]), .waitingResponse)
     workspace.workspaceId = "turn"
     workspace.status = .paused
     let record = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "goal", phase: .executing,
       routeKind: .localSystem, targetTitle: "Local", risk: .low, blocked: false, updatedAtMillis: 200)
     XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
-      tasks: [record], unread: false, workspaces: [workspace]), .running)
+      tasks: [record], unread: false, workspaces: [.init(workspace)]), .running)
     workspace.updatedAtMillis = 300
     XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
-      tasks: [record], unread: false, workspaces: [workspace]), .paused)
+      tasks: [record], unread: false, workspaces: [.init(workspace)]), .paused)
   }
 
   func testWorkspacePersistenceNotifiesOnlyAfterSuccessfulWrite() throws {

@@ -108,7 +108,7 @@ struct GalaxySSIConversationHubView: View {
   @State private var addContactPresentation: GalaxySSIAddContactPresentation?
   @State private var cloudModelOnboardingPresented = false
   @State private var hubRefreshToken = UUID()
-  @State private var executionWorkspaces: [AgentWorkspace] = []
+  @State private var executionWorkspaces: [GalaxySSIConversationExecutionPolicy.Snapshot] = []
   @State private var pendingFriendRequestsPresented = false
   @State private var smartDeviceOnboardingPresented = false
   @State private var groupsPresented = false
@@ -515,12 +515,12 @@ struct GalaxySSIConversationHubView: View {
     .onReceive(
       NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     ) { _ in
-      executionWorkspaces = store.agentWorkspaceStore.list()
+      executionWorkspaces = store.agentWorkspaceStore.list().map(GalaxySSIConversationExecutionPolicy.Snapshot.init)
       refreshAfterAppActivation()
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
       .debounce(for: .milliseconds(100), scheduler: RunLoop.main)) { _ in
-      executionWorkspaces = store.agentWorkspaceStore.list()
+      executionWorkspaces = store.agentWorkspaceStore.list().map(GalaxySSIConversationExecutionPolicy.Snapshot.init)
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       refreshAfterRemotePairingRevocation()
@@ -529,7 +529,7 @@ struct GalaxySSIConversationHubView: View {
       }
     }
     .onAppear {
-      executionWorkspaces = store.agentWorkspaceStore.list()
+      executionWorkspaces = store.agentWorkspaceStore.list().map(GalaxySSIConversationExecutionPolicy.Snapshot.init)
       openInitialContactIfNeeded()
     }
     .onChange(of: initialContactId) { _ in

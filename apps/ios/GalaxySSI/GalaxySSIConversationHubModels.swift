@@ -41,8 +41,28 @@ enum GalaxySSIConversationExecutionStatus: String, CaseIterable {
 }
 
 enum GalaxySSIConversationExecutionPolicy {
+  struct Snapshot {
+    let workspaceID: String
+    let conversationID: String
+    let taskID: String
+    let phase: AgentPhase
+    let createdAt: Int64
+    let updatedAt: Int64
+    let recovering: Bool
+
+    init(_ workspace: AgentWorkspace) {
+      workspaceID = workspace.workspaceId
+      conversationID = workspace.conversationId
+      taskID = workspace.taskId
+      phase = GalaxySSIConversationExecutionPolicy.phase(workspace.status)
+      createdAt = workspace.createdAtMillis
+      updatedAt = workspace.updatedAtMillis
+      recovering = GalaxySSIConversationExecutionPolicy.isRecovering(workspace)
+    }
+  }
+
   static func resolve(conversationID: String, message: ChatMessage?, tasks: [AgentTaskRecord], unread: Bool,
-                      workspaces: [AgentWorkspace] = []) -> GalaxySSIConversationExecutionStatus {
+                      workspaces: [Snapshot] = []) -> GalaxySSIConversationExecutionStatus {
     if let message, message.conversationId == conversationID, message.deliveryStatus == .failed { return .failed }
     let latest = message.flatMap { message -> AgentTranscriptEntry? in
       guard message.conversationId == conversationID else { return nil }
@@ -53,16 +73,16 @@ enum GalaxySSIConversationExecutionPolicy {
     }
     let selected = task(conversationID: conversationID, latest: latest, tasks: tasks)
     let workspace = workspaces.filter { workspace in
-      guard workspace.conversationId == conversationID else { return false }
+      guard workspace.conversationID == conversationID else { return false }
       guard let turn = latest?.turnId, !turn.isEmpty else { return true }
-      return workspace.workspaceId == turn || workspace.taskId == turn
+      return workspace.workspaceID == turn || workspace.taskID == turn
     }.max {
-      if $0.createdAtMillis != $1.createdAtMillis { return $0.createdAtMillis < $1.createdAtMillis }
-      return $0.updatedAtMillis < $1.updatedAtMillis
+      if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+      return $0.updatedAt < $1.updatedAt
     }
-    if let workspace, workspace.updatedAtMillis >= (selected?.updatedAtMillis ?? Int64.min) {
-      return resolve(phase: phase(workspace.status), latest: latest, unread: unread,
-        recovering: isRecovering(workspace))
+    if let workspace, workspace.updatedAt >= (selected?.updatedAtMillis ?? Int64.min) {
+      return resolve(phase: workspace.phase, latest: latest, unread: unread,
+        recovering: workspace.recovering)
     }
     return resolve(phase: selected?.phase, latest: latest, unread: unread)
   }
