@@ -207,6 +207,86 @@ class MqttAtomicInboxDeviceTest {
             accept(inbox, scope = peer.copy(scope = "other", endpoint = "other")).stage)
     }
 
+    @Test fun completedTombstonesDoNotConsumePendingRecordCapacity() {
+        val db = database()
+        val inbox = GalaxySSILinkInbox(db, maxRecords = 1, maxPeerRecords = 1)
+        repeat(100) { index ->
+            val stored = accept(inbox, id = "completed-$index", cipher = MqttImmutableContent.sha256("cipher-$index"))
+            assertTrue(inbox.complete(stored.payload))
+            assertTrue(inbox.complete(stored.payload))
+        }
+        assertEquals(100L, inbox.usage().retainedRecords)
+        assertEquals(0L, inbox.usage(peer.scope).pendingRecords)
+        assertEquals(0L, inbox.usage().pendingBytes)
+        assertTrue(db.keys("rx:payload:").isEmpty())
+        val pending = accept(inbox, id = "new-result")
+        assertEquals(1L, inbox.usage().pendingRecords)
+        assertThrows(GalaxySSILinkInbox.CapacityExceeded::class.java) { accept(inbox, id = "too-many", cipher = "e".repeat(64)) }
+        val reopened = GalaxySSILinkInbox(db, maxRecords = 1, maxPeerRecords = 1)
+        assertEquals(GalaxySSILinkInbox.Stage.COMPLETED,
+            accept(reopened, id = "completed-0", cipher = MqttImmutableContent.sha256("cipher-0")).stage)
+        assertTrue(reopened.replay(peer.scope, MqttImmutableContent.sha256("cipher-0"))!!.completed)
+        assertEquals(pending.recordKey, reopened.pending().single().recordKey)
+        assertEquals(1L, reopened.usage().pendingRecords)
+    }
+
+    @Test fun oldUsageMigrationCountsPendingWithoutDeletingReplayProofs() {
+        val db = database()
+        val before = GalaxySSILinkInbox(db)
+        val completed = accept(before)
+        before.complete(completed.payload)
+        val pending = accept(before, id = "pending", cipher = "e".repeat(64))
+        db.indexedTransaction { sql ->
+            sql.execSQL("DROP TABLE link_inbox_usage")
+            sql.execSQL("CREATE TABLE link_inbox_usage(scope_digest TEXT PRIMARY KEY NOT NULL, record_count INTEGER NOT NULL, pending_bytes INTEGER NOT NULL)")
+            sql.execSQL("INSERT INTO link_inbox_usage SELECT '',COUNT(*),SUM(payload_bytes) FROM link_inbox_records")
+            sql.execSQL("INSERT INTO link_inbox_usage SELECT scope_digest,COUNT(*),SUM(payload_bytes) FROM link_inbox_records GROUP BY scope_digest")
+        }
+        val migrated = GalaxySSILinkInbox(db, maxRecords = 2, maxPeerRecords = 2)
+        assertEquals(2L, migrated.usage().retainedRecords)
+        assertEquals(1L, migrated.usage().pendingRecords)
+        assertEquals(migrated.usage(), migrated.usage(peer.scope))
+        assertTrue(migrated.replay(peer.scope, digest)!!.completed)
+        assertTrue(migrated.isPending(pending.payload))
+        accept(migrated, id = "new", cipher = "f".repeat(64))
+        assertEquals(2L, migrated.usage().pendingRecords)
+        assertThrows(GalaxySSILinkInbox.CapacityExceeded::class.java) { accept(migrated, id = "full", cipher = "a".repeat(64)) }
+        assertEquals(migrated.usage(), GalaxySSILinkInbox(db).usage())
+    }
+
+    @Test fun rolledBackCompletionKeepsPendingSlotAndDoesNotLoseReplayProof() {
+        val db = database()
+        val inbox = GalaxySSILinkInbox(db, maxRecords = 1)
+        val first = accept(inbox)
+        assertThrows(IllegalStateException::class.java) {
+            db.indexedTransaction { inbox.complete(first.payload); error("rollback completion") }
+        }
+        assertEquals(1L, inbox.usage().pendingRecords)
+        assertFalse(inbox.replay(peer.scope, digest)!!.completed)
+        assertThrows(GalaxySSILinkInbox.CapacityExceeded::class.java) { accept(inbox, id = "blocked", cipher = "e".repeat(64)) }
+        inbox.complete(first.payload)
+        accept(inbox, id = "allowed", cipher = "e".repeat(64))
+        assertEquals(1L, inbox.usage().pendingRecords)
+    }
+
+    @Test fun pruningAndPairRemovalKeepPendingCountersExact() {
+        var now = 1000L
+        val inbox = GalaxySSILinkInbox(database(), now = { now })
+        val completed = accept(inbox)
+        inbox.complete(completed.payload)
+        accept(inbox, id = "pending", cipher = "e".repeat(64))
+        accept(inbox, scope = peer.copy(scope = "other", endpoint = "other"))
+        now += GalaxySSILinkInbox.RETENTION_MILLIS + 1
+        assertEquals(1, inbox.pruneCompleted())
+        assertEquals(2L, inbox.usage().pendingRecords)
+        assertEquals(2L, inbox.usage().retainedRecords)
+        assertEquals(1, inbox.forget(peer.scope))
+        assertEquals(1L, inbox.usage().pendingRecords)
+        assertEquals(0L, inbox.usage(peer.scope).pendingRecords)
+        assertEquals(1, inbox.forget("other"))
+        assertEquals(GalaxySSILinkInbox.Usage(0, 0, 0), inbox.usage())
+    }
+
     @Test fun completionAndRollbackUpdateByteQuotasAtomically() {
         val db = database()
         val inbox = GalaxySSILinkInbox(db, maxPendingBytes = 1000, maxPeerPendingBytes = 1000)

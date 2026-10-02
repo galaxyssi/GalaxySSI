@@ -57,6 +57,12 @@ internal object AndroidCollaborationRemoteEvidence {
         if (paired(context, desktop, payload)) client.receive(payload, desktop)
     }
 
+    internal suspend fun query(context: Context, desktop: String, fields: JSONObject, selection: JSONObject): JSONObject? =
+        client.query(desktop, fields, selection) { request ->
+            paired(context, desktop, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
+                GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
+        }
+
     fun pending(context: Context, group: String, source: Long): Boolean =
         CollaborationRemoteEvidenceStore(context).states(group, source).any { it.optString("status") == "pending" }
 
@@ -129,10 +135,7 @@ internal object AndroidCollaborationRemoteEvidence {
                     paired(context, desktop, fields) && current(context, fields) &&
                     CollaborationGroupStore(context).load(group)?.members?.any { it.id == binding?.personId } == true
             }) { target, scope, selection ->
-                client.query(target, scope, selection) { request ->
-                    paired(context, target, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
-                        GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
-                }
+                query(context, target, scope, selection)
             }
             if (finished) AgentTeamBackgroundRecovery.enqueue(context)
         }
