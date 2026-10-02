@@ -2,6 +2,73 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttDeliveryCompletionsTests: XCTestCase {
+  func testStoredApplicationReceiptCommitsAllThreeJournalsAndReplays() throws {
+    let f = try ChunkFixture()
+    let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let entry = try enqueue(journal.outbox)
+    try stageReceipt(journal, entry: entry)
+    let event = try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack")
+    XCTAssertEqual(event?.messageID, entry.message.messageId)
+    XCTAssertTrue(try journal.inbox.pending().isEmpty)
+    XCTAssertNil(try journal.outbox.entry(identity: entry.identity, messageID: entry.message.messageId))
+    XCTAssertNil(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack"))
+    XCTAssertEqual(try journal.outbox.completions.pending().count, 1)
+  }
+
+  func testInboxCompletionFailureRollsBackOutgoingAcknowledgement() throws {
+    let f = try ChunkFixture()
+    let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let entry = try enqueue(journal.outbox)
+    try stageReceipt(journal, entry: entry)
+    try f.execute("CREATE TRIGGER fail_inbox BEFORE UPDATE ON mqtt_business_inbox BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack"))
+    XCTAssertNotNil(try journal.outbox.entry(identity: entry.identity, messageID: entry.message.messageId))
+    XCTAssertTrue(try journal.outbox.completions.pending().isEmpty)
+    XCTAssertEqual(try journal.inbox.pending().count, 1)
+    try f.execute("DROP TRIGGER fail_inbox")
+    XCTAssertNotNil(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack"))
+  }
+
+  func testStoredReceiptAfterRawReceiptUsesExistingCompletion() throws {
+    let f = try ChunkFixture()
+    let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let entry = try enqueue(journal.outbox)
+    _ = try acknowledge(journal.outbox, entry)
+    try stageReceipt(journal, entry: entry)
+    XCTAssertNotNil(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack"))
+    XCTAssertEqual(try journal.outbox.completions.pending().count, 1)
+    XCTAssertTrue(try journal.inbox.pending().isEmpty)
+  }
+
+  func testStoredReceiptWrongHashPreservesAllPendingState() throws {
+    let f = try ChunkFixture()
+    let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let entry = try enqueue(journal.outbox)
+    try stageReceipt(journal, entry: entry, hash: sendDependencyA)
+    XCTAssertThrowsError(try journal.consumeStoredReceipt(identity: entry.identity, receiptMessageID: "ack"))
+    XCTAssertNotNil(try journal.outbox.entry(identity: entry.identity, messageID: entry.message.messageId))
+    XCTAssertEqual(try journal.inbox.pending().count, 1)
+    XCTAssertTrue(try journal.outbox.completions.pending().isEmpty)
+  }
+
+  func testStoredReceiptCannotBeConsumedUnderDifferentRelationship() throws {
+    let f = try ChunkFixture()
+    let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
+    let entry = try enqueue(journal.outbox)
+    try stageReceipt(journal, entry: entry)
+    XCTAssertNil(try journal.consumeStoredReceipt(identity: sendTestIdentity(secretByte: 8), receiptMessageID: "ack"))
+    XCTAssertEqual(try journal.inbox.pending().count, 1)
+    XCTAssertNotNil(try journal.outbox.entry(identity: entry.identity, messageID: entry.message.messageId))
+  }
+
+  private func stageReceipt(_ journal: MqttSignalStateJournal, entry: MqttBusinessOutbox.Entry,
+                            hash: String? = nil) throws {
+    var payload = try MqttDeliveryEnvelope.storedReceipt(messageID: entry.message.messageId, wireHash: hash ?? entry.wireHash)
+    payload["message_id"] = "ack"
+    _ = try journal.inbox.accept(identity: entry.identity, messageID: "ack", payload: payload,
+      ciphertextDigest: String(repeating: "e", count: 64), wireHash: String(repeating: "f", count: 64), receiptRequired: false)
+  }
+
   func testReceiptAtomicallyReplacesOutboxWithRecoverableUIEvent() throws {
     let f = try ChunkFixture()
     var outbox = try box(f)

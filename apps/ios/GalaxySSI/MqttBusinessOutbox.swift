@@ -132,11 +132,12 @@ final class MqttBusinessOutbox {
   // Both the authenticated relationship generation and canonical Signal wire hash must match.
   // No payload cleanup or success notification is legal until this transaction returns.
   @discardableResult
-  func acknowledgeVerified(identity: MqttBusinessIdentity, messageID: String, wireHash: String, now: Date = Date()) throws -> Entry? {
+  func acknowledgeVerified(identity: MqttBusinessIdentity, messageID: String, wireHash: String, now: Date = Date(),
+                           transaction: MqttChunkDatabase.Transaction? = nil) throws -> Entry? {
     let key = try identity.key(messageID: messageID)
     guard MqttRouteProtocol.hex(wireHash, count: 64) else { throw MqttRouteError.invalidPayload }
     let at = try milliseconds(now)
-    return try database.withTransaction { token in
+    return try database.withTransaction(joining: transaction) { token in
       guard let stored = try read(key), stored.identity == identity, stored.isPrepared, stored.wireHash == wireHash else { return nil }
       try completions.record(stored, at: at, transaction: token)
       try database.run("DELETE FROM mqtt_business_outbox WHERE record_key=?", [.text(key)])

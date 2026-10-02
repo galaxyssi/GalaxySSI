@@ -16,6 +16,28 @@ final class MqttSignalStateJournal {
 
   func load() throws -> Data? { try database.transaction { try read() } }
 
+  // The owner holds the current relationship fence. Read only previously decrypted, durable inbox
+  // content; dispatch cancellation and UI/attachment side effects must wait for this COMMIT.
+  func consumeStoredReceipt(identity: MqttBusinessIdentity, receiptMessageID: String,
+                            now: Date = Date()) throws -> MqttDeliveryCompletions.Event? {
+    try database.withTransaction { token in
+      guard let pending = try inbox.pending(identity: identity, messageID: receiptMessageID, transaction: token) else { return nil }
+      guard let payload = try JSONSerialization.jsonObject(with: pending.payload) as? [String: Any] else {
+        throw MqttRouteError.invalidPayload
+      }
+      guard payload["type"] as? String == "delivery_ack" else { return nil }
+      let receipt = try MqttDeliveryEnvelope.parseStoredReceipt(payload)
+      _ = try outbox.acknowledgeVerified(identity: identity, messageID: receipt.messageID,
+        wireHash: receipt.wireHash, now: now, transaction: token)
+      guard let event = try outbox.completions.event(identity: identity, messageID: receipt.messageID, transaction: token),
+            event.wireHash == receipt.wireHash else { throw MqttRouteError.unsolicitedAcknowledgement }
+      guard try inbox.complete(identity: identity, messageID: receiptMessageID, transaction: token) else {
+        throw MqttChunkStorageError.corruptState
+      }
+      return event
+    }
+  }
+
   // Compare the exact last committed snapshot before invoking libsignal. A stale engine must reopen,
   // not overwrite another engine's ratchet. Neither the result nor its receipt escapes before COMMIT.
   func commit<T>(expected: Data?, _ operation: (MqttChunkDatabase.Transaction) throws -> (T, Data)) throws -> (T, Data) {

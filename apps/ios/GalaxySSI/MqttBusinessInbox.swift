@@ -114,14 +114,25 @@ final class MqttBusinessInbox {
   }
 
   @discardableResult
-  func complete(identity: MqttBusinessIdentity, messageID: String) throws -> Bool {
+  func complete(identity: MqttBusinessIdentity, messageID: String,
+                transaction: MqttChunkDatabase.Transaction? = nil) throws -> Bool {
     let key = try identity.key(messageID: messageID)
-    return try database.transaction {
+    return try database.transaction(joining: transaction) {
       guard var saved = try record(key), saved.identity == identity else { return false }
       saved.completed = true
       saved.payload = nil
       try write(saved, key: key)
       return true
+    }
+  }
+
+  func pending(identity: MqttBusinessIdentity, messageID: String,
+               transaction: MqttChunkDatabase.Transaction) throws -> Pending? {
+    let key = try identity.key(messageID: messageID)
+    return try database.transaction(joining: transaction) {
+      guard let saved = try record(key), !saved.completed else { return nil }
+      guard saved.identity == identity, let body = saved.payload else { throw MqttChunkStorageError.corruptState }
+      return Pending(key: key, identity: saved.identity, messageID: saved.messageID, payload: body, createdAt: saved.createdAt)
     }
   }
 
