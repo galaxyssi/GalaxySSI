@@ -1,7 +1,6 @@
 import Foundation
 
-// An RX_STORED proof is returned only after SQLite COMMIT, never from an in-memory duplicate ID.
-// Activation also requires the Signal ratchet update to share the receive transaction.
+// A joined result must stay inside the owning transaction until its outer COMMIT succeeds.
 final class MqttBusinessInbox {
   struct Limits {
     var records = 100_000
@@ -36,18 +35,24 @@ final class MqttBusinessInbox {
   private let limits: Limits
   private let now: () -> Int64
 
-  init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = .init(),
+  convenience init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = .init(),
+       now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+    try self.init(database: MqttChunkDatabase(fileURL: fileURL, secrets: secrets), limits: limits, now: now)
+  }
+
+  init(database: MqttChunkDatabase, limits: Limits = .init(),
        now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
     guard limits.records > 0, limits.peerRecords > 0, limits.pendingBytes > 0, limits.peerPendingBytes > 0 else {
       throw MqttChunkStorageError.capacityExceeded
     }
-    database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)
+    self.database = database
     self.limits = limits; self.now = now
   }
 
   func accept(identity: MqttBusinessIdentity, messageID: String, payload: [String: Any],
               ciphertextDigest: String, wireHash: String, receiptRequired: Bool,
-              frame: MqttDeliveryEnvelope.Frame? = nil) throws -> Accepted {
+              frame: MqttDeliveryEnvelope.Frame? = nil,
+              transaction: MqttChunkDatabase.Transaction? = nil) throws -> Accepted {
     let key = try identity.key(messageID: messageID)
     guard payload["message_id"] as? String == messageID, MqttRouteProtocol.hex(ciphertextDigest, count: 64),
           MqttRouteProtocol.hex(wireHash, count: 64), payload["_link_rx_key"] == nil else { throw MqttRouteError.invalidPayload }
@@ -58,7 +63,7 @@ final class MqttBusinessInbox {
     }
     let body = try MqttBusinessStorage.payload(payload)
     let hash = MqttRouteProtocol.digest(body)
-    return try database.transaction {
+    return try database.transaction(joining: transaction) {
       let at = try MqttBusinessStorage.timestamp(now())
       let existing = try record(key)
       if let existing {
@@ -85,10 +90,11 @@ final class MqttBusinessInbox {
     }
   }
 
-  func replay(identity: MqttBusinessIdentity, ciphertextDigest: String) throws -> Accepted? {
+  func replay(identity: MqttBusinessIdentity, ciphertextDigest: String,
+              transaction: MqttChunkDatabase.Transaction? = nil) throws -> Accepted? {
     try identity.validate()
     guard MqttRouteProtocol.hex(ciphertextDigest, count: 64) else { throw MqttRouteError.invalidPayload }
-    return try database.transaction {
+    return try database.transaction(joining: transaction) {
       guard let key = try alias(binding: identity.binding, digest: ciphertextDigest) else { return nil }
       guard let saved = try record(key), saved.identity == identity, let hash = saved.aliases[ciphertextDigest] else {
         throw MqttChunkStorageError.corruptState

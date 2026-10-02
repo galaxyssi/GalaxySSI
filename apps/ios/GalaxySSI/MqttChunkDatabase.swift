@@ -11,6 +11,13 @@ enum MqttChunkStorageError: Error {
 // stay unchanged for compatibility. Rows contain encrypted payloads;
 // only bounded quota/expiry indexes and hashed identities remain outside AEAD.
 final class MqttChunkDatabase {
+  // A synchronous transaction capability. It cannot be reused after commit or on another database.
+  final class Transaction {
+    fileprivate let owner: MqttChunkDatabase
+    fileprivate var active = true
+    fileprivate var failed = false
+    fileprivate init(owner: MqttChunkDatabase) { self.owner = owner }
+  }
   enum Value { case text(String), number(Int64), blob(Data) }
 
   struct Row {
@@ -39,6 +46,7 @@ final class MqttChunkDatabase {
   private let lock = NSRecursiveLock()
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private var handle: OpaquePointer?
+  private var transactionActive = false
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
   private static let canary = Data("GalaxySSI/MqttChunkStore/v1".utf8)
 
@@ -97,6 +105,7 @@ final class MqttChunkDatabase {
           payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
         """)
       try execute("CREATE INDEX IF NOT EXISTS mqtt_business_outbox_schedule ON mqtt_business_outbox(binding_digest,next_attempt_at)")
+      try execute("CREATE TABLE IF NOT EXISTS mqtt_signal_state (id INTEGER PRIMARY KEY CHECK(id=1), encrypted_state BLOB NOT NULL)")
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
       try transaction { () }
     } catch {
@@ -109,12 +118,30 @@ final class MqttChunkDatabase {
   deinit { if let handle { sqlite3_close_v2(handle) } }
 
   func transaction<T>(_ body: () throws -> T) throws -> T {
+    try withTransaction { _ in try body() }
+  }
+
+  func transaction<T>(joining transaction: Transaction?, _ body: () throws -> T) throws -> T {
+    guard let transaction else { return try self.transaction(body) }
     lock.lock()
     defer { lock.unlock() }
+    guard transaction.owner === self, transaction.active, transactionActive else { throw MqttChunkStorageError.databaseFailure }
+    do { return try body() }
+    catch { transaction.failed = true; throw error }
+  }
+
+  func withTransaction<T>(_ body: (Transaction) throws -> T) throws -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !transactionActive else { throw MqttChunkStorageError.databaseFailure }
     try execute("BEGIN IMMEDIATE")
+    transactionActive = true
+    let transaction = Transaction(owner: self)
+    defer { transaction.active = false; transactionActive = false }
     do {
       try verifyKey()
-      let result = try body()
+      let result = try body(transaction)
+      guard !transaction.failed else { throw MqttChunkStorageError.databaseFailure }
       try execute("COMMIT")
       return result
     } catch {
@@ -153,7 +180,7 @@ final class MqttChunkDatabase {
     if let saved {
       guard try open(saved, purpose: "mqtt-chunk-store-key") == Self.canary else { throw MqttChunkStorageError.corruptState }
     } else {
-      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox)",
+      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_signal_state)",
                             maximumRows: 1) { try $0.number(0) }.first
       guard count == 0 else { throw MqttChunkStorageError.corruptState }
       let encrypted = try seal(Self.canary, purpose: "mqtt-chunk-store-key")
