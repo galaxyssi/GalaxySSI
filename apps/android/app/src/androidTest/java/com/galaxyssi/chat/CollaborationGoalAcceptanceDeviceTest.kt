@@ -15,13 +15,14 @@ import java.util.UUID
 /** Dedicated local fixtures only; no providers, contacts, web requests or physical controls. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationGoalAcceptanceDeviceTest {
-    private class Fixture(val token: String = UUID.randomUUID().toString()) {
+    private class Fixture(val token: String = UUID.randomUUID().toString(), val multipart: Boolean = false) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val group = "acceptance-fixture-$token"
         val groups = CollaborationGroupStore(context)
         val database = AgentEncryptedDatabase(context, group)
         val access = CollaborationWorkspaceAccess(group, "root", "turn", 3, "lead", "lead")
-        val criterion = JSONObject().put("id", "doc").put("requirement", "A documented fixture comparison")
+        val criterion = JSONObject().put("id", "doc").put("requirement", if (multipart)
+            "A documented fixture comparison; preserve constraints; state remaining uncertainty." else "A documented fixture comparison")
             .put("verification", "documentary").put("evidence_kind", "observed").put("status", "open").put("evidence", JSONArray())
         val prior = JSONArray().put(criterion).toString()
         fun seed(): String {
@@ -43,22 +44,37 @@ class CollaborationGoalAcceptanceDeviceTest {
                 .put("verdict", "supported").put("rationale", "The fixture document addresses the documentary criterion")
                 .put("unresolved", JSONArray())), JSONArray().put(delivery))
             val sources = CollaborationSemanticGoalCoverage.source(request().goal)
-            fun segments(reviewing: Boolean) = JSONArray((0 until sources.getJSONArray("segments").length()).map { index ->
+            fun segments(reviewing: Boolean, indices: List<Int>) = JSONArray(indices.map { index ->
                 JSONObject().put("id", sources.getJSONArray("segments").getJSONObject(index).getString("id"))
                     .put("criterion_ids", JSONArray().put("doc")).put("rationale", "The criterion covers this fixture source requirement")
                     .apply { if (reviewing) put("verdict", "supported").put("unresolved", JSONArray()) }
             })
-            val mapping = publish("lead", "mapping", "artifact", 1, JSONObject().put(CollaborationSemanticGoalCoverage.MAPPING,
-                JSONObject().put("format", CollaborationSemanticGoalCoverage.FORMAT).put("goal_sha256", sources.getString("goal_sha256"))
-                    .put("criteria_sha256", CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(prior))).put("segments", segments(false))))
-            val coverageReview = publish("reviewer", "coverage-review", CollaborationReviewContract.KIND, 2,
-                JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, JSONObject().put("target", mapping)
-                    .put("verdict", "supported").put("rationale", "Independent comparison of all host source IDs and preserved criterion")
-                    .put("unresolved", JSONArray()).put("segments", segments(true))), JSONArray().put(mapping))
+            val indices = (0 until sources.getJSONArray("segments").length()).toList()
+            val parts = (if (multipart) indices.chunked(1) else listOf(indices)).mapIndexed { index, batch ->
+                val mapping = publish("lead", "mapping-$index", "artifact", 1, JSONObject().put(CollaborationSemanticGoalCoverage.MAPPING,
+                    JSONObject().put("format", CollaborationSemanticGoalCoverage.FORMAT).put("goal_sha256", sources.getString("goal_sha256"))
+                        .put("criteria_sha256", CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(prior))).put("segments", segments(false, batch))))
+                val coverageReview = publish("reviewer", "coverage-review-$index", CollaborationReviewContract.KIND, 2,
+                    JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, JSONObject().put("target", mapping)
+                        .put("verdict", "supported").put("rationale", "Independent comparison of assigned host source IDs and preserved criterion")
+                        .put("unresolved", JSONArray()).put("segments", segments(true, batch))), JSONArray().put(mapping))
+                JSONObject().put("mapping", mapping).put("review", coverageReview)
+            }
+            val coverage = if (!multipart) parts.single() else {
+                fun header() = JSONObject().put("format", CollaborationGoalCoverageManifest.FORMAT)
+                    .put("goal_sha256", sources.getString("goal_sha256"))
+                    .put("criteria_sha256", CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(prior)))
+                val leaves = parts.mapIndexed { index, part -> publish("lead", "leaf-$index", "artifact", 3,
+                    JSONObject().put(CollaborationGoalCoverageManifest.FIELD, header().put("parts", JSONArray().put(part))),
+                    JSONArray().put(part.getJSONObject("mapping")).put(part.getJSONObject("review"))) }
+                val root = publish("lead", "directory", "artifact", 4,
+                    JSONObject().put(CollaborationGoalCoverageManifest.FIELD, header().put("manifests", JSONArray(leaves))), JSONArray(leaves))
+                JSONObject().put("manifest", root)
+            }
             return JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Fixture document reviewed")
                 .put("decision", "achieved").put("criteria", JSONArray().put(JSONObject(criterion.toString()).put("status", "met")
                     .put("evidence", JSONArray().put("workspace:" + delivery.getString("object_id"))).put("delivery", delivery).put("review", review)))
-                .put("goal_coverage", JSONObject().put("mapping", mapping).put("review", coverageReview))
+                .put("goal_coverage", coverage)
                 .put("work", JSONArray()).put("blockers", JSONArray()).toString()
         }
         fun definition() = AgentTeamDefinition("fixture", "fixture", listOf(AgentTeamMember("fixture", AgentDeliveryMode.RESPOND,
@@ -149,6 +165,27 @@ class CollaborationGoalAcceptanceDeviceTest {
             val rejected = CollaborationGoalAcceptance(f.context).evaluate(f.access, incomplete.toString(), f.prior, f.request().goal)
             assertFalse(rejected.accepted)
             assertTrue(rejected.feedback.contains("goal_coverage"))
+        } finally { f.clear() }
+    }
+
+    @Test fun multipartCoverageManifestSurvivesEncryptedReopenAndRespectsGroupRemoval() {
+        val f = Fixture(multipart = true)
+        try {
+            val raw = f.seed()
+            val scope = f.access.copy(round = 10)
+            repeat(2) {
+                val reopened = CollaborationGoalAcceptance(f.context).evaluate(scope, raw, f.prior, f.request().goal)
+                assertTrue(reopened.feedback, reopened.accepted)
+            }
+            val coverage = JSONObject(raw).getJSONObject("goal_coverage")
+            val workspace = CollaborationResearchWorkspace(f.context)
+            val resolved = CollaborationGoalCoverageManifest.resolve(coverage, JSONArray(f.prior), f.request().goal) { ref ->
+                requireNotNull(workspace.read(scope, ref.getString("object_id"), ref.getInt("revision")))
+            }
+            assertEquals(3, resolved.parts.size)
+            assertEquals(4, resolved.manifests.size)
+            f.groups.remove(f.group)
+            assertFalse(CollaborationGoalAcceptance(f.context).evaluate(scope, raw, f.prior, f.request().goal).accepted)
         } finally { f.clear() }
     }
 
