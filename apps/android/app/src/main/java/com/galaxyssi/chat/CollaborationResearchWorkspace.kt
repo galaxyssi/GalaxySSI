@@ -3,11 +3,18 @@ package com.galaxyssi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 internal interface CollaborationWorkspaceRows {
     fun read(key: String): String?
+    /** All values are committed atomically, including any head mutation and its token. */
     fun commit(values: Map<String, String>)
     fun page(prefix: String, after: String, limit: Int): List<String>
+    /** Removals and upserts share one transaction. */
+    fun mutate(values: Map<String, String>, removeKeys: Collection<String>) {
+        require(removeKeys.isEmpty()) { "Workspace row removal is unavailable" }
+        commit(values)
+    }
 }
 
 internal data class CollaborationWorkspaceAccess(
@@ -39,15 +46,22 @@ internal data class CollaborationWorkspaceAccess(
 internal class CollaborationResearchWorkspace(
     private val rows: CollaborationWorkspaceRows,
     private val authorized: (String) -> Boolean = { true },
-    private val evidence: ((CollaborationWorkspaceAccess, JSONArray) -> JSONArray)? = null
+    private val evidence: ((CollaborationWorkspaceAccess, JSONArray) -> JSONArray)? = null,
+    private val accessAuthorized: (CollaborationWorkspaceAccess) -> Boolean = { true }
 ) {
     constructor(context: Context) : this(object : CollaborationWorkspaceRows {
         private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
         override fun read(key: String) = database.readString(key, "").takeIf(String::isNotBlank)
         override fun commit(values: Map<String, String>) = database.mutateStrings(values)
         override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
+        override fun mutate(values: Map<String, String>, removeKeys: Collection<String>) = database.mutateStrings(values, removeKeys)
     }, { group -> CollaborationGroupStore(context.applicationContext).load(group) != null },
-        { access, refs -> CollaborationEvidenceLedger(context).references(access, refs) })
+        { access, refs -> CollaborationEvidenceLedger(context).references(access, refs) },
+        { access ->
+            val group = CollaborationGroupStore(context.applicationContext).load(access.groupId)
+            access.personId.isNotBlank() && group != null && group.conversationId == access.groupId &&
+                group.members.any { it.id == access.personId }
+        })
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
@@ -90,6 +104,14 @@ internal class CollaborationResearchWorkspace(
                 require(base == (head?.getInt("revision") ?: 0)) { "Version conflict for $id; inspect the current revision before editing" }
                 require(head == null || access.canRead(head)) { "Current independent work cannot be read or overwritten" }
                 require(head == null || head.getString("kind") == kind) { "An object's kind cannot be changed" }
+                if (head != null && kind == CollaborationReviewContract.KIND) {
+                    val previous = requireNotNull(read(access, id, base)) { "Previous review is missing or isolated" }
+                    require(previous.toString() == head.toString()) { "Review head integrity check failed" }
+                    require(previous.getString("person_id") == access.personId) { "Only the review author may revise their typed review" }
+                    require(reviewBinding(previous.getJSONObject("body")) == reviewBinding(body)) {
+                        "A typed review revision must retain its review type, exact target and criterion binding"
+                    }
+                }
                 val parents = item.optJSONArray("parents") ?: JSONArray()
                 val resolves = item.optJSONArray("resolves") ?: JSONArray()
                 require(!item.has("observations") || item.optJSONArray("observations") != null) { "observations must be an array" }
@@ -120,6 +142,8 @@ internal class CollaborationResearchWorkspace(
             JSONObject().put("status", "recorded").put("revisions", refs)
                 .put("trust", "authorship_and_version_recorded_not_scientifically_verified")
         }.getOrElse { writes.clear(); failure(it.message ?: "Invalid workspace update") }
+        // Heads and the fence token must become visible in the same storage transaction.
+        if (writes.isNotEmpty()) writes[mutationKey(access.groupId)] = newMutationToken()
         writes[publicationKey] = JSONObject().put("input_sha256", inputHash).put("result", result).toString()
         rows.commit(writes)
         result
@@ -127,20 +151,120 @@ internal class CollaborationResearchWorkspace(
 
     fun read(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): JSONObject? = synchronized(LOCK) {
         if (!authorized(access.groupId) || !objectId.matches(ID) || revision < 1) return@synchronized null
-        rows.read(revisionKey(prefix(access.groupId), objectId, revision))?.let(::JSONObject)?.also { saved ->
+        readRevision(access.groupId, objectId, revision)?.takeIf(access::canRead)
+    }
+
+    private fun readRevision(group: String, objectId: String, revision: Int): JSONObject? =
+        rows.read(revisionKey(prefix(group), objectId, revision))?.let(::JSONObject)?.also { saved ->
             val hash = saved.getString("sha256")
             val body = JSONObject(saved.toString()).apply { remove("sha256") }
-            check(digest(body.toString()) == hash && saved.getString("object_id") == objectId && saved.getInt("revision") == revision) {
+            check(revision > 0 && digest(body.toString()) == hash && saved.getString("object_id") == objectId &&
+                saved.getInt("revision") == revision && saved.getString("group_id") == group) {
                 "Research revision integrity check failed"
             }
-        }?.takeIf(access::canRead)
-    }
+        }
 
     fun isCurrent(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): Boolean = synchronized(LOCK) {
         if (!authorized(access.groupId) || !objectId.matches(ID)) return@synchronized false
         rows.read(prefix(access.groupId) + "head:" + objectId)?.let(::JSONObject)?.let {
-            access.canRead(it) && it.getInt("revision") == revision
+            access.canRead(it) && it.getInt("revision") == revision && read(access, objectId, revision)?.toString() == it.toString()
         } == true
+    }
+
+    fun contributorIds(access: CollaborationWorkspaceAccess, ref: JSONObject): Set<String> =
+        CollaborationAcceptanceAncestry.contributors(ref) { id, version -> read(access, id, version) }
+
+    fun acceptanceReviewSnapshot(access: CollaborationWorkspaceAccess,
+                                 targets: Set<CollaborationAcceptanceReviewSnapshot.Binding>): CollaborationAcceptanceReviewSnapshot {
+        val selected = targets.toSet()
+        return scanAcceptanceReviews(access) { _, binding -> binding in selected }
+    }
+
+    /** Compatibility query; evaluations share one indexed snapshot instead of calling this per target. */
+    fun currentAcceptanceReviews(access: CollaborationWorkspaceAccess, target: JSONObject,
+                                 relevant: (JSONObject) -> Boolean = { true }): List<JSONObject> {
+        val exactTarget = CollaborationAcceptanceReviewSnapshot.Target.of(target)
+        val snapshot = scanAcceptanceReviews(access) { saved, binding -> binding.target == exactTarget && relevant(saved) }
+        val reviews = snapshot.allReviews()
+        return withAcceptanceFence(snapshot) { reviews }
+    }
+
+    private fun scanAcceptanceReviews(access: CollaborationWorkspaceAccess,
+                                      relevant: (JSONObject, CollaborationAcceptanceReviewSnapshot.Binding) -> Boolean): CollaborationAcceptanceReviewSnapshot {
+        val scope = access.copy(dependencyNodes = access.dependencyNodes.toSet())
+        val token = synchronized(LOCK) {
+            checkAcceptanceAccess(scope)
+            mutationToken(scope.groupId)
+        }
+        val headPrefix = prefix(scope.groupId) + "head:"
+        return CollaborationAcceptanceReviewSnapshot.scan(this, scope, token, page = { cursor ->
+            synchronized(LOCK) {
+                checkAcceptanceFence(scope, token)
+                val keys = rows.page(headPrefix, cursor, CollaborationAcceptanceReviewSnapshot.PAGE_SIZE)
+                require(keys.size <= CollaborationAcceptanceReviewSnapshot.PAGE_SIZE) { "Acceptance review directory returned an oversized page" }
+                var previous = cursor
+                val heads = keys.map { key ->
+                    require(key > previous && key.startsWith(headPrefix)) {
+                        "Acceptance review directory has invalid or non-advancing pagination"
+                    }
+                    previous = key
+                    val id = key.removePrefix(headPrefix)
+                    require(id.matches(ID)) { "Invalid acceptance review directory entry" }
+                    val head = JSONObject(requireNotNull(rows.read(key)) { "Acceptance review directory entry disappeared" })
+                    val saved = requireNotNull(readRevision(scope.groupId, id, head.getInt("revision"))) {
+                        "Acceptance review directory revision is missing"
+                    }
+                    require(saved.toString() == head.toString()) { "Acceptance review head integrity check failed" }
+                    CollaborationAcceptanceReviewSnapshot.Head(key, saved)
+                }
+                checkAcceptanceFence(scope, token)
+                heads
+            }
+        }, read = { id, version ->
+            synchronized(LOCK) {
+                checkAcceptanceFence(scope, token)
+                val saved = requireNotNull(readRevision(scope.groupId, id, version)) { "Acceptance review history is incomplete" }
+                checkAcceptanceFence(scope, token)
+                saved
+            }
+        }, relevant = relevant)
+    }
+
+    fun <T> withAcceptanceFence(snapshot: CollaborationAcceptanceReviewSnapshot, receipt: () -> T): T = synchronized(LOCK) {
+        require(snapshot.owner === this) { "Acceptance snapshot belongs to another workspace" }
+        checkAcceptanceFence(snapshot.access, snapshot.mutationToken)
+        receipt()
+    }
+
+    private fun checkAcceptanceFence(access: CollaborationWorkspaceAccess, token: String?) {
+        require(mutationToken(access.groupId) == token) { "Workspace changed during acceptance; evaluate the current review state again" }
+        checkAcceptanceAccess(access)
+    }
+
+    private fun checkAcceptanceAccess(access: CollaborationWorkspaceAccess) {
+        require(authorized(access.groupId)) { "Group access was removed" }
+        require(accessAuthorized(access)) { "Acceptance member access was removed" }
+    }
+
+    private fun mutationToken(group: String): String? = rows.read(mutationKey(group))?.also {
+        require(it.matches(ID)) { "Workspace mutation token is corrupt" }
+    }
+
+    internal fun removeGroup(group: String) = synchronized(LOCK) {
+        val prefix = prefix(group)
+        val removed = linkedSetOf<String>()
+        var cursor = ""
+        while (true) {
+            val keys = rows.page(prefix, cursor, CollaborationAcceptanceReviewSnapshot.PAGE_SIZE)
+            require(keys.size <= CollaborationAcceptanceReviewSnapshot.PAGE_SIZE) { "Workspace removal returned an oversized page" }
+            if (keys.isEmpty()) break
+            keys.forEach { key ->
+                require(key > cursor && key.startsWith(prefix) && removed.add(key)) { "Invalid workspace removal pagination" }
+                cursor = key
+            }
+        }
+        // The token is outside the deleted namespace, including for an empty/legacy group.
+        rows.mutate(mapOf(mutationKey(group) to newMutationToken()), removed)
     }
 
     fun browse(access: CollaborationWorkspaceAccess, cursor: String = "", limit: Int = 20): Page = synchronized(LOCK) {
@@ -167,16 +291,16 @@ internal class CollaborationResearchWorkspace(
         val KINDS = setOf("hypothesis", "evidence", "counterexample", "proposal", "experiment", "artifact", "decision", "question", CollaborationReviewContract.KIND)
         private fun digest(value: String) = AgentNativeJsonCodec.sha256(value)
         private fun prefix(group: String) = "group:${digest(group)}:"
+        private fun mutationKey(group: String) = "mutation:${digest(group)}"
+        private fun newMutationToken() = digest(UUID.randomUUID().toString())
         private fun revisionKey(prefix: String, id: String, revision: Int) = "${prefix}revision:$id:$revision"
         private fun failure(message: String) = JSONObject().put("status", "rejected").put("reason", message)
+        private fun reviewBinding(body: JSONObject) = CollaborationAcceptanceReviewSnapshot.Binding.fromBody(body)
         private fun reference(revision: JSONObject) = JSONObject().apply {
             listOf("object_id", "revision", "kind", "title", "person_id", "node_id", "sha256", "evidence_state", "recorded_at")
                 .forEach { key -> put(key, revision.get(key)) }
         }
 
-        fun remove(context: Context, group: String) = synchronized(LOCK) {
-            val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
-            database.mutateStrings(emptyMap(), database.keys(prefix(group)))
-        }
+        fun remove(context: Context, group: String) = CollaborationResearchWorkspace(context).removeGroup(group)
     }
 }

@@ -92,6 +92,7 @@ internal class CollaborationResearchArchive(private val context: Context, privat
             CollaborationResearchWorkspace.remove(context, group)
             CollaborationEvidenceLedger.remove(context, group)
             CollaborationRemoteEvidenceStore(context).remove(group)
+            CollaborationGoalContractStore(context).remove(group)
             val name = databaseName(group)
             AgentKnowledgeDatabase.release(context, name)
             val path = context.getDatabasePath(name)

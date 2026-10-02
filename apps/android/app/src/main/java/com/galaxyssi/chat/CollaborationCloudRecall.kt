@@ -12,7 +12,7 @@ internal object CollaborationCloudRecall {
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace"))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract"))))
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
@@ -20,7 +20,9 @@ internal object CollaborationCloudRecall {
             .put("required", JSONArray(listOf("mode"))).put("additionalProperties", false)
         val function = JSONObject().put("name", NAME)
             .put("description", "Read this assigned member's saved group workspace or original host tool evidence. Browse first; " +
-                "read an exact object_id/revision or evidence_id/sha256, following next_offset/cursor. Returned output is not proof of a claim.")
+                "read an exact object_id/revision or evidence_id/sha256, following next_offset/cursor. " +
+                "mode=goal_contract takes only cursor and returns the host-pinned original goal, criteria and context fragments; follow next_cursor. " +
+                "Returned output is not proof of a claim.")
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
         when (prepared.provider) {
             ModelStreamProvider.OPENAI_COMPATIBLE -> tools.put(JSONObject().put("type", "function")
@@ -34,7 +36,7 @@ internal object CollaborationCloudRecall {
     fun execute(context: Context, access: CollaborationWorkspaceAccess, input: JSONObject): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence")) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract")) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }

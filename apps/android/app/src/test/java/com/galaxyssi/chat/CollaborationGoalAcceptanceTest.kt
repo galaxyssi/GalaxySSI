@@ -7,7 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationGoalAcceptanceTest {
-    private class Rows : CollaborationWorkspaceRows {
+    internal class Rows : CollaborationWorkspaceRows {
         val data = sortedMapOf<String, String>()
         var reads = 0
         override fun read(key: String): String? { reads++; return data[key] }
@@ -15,8 +15,11 @@ class CollaborationGoalAcceptanceTest {
         override fun page(prefix: String, after: String, limit: Int) = data.keys.filter { it.startsWith(prefix) && it > after }.take(limit)
     }
 
-    private class Fixture(reviewer: String = "reviewer", tool: String? = null, output: String = "{\"status\":\"ok\"}",
-                          reviewKind: String = "decision", requiredOrigin: String = "", reviewCitesOriginal: Boolean = false) {
+    internal class Fixture(reviewer: String = "reviewer", tool: String? = null, output: String = "{\"status\":\"ok\"}",
+                          reviewKind: String = "decision", requiredOrigin: String = "", reviewCitesOriginal: Boolean = false,
+                          requirement: String = "Deliver a documented comparison", verification: String = "documentary",
+                          validator: JSONObject? = null, computation: JSONObject? = null, val goal: String = requirement,
+                          mappingAuthor: String = "mapper", coverageReviewer: String = "coverage-reviewer", deliveryAuthor: String = "author") {
         val rows = Rows()
         val evidenceRows = Rows()
         var authorized = true
@@ -24,17 +27,21 @@ class CollaborationGoalAcceptanceTest {
         val workspace = CollaborationResearchWorkspace(rows, { authorized }, ledger::references)
         val engine = CollaborationGoalAcceptance(workspace, ledger)
         val access = CollaborationWorkspaceAccess("group", "run", "turn", 3, "lead", "lead")
-        val criterion = JSONObject().put("id", "document").put("requirement", "Deliver a documented comparison")
-            .put("verification", "documentary").put("status", "open").put("evidence_kind", "observed").put("evidence", JSONArray())
+        val criterion = JSONObject().put("id", "document").put("requirement", requirement)
+            .put("verification", verification).put("status", "open").put("evidence_kind", "observed").put("evidence", JSONArray())
+            .apply { if (validator != null) put("validator", validator) }
             .apply { if (requiredOrigin.isNotBlank()) put(CollaborationEvidenceRequirements.FIELD, JSONArray()
                 .put(JSONObject().put("origin", requiredOrigin).put("tool", "commandExecution"))) }
         val prior = JSONArray().put(criterion).toString()
         val delivery: JSONObject
         val review: JSONObject
+        val mapping: JSONObject
+        val coverageReview: JSONObject
         init {
-            val author = access.copy(nodeId = "author-node", personId = "author", round = 1)
+            val author = access.copy(nodeId = "author-node", personId = deliveryAuthor, round = 1)
             val observation = tool?.let { ledger.record(author, "invocation", it, "{}", output, 1, 2) }
-            val item = item("delivery", "artifact", JSONObject().put("content", "Comparison with explicit limits"))
+            val item = item("delivery", "artifact", JSONObject().put("content", "Comparison with explicit limits")
+                .apply { if (computation != null) put("computation", computation) })
             if (observation != null) item.put("observations", JSONArray().put(observation))
             delivery = publish(author, item)
             val check = JSONObject().put("criterion_id", "document").put("requirement", criterion.getString("requirement"))
@@ -43,23 +50,46 @@ class CollaborationGoalAcceptanceTest {
             review = publish(access.copy(nodeId = "review-node", personId = reviewer, round = 2),
                 item("review", reviewKind, JSONObject().put("acceptance_review", check)).put("parents", JSONArray().put(delivery))
                     .apply { if (reviewCitesOriginal && observation != null) put("observations", JSONArray().put(observation)) })
+            mapping = publish(access.copy(nodeId = "mapping-node", personId = mappingAuthor, round = 1),
+                item("mapping", "artifact", JSONObject().put(CollaborationSemanticGoalCoverage.MAPPING, mappingBody())))
+            coverageReview = publish(access.copy(nodeId = "coverage-review-node", personId = coverageReviewer, round = 2),
+                item("coverage-review", CollaborationReviewContract.KIND,
+                    JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, coverageReviewBody(mapping)))
+                    .put("parents", JSONArray().put(mapping)))
+        }
+        fun mappingBody() = JSONObject().put("format", CollaborationSemanticGoalCoverage.FORMAT)
+            .put("goal_sha256", CollaborationSemanticGoalCoverage.source(goal).getString("goal_sha256"))
+            .put("criteria_sha256", runCatching { CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(prior)) }.getOrDefault("invalid-binding"))
+            .put("segments", sourceSegments { JSONObject().put("id", it).put("criterion_ids", JSONArray().put("document"))
+                .put("rationale", "The criterion preserves the requested outcome and its constraints") })
+        fun coverageReviewBody(target: JSONObject) = JSONObject().put("target", target).put("verdict", "supported")
+            .put("rationale", "Independently compared the complete source text with the preserved criterion")
+            .put("unresolved", JSONArray()).put("segments", sourceSegments { JSONObject().put("id", it)
+                .put("criterion_ids", JSONArray().put("document")).put("verdict", "supported")
+                .put("rationale", "No omitted outcome or qualification found in this fixture").put("unresolved", JSONArray()) })
+        private fun sourceSegments(build: (String) -> JSONObject): JSONArray {
+            val sources = CollaborationSemanticGoalCoverage.source(goal).getJSONArray("segments")
+            return JSONArray((0 until sources.length()).map { build(sources.getJSONObject(it).getString("id")) })
         }
         fun item(id: String, kind: String, body: JSONObject) = JSONObject().put("id", id).put("kind", kind).put("title", id).put("body", body)
         fun publish(who: CollaborationWorkspaceAccess, item: JSONObject): JSONObject {
             val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Fixture contribution")
                 .put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray()).put("workspace", JSONArray().put(item))
-            return workspace.publish(who, raw.toString()).getJSONArray("revisions").getJSONObject(0)
+            val result = workspace.publish(who, raw.toString())
+            check(result.optString("status") == "recorded") { result.toString() }
+            return result.getJSONArray("revisions").getJSONObject(0)
         }
         fun assessment() = JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Document delivered and independently reviewed")
             .put("decision", "achieved").put("criteria", JSONArray().put(JSONObject(criterion.toString()).put("status", "met")
                 .put("evidence", JSONArray().put("workspace:" + delivery.getString("object_id"))).put("delivery", delivery).put("review", review)))
             .put("work", JSONArray()).put("blockers", JSONArray())
+            .put(CollaborationSemanticGoalCoverage.FIELD, JSONObject().put("mapping", mapping).put("review", coverageReview))
         fun evaluate(raw: String = assessment().toString(), who: CollaborationWorkspaceAccess = access, previous: String = prior) =
-            engine.evaluate(who, raw, previous, "Goal", 10)
+            engine.evaluate(who, raw, previous, goal, 10)
         fun record(raw: String, receipt: CollaborationAcceptanceReceipt?) : AgentTeamExecutionRecord {
             val member = AgentTeamMember("fixture", AgentDeliveryMode.RESPOND, instanceId = "lead",
                 context = mapOf(CollaborationGoalLoop.ENABLED to "1"))
-            val request = AgentRunRequest("group", "turn", "task", runId = "run", goal = "Goal", context = mapOf(CollaborationGoalLoop.CRITERIA to prior))
+            val request = AgentRunRequest("group", "turn", "task", runId = "run", goal = goal, context = mapOf(CollaborationGoalLoop.CRITERIA to prior))
             return AgentTeamExecutionRecord(AgentTeamDefinition("team", "fixture", listOf(member), primaryInstanceId = "lead"), request,
                 listOf(AgentSubagentEvent(1, "run", "lead", AgentSubagentEventKinds.CHILD_SUCCEEDED, childStatus = AgentSubagentStatus.SUCCEEDED,
                     result = AgentSubagentChildResult("run", "lead", "run", 1, AgentSubagentStatus.SUCCEEDED, raw, collaborationAcceptance = receipt))))

@@ -32,7 +32,25 @@ internal class CollaborationEvidenceLedger(
         val value = identity(access).put("dependencies", JSONArray(access.dependencyNodes.sorted())).toString()
         val existing = rows.read(key)
         check(existing == null || existing == value) { "Research dispatch identity changed" }
-        if (existing == null) rows.commit(mapOf(key to value))
+        val accessKey = prefix(access.groupId) + "access:" + digest(value)
+        val indexedSource = rows.read(accessKey)
+        if (indexedSource != null) {
+            check(indexedSource.toLongOrNull()?.let { rows.read(prefix(access.groupId) + "binding:$it") } == value) {
+                "Research dispatch access index is corrupt"
+            }
+        }
+        val writes = linkedMapOf<String, String>()
+        if (existing == null) writes[key] = value
+        if (indexedSource == null) writes[accessKey] = source.toString()
+        if (writes.isNotEmpty()) rows.commit(writes)
+    }
+
+    fun authorizes(access: CollaborationWorkspaceAccess): Boolean = synchronized(LOCK) {
+        if (!authorized(access.groupId)) return@synchronized false
+        val value = identity(access).put("dependencies", JSONArray(access.dependencyNodes.sorted())).toString()
+        val source = rows.read(prefix(access.groupId) + "access:" + digest(value))?.toLongOrNull()
+            ?.takeIf { it > 0 } ?: return@synchronized false
+        rows.read(prefix(access.groupId) + "binding:$source") == value
     }
 
     fun binding(source: Long, group: String, turn: String): CollaborationWorkspaceAccess? = synchronized(LOCK) {

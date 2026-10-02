@@ -10,6 +10,16 @@ internal object CollaborationScopedRecall {
         if (group == null || access.personId.isNotBlank() && group.members.none { it.id == access.personId })
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
         return when (input["mode"]) {
+            "goal_contract" -> {
+                if (input.keys.any { it !in setOf("mode", "cursor") } ||
+                    input.containsKey("cursor") && input["cursor"] !is String)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Goal contract recall accepts only mode and cursor.")
+                val result = CollaborationGoalContractStore(context).read(access, input["cursor"] as? String ?: "")
+                if (result.optString("status") != "ok")
+                    AgentNativeToolExecutionResult.failure("goal_contract_unavailable", result.optString("reason", "Contract is unavailable."))
+                else AgentNativeToolExecutionResult.success(result.toNativeObject() +
+                    ("trust" to "host_goal_contract_not_comprehension_or_claim_verification"))
+            }
             "evidence" -> {
                 val ledger = CollaborationEvidenceLedger(context)
                 val id = input["evidence_id"] as? String ?: ""
@@ -36,7 +46,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use evidence or workspace for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence or workspace for scoped recall.")
         }
     }
 

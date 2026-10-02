@@ -33,7 +33,7 @@ data class CollaborationAcceptanceReceipt internal constructor(
     }
 }
 
-/** Validates documentary deliveries; computational/physical completion needs a qualified adapter. */
+/** Checks mapped coverage/review integrity and explicitly qualified computation, not scientific truth. */
 internal class CollaborationGoalAcceptance(
     private val workspace: CollaborationResearchWorkspace,
     private val ledger: CollaborationEvidenceLedger
@@ -42,69 +42,105 @@ internal class CollaborationGoalAcceptance(
 
     fun evaluate(access: CollaborationWorkspaceAccess, raw: String, criteria: String, goal: String,
                  now: Long = System.currentTimeMillis()): CollaborationAcceptanceReceipt {
-        val failure = runCatching {
+        val scope = access.copy(dependencyNodes = access.dependencyNodes.toSet())
+        val assessmentHash = AgentNativeJsonCodec.sha256(raw)
+        val criteriaHash = AgentNativeJsonCodec.sha256(criteria)
+        val goalHash = AgentNativeJsonCodec.sha256(goal)
+        fun receipt(failure: Throwable?) = CollaborationAcceptanceReceipt(assessmentHash, criteriaHash, goalHash,
+            scope.runId, scope.turnId, scope.nodeId, failure == null,
+            if (failure != null) failure.message?.take(1200) ?: "Acceptance validation failed" else
+                "Host source-ID coverage and independent review integrity checked; " +
+                    "any computational qualification is limited to the exact-integer fixture. " +
+                    "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation", now)
+        return runCatching {
             val assessment = requireNotNull(CollaborationGoalLoop.decode(raw)) { "Invalid goal assessment" }
             val prior = JSONArray(criteria)
             require(prior.length() > 0) { "Establish the original acceptance criteria before submitting completion" }
             val current = assessment.getJSONArray("criteria")
             val byId = (0 until current.length()).associate { current.getJSONObject(it).let { item -> item.getString("id") to item } }
+            val priorIds = hashSetOf<String>()
             repeat(prior.length()) { index ->
                 val before = prior.getJSONObject(index)
+                require(priorIds.add(before.getString("id"))) { "Duplicate preserved criterion" }
                 val after = requireNotNull(byId[before.getString("id")]) { "An original criterion was dropped" }
                 require(before.getString("requirement") == after.getString("requirement") &&
                     before.optString("verification") == after.optString("verification") &&
-                    CollaborationEvidenceRequirements.preserved(before, after)) { "An original criterion was weakened" }
+                    CollaborationEvidenceRequirements.preserved(before, after) &&
+                    CollaborationQualifiedValidation.preserved(before, after)) { "An original criterion was weakened" }
             }
             require(assessment.getString("decision") == "achieved" && assessment.getJSONArray("work").length() == 0 &&
                 assessment.getJSONArray("blockers").length() == 0 && (assessment.optJSONArray("recruit")?.length() ?: 0) == 0) {
                 "Unfinished assignments or blockers remain"
             }
-            repeat(current.length()) { validateCriterion(access, current.getJSONObject(it)) }
-        }.exceptionOrNull()
-        return CollaborationAcceptanceReceipt(AgentNativeJsonCodec.sha256(raw), AgentNativeJsonCodec.sha256(criteria),
-            AgentNativeJsonCodec.sha256(goal), access.runId, access.turnId, access.nodeId, failure == null,
-            failure?.message?.take(1200) ?: "Exact documentary deliveries and independent reviews checked; not empirical validation", now)
+            val coverage = requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
+                "Publish an explicit original-goal requirement mapping and a separate independent semantic coverage review; supply goal_coverage references"
+            }
+            val targets = linkedSetOf(CollaborationAcceptanceReviewSnapshot.Binding.of(coverage.getJSONObject("mapping"),
+                CollaborationSemanticGoalCoverage.REVIEW))
+            repeat(current.length()) { index ->
+                val criterion = current.getJSONObject(index)
+                targets.add(CollaborationAcceptanceReviewSnapshot.Binding.of(criterion.getJSONObject("delivery"),
+                    CollaborationReviewContract.KIND, criterion.getString("id"), criterion.getString("requirement")))
+            }
+            val snapshot = workspace.acceptanceReviewSnapshot(scope, targets)
+            validateCoverage(scope, assessment, current, goal, snapshot)
+            repeat(current.length()) {
+                val criterion = current.getJSONObject(it)
+                require(criterion.optString("verification") != "computational" || criterion.getString("id") in priorIds) {
+                    "Establish computational inputs in preserved criteria before requesting completion"
+                }
+                validateCriterion(scope, criterion, snapshot)
+            }
+            workspace.withAcceptanceFence(snapshot) { receipt(null) }
+        }.getOrElse { receipt(it) }
     }
 
-    private fun validateCriterion(access: CollaborationWorkspaceAccess, criterion: JSONObject) {
+    private fun validateCoverage(access: CollaborationWorkspaceAccess, assessment: JSONObject, criteria: JSONArray, goal: String,
+                                 snapshot: CollaborationAcceptanceReviewSnapshot) {
+        val refs = requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
+            "Publish an explicit original-goal requirement mapping and a separate independent semantic coverage review; supply goal_coverage references"
+        }
+        val mappingRef = refs.getJSONObject("mapping")
+        val mapping = currentRevision(access, mappingRef)
+        val review = currentRevision(access, refs.getJSONObject("review"))
+        require(mapping.getString("kind") == "artifact" && review.getString("kind") == CollaborationReviewContract.KIND) {
+            "Coverage needs a saved mapping artifact and a typed independent review"
+        }
+        require(access.personId.isNotBlank() && review.getString("person_id") != access.personId) {
+            "The evaluating coordinator cannot independently certify coverage of its own criteria"
+        }
+        CollaborationReviewContract.validate(review.getString("kind"), review.getJSONObject("body"))
+        val check = review.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW)
+        validateIndependentReview(access, mappingRef, mapping, review, check, "Original-goal coverage")
+        CollaborationSemanticGoalCoverage.validate(mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING),
+            check, criteria, goal)
+        validateCurrentReviews(snapshot, mappingRef, CollaborationSemanticGoalCoverage.REVIEW, "Original-goal coverage") { settled ->
+            CollaborationSemanticGoalCoverage.validate(mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING),
+                settled, criteria, goal)
+        }
+    }
+
+    private fun validateCriterion(access: CollaborationWorkspaceAccess, criterion: JSONObject, snapshot: CollaborationAcceptanceReviewSnapshot) {
         val id = criterion.getString("id")
         require(criterion.getString("status") == "met") { "$id: criterion remains open" }
-        require(criterion.optString("verification") == "documentary") {
-            "$id: ${criterion.optString("verification")} requires a qualified execution/experimental validator; text and simulations cannot certify it"
-        }
-        require(criterion.optString("evidence_kind") == "observed") { "$id: a proposed or simulated delivery is not an observed document" }
         val deliveryRef = criterion.getJSONObject("delivery")
         val reviewRef = criterion.getJSONObject("review")
         val delivery = currentRevision(access, deliveryRef)
         val review = currentRevision(access, reviewRef)
         require(delivery.getString("kind") in setOf("artifact", "proposal", "decision") &&
+            delivery.getJSONObject("body").opt("content") is String &&
             delivery.getJSONObject("body").optString("content").isNotBlank()) { "$id: no substantive saved delivery" }
-        require(review.getString("kind") in setOf("decision", CollaborationReviewContract.KIND) &&
-            review.getString("person_id") != delivery.getString("person_id")) {
-            "$id: the author cannot independently review their own delivery"
-        }
-        repeat(delivery.getInt("revision")) { index ->
-            val previous = requireNotNull(workspace.read(access, delivery.getString("object_id"), index + 1)) {
-                "$id: delivery authorship history is incomplete"
-            }
-            require(previous.getString("person_id") != review.getString("person_id")) {
-                "$id: a previous contributor cannot independently review the same delivery"
-            }
-        }
+        CollaborationQualifiedValidation.validate(criterion, delivery.getJSONObject("body"))
+        CollaborationReviewContract.validate(CollaborationReviewContract.KIND, review.getJSONObject("body"))
         val check = review.getJSONObject("body").getJSONObject("acceptance_review")
+        validateIndependentReview(access, deliveryRef, delivery, review, check, id)
         require(check.getString("criterion_id") == id && check.getString("requirement") == criterion.getString("requirement")) {
             "$id: review addresses a different requirement"
         }
-        val target = check.getJSONObject("target")
-        require(listOf("object_id", "revision", "sha256").all { target.get(it) == deliveryRef.get(it) }) {
-            "$id: review addresses a different delivery version"
+        require(check.getString("verdict") == "supported" && check.getJSONArray("unresolved").length() == 0) {
+            "$id: review is negative, incomplete or has unresolved objections"
         }
-        require(review.getJSONArray("parents").let { parents -> (0 until parents.length()).any {
-            parents.getJSONObject(it).let { parent -> parent.getString("object_id") == deliveryRef.getString("object_id") &&
-                parent.getInt("revision") == deliveryRef.getInt("revision") }
-        } }) { "$id: review has no preserved delivery reference" }
-        require(check.getString("verdict") == "supported" && check.getString("rationale").isNotBlank() &&
-            check.getJSONArray("unresolved").length() == 0) { "$id: review is negative, incomplete or has unresolved objections" }
+        validateCurrentReviews(snapshot, deliveryRef, CollaborationReviewContract.KIND, id, criterion.getString("requirement"))
         val reviewedObservations = mutableListOf<JSONObject>()
         listOf(delivery, review).forEach { revision ->
             val refs = revision.getJSONArray("host_observations")
@@ -122,7 +158,39 @@ internal class CollaborationGoalAcceptance(
         CollaborationEvidenceRequirements.validate(criterion, reviewedObservations)
     }
 
+    private fun validateIndependentReview(access: CollaborationWorkspaceAccess, deliveryRef: JSONObject, delivery: JSONObject,
+                                          review: JSONObject, check: JSONObject, id: String) {
+        require(review.getString("kind") in setOf("decision", CollaborationReviewContract.KIND) &&
+            review.getString("person_id") != delivery.getString("person_id")) {
+            "$id: the author cannot independently review their own delivery"
+        }
+        require(review.getString("person_id") !in workspace.contributorIds(access, deliveryRef)) {
+            "$id: a previous contributor or declared ancestor author cannot independently review the same delivery"
+        }
+        val target = check.getJSONObject("target")
+        require(listOf("object_id", "revision", "sha256").all { target.get(it) == deliveryRef.get(it) }) {
+            "$id: review addresses a different delivery version"
+        }
+        require(review.getJSONArray("parents").let { parents -> (0 until parents.length()).any {
+            parents.getJSONObject(it).let { parent -> parent.getString("object_id") == deliveryRef.getString("object_id") &&
+                parent.getInt("revision") == deliveryRef.getInt("revision") }
+        } }) { "$id: review has no preserved delivery reference" }
+    }
+
+    private fun validateCurrentReviews(snapshot: CollaborationAcceptanceReviewSnapshot, target: JSONObject,
+                                       field: String, id: String, requirement: String = "", validateSupported: (JSONObject) -> Unit = {}) {
+        val reviews = snapshot.reviews(CollaborationAcceptanceReviewSnapshot.Binding.of(target, field, id, requirement))
+        reviews.forEach { revision ->
+            val check = revision.getJSONObject("body").getJSONObject(field)
+            require(check.getString("verdict") == "supported" && check.getJSONArray("unresolved").length() == 0) {
+                "$id: a current typed review retains dissent or untested requirements; its author must resolve it in a new revision of that review"
+            }
+            validateSupported(check)
+        }
+    }
+
     private fun currentRevision(access: CollaborationWorkspaceAccess, ref: JSONObject): JSONObject {
+        CollaborationReviewContract.validateReference(ref)
         val id = ref.getString("object_id")
         val revision = ref.getInt("revision")
         val saved = requireNotNull(workspace.read(access, id, revision)) { "Delivery/review is missing or isolated" }

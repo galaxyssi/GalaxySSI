@@ -1021,6 +1021,11 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         val forwardedContext = context.request.context
             .filterKeys { it.startsWith("_galaxyssi_") }
             .mapValues { (_, value) -> value?.toString().orEmpty() }
+        val groupId = context.member.context["collaboration_group_id"].orEmpty()
+        if (groupId.isNotBlank()) progressContext?.let {
+            CollaborationEvidenceLedger(it).bind(AgentTeamDispatchIds.sourceMessageId("member:${context.request.idempotencyKey}"),
+                CollaborationWorkspaceAccess.from(context))
+        }
         val action = AgentAction(
             id = "team-${managedRequest.runId}",
             kind = AgentActionKind.CALL_CONNECTOR,
@@ -1049,10 +1054,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             requiresConfirmation = false
         )
         progressContext?.let { CollaborationProgressStore.register(it, context) }
-        val groupId = context.member.context["collaboration_group_id"].orEmpty()
         if (groupId.isNotBlank()) progressContext?.let {
-            CollaborationEvidenceLedger(it).bind(AgentTeamDispatchIds.sourceMessageId("member:${context.request.idempotencyKey}"),
-                CollaborationWorkspaceAccess.from(context))
             CollaborationResearchArchive(it, groupId).record(context, context.request.goal, input = true)
         }
         provider.prepare(registration.agentId, managedRequest, action, screenProvider())
@@ -1094,7 +1096,15 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         message: AgentControlMessage
     ) = adapterWorker.sendMessage(member, runId, message)
 
-    private fun teamPrompt(context: AgentTeamMemberExecutionContext): String = buildString {
+    private fun teamPrompt(context: AgentTeamMemberExecutionContext): String {
+        if (progressContext != null && context.member.context["collaboration_group_id"].orEmpty().isNotBlank() &&
+            CollaborationResearchWorkflow.stage(context.member) != null) {
+            return CollaborationResearchPrompt.prepare(progressContext, context)
+        }
+        return legacyTeamPrompt(context)
+    }
+
+    private fun legacyTeamPrompt(context: AgentTeamMemberExecutionContext): String = buildString {
         append("Supervised Agent team assignment\n")
         val researchStage = CollaborationResearchWorkflow.stage(context.member)
         val livePlanner = CollaborationLiveGraph.planner(context.member)
@@ -1821,7 +1831,9 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
         visibilityMode = definition.visibilityMode,
         state = state,
         members = members,
-        finalOutput = if (CollaborationGoalLoop.enrolled(this)) CollaborationGoalLoop.publicText(rawOutput).orEmpty() else rawOutput,
+        finalOutput = if (CollaborationGoalLoop.enrolled(this))
+            CollaborationGoalLoop.preservedCriteriaError(request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]")
+                .ifBlank { CollaborationGoalLoop.publicText(rawOutput).orEmpty() } else rawOutput,
         createdAtMillis = request.createdAtMillis,
         updatedAtMillis = maxOf(updatedAtMillis, events.maxOfOrNull(AgentSubagentEvent::timestampMillis) ?: 0L),
         interruptedAtMillis = interruptedAtMillis,

@@ -19,12 +19,15 @@ internal object CollaborationGoalLoop {
     private const val STALLED = "collaboration_research_goal_stalled"
     const val FORMAT = "galaxyssi.goal-assessment.v1"
     const val ROSTER = "collaboration_research_goal_roster"
+    const val CONTRACT_RECOVERY_REQUIRED = "The preserved acceptance contract is damaged. Original records are retained unchanged. " +
+        "Execution is blocked until an authorized recovery restores the exact trusted contract; a model must not replace it."
 
     fun initial(members: List<AgentTeamMember>, goal: String): List<AgentTeamMember> = members.map { person ->
         person.copy(dependsOnAgentIds = emptySet(),
             deliveryMode = if (person.deliveryMode == AgentDeliveryMode.RESPOND) AgentDeliveryMode.RESPOND else AgentDeliveryMode.IGNORE,
             objective = if (person.deliveryMode == AgentDeliveryMode.RESPOND)
-                "Assess the original goal, define complete acceptance criteria, and assign the next executable work. User goal: $goal"
+                "Read the complete original goal contract supplied by the host, define complete acceptance criteria, " +
+                    "and assign the next executable work. Use the host contract references to retrieve any missing pages before planning."
                 else person.objective,
             context = person.context + mapOf(ENABLED to "1", ROSTER to "true",
                 CollaborationResearchWorkflow.STAGE to CollaborationResearchStage.DELIVER.name,
@@ -75,14 +78,20 @@ internal object CollaborationGoalLoop {
         Documentary criteria need a saved substantive artifact/proposal/decision and an acceptance_review object authored by a DIFFERENT person reviewing its exact version.
         The review body must contain acceptance_review: {criterion_id, requirement, target:{object_id,revision,sha256}, verdict:"supported", rationale, unresolved:[]}.
         The review must cite that delivery in parents. Copy host workspace receipts into delivery/review; current versions only, no invented IDs.
-        The host currently validates documentary delivery/review integrity, not physical experiments or computation. Those criteria require qualified validators;
-        keep them open and pursue available execution/resource discovery. Do not relabel them documentary or replace them with simulation.
+        Preserve any validator specification exactly, including its absence, through every continuation. Unsupported domains remain open.
+        The host checks documentary integrity and one narrow local fixture: exact_integer_sum.v1, not general computational/scientific completion.
+        That fixture requires verification=computational and validator:{id:"exact_integer_sum.v1",operands:[canonical decimal strings]} in the first preserved criterion.
+        It accepts only the literal requirement "Compute the exact integer sum: 2 + 3." for operands ["2","3"] (substitute the actual operands).
+        Save body.computation:{validator_id:"exact_integer_sum.v1",result:"5"} alongside body.content; the host recomputes the sum.
+        Limits are 2..32 operands of at most 256 digits. Independent delivery review and goal coverage are still mandatory.
+        Other computational/physical criteria require qualified validators that are not available; keep them open and pursue useful work.
+        Do not relabel them documentary or replace them with simulation.
         'blocked' requires NO executable work plus a concrete resource/permission blocker and resumption condition.
         Ambiguity with a safe reversible default is not a blocker: choose, label, and test the assumption.
         If a tool/provider fails, revise the route or plan; do not convert an attempt limit or a timeout into goal completion.
         No goal-level step or round limit. Keep each batch small enough to inspect; later batches continue the same goal.
         Permission checks, user pause/stop, destructive-action approvals and scientific safety boundaries still apply.
-    """.trimIndent()
+    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions()
 
     fun decode(raw: String): JSONObject? = runCatching {
         val text = raw.trim().let { if (it.startsWith("```")) it.substringAfter('\n').removeSuffix("```").trim() else it }
@@ -100,6 +109,7 @@ internal object CollaborationGoalLoop {
                 require(!item.has("verification") || item.getString("verification") in setOf("documentary", "computational", "physical"))
                 require(!item.has("evidence_kind") || item.getString("evidence_kind") in setOf("observed", "simulation", "proposal"))
                 CollaborationEvidenceRequirements.required(item)
+                CollaborationQualifiedValidation.binding(item)
                 item.getJSONArray("evidence")
             }
             json.getJSONArray("work")
@@ -113,16 +123,15 @@ internal object CollaborationGoalLoop {
 
     fun disposition(raw: String, previousCriteria: String = "[]", finishedWork: Set<String> = emptySet(),
                     acceptanceVerified: Boolean = false, allowUnverifiedHistory: Boolean = false): String {
+        val previous = try { preservedCriteria(previousCriteria) }
+            catch (_: Exception) { return "blocked" }
+            catch (_: StackOverflowError) { return "blocked" }
         val json = decode(raw) ?: return "continue"
-        val criteria = json.getJSONArray("criteria")
+        val criteria = runCatching { validateCriteria(json.getJSONArray("criteria")) }.getOrNull() ?: return "continue"
         val current = (0 until criteria.length()).map { criteria.getJSONObject(it) }.associateBy { it.getString("id") }
-        val previous = runCatching { JSONArray(previousCriteria) }.getOrDefault(JSONArray())
         if ((0 until previous.length()).any {
                 val prior = previous.getJSONObject(it)
-                val next = current[prior.getString("id")]
-                next?.optString("requirement") != prior.getString("requirement") ||
-                    (prior.has("verification") && next?.optString("verification") != prior.optString("verification")) ||
-                    !CollaborationEvidenceRequirements.preserved(prior, next)
+                !criterionPreserved(prior, current[prior.getString("id")])
             }) return "continue"
         if (json.getJSONArray("work").length() > 0) return "continue"
         if (json.optJSONArray("recruit")?.length()?.let { it > 0 } == true) return "continue"
@@ -182,6 +191,8 @@ internal object CollaborationGoalLoop {
         val previousResult = record.events.lastOrNull { it.childId == expectedPrimary && it.result != null }?.result
         val raw = previousResult?.output.orEmpty()
         val priorCriteria = record.request.context[CRITERIA]?.toString() ?: "[]"
+        // A corrupt host contract is not a model planning error. Preserve the checkpoint, not an endless repair dispatch.
+        if (preservedCriteriaError(priorCriteria).isNotEmpty()) return null
         val finished = finishedWork(record)
         val authors = finishedAuthors(record)
         val disposition = disposition(raw, priorCriteria, finished, record.acceptanceVerified(previousResult),
@@ -189,12 +200,25 @@ internal object CollaborationGoalLoop {
         if (disposition in setOf("achieved", "unverified_history") || disposition == "blocked" && !wakeBlocked) return null
         if (!wakeBlocked && (record.request.context[RETRY_AT]?.toString()?.toLongOrNull() ?: 0L) > now) return null
         val assessment = decode(raw)
+        // Validate the complete contract before recruitment or any executable work is planned.
+        val prior = runCatching { preservedCriteria(priorCriteria) }.getOrNull()
+        val merged = if (prior != null && assessment != null)
+            runCatching { mergeCriteria(prior, assessment.getJSONArray("criteria")) } else null
+        val contractError = when {
+            prior == null -> "Preserved criteria are malformed; retained unchanged. Repair requires recovery of the original saved contract."
+            assessment == null -> "Invalid assessment or validator specification; the original criteria were retained unchanged."
+            merged?.isFailure == true -> "${merged.exceptionOrNull()?.message} The original criteria were retained unchanged."
+            else -> ""
+        }.let { if (it.isBlank()) it else "$it No assignments, recruitment or resource jobs were dispatched; repair the assessment first." }
+        val criteria = merged?.getOrNull() ?: prior
+        val acceptedAssessment = assessment.takeIf { contractError.isBlank() }
         val round = (record.request.context[ROUND]?.toString()?.toLongOrNull() ?: 0L) + 1L
         val existingPeople = record.definition.members.filter { it.context[ROSTER] == "true" }
-        val requested = assessment?.getJSONArray("work") ?: JSONArray()
-        val recruits = assessment?.optJSONArray("recruit")
-        val recruitment = CollaborationGoalRecruitment.plan(existingPeople, recruits, requested,
-            if (recruits != null && recruits.length() > 0) recruitmentNames() else emptyList())
+        val requested = acceptedAssessment?.getJSONArray("work") ?: JSONArray()
+        val recruits = acceptedAssessment?.optJSONArray("recruit")
+        val recruitment = if (acceptedAssessment == null) CollaborationGoalRecruitment.Plan(existingPeople, emptyMap())
+            else CollaborationGoalRecruitment.plan(existingPeople, recruits, requested,
+                if (recruits != null && recruits.length() > 0) recruitmentNames() else emptyList())
         val people = recruitment.people
         val coordinatorPerson = record.definition.members.first { it.memberId == expectedPrimary }
             .context.getValue(CollaborationResearchWorkflow.PERSON)
@@ -210,9 +234,10 @@ internal object CollaborationGoalLoop {
         }
         // A malformed plan is repaired by the coordinator, never partially executed or silently dropped.
         val planned = if (recruitment.error.isBlank() && validWork.size == requested.length()) validWork else emptyList()
-        val recovery = if (assessment != null)
-            CollaborationResourceRecovery.jobs(assessment.getJSONArray("blockers"), people, coordinatorPerson, finished) else emptyList()
-        val graph = CollaborationWorkGraph.compile(planned + recovery, finished, authors)
+        val recovery = if (acceptedAssessment != null)
+            CollaborationResourceRecovery.jobs(acceptedAssessment.getJSONArray("blockers"), people, coordinatorPerson, finished) else emptyList()
+        val graph = if (contractError.isNotBlank()) CollaborationWorkGraph.Plan(emptyList(), contractError)
+            else CollaborationWorkGraph.compile(planned + recovery, finished, authors)
         val work = graph.work
         val dispatchIds = work.associate { CollaborationWorkGraph.id(it) to nodeId("work:${CollaborationWorkGraph.id(it)}") }
         val nodes = work.map { item ->
@@ -228,10 +253,12 @@ internal object CollaborationGoalLoop {
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
             dependsOnAgentIds = nodes.mapTo(linkedSetOf()) { it.memberId },
-            objective = "Evaluate the original goal against preserved criteria and actual new evidence. " +
+            objective = if (contractError.isNotBlank())
+                "Repair the assessment against the preserved original contract. Do not execute rejected assignments, repeat side effects, " +
+                    "or invent replacement criteria. Report corrupt saved criteria as requiring recovery of the original contract."
+            else "Evaluate the original goal against preserved criteria and actual new evidence. " +
                 "Continue feasible unfinished work, not just a textual plan. Repair any invalid previous assessment or assignment.",
             context = coordinator.context + mapOf(ROSTER to "false", CollaborationResearchWorkflow.STAGE to "DELIVER"))
-        val criteria = mergeCriteria(priorCriteria, assessment?.getJSONArray("criteria"))
         val failedNodes = record.events.mapNotNull { it.result }.filter { it.status != AgentSubagentStatus.SUCCEEDED }.mapTo(hashSetOf()) { it.childId }
         val failedWork = record.definition.members.filter { it.memberId in failedNodes }.mapNotNullTo(hashSetOf()) { it.context[WORK_ID] }
         val stalled = if (nodes.isEmpty() || nodes.all { it.context[WORK_ID] in failedWork })
@@ -242,10 +269,14 @@ internal object CollaborationGoalLoop {
                 members = (if (graph.error.isBlank()) people else existingPeople)
                     .map { it.copy(deliveryMode = AgentDeliveryMode.IGNORE, dependsOnAgentIds = emptySet()) } + nodes + assessmentNode),
             request = record.request.copy(context = record.request.context + mapOf(ROUND to round.toString(), HOST_ACCEPTANCE to "1",
-                CRITERIA to criteria.toString(), PREVIOUS to raw.ifBlank { "Previous attempt failed: ${previousResult?.errorMessage.orEmpty()}" },
+                CRITERIA to (if (contractError.isBlank()) requireNotNull(criteria).toString() else priorCriteria),
+                PREVIOUS to raw.ifBlank { "Previous attempt failed: ${previousResult?.errorMessage.orEmpty()}" },
                 CollaborationGoalRecruitment.FEEDBACK to recruitment.error,
-                ACCEPTANCE_FEEDBACK to if (assessment?.optString("decision") == "achieved")
-                    previousResult?.collaborationAcceptance?.feedback ?: "No host acceptance receipt. Publish the delivery and an independent review of its exact version." else "",
+                ACCEPTANCE_FEEDBACK to acceptanceContext(record.request.goal, criteria,
+                    if (contractError.isNotBlank()) contractError
+                    else if (assessment?.optString("decision") == "achieved") previousResult?.collaborationAcceptance?.feedback
+                        ?: "No host acceptance receipt. Publish the delivery, mapping and independent reviews of their exact versions."
+                    else ""),
                 CollaborationWorkGraph.FEEDBACK to graph.error.ifBlank {
                     if (validWork.size != requested.length()) "Invalid member, stage or assignment; repair the entire work plan." else ""
                 },
@@ -256,16 +287,50 @@ internal object CollaborationGoalLoop {
             events = emptyList(), interruptedAtMillis = now.coerceAtLeast(1L), updatedAtMillis = now)
     }
 
-    private fun mergeCriteria(previous: String, current: JSONArray?): JSONArray {
+    fun acceptanceContext(goal: String, criteria: JSONArray?, feedback: String = ""): String =
+        listOf(feedback, CollaborationSemanticGoalCoverage.context(goal, criteria)).filter(String::isNotBlank).joinToString("\n")
+
+    fun preservedCriteriaError(raw: String): String = try {
+        preservedCriteria(raw)
+        ""
+    } catch (_: Exception) { CONTRACT_RECOVERY_REQUIRED }
+      catch (_: StackOverflowError) { CONTRACT_RECOVERY_REQUIRED }
+
+    private fun preservedCriteria(raw: String): JSONArray = validateCriteria(CollaborationGoalContractStore.parseCriteria(raw))
+
+    private fun validateCriteria(criteria: JSONArray): JSONArray = criteria.also {
+        val ids = hashSetOf<String>()
+        repeat(criteria.length()) { index ->
+            val item = criteria.getJSONObject(index)
+            require(item.opt("id") is String && item.getString("id").isNotBlank() && ids.add(item.getString("id"))) { "Invalid or duplicate preserved criterion ID" }
+            require(item.opt("requirement") is String && item.getString("requirement").isNotBlank()) { "Missing preserved requirement" }
+            require(!item.has("verification") || item.opt("verification") is String &&
+                item.getString("verification") in setOf("documentary", "computational", "physical")) {
+                "Invalid preserved verification type"
+            }
+            CollaborationEvidenceRequirements.required(item)
+            CollaborationQualifiedValidation.binding(item)
+        }
+    }
+
+    private fun criterionPreserved(before: JSONObject, after: JSONObject?): Boolean = after != null &&
+        before.getString("requirement") == after.getString("requirement") &&
+        (!before.has("verification") || before.optString("verification") == after.optString("verification")) &&
+        CollaborationEvidenceRequirements.preserved(before, after) && CollaborationQualifiedValidation.preserved(before, after)
+
+    private fun mergeCriteria(prior: JSONArray, current: JSONArray): JSONArray {
+        validateCriteria(current)
         val merged = linkedMapOf<String, JSONObject>()
-        val prior = runCatching { JSONArray(previous) }.getOrDefault(JSONArray())
-        repeat(prior.length()) { prior.getJSONObject(it).let { item -> merged[item.getString("id")] = item } }
-        if (current != null) repeat(current.length()) {
+        val byId = (0 until current.length()).associate { current.getJSONObject(it).let { item -> item.getString("id") to item } }
+        repeat(prior.length()) { prior.getJSONObject(it).let { item ->
+            val next = byId[item.getString("id")]
+            require(CollaborationQualifiedValidation.preserved(item, next)) { "Rejected validator binding change or dropped criterion." }
+            require(criterionPreserved(item, next)) { "Rejected preserved requirement, verification or source constraint change." }
+            merged[item.getString("id")] = item
+        } }
+        repeat(current.length()) {
             val item = current.getJSONObject(it)
-            val old = merged[item.getString("id")]
-            if (old == null || old.getString("requirement") == item.getString("requirement") &&
-                (!old.has("verification") || old.optString("verification") == item.optString("verification")) &&
-                CollaborationEvidenceRequirements.preserved(old, item)) merged[item.getString("id")] = item
+            merged[item.getString("id")] = item
         }
         return JSONArray(merged.values.toList())
     }
