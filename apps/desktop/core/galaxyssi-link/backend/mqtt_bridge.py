@@ -5846,6 +5846,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             if task_id != task.task_id or task.execution_generation != codex_execution_generation:
                 return
             nonlocal result_published, recovery_attempts
+            if event.get("evidence_only") is True:
+                from codex_tool_evidence_bridge import capture
+                capture(codex_mutations, event)
+                return
             event_status = str(event.get("status") or "running")
             research = event.get("research")
             if isinstance(research, dict) and research.get("contract") == research_quality_standard()["version"]:
@@ -7471,6 +7475,13 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
         )
         return
 
+    if msg_type == "agent_task_evidence_request":
+        from codex_tool_evidence_bridge import query
+        response = query(agent_task_manager, payload, client_route_id=client_route_id)
+        if response is not None:
+            _publish_phone_payload(mqttc, wire_payload, response)
+        return
+
     if msg_type == "agent_task_recovery_request":
         from agent_task_recovery_query import recovery_query
         from agent_recovery_timing import recovery_timing
@@ -8178,6 +8189,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "agent_protocol_negotiation",
             "desktop_native_tool_registry_v1",
             "desktop_native_tool_receipts",
+            "desktop_codex_tool_evidence_v1",
             "desktop_control_authorization_v1",
             "desktop_control_screenshot_v1",
             "desktop_control_input_v1",

@@ -2,6 +2,7 @@
 
 QUERY_RESPONSES = frozenset({
     "agent_task_recovery_result", "agent_task_result_page", "agent_task_result_receipt_confirmed",
+    "agent_task_evidence",
 })
 
 

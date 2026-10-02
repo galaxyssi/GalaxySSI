@@ -1779,6 +1779,12 @@ class CodexAppServer:
             )
         elif method == "item/completed":
             item = params.get("item") or {}
+            from agent_tool_evidence import completed_tool_observation
+            observation = completed_tool_observation(
+                item, thread_id=common["thread_id"], turn_id=common["turn_id"],
+            )
+            if observation is not None:
+                self.on_event(task_id, {**common, "evidence_only": True, "tool_observation": observation})
             self._record_failed_item(run, item)
             item_type = str(item.get("type") or "")
             if item_type == "webSearch":

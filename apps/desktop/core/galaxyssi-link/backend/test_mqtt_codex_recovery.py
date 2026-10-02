@@ -3,7 +3,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import mqtt_bridge
 
@@ -116,6 +116,7 @@ class _RecoveredCodexServer:
 class MqttCodexRecoveryTests(unittest.TestCase):
     def test_recovered_codex_task_reconnects_to_original_turn(self):
         manager = _RecoveredTaskManager()
+        manager.tool_evidence = Mock()
         server = _RecoveredCodexServer()
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             mqtt_bridge,
@@ -156,6 +157,24 @@ class MqttCodexRecoveryTests(unittest.TestCase):
                 content="continue",
                 msg_type="text",
             )
+
+            from agent_tool_evidence import completed_tool_observation
+            observation = completed_tool_observation(
+                {"id": "command", "type": "commandExecution", "exitCode": 0, "aggregatedOutput": "fixture"},
+                thread_id="thread-original", turn_id="turn-original",
+            )
+            updates_before = len(manager.updates)
+            mqtt_bridge._dispatch_codex_event("task-recovered", {"evidence_only": True, "tool_observation": observation})
+            manager.tool_evidence.record.assert_called_once()
+            recorded_task, recorded_observation = manager.tool_evidence.record.call_args.args
+            self.assertEqual(2, recorded_task["execution_generation"])
+            self.assertEqual("phone-turn-recovered", recorded_task["client_turn_id"])
+            self.assertEqual(observation, recorded_observation)
+            self.assertEqual(updates_before, len(manager.updates))
+            manager.task.execution_generation = 3
+            mqtt_bridge._dispatch_codex_event("task-recovered", {"evidence_only": True, "tool_observation": observation})
+            self.assertEqual(1, manager.tool_evidence.record.call_count)
+            manager.task.execution_generation = 2
 
         self.assertFalse(server.started)
         self.assertEqual(1, len(server.recoveries))
