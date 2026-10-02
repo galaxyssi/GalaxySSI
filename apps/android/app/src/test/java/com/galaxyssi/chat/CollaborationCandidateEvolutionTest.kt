@@ -500,8 +500,10 @@ class CollaborationCandidateEvolutionTest {
     @Test fun schemaAndControllerPromptsExposeBoundedCycleWithoutCertification() {
         assertTrue(CollaborationGoalLoop.instructions().contains("candidate_cycles"))
         assertTrue(CollaborationResearchArtifact.instructions(CollaborationResearchStage.REVISE).contains("body.candidate.basis"))
+        assertTrue(CollaborationResearchArtifact.instructions(CollaborationResearchStage.REVISE).contains("NOT into resolves"))
         assertTrue(CollaborationCandidateEvolution.instructions().contains("simulation never satisfies physical"))
         val f = Fixture()
+        assertTrue(f.plan().work.single().getString("assignment").contains("Use resolves=[]"))
         val claimed = f.assessment(JSONArray().put(f.request())).put("decision", "achieved")
         assertEquals("continue", CollaborationGoalLoop.disposition(claimed.toString(), acceptanceVerified = true))
     }

@@ -252,11 +252,16 @@ internal object CollaborationCandidateEvolution {
         "criterion:\"exact shared requirement\",check:\"specific discriminating check\",rationale:\"evidence assessment\",outcome:\"supported|refuted|not_tested\",unresolved:[]}. " +
         "Compare has at least two distinct targets and outcome differentiated|inconclusive. Challenge has one target, refuted|not_tested and correction. " +
         "Review has one exact current target, a non-contributor reviewer and actual returned host observations; supported cannot retain blockers. " +
-        "Repair from a review also copies its exact reference into body.candidate.basis. A review is a member assessment, never a host verification certificate. "
+        "Repair from a review also copies its exact reference into body.candidate.basis, NOT into resolves. " +
+        "resolves accepts preserved counterexample/question objects (or a candidate challenge), not a candidate review; " +
+        "use resolves=[] for review-based repair unless a separate qualifying counterexample/question is supplied. " +
+        "A review is a member assessment, never a host verification certificate. "
 
     private fun assignment(task: JSONObject): String = "Exact-version candidate ${task.getString("operation")}. " +
         "Read the full exact target and original required host observations through scoped recall. " +
         "Publish exactly one candidate_event review, or one candidate revise with body.candidate.basis copied from this task. " +
+        "Use resolves=[]; the review basis belongs only in body.candidate.basis. For revise, object_id and base_revision name the target, " +
+        "and parents contains only the exact target reference, not the basis review. Cite original source_reference IDs in observations. " +
         "Do not change other candidates or execute unauthorized experiments; preserve alternatives. " +
         "A missing/unsupported check remains not_tested, never verified. Do not repeat completed side effects to manufacture receipts. " +
         "Host task: $task"

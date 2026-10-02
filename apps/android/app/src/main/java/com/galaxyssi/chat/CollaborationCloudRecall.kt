@@ -21,6 +21,7 @@ internal object CollaborationCloudRecall {
         val function = JSONObject().put("name", NAME)
             .put("description", "Read this assigned member's saved group workspace or original host tool evidence. Browse first; " +
                 "read an exact object_id/revision or evidence_id/sha256, following next_offset/cursor. " +
+                "Evidence pages expose source_reference for citing the original observation; galaxyssi_evidence_receipt only records this recall. " +
                 "mode=goal_contract takes only cursor and returns the host-pinned original goal, criteria and context fragments; follow next_cursor. " +
                 "Returned output is not proof of a claim.")
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
