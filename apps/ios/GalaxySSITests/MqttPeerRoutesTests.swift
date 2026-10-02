@@ -2,6 +2,116 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testSendDrainInspectsBlockedRoutesAndRecoversAfterBoundedWait() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    await f.peer.emit(topics: f.peer.binding.receiveTopics, generation: 2)
+    let drain = f.sendDrain()
+    let first = try await drain.drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertEqual(first.inspected, 1)
+    XCTAssertEqual(first.submitted, 0)
+    XCTAssertEqual(first.recoveredRoutes, 0)
+    f.peer.time += 30_000
+    let recovered = try await drain.drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertEqual(recovered.recoveredRoutes, 1)
+    XCTAssertEqual(recovered.submitted, 0)
+    XCTAssertEqual(try f.outbox.entry(identity: f.entry.identity, messageID: "message")?.message.attempts, 0)
+    let cooldown = try await drain.drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertEqual(cooldown.recoveredRoutes, 0)
+    await f.peer.routes.maintenance()
+    XCTAssertEqual(f.peer.path.publications.last?.generation, 2)
+  }
+
+  func testSendDrainDoesNotTreatBrokerEnqueueAsLogicalDelivery() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    let drain = f.sendDrain()
+    let result = try await drain.drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertEqual(result.submitted, 1)
+    XCTAssertTrue(result.failures.isEmpty)
+    let saved = try XCTUnwrap(f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+    XCTAssertEqual(saved.message.status, "published")
+    XCTAssertEqual(saved.message.attempts, 1)
+    XCTAssertEqual(saved.wireHash, f.entry.wireHash)
+    XCTAssertTrue(try f.outbox.completions.pending().isEmpty)
+    let duplicate = try await drain.drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertEqual(duplicate.inspected, 0)
+  }
+
+  func testSendDrainRejectsRevokedIdentityBeforeOutboxAccess() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    f.peer.binding.enabled = false
+    try f.peer.routes.replace([f.peer.binding])
+    let result = try await f.sendDrain().drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertEqual(result.inspected, 0)
+    XCTAssertEqual(result.failures.count, 1)
+    XCTAssertTrue(f.publications.isEmpty)
+    XCTAssertEqual(try f.outbox.entry(identity: f.entry.identity, messageID: "message")?.message.attempts, 0)
+  }
+
+  func testSendDrainRotatesPastPeerWithoutReadyRoute() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    var blocked = f.peer.binding
+    blocked.scope = "other"
+    blocked.sendTopic = String(repeating: "o", count: 43)
+    blocked.sendTopics = [blocked.sendTopic]
+    blocked.receiver = String(repeating: "c", count: 64)
+    try f.peer.routes.replace([f.peer.binding, blocked])
+    let blockedIdentity = try MqttBusinessIdentity(blocked)
+    var message = f.entry.message
+    message.topic = blocked.sendTopic
+    try f.outbox.enqueue(identity: blockedIdentity, message: message, traffic: .message)
+    let drain = f.sendDrain()
+    let peers = [f.entry.identity, blockedIdentity]
+    let first = try await drain.drain(identities: peers, validatedNetwork: true, limit: 1)
+    XCTAssertEqual(first.inspected, 1)
+    XCTAssertEqual(first.submitted, 0)
+    let second = try await drain.drain(identities: peers, validatedNetwork: true, limit: 1)
+    XCTAssertEqual(second.inspected, 1)
+    XCTAssertEqual(second.submitted, 1)
+  }
+
+  func testSendDrainClosedDoesNotTouchPendingMessages() async throws {
+    let f = try ReceiptBridgeFixture()
+    let drain = f.sendDrain()
+    await drain.close()
+    let result = try await drain.drain(identities: [f.entry.identity], validatedNetwork: true)
+    XCTAssertTrue(result.stopped)
+    XCTAssertEqual(result.inspected, 0)
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+  }
+
+  func testSendDrainPagesPastAttachmentAndNetworkBlockedMessages() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    for index in 0..<6 {
+      var message = f.entry.message
+      message.messageId = "blocked-\(index)"
+      if index.isMultiple(of: 2) { message.requiresValidatedNetwork = true }
+      else { message.blockedByAttachmentTransferIds = [String(repeating: "1", count: 64)] }
+      try f.outbox.enqueue(identity: f.entry.identity, message: message, traffic: .message)
+    }
+    let drain = f.sendDrain()
+    var sent = 0
+    for _ in 0..<9 {
+      let result = try await drain.drain(identities: [f.entry.identity], validatedNetwork: false, limit: 1)
+      XCTAssertLessThanOrEqual(result.inspected, 1)
+      XCTAssertTrue(result.failures.isEmpty)
+      sent += result.submitted
+    }
+    XCTAssertEqual(sent, 1)
+    for index in 0..<6 {
+      XCTAssertEqual(try f.outbox.entry(identity: f.entry.identity, messageID: "blocked-\(index)")?.message.attempts, 0)
+    }
+  }
+
   func testStoredReceiptRequiresCommittedMatchingInboxRecord() async throws {
     let f = try ReceiptBridgeFixture()
     await f.peer.start()
@@ -720,6 +830,12 @@ private final class ReceiptBridgeFixture {
     payload["message_id"] = "ack"
     _ = try journal.inbox.accept(identity: entry.identity, messageID: "ack", payload: payload,
       ciphertextDigest: String(repeating: "e", count: 64), wireHash: String(repeating: "f", count: 64), receiptRequired: false)
+  }
+
+  func sendDrain() -> MqttBusinessSendDrain {
+    MqttBusinessSendDrain(outbox: outbox, routes: peer.routes, dispatcher: dispatch,
+      engine: GalaxySSISignalEngine(profileName: "test", defaults: peer.defaults, secrets: storage.secrets),
+      now: { [weak self] in Date(timeIntervalSince1970: Double(self?.peer.time ?? 0) / 1000) })
   }
 
   func incomingPacket(body: String = "AA==", traffic: String = "message") async throws -> MqttPeerRoutes.VerifiedPacket {

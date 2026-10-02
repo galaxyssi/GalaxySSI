@@ -69,6 +69,7 @@
     F13234000000000000000041 /* MqttDeliveryCompletions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000041 /* MqttDeliveryCompletions.swift */; };
     F13234000000000000000042 /* MqttDeliveryCompletionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */; };
     F13234000000000000000043 /* MqttBusinessReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000043 /* MqttBusinessReceipts.swift */; };
+    F13234000000000000000044 /* MqttBusinessSendDrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000044 /* MqttBusinessSendDrain.swift */; };
     F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000002 /* AgentReplySpeechRuntime.swift */; };
     F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */; };
     F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */; };
@@ -1112,6 +1113,7 @@
     F23234000000000000000041 /* MqttDeliveryCompletions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryCompletions.swift; sourceTree = "<group>"; };
     F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryCompletionsTests.swift; sourceTree = "<group>"; };
     F23234000000000000000043 /* MqttBusinessReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessReceipts.swift; sourceTree = "<group>"; };
+    F23234000000000000000044 /* MqttBusinessSendDrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessSendDrain.swift; sourceTree = "<group>"; };
     F22678000000000000000002 /* AgentReplySpeechRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechRuntime.swift; sourceTree = "<group>"; };
     F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentReplySpeechView.swift; sourceTree = "<group>"; };
     F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechControllerTests.swift; sourceTree = "<group>"; };
@@ -2161,6 +2163,7 @@
         F23234000000000000000038 /* MqttSignalSendRequest.swift */,
         F23234000000000000000041 /* MqttDeliveryCompletions.swift */,
         F23234000000000000000043 /* MqttBusinessReceipts.swift */,
+        F23234000000000000000044 /* MqttBusinessSendDrain.swift */,
         F22678000000000000000002 /* AgentReplySpeechRuntime.swift */,
         F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */,
         F22679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift */,
@@ -3592,6 +3595,7 @@
         F13234000000000000000038 /* MqttSignalSendRequest.swift in Sources */,
         F13234000000000000000041 /* MqttDeliveryCompletions.swift in Sources */,
         F13234000000000000000043 /* MqttBusinessReceipts.swift in Sources */,
+        F13234000000000000000044 /* MqttBusinessSendDrain.swift in Sources */,
         F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */,
         F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */,
         F12679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift in Sources */,
