@@ -99,6 +99,10 @@ struct AgentHomeView: View {
 
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
+  @State private var homeVisible = false
+  @State private var homeWindowFocused = false
+  @State var agentUnreadCount = 0
+  @State var replyUnreadRevision = 0
   @EnvironmentObject var store: GalaxySSIStore
   @EnvironmentObject var coordinator: MessageCoordinator
   @ObservedObject var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
@@ -199,6 +203,7 @@ struct AgentHomeView: View {
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
+      .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
       .background(
         GalaxySSIAgentHomeNavigationRoutesView(
           recentTasksShortcutActive: $recentTasksShortcutActive,
@@ -228,6 +233,7 @@ struct AgentHomeView: View {
         )
       )
       .onAppear {
+        homeVisible = true
         coordinator.resumePendingAgentDelivery()
         if !sceneConversationID.isEmpty {
           _ = store.switchAgentSession(sceneConversationID)
@@ -236,8 +242,7 @@ struct AgentHomeView: View {
         sceneConversationID = store.activeAgentConversationId
         presentPendingPhonePublicPageExport()
         voiceAgentRunRecovery.start()
-        store.markContactRead(contact.id)
-        NotificationService.cancelIncomingMessage(contactId: contact.id)
+        refreshVisibleAgentReplyReadState()
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
         installComposerInputBridge()
@@ -247,6 +252,7 @@ struct AgentHomeView: View {
         installAgentHomeSwipeBridge()
       }
       .onDisappear {
+        homeVisible = false
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
         AgentIOSAgentHomeActionBridge.shared.removeLongPressHandler()
@@ -263,6 +269,12 @@ struct AgentHomeView: View {
         refreshAgentRouteState()
         retryPendingScannedAgentSelection()
         coordinator.refreshAgentHomeState()
+        refreshVisibleAgentReplyReadState()
+      }
+      .onChange(of: homeWindowFocused) { _ in refreshVisibleAgentReplyReadState() }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIReplyUnreadDidChange)) { _ in
+        replyUnreadRevision &+= 1
+        refreshVisibleAgentReplyReadState()
       }
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)
@@ -276,6 +288,7 @@ struct AgentHomeView: View {
         sceneConversationID = store.activeAgentConversationId
         resetAgentSessionPresentation()
         refreshAgentRouteState()
+        refreshVisibleAgentReplyReadState()
       }
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)
@@ -511,6 +524,8 @@ struct AgentHomeView: View {
     let presentation = headerPresentation
     return GalaxySSIAgentHomeHeaderView(
       sessionTitle: presentation.sessionTitle,
+      unreadCount: unreadTotal,
+      unreadLabel: String(format: t("galaxyssi.agent.unread", "%d unread"), unreadTotal),
       modelStatusLabel: presentation.modelStatusLabel,
       brandSubtitle: t("galaxyssi.agent.brand.subtitle", "Superintelligent agent"),
       newConversationLabel: t("new_conversation", "New conversation"),
@@ -532,6 +547,13 @@ struct AgentHomeView: View {
         : nil,
       onNewConversation: createAgentConversation
     )
+  }
+
+  func refreshVisibleAgentReplyReadState() {
+    if AgentReplyUnreadPolicy.canRead(visible: homeVisible, active: scenePhase == .active, focused: homeWindowFocused) {
+      store.markAgentRepliesRead(conversationId: store.activeAgentConversationId, rendered: transcriptMessages)
+    }
+    agentUnreadCount = store.agentReplyUnreadCount()
   }
 
   func openMainTab(_ tab: GalaxySSIMainTab) {
