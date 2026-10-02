@@ -80,10 +80,20 @@ enum AgentModelSelectionSettings {
     for conversationId: String,
     defaults: UserDefaults = .standard
   ) {
+    selectAutomaticForConversation(for: conversationId, defaults: defaults)
+    save(AgentModelSelection(), key: defaultSelectionKey, defaults: defaults)
+  }
+
+  static func selectAutomaticForConversation(
+    for conversationId: String,
+    defaults: UserDefaults = .standard
+  ) {
     rememberActiveTarget(for: conversationId, defaults: defaults)
-    let automatic = AgentModelSelection()
-    save(automatic, for: conversationId, defaults: defaults)
-    save(automatic, key: defaultSelectionKey, defaults: defaults)
+    save(AgentModelSelection(), for: conversationId, defaults: defaults)
+  }
+
+  static func defaultSelection(defaults: UserDefaults = .standard) -> AgentModelSelection {
+    loadSelection(key: defaultSelectionKey, defaults: defaults) ?? AgentModelSelection()
   }
 
   static func selectManual(
@@ -118,7 +128,7 @@ enum AgentModelSelectionSettings {
     defaults: UserDefaults = .standard
   ) {
     guard !hasStoredSelection(for: conversationId, defaults: defaults) else { return }
-    let inherited = loadSelection(key: defaultSelectionKey, defaults: defaults) ?? AgentModelSelection()
+    let inherited = defaultSelection(defaults: defaults)
     save(inherited, for: conversationId, defaults: defaults)
   }
 

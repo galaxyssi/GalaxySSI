@@ -126,6 +126,7 @@ struct AgentHomeView: View {
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
   @State var photoPickerPresented = false
+  @State var screenshotPickerPresented = false
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
@@ -329,6 +330,15 @@ struct AgentHomeView: View {
       }
       .onChange(of: coordinator.pendingPhonePublicPageExport) { _ in
         presentPendingPhonePublicPageExport()
+      }
+      .sheet(isPresented: $screenshotPickerPresented) {
+        PhotoLibraryPickerView(selectionLimit: 1) { attachment in
+          appendAttachment(attachment)
+          if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft = t("galaxyssi.screen_assistant.prompt", "Analyze this screenshot, summarize the important content and suggest next steps.")
+          }
+          screenshotPickerPresented = false
+        }
       }
       .galaxySSIAgentHomePresentationRoutes(
         scanShortcutActive: $scanShortcutActive,
@@ -622,6 +632,10 @@ struct AgentHomeView: View {
       onTakePhoto: openCameraAttachmentPicker,
       onAddFile: {
         fileImporterPresented = true
+      },
+      onAnalyzeScreenshot: {
+        actionTrayPresented = false
+        screenshotPickerPresented = true
       },
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,

@@ -4824,3 +4824,5 @@
 "galaxyssi.conversation_status.blocked" = "受阻";
 "galaxyssi.conversation_status.failed" = "失败";
 "galaxyssi.conversation_status.cancelled" = "已取消";
+"galaxyssi.screen_assistant.analyze" = "分析截图";
+"galaxyssi.screen_assistant.prompt" = "请分析这张截图，概括重要内容并给出下一步建议。";

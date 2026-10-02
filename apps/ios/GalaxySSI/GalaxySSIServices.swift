@@ -8717,14 +8717,16 @@ final class MessageCoordinator: ObservableObject {
         payload["task_budget_usage"] = encodedUsage
       }
     }
+    let wire = try linkWirePayload(payload, link: link)
     if !peerChat {
-      taskIdentityStore.register(
+      guard taskIdentityStore.register(
         contactId: contact.id,
         sourceMessageId: sourceMessageId,
         identity: taskIdentity
-      )
+      ) else {
+        throw GalaxySSIError.invalidPayload("Agent reply identity could not be registered")
+      }
     }
-    let wire = try linkWirePayload(payload, link: link)
     let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
       attachments: attachments,
       profile: mediaProfile

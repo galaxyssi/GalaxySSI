@@ -144,12 +144,13 @@ struct GalaxySSIAttachmentMenuDivider: View {
 }
 
 struct PhotoLibraryPickerView: UIViewControllerRepresentable {
+  var selectionLimit = GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount
   var onAttachment: (GalaxySSIDraftAttachment) -> Void
 
   func makeUIViewController(context: Context) -> PHPickerViewController {
     var configuration = PHPickerConfiguration(photoLibrary: .shared())
     configuration.filter = .images
-    configuration.selectionLimit = GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount
+    configuration.selectionLimit = max(1, min(selectionLimit, GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount))
     let controller = PHPickerViewController(configuration: configuration)
     controller.delegate = context.coordinator
     return controller
