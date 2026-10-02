@@ -39,6 +39,18 @@ internal class CollaborationGroupStore(context: Context) {
         CollaborationResearchArchive.remove(appContext, conversationId)
     }
 
+    fun projectRecruits(conversationId: String, recruits: List<AgentTeamMember>): Map<String, String> = synchronized(LOCK) {
+        val before = load(conversationId) ?: return@synchronized emptyMap()
+        val (proposed, admitted) = CollaborationGoalRecruitment.project(before, recruits, names(appContext))
+        if (proposed != before) {
+            val after = proposed.copy(revision = before.revision + 1)
+            database.writeString(conversationId, CollaborationGroupCodec.encode(after))
+            cache[conversationId] = after
+            AgentConversationWindows.changed()
+        }
+        admitted
+    }
+
     fun clear() {
         val ids = synchronized(LOCK) {
             val ids = database.keys("")

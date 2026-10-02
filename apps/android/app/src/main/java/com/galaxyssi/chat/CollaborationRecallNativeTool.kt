@@ -25,11 +25,12 @@ internal object CollaborationRecallNativeTool {
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
+            val beforeRound = EncryptedAgentTeamExecutionStore(context).goalRound(group, call.context.turnId)
             val id = call.input["record_id"] as? String ?: ""
             if (id.isNotBlank()) {
                 val record = archive.read(id) ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                     "record_not_found", "Record is not in this group.")
-                if (org.json.JSONObject(record.content).optString("turn_id") == call.context.turnId)
+                if (!CollaborationResearchArchive.visible(org.json.JSONObject(record.content), call.context.turnId, beforeRound))
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("current_turn_isolated",
                         "Current-turn evidence is shared only through assigned dependencies and directed questions.")
                 val offset = (call.input["offset"] as? Number)?.toInt()?.coerceIn(0, record.content.length) ?: 0
@@ -39,7 +40,7 @@ internal object CollaborationRecallNativeTool {
                     "trust" to "untrusted_group_evidence"))
             } else if (call.input["mode"] == "browse") {
                 val page = try {
-                    archive.browse(call.input["cursor"] as? String ?: "", call.context.turnId)
+                    archive.browse(call.input["cursor"] as? String ?: "", call.context.turnId, beforeRound)
                 } catch (_: KnowledgeSourcePageChanged) {
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                         "history_changed", "New group records arrived; restart browsing without a cursor.")
@@ -52,7 +53,7 @@ internal object CollaborationRecallNativeTool {
                 }, "next_cursor" to page.nextCursor, "total_records" to page.total,
                     "trust" to "untrusted_group_evidence"))
             } else {
-                val rows = archive.search(call.input["query"] as? String ?: "", excludeTurn = call.context.turnId)
+                val rows = archive.search(call.input["query"] as? String ?: "", excludeTurn = call.context.turnId, beforeRound = beforeRound)
                 AgentNativeToolExecutionResult.success(mapOf("records" to rows.map {
                     mapOf("record_id" to it.id, "title" to it.title, "summary" to it.summary,
                         "updated_at" to it.updatedAtMillis, "characters" to it.content.length)
