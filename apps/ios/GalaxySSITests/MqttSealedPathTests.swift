@@ -180,7 +180,7 @@ final class MqttSealedPathTests: XCTestCase {
     let frame = try MqttDeliveryEnvelope.Frame(message: delivery.message,
       attempt: .init(attemptID: String(repeating: "c", count: 32), brokerID: "emqx", generation: 1))
     return try .init(publication: .init(topic: topic, payload: delivery.encodeAttempt(frame), frame: frame,
-      receiveTopics: [inbox], secretFingerprint: delivery.secretFingerprint), completed: { _ in })
+      receiveTopics: [inbox], secretFingerprint: delivery.secretFingerprint, authorized: delivery.authorized), completed: { _ in })
   }
   private func rig() async -> (GalaxySSIMqttBrokerPool, [String: FakeMqttBrokerPath]) {
     var paths: [String: FakeMqttBrokerPath] = [:]

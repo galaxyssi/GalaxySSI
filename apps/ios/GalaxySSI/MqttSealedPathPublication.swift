@@ -9,7 +9,8 @@ struct MqttSealedPathPublication {
   var authorization: MqttPathPublication {
     MqttPathPublication(topic: publication.topic, payload: Data(), generation: publication.frame.attempt.generation,
       receiveTopics: publication.receiveTopics, secretFingerprint: publication.secretFingerprint,
-      durableMessageID: publication.frame.message.messageID, configurationID: configurationID)
+      durableMessageID: publication.frame.message.messageID, configurationID: configurationID,
+      authorized: { [publication] in publication.authorized(publication.frame.attempt.brokerID, publication.frame.attempt.generation) })
   }
 
   func accepts(snapshot: MqttBrokerPathSnapshot, secretFingerprint: String) -> Bool {

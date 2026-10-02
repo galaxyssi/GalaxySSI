@@ -52,6 +52,7 @@ struct MqttPathPublication {
   var durableMessageID = ""
   var brokerAcknowledged: (() -> Void)? = nil
   var configurationID = ""
+  var authorized: (() -> Bool)? = nil
 }
 
 protocol MqttBrokerPathTransport: AnyObject {
@@ -74,7 +75,8 @@ enum MqttBrokerPathPolicy {
                       currentSecretFingerprint: String) -> Bool {
     publication.configurationID == snapshot.configurationID &&
       publication.generation == snapshot.generation && snapshot.isReady(for: publication.receiveTopics) &&
-      !publication.secretFingerprint.isEmpty && publication.secretFingerprint == currentSecretFingerprint
+      !publication.secretFingerprint.isEmpty && publication.secretFingerprint == currentSecretFingerprint &&
+      (publication.authorized?() ?? true)
   }
 
   static func acknowledgedTopics(_ codes: [UInt8], requested: Set<String>) -> Set<String>? {

@@ -582,6 +582,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         break
       }
       let pending = pendingPacketPublishes.remove(at: index)
+      if let gate = pending.pathGate, !authorizes(gate) {
+        finishPhysical(pending, acknowledged: false)
+        continue
+      }
       let sentAtMillis = Self.nowMillis()
       let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
       mqttInflightPacketIds.insert(packetId)

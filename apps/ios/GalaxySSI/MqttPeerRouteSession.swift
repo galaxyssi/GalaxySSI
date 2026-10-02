@@ -73,6 +73,15 @@ final class MqttPeerRouteSession {
     try persistence.forget(peer: binding.scope)
   }
 
+  func invalidateLocalAdvertisement() {
+    lock.lock()
+    defer { lock.unlock() }
+    local = nil
+    localGenerations.removeAll()
+    confirmedEpoch = 0
+    nextSend = 0
+  }
+
   func maintenance(readyGenerations: [String: Int64]) throws -> [MqttPeerRouteControl] {
     lock.lock()
     defer { lock.unlock() }
