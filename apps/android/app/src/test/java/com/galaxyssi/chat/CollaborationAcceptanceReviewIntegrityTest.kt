@@ -161,8 +161,15 @@ class CollaborationAcceptanceReviewIntegrityTest {
             val h = Harness(true)
             val parent = JSONObject(h.target.toString())
             if (fault == "wrong-digest") parent.put("sha256", "0".repeat(64))
-            val copy = h.recorded(h.f.item("derived", "artifact", h.saved(h.target).getJSONObject("body"))
-                .put("parents", JSONArray().put(parent)), "copy-author")
+            val item = h.f.item("derived", "artifact", h.saved(h.target).getJSONObject("body"))
+                .put("parents", JSONArray().put(parent))
+            if (fault == "wrong-digest") {
+                val rejected = h.publish(item, "copy-author")
+                assertEquals("rejected", rejected.getString("status"))
+                assertTrue(rejected.getString("reason").contains("digest mismatch"))
+                return@forEach
+            }
+            val copy = h.recorded(item, "copy-author")
             if (fault == "missing") h.f.rows.data.remove(h.revisionKey(h.target))
             if (fault == "tampered") {
                 val original = JSONObject(h.f.rows.data.getValue(h.revisionKey(h.target)))

@@ -20,7 +20,7 @@ class CollaborationGoalLoopDeviceTest {
         val database = AgentEncryptedDatabase(context, groupId)
         val groups = CollaborationGroupStore(context)
         val names = CollaborationGroupStore.names(context)
-        val store = EncryptedAgentTeamExecutionStore(database) { names }
+        val store = EncryptedAgentTeamExecutionStore(database, recruitmentNames = { names })
         groups.update(groupId) { it.copy(members = listOf(
             CollaborationMember("lead", names[0], "fixture", "Fixture"),
             CollaborationMember("worker", names[1], "fixture", "Fixture")), coordinatorId = "lead") }
@@ -46,7 +46,7 @@ class CollaborationGoalLoopDeviceTest {
                 it.context[CollaborationGoalRecruitment.PUBLISHED] == "false" }
             assertEquals(1, pending.size)
             groups.projectRecruits(groupId, pending) // Simulate interruption before the execution-store acknowledgement.
-            val reopened = EncryptedAgentTeamExecutionStore(database) { names }
+            val reopened = EncryptedAgentTeamExecutionStore(database, recruitmentNames = { names })
             assertTrue(reopened.reconcileGoalRecruits("root", checkpoint.definition.primaryMemberId) { groups.projectRecruits(groupId, it) })
             assertEquals(3, groups.load(groupId)!!.members.size)
             val acknowledged = reopened.resumeCheckpoint("root")!!

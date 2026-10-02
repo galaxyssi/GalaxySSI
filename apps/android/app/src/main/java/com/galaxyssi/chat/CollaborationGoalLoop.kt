@@ -91,7 +91,7 @@ internal object CollaborationGoalLoop {
         If a tool/provider fails, revise the route or plan; do not convert an attempt limit or a timeout into goal completion.
         No goal-level step or round limit. Keep each batch small enough to inspect; later batches continue the same goal.
         Permission checks, user pause/stop, destructive-action approvals and scientific safety boundaries still apply.
-    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions()
+    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions() + "\n" + CollaborationCandidateEvolution.instructions()
 
     fun decode(raw: String): JSONObject? = runCatching {
         val text = raw.trim().let { if (it.startsWith("```")) it.substringAfter('\n').removeSuffix("```").trim() else it }
@@ -114,6 +114,7 @@ internal object CollaborationGoalLoop {
             }
             json.getJSONArray("work")
             json.getJSONArray("blockers")
+            require(!json.has(CollaborationCandidateEvolution.REQUESTS) || json.optJSONArray(CollaborationCandidateEvolution.REQUESTS) != null)
         }
     }.getOrNull()
 
@@ -122,11 +123,13 @@ internal object CollaborationGoalLoop {
     }?.optString("summary")?.takeIf(String::isNotBlank) }.getOrNull()
 
     fun disposition(raw: String, previousCriteria: String = "[]", finishedWork: Set<String> = emptySet(),
-                    acceptanceVerified: Boolean = false, allowUnverifiedHistory: Boolean = false): String {
+                    acceptanceVerified: Boolean = false, allowUnverifiedHistory: Boolean = false,
+                    candidateState: String = "[]"): String {
         val previous = try { preservedCriteria(previousCriteria) }
             catch (_: Exception) { return "blocked" }
             catch (_: StackOverflowError) { return "blocked" }
         val json = decode(raw) ?: return "continue"
+        if (CollaborationCandidateEvolution.requested(json) || CollaborationCandidateEvolution.pending(candidateState)) return "continue"
         val criteria = runCatching { validateCriteria(json.getJSONArray("criteria")) }.getOrNull() ?: return "continue"
         val current = (0 until criteria.length()).map { criteria.getJSONObject(it) }.associateBy { it.getString("id") }
         if ((0 until previous.length()).any {
@@ -184,7 +187,8 @@ internal object CollaborationGoalLoop {
 
     /** Atomic store mutation. Old dispatch identities are never reused for newly planned work. */
     fun advance(record: AgentTeamExecutionRecord, expectedPrimary: String, now: Long, wakeBlocked: Boolean,
-                recruitmentNames: () -> List<String> = { emptyList() }): AgentTeamExecutionRecord? {
+                recruitmentNames: () -> List<String> = { emptyList() },
+                candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null): AgentTeamExecutionRecord? {
         if (!enrolled(record) || record.definition.primaryMemberId != expectedPrimary) return null
         val terminal = record.events.lastOrNull { it.runStatus != null }?.runStatus ?: return null
         if (terminal == AgentSubagentRunStatus.CANCELLED) return null
@@ -195,8 +199,9 @@ internal object CollaborationGoalLoop {
         if (preservedCriteriaError(priorCriteria).isNotEmpty()) return null
         val finished = finishedWork(record)
         val authors = finishedAuthors(record)
+        val candidateState = record.request.context[CollaborationCandidateEvolution.STATE]?.toString() ?: "[]"
         val disposition = disposition(raw, priorCriteria, finished, record.acceptanceVerified(previousResult),
-            allowUnverifiedHistory = record.request.context[HOST_ACCEPTANCE] != "1")
+            allowUnverifiedHistory = record.request.context[HOST_ACCEPTANCE] != "1", candidateState = candidateState)
         if (disposition in setOf("achieved", "unverified_history") || disposition == "blocked" && !wakeBlocked) return null
         if (!wakeBlocked && (record.request.context[RETRY_AT]?.toString()?.toLongOrNull() ?: 0L) > now) return null
         val assessment = decode(raw)
@@ -230,14 +235,38 @@ internal object CollaborationGoalLoop {
         }.filter {
             it.optString("member") in byPerson && it.optString("assignment").isNotBlank() &&
                 !CollaborationResourceRecovery.isReservedWorkId(it.optString("id")) &&
+                !CollaborationCandidateEvolution.reserved(it.optString("id")) && !it.has("candidate_task") &&
                 it.optString("stage") in setOf("EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE")
         }
         // A malformed plan is repaired by the coordinator, never partially executed or silently dropped.
         val planned = if (recruitment.error.isBlank() && validWork.size == requested.length()) validWork else emptyList()
         val recovery = if (acceptedAssessment != null)
             CollaborationResourceRecovery.jobs(acceptedAssessment.getJSONArray("blockers"), people, coordinatorPerson, finished) else emptyList()
+        val basePlanValid = contractError.isBlank() && recruitment.error.isBlank() && validWork.size == requested.length()
+        val candidatePlan = runCatching { if (basePlanValid && (CollaborationCandidateEvolution.requested(acceptedAssessment) ||
+                CollaborationCandidateEvolution.pending(candidateState))) {
+            val workspace = runCatching { candidateWorkspace?.invoke() }.getOrNull()
+            if (workspace == null) {
+                val saved = CollaborationCandidateVerificationState.checkpoint(candidateState)
+                CollaborationCandidateEvolution.Plan(emptyList(), CollaborationCandidateVerificationState.encode(saved.cycles,
+                    CollaborationCandidateVerificationState.requests(saved.pendingRequests,
+                        acceptedAssessment?.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray())),
+                    "Candidate workspace is unavailable; requests retained without dispatch")
+            }
+            else CollaborationCandidateEvolution.plan(workspace,
+                CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
+                    record.request.messageId, round, personId = coordinatorPerson), byPerson.keys, requireNotNull(criteria),
+                acceptedAssessment?.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray(), candidateState,
+                record.events.mapNotNull { it.result }.filter { it.status == AgentSubagentStatus.SUCCEEDED }
+                    .mapTo(hashSetOf()) { it.childId } + CollaborationCandidateEvolution.completedNodes(candidateState, finished),
+                { nodeId("work:$it") })
+        } else CollaborationCandidateEvolution.Plan(emptyList(), candidateState) }.getOrElse {
+            CollaborationCandidateEvolution.Plan(emptyList(), candidateState,
+                it.message ?: "Candidate checkpoint cannot be advanced safely", true)
+        }
         val graph = if (contractError.isNotBlank()) CollaborationWorkGraph.Plan(emptyList(), contractError)
-            else CollaborationWorkGraph.compile(planned + recovery, finished, authors)
+            else if (candidatePlan.error) CollaborationWorkGraph.Plan(emptyList(), candidatePlan.feedback)
+            else CollaborationWorkGraph.compile(planned + recovery + candidatePlan.work, finished, authors)
         val work = graph.work
         val dispatchIds = work.associate { CollaborationWorkGraph.id(it) to nodeId("work:${CollaborationWorkGraph.id(it)}") }
         val nodes = work.map { item ->
@@ -248,7 +277,7 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
-                    CollaborationResearchWorkflow.STAGE to item.getString("stage")))
+                    CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationCandidateEvolution.taskContext(item))
         }
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
@@ -272,6 +301,8 @@ internal object CollaborationGoalLoop {
                 CRITERIA to (if (contractError.isBlank()) requireNotNull(criteria).toString() else priorCriteria),
                 PREVIOUS to raw.ifBlank { "Previous attempt failed: ${previousResult?.errorMessage.orEmpty()}" },
                 CollaborationGoalRecruitment.FEEDBACK to recruitment.error,
+                CollaborationCandidateEvolution.STATE to if (basePlanValid && graph.error.isBlank()) candidatePlan.state else candidateState,
+                CollaborationCandidateEvolution.FEEDBACK to candidatePlan.feedback,
                 ACCEPTANCE_FEEDBACK to acceptanceContext(record.request.goal, criteria,
                     if (contractError.isNotBlank()) contractError
                     else if (assessment?.optString("decision") == "achieved") previousResult?.collaborationAcceptance?.feedback
