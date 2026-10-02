@@ -81,6 +81,37 @@ final class GalaxySSIChatHistoryDatabase {
     }
   }
 
+  // Only chat-message completions belong here. Task and attachment receipts need their own
+  // durable writers; never silently consume them as a successful chat update.
+  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws -> ChatMessage {
+    let source = event.sourceMessageID.isEmpty ? event.messageID : event.sourceMessageID
+    guard let id = UUID(uuidString: source), !event.contactID.isBlank,
+          event.attachmentTransferID.isEmpty, event.traffic == MqttMultipathPolicy.Traffic.message.rawValue else {
+      throw MqttRouteError.invalidPayload
+    }
+    let key = try event.identity.key(messageID: event.messageID)
+    let traceID = UUID(uuidString: "\(key.prefix(8))-\(key.dropFirst(8).prefix(4))-\(key.dropFirst(12).prefix(4))-\(key.dropFirst(16).prefix(4))-\(key.dropFirst(20).prefix(12))")!
+    _ = try MqttBusinessStorage.timestamp(event.receivedAt)
+    return try locked {
+      // This commit precedes consumption in another database; NORMAL is insufficient for that handoff.
+      guard execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
+            execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard var saved = message(id: id), saved.contactId == event.contactID, saved.isMine else {
+        throw MqttRouteError.invalidPayload
+      }
+      if saved.deliveryStatus != .read { saved.deliveryStatus = .delivered }
+      if !saved.deliveryTrace.contains(where: { $0.id == traceID }) {
+        saved.deliveryTrace.append(DeliveryTraceEvent(id: traceID, stage: "delivered",
+          createdAt: Date(timeIntervalSince1970: Double(event.receivedAt) / 1000)))
+      }
+      guard upsert(saved), execute("COMMIT") else { throw MqttChunkStorageError.databaseFailure }
+      committed = true
+      return saved
+    }
+  }
+
   func page(
     contactId: String,
     conversationId: String? = nil,
@@ -386,10 +417,10 @@ final class GalaxySSIChatHistoryDatabase {
     value.withCString { sqlite3_bind_text(statement, index, $0, -1, Self.transient) }
   }
 
-  private func locked<T>(_ body: () -> T) -> T {
+  private func locked<T>(_ body: () throws -> T) rethrows -> T {
     lock.lock()
     defer { lock.unlock() }
-    return body()
+    return try body()
   }
 
   private static func millis(_ date: Date) -> Int64 {

@@ -1235,6 +1235,18 @@ final class GalaxySSIStore: ObservableObject {
     return false
   }
 
+  // The MQTT completion drain consumes its event only after this throws-or-succeeds boundary.
+  func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws {
+    let saved = try chatHistoryDatabase.persistTransportDelivery(event)
+    guard !runtimePlaintextCleared, var cached = messagesByContact[saved.contactId],
+          let index = cached.firstIndex(where: { $0.id == saved.id }) else { return }
+    cached[index] = saved
+    let previousSuppression = suppressMessageDatabaseSync
+    suppressMessageDatabaseSync = true
+    defer { suppressMessageDatabaseSync = previousSuppression }
+    messagesByContact[saved.contactId] = cached
+  }
+
   @discardableResult
   func addCloudModelContact(
     displayName: String,

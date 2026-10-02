@@ -2,6 +2,67 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttDeliveryCompletionsTests: XCTestCase {
+  func testChatDeliveryCommitSurvivesReopenAndIsIdempotent() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let message = ChatMessage(contactId: "contact", content: "outgoing", isMine: true)
+    XCTAssertTrue(history.upsert(message))
+    let event = try chatEvent(message)
+    let first = try history.persistTransportDelivery(event)
+    let second = try history.persistTransportDelivery(event)
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(first.deliveryStatus, .delivered)
+    XCTAssertEqual(first.deliveryTrace.count, message.deliveryTrace.count + 1)
+    let reopened = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    XCTAssertEqual(reopened.message(id: message.id), first)
+  }
+
+  func testChatDeliveryWriteFailurePreservesMessageAndAllowsRetry() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let message = ChatMessage(contactId: "contact", content: "outgoing", isMine: true)
+    XCTAssertTrue(history.upsert(message))
+    let event = try chatEvent(message)
+    try f.execute("CREATE TRIGGER fail_chat BEFORE UPDATE ON chat_messages BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try history.persistTransportDelivery(event))
+    XCTAssertEqual(history.message(id: message.id), message)
+    try f.execute("DROP TRIGGER fail_chat")
+    XCTAssertEqual(try history.persistTransportDelivery(event).deliveryStatus, .delivered)
+  }
+
+  func testChatDeliveryDoesNotDowngradeReadOrAcknowledgeAnotherContact() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    var message = ChatMessage(contactId: "contact", content: "outgoing", isMine: true)
+    message.deliveryStatus = .read
+    XCTAssertTrue(history.upsert(message))
+    XCTAssertThrowsError(try history.persistTransportDelivery(chatEvent(message, contact: "other")))
+    XCTAssertEqual(history.message(id: message.id), message)
+    XCTAssertEqual(try history.persistTransportDelivery(chatEvent(message)).deliveryStatus, .read)
+  }
+
+  func testChatDeliveryRejectsIncomingMissingAndAttachmentMessages() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let incoming = ChatMessage(contactId: "contact", content: "incoming", isMine: false)
+    XCTAssertTrue(history.upsert(incoming))
+    XCTAssertThrowsError(try history.persistTransportDelivery(chatEvent(incoming)))
+    let missing = ChatMessage(contactId: "contact", content: "missing", isMine: true)
+    XCTAssertThrowsError(try history.persistTransportDelivery(chatEvent(missing)))
+    XCTAssertTrue(history.upsert(missing))
+    XCTAssertThrowsError(try history.persistTransportDelivery(chatEvent(missing, attachment: sendDependencyA)))
+    XCTAssertThrowsError(try history.persistTransportDelivery(chatEvent(missing, traffic: "progress")))
+    XCTAssertEqual(history.message(id: missing.id), missing)
+  }
+
+  private func chatEvent(_ message: ChatMessage, contact: String = "contact", attachment: String = "",
+                         traffic: String = "message") throws -> MqttDeliveryCompletions.Event {
+    MqttDeliveryCompletions.Event(identity: try sendTestIdentity(), messageID: "transport-message",
+      wireHash: String(repeating: "a", count: 64), traffic: traffic, requestHash: nil,
+      sourceMessageID: message.id.uuidString, contactID: contact, attachmentTransferID: attachment,
+      receivedAt: 1000, consumedAt: nil)
+  }
+
   func testStoredApplicationReceiptCommitsAllThreeJournalsAndReplays() throws {
     let f = try ChunkFixture()
     let journal = try MqttSignalStateJournal(fileURL: f.url, secrets: f.secrets)
