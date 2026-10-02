@@ -179,6 +179,7 @@ struct GalaxySSIConversationHubView: View {
 
       GalaxySSITopBar(
         title: t("galaxyssi.agent_sessions.title", "Sessions"),
+        sideContentWidth: 108,
         leading: {
           if showsBackButton {
             Button(action: handleHubBack) {
