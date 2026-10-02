@@ -1851,6 +1851,35 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testAssistantConversationAutoDoesNotChangeHomeDefaultOrForgetTarget() throws {
+    let suite = "ScreenAssistantModelSelection.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), AgentModelSelection())
+    AgentModelSelectionSettings.selectManual(for: "home", targetId: "desktop:codex",
+      modelId: "gpt-6-sol", displayName: "Codex", reasoningEffort: .high, defaults: defaults)
+    let home = AgentModelSelectionSettings.defaultSelection(defaults: defaults)
+    AgentModelSelectionSettings.inheritDefault(for: "screen", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), home)
+    AgentModelSelectionSettings.selectManual(for: "screen", targetId: "desktop:codex",
+      modelId: "gpt-6-luna", displayName: "Codex", reasoningEffort: .low,
+      rememberAsDefault: false, defaults: defaults)
+    AgentModelSelectionSettings.selectAutomaticForConversation(for: "screen", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), home)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "home", defaults: defaults), home)
+    let remembered = try XCTUnwrap(AgentModelSelectionSettings.configurationForTarget(
+      conversationId: "screen", targetId: "desktop:codex", defaults: defaults))
+    XCTAssertEqual(remembered.modelId, "gpt-6-luna")
+    XCTAssertEqual(remembered.reasoningEffort, .low)
+    AgentModelSelectionSettings.inheritDefault(for: "next", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "next", defaults: defaults), home)
+    AgentModelSelectionSettings.inheritDefault(for: "screen", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
+    AgentModelSelectionSettings.selectAutomatic(for: "home", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), AgentModelSelection())
+  }
+
   func testScreenshotRoutingStillRecognizesActualControlCommands() {
     for goal in ["tap the button on the screen", "swipe to the next page", "open app settings",
       "\u{70b9}\u{51fb}\u{5c4f}\u{5e55}\u{4e0a}\u{7684}\u{6309}\u{94ae}"] {
