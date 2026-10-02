@@ -17,8 +17,12 @@ internal object CollaborationCandidateRuntime {
         val roster = record.definition.members.filter { it.context[CollaborationGoalLoop.ROSTER] == "true" }
             .associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
         val people = roster.keys
-        val results = record.events.mapNotNull { it.result }.associateBy { it.childId }.filterKeys { it in completed }
-        val statuses = record.events.filter { it.childStatus != null }.associate { it.childId to it.childStatus }
+        val projection = if (CollaborationTeamOrganization.enabled(record)) CollaborationTeamOrganizationProjection.current(record).also {
+            require(it.safeToApply) { "Conflicting collaboration lifecycle requires reconciliation" }
+        } else null
+        val results = (projection?.verifiedResults ?: record.events.mapNotNull { it.result }.associateBy { it.childId }).filterKeys { it in completed }
+        val statuses = record.events.filter { it.childStatus != null && it.supervisorId == record.request.runId }
+            .sortedBy { it.sequence }.associate { it.childId to it.childStatus }
         val work = record.definition.members.filter { !it.context[CollaborationGoalLoop.WORK_ID].isNullOrBlank() }
         val granted = (intakeDependencies ?: final.dependsOnAgentIds).filterTo(linkedSetOf()) {
             results[it]?.status == AgentSubagentStatus.SUCCEEDED

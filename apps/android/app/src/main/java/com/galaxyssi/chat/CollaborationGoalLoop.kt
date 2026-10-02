@@ -30,6 +30,7 @@ internal object CollaborationGoalLoop {
                     "and assign the next executable work. Use the host contract references to retrieve any missing pages before planning."
                 else person.objective,
             context = person.context + mapOf(ENABLED to "1", ROSTER to "true",
+                CollaborationTeamOrganization.ENABLED to if (members.all { !it.context["collaboration_group_id"].isNullOrBlank() }) "1" else "0",
                 CollaborationResearchWorkflow.STAGE to CollaborationResearchStage.DELIVER.name,
                 CollaborationResearchWorkflow.PERSON to person.memberId,
                 "collaboration_receive_results" to "false"))
@@ -91,7 +92,8 @@ internal object CollaborationGoalLoop {
         If a tool/provider fails, revise the route or plan; do not convert an attempt limit or a timeout into goal completion.
         No goal-level step or round limit. Keep each batch small enough to inspect; later batches continue the same goal.
         Permission checks, user pause/stop, destructive-action approvals and scientific safety boundaries still apply.
-    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions() + "\n" + CollaborationCandidateEvolution.instructions()
+    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions() + "\n" + CollaborationCandidateEvolution.instructions() +
+        "\n" + CollaborationTeamOrganizationContext.instructions()
 
     fun decode(raw: String): JSONObject? = runCatching {
         val text = raw.trim().let { if (it.startsWith("```")) it.substringAfter('\n').removeSuffix("```").trim() else it }
@@ -164,6 +166,10 @@ internal object CollaborationGoalLoop {
     fun enrolled(record: AgentTeamExecutionRecord): Boolean = record.definition.members.any { it.context[ENABLED] == "1" }
 
     fun finishedWork(record: AgentTeamExecutionRecord): LinkedHashSet<String> {
+        if (CollaborationTeamOrganization.enabled(record)) return CollaborationTeamOrganizationProjection.current(record).let {
+            require(it.safeToApply) { "Conflicting collaboration lifecycle requires reconciliation" }
+            LinkedHashSet(it.finishedWork)
+        }
         val finished = runCatching { JSONArray(record.request.context[FINISHED_WORK]?.toString() ?: "[]") }
             .getOrDefault(JSONArray()).let { array -> (0 until array.length()).mapTo(linkedSetOf()) { array.getString(it) } }
         val completed = record.events.mapNotNull { it.result }.filter { it.status == AgentSubagentStatus.SUCCEEDED }
@@ -173,6 +179,10 @@ internal object CollaborationGoalLoop {
     }
 
     fun finishedAuthors(record: AgentTeamExecutionRecord): Map<String, String> {
+        if (CollaborationTeamOrganization.enabled(record)) return CollaborationTeamOrganizationProjection.current(record).let {
+            require(it.safeToApply) { "Conflicting collaboration lifecycle requires reconciliation" }
+            it.finishedAuthors
+        }
         val saved = runCatching { JSONObject(record.request.context[FINISHED_AUTHORS]?.toString() ?: "{}") }.getOrDefault(JSONObject())
         val result = saved.keys().asSequence().associateWithTo(linkedMapOf()) { saved.getString(it) }
         val succeeded = record.events.mapNotNull { it.result }.filter { it.status == AgentSubagentStatus.SUCCEEDED }
@@ -190,15 +200,19 @@ internal object CollaborationGoalLoop {
                 recruitmentNames: () -> List<String> = { emptyList() },
                 candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null): AgentTeamExecutionRecord? {
         if (!enrolled(record) || record.definition.primaryMemberId != expectedPrimary) return null
-        val terminal = record.events.lastOrNull { it.runStatus != null }?.runStatus ?: return null
+        val projection = if (CollaborationTeamOrganization.enabled(record))
+            runCatching { CollaborationTeamOrganizationProjection.current(record) }.getOrNull()?.takeIf { it.settled } ?: return null else null
+        val organizationHistory = projection?.let { CollaborationTeamOrganizationHistory.capture(record, it) }
+        val terminal = projection?.terminal ?: record.events.lastOrNull { it.runStatus != null }?.runStatus ?: return null
         if (terminal == AgentSubagentRunStatus.CANCELLED) return null
-        val previousResult = record.events.lastOrNull { it.childId == expectedPrimary && it.result != null }?.result
+        val previousResult = if (projection != null) projection.verifiedResults[expectedPrimary] else
+            record.events.lastOrNull { it.childId == expectedPrimary && it.result != null }?.result
         val raw = previousResult?.output.orEmpty()
         val priorCriteria = record.request.context[CRITERIA]?.toString() ?: "[]"
         // A corrupt host contract is not a model planning error. Preserve the checkpoint, not an endless repair dispatch.
         if (preservedCriteriaError(priorCriteria).isNotEmpty()) return null
-        val finished = finishedWork(record)
-        val authors = finishedAuthors(record)
+        val finished = projection?.finishedWork ?: finishedWork(record)
+        val authors = projection?.finishedAuthors ?: finishedAuthors(record)
         val candidateState = record.request.context[CollaborationCandidateEvolution.STATE]?.toString() ?: "[]"
         val disposition = disposition(raw, priorCriteria, finished, record.acceptanceVerified(previousResult),
             allowUnverifiedHistory = record.request.context[HOST_ACCEPTANCE] != "1", candidateState = candidateState)
@@ -223,12 +237,12 @@ internal object CollaborationGoalLoop {
         val recruits = acceptedAssessment?.optJSONArray("recruit")
         val recruitment = if (acceptedAssessment == null) CollaborationGoalRecruitment.Plan(existingPeople, emptyMap())
             else CollaborationGoalRecruitment.plan(existingPeople, recruits, requested,
-                if (recruits != null && recruits.length() > 0) recruitmentNames() else emptyList())
+                if (recruits != null && recruits.length() > 0) recruitmentNames() else emptyList(), organizationHistory?.checkpoint)
         val people = recruitment.people
         val coordinatorPerson = record.definition.members.first { it.memberId == expectedPrimary }
             .context.getValue(CollaborationResearchWorkflow.PERSON)
-        val coordinator = people.first { it.context[CollaborationResearchWorkflow.PERSON] == coordinatorPerson }
-        val byPerson = people.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
+        var byPerson = people.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
+        var coordinator = byPerson.getValue(coordinatorPerson)
         fun nodeId(suffix: String) = UUID.nameUUIDFromBytes("${record.request.runId}:goal:$round:$suffix".toByteArray()).toString()
         val validWork = (0 until requested.length()).mapNotNull { requested.optJSONObject(it) }.map { item ->
             JSONObject(item.toString()).also { recruitment.aliases[item.optString("member")]?.let { id -> it.put("member", id) } }
@@ -257,7 +271,7 @@ internal object CollaborationGoalLoop {
                 CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
                     record.request.messageId, round, personId = coordinatorPerson), byPerson.keys, requireNotNull(criteria),
                 acceptedAssessment?.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray(), candidateState,
-                record.events.mapNotNull { it.result }.filter { it.status == AgentSubagentStatus.SUCCEEDED }
+                (projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result }).filter { it.status == AgentSubagentStatus.SUCCEEDED }
                     .mapTo(hashSetOf()) { it.childId } + CollaborationCandidateEvolution.completedNodes(candidateState, finished),
                 { nodeId("work:$it") })
         } else CollaborationCandidateEvolution.Plan(emptyList(), candidateState) }.getOrElse {
@@ -268,6 +282,11 @@ internal object CollaborationGoalLoop {
             else if (candidatePlan.error) CollaborationWorkGraph.Plan(emptyList(), candidatePlan.feedback)
             else CollaborationWorkGraph.compile(planned + recovery + candidatePlan.work, finished, authors)
         val work = graph.work
+        val organization = organizationHistory?.let { CollaborationTeamOrganization.allocate(
+            if (graph.error.isBlank()) people else existingPeople, work, it.checkpoint) }
+        val allocatedPeople = organization?.people ?: if (graph.error.isBlank()) people else existingPeople
+        byPerson = allocatedPeople.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
+        coordinator = byPerson.getValue(coordinatorPerson)
         val dispatchIds = work.associate { CollaborationWorkGraph.id(it) to nodeId("work:${CollaborationWorkGraph.id(it)}") }
         val nodes = work.map { item ->
             val person = byPerson.getValue(item.getString("member"))
@@ -288,14 +307,15 @@ internal object CollaborationGoalLoop {
             else "Evaluate the original goal against preserved criteria and actual new evidence. " +
                 "Continue feasible unfinished work, not just a textual plan. Repair any invalid previous assessment or assignment.",
             context = coordinator.context + mapOf(ROSTER to "false", CollaborationResearchWorkflow.STAGE to "DELIVER"))
-        val failedNodes = record.events.mapNotNull { it.result }.filter { it.status != AgentSubagentStatus.SUCCEEDED }.mapTo(hashSetOf()) { it.childId }
+        val failedNodes = (projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result })
+            .filter { it.status != AgentSubagentStatus.SUCCEEDED }.mapTo(hashSetOf()) { it.childId }
         val failedWork = record.definition.members.filter { it.memberId in failedNodes }.mapNotNullTo(hashSetOf()) { it.context[WORK_ID] }
         val stalled = if (nodes.isEmpty() || nodes.all { it.context[WORK_ID] in failedWork })
             (record.request.context[STALLED]?.toString()?.toIntOrNull() ?: 0).coerceAtMost(10) + 1 else 0
         val retryDelay = if (stalled > 0 && !wakeBlocked) (30_000L shl (stalled - 1).coerceAtMost(5)).coerceAtMost(900_000L) else 0L
         return record.copy(
             definition = record.definition.copy(primaryInstanceId = primary,
-                members = (if (graph.error.isBlank()) people else existingPeople)
+                members = allocatedPeople
                     .map { it.copy(deliveryMode = AgentDeliveryMode.IGNORE, dependsOnAgentIds = emptySet()) } + nodes + assessmentNode),
             request = record.request.copy(context = record.request.context + mapOf(ROUND to round.toString(), HOST_ACCEPTANCE to "1",
                 CRITERIA to (if (contractError.isBlank()) requireNotNull(criteria).toString() else priorCriteria),
@@ -314,7 +334,11 @@ internal object CollaborationGoalLoop {
                 FINISHED_WORK to JSONArray(finished.toList()).toString(),
                 FINISHED_AUTHORS to JSONObject(authors).toString(),
                 CollaborationLiveGraph.APPLIED to "[]", CollaborationLiveGraph.FEEDBACK to "",
-                RETRY_AT to (now + retryDelay).toString(), STALLED to stalled.toString())),
+                RETRY_AT to (now + retryDelay).toString(), STALLED to stalled.toString()) +
+                if (projection != null && organizationHistory != null && organization != null)
+                    CollaborationTeamOrganizationProjection.finishedContext(projection) +
+                        CollaborationTeamOrganizationContext.checkpointContext(record, organizationHistory, organization)
+                else emptyMap()),
             events = emptyList(), interruptedAtMillis = now.coerceAtLeast(1L), updatedAtMillis = now)
     }
 

@@ -184,7 +184,10 @@ private fun AgentTeamExecutionRecord.resumeCheckpoint(): AgentTeamExecutionCheck
     val snapshot = toSnapshot()
     if (snapshot.state != AgentTeamExecutionState.INTERRUPTED ||
         snapshot.members.any { it.status == AgentSubagentStatus.RUNNING }) return null
-    val results = events.mapNotNull { it.result }.associateBy { it.childId }
+    val results = if (CollaborationTeamOrganization.enabled(this))
+        runCatching { CollaborationTeamOrganizationProjection.current(this) }.getOrNull()
+            ?.takeIf { it.safeToApply }?.verifiedResults ?: return null
+        else events.mapNotNull { it.result }.associateBy { it.childId }
     if (snapshot.members.any { it.status.isTerminal && it.deliveryMode != AgentDeliveryMode.IGNORE &&
             it.memberId !in results }) return null
     return AgentTeamExecutionCheckpoint(definition, request, results,
@@ -192,11 +195,15 @@ private fun AgentTeamExecutionRecord.resumeCheckpoint(): AgentTeamExecutionCheck
 }
 
 private fun AgentTeamExecutionRecord.liveGraphCheckpoint() = AgentTeamExecutionCheckpoint(definition, request,
-    events.mapNotNull { it.result }.associateBy { it.childId }, events.maxOfOrNull { it.sequence } ?: 0L)
+    if (CollaborationTeamOrganization.enabled(this)) CollaborationTeamOrganizationProjection.current(this).let {
+        require(it.safeToApply) { "Conflicting collaboration lifecycle requires reconciliation" }
+        it.verifiedResults
+    } else events.mapNotNull { it.result }.associateBy { it.childId }, events.maxOfOrNull { it.sequence } ?: 0L)
 
 private fun retainTeamEvents(events: List<AgentSubagentEvent>): List<AgentSubagentEvent> {
-    val anchors = events.filter { it.childId.isNotBlank() }.groupBy { it.childId }
-        .values.map { it.maxBy(AgentSubagentEvent::sequence) } + listOfNotNull(events.lastOrNull { it.childId.isBlank() })
+    val anchors = (events.filter { it.childId.isNotBlank() }.groupBy { it.childId }
+        .values.map { it.maxBy(AgentSubagentEvent::sequence) } + listOfNotNull(events.lastOrNull { it.childId.isBlank() }) +
+        events.filter { it.result != null }).distinctBy { it.sequence }
     // Per-node and supervisor checkpoints are required even when a growing graph exceeds the trace-tail target.
     val retained = anchors + events.takeLast((InMemoryAgentTeamExecutionStore.MAX_EVENTS_PER_RUN - anchors.size).coerceAtLeast(0))
     return retained.distinctBy { it.sequence }.sortedBy { it.sequence }
@@ -442,7 +449,8 @@ class EncryptedAgentTeamExecutionStore internal constructor(
             candidateWorkspace) ?: return@synchronized false
         // Archive each batch's own results, not a quadratic copy of every earlier work ID.
         val archived = current.copy(request = current.request.copy(context = current.request.context -
-            setOf(CollaborationGoalLoop.FINISHED_WORK, CollaborationGoalLoop.FINISHED_AUTHORS)))
+            setOf(CollaborationGoalLoop.FINISHED_WORK, CollaborationGoalLoop.FINISHED_AUTHORS,
+                CollaborationTeamOrganizationProjection.COMPLETIONS)))
         database.mutateStrings(mapOf("goal-cycle:$supervisorRunId:$expectedPrimary" to encode(archived), recordKey(supervisorRunId) to encode(next)))
         true
     }
@@ -738,7 +746,7 @@ class AgentTeamExecutionRuntime(
                             "${it.context[CollaborationResearchWorkflow.PERSON]}: ${it.context["collaboration_name"]}; " +
                                 "role=${it.role}; provider=${it.context["collaboration_provider"].orEmpty()}; model=${it.context["collaboration_model_id"].orEmpty()}"
                         } else ""
-                ),
+                ) + if (research) CollaborationTeamOrganizationContext.dispatchContext(activeRequest, member) else emptyMap(),
                 idempotencyKey = "${request.idempotencyKey}:${member.memberId}"
             )
             worker.execute(
@@ -1129,6 +1137,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         val livePlanner = CollaborationLiveGraph.planner(context.member)
         val goalController = context.member.context[CollaborationGoalLoop.ENABLED] == "1" && researchStage == CollaborationResearchStage.DELIVER
         if (goalController) append(CollaborationGoalLoop.instructions()).append('\n')
+        if (context.member.context[CollaborationTeamOrganization.ENABLED] == "1")
+            append(CollaborationTeamOrganizationContext.prompt(context.member, context.request, goalController || livePlanner))
         if (livePlanner) {
             append(CollaborationLiveGraph.instructions()).append('\n')
             append("Existing work inventory (do not duplicate): ").append(context.request.context["collaboration_research_live_inventory"]).append('\n')
@@ -1791,19 +1801,23 @@ private const val MAX_LATE_RESPONSE_OUTPUT_CHARS = 16_000
 private const val MAX_LATE_RESPONSE_ERROR_CHARS = 1_024
 
 private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
-    val latestByChild = events.filter { it.childId.isNotBlank() }
+    val organizationEnabled = CollaborationTeamOrganization.enabled(this)
+    val organization = if (organizationEnabled) runCatching { CollaborationTeamOrganizationProjection.current(this) }.getOrNull() else null
+    val organizationUncertain = organizationEnabled && (organization == null || !organization.safeToApply)
+    val latestByChild = events.filter { it.childId.isNotBlank() && (!organizationEnabled || it.supervisorId == request.runId) }
         .groupBy(AgentSubagentEvent::childId)
         .mapValues { (_, values) -> values.maxBy(AgentSubagentEvent::sequence) }
     val members = definition.members.map { member ->
         val event = latestByChild[member.memberId]
-        val result = event?.result
+        val result = if (organizationEnabled) organization?.verifiedResults?.get(member.memberId) else event?.result
         AgentTeamMemberSnapshot(
             agentId = member.agentId,
             role = member.role,
             deliveryMode = member.deliveryMode,
             status = if (member.deliveryMode == AgentDeliveryMode.IGNORE) {
                 AgentSubagentStatus.SKIPPED
-            } else event?.childStatus ?: AgentSubagentStatus.QUEUED,
+            } else if (organizationEnabled && event?.childStatus?.isTerminal == true && result == null) AgentSubagentStatus.RUNNING
+            else result?.status ?: event?.childStatus ?: AgentSubagentStatus.QUEUED,
             output = result?.output.orEmpty(),
             errorMessage = result?.errorMessage.orEmpty().ifBlank { event?.message.orEmpty() },
             startedAtMillis = result?.startedAtMillis ?: 0L,
@@ -1818,19 +1832,25 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
             researchStage = member.context[CollaborationResearchWorkflow.STAGE].orEmpty(),
             personId = member.context[CollaborationResearchWorkflow.PERSON].orEmpty().ifBlank { member.memberId },
             waitingForDependencies = member.dependsOnAgentIds.any { dependencyId ->
-                latestByChild[dependencyId]?.childStatus?.isTerminal != true
+                if (organizationEnabled) organization?.verifiedResults?.get(dependencyId)?.status?.isTerminal != true
+                else latestByChild[dependencyId]?.childStatus?.isTerminal != true
             }
         )
     }
-    val terminal = events.lastOrNull { it.runStatus != null }
+    val terminal = events.filter { it.runStatus != null && (!organizationEnabled || it.supervisorId == request.runId && it.childId.isBlank()) }
+        .maxByOrNull { it.sequence }
     val rawOutput = members.firstOrNull { it.memberId == definition.primaryMemberId }
         ?.takeIf { it.status == AgentSubagentStatus.SUCCEEDED }?.output.orEmpty()
-    val goalDisposition = if (CollaborationGoalLoop.enrolled(this) && terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED)
+    val goalDisposition = if (CollaborationGoalLoop.enrolled(this) && terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED &&
+        !organizationUncertain && (!organizationEnabled || organization?.settled == true))
         CollaborationGoalLoop.disposition(rawOutput, request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]",
-            CollaborationGoalLoop.finishedWork(this), acceptanceVerified(latestByChild[definition.primaryMemberId]?.result),
+            organization?.finishedWork ?: CollaborationGoalLoop.finishedWork(this),
+            acceptanceVerified(if (organizationEnabled) organization?.verifiedResults?.get(definition.primaryMemberId) else latestByChild[definition.primaryMemberId]?.result),
             allowUnverifiedHistory = request.context[CollaborationGoalLoop.HOST_ACCEPTANCE] != "1",
             candidateState = request.context[CollaborationCandidateEvolution.STATE]?.toString() ?: "[]") else ""
     val state = when {
+        organizationUncertain || organizationEnabled && terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED && organization?.settled != true ->
+            AgentTeamExecutionState.INTERRUPTED
         goalDisposition in setOf("continue", "blocked") -> AgentTeamExecutionState.INTERRUPTED
         interruptedAtMillis > 0L && terminal == null -> AgentTeamExecutionState.INTERRUPTED
         terminal?.runStatus == AgentSubagentRunStatus.SUCCEEDED -> AgentTeamExecutionState.SUCCEEDED

@@ -33,14 +33,16 @@ class CollaborationSemanticGoalLoopTest {
         val primary = record.definition.primaryMemberId
         return record.copy(events = listOf(AgentSubagentEvent(1, "run", primary, AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = AgentSubagentStatus.SUCCEEDED,
-            result = AgentSubagentChildResult("run", primary, "run", 1, AgentSubagentStatus.SUCCEEDED, report.toString())),
+            result = AgentSubagentChildResult("run", primary, "run", 1, AgentSubagentStatus.SUCCEEDED, report.toString(),
+                provenance = AgentSubagentProvenance("agent-team", "team", "run", mapOf("instance_id" to primary, "agent_id" to "fixture")))),
             AgentSubagentEvent(2, "run", kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED)))
     }
 
     private fun job(id: String = "overwrite", member: String = "peer") = JSONObject().put("id", id).put("member", member)
         .put("stage", "EXECUTE").put("assignment", "Overwrite the saved result file using the proposed inputs and submit the result")
 
-    private fun executableRequests(report: JSONObject) = report.put("work", JSONArray().put(job()).put(job("recruit-job", "recruit:verifier")))
+    private fun executableRequests(report: JSONObject) = report.put("work", JSONArray().put(job()).put(job("recruit-job", "recruit:verifier")
+        .put("assignment", "Independently audit the proposed inputs without overwriting the saved file")))
         .put("recruit", JSONArray().put(JSONObject().put("id", "verifier").put("template_member", "peer")
             .put("role", "Verifier").put("scope", "Independent input audit").put("reason", "A distinct fixture responsibility")))
         .put("blockers", JSONArray().put(JSONObject().put("id", "lab").put("kind", "resource")

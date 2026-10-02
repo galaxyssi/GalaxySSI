@@ -83,7 +83,9 @@ class CollaborationCandidateEvolutionTest {
             val events = ids.mapIndexed { index, id -> AgentSubagentEvent((index + 1).toLong(), "run", id,
                 AgentSubagentEventKinds.CHILD_SUCCEEDED, childStatus = AgentSubagentStatus.SUCCEEDED,
                 result = AgentSubagentChildResult("run", id, "run", 1, AgentSubagentStatus.SUCCEEDED,
-                    if (id == record.definition.primaryMemberId) assessment.toString() else "Host publication recorded")) }
+                    if (id == record.definition.primaryMemberId) assessment.toString() else "Host publication recorded",
+                    provenance = AgentSubagentProvenance("agent-team", record.definition.teamId, "run",
+                        mapOf("instance_id" to id, "agent_id" to record.definition.members.single { it.memberId == id }.agentId)))) }
             return record.copy(events = events + AgentSubagentEvent((events.size + 1).toLong(), "run",
                 kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED))
         }

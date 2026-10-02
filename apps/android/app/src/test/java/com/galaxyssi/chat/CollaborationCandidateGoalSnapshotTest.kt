@@ -55,7 +55,8 @@ class CollaborationCandidateGoalSnapshotTest {
         store.create(AgentTeamDefinition("team", "fixture", people, primaryInstanceId = "lead"), request)
         store.append(AgentSubagentEvent(1, "run", "lead", AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = AgentSubagentStatus.SUCCEEDED,
-            result = AgentSubagentChildResult("run", "lead", "run", 1, AgentSubagentStatus.SUCCEEDED, report.toString())))
+            result = AgentSubagentChildResult("run", "lead", "run", 1, AgentSubagentStatus.SUCCEEDED, report.toString(),
+                provenance = AgentSubagentProvenance("agent-team", "team", "run", mapOf("instance_id" to "lead", "agent_id" to "fixture")))))
         store.append(AgentSubagentEvent(2, "run", kind = if (terminal == AgentSubagentRunStatus.CANCELLED)
             AgentSubagentEventKinds.SUPERVISOR_CANCELLED else AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = terminal))
         return requireNotNull(store.snapshot("run"))

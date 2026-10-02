@@ -48,6 +48,9 @@ internal object CollaborationResearchPrompt {
         }
         material("Live work inventory", context["collaboration_research_live_inventory"])
         material("Recruitment feedback", context[CollaborationGoalRecruitment.FEEDBACK])
+        if (execution.member.context[CollaborationTeamOrganization.ENABLED] == "1")
+            material("Host team organization", CollaborationTeamOrganizationContext.prompt(execution.member, execution.request,
+                CollaborationLiveGraph.planner(execution.member) || execution.member.deliveryMode == AgentDeliveryMode.RESPOND))
         material("Dependency feedback", context[CollaborationWorkGraph.FEEDBACK])
         material("Incremental plan feedback", context[CollaborationLiveGraph.FEEDBACK])
         material("Acceptance feedback", context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK])
