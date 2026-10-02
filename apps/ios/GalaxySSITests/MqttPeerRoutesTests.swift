@@ -2,6 +2,91 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  @MainActor
+  func testApplicationPeerMappingSeparatesApprovalFromSubscription() throws {
+    let (contact, request) = try applicationPeerRecords()
+    let pending = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "a", count: 64),
+      serverLinks: [], contacts: [], requests: [request])
+    XCTAssertEqual(pending.count, 1)
+    XCTAssertFalse(try XCTUnwrap(pending.first).binding.enabled)
+    let approved = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "a", count: 64),
+      serverLinks: [], contacts: [contact], requests: [request])
+    XCTAssertEqual(approved.count, 1)
+    XCTAssertTrue(try XCTUnwrap(approved.first).binding.enabled)
+    XCTAssertEqual(approved.first?.remoteName, contact.galaxySSIId)
+    XCTAssertEqual(approved.first?.binding.scope, contact.linkClientRouteId)
+  }
+
+  @MainActor
+  func testApplicationPeerMappingCannotResurrectDeletedContactFromOldRequest() throws {
+    var (contact, request) = try applicationPeerRecords()
+    contact.deleted = true
+    request.status = .approved
+    let peers = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "a", count: 64),
+      serverLinks: [], contacts: [contact], requests: [request])
+    XCTAssertTrue(peers.isEmpty)
+  }
+
+  @MainActor
+  func testApplicationPeerMappingRejectsWrongLocalIdentityAndDuplicateRoutes() throws {
+    let (contact, _) = try applicationPeerRecords()
+    XCTAssertThrowsError(try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "c", count: 64),
+      serverLinks: [], contacts: [contact], requests: []))
+    var duplicate = contact
+    duplicate.galaxySSIId = "another-name"
+    XCTAssertThrowsError(try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "a", count: 64),
+      serverLinks: [], contacts: [contact, duplicate], requests: []))
+  }
+
+  @MainActor
+  func testApplicationPeerMappingDoesNotEnableUnverifiedContactOrRequestOnlyApproval() throws {
+    var (contact, request) = try applicationPeerRecords()
+    contact.trustState = .unverified
+    request.status = .approved
+    let peers = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "a", count: 64),
+      serverLinks: [], contacts: [contact], requests: [request])
+    XCTAssertFalse(try XCTUnwrap(peers.first).binding.enabled)
+    let orphan = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: String(repeating: "a", count: 64),
+      serverLinks: [], contacts: [], requests: [request])
+    XCTAssertFalse(try XCTUnwrap(orphan.first).binding.enabled)
+  }
+
+  @MainActor
+  func testApplicationPeerMappingChecksDesktopPairingAndPinnedFingerprint() throws {
+    let (contact, _) = try applicationPeerRecords()
+    let routes = try XCTUnwrap(contact.opaquePhoneRoutes)
+    var link = ServerLink(desktopId: "desktop", desktopName: "Desktop", desktopFingerprint: contact.identityFingerprint,
+      signalName: "desktop", routes: routes, paired: false, accessProfile: "", accessScopes: [], updatedAt: Date())
+    let pending = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: routes.localFingerprint,
+      serverLinks: [link], contacts: [], requests: [])
+    XCTAssertFalse(try XCTUnwrap(pending.first).binding.enabled)
+    link.paired = true
+    let approved = try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: routes.localFingerprint,
+      serverLinks: [link], contacts: [], requests: [])
+    XCTAssertTrue(try XCTUnwrap(approved.first).binding.enabled)
+    link.desktopFingerprint = String(repeating: "d", count: 64)
+    XCTAssertThrowsError(try GalaxySSIPairingLifecycle.mqttPeers(localFingerprint: routes.localFingerprint,
+      serverLinks: [link], contacts: [], requests: []))
+  }
+
+  private func applicationPeerRecords() throws -> (GalaxySSIContact, GalaxySSIFriendRequest) {
+    let local = String(repeating: "a", count: 64)
+    let remote = String(repeating: "b", count: 64)
+    let secret = try GalaxySSILinkProtocol.deriveIdentityBoundLinkSecret(sharedSecret: Data(repeating: 7, count: 32),
+      firstFingerprint: local, secondFingerprint: remote)
+    let routeID = try GalaxySSILinkProtocol.deriveIdentityBoundRouteId(linkSecret: secret,
+      firstFingerprint: local, secondFingerprint: remote)
+    var contact = GalaxySSIContact.hermes()
+    contact.id = "phone"; contact.galaxySSIId = "phone"; contact.type = "person"
+    contact.desktopId = ""; contact.trustState = .verified; contact.deleted = false
+    contact.identityFingerprint = remote; contact.linkClientRouteId = routeID
+    contact.linkSecret = secret; contact.linkLocalFingerprint = local
+    let request = GalaxySSIFriendRequest(id: "request", galaxySSIId: "phone", name: "Phone", type: "person",
+      identityPublicKey: "", identityFingerprint: remote, mqttTopic: "", mqttInboxTopic: "",
+      linkClientRouteId: routeID, linkSecret: secret, linkLocalFingerprint: local)
+    return (contact, request)
+  }
+
   func testSendDrainInspectsBlockedRoutesAndRecoversAfterBoundedWait() async throws {
     let f = try ReceiptBridgeFixture()
     await f.peer.start()
