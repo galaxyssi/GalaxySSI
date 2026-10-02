@@ -138,7 +138,7 @@ class CollaborationResearchWorkspaceTest {
     @Test fun removedGroupCannotRecreateWorkspaceOrReadOldData() {
         val rows = Rows()
         var allowed = true
-        val workspace = CollaborationResearchWorkspace(rows) { allowed }
+        val workspace = CollaborationResearchWorkspace(rows, authorized = { allowed })
         val id = ref(workspace.publish(access(), raw(item()))).getString("object_id")
         allowed = false
         assertNull(workspace.read(access(), id, 1))

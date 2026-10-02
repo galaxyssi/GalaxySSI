@@ -1519,6 +1519,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                     CodexStyleResponsePolicy.prompt(appContext) + "\n" + CodexStyleResponsePolicy.SCREEN_ANALYSIS_PROMPT
                                 else "",
                             citationPreviewEnabled = !managedTeamAction,
+                            collaborationEvidence = if (managedTeamAction) CollaborationEvidenceLedger(appContext).let { ledger ->
+                                ledger.binding(messageId, conversationId, connectorTurnId)?.let { access ->
+                                    CollaborationCloudEvidence(ledger, access)
+                                }
+                            } else null,
                             recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
                                 AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)

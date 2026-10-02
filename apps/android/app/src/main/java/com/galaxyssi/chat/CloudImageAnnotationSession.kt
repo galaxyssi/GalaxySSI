@@ -20,7 +20,8 @@ import java.util.concurrent.TimeUnit
 internal class CloudImageAnnotationSession(
     private val context: Context,
     private val images: List<CloudImagePayload>,
-    private val sessionId: String = UUID.randomUUID().toString()
+    private val sessionId: String = UUID.randomUUID().toString(),
+    private val collaborationEvidence: CollaborationCloudEvidence? = null
 ) {
     val researchAudit = ResearchEvidenceAudit()
     private val completed = linkedMapOf<Int, AgentRichBlock>()
@@ -30,6 +31,13 @@ internal class CloudImageAnnotationSession(
         name: String, arguments: JSONObject,
         token: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         checkpoint: () -> Unit = {}
+    ): String = collaborationEvidence?.execute(name, arguments) { executeObserved(name, arguments, token, checkpoint) }
+        ?: executeObserved(name, arguments, token, checkpoint)
+
+    private fun executeObserved(
+        name: String, arguments: JSONObject,
+        token: AgentNativeToolCancellationToken,
+        checkpoint: () -> Unit
     ): String {
         if (name == ResearchEvidenceAudit.TOOL) {
             checkpoint()

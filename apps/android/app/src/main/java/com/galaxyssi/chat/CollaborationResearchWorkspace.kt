@@ -38,14 +38,16 @@ internal data class CollaborationWorkspaceAccess(
 /** Immutable, host-attributed revisions. A model's report is never promoted to verified evidence here. */
 internal class CollaborationResearchWorkspace(
     private val rows: CollaborationWorkspaceRows,
-    private val authorized: (String) -> Boolean = { true }
+    private val authorized: (String) -> Boolean = { true },
+    private val evidence: ((CollaborationWorkspaceAccess, JSONArray) -> JSONArray)? = null
 ) {
     constructor(context: Context) : this(object : CollaborationWorkspaceRows {
         private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
         override fun read(key: String) = database.readString(key, "").takeIf(String::isNotBlank)
         override fun commit(values: Map<String, String>) = database.mutateStrings(values)
         override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
-    }, { group -> CollaborationGroupStore(context.applicationContext).load(group) != null })
+    }, { group -> CollaborationGroupStore(context.applicationContext).load(group) != null },
+        { access, refs -> CollaborationEvidenceLedger(context).references(access, refs) })
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
@@ -89,6 +91,10 @@ internal class CollaborationResearchWorkspace(
                 require(head == null || head.getString("kind") == kind) { "An object's kind cannot be changed" }
                 val parents = item.optJSONArray("parents") ?: JSONArray()
                 val resolves = item.optJSONArray("resolves") ?: JSONArray()
+                require(!item.has("observations") || item.optJSONArray("observations") != null) { "observations must be an array" }
+                val observationRefs = item.optJSONArray("observations") ?: JSONArray()
+                val observations = if (observationRefs.length() == 0) JSONArray() else
+                    requireNotNull(evidence) { "Host evidence lookup is unavailable" }.invoke(access, observationRefs)
                 (listOf(parents, resolves)).forEach { links -> repeat(links.length()) { linkIndex ->
                     val link = links.getJSONObject(linkIndex)
                     val linked = requireNotNull(read(access, link.getString("object_id"), link.getInt("revision"))) {
@@ -100,6 +106,7 @@ internal class CollaborationResearchWorkspace(
                 } }
                 val revision = JSONObject().put("object_id", id).put("revision", base + 1).put("kind", kind)
                     .put("title", title).put("body", body).put("parents", parents).put("resolves", resolves)
+                    .put("host_observations", observations)
                     .put("group_id", access.groupId).put("run_id", access.runId).put("turn_id", access.turnId)
                     .put("round", access.round).put("node_id", access.nodeId).put("person_id", access.personId)
                     .put("recorded_at", now).put("evidence_state", "member_reported_not_verified")
