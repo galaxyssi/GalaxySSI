@@ -117,3 +117,12 @@ open issue; the displayed peer summary also contains excessive technical IDs.
 Broad semantic judgments, qualified experiments, large-goal multipart coverage,
 real-provider Doze/reboot/long-outage matrices and equal-budget superiority still
 require separate work.
+
+## Original-page coverage gate: Android 1.4.26
+
+Formal acceptance now checks a host-owned page-coverage snapshot frozen in the
+independent review's saved version. See
+[Original evidence page coverage](COLLABORATION_EVIDENCE_READ_COVERAGE.md) for
+the exact guarantees, automated/device results and the pending new real-provider
+test. The preceding live passes predate this gate and are not presented as its
+validation.

@@ -24,15 +24,24 @@ internal object CollaborationScopedRecall {
                 val ledger = CollaborationEvidenceLedger(context)
                 val id = input["evidence_id"] as? String ?: ""
                 if (id.isNotBlank()) {
-                    val saved = ledger.read(access, id, input["sha256"] as? String ?: "")
+                    val offset = input["offset"] ?: 0
+                    if (offset !is Number || offset.toDouble() != offset.toInt().toDouble() || offset.toInt() < 0)
+                        return AgentNativeToolExecutionResult.failure("invalid_arguments", "Evidence offset must be a nonnegative integer.")
+                    val page = try { ledger.readPage(access, id, input["sha256"] as? String ?: "", offset.toInt()) }
+                        catch (invalid: IllegalArgumentException) {
+                            return AgentNativeToolExecutionResult.failure("invalid_arguments", invalid.message.orEmpty())
+                        }
                         ?: return AgentNativeToolExecutionResult.failure("evidence_unavailable", "Evidence is missing, changed or isolated from this assignment.")
                     val source = listOf("evidence_id", "sha256", "origin", "tool", "status", "observation_kind")
-                        .associateWith { saved.get(it) }
-                    page(saved, input, "execution_observed_not_claim_verified", mapOf(
+                        .associateWith { page.source.get(it) }
+                    AgentNativeToolExecutionResult.success(mapOf("content" to page.content, "total_characters" to page.total,
+                        "next_offset" to page.next, "trust" to "execution_observed_not_claim_verified",
+                        CollaborationEvidenceReadCoverage.FIELD to page.coverage.toNativeObject(),
                         "source_reference" to source,
                         "citation_guidance" to "To cite the original observation in workspace.observations, copy source_reference.evidence_id and sha256. " +
                             "galaxyssi_evidence_receipt describes this recall operation, not the original source. " +
-                            "Follow next_offset to read the complete original; a reference or a read receipt is not verification."))
+                            "Follow next_offset until null before publishing a review. Missing pages cannot support formal acceptance; " +
+                            "use host_read_coverage.first_missing_offset to resume gaps. Page coverage is not comprehension or verification."))
                 } else {
                     val (refs, next) = ledger.browse(access, input["cursor"] as? String ?: "")
                     AgentNativeToolExecutionResult.success(mapOf("observations" to refs.map { it.toString() },

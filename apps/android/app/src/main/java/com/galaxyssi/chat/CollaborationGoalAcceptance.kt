@@ -153,7 +153,10 @@ internal class CollaborationGoalAcceptance(
                 require(observation.getString("status") == "returned" && observation.getString("observation_kind") == "tool_output_recorded") {
                     "$id: failed tools and member assessments are not supporting observations"
                 }
-                if (revision === review) reviewedObservations += observation
+                if (revision === review) {
+                    CollaborationEvidenceReadCoverage.requireComplete(ref, review, observation)
+                    reviewedObservations += observation
+                }
             }
         }
         CollaborationEvidenceRequirements.validate(criterion, reviewedObservations)

@@ -60,5 +60,7 @@ internal object CollaborationReviewContract {
         "Cite the exact reviewed delivery in parents and the actually read host evidence in observations. " +
         "When a criterion has required_observations, read and cite those original origin/tool receipts from mode=evidence; " +
         "a receipt for reading the peer's workspace document cannot substitute for its original tool output. " +
+        "Read every original evidence page until next_offset is null before publishing a review. " +
+        "The host binds page coverage to your dispatch at publication; another member's read or a later read cannot certify this review. " +
         CollaborationSemanticGoalCoverage.instructions()
 }

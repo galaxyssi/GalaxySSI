@@ -173,6 +173,16 @@ class CollaborationLiveEvidenceDeviceTest {
                 it.getString("tool") == "codex.commandExecution" && it.getString("output_json").contains(token) }
             assertTrue("Review must cite the actual Desktop observation, not a peer-document read receipt", originals.any { original ->
                 (0 until directRefs.length()).any { directRefs.getJSONObject(it).getString("evidence_id") == original.getString("evidence_id") } })
+            repeat(directRefs.length()) { index ->
+                val ref = directRefs.getJSONObject(index)
+                val original = ledger.read(access, ref.getString("evidence_id"), ref.getString("sha256"))!!
+                CollaborationEvidenceReadCoverage.requireComplete(ref, review, original)
+                assertEquals("scoped_pages", ref.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
+            }
+            File(context.getExternalFilesDir(null), "collaboration-live-evidence-read-coverage.json").writeText(JSONObject()
+                .put("run_id", run).put("review_node", review.getString("node_id"))
+                .put("observations", directRefs).put("coverage_frozen_at_publication", true)
+                .put("trust", "host_served_pages_not_scientific_validation").toString())
             assertTrue("Reviewer must actually fetch the original, not merely browse or cite its ID", observations.any { observation ->
                 val input = JSONObject(observation.getString("input_json"))
                 observation.getString("person_id") == reviewer.id && observation.getString("tool") == CollaborationCloudRecall.NAME &&

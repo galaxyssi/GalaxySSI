@@ -19,7 +19,8 @@ class CollaborationGoalAcceptanceTest {
                           reviewKind: String = "decision", requiredOrigin: String = "", reviewCitesOriginal: Boolean = false,
                           requirement: String = "Deliver a documented comparison", verification: String = "documentary",
                           validator: JSONObject? = null, computation: JSONObject? = null, val goal: String = requirement,
-                          mappingAuthor: String = "mapper", coverageReviewer: String = "coverage-reviewer", deliveryAuthor: String = "author") {
+                          mappingAuthor: String = "mapper", coverageReviewer: String = "coverage-reviewer", deliveryAuthor: String = "author",
+                          reviewReadsOriginal: Boolean = true) {
         val rows = Rows()
         val evidenceRows = Rows()
         var authorized = true
@@ -37,9 +38,11 @@ class CollaborationGoalAcceptanceTest {
         val review: JSONObject
         val mapping: JSONObject
         val coverageReview: JSONObject
+        val observation: JSONObject?
+        val reviewAccess = access.copy(nodeId = "review-node", personId = reviewer, round = 2)
         init {
             val author = access.copy(nodeId = "author-node", personId = deliveryAuthor, round = 1)
-            val observation = tool?.let { ledger.record(author, "invocation", it, "{}", output, 1, 2) }
+            observation = tool?.let { ledger.record(author, "invocation", it, "{}", output, 1, 2) }
             val item = item("delivery", "artifact", JSONObject().put("content", "Comparison with explicit limits")
                 .apply { if (computation != null) put("computation", computation) })
             if (observation != null) item.put("observations", JSONArray().put(observation))
@@ -47,7 +50,8 @@ class CollaborationGoalAcceptanceTest {
             val check = JSONObject().put("criterion_id", "document").put("requirement", criterion.getString("requirement"))
                 .put("target", delivery).put("verdict", "supported").put("rationale", "Compared the exact document against the request")
                 .put("unresolved", JSONArray())
-            review = publish(access.copy(nodeId = "review-node", personId = reviewer, round = 2),
+            if (reviewCitesOriginal && reviewReadsOriginal && observation != null) readOriginal(reviewAccess)
+            review = publish(reviewAccess,
                 item("review", reviewKind, JSONObject().put("acceptance_review", check)).put("parents", JSONArray().put(delivery))
                     .apply { if (reviewCitesOriginal && observation != null) put("observations", JSONArray().put(observation)) })
             mapping = publish(access.copy(nodeId = "mapping-node", personId = mappingAuthor, round = 1),
@@ -56,6 +60,11 @@ class CollaborationGoalAcceptanceTest {
                 item("coverage-review", CollaborationReviewContract.KIND,
                     JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, coverageReviewBody(mapping)))
                     .put("parents", JSONArray().put(mapping)))
+        }
+        fun readOriginal(reader: CollaborationWorkspaceAccess) {
+            val ref = requireNotNull(observation)
+            var offset: Int? = 0
+            while (offset != null) offset = requireNotNull(ledger.readPage(reader, ref.getString("evidence_id"), ref.getString("sha256"), offset)).next
         }
         fun mappingBody() = JSONObject().put("format", CollaborationSemanticGoalCoverage.FORMAT)
             .put("goal_sha256", CollaborationSemanticGoalCoverage.source(goal).getString("goal_sha256"))
@@ -133,6 +142,29 @@ class CollaborationGoalAcceptanceTest {
         result.getJSONArray("criteria").getJSONObject(0).remove(CollaborationEvidenceRequirements.FIELD)
         assertFalse(f.evaluate(result.toString()).accepted)
         assertEquals("continue", CollaborationGoalLoop.disposition(result.toString(), f.prior, acceptanceVerified = true))
+    }
+
+    @Test fun citingAnOriginalWithoutReadingAllPagesCannotPassAndLateReadDoesNotCertifyOldReview() {
+        val f = Fixture(tool = "commandExecution", requiredOrigin = "android_cloud_tool", reviewCitesOriginal = true,
+            output = JSONObject().put("text", "x".repeat(24_000)).toString(), reviewReadsOriginal = false)
+        assertFalse(f.evaluate().accepted)
+        f.readOriginal(f.reviewAccess)
+        assertFalse("Read coverage is frozen in the published review", f.evaluate().accepted)
+        val repair = f.reviewAccess.copy(nodeId = "review-repair", round = 3)
+        f.readOriginal(repair)
+        val body = f.workspace.read(f.access, f.review.getString("object_id"), 1)!!.getJSONObject("body")
+        val next = f.publish(repair, f.item("unused", "decision", body).put("object_id", f.review.getString("object_id"))
+            .put("base_revision", 1).put("parents", JSONArray().put(f.delivery)).put("observations", JSONArray().put(f.observation)))
+        val report = f.assessment()
+        report.getJSONArray("criteria").getJSONObject(0).put("review", next)
+        val receipt = f.evaluate(report.toString(), who = f.access.copy(round = 4))
+        assertTrue(receipt.feedback, receipt.accepted)
+    }
+
+    @Test fun optionalOriginalCitationsAlsoRequireReadCoverageNotJustRequiredSourceTypes() {
+        val f = Fixture(tool = "web_fetch", reviewCitesOriginal = true, reviewReadsOriginal = false)
+        assertFalse(f.evaluate().accepted)
+        assertTrue(Fixture(tool = "web_fetch", reviewCitesOriginal = true).evaluate().accepted)
     }
 
     @Test fun coordinatorTextAndForgedInlineReceiptCannotFinishGoal() {
