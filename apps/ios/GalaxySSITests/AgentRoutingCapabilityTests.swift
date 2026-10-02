@@ -1741,6 +1741,64 @@ extension GalaxySSIStoreTests {
     )
   }
 
+  func testGpt6CatalogRefreshPreservesDesktopDefaultAndSelectedRequest() throws {
+    let payload = """
+    {
+      "default_model": "gpt-5.6-sol",
+      "models": [
+        "gpt-5.6-sol",
+        {"id": "gpt-6-astra", "display_name": "GPT-6 Astra"},
+        {"id": "gpt-6-sol", "display_name": "GPT-6 Sol"},
+        {"id": "gpt-6-luna", "display_name": "GPT-6 Luna"}
+      ],
+      "reasoning_efforts": ["low", "medium", "high", "xhigh"]
+    }
+    """
+    let profile = try JSONDecoder().decode(AgentInvocationProfile.self, from: Data(payload.utf8))
+    let models = ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
+    XCTAssertEqual(profile.defaultModelId, "gpt-5.6-sol")
+    XCTAssertEqual(profile.models.map(\.id), ["gpt-5.6-sol"] + models)
+    XCTAssertEqual(profile.models.dropFirst().map(\.displayName), ["GPT-6 Astra", "GPT-6 Sol", "GPT-6 Luna"])
+    XCTAssertEqual(profile.normalizedModelId(""), "gpt-5.6-sol")
+    XCTAssertEqual(profile.normalizedModelId("missing"), "gpt-5.6-sol")
+    XCTAssertEqual(try JSONDecoder().decode(AgentInvocationProfile.self,
+      from: JSONEncoder().encode(profile)), profile)
+    for model in models {
+      XCTAssertEqual(profile.normalizedModelId(model), model)
+      for effort in AgentModelReasoningEffort.allCases {
+        let request = try XCTUnwrap(AgentInvocationRequestJsonCodec.encode(
+          modelId: profile.normalizedModelId(model), reasoningEffort: effort))
+        XCTAssertEqual(request["model_id"], model)
+        XCTAssertEqual(request["reasoning_effort"], effort.rawValue)
+      }
+    }
+  }
+
+  func testRefreshedGpt6SelectionSurvivesPersistenceBeforeRequestEncoding() throws {
+    let suiteName = "Gpt6CatalogRefreshTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let previous = AgentInvocationProfile(defaultModelId: "gpt-5.6-sol",
+      models: [AgentModelOption(id: "gpt-5.6-sol")])
+    let models = ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
+    let refreshed = AgentInvocationProfile(defaultModelId: previous.defaultModelId,
+      models: previous.models + models.map { AgentModelOption(id: $0) }, reasoningEfforts: [.high])
+    for model in models {
+      XCTAssertEqual(previous.normalizedModelId(model), "gpt-5.6-sol")
+      AgentModelSelectionSettings.selectManual(for: "catalog-refresh",
+        targetId: "desktop:codex", modelId: refreshed.normalizedModelId(model),
+        displayName: "Codex", reasoningEffort: .high, defaults: defaults)
+      let restored = try XCTUnwrap(AgentModelSelectionSettings.configurationForTarget(
+        conversationId: "catalog-refresh", targetId: "desktop:codex", defaults: defaults))
+      XCTAssertEqual(restored.modelId, model)
+      XCTAssertEqual(restored.reasoningEffort, .high)
+      XCTAssertEqual(AgentInvocationRequestJsonCodec.encode(
+        modelId: refreshed.normalizedModelId(restored.modelId), reasoningEffort: restored.reasoningEffort),
+        ["model_id": model, "reasoning_effort": "high"])
+      XCTAssertEqual(refreshed.defaultModelId, "gpt-5.6-sol")
+    }
+  }
+
   func testAgentModelSelectionRemembersEachAgentAndInheritsLatestDefault() throws {
     let suiteName = "AgentModelSelectionSettingsTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

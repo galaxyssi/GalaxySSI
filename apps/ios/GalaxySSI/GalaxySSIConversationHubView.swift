@@ -1,6 +1,45 @@
 import SwiftUI
 import UIKit
 
+private struct GalaxySSIConversationExecutionIcon: View {
+  let status: GalaxySSIConversationExecutionStatus
+  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var visible = false
+
+  private func color(_ rgb: UInt32) -> Color {
+    Color(red: Double((rgb >> 16) & 0xff) / 255,
+      green: Double((rgb >> 8) & 0xff) / 255, blue: Double(rgb & 0xff) / 255)
+  }
+
+  var body: some View {
+    Group {
+      if status.animated {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !visible || scenePhase != .active || reduceMotion)) { context in
+          Circle().trim(from: 0.1, to: 0.85)
+            .stroke(color(status.foregroundRGB), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+            .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
+            .frame(width: 24, height: 24)
+        }
+      } else {
+        Image(systemName: status.systemImage)
+          .font(.system(size: 24, weight: .regular))
+          .foregroundColor(color(status.foregroundRGB))
+      }
+    }
+    .frame(width: 48, height: 48)
+    .background(color(status.backgroundRGB))
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text(GalaxySSILocalization.string("galaxyssi.conversation_status." + status.rawValue,
+      fallback: status.label, language: language)))
+    .accessibilityIdentifier("ios.conversation.status." + status.rawValue)
+    .onAppear { visible = true }
+    .onDisappear { visible = false }
+  }
+}
+
 private enum GalaxySSIAddContactPresentation: String, Identifiable, Equatable {
   case normal
   case scanner
@@ -67,6 +106,7 @@ struct GalaxySSIConversationHubView: View {
   @State private var addContactPresentation: GalaxySSIAddContactPresentation?
   @State private var cloudModelOnboardingPresented = false
   @State private var hubRefreshToken = UUID()
+  @State private var executionWorkspaces: [GalaxySSIConversationExecutionPolicy.Snapshot] = []
   @State private var pendingFriendRequestsPresented = false
   @State private var smartDeviceOnboardingPresented = false
   @State private var groupsPresented = false
@@ -141,6 +181,7 @@ struct GalaxySSIConversationHubView: View {
 
       GalaxySSITopBar(
         title: t("galaxyssi.agent_sessions.title", "Sessions"),
+        sideContentWidth: 108,
         leading: {
           if showsBackButton {
             Button(action: handleHubBack) {
@@ -488,7 +529,12 @@ struct GalaxySSIConversationHubView: View {
       NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     ) { _ in
       backgroundSuspended = false
+      executionWorkspaces = store.agentWorkspaceStore.list().map(GalaxySSIConversationExecutionPolicy.Snapshot.init)
       refreshAfterAppActivation()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
+      .debounce(for: .milliseconds(100), scheduler: RunLoop.main)) { _ in
+      executionWorkspaces = store.agentWorkspaceStore.list().map(GalaxySSIConversationExecutionPolicy.Snapshot.init)
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       refreshAfterRemotePairingRevocation()
@@ -497,6 +543,7 @@ struct GalaxySSIConversationHubView: View {
       }
     }
     .onAppear {
+      executionWorkspaces = store.agentWorkspaceStore.list().map(GalaxySSIConversationExecutionPolicy.Snapshot.init)
       openInitialContactIfNeeded()
     }
     .onChange(of: initialContactId) { _ in
@@ -1093,7 +1140,12 @@ struct GalaxySSIConversationHubView: View {
         trailing: multiDeleteMode
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
           : "",
-        updatedAt: updatedAt
+        updatedAt: updatedAt,
+        showsDisclosure: false,
+        executionStatus: GalaxySSIConversationExecutionPolicy.resolve(
+          conversationID: session.id, message: store.latestAgentSessionMessage(session.id),
+          tasks: store.agentTaskRecords, unread: store.agentReplyUnreadCount(conversationId: session.id) > 0,
+          workspaces: executionWorkspaces)
       )
     }
     .buttonStyle(.plain)
@@ -1456,10 +1508,13 @@ struct GalaxySSIConversationHubView: View {
     leadingView: AnyView? = nil,
     titleAccessory: AnyView? = nil,
     unreadCount: Int = 0,
-    showsDisclosure: Bool = true
+    showsDisclosure: Bool = true,
+    executionStatus: GalaxySSIConversationExecutionStatus? = nil
   ) -> some View {
     HStack(spacing: 10) {
-      if let leadingView {
+      if let executionStatus {
+        GalaxySSIConversationExecutionIcon(status: executionStatus)
+      } else if let leadingView {
         leadingView
           .overlay(
             Circle()
@@ -1476,7 +1531,8 @@ struct GalaxySSIConversationHubView: View {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
           Text(title)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: 15, weight: executionStatus == nil ? .semibold :
+              (executionStatus == .completeUnread ? .bold : .regular)))
             .foregroundColor(.galaxySSITextPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
