@@ -109,6 +109,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     var pathGate: MqttPathPublication? = nil
     var acknowledgementGroup: MqttPublishAckGroup? = nil
     var fragmentIndex: Int = 0
+    var pathCompletion: MqttPhysicalCompletion? = nil
   }
   private struct InFlightTiming {
     var attemptId: String
@@ -178,6 +179,33 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
           continuation.resume(returning: .failed)
           return
         }
+        continuation.resume(returning: .queued)
+      }
+    }
+  }
+
+  func publishSealedOnPath(_ publication: MqttSealedPathPublication) async -> MqttPublishResult {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        let packet = publication.publication
+        guard let secret = self.relationshipSecret(forSendingTopic: packet.topic),
+              publication.accepts(snapshot: self.pathSnapshot, secretFingerprint: MqttRouteProtocol.digest(Data(secret.utf8))),
+              self.authorizes(publication.authorization),
+              self.pendingPacketPublishes.count + self.inFlightPublishes.count < 4_096,
+              self.pendingPacketPublishes.reduce(0, { $0 + $1.payload.count }) +
+                self.inFlightPublishes.values.reduce(0, { $0 + $1.payload.count }) + packet.payload.count <= 8_388_608 else {
+          continuation.resume(returning: .failed)
+          return
+        }
+        // Payload is final pair AEAD. Do not seal again, split it, or retry its attempt on another generation.
+        self.pendingPacketPublishes.append(PendingPublish(topic: packet.topic, payload: packet.payload,
+          transferId: nil, relationshipBound: true,
+          brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: packet.payload.count),
+          attemptId: packet.frame.attempt.attemptID, logicalMessageId: packet.frame.message.messageID,
+          durableMessageId: packet.frame.message.messageID, enqueuedAtMillis: Self.nowMillis(),
+          pathGate: publication.authorization, pathCompletion: MqttPhysicalCompletion(publication.completed)))
+        self.pumpPendingPublishes()
+        self.scheduleBrokerAckWatchdog()
         continuation.resume(returning: .queued)
       }
     }
@@ -545,7 +573,9 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private func pumpPendingPublishes() {
     guard connected, connection != nil else { return }
     pendingPacketPublishes.removeAll { pending in
-      pending.pathGate.map { !authorizes($0) } ?? false
+      let invalid = pending.pathGate.map { !authorizes($0) } ?? false
+      if invalid { finishPhysical(pending, acknowledged: false) }
+      return invalid
     }
     while mqttInflightPacketIds.count < Self.maximumMqttInflight {
       guard let index = pendingPacketPublishes.firstIndex(where: { canSend($0) }) else {
@@ -687,6 +717,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
             $0.acknowledgementGroup?.acknowledge($0.fragmentIndex) ?? true
           } ?? false
           let authorized = acknowledged?.pathGate.map { authorizes($0) } ?? true
+          if let acknowledged { finishPhysical(acknowledged, acknowledged: authorized) }
           if allAcknowledged, authorized, let completion = acknowledged?.brokerAcknowledged {
             brokerCompletionQueue.async(execute: completion)
           }
@@ -906,7 +937,13 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       topics.formUnion(routes.sendWindow)
     })
     pendingPacketPublishes.removeAll {
-      $0.relationshipBound && !validSendTopics.contains($0.topic)
+      let invalid = ($0.relationshipBound && !validSendTopics.contains($0.topic)) ||
+        ($0.pathGate.map { !authorizes($0) } ?? false)
+      if invalid { finishPhysical($0, acknowledged: false) }
+      return invalid
+    }
+    for pending in inFlightPublishes.values where pending.pathGate.map({ !authorizes($0) }) ?? false {
+      finishPhysical(pending, acknowledged: false)
     }
     if connected {
       subscribeToCurrentTopics()
@@ -1022,8 +1059,17 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func resetOutboundInflightForReconnect() {
+    pendingPacketPublishes.removeAll { pending in
+      guard pending.pathGate != nil else { return false }
+      finishPhysical(pending, acknowledged: false)
+      return true
+    }
     if !inFlightPublishes.isEmpty {
-      let retries = inFlightPublishes.values.map { pending -> PendingPublish in
+      let retries = inFlightPublishes.values.compactMap { pending -> PendingPublish? in
+        if pending.pathGate != nil {
+          finishPhysical(pending, acknowledged: false)
+          return nil
+        }
         var retry = pending
         retry.attemptId = UUID().uuidString
         return retry
@@ -1036,6 +1082,11 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     fragmentInflightByTransfer.removeAll()
     fragmentInflight = 0
     mqttInflightPacketIds.removeAll()
+  }
+
+  private func finishPhysical(_ pending: PendingPublish, acknowledged: Bool) {
+    guard let completion = pending.pathCompletion else { return }
+    brokerCompletionQueue.async { completion.finish(acknowledged) }
   }
 
   private func scheduleReconnect() {

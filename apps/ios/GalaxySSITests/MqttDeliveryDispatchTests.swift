@@ -280,7 +280,8 @@ private final class DispatchFixture {
   func delivery(hash: String = String(repeating: "a", count: 64), bytes: Int = 100, bound: Int = 512) throws -> MqttDeliveryDispatch.Delivery {
     try .init(peer: "pair", message: .init(messageID: "message", contentHash: hash,
       sender: String(repeating: "b", count: 64), receiver: String(repeating: "c", count: 64), traffic: "message"),
-      receiveTopics: ["inbox"], sizeBound: bound, encodeAttempt: { _ in Data(repeating: 1, count: bytes) },
+      receiveTopics: ["inbox"], secretFingerprint: String(repeating: "e", count: 64),
+      sizeBound: bound, encodeAttempt: { _ in Data(repeating: 1, count: bytes) },
       authorized: { [weak self] _, _ in self?.authorized ?? false })
   }
   func ack(_ publication: MqttDeliveryDispatch.Publication, acknowledged: Bool = true) async -> Bool {

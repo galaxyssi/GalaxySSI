@@ -59,6 +59,7 @@ protocol MqttBrokerPathTransport: AnyObject {
   var onAuthenticatedIngress: ((MqttAuthenticatedIngress) -> Void)? { get set }
   func configurePath(_ configuration: MqttBrokerPathConfiguration)
   func publishOnPath(_ publication: MqttPathPublication) async -> MqttPublishResult
+  func publishSealedOnPath(_ publication: MqttSealedPathPublication) async -> MqttPublishResult
   func outstandingDurableMessageIds() async -> Set<String>
   func disconnect()
 }

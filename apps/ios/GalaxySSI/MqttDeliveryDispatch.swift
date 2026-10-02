@@ -7,6 +7,7 @@ actor MqttDeliveryDispatch {
     let peer: String
     let message: MqttDeliveryEnvelope.Message
     let receiveTopics: Set<String>
+    let secretFingerprint: String
     let sizeBound: Int
     // Returns the final pair-AEAD packet, including this physical attempt's metadata.
     let encodeAttempt: (MqttDeliveryEnvelope.Frame) throws -> Data
@@ -16,6 +17,8 @@ actor MqttDeliveryDispatch {
     let topic: String
     let payload: Data
     let frame: MqttDeliveryEnvelope.Frame
+    let receiveTopics: Set<String>
+    let secretFingerprint: String
   }
   struct Diagnostics {
     let messages: Int
@@ -67,6 +70,7 @@ actor MqttDeliveryDispatch {
   func submit(topic: String, delivery: Delivery) async throws -> String {
     let at = now()
     guard !closed, at >= 0, at <= Int64.max - 30_000, !delivery.peer.isEmpty,
+          MqttRouteProtocol.hex(delivery.secretFingerprint, count: 64),
           (1...MqttRouteProtocol.packetBytes).contains(delivery.sizeBound) else { throw Failure.unavailable }
     _ = try Self.packetBytes(topic: topic, payloadBytes: 1)
     let key = Key(peer: delivery.peer, message: delivery.message)
@@ -229,7 +233,8 @@ actor MqttDeliveryDispatch {
         }
         job.attempts.insert(id)
         sent[id] = Sent(job: job, frame: frame)
-        let queued = await publish(Publication(topic: job.topic, payload: payload, frame: frame))
+        let queued = await publish(Publication(topic: job.topic, payload: payload, frame: frame,
+          receiveTopics: delivery.receiveTopics, secretFingerprint: delivery.secretFingerprint))
         // A callback may have completed, or close() may have run, during the enqueue await.
         guard !closed, jobs[job.key] === job else { return }
         if !queued, sent[id]?.pending == true {

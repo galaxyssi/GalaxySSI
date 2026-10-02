@@ -258,11 +258,13 @@ private final class IngressRecorder {
   }
 }
 
-private final class FakeMqttBrokerPath: MqttBrokerPathTransport {
+final class FakeMqttBrokerPath: MqttBrokerPathTransport {
   var onPathState: ((MqttBrokerPathSnapshot) -> Void)?
   var onAuthenticatedIngress: ((MqttAuthenticatedIngress) -> Void)?
   var configuration: MqttBrokerPathConfiguration?
   var publications: [MqttPathPublication] = []
+  var sealedPublications: [MqttSealedPathPublication] = []
+  var currentSecretFingerprint = "secret-hash"
   var outstanding: Set<String> = []
   var invalidateBeforePublish = false
   private var snapshot: MqttBrokerPathSnapshot
@@ -281,10 +283,21 @@ private final class FakeMqttBrokerPath: MqttBrokerPathTransport {
   }
   func publishOnPath(_ publication: MqttPathPublication) async -> MqttPublishResult {
     if invalidateBeforePublish { snapshot.generation += 1 }
-    guard MqttBrokerPathPolicy.accepts(publication, snapshot: snapshot, currentSecretFingerprint: "secret-hash") else { return .failed }
+    guard MqttBrokerPathPolicy.accepts(publication, snapshot: snapshot, currentSecretFingerprint: currentSecretFingerprint) else { return .failed }
     publications.append(publication)
     return .queued
   }
   func outstandingDurableMessageIds() async -> Set<String> { outstanding }
-  func disconnect() { snapshot.connected = false }
+  func publishSealedOnPath(_ publication: MqttSealedPathPublication) async -> MqttPublishResult {
+    if invalidateBeforePublish { snapshot.generation += 1 }
+    guard publication.accepts(snapshot: snapshot, secretFingerprint: currentSecretFingerprint) else { return .failed }
+    sealedPublications.append(publication)
+    return .queued
+  }
+  func disconnect() {
+    snapshot.connected = false
+    let pending = sealedPublications
+    sealedPublications.removeAll()
+    pending.forEach { $0.completed(false) }
+  }
 }

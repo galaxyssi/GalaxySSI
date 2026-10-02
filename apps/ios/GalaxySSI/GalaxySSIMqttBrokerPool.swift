@@ -100,6 +100,41 @@ final class GalaxySSIMqttBrokerPool {
     return result
   }
 
+  func publishSealed(_ publication: MqttSealedPathPublication) async -> MqttPublishResult {
+    let broker = publication.publication.frame.attempt.brokerID
+    let selected: (MqttBrokerPathTransport, MqttSealedPathPublication)? = await withCheckedContinuation { continuation in
+      queue.async {
+        guard self.running, let snapshot = self.snapshots[broker], let path = self.paths[broker] else {
+          continuation.resume(returning: nil)
+          return
+        }
+        var scoped = publication
+        scoped.configurationID = self.configurationID
+        guard scoped.accepts(snapshot: snapshot, secretFingerprint: scoped.publication.secretFingerprint) else {
+          continuation.resume(returning: nil)
+          return
+        }
+        continuation.resume(returning: (path, scoped))
+      }
+    }
+    guard let (path, scoped) = selected else { return .failed }
+    return await path.publishSealedOnPath(scoped)
+  }
+
+  func makeDeliveryDispatcher(brokerCompleted: @escaping (String, Bool) -> Void,
+                              now: @escaping () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) }) -> MqttDeliveryDispatch {
+    let relay = MqttDeliveryCompletionRelay()
+    let dispatcher = MqttDeliveryDispatch(policy: policy, publish: { [weak self] publication in
+      guard let self else { return false }
+      let packet = MqttSealedPathPublication(publication: publication, completed: { acknowledged in
+        relay.complete(publication.frame.attempt, acknowledged: acknowledged)
+      })
+      return await self.publishSealed(packet).accepted
+    }, brokerCompleted: brokerCompleted, now: now)
+    relay.bind(dispatcher)
+    return dispatcher
+  }
+
   func disconnect() {
     queue.async {
       self.running = false
