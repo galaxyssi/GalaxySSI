@@ -17,6 +17,17 @@ internal object AndroidAgentResultRecovery {
     private val active = AgentRecoveryTransferRegistry()
     private val transfers = Semaphore(2)
 
+    fun dispatchAuthenticatedRead(context: Context, payload: JSONObject, desktop: String): Boolean {
+        when (payload.optString("type")) {
+            "agent_task_result_receipt_confirmed" -> AndroidAgentResultReceipts.receive(context, payload, desktop)
+            "agent_task_result_page" -> receive(context, payload, desktop)
+            "agent_task_recovery_result" -> AndroidAgentRemoteRecovery.receive(context, payload, desktop)
+            "agent_task_evidence" -> AndroidCollaborationRemoteEvidence.receive(context, payload, desktop)
+            else -> return false
+        }
+        return true
+    }
+
     fun receive(context: Context, payload: JSONObject, desktopId: String) {
         if (paired(context, desktopId, payload)) client.receive(payload, desktopId)
     }
@@ -41,6 +52,7 @@ internal object AndroidAgentResultRecovery {
                     val response = AgentRemoteOutcomeCodec.decode(payload, AgentRemoteOutcomeCodec.content(app, payload),
                         CodexStyleResponsePolicy.filterAssistantRichOutput(AgentRichContentCodec.fromEnvelope(payload)))
                         ?: return@withPermit
+                    captureEvidence(app, payload, desktopId)
                     // The bus commits to the encrypted inbox before notifying the UI.
                     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.recovery(app)
                         .begin(fields.optString("task_id"), "publish").use { span ->
@@ -81,15 +93,23 @@ internal object AndroidAgentResultRecovery {
     }
 
     /** Called on the authenticated transport worker, before any Activity can acknowledge its envelope. */
-    internal fun persistAuthenticatedFinal(context: Context, payload: JSONObject) {
+    internal fun persistAuthenticatedFinal(context: Context, payload: JSONObject, authenticatedDesktop: String = "") {
         require(payload.optString("type") == "text" && !payload.optBoolean("peer_chat") &&
             AgentTaskIdentityStore.matchesRegistered(context, payload))
         val response = requireNotNull(AgentRemoteOutcomeCodec.decode(payload,
             AgentRemoteOutcomeCodec.content(context, payload),
             CodexStyleResponsePolicy.filterAssistantRichOutput(AgentRichContentCodec.fromEnvelope(payload))))
+        captureEvidence(context, payload, authenticatedDesktop)
         val consumed = publishResult(context, payload, response)
         check(consumed || AgentConnectorResponseStore.wasRecorded(context, response)) {
             "Final Agent reply is not durable; keep the transport envelope for replay"
+        }
+    }
+
+    private fun captureEvidence(context: Context, payload: JSONObject, desktop: String) {
+        runCatching { AndroidCollaborationRemoteEvidence.capture(context, payload, desktop) }.onFailure {
+            // The completed model response must remain deliverable even if a separate evidence store fails.
+            Log.w("GalaxySSIEvidence", "Evidence intent was not saved: ${it.javaClass.simpleName}")
         }
     }
 

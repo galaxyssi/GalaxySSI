@@ -1,0 +1,164 @@
+package com.galaxyssi.chat
+
+import android.content.Context
+import android.util.Log
+import androidx.work.BackoffPolicy
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** Only authenticated managed Codex completions schedule imports; ordinary chat has no extra queries. */
+internal object AndroidCollaborationRemoteEvidence {
+    private val client = CollaborationRemoteEvidenceClient()
+    private val recoveryLock = Mutex()
+    private const val PREFERENCES = "collaboration_remote_evidence_capabilities"
+
+    fun manifest(context: Context, desktop: String, payload: JSONObject) {
+        if (desktop.isBlank() || GalaxySSILinkProtocol.serverLink(context, desktop)?.paired != true) return
+        val features = payload.optJSONArray("features") ?: return
+        val supported = (0 until features.length()).any { features.optString(it) == CollaborationRemoteEvidenceProtocol.CAPABILITY }
+        val route = GalaxySSILinkProtocol.serverLink(context, desktop)?.routes?.clientRouteId.orEmpty()
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putString(desktop, route).putBoolean("$desktop:supported", supported).apply()
+    }
+
+    fun needsManifest(context: Context, desktop: String, route: String): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getString(desktop, "") != route
+
+    private fun supported(context: Context, desktop: String, route: String): Boolean =
+        !needsManifest(context, desktop, route) &&
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getBoolean("$desktop:supported", false)
+
+    /** Persist the read-only intent before publishing the final model reply, never acknowledge false evidence. */
+    fun capture(context: Context, payload: JSONObject, authenticatedDesktop: String) {
+        if (!CollaborationRemoteEvidenceProtocol.validScope(payload) || payload.optBoolean("peer_chat") ||
+            payload.optString("task_status") !in AgentRemoteOutcomeCodec.TERMINAL ||
+            !AgentTaskIdentityStore.matchesRegistered(context, payload) || !paired(context, authenticatedDesktop, payload)) return
+        if (!supported(context, authenticatedDesktop, payload.getString("client_route_id"))) return
+        val source = payload.getString("source_message_id").toLongOrNull() ?: return
+        val binding = CollaborationEvidenceLedger(context).binding(source, payload.getString("conversation_id"),
+            payload.getString("turn_id")) ?: return
+        if (!current(context, payload)) return
+        val created = CollaborationRemoteEvidenceStore(context).createIntent(authenticatedDesktop, payload, binding).second
+        enqueue(context, wake = created)
+    }
+
+    fun receive(context: Context, payload: JSONObject, desktop: String) {
+        if (paired(context, desktop, payload)) client.receive(payload, desktop)
+    }
+
+    fun pending(context: Context, group: String, source: Long): Boolean =
+        CollaborationRemoteEvidenceStore(context).states(group, source).any { it.optString("status") == "pending" }
+
+    fun summary(context: Context, execution: AgentTeamMemberExecutionContext): JSONArray {
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${execution.request.idempotencyKey}")
+        return JSONArray(CollaborationRemoteEvidenceStore(context).states(execution.request.conversationId, source).map { job ->
+            JSONObject().put("status", job.getString("status")).put("imported_observations", job.getLong("imported"))
+                .put("large_originals_not_imported", job.getLong("skipped_large"))
+                .put("provider_history_complete", false).put("trust", CollaborationRemoteEvidenceProtocol.TRUST)
+                .put("retrieval", "collaboration.recall mode=evidence; missing observations are not verified")
+        })
+    }
+
+    suspend fun await(context: Context, execution: AgentTeamMemberExecutionContext) {
+        val group = execution.member.context["collaboration_group_id"].orEmpty()
+        if (group.isBlank()) return
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${execution.request.idempotencyKey}")
+        if (!pending(context, group, source)) return
+        CollaborationProgressStore.evidenceWaiting(context, execution)
+        enqueue(context, wake = true)
+        execution.suspendExecutionPermit {
+            val control = AgentTeamDurableControl(context)
+            while (pending(context, group, source)) {
+                control.awaitDispatch(execution.request.parentRunId)
+                delay(1_000)
+            }
+        }
+    }
+
+    fun enqueue(context: Context, wake: Boolean = false) {
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("collaboration-remote-evidence-v1",
+            if (wake) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<CollaborationRemoteEvidenceWorker>()
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS).build())
+    }
+
+    internal suspend fun recover(context: Context): Boolean = recoveryLock.withLock { recoverSerially(context) }
+
+    private suspend fun recoverSerially(context: Context): Boolean {
+        val store = CollaborationRemoteEvidenceStore(context)
+        val ledger = CollaborationEvidenceLedger(context)
+        val control = AgentTeamDurableControl(context)
+        val importer = CollaborationRemoteEvidenceImporter(store, ledger)
+        var after = store.schedulerCursor()
+        var batch = store.pending(after)
+        if (batch.isEmpty()) { after = ""; store.schedulerCursor(after); batch = store.pending() }
+        for ((index, key) in batch) {
+            after = index
+            // Persist round-robin position before I/O, so one offline executor cannot starve later jobs after a worker timeout.
+            store.schedulerCursor(after)
+            val job = store.read(key) ?: continue
+            val fields = job.getJSONObject("fields")
+            val desktop = job.getString("desktop")
+            val group = fields.getString("conversation_id")
+            val binding = ledger.binding(fields.getString("source_message_id").toLong(), group, fields.getString("turn_id"))
+            val revoked = binding == null || !paired(context, desktop, fields) ||
+                CollaborationGroupStore(context).load(group)?.members?.none { it.id == binding.personId } != false
+            val status = when {
+                revoked -> "revoked"
+                !supported(context, desktop, fields.getString("client_route_id")) -> "unsupported"
+                !AgentTaskIdentityStore.matchesRegistered(context, fields) || !current(context, fields) -> "superseded"
+                control.get(job.getString("run_id")) == AgentTeamUserControl.STOP -> "stopped"
+                else -> null
+            }
+            if (status != null) {
+                store.save(key, job.put("status", status)); AgentTeamBackgroundRecovery.enqueue(context); continue
+            }
+            if (control.get(job.getString("run_id")) == AgentTeamUserControl.PAUSE) continue
+            val finished = importer.run(key, allowed = { latest ->
+                control.get(latest.getString("run_id")) == AgentTeamUserControl.RUN &&
+                    paired(context, desktop, fields) && current(context, fields) &&
+                    CollaborationGroupStore(context).load(group)?.members?.any { it.id == binding?.personId } == true
+            }) { target, scope, selection ->
+                client.query(target, scope, selection) { request ->
+                    paired(context, target, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
+                        GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
+                }
+            }
+            if (finished) AgentTeamBackgroundRecovery.enqueue(context)
+        }
+        if (store.pending(after).isEmpty()) store.schedulerCursor("")
+        AgentTeamBackgroundRecovery.enqueue(context)
+        return store.pending().isEmpty()
+    }
+
+    private fun paired(context: Context, desktop: String, fields: JSONObject): Boolean {
+        val link = GalaxySSILinkProtocol.serverLink(context, desktop) ?: return false
+        return link.paired && link.routes.clientRouteId == fields.optString("client_route_id") &&
+            AppStore.contactById(context, fields.optString("contact_id"))?.optString("desktop_id") == desktop
+    }
+    private fun current(context: Context, fields: JSONObject): Boolean = AgentRemoteOutcomeCodec.observation(fields)?.let {
+        AgentConnectorResponseStore.isCurrentExecution(context, it)
+    } == true
+}
+
+class CollaborationRemoteEvidenceWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    override suspend fun doWork(): Result = try {
+        // Yield the Android worker periodically; checkpoints survive and there is no total attempt limit.
+        val complete = withTimeoutOrNull(120_000) { AndroidCollaborationRemoteEvidence.recover(applicationContext) } == true
+        if (complete) Result.success() else Result.retry()
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (error: Exception) {
+        Log.w("GalaxySSIEvidence", "Read-only evidence recovery deferred: ${error.javaClass.simpleName}")
+        Result.retry()
+    }
+}

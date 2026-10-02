@@ -8,6 +8,13 @@ internal object CollaborationProgressStore {
     private val seenEvents = linkedMapOf<String, Pair<Long, String>>()
     private fun db(context: Context) = AgentEncryptedDatabase(context.applicationContext, "collaboration_progress_bindings")
 
+    fun evidenceWaiting(context: Context, execution: AgentTeamMemberExecutionContext) {
+        val request = execution.request
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
+        val binding = binding(context, source, request.conversationId, request.messageId) ?: return
+        write(context, binding, "evidence-transfer", context.getString(R.string.collaboration_evidence_transfer), System.currentTimeMillis())
+    }
+
     fun waiting(context: Context, execution: AgentTeamMemberExecutionContext, prolonged: Boolean) {
         val request = execution.request
         val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")

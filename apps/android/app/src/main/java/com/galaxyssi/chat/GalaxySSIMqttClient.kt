@@ -2441,20 +2441,9 @@ object GalaxySSIMqttClient {
                 payload.put("content", AgentRemoteOutcomeCodec.content(context, payload))
             }
             AgentResearchTraceStore.receiveAuthenticated(context, payload)
-            if (finalReply) AndroidAgentResultRecovery.persistAuthenticatedFinal(context, payload)
+            if (finalReply) AndroidAgentResultRecovery.persistAuthenticatedFinal(context, payload, sourceDesktopId)
         }
-        if (payload.optString("type") == "agent_task_result_receipt_confirmed") {
-            AndroidAgentResultReceipts.receive(context, payload, sourceDesktopId)
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
-            return
-        }
-        if (payload.optString("type") == "agent_task_result_page") {
-            AndroidAgentResultRecovery.receive(context, payload, sourceDesktopId)
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
-            return
-        }
-        if (payload.optString("type") == "agent_task_recovery_result") {
-            AndroidAgentRemoteRecovery.receive(context, payload, sourceDesktopId)
+        if (AndroidAgentResultRecovery.dispatchAuthenticatedRead(context, payload, sourceDesktopId)) {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
@@ -2480,6 +2469,7 @@ object GalaxySSIMqttClient {
             )
             RemoteWhisperNodeRegistry.ingest(context, payload, sourceDesktopId)
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
+            AndroidCollaborationRemoteEvidence.manifest(context, sourceDesktopId, payload)
         }
         if (payload.optString("type") == "artifact_chunk") {
             processAttachmentControl(context, payload) {
@@ -3083,7 +3073,8 @@ object GalaxySSIMqttClient {
         eligibleLinks.forEach { link ->
                 if (peerRoutes?.readyForTopic(link.routes.control) != true) return@forEach
                 val requestManifest = forceCapabilityManifest ||
-                    GalaxySSILinkProtocol.needsCapabilityManifest(link)
+                    GalaxySSILinkProtocol.needsCapabilityManifest(link) ||
+                    AndroidCollaborationRemoteEvidence.needsManifest(context, link.desktopId, link.routes.clientRouteId)
                 val payload = JSONObject()
                     .put("type", "connector_status_request")
                     .put("contact_id", "system")

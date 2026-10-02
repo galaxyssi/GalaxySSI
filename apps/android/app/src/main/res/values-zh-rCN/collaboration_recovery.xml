@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="collaboration_evidence_transfer">回复已收到，正在接续原始工具证据，不会重复执行任务</string>
     <string name="collaboration_goal_blocked">目标未完成：等待所列资源或授权</string>
     <string name="collaboration_waiting_connection">等待连接或空闲容量，正在自动重试</string>
     <string name="collaboration_waiting_connection_long">成员仍不可用，进度已保存，将持续尝试重新连接</string>
