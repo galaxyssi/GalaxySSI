@@ -699,11 +699,25 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func conversationSummary(for contactId: String) -> ContactConversationSummary {
-    let readAt = readAtByContact[contactId] ?? .distantPast
+    let readAt = max(readAtByContact[contactId] ?? .distantPast, agentReplyUnreadStore.contactReadAt(contactId))
     return ContactConversationSummary(
       lastMessage: chatHistoryDatabase.latestMessage(contactId: contactId),
       unreadCount: chatHistoryDatabase.unreadCount(contactId: contactId, after: readAt)
     )
+  }
+
+  private lazy var agentReplyUnreadStore = AgentReplyUnreadStore(defaults: defaults, secrets: secrets)
+
+  func agentReplyUnreadCount(conversationId: String? = nil) -> Int {
+    agentReplyUnreadStore.count(conversationId: conversationId)
+  }
+
+  func markAgentRepliesRead(conversationId: String, rendered: [ChatMessage]) {
+    agentReplyUnreadStore.read(conversationId: conversationId, rendered: rendered)
+  }
+
+  func removeAgentReplyUnreadConversations(_ ids: Set<String>) {
+    agentReplyUnreadStore.removeConversations(ids)
   }
 
   @discardableResult
@@ -731,6 +745,7 @@ final class GalaxySSIStore: ObservableObject {
       messagesByContact[contactId] = messages
     }
     readAtByContact[contactId] = max(previousReadAt, readAt)
+    agentReplyUnreadStore.markContactRead(contactId, at: readAt)
     save()
     return unreadBefore
   }
@@ -852,6 +867,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func deleteMessages(for contactId: String) {
+    if contactId == "hermes" { agentReplyUnreadStore.clearAgentReplies() }
     deletePrivateAttachmentCopies(in: chatHistoryDatabase.messages(contactId: contactId))
     chatHistoryDatabase.deleteContact(contactId)
     messagesByContact.removeValue(forKey: contactId)
@@ -872,7 +888,7 @@ final class GalaxySSIStore: ObservableObject {
         continue
       }
       let removed = messages.remove(at: index)
-      _ = chatHistoryDatabase.deleteMessage(id: messageId)
+      if let deleted = chatHistoryDatabase.deleteMessage(id: messageId) { agentReplyUnreadStore.remove(deleted) }
       deletePrivateAttachmentCopies(in: [removed])
       if messages.isEmpty {
         messagesByContact.removeValue(forKey: id)
@@ -883,6 +899,7 @@ final class GalaxySSIStore: ObservableObject {
       return true
     }
     if let removed = chatHistoryDatabase.deleteMessage(id: messageId) {
+      agentReplyUnreadStore.remove(removed)
       deletePrivateAttachmentCopies(in: [removed])
       return true
     }
@@ -934,6 +951,7 @@ final class GalaxySSIStore: ObservableObject {
     AgentIOSObsidianStateStore(defaults: defaults, secrets: secrets).clear()
     destroyGlobalAgentBackupData()
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    agentReplyUnreadStore.clear()
     agentConversationDatabase.destroyAllData()
     chatHistoryDatabase.destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
@@ -3039,7 +3057,9 @@ final class GalaxySSIStore: ObservableObject {
     for (contactId, messages) in messagesByContact {
       let oldById = Dictionary(uniqueKeysWithValues: (previous[contactId] ?? []).map { ($0.id, $0) })
       for message in messages where oldById[message.id] != message {
-        _ = chatHistoryDatabase.upsert(message)
+        if chatHistoryDatabase.upsert(message) {
+          agentReplyUnreadStore.record(message, previous: oldById[message.id])
+        }
       }
     }
   }

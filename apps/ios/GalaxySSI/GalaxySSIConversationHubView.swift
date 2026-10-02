@@ -466,6 +466,9 @@ struct GalaxySSIConversationHubView: View {
     .onDisappear {
       navigationContentGate.invalidate()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIReplyUnreadDidChange)) { _ in
+      hubRefreshToken = UUID()
+    }
     .onReceive(
       NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     ) { _ in
@@ -867,7 +870,8 @@ struct GalaxySSIConversationHubView: View {
       updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
       pinned: conversation.pinned,
       archived: conversation.status == .archived,
-      searchableMetadata: conversation.selectedModelOrAgent
+      searchableMetadata: conversation.selectedModelOrAgent,
+      unreadCount: store.agentReplyUnreadCount(conversationId: conversation.id)
     )
   }
 

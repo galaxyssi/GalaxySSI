@@ -36,7 +36,7 @@ extension AgentHomeView {
         if voiceTranscriptionPending && !messages.isEmpty {
           voiceTranscriptionPending = false
         }
-        store.markContactRead(contact.id)
+        refreshVisibleAgentReplyReadState()
         refreshAgentRuntimeAuditRecords()
       },
       onExecutionStateChanged: refreshAgentRuntimeAuditRecords
@@ -153,6 +153,7 @@ extension AgentHomeView {
               },
               onRetryMessage: retryAgentMessage,
               onMessageVisible: { message in
+                refreshVisibleAgentReplyReadState()
                 guard !message.isMine, !message.isSystem else { return }
                 let localTask = agentTask(for: message)
                 let remoteTask = replyRuntimeIndex.remoteTask(

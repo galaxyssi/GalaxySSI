@@ -26,6 +26,9 @@
     F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000001 /* AgentDirectVisionPolicy.swift */; };
     F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */; };
     F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000001 /* AgentReplySpeechController.swift */; };
+    F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000001 /* AgentReplyUnreadStore.swift */; };
+    F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */; };
+    F13228000000000000000003 /* AgentReplyUnreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000003 /* AgentReplyUnreadTests.swift */; };
     F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000002 /* AgentReplySpeechRuntime.swift */; };
     F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */; };
     F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */; };
@@ -1026,6 +1029,9 @@
     F22680000000000000000001 /* AgentDirectVisionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicy.swift; sourceTree = "<group>"; };
     F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicyTests.swift; sourceTree = "<group>"; };
     F22678000000000000000001 /* AgentReplySpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechController.swift; sourceTree = "<group>"; };
+    F23228000000000000000001 /* AgentReplyUnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadStore.swift; sourceTree = "<group>"; };
+    F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationFocusProbe.swift; sourceTree = "<group>"; };
+    F23228000000000000000003 /* AgentReplyUnreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadTests.swift; sourceTree = "<group>"; };
     F22678000000000000000002 /* AgentReplySpeechRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechRuntime.swift; sourceTree = "<group>"; };
     F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentReplySpeechView.swift; sourceTree = "<group>"; };
     F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechControllerTests.swift; sourceTree = "<group>"; };
@@ -2050,6 +2056,8 @@
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
         F22678000000000000000001 /* AgentReplySpeechController.swift */,
+        F23228000000000000000001 /* AgentReplyUnreadStore.swift */,
+        F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */,
         F22678000000000000000002 /* AgentReplySpeechRuntime.swift */,
         F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */,
         F22679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift */,
@@ -2808,6 +2816,7 @@
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
         F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */,
+        F23228000000000000000003 /* AgentReplyUnreadTests.swift */,
         F22679000000000000000002 /* MicrosoftTTSVoiceCatalogTests.swift */,
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
@@ -3438,6 +3447,8 @@
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
         F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */,
         F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */,
+        F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */,
+        F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */,
         F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */,
         F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */,
         F12679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift in Sources */,
@@ -3960,6 +3971,7 @@
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,
         F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */,
         F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */,
+        F13228000000000000000003 /* AgentReplyUnreadTests.swift in Sources */,
         F12679000000000000000002 /* MicrosoftTTSVoiceCatalogTests.swift in Sources */,
         F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */,
         A1F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift in Sources */,
