@@ -53,10 +53,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         allowExternalTools: Boolean = true,
         systemPromptOverride: String = "",
         citationPreviewEnabled: Boolean = false,
-        recoveryScope: AgentModelLoopScope? = null
+        recoveryScope: AgentModelLoopScope? = null,
+        collaborationEvidence: CollaborationCloudEvidence? = null
     ): Flow<ModelStreamEvent> = flow {
         lifetimes.run(requestId) {
-            val imageSession = CloudImageAnnotationSession(context, images, requestId)
+            val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
             var lastSequence = 0L
             val execute: suspend (AgentModelLoopRecords?) -> Unit = { records ->
                 streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,

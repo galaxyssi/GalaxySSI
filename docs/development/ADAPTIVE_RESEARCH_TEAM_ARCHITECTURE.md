@@ -7,10 +7,10 @@ GalaxySSI should operate as a durable professional team that improves verifiable
 | Requirement | Implementation / remaining acceptance |
 | --- | --- |
 | Goal and acceptance kernel | PR #3316 preserves original criteria and advances unfinished goals. Remaining: independently grounded acceptance checks, not just coordinator-reported evidence. |
-| Shared research workspace | This branch records immutable typed revisions, author identities, parent designs and addressed counterexamples; optimistic revision checks reject overwrites. Remaining: host-verified file/tool/source attachments and user-facing object inspection. |
+| Shared research workspace | Immutable typed revisions, author identities, parent designs and addressed counterexamples; optimistic revision checks reject overwrites. Managed cloud tool observations can be linked by exact host receipt and hash. Remaining: verified file/source attachments, other executor adapters and user-facing object inspection. |
 | Asynchronous collaboration | This branch compiles explicit work dependencies into the existing event-driven DAG runtime. Ready reviewers do not wait for unrelated slow members. Remaining: coordinator-triggered graph expansion while unrelated work is still running. |
 | Parallel candidate evolution | Separate versioned proposals and hypotheses can be compared, challenged and combined with exact parent references. Remaining: execution-backed candidate evaluation, branch lifecycle and automatic revised verification. |
-| Independent verification | Different-member review constraints and unverified labels are enforced. Remaining: a durable host evidence ledger, source/artifact/receipt integrity checks, domain-aware evaluators, and acceptance that cannot be self-certified. |
+| Independent verification | Different-member review constraints and unverified labels are enforced. The durable host ledger records managed cloud tool execution and rejects forged/inaccessible observation references. Remaining: native/remote adapters, source/artifact checks, domain-aware evaluators, and acceptance that cannot be self-certified. |
 | Adaptive organization | PR #3316 adds justified, deduplicated recruitment behind existing authority and concurrency limits. Remaining: budget-aware single-Agent/team selection, duplicate-work detection, subgroup allocation and contraction. |
 | Long-term team memory | Full research originals and typed object revisions survive; summaries are retrieval aids, not replacements. Remaining: longitudinal retrieval/conflict benchmarks and context assembly across large workspaces. |
 | Durable execution | Existing checkpoints, claims, delivery receipts, pause/stop and offline recovery remain in use. Remaining: new workspace/graph chaos matrix and explicitly authorized Desktop/server ownership transfer during phone unavailability. |
@@ -46,6 +46,12 @@ Independent current-batch proposals are isolated. Assigned dependency recipients
 
 Desktop `desktop_native_tools.py` also has native tool receipts and audit context; `codex_app_server.py` and `research_trace.py` preserve observed search events. A search/open event establishes that an operation occurred, not that the entire source was read or that its claim is true. These paths need a common scoped receipt reference tied to the paired executor, task, turn, member and artifact revision. Tests must reject fabricated, mismatched, failed, stale or cross-group receipts and distinguish execution integrity from scientific validation. These integrations remain pending, not implemented by the workspace storage change.
 
+### Managed cloud observation adapter
+
+`ActionExecutorAgentTeamMemberWorker` now binds each collaboration dispatch before execution. `MobileAgentActionExecutor` resolves that exact binding for the cloud path. `CloudImageAnnotationSession`, the tool boundary used by streaming cloud research, persists observations before exposing host receipts. Original output and hashes survive separately from compact model evidence; workspace publications resolve exact references and ignore forged host metadata. Non-collaboration conversations do not enable the recorder.
+
+This is execution provenance, not final goal acceptance. A failed tool cannot become a successful test merely by being recorded, and a recorded `research_audit` remains a member assessment. The coordinator's existing completion disposition is not yet replaced by an independent acceptance engine. Native and Desktop receipt adapters, artifact checks and task-specific validators must be connected before claiming that goals cannot be self-certified.
+
 ## Recorded verification: 2026-10-02
 
 - Android source, built APK metadata and installed S26U package agree on **1.4.12 (1097)**. The existing installation was upgraded without clearing application data.
@@ -55,5 +61,14 @@ Desktop `desktop_native_tools.py` also has native tool receipts and audit contex
 - The first instrumentation pass exposed a test method with a non-void inferred return type. The test entry point was corrected to `Unit`, rebuilt and rerun successfully; application code was unchanged by that correction.
 - `git diff --check` and the Kotlin source-size policy passed. `npm run check` remains blocked by pre-existing i18n-policy findings in unchanged Android, Watch, AR glasses, Desktop and documentation files.
 - No real model requests, original research reruns, contact messages or physical-control tools were executed. These tests do not establish research quality, scientific validity, real-provider resilience or a multi-agent advantage over an equal-budget single Agent.
+
+### Managed cloud evidence follow-up: 1.4.13 (1098)
+
+- Android source, built APK metadata and installed S26U package agree on **1.4.13 (1098)**. Installation preserved existing application data.
+- **225 JVM tests across 22 suites passed**, with zero failures, errors or skips. Coverage includes immutable dispatch bindings, exact original outputs, forged receipts, cross-member isolation, checkpoint retention, cancellation and evidence-storage failure without repeating a completed operation.
+- **Six isolated instrumentation cases passed on S26U**. The new case invokes the production local `research_audit` tool through the cloud tool session, reopens the encrypted observation, links it to a workspace revision and removes its fixture group. The five workspace, dependency and goal-continuity regressions also passed.
+- An additional evidence **seed/recover process pair passed**, with different process IDs (16896 and 17098). Recovery read the persisted dispatch binding and original tool observation, then deleted the fixture group. This validates process persistence, not device reboot or real-provider recovery.
+- `git diff --check` and the Kotlin source-size policy passed. The repository-wide `npm run check` still reports the pre-existing i18n-policy findings described above.
+- No live model requests, original research reruns, contact messages or physical controls were used. A recorded local assessment is not an independent scientific verifier. Native/remote adapters and independently grounded goal acceptance remain pending.
 
 See the [workspace protocol](../protocol/Collaboration-Research-Workspace-v1.md) for field meanings and trust boundaries. The full architecture remains in progress according to the completion table above.

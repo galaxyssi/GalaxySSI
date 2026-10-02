@@ -23,11 +23,14 @@ internal object CollaborationResearchArtifact {
             "\"base_revision\":0,\"kind\":\"hypothesis|evidence|counterexample|proposal|experiment|artifact|decision|question\"," +
             "\"title\":\"concise title\",\"body\":{\"content\":\"substantive design, data, finding or experiment specification\"}," +
             "\"parents\":[{\"object_id\":\"source object ID\",\"revision\":1}]," +
-            "\"resolves\":[{\"object_id\":\"counterexample or question ID\",\"revision\":1}]}]}. " +
+            "\"resolves\":[{\"object_id\":\"counterexample or question ID\",\"revision\":1}]," +
+            "\"observations\":[{\"evidence_id\":\"actual host receipt ID\",\"sha256\":\"exact receipt digest\"}]}]}. " +
             "Use workspace to improve shared, versioned research objects, not just post messages. For edits copy the exact host object_id and base_revision. " +
             "Keep competing hypotheses as distinct objects. Cross-domain combinations cite parents; repairs cite the counterexamples they address. " +
             "Counterexamples must include the specific weakness, evidence, a proposed correction and an executable discriminating check in body. " +
             "Read full originals through collaboration.recall mode=workspace before modifying them. Authors and revision hashes are assigned by the host. " +
+            "Link observations only by copying galaxyssi_evidence_receipt returned by a tool, or a mode=evidence recall result. " +
+            "A recorded tool output is not automatically a verified claim; a recorded assessment is still a member assertion. Never invent receipt IDs. " +
             "Workspace versions are reports, not independent validation. A version conflict requires re-reading and reconciling, never blind overwriting. " +
             "Use at most three candidates, eight findings and three targeted requests. Empty arrays are allowed outside proposal/verification stages. " +
             "Preserve up to eight important memory items, including negative evidence and unresolved disagreements. " +

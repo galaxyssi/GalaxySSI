@@ -1003,6 +1003,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         progressContext?.let { CollaborationProgressStore.register(it, context) }
         val groupId = context.member.context["collaboration_group_id"].orEmpty()
         if (groupId.isNotBlank()) progressContext?.let {
+            CollaborationEvidenceLedger(it).bind(AgentTeamDispatchIds.sourceMessageId("member:${context.request.idempotencyKey}"),
+                CollaborationWorkspaceAccess.from(context))
             CollaborationResearchArchive(it, groupId).record(context, context.request.goal, input = true)
         }
         provider.prepare(registration.agentId, managedRequest, action, screenProvider())
@@ -1074,6 +1076,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                     context.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L)).append('\n')
             append("Use galaxyssi.phone.collaboration.recall to search earlier group evidence or read full originals by record_id and offset. ")
             append("Use mode=workspace to browse shared hypotheses, proposals, counterexamples and artifacts; read object_id and revision with offset for full content. ")
+            append("Use mode=evidence to inspect host-recorded tool observations by evidence_id and sha256. These prove returned output, not scientific truth. ")
             append("Workspace publication receipts identify exact versions, not verification of their claims. A rejected update must be repaired in new work. ")
             append("Use mode=browse with cursor for paginated history when search is insufficient. ")
             append("A summary is a retrieval aid, not a replacement for its source. Older claims may be superseded. ")
