@@ -51,6 +51,18 @@ Workspace publication resolves `observations` against this ledger. Missing IDs, 
 
 The optional recorder is absent for ordinary non-collaboration chats. These changes currently cover Android managed streaming cloud research and the tools it actually executes. Native-tool registry observations, legacy non-streaming paths and authenticated Desktop/Codex result receipts still require explicit adapters. Missing adapters must not be represented as observed evidence.
 
+## Goal acceptance checkpoint
+
+An `achieved` assessment is a proposal to finish, not authority to end the goal. Its criteria must already have been established by an earlier plan. Each documentary criterion includes exact `delivery` and `review` references containing `object_id`, `revision` and `sha256`.
+
+The delivery is a substantive saved artifact, proposal or decision. A different person publishes a decision whose `body.acceptance_review` names the exact criterion ID and requirement, the exact target delivery reference, a `supported` verdict, a rationale and an empty `unresolved` array. Its `parents` must include the reviewed version. Missing, changed, inaccessible, cross-run or superseded revisions fail acceptance. Referenced observations must resolve to durable returned tool output; failed tools and recorded member assessments do not become supporting observations.
+
+The Android host evaluates these records at the managed member-completion boundary and places a typed acceptance receipt outside the model response text. The receipt binds the assessment, preserved criteria, original goal, root run, turn and coordinator node. It is persisted with the child result and recovered with the execution checkpoint. Text that imitates the receipt is ignored. Truncated or changed output cannot reuse it. Snapshot rendering uses the stored receipt and does not rescan workspace/evidence storage.
+
+This check establishes documentary delivery and independent review of a precise version. It does not certify scientific truth or the relevance/correctness of every sentence. Computational and physical criteria require qualified execution/experimental adapters and cannot yet pass through this documentary validator. They remain open for actual execution/resource work; they must not be relabeled as documentary or satisfied by simulation. Semantic coverage of the original goal, real file/source checks and domain-specific validation remain explicit follow-up requirements.
+
+An unverified completion returns repair feedback to the coordinator and follows the existing goal-continuation/checkpoint rules rather than publishing a successful final delivery. This does not add a step limit or override pause/stop, permissions or resource-blocker handling. Previously completed records without this gate are retained as `unverified_history`, not retroactively certified and not automatically restarted by upgrade. Every newly created goal, new execution event and continued batch enables the gate.
+
 ## Retrieval and removal
 
 Use `galaxyssi.phone.collaboration.recall` with `mode=workspace`:

@@ -32,6 +32,9 @@ internal object CollaborationResearchArtifact {
             "Link observations only by copying galaxyssi_evidence_receipt returned by a tool, or a mode=evidence recall result. " +
             "A recorded tool output is not automatically a verified claim; a recorded assessment is still a member assertion. Never invent receipt IDs. " +
             "Workspace versions are reports, not independent validation. A version conflict requires re-reading and reconciling, never blind overwriting. " +
+            "For an assigned documentary acceptance review, publish a decision whose body.acceptance_review contains criterion_id, the exact requirement, " +
+            "target:{object_id,revision,sha256}, verdict:supported|refuted|not_tested, rationale and unresolved:[...]. " +
+            "Cite the reviewed delivery in parents. Review another person's exact current version; do not review your own work or certify unperformed tests. " +
             "Use at most three candidates, eight findings and three targeted requests. Empty arrays are allowed outside proposal/verification stages. " +
             "Preserve up to eight important memory items, including negative evidence and unresolved disagreements. " +
             "Corrections must cite the earlier record; never silently replace it or promote an assumption to a fact. " +

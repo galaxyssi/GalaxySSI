@@ -56,7 +56,7 @@ class CollaborationResourceRecoveryTest {
         criterion.put("verification", "computational")
         assertEquals("continue", CollaborationGoalLoop.disposition(report.toString(), frozen))
         criterion.put("verification", "physical").put("evidence_kind", "observed")
-        assertEquals("achieved", CollaborationGoalLoop.disposition(report.toString(), frozen))
+        assertEquals("continue", CollaborationGoalLoop.disposition(report.toString(), frozen))
     }
 
     @Test fun actualRecoveryNodeIsScheduledAndSuccessfulCheckIsNotRepeated() = runBlocking {

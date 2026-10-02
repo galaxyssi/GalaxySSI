@@ -126,7 +126,20 @@ internal class CollaborationResearchWorkspace(
 
     fun read(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): JSONObject? = synchronized(LOCK) {
         if (!authorized(access.groupId) || !objectId.matches(ID) || revision < 1) return@synchronized null
-        rows.read(revisionKey(prefix(access.groupId), objectId, revision))?.let(::JSONObject)?.takeIf(access::canRead)
+        rows.read(revisionKey(prefix(access.groupId), objectId, revision))?.let(::JSONObject)?.also { saved ->
+            val hash = saved.getString("sha256")
+            val body = JSONObject(saved.toString()).apply { remove("sha256") }
+            check(digest(body.toString()) == hash && saved.getString("object_id") == objectId && saved.getInt("revision") == revision) {
+                "Research revision integrity check failed"
+            }
+        }?.takeIf(access::canRead)
+    }
+
+    fun isCurrent(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): Boolean = synchronized(LOCK) {
+        if (!authorized(access.groupId) || !objectId.matches(ID)) return@synchronized false
+        rows.read(prefix(access.groupId) + "head:" + objectId)?.let(::JSONObject)?.let {
+            access.canRead(it) && it.getInt("revision") == revision
+        } == true
     }
 
     fun browse(access: CollaborationWorkspaceAccess, cursor: String = "", limit: Int = 20): Page = synchronized(LOCK) {
