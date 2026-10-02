@@ -55,6 +55,7 @@ struct GalaxySSIConversationHubPreparedContent {
 
 struct GalaxySSIConversationHubView: View {
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -86,6 +87,7 @@ struct GalaxySSIConversationHubView: View {
   @State private var contextPolicySession: AgentConversation?
   @State private var detailsSession: AgentConversation?
   @State private var hubContentLoading = true
+  @State private var backgroundSuspended = false
   @State private var preparedHubContent = GalaxySSIConversationHubPreparedContent(
     conversations: GalaxySSIConversationHubSections(pinned: [], recent: []),
     archivedCount: 0,
@@ -476,12 +478,16 @@ struct GalaxySSIConversationHubView: View {
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
       captureContactScroll()
     }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+      suspendHubContentForBackground()
+    }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIReplyUnreadDidChange)) { _ in
       hubRefreshToken = UUID()
     }
     .onReceive(
       NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     ) { _ in
+      backgroundSuspended = false
       refreshAfterAppActivation()
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
@@ -697,6 +703,7 @@ struct GalaxySSIConversationHubView: View {
   }
 
   private var hubContentTaskID: String {
+    guard scenePhase == .active, !backgroundSuspended else { return "suspended" }
     let conversationKey = store.agentConversations.map {
       "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
     }.joined(separator: "|")
@@ -765,6 +772,7 @@ struct GalaxySSIConversationHubView: View {
   }
 
   private func prepareHubContent() async {
+    guard scenePhase == .active, !backgroundSuspended else { return }
     let generation = navigationContentGate.begin()
     hubContentLoading = true
     conversationPageLoading = true
@@ -821,7 +829,8 @@ struct GalaxySSIConversationHubView: View {
         contacts: GalaxySSIConversationHubModels.contacts(sourceContacts, query: query)
       )
     }.value
-    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
+    guard !Task.isCancelled, navigationContentGate.isCurrent(generation),
+          scenePhase == .active, !backgroundSuspended else { return }
     loadedAgentConversations = sourceConversations
     conversationPageCursor = page.nextCursor
     conversationPageHasMore = page.hasMore
@@ -831,7 +840,8 @@ struct GalaxySSIConversationHubView: View {
   }
 
   private func loadNextConversationPage() async {
-    guard selectedTab == .conversations,
+    guard scenePhase == .active, !backgroundSuspended,
+          selectedTab == .conversations,
           conversationPageHasMore,
           !conversationPageLoading else { return }
     conversationPageLoading = true
@@ -1028,6 +1038,36 @@ struct GalaxySSIConversationHubView: View {
     guard selectedTab == .contacts, !hubContentLoading, !restoringScrollAnchor,
           let scrollView = scrollViewReference.value else { return }
     savedContactOffset = Double(scrollView.contentOffset.y)
+  }
+
+  private func suspendHubContentForBackground() {
+    guard !backgroundSuspended else { return }
+    captureContactScroll()
+    backgroundSuspended = true
+    navigationContentGate.invalidate()
+    hubContentLoading = true
+    restoredScrollAnchor = false
+    restoringScrollAnchor = false
+    conversationPageLoading = false
+    conversationPageCursor = nil
+    conversationPageHasMore = false
+    loadedAgentConversations.removeAll()
+    preparedHubContent = GalaxySSIConversationHubPreparedContent(
+      conversations: GalaxySSIConversationHubSections(pinned: [], recent: []),
+      archivedCount: 0, contacts: [])
+    // Keep navigation IDs/offsets, but release previews and sheet snapshots with user text.
+    searchText = ""
+    searchExpanded = false
+    searchFocused = false
+    sessionNotice = ""
+    editingSession = nil
+    deletingSession = nil
+    mergingSession = nil
+    sessionEditDraft = nil
+    contextPolicySession = nil
+    detailsSession = nil
+    pendingContactDeletion = nil
+    pendingChatDeletion = nil
   }
 
   private func conversationRow(
