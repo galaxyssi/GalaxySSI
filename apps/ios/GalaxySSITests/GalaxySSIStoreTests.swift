@@ -195,6 +195,18 @@ final class GalaxySSIStoreTests: XCTestCase {
     )
   }
 
+  func testScreenshotCropNormalizesReverseDragAndClampsToImage() {
+    XCTAssertEqual(GalaxySSIScreenshotInputView.cropSelection(
+      from: CGPoint(x: 75, y: 150), to: CGPoint(x: 25, y: 50), size: CGSize(width: 100, height: 200)),
+      CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
+    XCTAssertEqual(GalaxySSIScreenshotInputView.cropSelection(
+      from: CGPoint(x: -20, y: -30), to: CGPoint(x: 300, y: 400), size: CGSize(width: 100, height: 200)),
+      CGRect(x: 0, y: 0, width: 1, height: 1))
+    XCTAssertNil(GalaxySSIScreenshotInputView.cropSelection(
+      from: .zero, to: CGPoint(x: 1, y: 1), size: CGSize(width: 100, height: 200)))
+    XCTAssertNil(GalaxySSIScreenshotInputView.cropSelection(from: .zero, to: .zero, size: .zero))
+  }
+
   func testConversationHubScrollPolicyRestoresAgentIdentityAndPixelOffset() {
     XCTAssertEqual(
       GalaxySSIConversationHubScrollPolicy.agentConversationId(

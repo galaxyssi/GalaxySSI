@@ -332,8 +332,10 @@ struct AgentHomeView: View {
         presentPendingPhonePublicPageExport()
       }
       .sheet(isPresented: $screenshotPickerPresented) {
-        PhotoLibraryPickerView(selectionLimit: 1) { attachment in
+        GalaxySSIScreenshotInputView { attachment in
           appendAttachment(attachment)
+          screenshotPickerPresented = false
+          guard attachments.contains(where: { $0.id == attachment.id }) else { return }
           if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             draft = t("galaxyssi.screen_assistant.prompt", "Analyze this screenshot, summarize the important content and suggest next steps.")
           }

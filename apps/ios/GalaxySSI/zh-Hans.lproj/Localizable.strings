@@ -4825,4 +4825,7 @@
 "galaxyssi.conversation_status.failed" = "失败";
 "galaxyssi.conversation_status.cancelled" = "已取消";
 "galaxyssi.screen_assistant.analyze" = "分析截图";
+"galaxyssi.screen_assistant.reset_crop" = "重置裁剪";
+"galaxyssi.screen_assistant.use_image" = "使用图片";
+"galaxyssi.screen_assistant.image_error" = "无法处理图片";
 "galaxyssi.screen_assistant.prompt" = "请分析这张截图，概括重要内容并给出下一步建议。";
