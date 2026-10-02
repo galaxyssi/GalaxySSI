@@ -1851,6 +1851,27 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testReplyIdentityRegistrationReportsValidationAndReadableBinding() throws {
+    let suite = "ReplyIdentityRegistration.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AgentTaskIdentityStore(defaults: defaults)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: "task", turnId: "turn")
+    XCTAssertFalse(store.register(contactId: "", sourceMessageId: "source", identity: identity))
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: " ", identity: identity))
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: Int64(0), identity: identity))
+    var invalid = identity
+    invalid.turnId = ""
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: "source", identity: invalid))
+    XCTAssertNil(store.identity(contactId: "agent", sourceMessageId: "source"))
+    XCTAssertTrue(store.register(contactId: "agent", sourceMessageId: "source", identity: identity))
+    XCTAssertEqual(AgentTaskIdentityStore(defaults: defaults).identity(contactId: "agent", sourceMessageId: "source"), identity)
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: "source", identity: invalid))
+    XCTAssertEqual(store.identity(contactId: "agent", sourceMessageId: "source"), identity)
+    XCTAssertTrue(store.register(contactId: "agent", sourceMessageId: Int64(7), identity: identity))
+    XCTAssertEqual(store.identity(contactId: "agent", sourceMessageId: "7"), identity)
+  }
+
   func testAssistantConversationAutoDoesNotChangeHomeDefaultOrForgetTarget() throws {
     let suite = "ScreenAssistantModelSelection.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

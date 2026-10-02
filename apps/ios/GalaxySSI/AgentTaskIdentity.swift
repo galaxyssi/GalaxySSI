@@ -206,29 +206,31 @@ final class AgentTaskIdentityStore {
     self.storageKeyPrefix = storageKeyPrefix
   }
 
+  @discardableResult
   func register(
     contactId: String,
     sourceMessageId: Int64,
     identity: AgentTaskIdentity
-  ) {
-    guard sourceMessageId > 0 else { return }
-    register(
+  ) -> Bool {
+    guard sourceMessageId > 0 else { return false }
+    return register(
       contactId: contactId,
       sourceMessageId: String(sourceMessageId),
       identity: identity
     )
   }
 
+  @discardableResult
   func register(
     contactId: String,
     sourceMessageId: String,
     identity: AgentTaskIdentity
-  ) {
+  ) -> Bool {
     guard let contactId = clean(contactId),
           let sourceMessageId = clean(sourceMessageId),
           identity.isComplete,
           let encoded = try? encoder.encode(identity) else {
-      return
+      return false
     }
     lock.lock()
     defer { lock.unlock() }
@@ -236,6 +238,8 @@ final class AgentTaskIdentityStore {
       String(decoding: encoded, as: UTF8.self),
       forKey: storageKey(contactId, sourceMessageId)
     )
+    // Detect rejected writes without claiming UserDefaults readback is a disk durability barrier.
+    return self.identity(contactId: contactId, sourceMessageId: sourceMessageId) == identity
   }
 
   func matches(payload: [String: Any]) -> Bool {
