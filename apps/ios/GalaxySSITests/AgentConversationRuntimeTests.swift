@@ -2,6 +2,43 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testConversationExecutionStatusCoversEveryTaskPhase() {
+    let expected: [AgentPhase: GalaxySSIConversationExecutionStatus] = [
+      .observing: .queued, .planning: .queued, .executing: .running, .verifying: .running,
+      .waitingConfirmation: .waitingConfirmation, .waitingResponse: .waitingResponse,
+      .paused: .paused, .blocked: .blocked, .failed: .failed, .cancelled: .cancelled, .completed: .delivering
+    ]
+    for phase in AgentPhase.allCases {
+      XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: phase, latest: nil, unread: false), expected[phase])
+    }
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: .waitingResponse, latest: nil,
+      unread: false, recovering: true), .reconnecting)
+  }
+
+  func testConversationExecutionStatusRequiresFinalReplyForCompletion() {
+    var reply = AgentTranscriptEntry(id: "reply", role: .assistant, text: "Done", timestampMillis: 100)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: .completed, latest: reply, unread: true), .completeUnread)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: .completed, latest: reply, unread: false), .read)
+    reply.id = "agent-stream-turn"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: .completed, latest: reply, unread: true), .delivering)
+    reply.id = "approval"
+    reply.dedupeKey = "approval:turn"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: .completed, latest: reply, unread: true), .delivering)
+    reply.dedupeKey = "remote-approval:turn"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: .completed, latest: reply, unread: true), .delivering)
+  }
+
+  func testConversationExecutionFallbackAndAnimationScope() {
+    let user = AgentTranscriptEntry(id: "question", role: .user, text: "Hello", timestampMillis: 100)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: nil, latest: user, unread: false), .waitingResponse)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(phase: nil, latest: nil, unread: true), .read)
+    let animated: Set<GalaxySSIConversationExecutionStatus> = [.queued, .running, .waitingResponse, .reconnecting, .delivering]
+    for state in GalaxySSIConversationExecutionStatus.allCases {
+      XCTAssertEqual(state.animated, animated.contains(state))
+    }
+    XCTAssertEqual(GalaxySSIConversationExecutionStatus.completeUnread.systemImage, "checkmark.circle.fill")
+  }
+
   func testAgentProcessClockStopsOnceAtMatchingFinalReply() {
     let process = AgentTranscriptEntry(
       id: "process",

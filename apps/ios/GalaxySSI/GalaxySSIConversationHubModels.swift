@@ -1,5 +1,65 @@
 import Foundation
 
+enum GalaxySSIConversationExecutionStatus: String, CaseIterable {
+  case queued, running, waitingResponse, reconnecting, delivering
+  case completeUnread, read, waitingConfirmation, paused, blocked, failed, cancelled
+
+  var animated: Bool {
+    switch self {
+    case .queued, .running, .waitingResponse, .reconnecting, .delivering: return true
+    default: return false
+    }
+  }
+
+  var systemImage: String {
+    if animated { return "arrow.triangle.2.circlepath" }
+    switch self {
+    case .completeUnread: return "checkmark.circle.fill"
+    case .waitingConfirmation, .paused, .blocked: return "pause.circle.fill"
+    case .failed: return "exclamationmark.circle.fill"
+    case .cancelled: return "xmark.circle"
+    default: return "bubble.left"
+    }
+  }
+}
+
+enum GalaxySSIConversationExecutionPolicy {
+  static func task(conversationID: String, latest: AgentTranscriptEntry?, tasks: [AgentTaskRecord]) -> AgentTaskRecord? {
+    tasks.filter { task in
+      guard task.sessionId == conversationID else { return false }
+      guard let latest else { return true }
+      guard latest.conversationId.isEmpty || latest.conversationId == conversationID else { return false }
+      if !latest.taskId.isEmpty { return task.taskId == latest.taskId }
+      return latest.turnId.isEmpty || task.taskId == latest.turnId
+    }.max {
+      if $0.createdAtMillis != $1.createdAtMillis { return $0.createdAtMillis < $1.createdAtMillis }
+      return $0.updatedAtMillis < $1.updatedAtMillis
+    }
+  }
+
+  static func resolve(phase: AgentPhase?, latest: AgentTranscriptEntry?, unread: Bool,
+                      recovering: Bool = false) -> GalaxySSIConversationExecutionStatus {
+    let finalReply = latest.map {
+      $0.role == .assistant && !AgentTranscriptRenderPolicy.isLiveStream($0) &&
+        !$0.dedupeKey.hasPrefix("approval:") && !$0.dedupeKey.hasPrefix("remote-approval:")
+    } ?? false
+    switch phase {
+    case .observing, .planning: return .queued
+    case .executing, .verifying: return .running
+    case .waitingResponse: return recovering ? .reconnecting : .waitingResponse
+    case .waitingConfirmation: return .waitingConfirmation
+    case .paused: return .paused
+    case .blocked: return .blocked
+    case .failed: return .failed
+    case .cancelled: return .cancelled
+    case .completed: return finalReply ? (unread ? .completeUnread : .read) : .delivering
+    case nil:
+      if latest?.role == .user { return .waitingResponse }
+      return finalReply && unread ? .completeUnread : .read
+    }
+  }
+}
+
 enum GalaxySSIConversationHubTab: String, CaseIterable, Identifiable {
   case conversations
   case contacts
