@@ -12,6 +12,7 @@ internal object CollaborationGoalLoop {
     const val PREVIOUS = "collaboration_research_goal_previous"
     const val RETRY_AT = "collaboration_research_goal_retry_at"
     const val FINISHED_WORK = "collaboration_research_goal_finished_work"
+    const val FINISHED_AUTHORS = "collaboration_research_goal_finished_authors"
     const val WORK_ID = "collaboration_research_goal_work_id"
     private const val STALLED = "collaboration_research_goal_stalled"
     const val FORMAT = "galaxyssi.goal-assessment.v1"
@@ -42,7 +43,8 @@ internal object CollaborationGoalLoop {
            "reason":"specific capability or workload gap; why existing members cannot cover it"}],
          "work":[{"id":"stable work ID; change only for a materially different task/artifact revision",
            "member":"exact person UUID from roster OR recruit:stable-vacancy-id","stage":"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE",
-           "assignment":"concrete next work with required artifact, evidence and check"}],
+           "assignment":"concrete next work with required artifact, evidence and check",
+           "depends_on":["other stable work IDs"],"dependency_policy":"success|terminal","independent_review":false}],
          "blockers":[{"id":"stable-blocker-id","kind":"resource|permission|connectivity|provider|capacity",
            "reason":"specific unavailable resource or authority","resume_when":"observable condition",
            "alternatives":[{"option":"checked substitute/simulation/platform","status":"unavailable|needs_approval|not_applicable",
@@ -50,6 +52,10 @@ internal object CollaborationGoalLoop {
         Keep every established criterion ID and requirement; do not weaken or drop unmet requirements. Cover the entire ORIGINAL goal.
         Continue while any feasible work remains, including computation, source verification and artifact creation even if a lab is unavailable.
         Choose the number and type of steps from evidence gaps, not a fixed recipe. Parallel alternatives are welcome.
+        Express producer/reviewer/repair dependencies with depends_on. Each ready work item starts without waiting for unrelated members.
+        Use success for work requiring an actual artifact; terminal for diagnosing failed work. The default is success.
+        An independent review must name its target work and use a different member from every target author.
+        Keep alternative candidates separate and plan their verification in parallel. A vote or ranking is not proof.
         Assign independently obtained evidence and cross-checks where useful; a text review is not an executed test.
         Recruit only when a distinct capability/workload gap justifies it, with concrete work assigned in this batch.
         Reuse existing members and vacancy IDs; do not create more people to bypass capacity, permissions or an unavailable provider.
@@ -135,6 +141,19 @@ internal object CollaborationGoalLoop {
         return finished
     }
 
+    fun finishedAuthors(record: AgentTeamExecutionRecord): Map<String, String> {
+        val saved = runCatching { JSONObject(record.request.context[FINISHED_AUTHORS]?.toString() ?: "{}") }.getOrDefault(JSONObject())
+        val result = saved.keys().asSequence().associateWithTo(linkedMapOf()) { saved.getString(it) }
+        val succeeded = record.events.mapNotNull { it.result }.filter { it.status == AgentSubagentStatus.SUCCEEDED }
+            .mapTo(hashSetOf()) { it.childId }
+        record.definition.members.filter { it.memberId in succeeded }.forEach { member ->
+            val id = member.context[WORK_ID]
+            val person = member.context[CollaborationResearchWorkflow.PERSON]
+            if (!id.isNullOrBlank() && !person.isNullOrBlank()) result.putIfAbsent(id, person)
+        }
+        return result
+    }
+
     /** Atomic store mutation. Old dispatch identities are never reused for newly planned work. */
     fun advance(record: AgentTeamExecutionRecord, expectedPrimary: String, now: Long, wakeBlocked: Boolean,
                 recruitmentNames: () -> List<String> = { emptyList() }): AgentTeamExecutionRecord? {
@@ -145,6 +164,7 @@ internal object CollaborationGoalLoop {
         val raw = previousResult?.output.orEmpty()
         val priorCriteria = record.request.context[CRITERIA]?.toString() ?: "[]"
         val finished = finishedWork(record)
+        val authors = finishedAuthors(record)
         val disposition = disposition(raw, priorCriteria, finished)
         if (disposition == "achieved" || disposition == "blocked" && !wakeBlocked) return null
         if (!wakeBlocked && (record.request.context[RETRY_AT]?.toString()?.toLongOrNull() ?: 0L) > now) return null
@@ -169,18 +189,20 @@ internal object CollaborationGoalLoop {
                 it.optString("stage") in setOf("EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE")
         }
         // A malformed plan is repaired by the coordinator, never partially executed or silently dropped.
-        fun workId(item: JSONObject): String = item.optString("id").ifBlank {
-            UUID.nameUUIDFromBytes("${item.optString("member")}:${item.optString("stage")}:${item.optString("assignment")}".toByteArray()).toString()
-        }
         val planned = if (recruitment.error.isBlank() && validWork.size == requested.length()) validWork else emptyList()
         val recovery = if (assessment != null)
             CollaborationResourceRecovery.jobs(assessment.getJSONArray("blockers"), people, coordinatorPerson, finished) else emptyList()
-        val work = (planned + recovery).distinctBy(::workId).filterNot { workId(it) in finished }
-        val nodes = work.mapIndexed { index, item ->
+        val graph = CollaborationWorkGraph.compile(planned + recovery, finished, authors)
+        val work = graph.work
+        val dispatchIds = work.associate { CollaborationWorkGraph.id(it) to nodeId("work:${CollaborationWorkGraph.id(it)}") }
+        val nodes = work.map { item ->
             val person = byPerson.getValue(item.getString("member"))
-            person.copy(instanceId = nodeId("work:$index"), deliveryMode = AgentDeliveryMode.OBSERVE,
-                objective = item.getString("assignment"), dependsOnAgentIds = emptySet(),
-                context = person.context + mapOf(ROSTER to "false", WORK_ID to workId(item), CollaborationResearchWorkflow.STAGE to item.getString("stage")))
+            person.copy(instanceId = dispatchIds.getValue(CollaborationWorkGraph.id(item)), deliveryMode = AgentDeliveryMode.OBSERVE,
+                objective = item.getString("assignment"), dependsOnAgentIds = CollaborationWorkGraph.dependencies(item).mapNotNullTo(linkedSetOf()) { dispatchIds[it] },
+                context = person.context + mapOf(ROSTER to "false", WORK_ID to CollaborationWorkGraph.id(item),
+                    CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
+                    CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
+                    CollaborationResearchWorkflow.STAGE to item.getString("stage")))
         }
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
@@ -196,11 +218,16 @@ internal object CollaborationGoalLoop {
         val retryDelay = if (stalled > 0 && !wakeBlocked) (30_000L shl (stalled - 1).coerceAtMost(5)).coerceAtMost(900_000L) else 0L
         return record.copy(
             definition = record.definition.copy(primaryInstanceId = primary,
-                members = people.map { it.copy(deliveryMode = AgentDeliveryMode.IGNORE, dependsOnAgentIds = emptySet()) } + nodes + assessmentNode),
+                members = (if (graph.error.isBlank()) people else existingPeople)
+                    .map { it.copy(deliveryMode = AgentDeliveryMode.IGNORE, dependsOnAgentIds = emptySet()) } + nodes + assessmentNode),
             request = record.request.copy(context = record.request.context + mapOf(ROUND to round.toString(),
                 CRITERIA to criteria.toString(), PREVIOUS to raw.ifBlank { "Previous attempt failed: ${previousResult?.errorMessage.orEmpty()}" },
                 CollaborationGoalRecruitment.FEEDBACK to recruitment.error,
+                CollaborationWorkGraph.FEEDBACK to graph.error.ifBlank {
+                    if (validWork.size != requested.length()) "Invalid member, stage or assignment; repair the entire work plan." else ""
+                },
                 FINISHED_WORK to JSONArray(finished.toList()).toString(),
+                FINISHED_AUTHORS to JSONObject(authors).toString(),
                 RETRY_AT to (now + retryDelay).toString(), STALLED to stalled.toString())),
             events = emptyList(), interruptedAtMillis = now.coerceAtLeast(1L), updatedAtMillis = now)
     }

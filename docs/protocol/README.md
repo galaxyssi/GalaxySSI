@@ -10,6 +10,7 @@ Additional protocol contracts:
 - [Super Agent Rich Output](Super-Agent-Rich-Output.md)
 - [Self-Evolution V2 API](Self-Evolution-V2-API.md)
 - [Web Evidence Pack v1](Web-Evidence-Pack-v1.md)
+- [Collaboration Research Workspace v1](Collaboration-Research-Workspace-v1.md)
 
 ## Agent Conversation Identity
 

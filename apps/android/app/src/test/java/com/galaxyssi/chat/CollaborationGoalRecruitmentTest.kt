@@ -188,4 +188,36 @@ class CollaborationGoalRecruitmentTest {
             assertEquals(2, peak.get())
         }
     }
+
+    @Test fun rejectedRecruitAlsoRemovesTransitiveDependentWork() = runBlocking {
+        val plan = assessment()
+        val producer = plan.getJSONArray("work").getJSONObject(0).put("id", "produce")
+        plan.put("work", JSONArray().put(producer)
+            .put(JSONObject().put("id", "review").put("member", "lead").put("stage", "VERIFY")
+                .put("assignment", "Check the recruited producer").put("depends_on", JSONArray().put("produce")))
+            .put(JSONObject().put("id", "revise").put("member", "lead").put("stage", "REVISE")
+                .put("assignment", "Repair findings").put("depends_on", JSONArray().put("review"))))
+        val store = InMemoryAgentTeamExecutionStore { names }
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            runtime.start(definition(), request()) { AgentSubagentOutput(plan.toString()) }.await()
+            store.advanceGoal("run", "lead", 1000)
+            val primary = store.snapshot("run")!!.primaryMemberId
+            store.reconcileGoalRecruits("run", primary) { emptyMap() }
+            val checkpoint = store.resumeCheckpoint("run")!!
+            assertEquals(1, checkpoint.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
+        }
+    }
+
+    @Test fun invalidDependencyPlanDoesNotPublishUnassignedRecruits() = runBlocking {
+        val plan = assessment()
+        plan.getJSONArray("work").getJSONObject(0).put("id", "self").put("depends_on", JSONArray().put("self"))
+        val store = InMemoryAgentTeamExecutionStore { names }
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            runtime.start(definition(), request()) { AgentSubagentOutput(plan.toString()) }.await()
+            store.advanceGoal("run", "lead", 1000)
+            val checkpoint = store.resumeCheckpoint("run")!!
+            assertTrue(checkpoint.definition.members.none { it.context[CollaborationGoalRecruitment.PUBLISHED] == "false" })
+            assertTrue(checkpoint.request.context[CollaborationWorkGraph.FEEDBACK].toString().isNotBlank())
+        }
+    }
 }
