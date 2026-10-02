@@ -65,15 +65,19 @@ internal class CollaborationResearchWorkspace(
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
-    fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis()): JSONObject = synchronized(LOCK) {
+    fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis(),
+                candidateTask: JSONObject? = null): JSONObject = synchronized(LOCK) {
         require(access.groupId.isNotBlank() && access.runId.isNotBlank() && access.turnId.isNotBlank() &&
             access.personId.isNotBlank() && access.nodeId.isNotBlank()) { "A host-owned research identity is required" }
         if (!authorized(access.groupId)) return@synchronized failure("Group access was removed")
-        val artifact = CollaborationResearchArtifact.decode(raw) ?: return@synchronized JSONObject()
-        val changes = artifact.optJSONArray("workspace") ?: return@synchronized JSONObject()
+        if (candidateTask != null && !accessAuthorized(access)) return@synchronized failure("Candidate member access was removed")
+        val artifact = CollaborationResearchArtifact.decode(raw) ?: return@synchronized (if (candidateTask == null) JSONObject()
+            else failure("Candidate task requires a structured workspace publication"))
+        val changes = artifact.optJSONArray("workspace") ?: return@synchronized (if (candidateTask == null) JSONObject()
+            else failure("Candidate task requires a workspace revision/event"))
         val prefix = prefix(access.groupId)
         val publicationKey = prefix + "publication:" + digest("${access.runId}:${access.nodeId}")
-        val inputHash = digest(raw)
+        val inputHash = digest(if (candidateTask == null) raw else JSONArray().put(raw).put(candidateTask).toString())
         rows.read(publicationKey)?.let { saved ->
             val prior = JSONObject(saved)
             return@synchronized if (prior.getString("input_sha256") == inputHash) prior.getJSONObject("result") else
@@ -81,7 +85,13 @@ internal class CollaborationResearchWorkspace(
         }
         val writes = linkedMapOf<String, String>()
         val result = runCatching {
+            candidateTask?.let { CollaborationCandidateEvolution.checkTask(this, access, it) }
             val refs = JSONArray()
+            val revisions = mutableListOf<JSONObject>()
+            val changingIds = (0 until changes.length()).map { changes.getJSONObject(it) }
+                .map { it.optString("object_id").ifBlank { digest("${access.groupId}:${access.personId}:${it.optString("id")}") } }.toSet()
+            val candidates = CollaborationResearchCandidates(access, { id, version -> read(access, id, version) },
+                { id, version -> isCurrent(access, id, version) }, changingIds)
             val changedIds = hashSetOf<String>()
             repeat(changes.length()) { index ->
                 val item = changes.getJSONObject(index)
@@ -101,8 +111,10 @@ internal class CollaborationResearchWorkspace(
                 val head = rows.read(headKey)?.let(::JSONObject)
                 require(requestedId.isBlank() == (head == null)) { "Use a new local id to create, or an existing host object_id to revise" }
                 val base = item.optInt("base_revision", 0)
+                require(base in 0 until Int.MAX_VALUE) { "Invalid workspace base revision" }
                 require(base == (head?.getInt("revision") ?: 0)) { "Version conflict for $id; inspect the current revision before editing" }
                 require(head == null || access.canRead(head)) { "Current independent work cannot be read or overwritten" }
+                require(head == null || read(access, id, base)?.toString() == head.toString()) { "Workspace head integrity check failed" }
                 require(head == null || head.getString("kind") == kind) { "An object's kind cannot be changed" }
                 if (head != null && kind == CollaborationReviewContract.KIND) {
                     val previous = requireNotNull(read(access, id, base)) { "Previous review is missing or isolated" }
@@ -111,6 +123,9 @@ internal class CollaborationResearchWorkspace(
                     require(reviewBinding(previous.getJSONObject("body")) == reviewBinding(body)) {
                         "A typed review revision must retain its review type, exact target and criterion binding"
                     }
+                }
+                listOf("parents", "resolves").forEach { key ->
+                    require(!item.has(key) || item.optJSONArray(key) != null) { "$key must be an array" }
                 }
                 val parents = item.optJSONArray("parents") ?: JSONArray()
                 val resolves = item.optJSONArray("resolves") ?: JSONArray()
@@ -123,7 +138,10 @@ internal class CollaborationResearchWorkspace(
                     val linked = requireNotNull(read(access, link.getString("object_id"), link.getInt("revision"))) {
                         "A parent or counterevidence reference is missing or isolated"
                     }
-                    if (links === resolves) require(linked.getString("kind") in setOf("counterexample", "question")) {
+                    require(!link.has("sha256") || link.getString("sha256") == linked.getString("sha256")) { "Workspace reference digest mismatch" }
+                    if (links === resolves) require(linked.getString("kind") in setOf("counterexample", "question") ||
+                        kind == CollaborationResearchCandidates.CANDIDATE &&
+                        linked.optJSONObject("host_candidate_event")?.optString("operation") == "challenge") {
                         "resolves must reference a preserved counterexample or open question"
                     }
                 } }
@@ -134,17 +152,28 @@ internal class CollaborationResearchWorkspace(
                     .put("round", access.round).put("node_id", access.nodeId).put("person_id", access.personId)
                     .put("recorded_at", now).put("evidence_state", "member_reported_not_verified")
                     .put("previous_sha256", head?.optString("sha256").orEmpty())
+                candidates.validate(item, head, revision)
+                listOf("parents", "resolves").forEach { key ->
+                    val links = revision.getJSONArray(key)
+                    revision.put(key, JSONArray((0 until links.length()).map { linkIndex ->
+                        val link = links.getJSONObject(linkIndex)
+                        CollaborationResearchCandidates.reference(requireNotNull(read(access, link.getString("object_id"), link.getInt("revision"))))
+                    }))
+                }
                 revision.put("sha256", digest(revision.toString()))
                 writes[revisionKey(prefix, id, base + 1)] = revision.toString()
                 writes[headKey] = revision.toString()
                 refs.put(reference(revision))
+                revisions += revision
             }
+            candidateTask?.let { CollaborationCandidateEvolution.checkPublication(it, revisions) }
             JSONObject().put("status", "recorded").put("revisions", refs)
                 .put("trust", "authorship_and_version_recorded_not_scientifically_verified")
         }.getOrElse { writes.clear(); failure(it.message ?: "Invalid workspace update") }
         // Heads and the fence token must become visible in the same storage transaction.
         if (writes.isNotEmpty()) writes[mutationKey(access.groupId)] = newMutationToken()
-        writes[publicationKey] = JSONObject().put("input_sha256", inputHash).put("result", result).toString()
+        writes[publicationKey] = JSONObject().put("input_sha256", inputHash).put("result", result)
+            .apply { candidateTask?.let { put("candidate_task_sha256", digest(it.toString())) } }.toString()
         rows.commit(writes)
         result
     }
@@ -163,6 +192,56 @@ internal class CollaborationResearchWorkspace(
                 "Research revision integrity check failed"
             }
         }
+
+    /** Resolve host publication receipts, never member-authored result text. */
+    fun publicationRevisions(access: CollaborationWorkspaceAccess, nodeId: String): List<JSONObject> = synchronized(LOCK) {
+        if (!authorized(access.groupId)) return@synchronized emptyList()
+        val publication = rows.read(prefix(access.groupId) + "publication:" + digest("${access.runId}:$nodeId"))
+            ?.let(::JSONObject)?.getJSONObject("result") ?: return@synchronized emptyList()
+        if (publication.optString("status") != "recorded") return@synchronized emptyList()
+        val refs = publication.getJSONArray("revisions")
+        (0 until refs.length()).map { index ->
+            val ref = refs.getJSONObject(index)
+            val saved = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Publication revision missing or isolated" }
+            check(CollaborationResearchCandidates.same(saved, ref) && saved.getString("run_id") == access.runId &&
+                saved.getString("turn_id") == access.turnId && saved.getString("node_id") == nodeId) { "Publication revision identity changed" }
+            observationReferences(access, ref)
+            saved
+        }
+    }
+
+    fun observationReferences(access: CollaborationWorkspaceAccess, ref: JSONObject): JSONArray = synchronized(LOCK) {
+        val saved = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Observation owner is missing or isolated" }
+        require(CollaborationResearchCandidates.same(saved, ref)) { "Observation owner digest changed" }
+        val refs = saved.getJSONArray("host_observations")
+        if (refs.length() == 0) JSONArray() else requireNotNull(evidence) { "Host evidence lookup is unavailable" }.invoke(access, refs)
+    }
+
+    fun replayCandidateTask(access: CollaborationWorkspaceAccess, task: JSONObject): JSONObject? = synchronized(LOCK) {
+        require(authorized(access.groupId) && accessAuthorized(access)) { "Candidate member access was removed" }
+        CollaborationCandidateEvolution.checkIdentity(access, task)
+        val saved = rows.read(prefix(access.groupId) + "publication:" + digest("${access.runId}:${access.nodeId}"))
+            ?.let(::JSONObject) ?: return@synchronized null
+        require(saved.optString("candidate_task_sha256") == digest(task.toString())) { "Candidate dispatch task changed" }
+        val result = saved.getJSONObject("result")
+        if (result.optString("status") == "recorded")
+            CollaborationCandidateEvolution.checkPublication(task, publicationRevisions(access, access.nodeId))
+        JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+            .put("summary", "Restored durable candidate publication; original revisions and observations remain in scoped workspace recall. No task was repeated.")
+            .put("candidates", JSONArray()).put("findings", JSONArray()).put("workspace_receipt", result)
+    }
+
+    fun candidateReviewApplies(access: CollaborationWorkspaceAccess, ref: JSONObject): Boolean = synchronized(LOCK) {
+        val saved = read(access, ref.optString("object_id"), ref.optInt("revision")) ?: return@synchronized false
+        if (!CollaborationResearchCandidates.same(saved, ref) || saved.getString("kind") != CollaborationResearchCandidates.EVENT ||
+            !isCurrent(access, saved.getString("object_id"), saved.getInt("revision"))) return@synchronized false
+        val event = saved.optJSONObject("host_candidate_event") ?: return@synchronized false
+        if (event.optString("operation") != "review") return@synchronized false
+        val target = event.getJSONArray("targets").getJSONObject(0)
+        val candidate = read(access, target.getString("object_id"), target.getInt("revision")) ?: return@synchronized false
+        CollaborationResearchCandidates.same(candidate, target) && CollaborationResearchCandidates.active(candidate) &&
+            isCurrent(access, target.getString("object_id"), target.getInt("revision"))
+    }
 
     fun isCurrent(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): Boolean = synchronized(LOCK) {
         if (!authorized(access.groupId) || !objectId.matches(ID)) return@synchronized false
@@ -279,7 +358,14 @@ internal class CollaborationResearchWorkspace(
                 val previous = candidate.getInt("revision") - 1
                 candidate = if (previous > 0) rows.read(revisionKey(prefix(access.groupId), candidate.getString("object_id"), previous))?.let(::JSONObject) else null
             }
-            candidate?.let(::reference)
+            candidate?.let { visible ->
+                read(access, visible.getString("object_id"), visible.getInt("revision"))?.let { saved ->
+                    reference(saved).apply {
+                        if (saved.optJSONObject("host_candidate_event")?.optString("operation") == "review")
+                            put("review_applicability", if (candidateReviewApplies(access, this)) "current" else "stale_or_isolated")
+                    }
+                }
+            }
         }
         Page(revisions, selected.lastOrNull()?.takeIf { keys.size > selected.size })
     }
@@ -288,7 +374,8 @@ internal class CollaborationResearchWorkspace(
         private val LOCK = Any()
         private const val DATABASE = "galaxyssi_collaboration_workspace_v1"
         private val ID = Regex("[a-f0-9]{64}")
-        val KINDS = setOf("hypothesis", "evidence", "counterexample", "proposal", "experiment", "artifact", "decision", "question", CollaborationReviewContract.KIND)
+        val KINDS = setOf("hypothesis", "evidence", "counterexample", "proposal", "experiment", "artifact", "decision", "question",
+            CollaborationReviewContract.KIND, CollaborationResearchCandidates.CANDIDATE, CollaborationResearchCandidates.EVENT)
         private fun digest(value: String) = AgentNativeJsonCodec.sha256(value)
         private fun prefix(group: String) = "group:${digest(group)}:"
         private fun mutationKey(group: String) = "mutation:${digest(group)}"
@@ -299,6 +386,7 @@ internal class CollaborationResearchWorkspace(
         private fun reference(revision: JSONObject) = JSONObject().apply {
             listOf("object_id", "revision", "kind", "title", "person_id", "node_id", "sha256", "evidence_state", "recorded_at")
                 .forEach { key -> put(key, revision.get(key)) }
+            listOf("host_candidate", "host_candidate_event").forEach { key -> revision.optJSONObject(key)?.let { put(key, it) } }
         }
 
         fun remove(context: Context, group: String) = CollaborationResearchWorkspace(context).removeGroup(group)

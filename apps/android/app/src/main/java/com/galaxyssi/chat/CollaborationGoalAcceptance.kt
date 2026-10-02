@@ -54,6 +54,7 @@ internal class CollaborationGoalAcceptance(
                     "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation", now)
         return runCatching {
             val assessment = requireNotNull(CollaborationGoalLoop.decode(raw)) { "Invalid goal assessment" }
+            require(!CollaborationCandidateEvolution.requested(assessment)) { "Candidate cycle work remains requested" }
             val prior = JSONArray(criteria)
             require(prior.length() > 0) { "Establish the original acceptance criteria before submitting completion" }
             val current = assessment.getJSONArray("criteria")

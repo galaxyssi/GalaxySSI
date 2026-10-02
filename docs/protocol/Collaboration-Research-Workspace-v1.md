@@ -15,7 +15,7 @@ Entries in the coordinator's existing `work` array may add:
 
 The host derives round-specific dispatch IDs from the stable work IDs. Duplicate IDs, self-dependencies, unknown dependencies, cycles and self-authored independent reviews reject the whole work graph. Rejection returns feedback to the coordinator; it does not partially dispatch the plan or publish its proposed recruits. Historical author attribution comes from persisted successful dispatches, not a newly supplied model claim.
 
-Ready nodes execute under the existing concurrency and authority controls. Failure skips success-dependent nodes while terminal-policy diagnostics can continue. Independent branches need not wait for unrelated slow work. The final coordinator assessment still waits for the declared graph; appending new nodes while that graph is running is not implemented by this version.
+Ready nodes execute under the existing concurrency and authority controls. Failure skips success-dependent nodes while terminal-policy diagnostics can continue. Independent branches need not wait for unrelated slow work. Opted-in research teams accept append-only `galaxyssi.work-expansion.v1` checkpoints while the graph is running. The final coordinator assessment waits for both original work and every accepted addition.
 
 ## Research object publication
 
@@ -26,10 +26,10 @@ An optional `workspace` array extends `galaxyssi.research-artifact.v1`. Each ent
 | `id` | Stable local ID for a new object, up to 160 characters. |
 | `object_id` | Existing host-assigned ID for an update; empty for a new object. |
 | `base_revision` | Exact expected head revision; zero when creating. |
-| `kind` | `hypothesis`, `evidence`, `counterexample`, `proposal`, `experiment`, `artifact`, `decision`, `question` or `acceptance_review`. |
+| `kind` | `hypothesis`, `evidence`, `counterexample`, `proposal`, `experiment`, `artifact`, `decision`, `question`, `acceptance_review`, `candidate` or `candidate_event`. |
 | `title` | Nonempty title, up to 240 characters. |
 | `body` | Nonempty JSON object preserving the substantive original content. |
-| `parents` | Exact `{object_id, revision}` references used to derive this version. |
+| `parents` | Exact `{object_id, revision, sha256}` references used to derive this version. |
 | `resolves` | Exact references to preserved counterexamples or questions being addressed. |
 | `observations` | Exact `{evidence_id, sha256}` references copied from host tool receipts. |
 
@@ -38,6 +38,30 @@ New object IDs are derived from the group, author and local ID. Group, run, turn
 All updates in one publication are validated before any revision is committed. A stale base revision rejects the complete publication. Revisions, head indexes and publication receipts commit atomically in encrypted storage. A dispatch can replay its identical publication, but cannot publish a different result under the same identity. Corrections require new work and an explicit new revision. Storage errors propagate instead of reporting a successful publication.
 
 The host removes any member-supplied `workspace_receipt` before attaching the actual receipt. A recorded receipt establishes authorship and version integrity only. Objects are labeled `member_reported_not_verified`; neither an `outcome` field nor an independent member's agreement establishes scientific truth.
+
+### Candidate history and automatic documentary checks
+
+`candidate` bodies preserve substantive `content` and a `candidate` object with `operation`, `rationale` and exact inherited `criteria`. Operations are `propose`, `revise`, `combine` and `retire`. Revision/retirement names its exact active head as the sole parent; combination creates a new object from at least two distinct active parents. Retirement preserves the original content and criteria. There is no arbitrary eight-parent limit. Non-proposal changes require host-observed evidence.
+
+`candidate_event` bodies contain a `candidate_event` object with `operation`, exact `targets`, a shared `criterion`, `check`, `rationale` and `outcome`. Compare uses at least two distinct candidates and reports `differentiated` or `inconclusive`; challenge/review uses one exact active version and reports `supported`, `refuted` or `not_tested`. Challenges include a correction. Independent review cannot be authored by any candidate contributor or ancestor author; supported review has no unresolved blockers and cites returned host tool originals. Events are immutable. Updating or retiring the candidate invalidates the applicability of its old review without deleting that review.
+
+Both work expansions and goal assessments accept optional `candidate_cycles` entries:
+
+```json
+{
+  "target": {"object_id": "host-id", "revision": 1, "sha256": "host-digest"},
+  "criterion_id": "established-criterion",
+  "editor": "authorized-person",
+  "reviewer": "independent-person",
+  "producer_work_ids": ["exact-current-producer"]
+}
+```
+
+The criterion must already preserve documentary verification and required original observation types. Current-round live targets require explicit producer work with successful host result and read authority. The host owns `candidate-cycle:` work IDs and the task binding; models cannot supply or rewrite either. Its checkpoint records exact targets, phases, original criteria, assigned identities and pending requests. It shares the existing encrypted graph transaction, not a new model-controlled task store.
+
+A refuted exact review can append `revise`, then `review` of the new version, under existing runtime capacity and pause/stop controls. These transitions do not need another coordinator model call. A different candidate can proceed concurrently. Publication must contain the single assigned exact revision/review; after a committed publication and process loss, the worker replays the host receipt instead of reexecuting. Unknown/in-flight dispatches wait for authoritative reconciliation. Terminal errors retain feedback for coordinator replanning; they are never converted to successful verification.
+
+These checks enforce documentary lineage, scope and execution integrity. They do not rank scientific merit, certify a physical experiment, or make a majority vote true. Pending cycles prevent goal acceptance; settled cycles do not by themselves allow acceptance. Computational/physical candidate evaluators and real-provider repair reliability need separate acceptance.
 
 ## Host-observed tool evidence
 

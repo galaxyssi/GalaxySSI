@@ -20,7 +20,7 @@ internal object CollaborationResearchArtifact {
             "\"memory\":[{\"kind\":\"constraint|decision|rejected_route|open_question\",\"text\":\"important item to preserve\"," +
             "\"source\":\"original evidence reference\",\"supersedes\":\"earlier record_id, or empty\"}]," +
             "\"workspace\":[{\"id\":\"stable local ID for a NEW object\",\"object_id\":\"existing host ID when revising, otherwise empty\"," +
-            "\"base_revision\":0,\"kind\":\"hypothesis|evidence|counterexample|proposal|experiment|artifact|decision|question|acceptance_review\"," +
+            "\"base_revision\":0,\"kind\":\"hypothesis|evidence|counterexample|proposal|experiment|artifact|decision|question|acceptance_review|candidate|candidate_event\"," +
             "\"title\":\"concise title\",\"body\":{\"content\":\"substantive design, data, finding or experiment specification\"}," +
             "\"parents\":[{\"object_id\":\"source object ID\",\"revision\":1}]," +
             "\"resolves\":[{\"object_id\":\"counterexample or question ID\",\"revision\":1}]," +
@@ -32,12 +32,12 @@ internal object CollaborationResearchArtifact {
             "Link observations only by copying galaxyssi_evidence_receipt returned by a tool, or a mode=evidence recall result. " +
             "A recorded tool output is not automatically a verified claim; a recorded assessment is still a member assertion. Never invent receipt IDs. " +
             "Workspace versions are reports, not independent validation. A version conflict requires re-reading and reconciling, never blind overwriting. " +
-            CollaborationReviewContract.instructions() +
+            CollaborationCandidateEvolution.artifactInstructions() + CollaborationReviewContract.instructions() +
             "Cite the reviewed delivery in parents. Review another person's exact current version; do not review your own work or certify unperformed tests. " +
-            "Use at most three candidates, eight findings and three targeted requests. Empty arrays are allowed outside proposal/verification stages. " +
+            "Keep top-level candidate/findings notes and targeted requests concise; preserve complete alternatives in versioned workspace originals. Empty arrays are allowed outside proposal/verification stages. " +
             "Preserve up to eight important memory items, including negative evidence and unresolved disagreements. " +
             "Corrections must cite the earlier record; never silently replace it or promote an assumption to a fact. " +
-            "Keep the entire artifact concise (about 2500 characters). Summary must include the useful proposal or critique, not just status. " +
+            "Keep summary concise, but preserve full workspace originals and required typed fields. Summary must include the useful proposal or critique, not just status. " +
             "An outcome is your reported assessment, not host-verified truth. Never invent a source, observation or completed experiment."
     }
 

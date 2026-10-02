@@ -153,8 +153,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1105
-        versionName = "1.4.20"
+        versionCode = 1106
+        versionName = "1.4.21"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -188,6 +188,8 @@ android {
     }
 
     sourceSets {
+        getByName("test").java.srcDir("src/testFixtures/collaboration")
+        getByName("androidTest").java.srcDir("src/testFixtures/collaboration")
         getByName("main") {
             jniLibs.srcDir(runtimeJniRoot)
             jniLibs.srcDir(qnnCompatJniRoot)
