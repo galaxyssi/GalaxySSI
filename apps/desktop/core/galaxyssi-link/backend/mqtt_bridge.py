@@ -1996,13 +1996,29 @@ def _dispatch_codex_event(task_id: str, event: dict) -> None:
             codex_task_callbacks.pop(task_id, None)
 
 
+def _codex_collaboration_recall(task_id, arguments, active):
+    from collaboration_recall_bridge import broker
+
+    def snapshot():
+        task = agent_task_manager.get(task_id)
+        return task.public() if task is not None else None
+
+    def publish(request):
+        route = request["client_route_id"]
+        return get_client(route) is not None and _publish_phone_payload(client,
+            {"scheme": "signal", "_client_route_id": route}, request, durable=False)
+
+    return broker.query(snapshot, arguments, publish, active=active)
+
+
 def _codex_server(executable: str, env: dict) -> CodexAppServer:
     global codex_app_server
     previous = None
     with codex_task_callbacks_lock:
         if codex_app_server is None or codex_app_server.executable != executable:
             previous = codex_app_server
-            codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event)
+            codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event,
+                collaboration_recall=_codex_collaboration_recall)
         server = codex_app_server
     if previous is not None:
         previous.close()
@@ -7473,6 +7489,11 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
             include_capability_manifest=_capability_manifest_requested(payload),
             include_blob_configuration=payload.get("request_blob_configuration") is True,
         )
+        return
+
+    if msg_type == "collaboration_recall_result":
+        from collaboration_recall_bridge import broker
+        broker.receive(payload, client_route_id)
         return
 
     if msg_type == "agent_task_evidence_request":

@@ -1,6 +1,8 @@
 package com.galaxyssi.chat
 
 import android.graphics.Bitmap
+import android.app.KeyguardManager
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
@@ -31,7 +33,9 @@ class CollaborationLiveEvidenceDeviceTest {
     @Test fun remoteAuthorIndependentReviewerAndHostAcceptance() = runBlocking {
         assumeTrue("Requires explicit authorization for real provider calls",
             InstrumentationRegistry.getArguments().getString("collaborationLiveEvidence") == "true")
-        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        val headless = InstrumentationRegistry.getArguments().getString("collaborationLiveHeadless") == "true"
+        val multipart = InstrumentationRegistry.getArguments().getString("collaborationLiveMultipart") == "true"
+        val scenario = if (headless) null else ActivityScenario.launch(MainActivity::class.java)
         val token = UUID.randomUUID().toString()
         val run = "live-evidence-$token"
         val turn = "turn-$token"
@@ -45,20 +49,32 @@ class CollaborationLiveEvidenceDeviceTest {
         var touchedWindow = false
         var fixtureFailure: Throwable? = null
         try {
-            waitUntil("activity hydration") {
-                var ready = false
-                scenario.onActivity { ready = !it.initialAgentHydrationPending &&
-                    it.findViewById<View>(R.id.startupConnectingView).visibility != View.VISIBLE }
-                ready
+            if (headless) {
+                val transcripts = AgentTranscriptStore(context)
+                previous = transcripts.activeConversation().id
+                group = transcripts.createAgentConversation("Evidence acceptance").id
+                assertEquals("Headless fixture must not change the active conversation", previous, transcripts.activeConversation().id)
+                GalaxySSIMqttClient.connect(context)
+            } else {
+                waitUntil("activity hydration") {
+                    var ready = false
+                    scenario?.onActivity { ready = !it.initialAgentHydrationPending &&
+                        it.findViewById<View>(R.id.startupConnectingView).visibility != View.VISIBLE }
+                    ready
+                }
+                scenario?.onActivity {
+                    keptScreenOn = (it.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
+                    it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    touchedWindow = true
+                    previous = it.agentTranscriptStore.activeConversation().id
+                    it.createAgentConversation()
+                    group = it.agentTranscriptStore.activeConversation().id
+                }
             }
-            scenario.onActivity {
-                keptScreenOn = (it.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
-                it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                touchedWindow = true
-                previous = it.agentTranscriptStore.activeConversation().id
-                it.createAgentConversation()
-                group = it.agentTranscriptStore.activeConversation().id
-            }
+            File(context.getExternalFilesDir(null), "collaboration-live-evidence-mode.json").writeText(JSONObject()
+                .put("run_id", run).put("headless", headless).put("multipart", multipart).put("activity_launched", scenario != null)
+                .put("device_locked", context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
+                .put("interactive", context.getSystemService(PowerManager::class.java).isInteractive).toString())
             assertNotEquals("Fixture must not reuse the user's selected conversation", previous, group)
             val transcripts = AgentTranscriptStore(context)
             transcripts.append(AgentTranscriptRole.PROCESS, "Live evidence acceptance fixture",
@@ -81,8 +97,10 @@ class CollaborationLiveEvidenceDeviceTest {
                 role = "Independent documentary reviewer", independentReview = true)
             CollaborationGroupStore(context).update(group) { it.copy(members = listOf(author, reviewer),
                 coordinatorId = author.id, workflow = CollaborationWorkflow.RESEARCH) }
-            scenario.onActivity { it.refreshCollaborationStrip(); it.refreshAgentTranscriptWindow(group) }
-            val requirement = "Document the observed command output for fixture $token, including numbers 1,2,4,8, their sum and mean, and the observation limitations."
+            scenario?.onActivity { it.refreshCollaborationStrip(); it.refreshAgentTranscriptWindow(group) }
+            val requirement = if (multipart) "Document the observed command output for fixture $token. " +
+                "Include numbers 1,2,4,8 and their sum and mean. State observation limitations." else
+                "Document the observed command output for fixture $token, including numbers 1,2,4,8, their sum and mean, and the observation limitations."
             val criteria = JSONArray().put(JSONObject().put("id", "doc").put("requirement", requirement)
                 .put("verification", "documentary").put("evidence_kind", "observed").put("status", "open")
                 .put(CollaborationEvidenceRequirements.FIELD, JSONArray().put(JSONObject()
@@ -95,13 +113,20 @@ class CollaborationLiveEvidenceDeviceTest {
                 context = mapOf("collaboration_group_id" to group, "collaboration_name" to person.name,
                     "collaboration_provider" to person.providerLabel, CollaborationResearchWorkflow.PERSON to person.id,
                     CollaborationResearchWorkflow.STAGE to stage, CollaborationGoalLoop.ENABLED to "1"))
-            val definition = AgentTeamDefinition(run, codex.id, listOf(
+            val mappingInstruction = if (multipart) "Publish TWO separate mapping artifacts, id=fixture-goal-map-a for source-1/source-2 " +
+                "and id=fixture-goal-map-b for source-3, each with body.semantic_goal_mapping and the same full host goal/criteria hashes. " else
+                "Also publish a separate artifact id=fixture-goal-map, title=Original goal mapping, with body.semantic_goal_mapping. "
+            val reviewInstruction = if (multipart) "Independently review BOTH saved mapping parts; publish separate acceptance_review objects " +
+                "id=fixture-coverage-review-a and id=fixture-coverage-review-b, each targeting its corresponding exact mapping " +
+                "and reviewing ONLY that mapping's source IDs. " else
+                "Publish a SECOND workspace kind=acceptance_review object id=fixture-coverage-review with body.semantic_coverage_review, "
+            val members = mutableListOf(
                 member(author, "author", "EXECUTE", "Use the terminal to print fixture token $token " +
                     "and compute the sum and mean of 1,2,4,8. In PowerShell use Write-Output '$token'; Write-Output (1+2+4+8); Write-Output ((1+2+4+8)/4). " +
                     "Avoid nested shells and variable quoting. A failed read-only attempt may be corrected; do not repeat a successful command. " +
                     "Do not inspect repository files, use the web, operate the phone, or write files. " +
                     "Publish a workspace artifact with id=fixture-document and body.content documenting the actual returned output and its limits. " +
-                    "Also publish a separate artifact id=fixture-goal-map, title=Original goal mapping, with body.semantic_goal_mapping. " +
+                    mappingInstruction +
                     "Copy goal_sha256 and criteria_sha256 from the host goal-coverage source in acceptance feedback; map every host source ID to criterion doc. " +
                     "Do not reproduce source text, count offsets or invent hashes. You author this mapping; the other member independently reviews it. " +
                     "This is documentary evidence, not a qualified computational or scientific certification. Do not invent receipt IDs; " +
@@ -115,17 +140,31 @@ class CollaborationLiveEvidenceDeviceTest {
                     "The required source is origin=desktop_codex_tool, tool=codex.commandExecution. Browse mode=evidence, " +
                     "read its original with evidence_id/sha256, and cite that original receipt, not just a receipt for reading the author's document. " +
                     "Use verdict=supported only if the document agrees with the recorded output, otherwise refuted/not_tested with unresolved issues. " +
-                    "Also independently compare every host source segment against criterion doc and the author's saved fixture-goal-map. " +
-                    "Publish a SECOND workspace kind=acceptance_review object id=fixture-coverage-review with body.semantic_coverage_review, " +
-                    "targeting the exact mapping reference, citing it in parents, and explicitly reviewing every source ID and criterion_ids:[doc]. " +
+                    "Also independently compare every host source segment against criterion doc and the author's saved mapping artifacts. " +
+                    reviewInstruction + "Use body.semantic_coverage_review, " +
+                    "targeting the exact mapping reference, citing it in parents, and explicitly reviewing each source ID assigned to that mapping and criterion_ids:[doc]. " +
                     "Keep global and per-segment verdict, rationale and unresolved fields. Do not author or edit the mapping you review. " +
-                    "Do not run another command, browse the web, or operate other apps.", setOf("author")),
-                member(author, "deliver", "DELIVER", "Assess only this documentary fixture. Use the exact saved author/review versions " +
+                    "Do not run another command, browse the web, or operate other apps.", setOf("author"))
+            )
+            if (multipart) members += member(author, "catalogue", "EXECUTE", "Create only a saved coverage directory for the existing two mapping parts. " +
+                "Read exact references from the author and reviewer dependency workspace_receipts. Publish ONE kind=artifact id=fixture-coverage-directory " +
+                "with body.semantic_goal_manifest:{format:'galaxyssi.semantic-goal-manifest.v1',goal_sha256:the full host goal hash," +
+                "criteria_sha256:the full host criteria hash,parts:[{mapping:exact map-a reference,review:exact coverage-review-a reference}," +
+                "{mapping:exact map-b reference,review:exact coverage-review-b reference}]}. Cite all four references in parents. " +
+                "Do not substitute the delivery review for a coverage review. Use only scoped collaboration_recall when receipts are omitted: " +
+                "mode=goal_contract for paged dependency context, or mode=workspace for exact saved versions. " +
+                "Do not run external tools, change mappings, add claims, or certify the result. " +
+                "Return research-artifact JSON only.", setOf("author", "review"))
+            val coverageInstruction = if (multipart) "plus goal_coverage:{manifest:exact saved fixture-coverage-directory reference from catalogue}. " else
+                "plus goal_coverage:{mapping:exact author mapping reference,review:exact peer coverage-review reference}. "
+            members += member(author, "deliver", "DELIVER", "Assess only this documentary fixture. Use the exact saved author/review versions " +
                     "in the dependency workspace receipts. If valid, return achieved with the preserved criterion and delivery/review references, " +
-                    "plus goal_coverage:{mapping:exact author mapping reference,review:exact peer coverage-review reference}. " +
+                    coverageInstruction +
                     "The peer's delivery review and coverage review are separate objects; do not interchange them. " +
-                    "No new tools, experiments, members or unrelated work. Do not claim scientific or general team superiority.", setOf("author", "review"))
-            ), primaryInstanceId = "deliver", visibilityMode = AgentTeamVisibilityMode.VISIBLE)
+                    "Only scoped collaboration_recall is allowed to read missing dependency receipts or saved originals. " +
+                    "No external tools, experiments, members or unrelated work. Do not claim scientific or general team superiority.",
+                if (multipart) setOf("author", "review", "catalogue") else setOf("author", "review"))
+            val definition = AgentTeamDefinition(run, codex.id, members, primaryInstanceId = "deliver", visibilityMode = AgentTeamVisibilityMode.VISIBLE)
             val request = AgentRunRequest(group, turn, turn, runId = run,
                 goal = requirement, idempotencyKey = run, context = mapOf(CollaborationGoalLoop.CRITERIA to criteria,
                     CollaborationGoalLoop.ROUND to "1", CollaborationGoalLoop.ACCEPTANCE_FEEDBACK to
@@ -136,7 +175,7 @@ class CollaborationLiveEvidenceDeviceTest {
                 publisher.publish(snapshot)
                 report(snapshot)
             })
-            handle = runtime.start(definition, request, ActionExecutorAgentTeamMemberWorker(context))
+            handle = runtime.start(definition, request, fixtureWorker(headless))
             val result = withTimeout(12 * 60_000L) { handle.await() }
             report(result.snapshot)
             assertEquals(reportText(result.snapshot), AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
@@ -157,16 +196,26 @@ class CollaborationLiveEvidenceDeviceTest {
                 workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))!!
             } }
             val review = savedReviews.single { it.getJSONObject("body").has("acceptance_review") }
-            val coverageReview = savedReviews.single { it.getJSONObject("body").has(CollaborationSemanticGoalCoverage.REVIEW) }
-            assertEquals(reviewer.id, coverageReview.getString("person_id"))
-            val mappingRef = coverageReview.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW).getJSONObject("target")
-            val mapping = workspace.read(access, mappingRef.getString("object_id"), mappingRef.getInt("revision"))!!
-            assertEquals(author.id, mapping.getString("person_id"))
-            assertEquals(CollaborationSemanticGoalCoverage.source(requirement).getString("goal_sha256"),
-                mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING).getString("goal_sha256"))
+            val coverageReviews = savedReviews.filter { it.getJSONObject("body").has(CollaborationSemanticGoalCoverage.REVIEW) }
+            assertEquals(if (multipart) 2 else 1, coverageReviews.size)
+            coverageReviews.forEach { coverageReview ->
+                assertEquals(reviewer.id, coverageReview.getString("person_id"))
+                val mappingRef = coverageReview.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW).getJSONObject("target")
+                val mapping = workspace.read(access, mappingRef.getString("object_id"), mappingRef.getInt("revision"))!!
+                assertEquals(author.id, mapping.getString("person_id"))
+                assertEquals(CollaborationSemanticGoalCoverage.source(requirement).getString("goal_sha256"),
+                    mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING).getString("goal_sha256"))
+            }
             val assessment = requireNotNull(CollaborationGoalLoop.decode(result.snapshot.members.single { it.memberId == "deliver" }.output))
-            assertEquals(coverageReview.getString("object_id"), assessment.getJSONObject("goal_coverage").getJSONObject("review").getString("object_id"))
-            assertEquals(mappingRef.getString("object_id"), assessment.getJSONObject("goal_coverage").getJSONObject("mapping").getString("object_id"))
+            val resolvedCoverage = CollaborationGoalCoverageManifest.resolve(assessment.getJSONObject("goal_coverage"),
+                assessment.getJSONArray("criteria"), requirement) { ref ->
+                requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision")))
+            }
+            assertEquals(coverageReviews.map { it.getString("object_id") }.toSet(),
+                resolvedCoverage.parts.map { it.review.getString("object_id") }.toSet())
+            assertEquals(if (multipart) 1 else 0, resolvedCoverage.manifests.size)
+            if (multipart) assertEquals("catalogue", workspace.read(access,
+                resolvedCoverage.manifests.single().getString("object_id"), 1)!!.getString("node_id"))
             assertTrue("Review must reference observed evidence", review.getJSONArray("host_observations").length() > 0)
             val directRefs = review.getJSONArray("host_observations")
             val originals = observations.filter { it.getString("origin") == "desktop_codex_tool" &&
@@ -191,8 +240,9 @@ class CollaborationLiveEvidenceDeviceTest {
             })
             assertEquals(reportText(result.snapshot), "achieved", result.snapshot.goalDisposition)
             assertTrue(result.subagentResult.results.single { it.childId == "deliver" }.collaborationAcceptance?.accepted == true)
-            scenario.onActivity { it.refreshAgentTranscriptWindow(group) }
-            screenshot()
+            scenario?.onActivity { it.refreshAgentTranscriptWindow(group) }
+            if (!headless) screenshot()
+            else assertEquals("Background fixture changed the active conversation", previous, AgentTranscriptStore(context).activeConversation().id)
         } catch (failure: Throwable) {
             fixtureFailure = failure
             throw failure
@@ -218,9 +268,9 @@ class CollaborationLiveEvidenceDeviceTest {
                 } finally {
                     runCatching { runtime?.close() }.exceptionOrNull()?.let(::remember)
                     runCatching {
-                        if (previous.isNotBlank()) {
+                        if (!headless && previous.isNotBlank()) {
                             AgentTranscriptStore(context).switchConversation(previous)
-                            scenario.onActivity {
+                            scenario?.onActivity {
                                 it.agentTranscriptStore.switchConversation(previous)
                                 it.refreshCollaborationStrip()
                                 it.refreshAgentTranscriptWindow(previous)
@@ -228,11 +278,11 @@ class CollaborationLiveEvidenceDeviceTest {
                         }
                     }.exceptionOrNull()?.let(::remember)
                     runCatching {
-                        if (touchedWindow && !keptScreenOn) scenario.onActivity {
+                        if (touchedWindow && !keptScreenOn) scenario?.onActivity {
                             it.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         }
                     }.exceptionOrNull()?.let(::remember)
-                    runCatching { scenario.close() }.exceptionOrNull()?.let(::remember)
+                    runCatching { scenario?.close() }.exceptionOrNull()?.let(::remember)
                 }
                 cleanupFailure?.let { failure ->
                     val original = fixtureFailure
@@ -241,6 +291,21 @@ class CollaborationLiveEvidenceDeviceTest {
             }
         }
         Unit
+    }
+
+    private fun fixtureWorker(headless: Boolean): ActionExecutorAgentTeamMemberWorker {
+        if (!headless) return ActionExecutorAgentTeamMemberWorker(context)
+        val provider = ActionExecutorAgentProvider(
+            registrationSource = { AppStoreAgentConnectorRegistry(context).registrations() },
+            delegate = AndroidAgentActionExecutor(context),
+            runStartReceipts = EncryptedAgentRunStartReceiptStore(context),
+            healthLedger = EncryptedAgentProviderHealthLedger(context),
+            managedResponses = EncryptedAgentManagedResponseLedger(context),
+            globalRunSlots = AgentGlobalRunSlotStore(context)
+        )
+        return ActionExecutorAgentTeamMemberWorker(provider, AgentAdapterDirectory().apply { register(provider) },
+            screenProvider = { ScreenContext(foregroundApp = "GalaxySSI fixture", pageTitle = "Synthetic evidence acceptance") },
+            progressContext = context.applicationContext)
     }
 
     private suspend fun stopFixture(run: String, group: String, store: AgentTeamExecutionStore,
