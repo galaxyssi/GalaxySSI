@@ -8,7 +8,8 @@ import java.util.UUID
 internal class CollaborationEvidenceAccessRevoked : IllegalStateException("Group access was removed")
 
 internal enum class CollaborationEvidenceOrigin(val wireValue: String) {
-    ANDROID_CLOUD_TOOL("android_cloud_tool"), ANDROID_NATIVE_TOOL("android_native_tool")
+    ANDROID_CLOUD_TOOL("android_cloud_tool"), ANDROID_NATIVE_TOOL("android_native_tool"),
+    DESKTOP_CODEX_TOOL("desktop_codex_tool")
 }
 
 /** Host observations establish what ran and what it returned, never the truth of a model's conclusion. */

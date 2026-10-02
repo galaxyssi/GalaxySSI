@@ -1020,13 +1020,17 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         provider.prepare(registration.agentId, managedRequest, action, screenProvider())
         return try {
             val result = adapterWorker.execute(context.copy(request = managedRequest))
+            progressContext?.let { AndroidCollaborationRemoteEvidence.await(it, context) }
             if (groupId.isNotBlank()) progressContext?.let {
                 CollaborationResearchArchive(it, groupId).record(context, result.content)
             }
             CollaborationResearchWorkflow.stage(context.member)?.let { stage ->
                 val artifact = CollaborationResearchArtifact.decode(result.content)
                 artifact?.remove("workspace_receipt")
+                artifact?.remove("remote_evidence_import")
                 if (artifact != null && groupId.isNotBlank() && progressContext != null) {
+                    val remoteEvidence = AndroidCollaborationRemoteEvidence.summary(progressContext, context)
+                    if (remoteEvidence.length() > 0) artifact.put("remote_evidence_import", remoteEvidence)
                     val receipt = CollaborationResearchWorkspace(progressContext).publish(
                         CollaborationWorkspaceAccess.from(context), result.content)
                     if (receipt.length() > 0) artifact.put("workspace_receipt", receipt)
@@ -1094,6 +1098,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             append("Use galaxyssi.phone.collaboration.recall to search earlier group evidence or read full originals by record_id and offset. ")
             append("Use mode=workspace to browse shared hypotheses, proposals, counterexamples and artifacts; read object_id and revision with offset for full content. ")
             append("Use mode=evidence to inspect host-recorded tool observations by evidence_id and sha256. These prove returned output, not scientific truth. ")
+            append("Imported Desktop observations preserve the exact provider payload, not necessarily a complete source. Missing receipts are evidence gaps; never repeat a completed side effect just to obtain one. ")
             append("Workspace publication receipts identify exact versions, not verification of their claims. A rejected update must be repaired in new work. ")
             append("Use mode=browse with cursor for paginated history when search is insufficient. ")
             append("A summary is a retrieval aid, not a replacement for its source. Older claims may be superseded. ")
@@ -1183,6 +1188,7 @@ class AgentProductionTeamController(
         maxConcurrency = AgentDeviceProfileDetector.detect(context).maxTeamConcurrency
     )
 ) : Closeable {
+    private val evidenceContext = context.applicationContext
     private val collaborationProjection = CollaborationTranscriptPublisher(context)
     private val collaborationGroups = CollaborationGroupStore(context)
     private val durableControl = AgentTeamDurableControl(context)
@@ -1494,6 +1500,10 @@ class AgentProductionTeamController(
     private fun applyLateResponse(record: AgentManagedResponseRecord): Boolean {
         // The live runtime owns its event sequence. Orphan responses remain durable until it exits.
         if (record.supervisorRunId in executingRuns || activeHandles.containsKey(record.supervisorRunId)) return false
+        if (AndroidCollaborationRemoteEvidence.pending(evidenceContext, record.conversationId, record.sourceMessageId)) {
+            AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
+            return false
+        }
         val applied = store.applyLateResponse(record)
         if (applied) {
             managedResponses.markApplied(record.ownerRunId)

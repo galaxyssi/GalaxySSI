@@ -16,7 +16,7 @@ Encrypted originals and authenticated descriptors live in separate indexed table
 
 New evidence is not admitted to terminal/paused/takeover tasks. Exact prior observations remain replayable. Deleting the owning task cascades to its evidence and pages. An evidence storage failure does not change a completed tool result, manufacture a durable receipt or rerun its side effect. Current coverage is explicitly incomplete; the index always declares `provider_history_complete=false`. This adapter does not reconstruct events lost before capture or automatically retry a failed archive write.
 
-This initial adapter covers the paired-phone Codex callback path. Worker-leased/remote-worker execution must use its own authorized writer adapter, rather than bypassing the lease fence. Other Agents, native Desktop tools outside this path and Android collaboration-ledger import are separate follow-up work.
+This adapter covers the paired-phone Codex callback path. Worker-leased/remote-worker execution must use its own authorized writer adapter, rather than bypassing the lease fence. Other Agents and native Desktop tools outside this path are separate follow-up work. Android import behavior is specified below.
 
 ## Read-only MQTT queries
 
@@ -36,4 +36,12 @@ Set `mode=index` and `after_sequence=0` initially. Responses contain up to 20 im
 
 Set `mode=page`, the exact `evidence_id` and `sha256` from a descriptor, and zero-based `page_index`. Responses include `data_b64`, `page_sha256`, `page_count`, `total_bytes` and the full-body `sha256`. Each decoded page is at most 16 KiB. Authenticate the transport, verify page hashes, concatenate in order and verify total bytes and full SHA-256 before importing the original. UTF-8 decoding happens after concatenation because a character can span page boundaries.
 
-The original JSON contains the contract, host scope/generation/trust, coverage and `observation` with provider identity and unmodified operational item. Consumers must preserve that provenance and cannot promote it to independent scientific validation. Android import must additionally resolve the exact managed-member dispatch and group authorization; that consumer is not included in this initial Desktop provider.
+The original JSON contains the contract, host scope/generation/trust, coverage and `observation` with provider identity and unmodified operational item. Consumers must preserve that provenance and cannot promote it to independent scientific validation.
+
+## Android collaboration import
+
+The Android consumer additionally resolves the immutable source-message binding to the exact group, run, turn, node and digital person. It only schedules supported paired Codex completions; ordinary chat is excluded. Received pages must match the nonce-bound requested executor/scope/generation/reference/index. Original bytes are verified before UTF-8 parsing and retained as `original_json`, alongside the authenticated Desktop ID, original SHA-256 and original evidence ID in the encrypted collaboration ledger. Local immutable IDs are namespaced by the full remote import identity. Model-controlled fields never supply the member binding or override host trust/status.
+
+Index pages contain at most twenty observations, but no total observation limit exists. Verified pages and index remainders survive interruption; ledger-first/cursor-second commit ordering allows exact replay after process death without executing anything remotely. Queries stay out of the durable send queue. A unique read-only worker owns retry/backoff and persists round-robin position. Import pauses with the team and ends without new receipts after revocation, stop, supersession, explicit unavailability or integrity rejection.
+
+To bound phone parsing memory, an individual original larger than 8 MiB is not imported. Its bytes are not silently truncated; the handoff reports the count of such records and partial coverage. The original remains retrievable on Desktop. Timeout leaves the checkpoint pending rather than reporting success or rerunning the provider. A completed import means all supported-size observations advertised by this archive were copied, not that the provider captured its entire history, sources were fully read, or conclusions are verified.
