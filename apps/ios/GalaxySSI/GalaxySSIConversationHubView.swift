@@ -1,6 +1,31 @@
 import SwiftUI
 import UIKit
 
+// Android #3231 ic_conversation_read: preserve its 24-unit path and 20-point artwork size.
+struct GalaxySSIConversationReadShape: Shape {
+  func path(in rect: CGRect) -> Path {
+    var path = Path()
+    path.move(to: CGPoint(x: 8, y: 4))
+    path.addLine(to: CGPoint(x: 16, y: 4))
+    path.addCurve(to: CGPoint(x: 21, y: 9),
+      control1: CGPoint(x: 19.314, y: 4), control2: CGPoint(x: 21, y: 5.686))
+    path.addLine(to: CGPoint(x: 21, y: 13))
+    path.addCurve(to: CGPoint(x: 16, y: 18),
+      control1: CGPoint(x: 21, y: 16.314), control2: CGPoint(x: 19.314, y: 18))
+    path.addLine(to: CGPoint(x: 10, y: 18))
+    path.addLine(to: CGPoint(x: 5, y: 21))
+    path.addLine(to: CGPoint(x: 5, y: 17.4))
+    path.addCurve(to: CGPoint(x: 3, y: 13),
+      control1: CGPoint(x: 3.65, y: 16.6), control2: CGPoint(x: 3, y: 15.1))
+    path.addLine(to: CGPoint(x: 3, y: 9))
+    path.addCurve(to: CGPoint(x: 8, y: 4),
+      control1: CGPoint(x: 3, y: 5.686), control2: CGPoint(x: 4.686, y: 4))
+    path.closeSubpath()
+    return path.applying(CGAffineTransform(a: rect.width / 24, b: 0, c: 0,
+      d: rect.height / 24, tx: rect.minX, ty: rect.minY))
+  }
+}
+
 private struct GalaxySSIConversationExecutionIcon: View {
   let status: GalaxySSIConversationExecutionStatus
   @Environment(\.scenePhase) private var scenePhase
@@ -22,6 +47,11 @@ private struct GalaxySSIConversationExecutionIcon: View {
             .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
             .frame(width: 24, height: 24)
         }
+      } else if status == .read {
+        GalaxySSIConversationReadShape()
+          .stroke(color(status.foregroundRGB),
+            style: StrokeStyle(lineWidth: 2 * 20.0 / 24.0, lineCap: .round, lineJoin: .round))
+          .frame(width: 20, height: 20)
       } else {
         Image(systemName: status.systemImage)
           .font(.system(size: 24, weight: .regular))
