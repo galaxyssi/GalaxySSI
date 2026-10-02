@@ -133,7 +133,8 @@ internal object CollaborationResearchPrompt {
         "Use mode=workspace to browse and read exact object_id/revision originals; use mode=evidence for evidence_id/sha256 observations. " +
         "Native recall also provides earlier-history search and mode=browse. Do not search the web for these internal tools. " +
         "Imported Desktop observations preserve provider payloads, not necessarily complete sources or scientific truth. " +
-        "Never repeat a completed side effect to obtain a missing receipt. Repair rejected publications in new work. " +
+        "Never repeat a completed side effect to obtain a missing receipt. When the host returns publication validation feedback, " +
+        "correct the same uncommitted draft in this assignment using saved evidence only. Once a publication succeeds, revisions require new work. " +
         "A summary is a retrieval aid, not a replacement for its source. Recall original constraints and counterevidence before revising decisions. " +
         "Current-batch independent proposals remain isolated. Use only supplied roster UUIDs for targeted requests; names are not IDs. " +
         "Requests grant no authorization and are delivered at a safe checkpoint. Continue feasible assigned work while waiting. " +

@@ -65,26 +65,59 @@ internal class CollaborationResearchWorkspace(
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
+    fun enrollPublication(access: CollaborationWorkspaceAccess, stage: CollaborationResearchStage,
+                          candidateTask: JSONObject? = null) = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        candidateTask?.let { CollaborationCandidateEvolution.checkIdentity(access, it) }
+        CollaborationPublicationJournal(rows, access).enroll(stage, candidateTask)
+    }
+
+    fun publicationContract(access: CollaborationWorkspaceAccess): JSONObject? = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationPublicationJournal(rows, access).contract()
+    }
+
+    fun publicationCheckpoint(access: CollaborationWorkspaceAccess): JSONObject? = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationPublicationJournal(rows, access).checkpoint()
+    }
+
+    fun submitPublication(access: CollaborationWorkspaceAccess, raw: String): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        val contract = requireNotNull(CollaborationPublicationJournal(rows, access).contract()) {
+            "Publication repair requires a host-owned contract"
+        }
+        publishInternal(access, raw, System.currentTimeMillis(), contract.optJSONObject("candidate_task"), recoverable = true)
+    }
+
     fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis(),
-                candidateTask: JSONObject? = null): JSONObject = synchronized(LOCK) {
+                candidateTask: JSONObject? = null): JSONObject = publishInternal(access, raw, now, candidateTask, false)
+
+    private fun publishInternal(access: CollaborationWorkspaceAccess, raw: String, now: Long,
+                                candidateTask: JSONObject?, recoverable: Boolean): JSONObject = synchronized(LOCK) {
         require(access.groupId.isNotBlank() && access.runId.isNotBlank() && access.turnId.isNotBlank() &&
             access.personId.isNotBlank() && access.nodeId.isNotBlank()) { "A host-owned research identity is required" }
         if (!authorized(access.groupId)) return@synchronized failure("Group access was removed")
         if (candidateTask != null && !accessAuthorized(access)) return@synchronized failure("Candidate member access was removed")
-        val artifact = CollaborationResearchArtifact.decode(raw) ?: return@synchronized (if (candidateTask == null) JSONObject()
-            else failure("Candidate task requires a structured workspace publication"))
-        val changes = artifact.optJSONArray("workspace") ?: return@synchronized (if (candidateTask == null) JSONObject()
-            else failure("Candidate task requires a workspace revision/event"))
+        val artifact = CollaborationResearchArtifact.decode(raw)
+        if (artifact == null && candidateTask == null && !recoverable) return@synchronized JSONObject()
+        val changes = artifact?.optJSONArray("workspace")
+        if (artifact != null && changes == null && candidateTask == null && !recoverable) return@synchronized JSONObject()
         val prefix = prefix(access.groupId)
         val publicationKey = prefix + "publication:" + digest("${access.runId}:${access.nodeId}")
         val inputHash = digest(if (candidateTask == null) raw else JSONArray().put(raw).put(candidateTask).toString())
         rows.read(publicationKey)?.let { saved ->
             val prior = JSONObject(saved)
-            return@synchronized if (prior.getString("input_sha256") == inputHash) prior.getJSONObject("result") else
-                failure("A different result already owns this dispatch; create new work for a revision")
+            if (!recoverable || prior.getJSONObject("result").optString("status") == "recorded") {
+                return@synchronized if (prior.getString("input_sha256") == inputHash) prior.getJSONObject("result") else
+                    failure("A different result already owns this dispatch; create new work for a revision")
+            }
         }
         val writes = linkedMapOf<String, String>()
         val result = runCatching {
+            requireNotNull(artifact) { "Return a valid ${CollaborationResearchArtifact.FORMAT} object with summary, candidates and findings" }
+            val changes = changes ?: if (candidateTask == null) JSONArray() else
+                throw IllegalArgumentException("Candidate task requires a workspace revision/event")
             candidateTask?.let { CollaborationCandidateEvolution.checkTask(this, access, it) }
             val refs = JSONArray()
             val revisions = mutableListOf<JSONObject>()
@@ -169,11 +202,16 @@ internal class CollaborationResearchWorkspace(
             candidateTask?.let { CollaborationCandidateEvolution.checkPublication(it, revisions) }
             JSONObject().put("status", "recorded").put("revisions", refs)
                 .put("trust", "authorship_and_version_recorded_not_scientifically_verified")
-        }.getOrElse { writes.clear(); failure(it.message ?: "Invalid workspace update") }
+        }.getOrElse {
+            if (recoverable && it !is IllegalArgumentException && it !is org.json.JSONException) throw it
+            writes.clear()
+            failure(it.message ?: "Invalid workspace update")
+        }
         // Heads and the fence token must become visible in the same storage transaction.
         if (writes.isNotEmpty()) writes[mutationKey(access.groupId)] = newMutationToken()
         writes[publicationKey] = JSONObject().put("input_sha256", inputHash).put("result", result)
             .apply { candidateTask?.let { put("candidate_task_sha256", digest(it.toString())) } }.toString()
+        if (recoverable) writes.putAll(CollaborationPublicationJournal(rows, access).outcomeWrites(raw, result, now))
         rows.commit(writes)
         result
     }
@@ -224,6 +262,8 @@ internal class CollaborationResearchWorkspace(
             ?.let(::JSONObject) ?: return@synchronized null
         require(saved.optString("candidate_task_sha256") == digest(task.toString())) { "Candidate dispatch task changed" }
         val result = saved.getJSONObject("result")
+        if (result.optString("status") == "rejected" && CollaborationPublicationJournal(rows, access).contract() != null)
+            return@synchronized null
         if (result.optString("status") == "recorded")
             CollaborationCandidateEvolution.checkPublication(task, publicationRevisions(access, access.nodeId))
         JSONObject().put("format", CollaborationResearchArtifact.FORMAT)

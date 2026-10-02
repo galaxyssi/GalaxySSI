@@ -16,6 +16,7 @@ import com.galaxyssi.chat.voice.modelstream.OkHttpCloudModelStreamClient
 import com.galaxyssi.chat.voice.modelstream.ToolCallDeltaAssembler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -69,11 +70,12 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         lifetimes.run(requestId) {
             val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
             val textPolicy = CloudConversationTextPolicy(collaborationEvidence != null)
+            val publication = collaborationEvidence?.let { CollaborationPublicationRecovery.create(context, it.access) }
             var lastSequence = 0L
             val execute: suspend (AgentModelLoopRecords?) -> Unit = { records ->
                 streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
                     readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled,
-                    imageSession, records, textPolicy).collect { event ->
+                    imageSession, records, textPolicy, publication).collect { event ->
                     if (event is ModelStreamEvent.TextDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.ToolCallDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.Completed) {
@@ -104,7 +106,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         citationPreviewEnabled: Boolean,
         imageSession: CloudImageAnnotationSession,
         records: AgentModelLoopRecords?,
-        textPolicy: CloudConversationTextPolicy
+        textPolicy: CloudConversationTextPolicy,
+        publication: CollaborationPublicationRecovery?
     ): Flow<ModelStreamEvent> = flow {
         var useStreaming = contact.optBoolean("cloud_streaming_enabled", true)
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -160,7 +163,43 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         var emittedText = false
         var connected = false
         var lastFinishReason: String? = null
+        var publicationDraftTurn = -1
+        fun preparePublicationRepair(extra: String = "") {
+            val current = requireNotNull(publication)
+            if (publicationDraftTurn < 0) publicationDraftTurn = prepared.conversation.length()
+            // Evidence projections retain turn indices, so correction must not shift later tool observations.
+            val replacement = prepared.copy(conversation = JSONArray())
+            appendPlainConversationTurn(replacement, "assistant", requireNotNull(current.latest).getString("raw"))
+            appendPlainConversationTurn(replacement, "user", current.feedback() + extra)
+            repeat(2) { prepared.conversation.put(publicationDraftTurn + it, replacement.conversation.get(it)) }
+            restrictPublicationRepairTools(prepared, allowExternalTools)
+        }
+        suspend fun finishPublication(raw: String): Boolean {
+            val current = requireNotNull(publication)
+            if (!current.accept(raw)) {
+                preparePublicationRepair()
+                onToolEvent?.invoke(CloudToolEvent("collaboration_publication", "repairing",
+                    "\u6b63\u5728\u4fee\u6b63\u6210\u679c\u63d0\u4ea4\u683c\u5f0f"))
+                return false
+            }
+            emittedText = true
+            emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), requireNotNull(current.latest).getString("raw"),
+                System.nanoTime() / 1_000_000L))
+            AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+            emit(ModelStreamEvent.Completed(requestId, "publication_recorded", System.nanoTime() / 1_000_000L))
+            return true
+        }
         try {
+            publication?.latest?.let { saved ->
+                if (saved.getJSONObject("receipt").getString("status") == "recorded") {
+                    emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), saved.getString("raw"),
+                        System.nanoTime() / 1_000_000L))
+                    AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+                    emit(ModelStreamEvent.Completed(requestId, "publication_restored", System.nanoTime() / 1_000_000L))
+                    return@flow
+                }
+                preparePublicationRepair()
+            }
             if (allowExternalTools) onToolEvent?.invoke(CloudToolEvent("research", "planning", "\u6b63\u5728\u7406\u89e3\u95ee\u9898\u5e76\u5224\u65ad\u662f\u5426\u9700\u8981\u68c0\u7d22"))
             val restored = checkpoint?.restore().orEmpty()
             restored.forEach { observation ->
@@ -185,7 +224,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 }
                 onToolEvent?.invoke(CloudToolEvent("research", "resumed", "\u5df2\u6062\u590d ${restored.size} \u9879\u68c0\u7d22\u7ed3\u679c\uff0c\u7ee7\u7eed\u6838\u67e5\u4e0e\u6c47\u603b"))
             }
-            checkpoint?.finalAnswer(quality.version)?.let { answer ->
+            checkpoint?.finalAnswer(quality.version)?.takeIf { publication == null }?.let { answer ->
                 emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), answer, System.nanoTime() / 1_000_000L))
                 AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
                 emit(ModelStreamEvent.Completed(requestId, "research_restored", System.nanoTime() / 1_000_000L))
@@ -193,8 +232,9 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             }
             var round = 0L
             while (true) {
+                if (publication?.repairing == true) delay(publication.backoffMillis())
                 evidencePrompt.refresh()
-                research.stopReason()?.let { reason ->
+                research.stopReason()?.takeIf { publication?.repairing != true }?.let { reason ->
                     if (toolProgress.requestFinalization()) {
                         appendPlainConversationTurn(prepared, "user", research.guidance(reason))
                         prepareFinalRound(prepared)
@@ -291,6 +331,13 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     "elapsed_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} completed=$roundCompleted")
                 if (!finishedWithinBudget) {
                     if (previewShown) emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
+                    if (publication != null) {
+                        AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, "Publication model request timed out")
+                        emit(ModelStreamEvent.Failed(requestId,
+                            ModelStreamError("MODEL_TIMEOUT", "Publication remains pending; retry from the saved draft",
+                                retryable = true, partialResponse = false)))
+                        return@flow
+                    }
                     // A model timeout cannot consume the independent synthesis attempt.
                     if (toolProgress.requestDeadlineSynthesis(evidenceResults.isNotEmpty())) {
                         Log.i("GalaxySSIWebLatency", "synthesis_recovery request=$requestId reason=model_timeout")
@@ -348,7 +395,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                 }
                 val rawRoundText = inlineProtocolGuard.rawText()
-                if (!allowExternalTools) {
+                if (!allowExternalTools && publication == null) {
                     if (textPolicy.managedCollaboration) {
                         if (assembler.completedCalls().isNotEmpty() || CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
                             AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, "Unexpected tool response")
@@ -391,6 +438,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                 }
                 if (calls.isEmpty()) {
+                    if (publication != null && !bufferForCitationVerification) {
+                        if (!finishPublication(rawRoundText)) continue
+                        return@flow
+                    }
                     if (CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
                         if (!toolProgress.requestRepair("stream_internal_protocol")) {
                             emitEvidenceFallbackAndComplete(
@@ -477,7 +528,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             continue
                         }
                         val visibleAnswer = if (candidate.isNotBlank() && citationRepair == null) {
-                            checkpoint?.complete(candidate, qualityReport)
+                            if (publication == null) checkpoint?.complete(candidate, qualityReport)
                             onToolEvent?.invoke(CloudToolEvent("research", "synthesis_completed", "\u7ed3\u8bba\u6c47\u603b\u5b8c\u6210"))
                             candidate
                         } else {
@@ -486,6 +537,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                                 "evidence_items=${citationValidation.evidenceItemCount} " +
                                 "verified_items=${citationValidation.verifiedEvidenceItemCount}")
                             CloudWebGrounding.evidenceFallback(context, evidenceResults)
+                        }
+                        if (publication != null) {
+                            if (!finishPublication(visibleAnswer)) continue
+                            return@flow
                         }
                         if (visibleAnswer.isNotBlank()) {
                             emittedText = true
@@ -514,7 +569,17 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                     return@flow
                 }
-                if (toolProgress.finalizationRequested) {
+                if (publication != null && calls.any { !allowExternalTools || !publication.permitsTool(it.name) }) {
+                    // Reject the whole batch before cache lookup or dispatch: no hidden side effects during format repair.
+                    if (!publication.repairing) {
+                        emit(ModelStreamEvent.Failed(requestId, ModelStreamError("UNEXPECTED_TOOL_CALL", "Tools are disabled for this assignment")))
+                        return@flow
+                    }
+                    preparePublicationRepair("\nThe requested tool batch was NOT executed. Correct the draft using saved evidence only.")
+                    delay(60_000L)
+                    continue
+                }
+                if (toolProgress.finalizationRequested && publication?.repairing != true) {
                     emitEvidenceFallbackAndComplete(
                         context,
                         disclosure,
@@ -552,7 +617,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     }
                     continue
                 }
-                if (!research.reserveTools(preparedCallsByKey.size)) {
+                if (publication?.repairing != true && !research.reserveTools(preparedCallsByKey.size)) {
                     appendPlainConversationTurn(prepared, "user", research.guidance(research.stopReason() ?: "tool_limit"))
                     toolProgress.requestFinalization()
                     prepareFinalRound(prepared)
@@ -697,6 +762,12 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     .put("parts", JSONArray().put(JSONObject().put("text", FINALIZE_PROMPT)))
             )
         }
+    }
+
+    internal fun restrictPublicationRepairTools(prepared: PreparedCloudConversationStream, allowRecall: Boolean = true) {
+        disableExternalTools(prepared)
+        prepared.body.remove("toolConfig")
+        if (allowRecall) CollaborationCloudRecall.install(prepared)
     }
 
     private fun disableExternalTools(prepared: PreparedCloudConversationStream) {
