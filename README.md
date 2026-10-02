@@ -1,6 +1,6 @@
 # GalaxySSI
 
-GalaxySSI is a private superintelligence interface that turns phones, computers, agents, models, and devices into a trusted AI mesh.
+GalaxySSI is a scalable Super Intelligence that turns phones, computers, agents, models, and devices into a trusted AI mesh.
 
 Current release: **v1.0.0**
 
