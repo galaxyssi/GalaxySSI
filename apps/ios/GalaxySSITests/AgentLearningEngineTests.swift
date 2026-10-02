@@ -3,6 +3,29 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentLearningEngineTests: XCTestCase {
+  func testProposalUpdatesAcrossStoreInstancesPreserveReviewsAndConcurrentAppends() {
+    let suite = "learning-proposals-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let initial = AgentLearningProposal(id: "reviewed", kind: .skill, title: "Review",
+      taskFamily: "review", summary: "Pending", evidenceRunIds: ["run"])
+    let store = UserDefaultsAgentLearningProposalStore(defaults: defaults)
+    store.saveProposals([initial])
+    DispatchQueue.concurrentPerform(iterations: 24) { index in
+      let writer = UserDefaultsAgentLearningProposalStore(defaults: defaults)
+      writer.updateProposals { proposals in
+        proposals[0].status = .approved
+        proposals.append(AgentLearningProposal(id: "proposal-\(index)", kind: .skill,
+          title: "Candidate", taskFamily: "family-\(index)", summary: "Review required",
+          evidenceRunIds: ["run-\(index)"]))
+      }
+    }
+    let saved = store.loadProposals()
+    XCTAssertEqual(saved.count, 25)
+    XCTAssertEqual(Set(saved.map(\.id)).count, 25)
+    XCTAssertEqual(saved.first?.status, .approved)
+  }
+
   func testAgentLearningAnalyzerLearnsPreferenceCorrectionAndFailureFamily() {
     let left = AgentLearningAnalyzer.taskFamily("Summarize C:\\Work\\private\\alpha.pdf for 12 people")
     let right = AgentLearningAnalyzer.taskFamily("Summarize C:\\Temp\\beta.pdf for 28 people")

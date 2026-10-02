@@ -161,6 +161,33 @@ final class MessageCoordinator: ObservableObject {
         guard let policy else { return }
         _ = AgentEvalOpsService.observeRunCompleted(run, completedDevice: policy.0,
           personalLearningEnabled: policy.1)
+        let recent = UserDefaultsAgentRecordedRunStore().runs(for: "")
+        let learning = await MainActor.run { () -> (AgentLearningEngine, [AgentRecordedRun], Bool)? in
+          guard let self, let current = self.store.agentSession(id: run.conversationId),
+                !current.privateMode, !current.trackingPaused else { return nil }
+          let allowed = Set(recent.map(\.conversationId)).filter { id in
+            guard let session = self.store.agentSession(id: id) else { return false }
+            return !session.privateMode && !session.trackingPaused
+          }
+          let descriptors = self.localNativeToolRuntime?.registry.descriptors() ?? []
+          let engine = AgentLearningEngine(
+            memoryStore: self.store.agentMemoryStore,
+            skillRuntime: self.localSkillRuntime,
+            skillCompiler: AgentConversationSkillCompiler(self.localSkillRuntime, availableTools: { descriptors }),
+            proposalStore: UserDefaultsAgentLearningProposalStore()
+          )
+          return (engine, recent.filter { allowed.contains($0.conversationId) },
+            self.store.agentSafetySettings.memoryCapture)
+        }
+        guard let learning else { return }
+        let outcome = learning.0.observeCompletedRun(run: run, recentRuns: learning.1,
+          privateMode: false, memoryCaptureEnabled: learning.2)
+        if !outcome.memories.isEmpty {
+          await MainActor.run {
+            guard let self, UIApplication.shared.applicationState == .active else { return }
+            self.store.agentMemoryItems = self.store.agentMemoryStore.exportItems()
+          }
+        }
       }
     }
   }
