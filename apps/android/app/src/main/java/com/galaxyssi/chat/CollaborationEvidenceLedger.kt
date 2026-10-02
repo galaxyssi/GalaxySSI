@@ -107,7 +107,22 @@ internal class CollaborationEvidenceLedger(
         payload.takeIf(access::canRead)?.put("sha256", hash)
     }
 
-    fun references(access: CollaborationWorkspaceAccess, requested: JSONArray): JSONArray = JSONArray().apply {
+    data class EvidencePage(val source: JSONObject, val content: String, val total: Int, val next: Int?, val coverage: JSONObject)
+
+    fun readPage(access: CollaborationWorkspaceAccess, id: String, expectedHash: String = "", offset: Int = 0): EvidencePage? = synchronized(LOCK) {
+        val saved = read(access, id, expectedHash) ?: return@synchronized null
+        val content = saved.toString()
+        require(offset in 0..content.length) { "Evidence offset must be within the original document" }
+        require(offset == 0 || offset == content.length || !Character.isLowSurrogate(content[offset]) ||
+            !Character.isHighSurrogate(content[offset - 1])) { "Evidence offset splits a Unicode character" }
+        var end = offset + minOf(8_000, content.length - offset)
+        if (end < content.length && Character.isHighSurrogate(content[end - 1]) && Character.isLowSurrogate(content[end])) end--
+        val coverage = CollaborationEvidenceReadCoverage.record(rows, prefix(access.groupId), access, saved, content, offset, end)
+        EvidencePage(reference(saved, saved.getString("sha256")), content.substring(offset, end), content.length,
+            end.takeIf { it < content.length }, coverage)
+    }
+
+    fun references(access: CollaborationWorkspaceAccess, requested: JSONArray): JSONArray = synchronized(LOCK) { JSONArray().apply {
         repeat(requested.length()) { index ->
             val item = requested.getJSONObject(index)
             val hash = item.getString("sha256")
@@ -115,9 +130,10 @@ internal class CollaborationEvidenceLedger(
             val saved = requireNotNull(read(access, item.getString("evidence_id"), hash)) {
                 "Evidence is missing, changed or isolated from this assignment"
             }
-            put(reference(saved, hash))
+            put(reference(saved, hash).put(CollaborationEvidenceReadCoverage.FIELD,
+                CollaborationEvidenceReadCoverage.snapshot(rows, prefix(access.groupId), access, saved)))
         }
-    }
+    } }
 
     fun browse(access: CollaborationWorkspaceAccess, cursor: String = ""): Pair<List<JSONObject>, String?> = synchronized(LOCK) {
         if (!authorized(access.groupId)) return@synchronized emptyList<JSONObject>() to null

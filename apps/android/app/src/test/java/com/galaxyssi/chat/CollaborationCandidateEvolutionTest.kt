@@ -458,7 +458,11 @@ class CollaborationCandidateEvolutionTest {
             .put("id", "delivery").put("kind", "artifact").put("title", "Delivery").put("body", JSONObject().put("content", "Document"))
             .put("parents", JSONArray().put(f.target)).put("observations", JSONArray().put(f.source)))
         fun assessment(reviewer: String, id: String): JSONObject {
-            val review = f.publish(f.access.copy(nodeId = id, personId = reviewer, round = 2), JSONObject().put("id", id)
+            val reader = f.access.copy(nodeId = id, personId = reviewer, round = 2)
+            var offset: Int? = 0
+            while (offset != null) offset = requireNotNull(f.ledger.readPage(reader, f.source.getString("evidence_id"),
+                f.source.getString("sha256"), offset)).next
+            val review = f.publish(reader, JSONObject().put("id", id)
                 .put("kind", "acceptance_review").put("title", "Review").put("parents", JSONArray().put(delivery))
                 .put("observations", JSONArray().put(f.source)).put("body", JSONObject().put("acceptance_review", JSONObject()
                     .put("criterion_id", "accuracy").put("requirement", "Documented accuracy").put("target", delivery)
