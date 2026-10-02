@@ -98,6 +98,9 @@ struct GalaxySSIConversationHubView: View {
   @SceneStorage("galaxyssi.conversation_hub.scroll_anchor") private var savedScrollAnchorId = ""
   @SceneStorage("galaxyssi.conversation_hub.scroll_anchor_offset") private var savedScrollAnchorOffset = 0.0
   @SceneStorage("galaxyssi.conversation_hub.scroll_anchor_archived") private var savedScrollAnchorArchived = false
+  @SceneStorage("galaxyssi.conversation_hub.scroll_anchor_position") private var savedScrollAnchorPosition = 0
+  @SceneStorage("galaxyssi.conversation_hub.loaded_agent_count") private var savedLoadedAgentCount = 0
+  @SceneStorage("galaxyssi.conversation_hub.contact_offset") private var savedContactOffset = 0.0
   @State private var restoredScrollAnchor = false
   @State private var restoringScrollAnchor = false
   @State private var scrollViewReference = GalaxySSIConversationHubScrollViewReference()
@@ -233,12 +236,15 @@ struct GalaxySSIConversationHubView: View {
           guard selectedTab == .conversations,
                 !hubContentLoading,
                 !restoringScrollAnchor,
+                (restoredScrollAnchor || savedScrollAnchorId.isEmpty || savedScrollAnchorArchived != showingArchived),
                 let anchor = GalaxySSIConversationHubScrollPolicy.anchorId(positions: positions) else {
             return
           }
           savedScrollAnchorId = anchor
           savedScrollAnchorOffset = Double(positions[anchor] ?? 0)
           savedScrollAnchorArchived = showingArchived
+          savedScrollAnchorPosition = conversationScrollRowIds.firstIndex(of: anchor) ?? 0
+          savedLoadedAgentCount = loadedAgentConversations.count
         }
         .onChange(of: hubContentLoading) { loading in
           guard !loading else {
@@ -464,7 +470,11 @@ struct GalaxySSIConversationHubView: View {
       refreshAfterDesktopPairing()
     }
     .onDisappear {
+      captureContactScroll()
       navigationContentGate.invalidate()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+      captureContactScroll()
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIReplyUnreadDidChange)) { _ in
       hubRefreshToken = UUID()
@@ -769,12 +779,11 @@ struct GalaxySSIConversationHubView: View {
     let sourceChatContacts = store.chatContacts(matching: "")
     let query = searchText
     let archived = showingArchived
-    let restorationConversationId = savedScrollAnchorArchived == archived
-      ? GalaxySSIConversationHubScrollPolicy.agentConversationId(from: savedScrollAnchorId)
-      : nil
     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-       let restorationConversationId {
-      while page.hasMore && !sourceConversations.contains(where: { $0.id == restorationConversationId }) {
+       savedScrollAnchorArchived == archived, !savedScrollAnchorId.isEmpty {
+      // Restore the previously loaded window, not the entire history when an anchor was deleted.
+      while page.hasMore && sourceConversations.count < savedLoadedAgentCount {
+        guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
         page = store.agentSessionPage(
           status: requestedStatus,
           cursor: page.nextCursor,
@@ -936,6 +945,11 @@ struct GalaxySSIConversationHubView: View {
     "conversation:\(item.kind.rawValue):\(item.id)"
   }
 
+  private var conversationScrollRowIds: [String] {
+    let sections = preparedHubContent.conversations
+    return (sections.pinned + sections.recent).map { scrollRowId($0) }
+  }
+
   private func scrollRowPosition(_ item: GalaxySSIConversationHubItem) -> some View {
     GeometryReader { geometry in
       Color.clear.preference(
@@ -950,17 +964,41 @@ struct GalaxySSIConversationHubView: View {
   }
 
   private func restoreConversationScroll(with proxy: ScrollViewProxy) {
+    if selectedTab == .contacts, !hubContentLoading, !restoredScrollAnchor {
+      restoredScrollAnchor = true
+      restoringScrollAnchor = true
+      DispatchQueue.main.async {
+        if let scrollView = scrollViewReference.value, selectedTab == .contacts, !hubContentLoading {
+          let minimumY = -scrollView.adjustedContentInset.top
+          let maximumY = max(minimumY,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom)
+          scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x,
+            y: min(max(CGFloat(savedContactOffset), minimumY), maximumY)), animated: false)
+        }
+        restoringScrollAnchor = false
+      }
+      return
+    }
     guard selectedTab == .conversations,
           !hubContentLoading,
           !restoredScrollAnchor,
           !savedScrollAnchorId.isEmpty,
           savedScrollAnchorArchived == showingArchived else { return }
+    guard let anchor = GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: savedScrollAnchorId, savedPosition: savedScrollAnchorPosition,
+      rowIds: conversationScrollRowIds) else { return }
+    let offset = savedScrollAnchorOffset
     restoredScrollAnchor = true
     restoringScrollAnchor = true
     DispatchQueue.main.async {
-      proxy.scrollTo(savedScrollAnchorId, anchor: .top)
+      guard selectedTab == .conversations, !hubContentLoading else {
+        restoringScrollAnchor = false
+        return
+      }
+      proxy.scrollTo(anchor, anchor: .top)
       DispatchQueue.main.async {
-        guard let scrollView = scrollViewReference.value else {
+        guard selectedTab == .conversations, !hubContentLoading,
+              let scrollView = scrollViewReference.value else {
           restoringScrollAnchor = false
           return
         }
@@ -971,7 +1009,7 @@ struct GalaxySSIConversationHubView: View {
         )
         let targetY = GalaxySSIConversationHubScrollPolicy.restoredContentOffsetY(
           alignedContentOffsetY: scrollView.contentOffset.y,
-          savedRowOffset: CGFloat(savedScrollAnchorOffset),
+          savedRowOffset: CGFloat(offset),
           minimumContentOffsetY: minimumY,
           maximumContentOffsetY: maximumY
         )
@@ -984,6 +1022,12 @@ struct GalaxySSIConversationHubView: View {
         }
       }
     }
+  }
+
+  private func captureContactScroll() {
+    guard selectedTab == .contacts, !hubContentLoading, !restoringScrollAnchor,
+          let scrollView = scrollViewReference.value else { return }
+    savedContactOffset = Double(scrollView.contentOffset.y)
   }
 
   private func conversationRow(
