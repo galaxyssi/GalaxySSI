@@ -130,7 +130,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             return@flow
         }
         if (!allowExternalTools) disableExternalTools(prepared)
-        else appendPlainConversationTurn(prepared, "user", CloudEvidenceCitations.instruction)
+        else {
+            imageSession.installCollaborationTools(prepared)
+            appendPlainConversationTurn(prepared, "user", CloudEvidenceCitations.instruction)
+        }
         val globalSequence = AtomicLong(0L)
         val toolProgress = CloudWebToolLoopProgress()
         val research = CloudResearchLoop(CloudResearchLimits.from(contact))

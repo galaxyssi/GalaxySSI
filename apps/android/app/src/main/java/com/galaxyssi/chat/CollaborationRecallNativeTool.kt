@@ -29,49 +29,13 @@ internal object CollaborationRecallNativeTool {
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
-            if (call.input["mode"] == "evidence") {
-                val ledger = CollaborationEvidenceLedger(context)
-                val access = EncryptedAgentTeamExecutionStore(context).workspaceReadAccess(group, call.context.turnId)
-                val id = call.input["evidence_id"] as? String ?: ""
-                if (id.isNotBlank()) {
-                    val saved = ledger.read(access, id, call.input["sha256"] as? String ?: "")
-                        ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                            "evidence_unavailable", "Evidence is missing, changed or isolated from this assignment.")
-                    val content = saved.toString()
-                    val offset = (call.input["offset"] as? Number)?.toInt()?.coerceIn(0, content.length) ?: 0
-                    val end = minOf(content.length, offset + 8_000)
-                    return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(mapOf(
-                        "content" to content.substring(offset, end), "total_characters" to content.length,
-                        "next_offset" to end.takeIf { it < content.length }, "trust" to "execution_observed_not_claim_verified"))
-                }
-                val (refs, next) = try { ledger.browse(access, call.input["cursor"] as? String ?: "") }
-                catch (_: IllegalArgumentException) { return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                    "invalid_cursor", "Invalid evidence cursor.") }
-                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(mapOf(
-                    "observations" to refs.map { it.toString() }, "next_cursor" to next,
-                    "trust" to "execution_observed_not_claim_verified"))
-            }
-            if (call.input["mode"] == "workspace") {
-                val workspace = CollaborationResearchWorkspace(context)
-                val access = EncryptedAgentTeamExecutionStore(context).workspaceReadAccess(group, call.context.turnId)
-                val objectId = call.input["object_id"] as? String ?: ""
-                if (objectId.isNotBlank()) {
-                    val revision = workspace.read(access, objectId, (call.input["revision"] as? Number)?.toInt() ?: 0)
-                        ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                            "object_unavailable", "Object revision is missing or isolated from this assignment.")
-                    val content = revision.toString()
-                    val offset = (call.input["offset"] as? Number)?.toInt()?.coerceIn(0, content.length) ?: 0
-                    val end = minOf(content.length, offset + 8_000)
-                    return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(mapOf(
-                        "content" to content.substring(offset, end), "total_characters" to content.length,
-                        "next_offset" to end.takeIf { it < content.length }, "trust" to "member_reported_not_verified"))
-                }
-                val page = try { workspace.browse(access, call.input["cursor"] as? String ?: "") }
-                catch (_: IllegalArgumentException) { return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                    "invalid_cursor", "Invalid workspace cursor.") }
-                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(mapOf(
-                    "revisions" to page.revisions.map { it.toString() }, "next_cursor" to page.next,
-                    "trust" to "member_reported_not_verified"))
+            if (call.input["mode"] in setOf("evidence", "workspace")) {
+                val source = call.context.collaborationSourceMessageId
+                val access = if (source != null) CollaborationEvidenceLedger(context).binding(source, group, call.context.turnId)
+                    ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "No exact member binding.")
+                else EncryptedAgentTeamExecutionStore(context).workspaceReadAccess(group, call.context.turnId)
+                return@AgentNativeToolExecutor try { CollaborationScopedRecall.read(context, call.input, access) }
+                catch (_: IllegalArgumentException) { AgentNativeToolExecutionResult.failure("invalid_cursor", "Invalid recall cursor.") }
             }
             val beforeRound = EncryptedAgentTeamExecutionStore(context).goalRound(group, call.context.turnId)
             val id = call.input["record_id"] as? String ?: ""
