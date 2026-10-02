@@ -149,6 +149,7 @@ extension MessageCoordinator {
       return
     }
     if payload.string("status") == "stored" {
+      guard transfer.matchesStoredReceipt(payload) else { return }
       Task { [weak self] in
         guard let self else { return }
         if await blobOutgoingCoordinator.owns(transfer.transferId) {
@@ -215,6 +216,10 @@ extension MessageCoordinator {
     _ payload: [String: Any],
     transfer: AgentPreparedOutboundAttachment
   ) {
+    guard attachmentTransferStore.acknowledgeStored(
+      payload: payload,
+      deliveryStore: deliveryStore
+    ) != nil else { return }
     if let contact = store.visibleContacts.first(where: {
       $0.isDesktopDeviceContact && $0.desktopId == transfer.scope.desktopId
     }) {
@@ -228,10 +233,6 @@ extension MessageCoordinator {
       completion["state"] = GalaxySSIPeerAttachmentTransferProgress.complete
       applyPeerAttachmentTransferProgress(completion, contact: contact)
     }
-    guard attachmentTransferStore.acknowledgeStored(
-      payload: payload,
-      deliveryStore: deliveryStore
-    ) != nil else { return }
     scheduleOutboxFlush(after: 0)
   }
 
