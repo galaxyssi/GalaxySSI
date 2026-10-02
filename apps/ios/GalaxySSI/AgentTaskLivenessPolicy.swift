@@ -57,6 +57,10 @@ struct AgentTaskLivenessSignal: Codable, Equatable {
 }
 
 enum AgentTaskTerminalReplyPolicy {
+  static func isTerminalReply(_ entry: AgentTranscriptEntry) -> Bool {
+    entry.role == .assistant && terminalDedupePrefixes.contains { entry.dedupeKey.hasPrefix($0) }
+  }
+
   static func hasTerminalReply(entries: [AgentTranscriptEntry], turnId: String) -> Bool {
     let cleanTurnId = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTurnId.isEmpty else {
@@ -64,8 +68,7 @@ enum AgentTaskTerminalReplyPolicy {
     }
     return entries.contains { entry in
       (entry.turnId == cleanTurnId || entry.taskId == cleanTurnId) &&
-        entry.role == .assistant &&
-        terminalDedupePrefixes.contains(where: { entry.dedupeKey.hasPrefix($0) })
+        isTerminalReply(entry)
     }
   }
 
