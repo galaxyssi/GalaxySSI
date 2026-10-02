@@ -11,7 +11,8 @@ enum AgentTaskRequirementAnalyzer {
     let codeExecution = code &&
       containsAny(normalized, codeExecutionTerms) &&
       !AgentCodeDiscussionPolicy.isInformational(trustedGoal)
-    let device = containsAny(normalized, deviceTerms)
+    let device = containsAny(normalized, deviceTerms) ||
+      normalized.range(of: deviceCommand, options: .regularExpression) != nil
     let screen = containsAny(normalized, screenTerms)
     let knowledge = containsAny(normalized, knowledgeTerms)
     let mcp = containsAny(normalized, mcpTerms)
@@ -118,13 +119,14 @@ enum AgentTaskRequirementAnalyzer {
     "\u{521b}\u{5efa} pr", "\u{63d0}\u{4ea4} pr"
   ]
   private static let deviceTerms = [
-    "home assistant", "smart home", "light", "scene", "device",
+    "home assistant", "smart home", "turn on light", "turn off light", "control device", "activate scene",
     "\u{667a}\u{80fd}\u{5bb6}\u{5c45}", "\u{5f00}\u{706f}", "\u{5173}\u{706f}",
-    "\u{8bbe}\u{5907}", "\u{573a}\u{666f}"
+    "\u{63a7}\u{5236}\u{8bbe}\u{5907}", "\u{5207}\u{6362}\u{573a}\u{666f}"
   ]
+  private static let deviceCommand = #"\b(?:turn|switch|set|dim|control|activate)\b.{0,32}\b(?:lights?|devices?|scenes?)\b"#
   private static let screenTerms = [
-    "screen", "tap", "click", "swipe", "open app",
-    "\u{5c4f}\u{5e55}", "\u{70b9}\u{51fb}", "\u{6ed1}\u{52a8}",
+    "tap", "click", "swipe", "open app",
+    "\u{70b9}\u{51fb}", "\u{6ed1}\u{52a8}",
     "\u{6253}\u{5f00} app"
   ]
   private static let knowledgeTerms = [

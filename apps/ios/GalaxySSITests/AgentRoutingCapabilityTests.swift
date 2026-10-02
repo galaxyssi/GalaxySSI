@@ -1839,4 +1839,29 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(inherited.reasoningEffort, .xhigh)
   }
 
+  func testScreenshotAnalysisDoesNotRequireNavigationOrDeviceControl() {
+    let chinese = "\u{8bf7}\u{5206}\u{6790}\u{8fd9}\u{5f20}\u{5c4f}\u{5e55}\u{622a}\u{56fe}"
+    let goals = [chinese, "Explain what is visible in this screen image",
+      "Describe the device, light and scene visible in this photo",
+      chinese + "\n\n" + AgentDirectVisionPolicy.instructionForMimeTypes(["image/jpeg"])]
+    for goal in goals {
+      let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+      XCTAssertFalse(requirements.capabilities.contains(.appNavigation), goal)
+      XCTAssertFalse(requirements.capabilities.contains(.deviceControl), goal)
+    }
+  }
+
+  func testScreenshotRoutingStillRecognizesActualControlCommands() {
+    for goal in ["tap the button on the screen", "swipe to the next page", "open app settings",
+      "\u{70b9}\u{51fb}\u{5c4f}\u{5e55}\u{4e0a}\u{7684}\u{6309}\u{94ae}"] {
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.appNavigation), goal)
+    }
+    for goal in ["activate scene movie night", "dim the living room lights", "switch the device off",
+      "\u{5f00}\u{706f}", "\u{63a7}\u{5236}\u{8bbe}\u{5907}\u{6253}\u{5f00}\u{7a7a}\u{8c03}"] {
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.deviceControl), goal)
+    }
+    XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze("Describe the control panel in this device photo")
+      .capabilities.contains(.appNavigation))
+  }
+
 }
