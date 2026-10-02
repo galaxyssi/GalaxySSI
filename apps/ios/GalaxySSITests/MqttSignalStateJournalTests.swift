@@ -220,6 +220,53 @@ private func signalTestIdentity(local: String = String(repeating: "a", count: 64
 
 #if canImport(LibSignalClient)
 final class MqttSignalAtomicReceiveTests: XCTestCase {
+  func testWrappedPhoneReceiptIsStoredAsReceiptWithoutReceiptLoop() throws {
+    let f = try SignalReceiveFixture()
+    let id = UUID().uuidString
+    var receipt = try MqttDeliveryEnvelope.storedReceipt(messageID: "outgoing", wireHash: String(repeating: "c", count: 64))
+    receipt["message_id"] = id
+    let wrapped = try GalaxySSILinkProtocol.makeEnvelope(payload: receipt,
+      sourceId: f.aliceIdentity.name, targetId: f.bobIdentity.name)
+    let wire = try XCTUnwrap(f.alice.encrypt(wrapped, remoteName: f.bobIdentity.name))
+    let accepted = try f.receive(wire)
+    XCTAssertNil(accepted.receipt)
+    let pending = try XCTUnwrap(f.journal.inbox.pending().first)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: pending.payload) as? [String: Any])
+    XCTAssertEqual(body["type"] as? String, "delivery_ack")
+    XCTAssertEqual(body["message_id"] as? String, id)
+    XCTAssertEqual(try MqttDeliveryEnvelope.parseStoredReceipt(body).messageID, "outgoing")
+    XCTAssertNil(try f.receive(wire).receipt)
+  }
+
+  func testWrappedPhoneMessagePersistsBusinessContentAndEnvelopeMessageID() throws {
+    let f = try SignalReceiveFixture()
+    let id = UUID().uuidString
+    let wrapped = try GalaxySSILinkProtocol.makeEnvelope(payload: ["type": "peer_message",
+      "message_id": id, "content": "hello", "conversation_id": "conversation"],
+      sourceId: f.aliceIdentity.name, targetId: f.bobIdentity.name)
+    let wire = try XCTUnwrap(f.alice.encrypt(wrapped, remoteName: f.bobIdentity.name))
+    let accepted = try f.receive(wire)
+    XCTAssertEqual(accepted.receipt?.messageID, id)
+    let pending = try XCTUnwrap(f.journal.inbox.pending().first)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: pending.payload) as? [String: Any])
+    XCTAssertEqual(body["type"] as? String, "peer_message")
+    XCTAssertEqual(body["content"] as? String, "hello")
+    XCTAssertEqual(body["conversation_id"] as? String, "conversation")
+    XCTAssertNil(body["payload"])
+  }
+
+  func testWrongWrappedDestinationRollsBackSignalAndInbox() throws {
+    let f = try SignalReceiveFixture()
+    let before = try f.journal.load()
+    let wrapped = try GalaxySSILinkProtocol.makeEnvelope(payload: ["type": "peer_message",
+      "message_id": UUID().uuidString, "content": "wrong target"],
+      sourceId: f.aliceIdentity.name, targetId: "another-peer")
+    let wire = try XCTUnwrap(f.alice.encrypt(wrapped, remoteName: f.bobIdentity.name))
+    XCTAssertThrowsError(try f.receive(wire))
+    XCTAssertEqual(try f.journal.load(), before)
+    XCTAssertTrue(try f.journal.inbox.pending().isEmpty)
+  }
+
   func testSignalReceiveAndDuplicateSurviveEngineReopen() throws {
     let f = try SignalReceiveFixture()
     let wire = try f.wire()

@@ -314,7 +314,18 @@ final class GalaxySSISignalEngine {
         }
         return replay
       }
-      let payload = try decryptPayload(envelope)
+      let decrypted = try decryptPayload(envelope)
+      let payload: [String: Any]
+      if decrypted["protocol"] as? String == GalaxySSILinkProtocol.name, decrypted["payload"] != nil {
+        guard decrypted["source_id"] as? String == remoteName,
+              decrypted["target_id"] as? String == localName,
+              let unwrapped = GalaxySSILinkProtocol.unwrapEnvelope(decrypted) else {
+          throw MqttRouteError.invalidPayload
+        }
+        payload = unwrapped
+      } else {
+        payload = decrypted
+      }
       let address = try ProtocolAddress(name: remoteName, deviceId: signalDeviceID(envelope))
       guard let remoteKey = try store.identity(for: address, context: context),
             Self.sha256(remoteKey.serialize()) == identity.remote else { throw MqttRouteError.identityChanged }
