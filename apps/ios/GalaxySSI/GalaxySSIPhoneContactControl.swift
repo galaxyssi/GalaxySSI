@@ -7,6 +7,7 @@ struct GalaxySSIPhoneContactControl {
     case refresh = "opaque_bundle_refresh"
     case approval = "opaque_contact_accept"
     case rejection = "opaque_contact_reject"
+    case receipt = "opaque_contact_receipt"
   }
 
   struct ValidatedPayload {
@@ -15,6 +16,7 @@ struct GalaxySSIPhoneContactControl {
     let contactCard: [String: Any]
     let signalBundle: [String: Any]
     let pairingToken: String
+    let sessionRecovery: Bool
   }
 
   static let maximumAgeMillis: Int64 = 10 * 60 * 1_000
@@ -26,6 +28,7 @@ struct GalaxySSIPhoneContactControl {
     localCard: [String: Any],
     localSignalIdentity: GalaxySSISignalIdentity,
     pairingToken: String = "",
+    sessionRecovery: Bool = false,
     controlId: String = UUID().uuidString,
     now: Date = Date()
   ) -> [String: Any]? {
@@ -39,17 +42,20 @@ struct GalaxySSIPhoneContactControl {
     if kind == .request, !GalaxySSILinkProtocol.validLinkSecret(pairingToken) {
       return nil
     }
+    var wireCard = localCard
+    wireCard["signal_bundle"] = bundle
     var payload: [String: Any] = [
       "type": kind.rawValue,
       "version": GalaxySSILinkProtocol.version,
       "control_id": controlId,
       "from": localSignalIdentity.name,
       "to": targetCard.string("galaxyssi_id"),
-      "contact_card": localCard,
+      "contact_card": wireCard,
       "signal_bundle": bundle,
       "time": Int64(now.timeIntervalSince1970 * 1_000)
     ]
     if kind == .request { payload["pairing_token"] = pairingToken }
+    if sessionRecovery { payload["session_recovery"] = true }
     return payload
   }
 
@@ -62,7 +68,7 @@ struct GalaxySSIPhoneContactControl {
           payload.int("version") == GalaxySSILinkProtocol.version,
           UUID(uuidString: payload.string("control_id")) != nil,
           let card = payload.dictionary("contact_card"),
-          let bundle = payload.dictionary("signal_bundle"),
+          let bundle = payload.dictionary("signal_bundle") ?? card.dictionary("signal_bundle"),
           payload.string("from") == card.string("galaxyssi_id"),
           payload.string("to") == localGalaxySSIId,
           GalaxySSISignalEngine.bundleIdentityFingerprint(bundle)?
@@ -83,14 +89,18 @@ struct GalaxySSIPhoneContactControl {
       controlId: payload.string("control_id"),
       contactCard: card,
       signalBundle: bundle,
-      pairingToken: token
+      pairingToken: token,
+      sessionRecovery: payload["session_recovery"] as? Bool ?? false
     )
   }
 }
 
 enum GalaxySSIPhoneContactBundlePolicy {
-  static func replacesExistingSession(_ kind: GalaxySSIPhoneContactControl.Kind) -> Bool {
-    kind == .bundle || kind == .refresh
+  static func replacesExistingSession(
+    _ kind: GalaxySSIPhoneContactControl.Kind,
+    sessionRecovery: Bool = false
+  ) -> Bool {
+    kind == .refresh || (kind == .bundle && sessionRecovery)
   }
 }
 

@@ -182,6 +182,8 @@ final class MessageCoordinator: ObservableObject {
   private var automationSchedulerTask: Task<Void, Never>?
   private var pairingConfirmationTimeoutTask: Task<Void, Never>?
   private var pendingDesktopPairingClaim: PendingDesktopPairingClaim?
+  private lazy var pairingDeliveries = GalaxySSIPairingDeliveryStore(localIdentity: signalEngine.identity.fingerprint)
+  private var pairingDeliveryTask: Task<Void, Never>?
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
@@ -204,14 +206,7 @@ final class MessageCoordinator: ObservableObject {
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
   private static let incomingAttachmentResumeThrottleMillis: Int64 = 2_000
   private static let pendingRecoveryPageSize = 32
-  private static let pairingClaimMaximumAgeNanoseconds: UInt64 = 9 * 60 * 1_000_000_000
-
-  private struct PendingDesktopPairingClaim: Equatable {
-    var desktopId: String
-    var desktopName: String
-    var desktopFingerprint: String
-    var clientRouteId: String
-  }
+  private typealias PendingDesktopPairingClaim = GalaxySSIPairingDelivery
 
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
@@ -349,6 +344,8 @@ final class MessageCoordinator: ObservableObject {
         self.transportConnected = connected
         self.pendingReplyRecoveryWake.connectionChanged(false)
         if connected {
+          self.restorePendingPairingClaim()
+          self.wakePairingDeliveries()
           self.requestConnectorStatuses()
           Task {
             await self.blobArtifactCapabilityPublisher.reconnect()
@@ -375,6 +372,7 @@ final class MessageCoordinator: ObservableObject {
       Task { @MainActor in
         guard let self else { return }
         self.replayApprovedPhoneContactDecisionsOnce()
+        self.wakePairingDeliveries()
         self.pendingReplyRecoveryWake.connectionChanged(self.mqttClient.isConnected)
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
         Task { await self.refreshBlobArtifactCapabilities() }
@@ -392,6 +390,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func start() {
+    restorePendingPairingClaim()
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
     AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
@@ -710,6 +709,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   deinit {
+    pairingDeliveryTask?.cancel()
     pairingConfirmationTimeoutTask?.cancel()
     transportReceiptDrainTask?.cancel()
     if let foregroundRecoveryObserver {
@@ -7931,27 +7931,25 @@ final class MessageCoordinator: ObservableObject {
       "requested_access_profile": qr.access.profile,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
-    let payload = try GalaxySSILinkProtocol.jsonData(claim)
-    let result = await mqttClient.publishPairing(
-      topic: qr.pairingTopic,
-      secret: qr.pairingSecret.base64URLEncodedString(),
-      payload: payload
-    )
-    if result.accepted {
-      beginWaitingForPairingConfirmation(qr: qr, link: link)
-    } else {
-      pairingStatus = "Pairing claim failed"
-      throw GalaxySSIError.invalidPayload("GalaxySSI Link is offline")
+    guard pairingDeliveries.enqueue(
+      payload: claim, topic: qr.pairingTopic, secret: qr.pairingSecret.base64URLEncodedString(),
+      fingerprint: qr.desktopFingerprint, desktopId: qr.desktopId, desktopName: qr.desktopName,
+      clientRouteId: link.routes.clientRouteId
+    ) else {
+      throw GalaxySSIError.invalidPayload("Pairing claim could not be saved.")
     }
+    restorePendingPairingClaim()
+    wakePairingDeliveries()
   }
 
-  private func beginWaitingForPairingConfirmation(qr: PairingQRCode, link: ServerLink) {
-    let pending = PendingDesktopPairingClaim(
-      desktopId: qr.desktopId,
-      desktopName: qr.desktopName,
-      desktopFingerprint: qr.desktopFingerprint,
-      clientRouteId: link.routes.clientRouteId
-    )
+  private func restorePendingPairingClaim() {
+    guard let pending = pairingDeliveries.pending().first(where: \.isDesktop) else { return }
+    guard let link = store.serverLinks.first(where: { $0.desktopId == pending.desktopId }),
+          !link.paired, link.routes.clientRouteId == pending.clientRouteId,
+          link.desktopFingerprint == pending.desktopFingerprint else {
+      pairingDeliveries.discard(controlId: pending.controlId)
+      return
+    }
     pendingDesktopPairingClaim = pending
     pairingConfirmationTimeoutTask?.cancel()
     pairingStatus = String(
@@ -7959,20 +7957,22 @@ final class MessageCoordinator: ObservableObject {
         "galaxyssi.pairing.desktop_waiting",
         fallback: "Waiting for %@ to confirm pairing..."
       ),
-      qr.desktopName
+      pending.desktopName
     )
     pairingConfirmationTimeoutTask = Task { @MainActor [weak self] in
       do {
-        try await Task.sleep(nanoseconds: Self.pairingClaimMaximumAgeNanoseconds)
+        let remaining = max(0, pending.expiresAt - Int64(Date().timeIntervalSince1970 * 1_000))
+        try await Task.sleep(nanoseconds: UInt64(remaining) * 1_000_000)
       } catch {
         return
       }
       guard let self,
-            self.pendingDesktopPairingClaim == pending,
+            self.pendingDesktopPairingClaim?.controlId == pending.controlId,
             self.store.serverLinks.first(where: { $0.desktopId == pending.desktopId })?.paired != true else {
         return
       }
       self.pendingDesktopPairingClaim = nil
+      self.pairingDeliveries.discard(controlId: pending.controlId)
       self.pairingStatus = GalaxySSILocalization.string(
         "galaxyssi.pairing.desktop_timed_out",
         fallback: "Desktop did not confirm pairing. Check the connection and scan a new QR code."
@@ -7981,6 +7981,9 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func completePendingPairing(desktopId: String) {
+    for pending in pairingDeliveries.pending() where pending.isDesktop && pending.desktopId == desktopId {
+      pairingDeliveries.discard(controlId: pending.controlId)
+    }
     if pendingDesktopPairingClaim?.desktopId == desktopId {
       pendingDesktopPairingClaim = nil
       pairingConfirmationTimeoutTask?.cancel()
@@ -8085,30 +8088,83 @@ final class MessageCoordinator: ObservableObject {
     kind: GalaxySSIPhoneContactControl.Kind,
     targetCard: [String: Any]
   ) async -> MqttPublishResult {
+    enqueuePhoneContactControl(kind: kind, targetCard: targetCard)
+  }
+
+  private func enqueuePhoneContactControl(
+    kind: GalaxySSIPhoneContactControl.Kind,
+    targetCard: [String: Any],
+    sessionRecovery: Bool = false,
+    receiptFor: [String: Any]? = nil
+  ) -> MqttPublishResult {
     guard let localQRText = try? myContactQRText(),
           let localRawCard = try? GalaxySSIQRCodePayload.decodeObject(from: localQRText, label: "My contact QR"),
           let localCard = GalaxySSIContactExchange.normalizeCompactPhoneContactQR(localRawCard),
-          let payload = GalaxySSIPhoneContactControl.makePayload(
+          var payload = GalaxySSIPhoneContactControl.makePayload(
             kind: kind,
             targetCard: targetCard,
             localCard: localCard,
             localSignalIdentity: signalEngine.identity,
-            pairingToken: kind == .request ? targetCard.string("pairing_token") : ""
-          ),
-          let data = try? GalaxySSILinkProtocol.jsonData(payload) else {
+            pairingToken: kind == .request ? targetCard.string("pairing_token") : "",
+            sessionRecovery: sessionRecovery
+          ) else {
       return .failed
-    }
-    if kind == .request {
-      return await mqttClient.publishPairing(
-        topic: targetCard.string("pairing_topic"),
-        secret: targetCard.string("pairing_secret"),
-        payload: data
-      )
     }
     guard let routes = store.phoneOpaqueRoutes(for: targetCard.string("galaxyssi_id")) else {
       return .failed
     }
-    return await mqttClient.publish(topic: routes.upTopic, payload: data)
+    if kind == .receipt {
+      guard let receiptFor, let hash = GalaxySSIPairingDeliveryStore.payloadHash(receiptFor) else { return .failed }
+      payload["ack_control_id"] = receiptFor.string("control_id")
+      payload["ack_payload_hash"] = hash
+      guard let data = try? GalaxySSILinkProtocol.jsonData(payload) else { return .failed }
+      Task { [weak self] in _ = await self?.mqttClient.publish(topic: routes.upTopic, payload: data) }
+      return .queued
+    }
+    guard pairingDeliveries.enqueue(
+      payload: payload,
+      topic: kind == .request ? targetCard.string("pairing_topic") : routes.upTopic,
+      secret: kind == .request ? targetCard.string("pairing_secret") : routes.linkSecret,
+      fingerprint: targetCard.string("identity_fingerprint")
+    ) else { return .failed }
+    wakePairingDeliveries()
+    return .queued
+  }
+
+  private func wakePairingDeliveries() {
+    pairingDeliveryTask?.cancel()
+    pairingDeliveryTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        guard let delay = await self?.flushPairingDeliveryBatch() else { return }
+        do {
+          try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+        } catch { return }
+      }
+    }
+  }
+
+  private func flushPairingDeliveryBatch() async -> Int64? {
+    if mqttClient.isConnected {
+      for pending in pairingDeliveries.takeDue() {
+        guard !Task.isCancelled else { return nil }
+        let valid: Bool
+        if pending.isDesktop {
+          valid = store.serverLinks.contains {
+            !$0.paired && $0.desktopId == pending.peer && $0.desktopFingerprint == pending.fingerprint &&
+              $0.routes.clientRouteId == pending.clientRouteId
+          }
+        } else {
+          valid = store.phoneOpaqueRoutes(for: pending.peer)?.remoteFingerprint == pending.fingerprint
+        }
+        guard valid else {
+          pairingDeliveries.discard(controlId: pending.controlId)
+          continue
+        }
+        _ = await mqttClient.publishPairing(topic: pending.topic, secret: pending.secret, payload: pending.payload)
+      }
+    }
+    guard let delay = pairingDeliveries.nextDelayMillis() else { return nil }
+    return mqttClient.isConnected ? delay : max(2_000, delay)
   }
 
   private func phoneRendezvousSecrets() -> [String: String] {
@@ -8924,9 +8980,10 @@ final class MessageCoordinator: ObservableObject {
       object,
       addressedTo: localGalaxySSIId
     ) {
-      guard store.acceptPhoneControl(control.controlId) else { return }
       let remoteFingerprint = control.contactCard.string("identity_fingerprint")
       let existingRoutes = store.phoneOpaqueRoutes(for: control.contactCard.string("galaxyssi_id"))
+      if let existingRoutes,
+         existingRoutes.remoteFingerprint.caseInsensitiveCompare(remoteFingerprint) != .orderedSame { return }
       guard let identityBoundRoutes = signalEngine.derivePhoneRelationshipRoutes(
         remoteIdentityPublicKey: control.contactCard.string("identity_public_key"),
         expectedRemoteFingerprint: remoteFingerprint
@@ -8939,11 +8996,20 @@ final class MessageCoordinator: ObservableObject {
         ) != nil else { return }
       } else {
         guard let existingRoutes,
+              existingRoutes.receiveWindow.contains(topic),
               existingRoutes.remoteFingerprint.caseInsensitiveCompare(remoteFingerprint) == .orderedSame else {
           return
         }
       }
       let senderId = control.contactCard.string("galaxyssi_id")
+      if control.kind == .receipt {
+        _ = pairingDeliveries.acknowledge(peer: senderId, fingerprint: remoteFingerprint, receipt: object)
+        return
+      }
+      if pairingDeliveries.accepted(object) {
+        _ = enqueuePhoneContactControl(kind: .receipt, targetCard: control.contactCard, receiptFor: object)
+        return
+      }
       if control.kind == .request,
          store.contact(id: senderId)?.isCommunicable == true,
          !store.hasPendingFriendRequest(for: senderId),
@@ -8958,9 +9024,7 @@ final class MessageCoordinator: ObservableObject {
           rendezvousSecrets: phoneRendezvousSecrets(),
           rendezvousExpirations: phoneRendezvousExpirations()
         )
-        Task { [weak self] in
-          _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
-        }
+        finishPhonePairingControl(object, control: control)
         return
       }
       let previousDirection = store.friendRequests.first { $0.galaxySSIId == senderId }?.direction
@@ -8978,7 +9042,7 @@ final class MessageCoordinator: ObservableObject {
               control.signalBundle,
               remoteName: request.galaxySSIId,
               replaceExisting: GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(
-                control.kind
+                control.kind, sessionRecovery: control.sessionRecovery
               )
             ) else {
         return
@@ -8989,17 +9053,13 @@ final class MessageCoordinator: ObservableObject {
         rendezvousSecrets: phoneRendezvousSecrets(),
         rendezvousExpirations: phoneRendezvousExpirations()
       )
-      if control.kind == .request || control.kind == .refresh {
-        Task { [weak self] in
-          _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
-        }
-      }
-      if GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(control.kind),
+      if GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(control.kind, sessionRecovery: control.sessionRecovery),
          let refreshedContact = store.contact(id: request.galaxySSIId) {
         recoverPendingPhoneMessages(afterSessionRefresh: refreshedContact)
       }
       if control.kind == .approval {
-        guard store.approveFriendRequest(galaxySSIId: request.galaxySSIId) else { return }
+        guard store.contact(id: request.galaxySSIId)?.isCommunicable == true ||
+                store.approveFriendRequest(galaxySSIId: request.galaxySSIId) else { return }
         refreshApprovedPhoneContactSubscriptions()
       } else if control.kind == .rejection {
         guard store.rejectFriendRequest(galaxySSIId: request.galaxySSIId) else { return }
@@ -9020,6 +9080,7 @@ final class MessageCoordinator: ObservableObject {
       let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
       let body: String
       switch control.kind {
+      case .receipt: return
       case .request:
         body = String(
           format: GalaxySSILocalization.string(
@@ -9066,6 +9127,7 @@ final class MessageCoordinator: ObservableObject {
           request.name
         )
       }
+      guard finishPhonePairingControl(object, control: control) else { return }
       NotificationService.notify(
         title: "GalaxySSI",
         body: body,
@@ -9074,6 +9136,20 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     handlePhoneContactCiphertext(object, localGalaxySSIId: localGalaxySSIId)
+  }
+
+  @discardableResult
+  private func finishPhonePairingControl(
+    _ payload: [String: Any], control: GalaxySSIPhoneContactControl.ValidatedPayload
+  ) -> Bool {
+    if control.kind == .request || control.kind == .refresh {
+      guard enqueuePhoneContactControl(
+        kind: .bundle, targetCard: control.contactCard, sessionRecovery: control.kind == .refresh
+      ).accepted else { return false }
+    }
+    guard pairingDeliveries.markAccepted(payload) else { return false }
+    _ = enqueuePhoneContactControl(kind: .receipt, targetCard: control.contactCard, receiptFor: payload)
+    return true
   }
 
   private func handlePhoneContactBundleRequest(
@@ -9572,6 +9648,7 @@ final class MessageCoordinator: ObservableObject {
             pendingDesktopPairingClaim?.clientRouteId == pairingLink.routes.clientRouteId else {
         return
       }
+      if let pending = pendingDesktopPairingClaim { pairingDeliveries.discard(controlId: pending.controlId) }
       pendingDesktopPairingClaim = nil
       pairingConfirmationTimeoutTask?.cancel()
       pairingConfirmationTimeoutTask = nil

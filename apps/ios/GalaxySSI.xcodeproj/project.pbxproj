@@ -290,6 +290,8 @@
     A10000000000000000000013 /* GalaxySSIBackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* GalaxySSIBackupTests.swift */; };
     A10000000000000000000014 /* GalaxySSIContactExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* GalaxySSIContactExchange.swift */; };
     A10000000000000000002080 /* GalaxySSIPhoneContactControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002080 /* GalaxySSIPhoneContactControl.swift */; };
+    F32540000000000000000001 /* GalaxySSIPairingDeliveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32540000000000000000002 /* GalaxySSIPairingDeliveryStore.swift */; };
+    F32540000000000000000003 /* GalaxySSIPairingDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32540000000000000000004 /* GalaxySSIPairingDeliveryTests.swift */; };
     A10000000000000000002020 /* GalaxySSIDeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002020 /* GalaxySSIDeviceIdentity.swift */; };
     A10000000000000000000015 /* GalaxySSIContactExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* GalaxySSIContactExchangeTests.swift */; };
     A10000000000000000000480 /* GalaxySSILinkOutboxPayloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000480 /* GalaxySSILinkOutboxPayloadStore.swift */; };
@@ -1299,6 +1301,8 @@
     A20000000000000000000015 /* GalaxySSIBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIBackupTests.swift; sourceTree = "<group>"; };
     A20000000000000000000016 /* GalaxySSIContactExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactExchange.swift; sourceTree = "<group>"; };
     A20000000000000000002080 /* GalaxySSIPhoneContactControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPhoneContactControl.swift; sourceTree = "<group>"; };
+    F32540000000000000000002 /* GalaxySSIPairingDeliveryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPairingDeliveryStore.swift; sourceTree = "<group>"; };
+    F32540000000000000000004 /* GalaxySSIPairingDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPairingDeliveryTests.swift; sourceTree = "<group>"; };
     A20000000000000000002020 /* GalaxySSIDeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDeviceIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000017 /* GalaxySSIContactExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactExchangeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000480 /* GalaxySSILinkOutboxPayloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILinkOutboxPayloadStore.swift; sourceTree = "<group>"; };
@@ -2532,6 +2536,7 @@
         A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */,
         A20000000000000000000016 /* GalaxySSIContactExchange.swift */,
         A20000000000000000002080 /* GalaxySSIPhoneContactControl.swift */,
+        F32540000000000000000002 /* GalaxySSIPairingDeliveryStore.swift */,
         A20000000000000000002020 /* GalaxySSIDeviceIdentity.swift */,
         A20000000000000000000012 /* GalaxySSIAttachments.swift */,
         A20000000000000000001420 /* GalaxySSIAttachmentInputViews.swift */,
@@ -2812,6 +2817,7 @@
         A2F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift */,
         A20000000000000000000013 /* GalaxySSIAttachmentTests.swift */,
         A20000000000000000000017 /* GalaxySSIContactExchangeTests.swift */,
+        F32540000000000000000004 /* GalaxySSIPairingDeliveryTests.swift */,
         A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */,
         A20000000000000000000011 /* GalaxySSILinkReliabilityTests.swift */,
         A20000000000000000002707 /* AgentEvalOpsTests.swift */,
@@ -3681,6 +3687,7 @@
         A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */,
         A10000000000000000000014 /* GalaxySSIContactExchange.swift in Sources */,
         A10000000000000000002080 /* GalaxySSIPhoneContactControl.swift in Sources */,
+        F32540000000000000000001 /* GalaxySSIPairingDeliveryStore.swift in Sources */,
         A10000000000000000002020 /* GalaxySSIDeviceIdentity.swift in Sources */,
         A10000000000000000000010 /* GalaxySSIAttachments.swift in Sources */,
         A10000000000000000001420 /* GalaxySSIAttachmentInputViews.swift in Sources */,
@@ -3959,6 +3966,7 @@
         A1F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift in Sources */,
         A10000000000000000000011 /* GalaxySSIAttachmentTests.swift in Sources */,
         A10000000000000000000015 /* GalaxySSIContactExchangeTests.swift in Sources */,
+        F32540000000000000000003 /* GalaxySSIPairingDeliveryTests.swift in Sources */,
         A10000000000000000000006 /* GalaxySSILinkProtocolTests.swift in Sources */,
         A10000000000000000000009 /* GalaxySSILinkReliabilityTests.swift in Sources */,
         A10000000000000000002707 /* AgentEvalOpsTests.swift in Sources */,
