@@ -7,7 +7,8 @@ enum MqttChunkStorageError: Error {
   case capacityExceeded
 }
 
-// Storage private to the MQTT chunk journal. Rows contain encrypted payloads;
+// Shared storage for MQTT chunk and business delivery journals. Existing chunk key/schema names
+// stay unchanged for compatibility. Rows contain encrypted payloads;
 // only bounded quota/expiry indexes and hashed identities remain outside AEAD.
 final class MqttChunkDatabase {
   enum Value { case text(String), number(Int64), blob(Data) }
@@ -76,6 +77,26 @@ final class MqttChunkDatabase {
           encrypted_metadata BLOB NOT NULL, PRIMARY KEY(scope_digest, transfer_id))
         """)
       try execute("CREATE INDEX IF NOT EXISTS mqtt_outgoing_chunk_expiry ON mqtt_outgoing_chunks(expires_at)")
+      try execute("""
+        CREATE TABLE IF NOT EXISTS mqtt_business_inbox (
+          record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL,
+          completed INTEGER NOT NULL, retain_until INTEGER NOT NULL, payload_bytes INTEGER NOT NULL,
+          encrypted_metadata BLOB NOT NULL)
+        """)
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending ON mqtt_business_inbox(completed,record_key)")
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_scope ON mqtt_business_inbox(binding_digest)")
+      try execute("""
+        CREATE TABLE IF NOT EXISTS mqtt_business_ciphertexts (
+          binding_digest TEXT NOT NULL, ciphertext_digest TEXT NOT NULL, record_key TEXT NOT NULL,
+          PRIMARY KEY(binding_digest,ciphertext_digest))
+        """)
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_cipher_record ON mqtt_business_ciphertexts(record_key)")
+      try execute("""
+        CREATE TABLE IF NOT EXISTS mqtt_business_outbox (
+          record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, next_attempt_at INTEGER NOT NULL,
+          payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
+        """)
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_outbox_schedule ON mqtt_business_outbox(binding_digest,next_attempt_at)")
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
       try transaction { () }
     } catch {
@@ -132,7 +153,7 @@ final class MqttChunkDatabase {
     if let saved {
       guard try open(saved, purpose: "mqtt-chunk-store-key") == Self.canary else { throw MqttChunkStorageError.corruptState }
     } else {
-      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks)",
+      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox)",
                             maximumRows: 1) { try $0.number(0) }.first
       guard count == 0 else { throw MqttChunkStorageError.corruptState }
       let encrypted = try seal(Self.canary, purpose: "mqtt-chunk-store-key")
