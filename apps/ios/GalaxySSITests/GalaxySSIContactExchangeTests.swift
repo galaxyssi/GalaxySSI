@@ -4,6 +4,92 @@ import XCTest
 @MainActor
 final class GalaxySSIContactExchangeTests: XCTestCase {
 #if canImport(LibSignalClient)
+  func testDuplicateBundlePreservesEstablishedSignalSession() throws {
+    let aliceSuite = "PairingAlice-\(UUID().uuidString)"
+    let bobSuite = "PairingBob-\(UUID().uuidString)"
+    let aliceDefaults = UserDefaults(suiteName: aliceSuite)!
+    let bobDefaults = UserDefaults(suiteName: bobSuite)!
+    defer {
+      aliceDefaults.removePersistentDomain(forName: aliceSuite)
+      bobDefaults.removePersistentDomain(forName: bobSuite)
+    }
+    let alice = GalaxySSISignalEngine(profileName: "Alice", defaults: aliceDefaults, secrets: InMemorySecretStore())
+    let bob = GalaxySSISignalEngine(profileName: "Bob", defaults: bobDefaults, secrets: InMemorySecretStore())
+    let bundleData = try JSONSerialization.data(withJSONObject: XCTUnwrap(bob.localBundle()))
+    let bundle = try XCTUnwrap(JSONSerialization.jsonObject(with: bundleData) as? [String: Any])
+    XCTAssertTrue(alice.processBundle(bundle, remoteName: bob.identity.name))
+    let first = try XCTUnwrap(alice.encrypt(["text": "first"], remoteName: bob.identity.name))
+    XCTAssertEqual(bob.decrypt(first)?["text"] as? String, "first")
+    let reply = try XCTUnwrap(bob.encrypt(["text": "reply"], remoteName: alice.identity.name))
+    XCTAssertEqual(alice.decrypt(reply)?["text"] as? String, "reply")
+
+    XCTAssertTrue(alice.processBundle(bundle, remoteName: bob.identity.name))
+    let next = try XCTUnwrap(alice.encrypt(["text": "next"], remoteName: bob.identity.name))
+    XCTAssertEqual(next["signal_type"] as? String, "signal")
+    XCTAssertEqual(bob.decrypt(next)?["text"] as? String, "next")
+  }
+
+  func testPhoneControlsCarryAndAcceptAndroidNestedBundle() throws {
+    let suite = "PairingWireCard-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let engine = GalaxySSISignalEngine(profileName: "Alice", defaults: defaults, secrets: InMemorySecretStore())
+    let identity = engine.identity
+    let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    let profile = GalaxySSIProfile(
+      galaxySSIId: identity.name, name: "Alice",
+      identityFingerprint: identity.fingerprint, identityPublicKey: identity.publicKey
+    )
+    let qr = try XCTUnwrap(GalaxySSIContactExchange.makeSignedPhoneContactQRText(
+      profile: profile, signalIdentity: identity, pairingToken: secret, pairingSecret: secret,
+      pairingTopic: GalaxySSILinkProtocol.pairingTopic(secret: secret), sign: engine.signContactCard
+    ))
+    let card = try XCTUnwrap(GalaxySSIContactExchange.normalizeCompactPhoneContactQR(
+      GalaxySSIQRCodePayload.decodeObject(from: qr, label: "Test contact")
+    ))
+    XCTAssertNil(card["signal_bundle"])
+    var wireCard = card
+    wireCard["signal_bundle"] = try XCTUnwrap(engine.localBundle())
+    var incoming: [String: Any] = [
+      "type": "opaque_contact_confirm", "version": GalaxySSILinkProtocol.version,
+      "control_id": UUID().uuidString, "from": identity.name, "to": "local-recipient",
+      "contact_card": wireCard, "time": Int64(Date().timeIntervalSince1970 * 1_000),
+      "session_recovery": true
+    ]
+    let validated = try XCTUnwrap(GalaxySSIPhoneContactControl.validate(incoming, addressedTo: "local-recipient"))
+    XCTAssertEqual(validated.signalBundle["identityKey"] as? String, identity.publicKey)
+    XCTAssertTrue(validated.sessionRecovery)
+    incoming["type"] = "opaque_contact_receipt"
+    XCTAssertEqual(GalaxySSIPhoneContactControl.validate(incoming, addressedTo: "local-recipient")?.kind, .receipt)
+    wireCard["signal_bundle"] = ["identityKey": Data(repeating: 9, count: 33).base64EncodedString()]
+    incoming["contact_card"] = wireCard
+    XCTAssertNil(GalaxySSIPhoneContactControl.validate(incoming, addressedTo: "local-recipient"))
+
+    let otherSuite = "PairingWireTarget-\(UUID().uuidString)"
+    let otherDefaults = UserDefaults(suiteName: otherSuite)!
+    defer { otherDefaults.removePersistentDomain(forName: otherSuite) }
+    let other = GalaxySSISignalEngine(profileName: "Bob", defaults: otherDefaults, secrets: InMemorySecretStore())
+    let otherIdentity = other.identity
+    let otherProfile = GalaxySSIProfile(
+      galaxySSIId: otherIdentity.name, name: "Bob",
+      identityFingerprint: otherIdentity.fingerprint, identityPublicKey: otherIdentity.publicKey
+    )
+    let otherQR = try XCTUnwrap(GalaxySSIContactExchange.makeSignedPhoneContactQRText(
+      profile: otherProfile, signalIdentity: otherIdentity, pairingToken: secret, pairingSecret: secret,
+      pairingTopic: GalaxySSILinkProtocol.pairingTopic(secret: secret), sign: other.signContactCard
+    ))
+    let target = try XCTUnwrap(GalaxySSIContactExchange.normalizeCompactPhoneContactQR(
+      GalaxySSIQRCodePayload.decodeObject(from: otherQR, label: "Test target")
+    ))
+    let outgoing = try XCTUnwrap(GalaxySSIPhoneContactControl.makePayload(
+      kind: .bundle, targetCard: target, localCard: card, localSignalIdentity: identity
+    ))
+    let outgoingCard = try XCTUnwrap(outgoing["contact_card"] as? [String: Any])
+    let nested = try XCTUnwrap(outgoingCard["signal_bundle"] as? [String: Any])
+    XCTAssertEqual(nested["identityKey"] as? String, identity.publicKey)
+    XCTAssertNoThrow(try GalaxySSIContactExchange.validateSignedPhoneContactCard(outgoingCard))
+  }
+
   func testConsumedContactQRPreKeyRotatesWithoutChangingIdentity() throws {
     let suite = "GalaxySSIContactQRPreKeyTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

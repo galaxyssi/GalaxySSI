@@ -348,7 +348,9 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
   func testOnlyExplicitPhoneBundleRefreshReplacesExistingSession() {
     XCTAssertFalse(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.request))
     XCTAssertTrue(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.refresh))
-    XCTAssertTrue(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.bundle))
+    XCTAssertFalse(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.bundle))
+    XCTAssertTrue(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.bundle, sessionRecovery: true))
+    XCTAssertFalse(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.receipt, sessionRecovery: true))
     XCTAssertFalse(GalaxySSIPhoneContactBundlePolicy.replacesExistingSession(.approval))
   }
 

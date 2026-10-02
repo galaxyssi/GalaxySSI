@@ -120,6 +120,7 @@ final class GalaxySSISignalEngine {
       )
       let address = try ProtocolAddress(name: name, deviceId: deviceId)
       let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+      if !replaceExisting, store.containsSession(name: name, deviceId: deviceId) { return true }
       if replaceExisting {
         store.removeSession(name: name, deviceId: deviceId)
       }
