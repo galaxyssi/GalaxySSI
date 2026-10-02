@@ -18,7 +18,17 @@ internal object CollaborationResearchArtifact {
             "\"outcome\":\"supported|refuted|not_tested\",\"change\":\"concrete repair\"}],\"questions\":[\"unresolved issue\"]," +
             "\"requests\":[{\"to\":[\"exact member UUID\"],\"question\":\"specific request to peers\",\"candidate_id\":\"C1\"}]," +
             "\"memory\":[{\"kind\":\"constraint|decision|rejected_route|open_question\",\"text\":\"important item to preserve\"," +
-            "\"source\":\"original evidence reference\",\"supersedes\":\"earlier record_id, or empty\"}]}. " +
+            "\"source\":\"original evidence reference\",\"supersedes\":\"earlier record_id, or empty\"}]," +
+            "\"workspace\":[{\"id\":\"stable local ID for a NEW object\",\"object_id\":\"existing host ID when revising, otherwise empty\"," +
+            "\"base_revision\":0,\"kind\":\"hypothesis|evidence|counterexample|proposal|experiment|artifact|decision|question\"," +
+            "\"title\":\"concise title\",\"body\":{\"content\":\"substantive design, data, finding or experiment specification\"}," +
+            "\"parents\":[{\"object_id\":\"source object ID\",\"revision\":1}]," +
+            "\"resolves\":[{\"object_id\":\"counterexample or question ID\",\"revision\":1}]}]}. " +
+            "Use workspace to improve shared, versioned research objects, not just post messages. For edits copy the exact host object_id and base_revision. " +
+            "Keep competing hypotheses as distinct objects. Cross-domain combinations cite parents; repairs cite the counterexamples they address. " +
+            "Counterexamples must include the specific weakness, evidence, a proposed correction and an executable discriminating check in body. " +
+            "Read full originals through collaboration.recall mode=workspace before modifying them. Authors and revision hashes are assigned by the host. " +
+            "Workspace versions are reports, not independent validation. A version conflict requires re-reading and reconciling, never blind overwriting. " +
             "Use at most three candidates, eight findings and three targeted requests. Empty arrays are allowed outside proposal/verification stages. " +
             "Preserve up to eight important memory items, including negative evidence and unresolved disagreements. " +
             "Corrections must cite the earlier record; never silently replace it or promote an assumption to a fact. " +
@@ -53,6 +63,7 @@ internal object CollaborationResearchArtifact {
                 require(item.getString("text").isNotBlank())
             }
         }
+        require(!json.has("workspace") || json.optJSONArray("workspace") != null)
         json
     }.getOrNull()
 

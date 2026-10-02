@@ -387,6 +387,14 @@ class EncryptedAgentTeamExecutionStore internal constructor(
             .maxOfOrNull { it.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L } ?: 0L
     }
 
+    internal fun workspaceReadAccess(conversationId: String, turnId: String): CollaborationWorkspaceAccess = synchronized(LOCK) {
+        val record = records().filter { it.request.conversationId == conversationId &&
+            (it.request.messageId == turnId || it.request.taskId == turnId) && CollaborationGoalLoop.enrolled(it) }
+            .maxByOrNull { it.request.createdAtMillis }
+        CollaborationWorkspaceAccess(conversationId, record?.request?.runId.orEmpty(), turnId,
+            record?.request?.context?.get(CollaborationGoalLoop.ROUND)?.toString()?.toLongOrNull() ?: 0L)
+    }
+
     override fun resumeCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
         record(supervisorRunId)?.resumeCheckpoint()
     }
@@ -395,7 +403,8 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         val current = record(supervisorRunId) ?: return@synchronized false
         val next = CollaborationGoalLoop.advance(current, expectedPrimary, nowMillis, wakeBlocked, recruitmentNames) ?: return@synchronized false
         // Archive each batch's own results, not a quadratic copy of every earlier work ID.
-        val archived = current.copy(request = current.request.copy(context = current.request.context - CollaborationGoalLoop.FINISHED_WORK))
+        val archived = current.copy(request = current.request.copy(context = current.request.context -
+            setOf(CollaborationGoalLoop.FINISHED_WORK, CollaborationGoalLoop.FINISHED_AUTHORS)))
         database.mutateStrings(mapOf("goal-cycle:$supervisorRunId:$expectedPrimary" to encode(archived), recordKey(supervisorRunId) to encode(next)))
         true
     }
@@ -604,7 +613,10 @@ class AgentTeamExecutionRuntime(
                 AgentSubagentChild(
                     childId = member.memberId,
                     dependencies = dependencies,
-                    dependencyPolicy = if (research || member.memberId == normalizedDefinition.primaryMemberId) {
+                    dependencyPolicy = if (research && member.context[CollaborationWorkGraph.POLICY] == "success" &&
+                        member.memberId != normalizedDefinition.primaryMemberId) {
+                        AgentSubagentDependencyPolicy.REQUIRE_SUCCESS
+                    } else if (research || member.memberId == normalizedDefinition.primaryMemberId) {
                         AgentSubagentDependencyPolicy.ALLOW_TERMINAL
                     } else AgentSubagentDependencyPolicy.REQUIRE_SUCCESS,
                     context = member.objective.ifBlank { request.goal }.take(MAX_MEMBER_CONTEXT_CHARS),
@@ -753,7 +765,7 @@ class AgentTeamExecutionRuntime(
                 member.dependsOnAgentIds + observerIds
             } else member.dependsOnAgentIds
         }
-        require(isAcyclic(dependencies)) { "Agent team dependencies must form an acyclic graph" }
+        require(AgentDependencyGraph.isAcyclic(dependencies)) { "Agent team dependencies must form an acyclic graph" }
         if (definition.collectiveCapabilities.isNotEmpty()) {
             val declaredCapabilities = members.flatMapTo(linkedSetOf(), AgentTeamMember::requiredCapabilities)
             require(declaredCapabilities.containsAll(definition.collectiveCapabilities)) {
@@ -761,20 +773,6 @@ class AgentTeamExecutionRuntime(
             }
         }
         return members
-    }
-
-    private fun isAcyclic(dependencies: Map<String, Set<String>>): Boolean {
-        val visiting = mutableSetOf<String>()
-        val visited = mutableSetOf<String>()
-        fun visit(agentId: String): Boolean {
-            if (agentId in visiting) return false
-            if (!visited.add(agentId)) return true
-            visiting += agentId
-            if (dependencies[agentId].orEmpty().any { !visit(it) }) return false
-            visiting -= agentId
-            return true
-        }
-        return dependencies.keys.all(::visit)
     }
 
     private companion object {
@@ -1014,7 +1012,14 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 CollaborationResearchArchive(it, groupId).record(context, result.content)
             }
             CollaborationResearchWorkflow.stage(context.member)?.let { stage ->
-                result.copy(content = CollaborationResearchArtifact.handoff(result.content, stage))
+                val artifact = CollaborationResearchArtifact.decode(result.content)
+                artifact?.remove("workspace_receipt")
+                if (artifact != null && groupId.isNotBlank() && progressContext != null) {
+                    val receipt = CollaborationResearchWorkspace(progressContext).publish(
+                        CollaborationWorkspaceAccess.from(context), result.content)
+                    if (receipt.length() > 0) artifact.put("workspace_receipt", receipt)
+                }
+                result.copy(content = CollaborationResearchArtifact.handoff(artifact?.toString() ?: result.content, stage))
             } ?: result
         } finally {
             provider.discardPrepared(registration.agentId, managedRequest.runId)
@@ -1038,6 +1043,9 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             append("Preserved acceptance criteria (do not drop or weaken): ")
                 .append(context.request.context[CollaborationGoalLoop.CRITERIA] ?: "[]").append('\n')
             append("Host recruitment feedback: ").append(context.request.context[CollaborationGoalRecruitment.FEEDBACK]?.toString().orEmpty()).append('\n')
+            append("Host dependency validation: ").append(context.request.context[CollaborationWorkGraph.FEEDBACK]?.toString().orEmpty()).append('\n')
+            append("Completed prior work dependencies (recall their original artifacts): ")
+                .append(context.member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES].orEmpty()).append('\n')
             append("Already completed work IDs (do not dispatch again; recall archived results instead): ")
                 .append(context.request.context[CollaborationGoalLoop.FINISHED_WORK]?.toString()?.let { raw ->
                     runCatching { JSONArray(raw).let { array -> JSONArray((maxOf(0, array.length() - 32) until array.length()).map { array.getString(it) }).toString() } }.getOrDefault("[]")
@@ -1065,6 +1073,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 .context(context.request.goal, context.request.messageId,
                     context.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L)).append('\n')
             append("Use galaxyssi.phone.collaboration.recall to search earlier group evidence or read full originals by record_id and offset. ")
+            append("Use mode=workspace to browse shared hypotheses, proposals, counterexamples and artifacts; read object_id and revision with offset for full content. ")
+            append("Workspace publication receipts identify exact versions, not verification of their claims. A rejected update must be repaired in new work. ")
             append("Use mode=browse with cursor for paginated history when search is insufficient. ")
             append("A summary is a retrieval aid, not a replacement for its source. Older claims may be superseded. ")
             append("Before changing a past decision, recall its original constraints, counterevidence and open questions. ")

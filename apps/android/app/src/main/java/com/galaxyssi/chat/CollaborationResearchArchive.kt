@@ -89,6 +89,7 @@ internal class CollaborationResearchArchive(private val context: Context, privat
         private fun databaseName(group: String) = "galaxyssi_group_research_${AgentNativeJsonCodec.sha256(group)}.db"
 
         fun remove(context: Context, group: String) = synchronized(LOCK) {
+            CollaborationResearchWorkspace.remove(context, group)
             val name = databaseName(group)
             AgentKnowledgeDatabase.release(context, name)
             val path = context.getDatabasePath(name)

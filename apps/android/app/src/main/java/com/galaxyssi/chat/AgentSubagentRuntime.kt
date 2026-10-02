@@ -837,21 +837,9 @@ class AgentSubagentRuntime(
     }
 
     private fun validateDependencyDag(children: Map<String, NormalizedChild>) {
-        val state = mutableMapOf<String, Int>()
-
-        fun visit(childId: String) {
-            when (state[childId]) {
-                1 -> throw IllegalArgumentException(
-                    "Subagent dependency graph contains a cycle at $childId"
-                )
-                2 -> return
-            }
-            state[childId] = 1
-            checkNotNull(children[childId]).dependencies.forEach(::visit)
-            state[childId] = 2
+        require(AgentDependencyGraph.isAcyclic(children.mapValues { it.value.dependencies.toSet() })) {
+            "Subagent dependency graph contains a cycle or unknown dependency"
         }
-
-        children.keys.sorted().forEach(::visit)
     }
 
     private fun normalizeId(value: String, fieldName: String): String {

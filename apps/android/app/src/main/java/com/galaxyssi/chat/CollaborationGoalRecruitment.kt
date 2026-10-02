@@ -106,6 +106,12 @@ internal object CollaborationGoalRecruitment {
         val rejected = pendingIds - names.keys
         val removedNodes = record.definition.members.filter { it.context[CollaborationResearchWorkflow.PERSON] in rejected }
             .mapTo(hashSetOf()) { it.memberId }
+        // Never run a dependent assignment after deleting the producer it requires.
+        do {
+            val size = removedNodes.size
+            record.definition.members.filter { it.memberId != record.definition.primaryMemberId &&
+                it.dependsOnAgentIds.any(removedNodes::contains) }.mapTo(removedNodes) { it.memberId }
+        } while (removedNodes.size != size)
         val members = record.definition.members.filterNot { it.memberId in removedNodes }.map { member ->
             val id = member.context[CollaborationResearchWorkflow.PERSON]
             member.copy(dependsOnAgentIds = member.dependsOnAgentIds - removedNodes,

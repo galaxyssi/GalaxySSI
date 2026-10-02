@@ -15,6 +15,8 @@ internal object CollaborationRecallNativeTool {
                 "mode" to AgentNativeJsonSchema.string(maxLength = 16),
                 "cursor" to AgentNativeJsonSchema.string(maxLength = 512),
                 "record_id" to AgentNativeJsonSchema.string(maxLength = 64),
+                "object_id" to AgentNativeJsonSchema.string(maxLength = 64),
+                "revision" to AgentNativeJsonSchema.integer(minimum = 1),
                 "offset" to AgentNativeJsonSchema.integer(minimum = 0)
             ), additionalProperties = false),
             outputSchema = AgentNativeJsonSchema.objectSchema(additionalProperties = true),
@@ -25,6 +27,28 @@ internal object CollaborationRecallNativeTool {
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
+            if (call.input["mode"] == "workspace") {
+                val workspace = CollaborationResearchWorkspace(context)
+                val access = EncryptedAgentTeamExecutionStore(context).workspaceReadAccess(group, call.context.turnId)
+                val objectId = call.input["object_id"] as? String ?: ""
+                if (objectId.isNotBlank()) {
+                    val revision = workspace.read(access, objectId, (call.input["revision"] as? Number)?.toInt() ?: 0)
+                        ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
+                            "object_unavailable", "Object revision is missing or isolated from this assignment.")
+                    val content = revision.toString()
+                    val offset = (call.input["offset"] as? Number)?.toInt()?.coerceIn(0, content.length) ?: 0
+                    val end = minOf(content.length, offset + 8_000)
+                    return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(mapOf(
+                        "content" to content.substring(offset, end), "total_characters" to content.length,
+                        "next_offset" to end.takeIf { it < content.length }, "trust" to "member_reported_not_verified"))
+                }
+                val page = try { workspace.browse(access, call.input["cursor"] as? String ?: "") }
+                catch (_: IllegalArgumentException) { return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
+                    "invalid_cursor", "Invalid workspace cursor.") }
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(mapOf(
+                    "revisions" to page.revisions.map { it.toString() }, "next_cursor" to page.next,
+                    "trust" to "member_reported_not_verified"))
+            }
             val beforeRound = EncryptedAgentTeamExecutionStore(context).goalRound(group, call.context.turnId)
             val id = call.input["record_id"] as? String ?: ""
             if (id.isNotBlank()) {
