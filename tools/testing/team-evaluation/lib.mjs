@@ -25,7 +25,11 @@ export function validateCorpus(corpus) {
   validateManifest(corpus);
   requireThat(corpus.scenarios.length >= 3 && new Set(corpus.scenarios.map((s) => s.category)).size >= 3,
     "Corpus needs at least three task types");
+  const seenRequests = new Set();
   for (const scenario of corpus.scenarios) {
+    const requestHash = digest(scenario.request);
+    requireThat(!seenRequests.has(requestHash), `Duplicate corpus request: ${scenario.id}`);
+    seenRequests.add(requestHash);
     requireThat(object(scenario.answers) && Object.keys(scenario.answers).length > 0, `Missing rubric: ${scenario.id}`);
   }
   return corpus;
@@ -126,6 +130,17 @@ export function validateExport(input, plan, expectedKind) {
     requireThat(text(run.run_id) && !seenRuns.has(run.run_id), "Missing/reused run ID across trials");
     requireThat(run.result === undefined || object(run.result), "Result must be an object");
     requireThat(run.accounting?.ledger?.calls === undefined || Array.isArray(run.accounting.ledger.calls), "Calls must be an array");
+    if (expectedKind === "actual") {
+      const accounting = run.accounting || {};
+      const ledger = accounting.ledger || {};
+      // Inspect receipt fields only; answers may legitimately quote a fixture marker.
+      const refs = [run.budget?.evidence_ref, run.capture?.evidence_ref, ledger.evidence_ref,
+        accounting.wall_time_ms?.evidence_ref, accounting.rework_count?.evidence_ref,
+        accounting.intervention_count?.evidence_ref,
+        ...(ledger.calls || []).flatMap((call) => [call?.total_tokens?.evidence_ref, call?.cost_micros?.evidence_ref])];
+      requireThat(!refs.some((ref) => typeof ref === "string" && /^FIXTURE_ONLY(?:[:_\s-]|$)/i.test(ref.trim())),
+        "Explicit fixture provenance cannot be actual evidence");
+    }
     seenSlots.add(run.slot_id); seenRuns.add(run.run_id);
     for (const call of run.accounting?.ledger?.calls || []) {
       requireThat(object(call) && text(call.call_id) && !seenCalls.has(call.call_id), "Missing/reused call ID");
@@ -165,7 +180,11 @@ export function measureRun(run) {
 
 export function assessQuality(scenario, result) {
   if (!result || !TERMINAL.includes(result.status)) return { score: UNKNOWN, passed: UNKNOWN, assertions: [] };
-  const base = evaluateScenario(scenario, result);
+  // Resource eligibility is checked separately against the whole-trial budget.
+  const qualityExpect = { ...(scenario.expect || {}) };
+  delete qualityExpect.max_duration_ms;
+  delete qualityExpect.latency_is_critical;
+  const base = evaluateScenario({ ...scenario, expect: qualityExpect }, result);
   let parsed;
   try { parsed = JSON.parse(result.response); } catch { parsed = undefined; }
   const checks = Object.entries(scenario.answers).map(([key, expected]) => ({
