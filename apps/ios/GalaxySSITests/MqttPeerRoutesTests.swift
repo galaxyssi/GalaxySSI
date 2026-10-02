@@ -2,6 +2,39 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testApprovedOfflineBindingCanCommitOutboxWithoutRouteReadiness() throws {
+    let fixture = try PeerRoutesFixture()
+    let identity = try MqttBusinessIdentity(fixture.binding)
+    XCTAssertFalse(fixture.routes.isReady(scope: identity.scope))
+    let result = try fixture.routes.withOutgoing(identity: identity, topics: [fixture.binding.sendTopic]) { "committed" }
+    XCTAssertEqual(result, "committed")
+    XCTAssertTrue(fixture.path.publications.isEmpty)
+  }
+
+  func testRevocationAndKeyRotationPreventQueuedCommit() throws {
+    let fixture = try PeerRoutesFixture()
+    let identity = try MqttBusinessIdentity(fixture.binding)
+    var called = false
+    fixture.binding.enabled = false
+    try fixture.routes.replace([fixture.binding])
+    XCTAssertThrowsError(try fixture.routes.withOutgoing(identity: identity, topics: [fixture.binding.sendTopic]) { called = true })
+    fixture.binding.enabled = true
+    fixture.binding.secret = Data(repeating: 8, count: 32).base64URLEncodedString()
+    try fixture.routes.replace([fixture.binding])
+    XCTAssertThrowsError(try fixture.routes.withOutgoing(identity: identity, topics: [fixture.binding.sendTopic]) { called = true })
+    XCTAssertFalse(called)
+  }
+
+  func testOutgoingCommitRequiresEveryTopicToBelongToCurrentPeer() throws {
+    let fixture = try PeerRoutesFixture()
+    let identity = try MqttBusinessIdentity(fixture.binding)
+    var called = false
+    XCTAssertThrowsError(try fixture.routes.withOutgoing(identity: identity, topics: []) { called = true })
+    XCTAssertThrowsError(try fixture.routes.withOutgoing(identity: identity,
+      topics: [fixture.binding.sendTopic, String(repeating: "x", count: 43)]) { called = true })
+    XCTAssertFalse(called)
+  }
+
   func testConnectedBrokerIsNotReadyUntilMatchingPeerAcknowledgement() async throws {
     let fixture = try PeerRoutesFixture()
     await fixture.start()

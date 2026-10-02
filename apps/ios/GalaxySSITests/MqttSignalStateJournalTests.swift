@@ -209,7 +209,10 @@ final class MqttSignalAtomicReceiveTests: XCTestCase {
   func testEstablishedRatchetAlsoRollsBackAndRetries() throws {
     let f = try SignalReceiveFixture()
     _ = try f.receive(f.wire())
-    let reply = try XCTUnwrap(f.bob.encrypt(["message_id": "reply"], remoteName: f.aliceIdentity.name))
+    let request = try MqttSignalSendRequest(identity: signalTestIdentity(local: f.bobIdentity.fingerprint, remote: f.aliceIdentity.fingerprint),
+      payload: ["message_id": "reply"], remoteName: f.aliceIdentity.name, topic: String(repeating: "A", count: 43))
+    let entry = try f.bob.encryptAndEnqueue(request)
+    let reply = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(entry.message.wirePayload.utf8)) as? [String: Any])
     XCTAssertNotNil(f.alice.decrypt(reply))
     let wire = try f.wire(messageID: "second")
     XCTAssertEqual(wire["signal_type"] as? String, "signal")

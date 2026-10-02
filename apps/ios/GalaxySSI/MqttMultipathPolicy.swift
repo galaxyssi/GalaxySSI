@@ -2,7 +2,7 @@ import Foundation
 
 // Scheduling only. The caller authenticates and commits peer receipts before confirming them here.
 final class MqttMultipathPolicy {
-  enum Traffic: String { case control, message, `final`, progress, chunk, receipt }
+  enum Traffic: String, Codable { case control, message, `final`, progress, chunk, receipt }
   struct PeerRoute: Equatable {
     let epoch: Int64
     let receiveBrokers: Set<String>

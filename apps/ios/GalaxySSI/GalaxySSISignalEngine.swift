@@ -199,35 +199,88 @@ final class GalaxySSISignalEngine {
   }
 
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? {
-    guard hasSession(remoteName: remoteName, deviceId: deviceId),
+    guard journal == nil, hasSession(remoteName: remoteName, deviceId: deviceId),
           let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return nil }
-    do {
-      let address = try ProtocolAddress(name: remoteName, deviceId: deviceId)
-      let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
-      return try store.transaction { _ in
-        let message = try signalEncrypt(
-          message: data,
-          for: address,
-          localAddress: localAddress,
-          sessionStore: store,
-          identityStore: store,
-          context: context
-        )
-        return [
-          "version": 1,
-          "scheme": "signal",
-          "from": localName,
-          "to": remoteName,
-          "device_id": deviceId,
-          "signal_type": message.messageType == .preKey ? "prekey" : "signal",
-          "message_type": Int(message.messageType.rawValue),
-          "body": message.serialize().base64EncodedString(),
-          "time": Int64(Date().timeIntervalSince1970 * 1_000)
-        ]
-      }
-    } catch {
-      return nil
+    return try? store.transaction { _ in
+      try encryptPayload(data, remoteName: remoteName, deviceID: deviceId, now: Date())
     }
+  }
+
+  func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry {
+    guard let entry = try enqueueBatch([request], now: now).first else { throw MqttRouteError.invalidPayload }
+    return entry
+  }
+
+  // The coordinator must hold its current approved binding while queueing. No network I/O is done here.
+  // Attachment-blocked requests remain encrypted at rest, without advancing a Signal sending chain.
+  func enqueueBatch(_ requests: [MqttSignalSendRequest], now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] {
+    guard let journal, let first = requests.first, (1...64).contains(requests.count),
+          requests.allSatisfy({ $0.identity == first.identity }),
+          first.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
+          requests.reduce(0, { $0 + $1.payload.count }) <= 4 * 1024 * 1024 else { throw MqttRouteError.invalidPayload }
+    let hashes = try requests.map { try $0.digest() }
+    guard Set(requests.map(\.messageID)).count == requests.count else { throw MqttRouteError.invalidPayload }
+    return try store.transaction { token in
+      guard let token else { throw MqttChunkStorageError.databaseFailure }
+      return try zip(requests, hashes).map { request, hash in
+        if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) {
+          guard existing.requestHash == hash, existing.traffic == request.traffic.rawValue, request.matches(existing.message) else {
+            throw MqttChunkStorageError.corruptState
+          }
+          return existing
+        }
+        if request.attachmentDependencies.isEmpty {
+          let wire = try outgoingWire(request, now: now)
+          try journal.outbox.enqueue(identity: request.identity, message: request.pendingMessage(wire: wire, now: now),
+            traffic: request.traffic, requestHash: hash, transaction: token)
+        } else {
+          try journal.outbox.enqueueDeferred(request, now: now, transaction: token)
+        }
+        guard let saved = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) else {
+          throw MqttChunkStorageError.corruptState
+        }
+        return saved
+      }
+    }
+  }
+
+  func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,
+                        now: Date = Date()) throws -> MqttBusinessOutbox.Entry? {
+    guard let journal, identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()) else { throw MqttRouteError.identityChanged }
+    return try store.transaction { token in
+      guard let token else { throw MqttChunkStorageError.databaseFailure }
+      guard let entry = try journal.outbox.entry(identity: identity, messageID: messageID, transaction: token),
+            entry.message.blockedByAttachmentTransferIds.isEmpty,
+            !entry.message.requiresValidatedNetwork || validatedNetwork else { return nil }
+      guard let request = entry.deferredRequest else { return entry }
+      let hash = try request.digest()
+      let wire = try outgoingWire(request, now: now)
+      return try journal.outbox.prepare(identity: identity, messageID: messageID, requestHash: hash, wire: wire, now: now, transaction: token)
+    }
+  }
+
+  private func outgoingWire(_ request: MqttSignalSendRequest, now: Date) throws -> String {
+    try request.validate()
+    let address = try ProtocolAddress(name: request.remoteName, deviceId: request.deviceID)
+    guard let known = try store.identity(for: address, context: context),
+          Self.sha256(known.serialize()) == request.identity.remote,
+          store.containsSession(name: request.remoteName, deviceId: request.deviceID) else { throw MqttRouteError.identityChanged }
+    var wire = try encryptPayload(request.payload, remoteName: request.remoteName, deviceID: request.deviceID, now: now)
+    wire["message_id"] = request.messageID
+    if let route = request.clientRouteID { wire["_client_route_id"] = route }
+    return String(decoding: try GalaxySSILinkProtocol.jsonData(wire), as: UTF8.self)
+  }
+
+  private func encryptPayload(_ data: Data, remoteName: String, deviceID: UInt32, now: Date) throws -> [String: Any] {
+    let time = now.timeIntervalSince1970 * 1000
+    guard time.isFinite, time >= 0, time <= Double(MqttRouteProtocol.maximumInteger) else { throw MqttRouteError.invalidPayload }
+    let address = try ProtocolAddress(name: remoteName, deviceId: deviceID)
+    let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+    let message = try signalEncrypt(message: data, for: address, localAddress: localAddress,
+      sessionStore: store, identityStore: store, context: context)
+    return ["version": 1, "scheme": "signal", "from": localName, "to": remoteName, "device_id": deviceID,
+      "signal_type": message.messageType == .preKey ? "prekey" : "signal",
+      "message_type": Int(message.messageType.rawValue), "body": message.serialize().base64EncodedString(), "time": Int64(time)]
   }
 
   func decrypt(_ envelope: [String: Any]) -> [String: Any]? {
@@ -356,6 +409,10 @@ final class GalaxySSISignalEngine {
     throw MqttRouteError.invalidPayload
   }
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
+  func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry { throw MqttRouteError.invalidPayload }
+  func enqueueBatch(_ requests: [MqttSignalSendRequest], now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] { throw MqttRouteError.invalidPayload }
+  func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,
+                        now: Date = Date()) throws -> MqttBusinessOutbox.Entry? { throw MqttRouteError.invalidPayload }
   func decrypt(_ envelope: [String: Any]) -> [String: Any]? { nil }
 }
 #endif

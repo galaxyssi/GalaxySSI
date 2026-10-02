@@ -5,11 +5,13 @@ final class MqttSignalStateJournal {
   static let maximumBytes = 32 * 1024 * 1024
   private let database: MqttChunkDatabase
   let inbox: MqttBusinessInbox
+  let outbox: MqttBusinessOutbox
 
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
-       inboxLimits: MqttBusinessInbox.Limits = .init()) throws {
+       inboxLimits: MqttBusinessInbox.Limits = .init(), outboxLimits: MqttBusinessOutbox.Limits = .init()) throws {
     database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)
     inbox = try MqttBusinessInbox(database: database, limits: inboxLimits)
+    outbox = try MqttBusinessOutbox(database: database, limits: outboxLimits)
   }
 
   func load() throws -> Data? { try database.transaction { try read() } }

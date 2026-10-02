@@ -195,6 +195,25 @@ final class MqttPeerRoutes {
     }
   }
 
+  // Queueing is allowed while offline, but approval, relationship key and destination must still be current.
+  func withOutgoing<T>(identity: MqttBusinessIdentity, topics: Set<String>, commit: () throws -> T) throws -> T {
+    try locked {
+      guard let peer = peers[identity.scope], peer.active, peer.binding.enabled, !topics.isEmpty,
+            topics.isSubset(of: peer.binding.sendTopics),
+            try MqttBusinessIdentity(peer.binding) == identity else { throw MqttRouteError.identityChanged }
+      return try commit()
+    }
+  }
+
+  func enqueue(_ requests: [MqttSignalSendRequest], using engine: GalaxySSISignalEngine,
+               now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] {
+    guard let first = requests.first, (1...64).contains(requests.count),
+          requests.allSatisfy({ $0.identity == first.identity }) else { throw MqttRouteError.invalidPayload }
+    return try withOutgoing(identity: first.identity, topics: Set(requests.map(\.topic))) {
+      try engine.enqueueBatch(requests, now: now)
+    }
+  }
+
   func isReady(scope: String) -> Bool { locked { peers[scope].map(ready) ?? false } }
   func readyForTopic(_ topic: String) -> Bool { locked { outgoing[topic].flatMap { peers[$0] }.map(ready) ?? false } }
 
