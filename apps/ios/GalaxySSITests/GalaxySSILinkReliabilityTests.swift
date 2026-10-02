@@ -552,7 +552,8 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     let wire = #"{"scheme":"galaxyssi-link-ios-preview","from":"ios","to":"desktop","body":""# +
       String(repeating: "x", count: 80 * 1024) +
       #""}"#
-    let packet = try GalaxySSIMqttWireChunking.encode(wirePayload: wire).first!
+    let packet = try GalaxySSIMqttWireChunking.encode(wirePayload: wire, directLimitBytes: 1024,
+                                                      chunkDataBytes: 4096).first!
     let object = jsonObject(packet)
     var conflicting = object
     conflicting["data"] = Data("different".utf8).base64EncodedString()

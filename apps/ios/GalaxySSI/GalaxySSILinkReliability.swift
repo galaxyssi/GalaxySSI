@@ -1219,42 +1219,17 @@ final class GalaxySSIMqttChunkAssembler {
   }
 
   func accept(scope: String, wire: [String: Any]) throws -> String? {
-    guard GalaxySSIMqttWireChunking.isChunk(wire) else {
-      throw GalaxySSIError.invalidPayload("Not a GalaxySSI MQTT chunk.")
-    }
+    let manifest = try MqttChunkManifest.parse(wire)
+    _ = try MqttChunkReceipts.fromChunk(wire)
     pruneExpired()
-    let transferId = wire.string("transfer_id").lowercased()
-    let fullHash = wire.string("sha256").lowercased()
-    let chunkHash = wire.string("chunk_sha256").lowercased()
-    let chunkIndex = wire.int("chunk_index")
-    let chunkCount = wire.int("chunk_count")
-    let totalBytes = wire.int("total_bytes")
-    let from = wire.string("from")
-    let to = wire.string("to")
-    guard transferId.count == 64, transferId == fullHash else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT transfer identity.")
-    }
-    guard chunkHash.count == 64 else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT chunk hash.")
-    }
-    guard (2...GalaxySSIMqttWireChunking.maximumChunkCount).contains(chunkCount) else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT chunk count.")
-    }
-    guard (0..<chunkCount).contains(chunkIndex) else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT chunk index.")
-    }
-    guard (1...GalaxySSIMqttWireChunking.maximumReassembledBytes).contains(totalBytes) else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT transfer size.")
-    }
-    guard let chunk = Data(base64Encoded: wire.string("data")) else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT chunk encoding.")
-    }
-    guard !chunk.isEmpty, chunk.count <= GalaxySSIMqttWireChunking.defaultChunkDataBytes else {
-      throw GalaxySSIError.invalidPayload("Invalid MQTT chunk size.")
-    }
-    guard GalaxySSIMqttWireChunking.sha256(chunk) == chunkHash else {
-      throw GalaxySSIError.invalidPayload("MQTT chunk integrity check failed.")
-    }
+    let transferId = manifest.transfer
+    let fullHash = manifest.transfer
+    let chunkIndex = manifest.index
+    let chunkCount = manifest.count
+    let totalBytes = manifest.total
+    let from = manifest.source
+    let to = manifest.target
+    let chunk = manifest.data
 
     let key = "\(scope):\(transferId)"
     if transfers[key] == nil {
@@ -1280,6 +1255,10 @@ final class GalaxySSIMqttChunkAssembler {
     if let previous = partial.chunks[chunkIndex], previous != chunk {
       throw GalaxySSIError.invalidPayload("Conflicting MQTT chunk duplicate.")
     }
+    let storedBytes = partial.chunks.reduce(0) { $0 + ($1.key == chunkIndex ? 0 : $1.value.count) }
+    guard storedBytes + chunk.count <= partial.totalBytes else {
+      throw GalaxySSIError.invalidPayload("MQTT transfer length check failed.")
+    }
     partial.chunks[chunkIndex] = chunk
     partial.updatedAt = now()
     transfers[key] = partial
@@ -1301,7 +1280,12 @@ final class GalaxySSIMqttChunkAssembler {
     guard GalaxySSIMqttWireChunking.sha256(assembled) == partial.sha256 else {
       throw GalaxySSIError.invalidPayload("MQTT transfer integrity check failed.")
     }
-    return String(data: assembled, encoding: .utf8)
+    guard let result = String(data: assembled, encoding: .utf8),
+          let decoded = try? JSONSerialization.jsonObject(with: assembled) as? [String: Any],
+          decoded["from"] as? String == from, decoded["to"] as? String == to else {
+      throw GalaxySSIError.invalidPayload("MQTT assembled endpoint mismatch.")
+    }
+    return result
   }
 
   func clear() {

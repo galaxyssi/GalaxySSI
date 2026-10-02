@@ -10,7 +10,8 @@ enum MqttRouteProtocol {
   static let maximumInteger: Int64 = 9_007_199_254_740_991
 
   static func integer(_ object: [String: Any], _ key: String) throws -> Int64 {
-    guard let value = object[key] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+    guard let raw = object[key], type(of: raw) != Double.self, type(of: raw) != Float.self,
+          let value = raw as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
           !["f", "d"].contains(String(cString: value.objCType)),
           value.doubleValue >= 0, value.doubleValue <= Double(maximumInteger) else {
       throw MqttRouteError.invalidPayload
