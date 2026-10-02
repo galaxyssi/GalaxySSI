@@ -2,6 +2,54 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttDeliveryCompletionsTests: XCTestCase {
+  func testIncomingCommitReplaysFromDiskWithoutDuplicateRows() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let message = ChatMessage(contactId: "contact", content: "incoming", isMine: false,
+      turnId: "turn", remoteMessageId: "remote")
+    let first = try history.persistTransportIncoming(message)
+    let reopened = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let replay = ChatMessage(contactId: "contact", content: "incoming", isMine: false,
+      turnId: "turn", remoteMessageId: "remote")
+    XCTAssertEqual(try reopened.persistTransportIncoming(replay), first)
+    XCTAssertEqual(reopened.messages(contactId: "contact").count, 1)
+    var conflict = replay
+    conflict.content = "changed"
+    XCTAssertThrowsError(try reopened.persistTransportIncoming(conflict))
+    XCTAssertEqual(reopened.message(id: first.id), first)
+  }
+
+  func testIncomingCommitFailureDoesNotPublishRowAndCanRetry() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let message = ChatMessage(contactId: "contact", content: "incoming", isMine: false,
+      remoteMessageId: "remote")
+    try f.execute("CREATE TRIGGER fail_incoming BEFORE INSERT ON chat_messages BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertThrowsError(try history.persistTransportIncoming(message))
+    XCTAssertNil(history.message(id: message.id))
+    try f.execute("DROP TRIGGER fail_incoming")
+    XCTAssertEqual(try history.persistTransportIncoming(message), message)
+  }
+
+  func testIncomingCommitOnlyReplacesMatchingContactAttachmentPlaceholder() throws {
+    let f = try ChunkFixture()
+    let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)
+    let placeholder = ChatMessage(contactId: "contact", content: "download", isMine: false,
+      remoteMessageId: "pending-peer:source:transfer")
+    XCTAssertTrue(history.upsert(placeholder))
+    var completed = placeholder
+    completed.content = "ready"
+    completed.remoteMessageId = "remote"
+    var wrongContact = completed
+    wrongContact.contactId = "other"
+    XCTAssertThrowsError(try history.persistTransportIncoming(wrongContact, replacing: placeholder.id))
+    XCTAssertEqual(history.message(id: placeholder.id), placeholder)
+    XCTAssertEqual(try history.persistTransportIncoming(completed, replacing: placeholder.id), completed)
+    XCTAssertEqual(history.messages(contactId: "contact").count, 1)
+    completed.remoteMessageId = "different-remote"
+    XCTAssertThrowsError(try history.persistTransportIncoming(completed, replacing: placeholder.id))
+  }
+
   func testChatDeliveryCommitSurvivesReopenAndIsIdempotent() throws {
     let f = try ChunkFixture()
     let history = GalaxySSIChatHistoryDatabase(fileURL: f.url, secrets: f.secrets)

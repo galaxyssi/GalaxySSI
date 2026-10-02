@@ -9311,42 +9311,17 @@ final class MessageCoordinator: ObservableObject {
       contactId: contact.id,
       attachments: resolvedAttachments
     )
-    if pendingMessage == nil, store.hasIncomingDuplicate(
-      messageContent,
-      from: contact.id,
-      remoteMessageId: messageId,
-      turnId: turnId
-    ) {
-      deliveryStore.completeIncoming(messageId: messageId)
+    let incoming: ChatMessage
+    do {
+      incoming = try store.persistTransportIncoming(
+        messageContent, from: contact.id, remoteMessageId: messageId,
+        conversationId: payload.string("conversation_id"), turnId: turnId,
+        richOutputJson: richOutputJson, replacing: pendingMessage
+      )
+    } catch {
+      // Leave the durable inbox pending; an in-memory message is not a successful handoff.
       return
     }
-    let incoming = pendingMessage.flatMap {
-      store.completePendingIncomingMessage(
-        $0.id,
-        contactId: contact.id,
-        content: messageContent,
-        remoteMessageId: messageId,
-        conversationId: payload.string("conversation_id"),
-        turnId: turnId,
-        richOutputJson: richOutputJson
-      )
-    } ?? store.appendIncoming(
-        messageContent,
-        from: contact.id,
-        remoteMessageId: messageId,
-        status: .delivered,
-        traceStage: "phone_contact_received",
-        conversationId: payload.string("conversation_id"),
-        turnId: turnId,
-        richOutputJson: richOutputJson
-      )
-    store.appendDeliveryTrace(
-      incoming.id,
-      contactId: contact.id,
-      stage: "phone_contact_decrypted",
-      detail: "Signal",
-      status: .delivered
-    )
     deliveryStore.completeIncoming(messageId: messageId)
     if GalaxySSIVisibleConversationTracker.shared.shouldNotify(
       contactId: contact.id,
@@ -11246,7 +11221,16 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   private func replayPendingIncoming() -> Bool {
-    let pendingMessages = deliveryStore.pendingIncoming()
+    let pendingMessages = deliveryStore.pendingIncoming().filter { pending in
+      guard let data = pending.payload.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            object.string("scheme") == "signal",
+            object.string("to") == signalEngine.identity.name,
+            let contact = store.contact(id: object.string("from")), isPhoneContact(contact) else { return true }
+      // Legacy phone entries contain already-decrypted Signal ciphertext, not replayable plaintext.
+      // Preserve them for migration instead of dispatching through the desktop path and deleting them.
+      return false
+    }
     pendingMessages.prefix(Self.pendingRecoveryPageSize).forEach { pending in
       guard let data = pending.payload.data(using: .utf8),
             let rawObject = try? JSONSerialization.jsonObject(with: data),

@@ -112,6 +112,51 @@ final class GalaxySSIChatHistoryDatabase {
     }
   }
 
+  // Commit before the transport inbox is consumed. Deduplicate on disk, not in the paged UI cache.
+  func persistTransportIncoming(_ message: ChatMessage, replacing pendingID: UUID? = nil) throws -> ChatMessage {
+    guard !message.isMine, !message.isSystem, !message.contactId.isBlank,
+          !message.remoteMessageId.isBlank, pendingID == nil || pendingID == message.id else {
+      throw MqttRouteError.invalidPayload
+    }
+    return try locked {
+      guard execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
+            execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard let statement = prepare("""
+        SELECT message_id, encrypted_payload FROM chat_messages
+        WHERE (contact_id = ? AND remote_message_id = ? AND is_mine = 0) OR message_id = ?
+        """) else { throw MqttChunkStorageError.databaseFailure }
+      defer { sqlite3_finalize(statement) }
+      bind(message.contactId, at: 1, to: statement)
+      bind(message.remoteMessageId, at: 2, to: statement)
+      bind(message.id.uuidString, at: 3, to: statement)
+      var replay: ChatMessage?
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { break }
+        guard step == SQLITE_ROW, let rawID = sqlite3_column_text(statement, 0),
+              let saved = decode(statement, id: String(cString: rawID), payloadColumn: 1) else {
+          throw MqttChunkStorageError.databaseFailure
+        }
+        guard !saved.isMine, !saved.isSystem, saved.contactId == message.contactId else {
+          throw MqttRouteError.invalidPayload
+        }
+        if saved.id == pendingID, saved.remoteMessageId != message.remoteMessageId {
+          guard saved.remoteMessageId.hasPrefix("pending-peer:") else { throw MqttRouteError.invalidPayload }
+          continue
+        }
+        guard saved.remoteMessageId == message.remoteMessageId, saved.content == message.content,
+              saved.turnId == message.turnId, replay == nil else { throw MqttRouteError.invalidPayload }
+        replay = saved
+      }
+      let saved = replay ?? message
+      guard upsert(saved), execute("COMMIT") else { throw MqttChunkStorageError.databaseFailure }
+      committed = true
+      return saved
+    }
+  }
+
   func page(
     contactId: String,
     conversationId: String? = nil,

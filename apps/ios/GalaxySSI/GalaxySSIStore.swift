@@ -1089,6 +1089,39 @@ final class GalaxySSIStore: ObservableObject {
     return message
   }
 
+  func persistTransportIncoming(
+    _ content: String, from contactId: String, remoteMessageId: String,
+    conversationId: String, turnId: String, richOutputJson: String,
+    replacing pending: ChatMessage? = nil
+  ) throws -> ChatMessage {
+    guard pending == nil || (pending?.contactId == contactId && pending?.isMine == false) else {
+      throw MqttRouteError.invalidPayload
+    }
+    var message = pending ?? ChatMessage(contactId: contactId, content: content, isMine: false)
+    message.content = content
+    message.remoteMessageId = remoteMessageId
+    message.conversationId = conversationId.ifBlank(message.conversationId.ifBlank(activeConversationId(for: contactId)))
+    message.turnId = turnId
+    message.richOutputJson = richOutputJson
+    message.deliveryStatus = .delivered
+    message.deliveryTrace.append(DeliveryTraceEvent(stage: "phone_contact_received"))
+    message.deliveryTrace.append(DeliveryTraceEvent(stage: "phone_contact_decrypted", detail: "Signal"))
+    let saved = try chatHistoryDatabase.persistTransportIncoming(message, replacing: pending?.id)
+    if !runtimePlaintextCleared {
+      var cached = messagesByContact[contactId] ?? []
+      if let index = cached.firstIndex(where: { $0.id == saved.id }) { cached[index] = saved }
+      else { cached.append(saved) }
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      messagesByContact[contactId] = cached
+      suppressMessageDatabaseSync = previous
+    }
+    recordAgentConversationActivity(conversationId: saved.conversationId, contactId: contactId,
+      content: saved.content, at: saved.createdAt)
+    save()
+    return saved
+  }
+
   @discardableResult
   func appendSystem(_ content: String, to contactId: String, conversationId: String = "") -> ChatMessage {
     let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
