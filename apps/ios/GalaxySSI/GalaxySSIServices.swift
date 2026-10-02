@@ -8049,10 +8049,23 @@ final class MessageCoordinator: ObservableObject {
           store.phoneOpaqueRoutes(for: contactId) != nil else {
       return .failed
     }
+    if approved { refreshApprovedPhoneContactSubscriptions() }
     return await publishPhoneContactControl(
       kind: approved ? .approval : .rejection,
       targetCard: card
     )
+  }
+
+  private func refreshApprovedPhoneContactSubscriptions() {
+    // Pending requests can already have the same topics subscribed before approval.
+    mqttClient.updateSubscriptions(
+      serverLinks: store.serverLinks,
+      phoneRoutes: store.phoneOpaqueRoutes(),
+      rendezvousSecrets: phoneRendezvousSecrets(),
+      rendezvousExpirations: phoneRendezvousExpirations(),
+      notifyWhenReady: true
+    )
+    scheduleOutboxFlush(after: 0)
   }
 
   private func replayApprovedPhoneContactDecisionsOnce() {
@@ -8987,6 +9000,7 @@ final class MessageCoordinator: ObservableObject {
       }
       if control.kind == .approval {
         guard store.approveFriendRequest(galaxySSIId: request.galaxySSIId) else { return }
+        refreshApprovedPhoneContactSubscriptions()
       } else if control.kind == .rejection {
         guard store.rejectFriendRequest(galaxySSIId: request.galaxySSIId) else { return }
         let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
@@ -10099,7 +10113,8 @@ final class MessageCoordinator: ObservableObject {
           Int64(appPayload.string("execution_generation"))
             ?? Int64(appPayload.int("execution_generation")),
           1
-        )
+        ),
+        isFailure: AgentRemoteTaskStatusPolicy.workspaceStatus(remoteTaskStatus) == .failed
       ))
       agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
     }

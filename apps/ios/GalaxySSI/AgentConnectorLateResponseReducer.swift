@@ -9,6 +9,7 @@ struct AgentTerminalDelivery: Codable, Equatable {
   var reason: String
   var terminalAtMillis: Int64
   var executionGeneration: Int64
+  var isFailure: Bool
 
   init(
     sourceMessageId: Int64,
@@ -18,7 +19,8 @@ struct AgentTerminalDelivery: Codable, Equatable {
     contactId: String = "",
     reason: String = "",
     terminalAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
-    executionGeneration: Int64 = 1
+    executionGeneration: Int64 = 1,
+    isFailure: Bool = false
   ) {
     self.sourceMessageId = max(sourceMessageId, 0)
     self.conversationId = Self.clean(conversationId)
@@ -26,6 +28,7 @@ struct AgentTerminalDelivery: Codable, Equatable {
     self.taskId = Self.clean(taskId)
     self.contactId = Self.clean(contactId)
     self.reason = String(reason.prefix(1_000))
+    self.isFailure = isFailure
     self.terminalAtMillis = max(terminalAtMillis, 0)
     self.executionGeneration = AgentRemoteOutcomePolicy.validGeneration(executionGeneration)
       ? executionGeneration
@@ -56,7 +59,7 @@ struct AgentTerminalDelivery: Codable, Equatable {
 
   private enum CodingKeys: String, CodingKey {
     case sourceMessageId, conversationId, turnId, taskId, contactId, reason, terminalAtMillis
-    case executionGeneration
+    case executionGeneration, isFailure
   }
 
   init(from decoder: Decoder) throws {
@@ -69,7 +72,8 @@ struct AgentTerminalDelivery: Codable, Equatable {
       contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "",
       reason: try container.decodeIfPresent(String.self, forKey: .reason) ?? "",
       terminalAtMillis: try container.decodeIfPresent(Int64.self, forKey: .terminalAtMillis) ?? 0,
-      executionGeneration: try container.decodeIfPresent(Int64.self, forKey: .executionGeneration) ?? 1
+      executionGeneration: try container.decodeIfPresent(Int64.self, forKey: .executionGeneration) ?? 1,
+      isFailure: try container.decodeIfPresent(Bool.self, forKey: .isFailure) ?? false
     )
   }
 
@@ -84,6 +88,35 @@ protocol AgentTerminalDeliveryStoring: AnyObject {
   func isTerminal(_ response: AgentConnectorResponse) -> Bool
   func records() -> [AgentTerminalDelivery]
   func clear()
+}
+
+enum AgentTerminalDeliveryFailurePolicy {
+  static func failure(
+    for workspace: AgentWorkspace,
+    records: [AgentTerminalDelivery],
+    executionGeneration: Int64? = nil
+  ) -> AgentTerminalDelivery? {
+    guard !workspace.cancellationRequested,
+          [.created, .queued, .running, .waitingResponse, .failed].contains(workspace.status) else {
+      return nil
+    }
+    return records.filter { record in
+      guard record.isFailure, record.hasIdentity, !record.taskId.isEmpty,
+            !record.conversationId.isEmpty, record.conversationId == workspace.conversationId,
+            !record.turnId.isEmpty,
+            record.turnId == workspace.workspaceId || record.turnId == workspace.taskId,
+            record.taskId == workspace.taskId ||
+              (record.turnId == workspace.workspaceId && workspace.taskId == workspace.workspaceId),
+            record.terminalAtMillis >= workspace.createdAtMillis,
+            executionGeneration.map({ record.executionGeneration == $0 }) ?? true else {
+        return false
+      }
+      return !workspace.eventJournal.contains {
+        ($0.kind == AgentTaskEventKinds.resumed || $0.kind == AgentTaskEventKinds.completed) &&
+          $0.timestampMillis > record.terminalAtMillis
+      }
+    }.max { $0.terminalAtMillis < $1.terminalAtMillis }
+  }
 }
 
 final class InMemoryAgentTerminalDeliveryStore: AgentTerminalDeliveryStoring {
