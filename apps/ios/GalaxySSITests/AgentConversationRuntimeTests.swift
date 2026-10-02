@@ -45,7 +45,7 @@ extension GalaxySSIStoreTests {
     var writes = 0
     let observer = NotificationCenter.default.addObserver(forName: .galaxySSIWorkspaceDidPersist, object: nil, queue: nil) { notification in
       guard let source = notification.object as? FileAgentWorkspaceStore, source === store else { return }
-      XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+      if writes == 0 { XCTAssertTrue(FileManager.default.fileExists(atPath: file.path)) }
       writes += 1
     }
     defer { NotificationCenter.default.removeObserver(observer) }
@@ -54,6 +54,11 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(writes, 1)
     XCTAssertThrowsError(try store.upsert(workspace, expectedRevision: 0))
     XCTAssertEqual(writes, 1)
+    store.clear()
+    XCTAssertEqual(writes, 2)
+    XCTAssertTrue(store.list().isEmpty)
+    store.clear()
+    XCTAssertEqual(writes, 2)
   }
 
   func testConversationExecutionUsesPersistedReplyEligibility() {
