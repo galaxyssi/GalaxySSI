@@ -1,6 +1,48 @@
 import SwiftUI
 import UIKit
 
+private struct GalaxySSIConversationExecutionIcon: View {
+  let status: GalaxySSIConversationExecutionStatus
+  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var visible = false
+
+  private var tint: Color {
+    if status.animated { return .blue }
+    switch status {
+    case .completeUnread: return .green
+    case .waitingConfirmation, .paused, .blocked: return .orange
+    case .failed: return .red
+    default: return .galaxySSITextSecondary
+    }
+  }
+
+  var body: some View {
+    Group {
+      if status.animated {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !visible || scenePhase != .active || reduceMotion)) { context in
+          Circle().trim(from: 0.1, to: 0.85)
+            .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
+            .frame(width: 20, height: 20)
+        }
+      } else {
+        Image(systemName: status.systemImage)
+          .font(.system(size: 20, weight: .medium))
+          .foregroundColor(tint)
+      }
+    }
+    .frame(width: 34, height: 34)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text(GalaxySSILocalization.string("galaxyssi.conversation_status." + status.rawValue,
+      fallback: status.label, language: language)))
+    .accessibilityIdentifier("ios.conversation.status." + status.rawValue)
+    .onAppear { visible = true }
+    .onDisappear { visible = false }
+  }
+}
+
 private enum GalaxySSIAddContactPresentation: String, Identifiable, Equatable {
   case normal
   case scanner
@@ -1009,7 +1051,10 @@ struct GalaxySSIConversationHubView: View {
         trailing: multiDeleteMode
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
           : "",
-        updatedAt: updatedAt
+        updatedAt: updatedAt,
+        executionStatus: GalaxySSIConversationExecutionPolicy.resolve(
+          conversationID: session.id, message: store.latestAgentSessionMessage(session.id),
+          tasks: store.agentTaskRecords, unread: store.agentReplyUnreadCount(conversationId: session.id) > 0)
       )
     }
     .buttonStyle(.plain)
@@ -1372,10 +1417,13 @@ struct GalaxySSIConversationHubView: View {
     leadingView: AnyView? = nil,
     titleAccessory: AnyView? = nil,
     unreadCount: Int = 0,
-    showsDisclosure: Bool = true
+    showsDisclosure: Bool = true,
+    executionStatus: GalaxySSIConversationExecutionStatus? = nil
   ) -> some View {
     HStack(spacing: 10) {
-      if let leadingView {
+      if let executionStatus {
+        GalaxySSIConversationExecutionIcon(status: executionStatus)
+      } else if let leadingView {
         leadingView
           .overlay(
             Circle()

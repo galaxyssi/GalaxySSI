@@ -21,9 +21,39 @@ enum GalaxySSIConversationExecutionStatus: String, CaseIterable {
     default: return "bubble.left"
     }
   }
+
+  var label: String {
+    switch self {
+    case .queued: return "Queued"
+    case .running: return "Running"
+    case .waitingResponse: return "Waiting for response"
+    case .reconnecting: return "Reconnecting"
+    case .delivering: return "Delivering reply"
+    case .completeUnread: return "Completed, unread"
+    case .read: return "Read"
+    case .waitingConfirmation: return "Waiting for confirmation"
+    case .paused: return "Paused"
+    case .blocked: return "Blocked"
+    case .failed: return "Failed"
+    case .cancelled: return "Cancelled"
+    }
+  }
 }
 
 enum GalaxySSIConversationExecutionPolicy {
+  static func resolve(conversationID: String, message: ChatMessage?, tasks: [AgentTaskRecord], unread: Bool) -> GalaxySSIConversationExecutionStatus {
+    if let message, message.conversationId == conversationID, message.deliveryStatus == .failed { return .failed }
+    let latest = message.flatMap { message -> AgentTranscriptEntry? in
+      guard message.conversationId == conversationID else { return nil }
+      let role: AgentTranscriptRole = message.isMine ? .user : (AgentReplyUnreadPolicy.token(message) == nil ? .process : .assistant)
+      return AgentTranscriptEntry(id: message.remoteMessageId.ifBlank(message.id.uuidString), role: role,
+        text: "", timestampMillis: Int64(message.createdAt.timeIntervalSince1970 * 1000),
+        dedupeKey: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
+    }
+    let selected = task(conversationID: conversationID, latest: latest, tasks: tasks)
+    return resolve(phase: selected?.phase, latest: latest, unread: unread)
+  }
+
   static func task(conversationID: String, latest: AgentTranscriptEntry?, tasks: [AgentTaskRecord]) -> AgentTaskRecord? {
     tasks.filter { task in
       guard task.sessionId == conversationID else { return false }

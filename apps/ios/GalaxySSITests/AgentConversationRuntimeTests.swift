@@ -2,6 +2,40 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testConversationExecutionUsesPersistedReplyEligibility() {
+    var reply = ChatMessage(contactId: "hermes", content: "Done", isMine: false, conversationId: "session")
+    reply.deliveryStatus = .delivered
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "session", message: reply,
+      tasks: [], unread: true), .completeUnread)
+    reply.remoteMessageId = "agent-stream-turn"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "session", message: reply,
+      tasks: [], unread: true), .read)
+    reply.deliveryStatus = .failed
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "session", message: reply,
+      tasks: [], unread: true), .failed)
+  }
+
+  func testConversationExecutionSelectsOnlyMatchingTaskAndConversation() {
+    let task = AgentTaskRecord(taskId: "turn", sessionId: "session", goal: "goal", phase: .executing,
+      routeKind: .localSystem, targetTitle: "Local", risk: .low, blocked: false)
+    var newer = task
+    newer.taskId = "new-turn"
+    newer.createdAtMillis = 200
+    var foreign = task
+    foreign.sessionId = "other"
+    foreign.createdAtMillis = 300
+    var latest = AgentTranscriptEntry(id: "reply", role: .user, text: "", timestampMillis: 100,
+      conversationId: "session", turnId: "turn")
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.task(conversationID: "session", latest: latest,
+      tasks: [task, newer, foreign])?.taskId, "turn")
+    latest.taskId = "new-turn"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.task(conversationID: "session", latest: latest,
+      tasks: [task, newer, foreign])?.taskId, "new-turn")
+    latest.conversationId = "other"
+    XCTAssertNil(GalaxySSIConversationExecutionPolicy.task(conversationID: "session", latest: latest,
+      tasks: [task, newer, foreign]))
+  }
+
   func testConversationExecutionStatusCoversEveryTaskPhase() {
     let expected: [AgentPhase: GalaxySSIConversationExecutionStatus] = [
       .observing: .queued, .planning: .queued, .executing: .running, .verifying: .running,
