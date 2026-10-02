@@ -55,7 +55,7 @@ internal fun MobileNativeAgent.submitGoal(
     val requestedGoal = goal.trim()
     activeConversationContext = conversationContext
     activeConversationTurnId = turnId
-    activeRequestedMembers = requestedMembers.take(12)
+    activeRequestedMembers = if (CollaborationResearchWorkflow.enabled(requestedGoal, requestedMembers)) requestedMembers else requestedMembers.take(12)
     if (AgentActiveTurnPolicy.hasLocalControlTarget(currentPlan != null)) {
         when {
             retryTaskCommand(requestedGoal) -> return retryFailedAction()

@@ -531,6 +531,35 @@ class AgentTeamPlanBridgeTest {
     }
 
     @Test
+    fun researchGroupQueuesMoreThanTwelveMembersOnABusyProvider() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = plan(agentAction("fallback", "codex")).copy(goal = "Research and verify the solution"),
+            targets = listOf(codex), enabled = true,
+            registrations = targetRegistrations(listOf(codex)).map {
+                it.copy(status = AgentEndpointStatus.BUSY, activeRuns = 1, maxParallelRuns = 1)
+            },
+            requestedMembers = (1..16).map {
+                AgentRequestedMember("codex", "Researcher $it", it, persistentInstanceId = "person-$it", collaborationGroupId = "group")
+            })
+        val spec = requireNotNull(AgentTeamDispatchSpecCodec.decode(compiled.actions.single().parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty()))
+        assertEquals(16, spec.definition.members.size)
+        assertEquals(1, spec.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
+    }
+
+    @Test
+    fun researchGroupDoesNotBypassMissingProviderPermission() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val failure = runCatching { AgentTeamPlanCompiler.compile(
+            plan = plan(agentAction("fallback", "codex")).copy(goal = "Research the solution"), targets = listOf(codex), enabled = true,
+            registrations = targetRegistrations(listOf(codex)).map { it.copy(status = AgentEndpointStatus.PERMISSION_REQUIRED) },
+            requestedMembers = (1..2).map {
+                AgentRequestedMember("codex", "Member $it", it, collaborationGroupId = "group")
+            }) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
     fun legacyDispatchWithoutInstanceFieldsFallsBackToAgentIds() {
         val source = AgentTeamDispatchSpec(
             AgentTeamDefinition(

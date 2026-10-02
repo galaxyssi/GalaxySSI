@@ -26,7 +26,7 @@ internal fun MainActivity.routeCollaborationFollowup(
                     globalSuperAgentRuntime.cancelAgentTeam(active.supervisorRunId)
                     return@runCatching getString(R.string.collaboration_cancelled)
                 }
-                AgentTeamUserControl.RUN -> if (active.paused) {
+                AgentTeamUserControl.RUN -> if (active.paused || active.goalDisposition == "blocked") {
                     globalSuperAgentRuntime.resumeAgentTeam(active.supervisorRunId)
                     return@runCatching getString(R.string.collaboration_team_resumed)
                 }
@@ -39,7 +39,8 @@ internal fun MainActivity.routeCollaborationFollowup(
                 (it.memberId in selected || it.personId in selected) && it.canReceiveTeamMessage(active.state)
             }.groupBy { it.personId }.values.map { stages ->
                 stages.firstOrNull { it.status == AgentSubagentStatus.RUNNING } ?: stages.first()
-            }
+            }.ifEmpty { if (active.goalDisposition in setOf("continue", "blocked"))
+                active.members.filter { it.memberId == active.primaryMemberId } else emptyList() }
             var delivered = 0
             var queued = 0
             runBlocking {
@@ -49,6 +50,8 @@ internal fun MainActivity.routeCollaborationFollowup(
                     if (result.state == AgentTeamMessageState.PENDING) queued++ else delivered++
                 }
             }
+            if (active.goalDisposition == "blocked" && recipients.isNotEmpty())
+                globalSuperAgentRuntime.resumeAgentTeam(active.supervisorRunId)
             if (recipients.isEmpty()) getString(R.string.collaboration_member_finished)
             else getString(R.string.collaboration_update_receipt, delivered, queued)
         }

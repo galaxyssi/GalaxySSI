@@ -196,7 +196,8 @@ internal object AgentTeamPlanCompiler {
         registrations: Collection<AgentRegistration>,
         reputation: AgentReputationSnapshotProvider
     ): AgentPlan {
-        require(requestedMembers.size <= MAX_TEAM_MEMBERS) { "Too many selected members for one execution batch" }
+        val goalDriven = CollaborationResearchWorkflow.enabled(plan.goal, requestedMembers)
+        require(goalDriven || requestedMembers.size <= MAX_TEAM_MEMBERS) { "Too many selected members for one execution batch" }
         val requested = requestedMembers.toMutableList()
         if (requested.none { it.collaborationGroupId.isNotBlank() } && allowsAutomaticExpansion(plan.goal)) {
             val explicitMemberCount = requested.size
@@ -271,14 +272,14 @@ internal object AgentTeamPlanCompiler {
                 "Selected Agent is not registered: $agentId"
             }
             require(
-                registration.status in setOf(
+                (goalDriven && registration.status != AgentEndpointStatus.PERMISSION_REQUIRED) || registration.status in setOf(
                     AgentEndpointStatus.ONLINE,
                     AgentEndpointStatus.IDLE,
                     AgentEndpointStatus.BUSY
                 )
             ) { "Selected Agent is offline: ${registration.displayName}" }
             val availableCapacity = (registration.maxParallelRuns - registration.activeRuns).coerceAtLeast(0)
-            require(count <= availableCapacity) {
+            require(goalDriven || count <= availableCapacity) {
                 "Selected Agent has only $availableCapacity available Run slots: ${registration.displayName}"
             }
         }
@@ -690,7 +691,7 @@ internal object AgentTeamDispatchSpecCodec {
             .ifBlank { primaryAgentId }
         if (runId.isBlank() || teamId.isBlank() || primaryAgentId.isBlank()) return null
         val input = json.optJSONArray("members") ?: return null
-        if (input.length() !in 1..CollaborationResearchWorkflow.MAX_NODES) return null
+        if (input.length() < 1) return null
         val members = buildList {
             for (index in 0 until input.length()) {
                 val item = input.optJSONObject(index) ?: return null

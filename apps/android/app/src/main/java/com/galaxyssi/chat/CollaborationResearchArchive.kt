@@ -15,6 +15,8 @@ internal class CollaborationResearchArchive(private val context: Context, privat
         val document = JSONObject().put("id", id).put("group_id", groupId)
             .put("run_id", execution.request.parentRunId).put("node_id", member.memberId)
             .put("turn_id", execution.request.messageId).put("task_id", execution.request.taskId)
+            .put("goal_round", execution.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L)
+            .put("roster", execution.request.context["collaboration_research_roster"]?.toString().orEmpty())
             .put("member_id", member.context[CollaborationResearchWorkflow.PERSON].orEmpty().ifBlank { member.memberId })
             .put("name", member.context["collaboration_name"]).put("stage", member.context[CollaborationResearchWorkflow.STAGE])
             .put("record_type", if (input) "assignment" else "result")
@@ -40,7 +42,7 @@ internal class CollaborationResearchArchive(private val context: Context, privat
 
     data class Page(val records: List<AgentKnowledgeItem>, val nextCursor: String?, val total: Int)
 
-    fun browse(cursor: String = "", excludeTurn: String = ""): Page = synchronized(LOCK) {
+    fun browse(cursor: String = "", excludeTurn: String = "", beforeRound: Long = 0L): Page = synchronized(LOCK) {
         if (CollaborationGroupStore(context).load(groupId) == null) return@synchronized Page(emptyList(), null, 0)
         val position = cursor.takeIf(String::isNotBlank)?.let { raw ->
             val json = JSONObject(raw)
@@ -50,19 +52,19 @@ internal class CollaborationResearchArchive(private val context: Context, privat
         val page = storage.sourcePage(position, 12)
         val ids = page.groups.flatMap { storage.sourceItemIds(requireNotNull(it.reference)) }.toSet()
         val records = storage.findByIds(ids).filter {
-            excludeTurn.isBlank() || JSONObject(it.content).optString("turn_id") != excludeTurn
+            visible(JSONObject(it.content), excludeTurn, beforeRound)
         }
         Page(records, page.next?.let {
             JSONObject().put("updated", it.updated).put("key", it.groupKey).put("revision", it.revision).put("scope", it.scope).toString()
         }, page.total)
     }
 
-    fun search(query: String, limit: Int = 6, excludeTurn: String = ""): List<AgentKnowledgeItem> {
+    fun search(query: String, limit: Int = 6, excludeTurn: String = "", beforeRound: Long = 0L): List<AgentKnowledgeItem> {
         if (CollaborationGroupStore(context).load(groupId) == null) return emptyList()
         return synchronized(LOCK) {
             if (CollaborationGroupStore.cached(groupId) == null) emptyList()
             else (if (query.isBlank()) store().list(48) else store().search(query.take(1000), 48))
-                .filter { excludeTurn.isBlank() || JSONObject(it.content).optString("turn_id") != excludeTurn }
+                .filter { visible(JSONObject(it.content), excludeTurn, beforeRound) }
                 .take(limit.coerceIn(1, 12))
         }
     }
@@ -74,11 +76,15 @@ internal class CollaborationResearchArchive(private val context: Context, privat
         }
     }
 
-    fun context(query: String, excludeTurn: String): String = search(query, excludeTurn = excludeTurn).joinToString("\n\n") {
+    fun context(query: String, excludeTurn: String, beforeRound: Long = 0L): String = search(query, excludeTurn = excludeTurn, beforeRound = beforeRound).joinToString("\n\n") {
         "record_id=${it.id}; recorded_at=${it.updatedAtMillis}; ${it.title}\n${it.summary.take(750)}"
     }.take(5_500)
 
     companion object {
+        fun visible(record: JSONObject, excludedTurn: String, beforeRound: Long): Boolean =
+            excludedTurn.isBlank() || record.optString("turn_id") != excludedTurn ||
+                record.has("goal_round") && record.optLong("goal_round") < beforeRound
+
         private val LOCK = Any()
         private fun databaseName(group: String) = "galaxyssi_group_research_${AgentNativeJsonCodec.sha256(group)}.db"
 

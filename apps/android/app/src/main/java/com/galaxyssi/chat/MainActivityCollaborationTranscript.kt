@@ -40,6 +40,7 @@ internal fun MainActivity.collaborationTranscriptRow(
         maxLines = 2
         ellipsize = android.text.TextUtils.TruncateAt.END
         text = when {
+            metadata.goalDisposition == "blocked" -> getString(R.string.collaboration_goal_blocked)
             metadata.result -> getString(R.string.collaboration_view_process)
             metadata.paused -> getString(R.string.collaboration_team_paused)
             metadata.status == AgentSubagentStatus.QUEUED -> getString(if (metadata.waiting)
@@ -75,7 +76,7 @@ internal fun MainActivity.collaborationTranscriptRow(
                 val choices = buildList {
                     add(R.string.collaboration_view_process)
                     if (actionable) {
-                        add(if (snapshot?.paused == true) R.string.collaboration_resume_team else R.string.collaboration_pause_team)
+                        add(if (snapshot?.paused == true || snapshot?.goalDisposition == "blocked") R.string.collaboration_resume_team else R.string.collaboration_pause_team)
                         add(R.string.collaboration_stop_team)
                     }
                 }

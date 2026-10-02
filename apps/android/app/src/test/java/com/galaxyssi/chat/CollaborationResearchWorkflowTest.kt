@@ -1,6 +1,5 @@
 package com.galaxyssi.chat
 
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -10,7 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchWorkflowTest {
-    private fun team(researchers: Int = 6): AgentTeamDefinition {
+    private fun team(researchers: Int = 3): AgentTeamDefinition {
         val people = (0..researchers).map { index -> AgentTeamMember(agentId = "codex",
             instanceId = "person-$index", role = if (index == 0) "Coordinator" else "Researcher",
             deliveryMode = if (index == 0) AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
@@ -21,42 +20,235 @@ class CollaborationResearchWorkflowTest {
     private fun request() = AgentRunRequest("group", "turn", "task", runId = "research-run", goal = "Design a verifiable solution")
     private fun artifact(summary: String) = JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
         .put("summary", summary).put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray())
+    private fun work(member: String = "person-1", stage: String = "EXECUTE") = JSONObject()
+        .put("member", member).put("stage", stage).put("assignment", "Produce and verify the actual artifact")
+    private fun assessment(decision: String = "continue", jobs: Int = 1): JSONObject = JSONObject()
+        .put("format", CollaborationGoalLoop.FORMAT).put("summary", "Evidence-backed progress")
+        .put("decision", decision).put("criteria", JSONArray().put(JSONObject().put("id", "artifact")
+            .put("requirement", "Verified artifact").put("status", if (decision == "achieved") "met" else "open")
+            .put("evidence", JSONArray(if (decision == "achieved") listOf("tool:verified-artifact") else emptyList<String>()))))
+        .put("work", JSONArray((0 until jobs).map { work().put("id", "work-$it") })).put("blockers", JSONArray())
 
-    @Test fun sixResearchersProduceThreeAlternativesWithoutIncreasingLiveConcurrency() = runBlocking {
-        val definition = team()
-        assertEquals(34, definition.members.size)
-        assertEquals(34, definition.members.map { it.memberId }.distinct().size)
-        assertEquals(7, definition.members.map { it.context[CollaborationResearchWorkflow.PERSON] }.distinct().size)
-        assertEquals(1, definition.members.count { it.deliveryMode == AgentDeliveryMode.RESPOND })
+    @Test fun initialGraphOnlyAsksCoordinatorToPlanAndRetainsAllPeople() = runBlocking {
+        val definition = team(15)
+        assertEquals(16, definition.members.size)
+        assertEquals(1, definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
         assertEquals(definition, requireNotNull(AgentTeamDispatchSpecCodec.decode(
             AgentTeamDispatchSpecCodec.encode(AgentTeamDispatchSpec(definition, "research-run")))).definition)
+        val store = InMemoryAgentTeamExecutionStore()
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val calls = AtomicInteger()
+            val result = runtime.start(definition, request()) {
+                calls.incrementAndGet(); AgentSubagentOutput(assessment().toString())
+            }.await()
+            assertEquals(1, calls.get())
+            assertEquals("continue", result.snapshot.goalDisposition)
+            assertEquals(AgentTeamExecutionState.INTERRUPTED, result.snapshot.state)
+            assertEquals("Evidence-backed progress", result.snapshot.finalOutput)
+        }
+    }
+
+    @Test fun moreThanOneThousandBatchesKeepSameGoalAndNeverReplayCompletedWork() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        val completed = hashSetOf<String>()
+        var assessments = 0
+        val worker = AgentTeamMemberWorker { context ->
+            if (context.member.deliveryMode == AgentDeliveryMode.RESPOND) {
+                assessments++
+                val plan = assessment(if (assessments > 1001) "achieved" else "continue", if (assessments > 1001) 0 else 1)
+                if (assessments <= 1001) plan.getJSONArray("work").getJSONObject(0).put("id", "iteration-$assessments")
+                AgentSubagentOutput(plan.toString())
+            } else {
+                assertTrue("Completed side effect must not replay", completed.add(context.request.runId))
+                AgentSubagentOutput(artifact("Verified actual artifact").toString())
+            }
+        }
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            var result = runtime.start(team(), request(), worker).await()
+            repeat(1001) {
+                assertEquals("continue", result.snapshot.goalDisposition)
+                val oldPrimary = result.snapshot.primaryMemberId
+                assertTrue(store.advanceGoal("research-run", oldPrimary, System.currentTimeMillis()))
+                assertFalse("CAS makes duplicate scheduling harmless", store.advanceGoal("research-run", oldPrimary, System.currentTimeMillis()))
+                val checkpoint = requireNotNull(store.resumeCheckpoint("research-run"))
+                assertEquals(request().runId, checkpoint.request.runId)
+                assertEquals(request().taskId, checkpoint.request.taskId)
+                assertEquals(request().goal, checkpoint.request.goal)
+                result = runtime.resume(checkpoint, worker).await()
+            }
+            assertEquals(1001, completed.size)
+            assertEquals(1002, assessments)
+            assertEquals("achieved", result.snapshot.goalDisposition)
+            assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
+            assertFalse(store.advanceGoal("research-run", result.snapshot.primaryMemberId, Long.MAX_VALUE))
+        }
+    }
+
+    @Test fun moreThanSixtyFourWorkItemsStillUseBoundedLiveConcurrency() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
         val active = AtomicInteger()
         val peak = AtomicInteger()
-        val observed = ConcurrentHashMap<String, AgentTeamMemberExecutionContext>()
-        val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore(), AgentSubagentLimits(maxConcurrency = 3))
-        try {
-            val result = runtime.start(definition, request()) { context ->
-                val running = active.incrementAndGet()
-                peak.updateAndGet { maxOf(it, running) }
-                observed[context.member.memberId] = context
-                delay(10)
-                active.decrementAndGet()
-                AgentSubagentOutput(artifact(context.member.objective).toString())
-            }.await()
-            assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
-            assertTrue(peak.get() in 2..3)
-            definition.members.filter { CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.EXPLORE }.forEach {
-                assertEquals(1, observed.getValue(it.memberId).handoff.dependencies.size)
-                assertEquals(CollaborationResearchStage.BRIEF, CollaborationResearchWorkflow.stage(definition.members.single { node ->
-                    node.memberId == observed.getValue(it.memberId).handoff.dependencies.single().childId }))
+        var coordinatorCalls = 0
+        AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 3)).use { runtime ->
+            val worker = AgentTeamMemberWorker { context ->
+                if (context.member.deliveryMode == AgentDeliveryMode.RESPOND) {
+                    coordinatorCalls++
+                    AgentSubagentOutput(assessment(if (coordinatorCalls == 1) "continue" else "achieved",
+                        if (coordinatorCalls == 1) 80 else 0).toString())
+                } else {
+                    val running = active.incrementAndGet()
+                    peak.updateAndGet { maxOf(it, running) }
+                    delay(2); active.decrementAndGet()
+                    AgentSubagentOutput(artifact("Evidence").toString())
+                }
             }
-            val validators = definition.members.filter { CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.VERIFY }
-            assertEquals(mapOf("C1" to 2, "C2" to 2, "C3" to 2),
-                validators.groupingBy { it.context.getValue(CollaborationResearchWorkflow.CANDIDATE) }.eachCount())
-            val final = observed.getValue("person-0").handoff.dependencies
-            assertEquals(8, final.size)
-            assertTrue(final.all { it.status == AgentSubagentStatus.SUCCEEDED })
-        } finally { runtime.close() }
+            runtime.start(team(), request(), worker).await()
+            assertTrue(store.advanceGoal("research-run", "person-0", System.currentTimeMillis()))
+            val checkpoint = requireNotNull(store.resumeCheckpoint("research-run"))
+            assertEquals(81, checkpoint.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
+            val result = runtime.resume(checkpoint, worker).await()
+            assertEquals("achieved", result.snapshot.goalDisposition)
+            assertTrue(peak.get() in 2..3)
+        }
+    }
+
+    @Test fun cannotFinishWithoutEvidenceOrByDroppingOrWeakeningCriteria() {
+        val prior = assessment().getJSONArray("criteria").toString()
+        val done = assessment("achieved", 0)
+        assertEquals("achieved", CollaborationGoalLoop.disposition(done.toString(), prior))
+        done.getJSONArray("criteria").getJSONObject(0).put("evidence", JSONArray())
+        assertEquals("continue", CollaborationGoalLoop.disposition(done.toString(), prior))
+        val changed = assessment("achieved", 0)
+        changed.getJSONArray("criteria").getJSONObject(0).put("requirement", "Only write a plan")
+        assertEquals("continue", CollaborationGoalLoop.disposition(changed.toString(), prior))
+        changed.getJSONArray("criteria").getJSONObject(0).put("id", "different")
+        assertEquals("continue", CollaborationGoalLoop.disposition(changed.toString(), prior))
+    }
+
+    @Test fun labBlockDoesNotStopExecutableComputation() {
+        val blocked = assessment("blocked", 1).put("blockers", JSONArray().put(JSONObject()
+            .put("kind", "resource").put("reason", "No authorized lab").put("resume_when", "Lab access granted")))
+        assertEquals("continue", CollaborationGoalLoop.disposition(blocked.toString()))
+        blocked.put("work", JSONArray())
+        assertEquals("continue", CollaborationGoalLoop.disposition(blocked.toString()))
+        val blocker = blocked.getJSONArray("blockers").getJSONObject(0)
+        blocker.put("alternatives", JSONArray().put(JSONObject().put("option", "Public lab")
+            .put("status", "needs_approval").put("result", "Requires account and authorized sample submission")
+            .put("evidence", JSONArray().put("source:lab-access"))))
+        assertEquals("blocked", CollaborationGoalLoop.disposition(blocked.toString(), "[]", setOf(CollaborationResourceRecovery.workId(blocker))))
+        blocked.put("blockers", JSONArray())
+        assertEquals("continue", CollaborationGoalLoop.disposition(blocked.toString()))
+    }
+
+    @Test fun blockedGoalWaitsForWakeupRatherThanFinishingOrPollingTheModel() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val blocked = assessment("blocked", 0).put("blockers", JSONArray().put(JSONObject()
+                .put("kind", "resource").put("reason", "No authorized lab").put("resume_when", "Lab access granted")
+                .put("alternatives", JSONArray().put(JSONObject().put("option", "Public platform").put("status", "needs_approval")
+                    .put("result", "Requires permission").put("evidence", JSONArray().put("source:access"))))))
+            val worker = AgentTeamMemberWorker { AgentSubagentOutput(blocked.toString()) }
+            assertEquals("continue", runtime.start(team(), request(), worker).await().snapshot.goalDisposition)
+            assertTrue(store.advanceGoal("research-run", "person-0", System.currentTimeMillis()))
+            val result = runtime.resume(requireNotNull(store.resumeCheckpoint("research-run")), worker).await()
+            assertEquals("blocked", result.snapshot.goalDisposition)
+            assertEquals(AgentTeamExecutionState.INTERRUPTED, result.snapshot.state)
+            assertFalse(store.advanceGoal("research-run", result.snapshot.primaryMemberId, Long.MAX_VALUE))
+            assertTrue(store.advanceGoal("research-run", result.snapshot.primaryMemberId, System.currentTimeMillis(), true))
+            assertNotNull(store.resumeCheckpoint("research-run"))
+        }
+    }
+
+    @Test fun temporaryNetworkOrCapacityBlockerRemainsAutomaticallyRetryable() {
+        listOf("connectivity", "provider", "capacity").forEach { kind ->
+            val blocked = assessment("blocked", 0).put("blockers", JSONArray().put(JSONObject()
+                .put("kind", kind).put("reason", "Temporarily unavailable").put("resume_when", "Connection returns")))
+            assertEquals("continue", CollaborationGoalLoop.disposition(blocked.toString()))
+        }
+    }
+
+    @Test fun malformedOrPlainTextFinalIsReplannedNotAccepted() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val result = runtime.start(team(), request()) { AgentSubagentOutput("The review is finished; design remains undone.") }.await()
+            assertEquals("continue", result.snapshot.goalDisposition)
+            assertTrue(store.advanceGoal("research-run", "person-0", 10_000))
+            val next = requireNotNull(store.snapshot("research-run"))
+            assertTrue(next.nextGoalAttemptAtMillis > 10_000)
+            assertEquals(1, requireNotNull(store.resumeCheckpoint("research-run")).definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
+        }
+    }
+
+    @Test fun invalidAssigneeNeverDispatchesPartialWork() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        val plan = assessment().put("work", JSONArray().put(work()).put(work("outsider")))
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            runtime.start(team(), request()) { AgentSubagentOutput(plan.toString()) }.await()
+            assertTrue(store.advanceGoal("research-run", "person-0", 10_000))
+            val checkpoint = requireNotNull(store.resumeCheckpoint("research-run"))
+            assertEquals(1, checkpoint.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
+        }
+    }
+
+    @Test fun duplicateCompletedWorkIsNotExecutedAgain() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        var executions = 0
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val worker = AgentTeamMemberWorker {
+                if (it.member.deliveryMode == AgentDeliveryMode.RESPOND) AgentSubagentOutput(assessment().toString())
+                else { executions++; AgentSubagentOutput(artifact("Executed").toString()) }
+            }
+            runtime.start(team(), request(), worker).await()
+            store.advanceGoal("research-run", "person-0", 10_000)
+            val completed = runtime.resume(requireNotNull(store.resumeCheckpoint("research-run")), worker).await()
+            assertTrue(store.advanceGoal("research-run", completed.snapshot.primaryMemberId, 20_000))
+            val repair = requireNotNull(store.resumeCheckpoint("research-run"))
+            assertEquals(1, repair.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
+            assertEquals(1, executions)
+            assertTrue(repair.request.context[CollaborationGoalLoop.FINISHED_WORK].toString().contains("work-0"))
+        }
+    }
+
+    @Test fun oldRoundResponseCannotAttachToNewRoundOfSameProvider() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            runtime.start(team(), request()) { AgentSubagentOutput("Malformed assessment") }.await()
+            assertTrue(store.advanceGoal("research-run", "person-0", 10_000))
+            val old = AgentManagedResponseRecord(ownerRunId = stableAgentTeamMemberRunId("research-run", "person-0"),
+                supervisorRunId = "research-run", agentId = "codex", deliveryMode = AgentDeliveryMode.RESPOND,
+                sourceMessageId = 123L, contactId = "codex", state = AgentManagedResponseState.COMPLETED,
+                response = AgentConnectorResponse(123L, "codex", assessment("achieved", 0).toString()))
+            assertFalse(store.applyLateResponse(old))
+            assertEquals("", store.snapshot("research-run")?.finalOutput)
+        }
+    }
+
+    @Test fun earlierBatchEvidenceIsAccessibleButCurrentIndependentWorkIsNot() {
+        val earlier = JSONObject().put("turn_id", "turn").put("goal_round", 3L)
+        assertTrue(CollaborationResearchArchive.visible(earlier, "turn", 4L))
+        assertFalse(CollaborationResearchArchive.visible(earlier, "turn", 3L))
+        assertFalse(CollaborationResearchArchive.visible(earlier, "turn", 2L))
+        assertFalse(CollaborationResearchArchive.visible(JSONObject().put("turn_id", "turn"), "turn", 4L))
+        assertTrue(CollaborationResearchArchive.visible(earlier, "different-turn", 0L))
+    }
+
+    @Test fun failedProviderDoesNotMarkGoalAchieved() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val result = runtime.start(team(), request()) { error("Provider unavailable") }.await()
+            assertEquals("continue", result.snapshot.goalDisposition)
+            assertTrue(store.advanceGoal("research-run", "person-0", 10_000))
+        }
+    }
+
+    @Test fun legacyResearchDoesNotRestartOnUpgrade() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        val legacy = team().let { it.copy(members = it.members.map { member -> member.copy(context = member.context - CollaborationGoalLoop.ENABLED) }) }
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val result = runtime.start(legacy, request()) { AgentSubagentOutput("Legacy final result") }.await()
+            assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
+            assertFalse(store.advanceGoal("research-run", "person-0", Long.MAX_VALUE))
+        }
     }
 
     @Test fun autoKeepsSimpleTasksCheapAndRespectsExplicitMode() {
@@ -66,49 +258,13 @@ class CollaborationResearchWorkflowTest {
         assertFalse(CollaborationResearchWorkflow.enabled("Design a plan", people.map { it.copy(collaborationWorkflow = "PARALLEL") }))
         assertTrue(CollaborationResearchWorkflow.enabled("Compare these", people.map { it.copy(collaborationWorkflow = "RESEARCH") }))
         assertFalse(CollaborationResearchWorkflow.enabled("Research", people.map { it.copy(collaborationGroupId = "") }))
-        assertFalse(CollaborationResearchWorkflow.enabled("Research", people.take(2)))
+        assertTrue(CollaborationResearchWorkflow.enabled("Research", people.take(2)))
+        assertTrue(CollaborationResearchWorkflow.enabled("继续", people))
     }
 
-    @Test fun explicitGroupStartsWithTeamSeedNotHeuristicPhoneExecution() {
-        val members = listOf(AgentRequestedMember("codex", "Turing", collaborationGroupId = "group"),
-            AgentRequestedMember("deepseek", "Curie", collaborationGroupId = "group"))
-        val seed = requireNotNull(CollaborationRoutingPolicy.seed("turn", members))
-        assertEquals("codex", seed.parameters["connector_id"])
-        assertFalse(seed.isSupervisedProjectConnector())
-        assertNull(CollaborationRoutingPolicy.seed("turn", members.map { it.copy(collaborationGroupId = "") }))
-        assertNull(CollaborationRoutingPolicy.seed("turn", listOf(members[0], members[1].copy(collaborationGroupId = "other"))))
-    }
-
-    @Test fun rolesAndStageIdentitiesAreStableAndResearchPathsDiffer() {
-        val first = team()
-        assertEquals(first, team())
-        val explorations = first.members.filter { CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.EXPLORE }
-        assertEquals(6, explorations.map { it.objective }.distinct().size)
-        assertTrue(first.members.all { it.context["collaboration_receive_results"] == "false" })
-        assertEquals(59, team(11).members.size)
-        assertTrue(first.members.all { isPersistedAgentTeamContextKey(CollaborationResearchWorkflow.STAGE) })
-    }
-
-    @Test fun crossReviewIsAssignedToAnotherPersonAndRevisionsReceiveTheCritique() {
+    @Test fun targetedQuestionsRemainScopedAndIdempotent() {
         val definition = team()
-        val nodes = definition.members.associateBy { it.memberId }
-        definition.members.filter { CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.CHALLENGE }.forEach { review ->
-            assertTrue(review.dependsOnAgentIds.map(nodes::getValue).any {
-                CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.EXPLORE &&
-                    it.context[CollaborationResearchWorkflow.PERSON] != review.context[CollaborationResearchWorkflow.PERSON]
-            })
-        }
-        definition.members.filter { CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.REVISE }.forEach { revision ->
-            assertTrue(revision.dependsOnAgentIds.map(nodes::getValue).any {
-                CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.CHALLENGE &&
-                    it.context[CollaborationResearchWorkflow.PERSON] != revision.context[CollaborationResearchWorkflow.PERSON]
-            })
-        }
-    }
-
-    @Test fun targetedQuestionsAreScopedBoundedAndIdempotent() {
-        val definition = team()
-        val sender = definition.members.first { CollaborationResearchWorkflow.stage(it) == CollaborationResearchStage.EXPLORE }
+        val sender = definition.members[1].copy(context = definition.members[1].context + (CollaborationResearchWorkflow.STAGE to "EXECUTE"))
         val output = artifact("Finding").put("requests", JSONArray().put(JSONObject()
             .put("to", JSONArray(listOf("person-2", "person-3", "outsider")))
             .put("question", "Can you falsify this?").put("candidate_id", "C1"))).toString()
@@ -117,61 +273,18 @@ class CollaborationResearchWorkflowTest {
         val mailbox = InMemoryAgentTeamMailbox()
         repeat(3) { messages.forEach(mailbox::append) }
         assertEquals(2, mailbox.messages("research-run").size)
-        assertTrue(mailbox.messages("research-run", "person-4").isEmpty())
-        assertTrue(messages.all { !it.isBroadcast && it.kind == AgentTeamMessageKind.REVIEW })
-    }
-
-    @Test fun directedRequestsWaitUntilAfterIndependentExploration() = runBlocking {
-        val definition = team(2)
-        val mailbox = InMemoryAgentTeamMailbox()
-        mailbox.append(AgentTeamMessageEnvelope(teamId = definition.teamId, conversationId = "group", supervisorRunId = "research-run",
-            fromInstanceId = "person-1", toInstanceId = "person-2", kind = AgentTeamMessageKind.REVIEW, text = "Private checkpoint question"))
-        val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore(), mailbox = mailbox)
-        var received = false
-        try {
-            runtime.start(definition, request()) { context ->
-                val inbox = context.request.context["team_messages"] as List<*>
-                if (CollaborationResearchWorkflow.stage(context.member) == CollaborationResearchStage.EXPLORE) assertTrue(inbox.isEmpty())
-                if (context.member.context[CollaborationResearchWorkflow.PERSON] == "person-2" &&
-                    CollaborationResearchWorkflow.stage(context.member) == CollaborationResearchStage.CHALLENGE) {
-                    assertEquals(1, inbox.size); received = true
-                }
-                AgentSubagentOutput(artifact("Evidence").toString())
-            }.await()
-            assertTrue(received)
-        } finally { runtime.close() }
-    }
-
-    @Test fun providerFailureIsEvidenceNotInventedSuccess() = runBlocking {
-        val definition = team(2)
-        val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore())
-        var finalSawFailure = false
-        try {
-            val result = runtime.start(definition, request()) { context ->
-                if (CollaborationResearchWorkflow.stage(context.member) == CollaborationResearchStage.RECHECK)
-                    error("Fixture check could not run")
-                if (context.member.deliveryMode == AgentDeliveryMode.RESPOND)
-                    finalSawFailure = context.handoff.dependencies.any { it.status == AgentSubagentStatus.FAILED }
-                AgentSubagentOutput(artifact("Unverified proposal").toString())
-            }.await()
-            assertTrue(finalSawFailure)
-            assertEquals(AgentTeamExecutionState.COMPLETED_WITH_FAILURES, result.snapshot.state)
-        } finally { runtime.close() }
     }
 
     @Test fun malformedArtifactsArePreservedAsUnverifiedNotes() {
-        val raw = "I think this might work; no experiment was run."
-        val normalized = CollaborationResearchArtifact.handoff(raw, CollaborationResearchStage.VERIFY)
-        val parsed = requireNotNull(CollaborationResearchArtifact.decode(normalized))
+        val raw = "Unverified proposal"
+        val parsed = requireNotNull(CollaborationResearchArtifact.decode(CollaborationResearchArtifact.handoff(raw, CollaborationResearchStage.VERIFY)))
         assertTrue(parsed.getBoolean("unstructured"))
         assertEquals(raw, parsed.getString("summary"))
-        assertEquals(0, parsed.getJSONArray("findings").length())
         assertEquals(raw, CollaborationResearchArtifact.handoff(raw, CollaborationResearchStage.DELIVER))
     }
 
     @Test fun groupWorkflowRoundTripsWithoutChangingMemberSettings() {
-        val group = CollaborationGroup("group", listOf(CollaborationMember(name = "Turing", agentId = "codex", providerLabel = "Codex")),
-            workflow = CollaborationWorkflow.RESEARCH)
+        val group = CollaborationGroup("group", listOf(CollaborationMember(name = "Turing", agentId = "codex", providerLabel = "Codex")), workflow = CollaborationWorkflow.RESEARCH)
         assertEquals(group, CollaborationGroupCodec.decode(CollaborationGroupCodec.encode(group)))
         assertEquals("RESEARCH", group.requested(emptyList()).single().collaborationWorkflow)
     }
