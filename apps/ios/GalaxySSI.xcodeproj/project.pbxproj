@@ -38,6 +38,9 @@
     F13234000000000000000010 /* MqttChunkReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000010 /* MqttChunkReceipts.swift */; };
     F13234000000000000000011 /* MqttDeliveryEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000011 /* MqttDeliveryEnvelopeTests.swift */; };
     F13234000000000000000012 /* MqttChunkProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000012 /* MqttChunkProtocolTests.swift */; };
+    F13234000000000000000013 /* MqttChunkDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000013 /* MqttChunkDatabase.swift */; };
+    F13234000000000000000014 /* MqttDurableChunks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000014 /* MqttDurableChunks.swift */; };
+    F13234000000000000000015 /* MqttDurableChunksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000015 /* MqttDurableChunksTests.swift */; };
     F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000002 /* AgentReplySpeechRuntime.swift */; };
     F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */; };
     F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */; };
@@ -1050,6 +1053,9 @@
     F23234000000000000000010 /* MqttChunkReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkReceipts.swift; sourceTree = "<group>"; };
     F23234000000000000000011 /* MqttDeliveryEnvelopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryEnvelopeTests.swift; sourceTree = "<group>"; };
     F23234000000000000000012 /* MqttChunkProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkProtocolTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000013 /* MqttChunkDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkDatabase.swift; sourceTree = "<group>"; };
+    F23234000000000000000014 /* MqttDurableChunks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDurableChunks.swift; sourceTree = "<group>"; };
+    F23234000000000000000015 /* MqttDurableChunksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDurableChunksTests.swift; sourceTree = "<group>"; };
     F22678000000000000000002 /* AgentReplySpeechRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechRuntime.swift; sourceTree = "<group>"; };
     F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentReplySpeechView.swift; sourceTree = "<group>"; };
     F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechControllerTests.swift; sourceTree = "<group>"; };
@@ -2082,6 +2088,8 @@
         F23234000000000000000008 /* MqttDeliveryEnvelope.swift */,
         F23234000000000000000009 /* MqttChunkManifest.swift */,
         F23234000000000000000010 /* MqttChunkReceipts.swift */,
+        F23234000000000000000013 /* MqttChunkDatabase.swift */,
+        F23234000000000000000014 /* MqttDurableChunks.swift */,
         F22678000000000000000002 /* AgentReplySpeechRuntime.swift */,
         F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */,
         F22679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift */,
@@ -2844,6 +2852,7 @@
         F23234000000000000000007 /* MqttBrokerPoolTests.swift */,
         F23234000000000000000011 /* MqttDeliveryEnvelopeTests.swift */,
         F23234000000000000000012 /* MqttChunkProtocolTests.swift */,
+        F23234000000000000000015 /* MqttDurableChunksTests.swift */,
         F22679000000000000000002 /* MicrosoftTTSVoiceCatalogTests.swift */,
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
@@ -3482,6 +3491,8 @@
         F13234000000000000000008 /* MqttDeliveryEnvelope.swift in Sources */,
         F13234000000000000000009 /* MqttChunkManifest.swift in Sources */,
         F13234000000000000000010 /* MqttChunkReceipts.swift in Sources */,
+        F13234000000000000000013 /* MqttChunkDatabase.swift in Sources */,
+        F13234000000000000000014 /* MqttDurableChunks.swift in Sources */,
         F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */,
         F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */,
         F12679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift in Sources */,
@@ -4008,6 +4019,7 @@
         F13234000000000000000007 /* MqttBrokerPoolTests.swift in Sources */,
         F13234000000000000000011 /* MqttDeliveryEnvelopeTests.swift in Sources */,
         F13234000000000000000012 /* MqttChunkProtocolTests.swift in Sources */,
+        F13234000000000000000015 /* MqttDurableChunksTests.swift in Sources */,
         F12679000000000000000002 /* MicrosoftTTSVoiceCatalogTests.swift in Sources */,
         F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */,
         A1F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift in Sources */,
