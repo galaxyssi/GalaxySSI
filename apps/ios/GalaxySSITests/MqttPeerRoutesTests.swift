@@ -2,6 +2,137 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testDeliveryDrainRetriesBusinessHandoffWhenConsumeWriteFails() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    try f.storage.execute("CREATE TRIGGER fail_consumed BEFORE UPDATE ON mqtt_delivery_completions BEGIN SELECT RAISE(ABORT,'forced'); END")
+    var applied: Set<String> = []
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { event in
+      applied.insert(event.messageID)
+    }
+    let first = try await drain.drain()
+    XCTAssertEqual(first.failures.count, 1)
+    XCTAssertEqual(first.completions, 0)
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+    try f.storage.execute("DROP TRIGGER fail_consumed")
+    let second = try await drain.drain()
+    XCTAssertEqual(second.completions, 1)
+    XCTAssertEqual(applied, ["message"])
+  }
+
+  func testDeliveryDrainIsSingleFlightAcrossAsyncBusinessSave() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    let gate = ReceiptDrainGate()
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { _ in await gate.hold() }
+    let first = Task { try await drain.drain() }
+    await gate.waitForEntry()
+    let duplicate = try await drain.drain()
+    XCTAssertTrue(duplicate.busy)
+    await gate.release()
+    let result = try await first.value
+    XCTAssertEqual(result.completions, 1)
+  }
+
+  func testClosingDuringAsyncBusinessSaveRetainsCompletionForRecovery() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    let gate = ReceiptDrainGate()
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { _ in await gate.hold() }
+    let task = Task { try await drain.drain() }
+    await gate.waitForEntry()
+    await drain.close()
+    await gate.release()
+    let result = try await task.value
+    XCTAssertTrue(result.stopped)
+    XCTAssertEqual(result.completions, 0)
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+  }
+
+  func testDeliveryDrainPersistsBusinessStateBeforeConsumingCompletion() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    var applied: [String] = []
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes,
+      now: { 3000 }) { event in
+      XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+      applied.append(event.messageID)
+    }
+    let first = try await drain.drain()
+    XCTAssertEqual(first.receipts, 1)
+    XCTAssertEqual(first.completions, 1)
+    XCTAssertTrue(first.failures.isEmpty)
+    XCTAssertEqual(applied, ["message"])
+    XCTAssertTrue(try f.outbox.completions.pending().isEmpty)
+    let second = try await drain.drain()
+    XCTAssertEqual(second.completions, 0)
+    XCTAssertEqual(applied.count, 1)
+  }
+
+  func testDeliveryDrainKeepsCompletionPendingWhenBusinessSaveFails() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    var fail = true
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { _ in
+      if fail { throw MqttChunkStorageError.databaseFailure }
+    }
+    let first = try await drain.drain()
+    XCTAssertEqual(first.failures.count, 1)
+    XCTAssertEqual(first.completions, 0)
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+    fail = false
+    let second = try await drain.drain()
+    XCTAssertEqual(second.completions, 1)
+    XCTAssertTrue(try f.outbox.completions.pending().isEmpty)
+  }
+
+  func testDeliveryDrainDoesNotConsumeWhenRelationshipRevokedDuringApply() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { _ in
+      f.peer.binding.enabled = false
+      try f.peer.routes.replace([f.peer.binding])
+    }
+    let result = try await drain.drain()
+    XCTAssertEqual(result.completions, 0)
+    XCTAssertEqual(result.failures.count, 1)
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+  }
+
+  func testClosedDeliveryDrainLeavesDurableWorkUntouched() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { _ in
+      XCTFail("Closed drain must not apply business state")
+    }
+    await drain.close()
+    let result = try await drain.drain()
+    XCTAssertTrue(result.stopped)
+    XCTAssertEqual(try f.journal.inbox.pending().count, 1)
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+  }
+
+  func testDeliveryDrainAdvancesPastUnrelatedInboxRecordsAndWraps() async throws {
+    let f = try ReceiptBridgeFixture()
+    for index in 0..<3 {
+      let id = "chat-\(index)"
+      _ = try f.journal.inbox.accept(identity: f.entry.identity, messageID: id,
+        payload: ["type": "message", "message_id": id], ciphertextDigest: String(repeating: String(index + 1), count: 64),
+        wireHash: String(repeating: "a", count: 64), receiptRequired: true)
+    }
+    try f.stageStoredReceipt()
+    var applied = 0
+    let drain = MqttBusinessDeliveryDrain(journal: f.journal, receipts: f.receipts, routes: f.peer.routes) { _ in applied += 1 }
+    for _ in 0..<6 {
+      let result = try await drain.drain(limit: 1)
+      XCTAssertLessThanOrEqual(result.receipts, 1)
+      XCTAssertLessThanOrEqual(result.completions, 1)
+      XCTAssertTrue(result.failures.isEmpty)
+    }
+    XCTAssertEqual(applied, 1)
+    XCTAssertEqual(try f.journal.inbox.pending().count, 3)
+  }
+
   func testStoredReceiptCancelsDispatchOnlyAfterDurableConsumption() async throws {
     let f = try ReceiptBridgeFixture()
     await f.peer.start()
@@ -497,5 +628,28 @@ private final class ReceiptBridgeFixture {
     payload["message_id"] = "ack"
     _ = try journal.inbox.accept(identity: entry.identity, messageID: "ack", payload: payload,
       ciphertextDigest: String(repeating: "e", count: 64), wireHash: String(repeating: "f", count: 64), receiptRequired: false)
+  }
+}
+
+private actor ReceiptDrainGate {
+  private var entered = false
+  private var entryWaiter: CheckedContinuation<Void, Never>?
+  private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+  func hold() async {
+    await withCheckedContinuation { continuation in
+      releaseWaiter = continuation
+      entered = true
+      entryWaiter?.resume()
+      entryWaiter = nil
+    }
+  }
+  func waitForEntry() async {
+    if entered { return }
+    await withCheckedContinuation { entryWaiter = $0 }
+  }
+  func release() {
+    releaseWaiter?.resume()
+    releaseWaiter = nil
   }
 }

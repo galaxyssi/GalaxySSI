@@ -71,3 +71,82 @@ final class MqttBusinessReceipts {
     return completion
   }
 }
+
+// The owner schedules repeated drains and supplies an idempotent DURABLE business-state writer.
+// Returning from apply before persistence succeeds would lose the handoff after consume.
+actor MqttBusinessDeliveryDrain {
+  struct Failure { let key: String; let error: Error }
+  struct Result {
+    var busy = false
+    var stopped = false
+    var receipts = 0
+    var completions = 0
+    var failures: [Failure] = []
+  }
+  private let journal: MqttSignalStateJournal
+  private let receipts: MqttBusinessReceipts
+  private let routes: MqttPeerRoutes
+  private let apply: (MqttDeliveryCompletions.Event) async throws -> Void
+  private let now: () -> Int64
+  private var inboxCursor = ""
+  private var completionCursor = ""
+  private var running = false
+  private var closed = false
+
+  init(journal: MqttSignalStateJournal, receipts: MqttBusinessReceipts, routes: MqttPeerRoutes,
+       now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+       apply: @escaping (MqttDeliveryCompletions.Event) async throws -> Void) {
+    self.journal = journal; self.receipts = receipts; self.routes = routes
+    self.now = now; self.apply = apply
+  }
+
+  func close() { closed = true }
+
+  // Keyset cursors advance over failures and unrelated inbox messages. A poison record cannot
+  // starve later peers; failed records remain durable and are revisited on the next scan cycle.
+  func drain(limit: Int = 8) async throws -> Result {
+    guard (1...32).contains(limit) else { throw MqttRouteError.invalidPayload }
+    try Task.checkCancellation()
+    if closed { var result = Result(); result.stopped = true; return result }
+    if running { var result = Result(); result.busy = true; return result }
+    running = true
+    defer { running = false }
+    var result = Result()
+    let pending = try journal.inbox.pending(afterKey: inboxCursor, limit: limit)
+    for item in pending {
+      try Task.checkCancellation()
+      if closed { result.stopped = true; return result }
+      inboxCursor = item.key
+      do {
+        if try await receipts.consumeStored(identity: item.identity, receiptMessageID: item.messageID, journal: journal) != nil {
+          result.receipts += 1
+        }
+      } catch { result.failures.append(Failure(key: item.key, error: error)) }
+    }
+    if pending.count < limit { inboxCursor = "" }
+    if closed { result.stopped = true; return result }
+    let events = try journal.outbox.completions.pending(afterKey: completionCursor, limit: limit)
+    for event in events {
+      try Task.checkCancellation()
+      if closed { result.stopped = true; return result }
+      let key = try event.identity.key(messageID: event.messageID)
+      completionCursor = key
+      do {
+        guard let current = try await receipts.resumeCompletion(identity: event.identity,
+          messageID: event.messageID, journal: journal) else { throw MqttRouteError.unsolicitedAcknowledgement }
+        if closed { result.stopped = true; return result }
+        try Task.checkCancellation()
+        // The business writer must also fence any asynchronous side effects against revocation.
+        try await apply(current)
+        if closed { result.stopped = true; return result }
+        try Task.checkCancellation()
+        try routes.withIdentity(event.identity) {
+          _ = try journal.outbox.completions.consume(identity: event.identity, messageID: event.messageID, at: now())
+        }
+        result.completions += 1
+      } catch { result.failures.append(Failure(key: key, error: error)) }
+    }
+    if events.count < limit { completionCursor = "" }
+    return result
+  }
+}
