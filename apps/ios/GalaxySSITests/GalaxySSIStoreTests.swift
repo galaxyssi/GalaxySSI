@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import GalaxySSI
 
 final class TestAgentActionExecutor: AgentActionExecutor {
@@ -195,6 +196,14 @@ final class GalaxySSIStoreTests: XCTestCase {
     )
   }
 
+  func testConversationReadArtworkPreservesAndroidViewportAndTail() {
+    let shape = GalaxySSIConversationReadShape()
+    let path = shape.path(in: CGRect(x: 0, y: 0, width: 24, height: 24))
+    XCTAssertEqual(path.boundingRect, CGRect(x: 3, y: 4, width: 18, height: 17))
+    XCTAssertTrue(path.contains(CGPoint(x: 5.1, y: 20)))
+    XCTAssertFalse(path.contains(CGPoint(x: 3, y: 20)))
+    XCTAssertEqual(shape.path(in: CGRect(x: 10, y: 20, width: 48, height: 48)).boundingRect,
+      CGRect(x: 16, y: 28, width: 36, height: 34))
   func testConversationHubDeletedAnchorFallsBackToNearestPosition() {
     let rows = ["conversation:contact:x", "conversation:agent:x", "conversation:agent:y"]
     XCTAssertEqual(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
