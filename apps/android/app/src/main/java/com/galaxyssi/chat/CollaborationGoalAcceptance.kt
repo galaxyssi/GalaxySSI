@@ -73,18 +73,21 @@ internal class CollaborationGoalAcceptance(
                 assessment.getJSONArray("blockers").length() == 0 && (assessment.optJSONArray("recruit")?.length() ?: 0) == 0) {
                 "Unfinished assignments or blockers remain"
             }
-            val coverage = requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
+            val coverage = CollaborationGoalCoverageManifest.resolve(requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
                 "Publish an explicit original-goal requirement mapping and a separate independent semantic coverage review; supply goal_coverage references"
+            }, current, goal) { ref -> currentRevision(scope, ref) }
+            val targets = coverage.parts.mapTo(linkedSetOf()) { part ->
+                CollaborationAcceptanceReviewSnapshot.Binding.of(part.mapping, CollaborationSemanticGoalCoverage.REVIEW)
             }
-            val targets = linkedSetOf(CollaborationAcceptanceReviewSnapshot.Binding.of(coverage.getJSONObject("mapping"),
-                CollaborationSemanticGoalCoverage.REVIEW))
             repeat(current.length()) { index ->
                 val criterion = current.getJSONObject(index)
                 targets.add(CollaborationAcceptanceReviewSnapshot.Binding.of(criterion.getJSONObject("delivery"),
                     CollaborationReviewContract.KIND, criterion.getString("id"), criterion.getString("requirement")))
             }
             val snapshot = workspace.acceptanceReviewSnapshot(scope, targets)
-            validateCoverage(scope, assessment, current, goal, snapshot)
+            // Resolution precedes the review snapshot; recheck directories inside its mutation fence.
+            coverage.manifests.forEach { currentRevision(scope, it) }
+            validateCoverage(scope, coverage.parts, current, goal, snapshot)
             repeat(current.length()) {
                 val criterion = current.getJSONObject(it)
                 require(criterion.optString("verification") != "computational" || criterion.getString("id") in priorIds) {
@@ -96,29 +99,28 @@ internal class CollaborationGoalAcceptance(
         }.getOrElse { receipt(it) }
     }
 
-    private fun validateCoverage(access: CollaborationWorkspaceAccess, assessment: JSONObject, criteria: JSONArray, goal: String,
+    private fun validateCoverage(access: CollaborationWorkspaceAccess, parts: List<CollaborationSemanticGoalCoverage.ReferencePair>, criteria: JSONArray, goal: String,
                                  snapshot: CollaborationAcceptanceReviewSnapshot) {
-        val refs = requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
-            "Publish an explicit original-goal requirement mapping and a separate independent semantic coverage review; supply goal_coverage references"
+        val validation = CollaborationSemanticGoalCoverage.Validation(criteria, goal)
+        val covered = parts.map { part ->
+            val mapping = currentRevision(access, part.mapping)
+            val review = currentRevision(access, part.review)
+            require(mapping.getString("kind") == "artifact" && review.getString("kind") == CollaborationReviewContract.KIND) {
+                "Coverage needs a saved mapping artifact and a typed independent review"
+            }
+            require(access.personId.isNotBlank() && review.getString("person_id") != access.personId) {
+                "The evaluating coordinator cannot independently certify coverage of its own criteria"
+            }
+            CollaborationReviewContract.validate(review.getString("kind"), review.getJSONObject("body"))
+            val check = review.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW)
+            validateIndependentReview(access, part.mapping, mapping, review, check, "Original-goal coverage")
+            val body = mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING)
+            validateCurrentReviews(snapshot, part.mapping, CollaborationSemanticGoalCoverage.REVIEW, "Original-goal coverage") { settled ->
+                validation.part(body, settled)
+            }
+            validation.part(body, check)
         }
-        val mappingRef = refs.getJSONObject("mapping")
-        val mapping = currentRevision(access, mappingRef)
-        val review = currentRevision(access, refs.getJSONObject("review"))
-        require(mapping.getString("kind") == "artifact" && review.getString("kind") == CollaborationReviewContract.KIND) {
-            "Coverage needs a saved mapping artifact and a typed independent review"
-        }
-        require(access.personId.isNotBlank() && review.getString("person_id") != access.personId) {
-            "The evaluating coordinator cannot independently certify coverage of its own criteria"
-        }
-        CollaborationReviewContract.validate(review.getString("kind"), review.getJSONObject("body"))
-        val check = review.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW)
-        validateIndependentReview(access, mappingRef, mapping, review, check, "Original-goal coverage")
-        CollaborationSemanticGoalCoverage.validate(mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING),
-            check, criteria, goal)
-        validateCurrentReviews(snapshot, mappingRef, CollaborationSemanticGoalCoverage.REVIEW, "Original-goal coverage") { settled ->
-            CollaborationSemanticGoalCoverage.validate(mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING),
-                settled, criteria, goal)
-        }
+        validation.complete(covered)
     }
 
     private fun validateCriterion(access: CollaborationWorkspaceAccess, criterion: JSONObject, snapshot: CollaborationAcceptanceReviewSnapshot) {

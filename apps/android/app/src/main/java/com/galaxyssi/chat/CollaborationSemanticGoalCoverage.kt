@@ -96,48 +96,99 @@ internal object CollaborationSemanticGoalCoverage {
         }
     }
 
-    fun validate(mapping: JSONObject, review: JSONObject, criteria: JSONArray, goal: String) {
-        val source = source(goal)
-        require(goal.isNotBlank() && mapping.opt("format") == FORMAT && mapping.opt("goal_sha256") == source.getString("goal_sha256")) {
-            "Requirement mapping must bind the host-supplied original goal hash"
+    data class ReferencePair(val mapping: JSONObject, val review: JSONObject)
+    data class PartCoverage(val sourceIds: Set<String>, val criterionIds: Set<String>)
+
+    fun references(coverage: JSONObject): List<ReferencePair> {
+        val keys = coverage.keys().asSequence().toSet()
+        val parts = if (keys == setOf("mapping", "review")) listOf(coverage) else {
+            require(keys == setOf("parts")) { "goal_coverage must contain either mapping/review or parts, not both" }
+            val array = requireNotNull(coverage.optJSONArray("parts")) { "goal_coverage.parts must be an array" }
+            require(array.length() > 0) { "At least one independently reviewed coverage part is required" }
+            (0 until array.length()).map { array.getJSONObject(it) }
         }
-        require(mapping.keys().asSequence().toSet() == setOf("format", "goal_sha256", "criteria_sha256", "segments")) {
-            "Use only host goal/criterion hashes and source IDs; do not supply replacement goal text or offsets"
+        val targets = hashSetOf<CollaborationAcceptanceReviewSnapshot.Target>()
+        return parts.map { part ->
+            require(part.keys().asSequence().toSet() == setOf("mapping", "review")) { "A coverage part needs exact mapping/review references only" }
+            val mapping = part.getJSONObject("mapping")
+            val review = part.getJSONObject("review")
+            require(targets.add(CollaborationAcceptanceReviewSnapshot.Target.of(mapping))) { "Duplicate goal coverage mapping part" }
+            CollaborationReviewContract.validateReference(review)
+            ReferencePair(mapping, review)
         }
-        val expected = criteriaBinding(criteria)
-        require(expected.isNotEmpty() && mapping.opt("criteria_sha256") == criteriaHash(criteria)) {
-            "Requirement mapping must bind every current preserved criterion and its verification constraints"
+    }
+
+    /** Build the original-goal/criteria index once, not again for every part and dissenting review. */
+    class Validation(criteria: JSONArray, goal: String) {
+        private val source = source(goal)
+        private val expected = criteriaBinding(criteria)
+        private val criteriaHash = AgentNativeJsonCodec.sha256(expected)
+        private val sourceIds = source.getJSONArray("segments").let { values ->
+            (0 until values.length()).mapTo(linkedSetOf()) { values.getJSONObject(it).getString("id") }
         }
-        validateReview(review)
-        require(review.getString("verdict") == "supported" && review.getJSONArray("unresolved").length() == 0) {
-            "Original-goal coverage is not independently supported or has unresolved omissions"
+        init {
+            require(goal.isNotBlank() && sourceIds.isNotEmpty()) { "Original goal source is empty" }
+            require(expected.isNotEmpty()) { "Preserved acceptance criteria are empty" }
         }
-        val segments = mapping.getJSONArray("segments")
-        val reviewed = review.getJSONArray("segments")
-        val byId = (0 until reviewed.length()).associate { reviewed.getJSONObject(it).let { item -> item.getString("id") to item } }
-        val seen = hashSetOf<String>()
-        val mapped = hashSetOf<String>()
-        val sources = source.getJSONArray("segments")
-        val sourceIds = (0 until sources.length()).mapTo(linkedSetOf()) { sources.getJSONObject(it).getString("id") }
-        require(segments.length() > 0) { "Map the entire original goal, including constraints" }
-        repeat(segments.length()) { index ->
-            val segment = segments.getJSONObject(index)
-            val id = requiredText(segment, "id")
-            require(seen.add(id)) { "Duplicate mapped source segment" }
-            require(id in sourceIds && segment.keys().asSequence().toSet() == setOf("id", "criterion_ids", "rationale")) {
-                "Map host source IDs only; invented IDs, replacement text and model-counted offsets are invalid"
+
+        fun part(mapping: JSONObject, review: JSONObject): PartCoverage {
+            require(mapping.opt("format") == FORMAT && mapping.opt("goal_sha256") == source.getString("goal_sha256")) {
+                "Requirement mapping must bind the host-supplied original goal hash"
             }
-            requiredText(segment, "rationale")
-            val targets = ids(segment.getJSONArray("criterion_ids"))
-            require(expected.keys.containsAll(targets)) { "Source segment references an unknown criterion" }
-            val check = requireNotNull(byId[id]) { "A source segment has no independent semantic assessment" }
-            require(ids(check.getJSONArray("criterion_ids")) == targets && check.getString("verdict") == "supported" &&
-                check.getJSONArray("unresolved").length() == 0) { "Segment review disagrees with the exact mapping or retains objections" }
-            mapped.addAll(targets)
+            require(mapping.keys().asSequence().toSet() == setOf("format", "goal_sha256", "criteria_sha256", "segments")) {
+                "Use only host goal/criterion hashes and source IDs; do not supply replacement goal text or offsets"
+            }
+            require(mapping.opt("criteria_sha256") == criteriaHash) {
+                "Requirement mapping must bind every current preserved criterion and its verification constraints"
+            }
+            validateReview(review)
+            require(review.getString("verdict") == "supported" && review.getJSONArray("unresolved").length() == 0) {
+                "Original-goal coverage is not independently supported or has unresolved omissions"
+            }
+            val segments = mapping.getJSONArray("segments")
+            val reviewed = review.getJSONArray("segments")
+            val byId = (0 until reviewed.length()).associate { reviewed.getJSONObject(it).let { item -> item.getString("id") to item } }
+            val seen = hashSetOf<String>()
+            val mapped = hashSetOf<String>()
+            require(segments.length() > 0) { "Each coverage part must map original goal content, including constraints" }
+            repeat(segments.length()) { index ->
+                val segment = segments.getJSONObject(index)
+                val id = requiredText(segment, "id")
+                require(seen.add(id)) { "Duplicate mapped source segment" }
+                require(id in sourceIds && segment.keys().asSequence().toSet() == setOf("id", "criterion_ids", "rationale")) {
+                    "Map host source IDs only; invented IDs, replacement text and model-counted offsets are invalid"
+                }
+                requiredText(segment, "rationale")
+                val targets = ids(segment.getJSONArray("criterion_ids"))
+                require(expected.keys.containsAll(targets)) { "Source segment references an unknown criterion" }
+                val check = requireNotNull(byId[id]) { "A source segment has no independent semantic assessment" }
+                require(ids(check.getJSONArray("criterion_ids")) == targets && check.getString("verdict") == "supported" &&
+                    check.getJSONArray("unresolved").length() == 0) { "Segment review disagrees with the exact mapping or retains objections" }
+                mapped.addAll(targets)
+            }
+            require(seen == byId.keys) {
+                "Coverage must include all host source IDs assigned to this part, with no extra or missing segment reviews"
+            }
+            return PartCoverage(seen, mapped)
         }
-        require(seen == sourceIds && seen == byId.keys && mapped == expected.keys) {
-            "Coverage must include all host source IDs and every criterion, with no extra or missing segment reviews"
+
+        fun complete(parts: List<PartCoverage>) {
+            val seen = hashSetOf<String>()
+            val mapped = hashSetOf<String>()
+            parts.forEach { part ->
+                require(part.sourceIds.none { it in seen }) { "A host source ID is counted in more than one coverage part" }
+                seen.addAll(part.sourceIds)
+                mapped.addAll(part.criterionIds)
+            }
+            require(seen == sourceIds && mapped == expected.keys) {
+                "Coverage must include all host source IDs and every criterion across independently reviewed parts"
+            }
         }
+    }
+
+    fun validate(mapping: JSONObject, review: JSONObject, criteria: JSONArray, goal: String) {
+        val validation = Validation(criteria, goal)
+        validation.complete(listOf(validation.part(mapping, review)))
     }
 
     fun instructions() = "Completion also requires goal_coverage:{mapping:{object_id,revision,sha256},review:{object_id,revision,sha256}}. " +
@@ -146,6 +197,12 @@ internal object CollaborationSemanticGoalCoverage {
         "criteria_sha256:copy host hash,segments:[{id:host source ID,criterion_ids:[exact IDs],rationale}]}. " +
         "Use every host source ID exactly once. Do not count offsets, repeat original text/criteria, compute hashes or invent source IDs. " +
         "Map constraints as well as desired outcomes; every criterion must be mapped. " +
+        "For long goals, split source IDs into non-overlapping work assignments and publish separate mapping artifacts; " +
+        "each part uses the same full host goal_sha256 and criteria_sha256 but contains only its assigned segments. " +
+        "Different members may author/review different parts. Return goal_coverage:{parts:[{mapping:exact reference,review:exact reference},...]} " +
+        "instead of the single mapping/review pair. Across all parts cover every host source ID exactly once and every criterion at least once. " +
+        "Do not replace the exact original with a summary, omit difficult constraints, reuse a review for another part, or count an ID twice. " +
+        CollaborationGoalCoverageManifest.instructions() +
         "A member different from the evaluating coordinator and every mapping contributor publishes kind=acceptance_review with body.semantic_coverage_review " +
         "(instead of body.acceptance_review):{target:exact mapping reference,verdict,rationale,unresolved:[]," +
         "segments:[{id,criterion_ids,verdict,rationale,unresolved:[]}]}, and cites the mapping in parents. " +
