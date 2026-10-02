@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:galaxyssi:equal-budget-comparison-export:v1",
+  "title": "Equal-budget comparison evidence export",
+  "description": "Structural interchange schema. lib.mjs additionally enforces schedule identity, pairing, uniqueness, provenance, total caps and eligibility. No defaults imply measurement.",
+  "type": "object",
+  "required": ["schema_version", "evidence_kind", "plan_sha256", "runs"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "evidence_kind": {"enum": ["actual", "fixture"]},
+    "plan_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "warning": {"type": "string"},
+    "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "measurement": {
+      "type": "object",
+      "description": "Missing/null/UNKNOWN values, incomplete capture, or absent evidence_ref become UNKNOWN. An explicit observed zero is valid.",
+      "properties": {
+        "value": {"anyOf": [{"type": "integer", "minimum": 0, "maximum": 9007199254740991}, {"type": "null"}, {"const": "UNKNOWN"}]},
+        "complete": {"type": "boolean"},
+        "evidence_ref": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "budget": {
+      "type": "object",
+      "required": ["max_wall_time_ms", "max_total_tokens", "max_cost_micros", "max_rework_count", "max_intervention_count", "currency"],
+      "properties": {
+        "max_wall_time_ms": {"type": "integer", "minimum": 1},
+        "max_total_tokens": {"type": "integer", "minimum": 1},
+        "max_cost_micros": {"type": "integer", "minimum": 1},
+        "max_rework_count": {"type": "integer", "minimum": 0},
+        "max_intervention_count": {"type": "integer", "minimum": 0},
+        "currency": {"const": "USD"}
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "object",
+      "required": ["model_policy", "tool_policy", "environment", "context_policy"],
+      "properties": {
+        "model_policy": {"type": "string", "minLength": 1},
+        "tool_policy": {"type": "string", "minLength": 1},
+        "environment": {"type": "string", "minLength": 1},
+        "context_policy": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "call": {
+      "type": "object",
+      "required": ["call_id"],
+      "properties": {
+        "call_id": {"type": "string", "minLength": 1},
+        "participant_id": {"type": "string"},
+        "total_tokens": {"$ref": "#/$defs/measurement"},
+        "cost_micros": {"$ref": "#/$defs/measurement"}
+      },
+      "additionalProperties": true
+    },
+    "ledger": {
+      "type": "object",
+      "properties": {
+        "complete": {"type": "boolean"},
+        "scope": {"const": "entire_trial"},
+        "evidence_ref": {"type": "string"},
+        "participants": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "no_model_calls_observed": {"type": "boolean"},
+        "calls": {"type": "array", "items": {"$ref": "#/$defs/call"}}
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": ["slot_id", "run_id", "evidence_kind"],
+      "properties": {
+        "slot_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "evidence_kind": {"enum": ["actual", "fixture"]},
+        "result": {
+          "type": "object",
+          "description": "Existing agent benchmark result, preserved verbatim. Absent/nonterminal result excludes the pair. Never map EvalOps passed directly to quality.",
+          "properties": {
+            "run_id": {"type": "string"}, "scenario_id": {"type": "string"},
+            "status": {"type": "string"}, "response": {"type": "string"},
+            "failure_reasons": {"type": "array", "items": {"type": "string"}},
+            "events": {"type": "array"}, "tools": {"type": "array"}
+          },
+          "additionalProperties": true
+        },
+        "controls": {"$ref": "#/$defs/controls"},
+        "budget": {
+          "type": "object",
+          "properties": {
+            "limits": {"$ref": "#/$defs/budget"}, "scope": {"const": "entire_trial"},
+            "enforced": {"type": "boolean"}, "evidence_ref": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "capture": {
+          "type": "object",
+          "properties": {
+            "complete": {"type": "boolean"}, "assignment_verified": {"type": "boolean"},
+            "controls_verified": {"type": "boolean"}, "reset_verified": {"type": "boolean"},
+            "scope": {"const": "entire_trial"},
+            "order": {"type": ["integer", "null"], "minimum": 1},
+            "request_sha256": {"type": "string"}, "evidence_ref": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "accounting": {
+          "type": "object",
+          "properties": {
+            "wall_time_ms": {"$ref": "#/$defs/measurement"},
+            "rework_count": {"$ref": "#/$defs/measurement"},
+            "intervention_count": {"$ref": "#/$defs/measurement"},
+            "ledger": {"$ref": "#/$defs/ledger"}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
