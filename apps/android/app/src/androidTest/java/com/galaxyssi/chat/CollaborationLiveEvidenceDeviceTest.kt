@@ -74,6 +74,8 @@ class CollaborationLiveEvidenceDeviceTest {
             val requirement = "Document the observed command output for fixture $token, including numbers 1,2,4,8, their sum and mean, and the observation limitations."
             val criteria = JSONArray().put(JSONObject().put("id", "doc").put("requirement", requirement)
                 .put("verification", "documentary").put("evidence_kind", "observed").put("status", "open")
+                .put(CollaborationEvidenceRequirements.FIELD, JSONArray().put(JSONObject()
+                    .put("origin", "desktop_codex_tool").put("tool", "codex.commandExecution")))
                 .put("evidence", JSONArray())).toString()
             fun member(person: CollaborationMember, node: String, stage: String, objective: String,
                        dependencies: Set<String> = emptySet()) = AgentTeamMember(person.agentId,
@@ -93,8 +95,11 @@ class CollaborationLiveEvidenceDeviceTest {
                 member(reviewer, "review", "RECHECK", "Independently review the author's exact saved document from the dependency workspace_receipt. " +
                     "Use the available collaboration_recall tool with mode=evidence to inspect the original recorded Desktop command observation, " +
                     "not just the author's prose. Read the original by evidence_id and sha256 when needed. Check token $token and the numbers. " +
-                    "Publish a decision id=fixture-review with body.acceptance_review for criterion_id=doc and exact requirement: $requirement " +
+                    "Publish workspace kind=acceptance_review id=fixture-review with a JSON object body.acceptance_review (not prose) " +
+                    "for criterion_id=doc and exact requirement: $requirement " +
                     "Copy the delivery reference into target and parents; cite the actual host evidence in observations. " +
+                    "The required source is origin=desktop_codex_tool, tool=codex.commandExecution. Browse mode=evidence, " +
+                    "read its original with evidence_id/sha256, and cite that original receipt, not just a receipt for reading the author's document. " +
                     "Use verdict=supported only if the document agrees with the recorded output, otherwise refuted/not_tested with unresolved issues. " +
                     "Do not run another command, browse the web, or operate other apps.", setOf("author")),
                 member(author, "deliver", "DELIVER", "Assess only this documentary fixture. Use the exact saved author/review versions " +
@@ -128,6 +133,17 @@ class CollaborationLiveEvidenceDeviceTest {
             val reviewRef = reviewed.getJSONObject("workspace_receipt").getJSONArray("revisions").getJSONObject(0)
             val review = CollaborationResearchWorkspace(context).read(access, reviewRef.getString("object_id"), reviewRef.getInt("revision"))!!
             assertTrue("Review must reference observed evidence", review.getJSONArray("host_observations").length() > 0)
+            val directRefs = review.getJSONArray("host_observations")
+            val originals = observations.filter { it.getString("origin") == "desktop_codex_tool" &&
+                it.getString("tool") == "codex.commandExecution" && it.getString("output_json").contains(token) }
+            assertTrue("Review must cite the actual Desktop observation, not a peer-document read receipt", originals.any { original ->
+                (0 until directRefs.length()).any { directRefs.getJSONObject(it).getString("evidence_id") == original.getString("evidence_id") } })
+            assertTrue("Reviewer must actually fetch the original, not merely browse or cite its ID", observations.any { observation ->
+                val input = JSONObject(observation.getString("input_json"))
+                observation.getString("person_id") == reviewer.id && observation.getString("tool") == CollaborationCloudRecall.NAME &&
+                    input.optString("mode") == "evidence" && originals.any { it.getString("evidence_id") == input.optString("evidence_id") } &&
+                    observation.getString("status") == "returned" && observation.getString("output_json").contains(token)
+            })
             assertEquals(reportText(result.snapshot), "achieved", result.snapshot.goalDisposition)
             assertTrue(result.subagentResult.results.single { it.childId == "deliver" }.collaborationAcceptance?.accepted == true)
             scenario.onActivity { it.refreshAgentTranscriptWindow(group) }

@@ -82,6 +82,7 @@ internal class CollaborationResearchWorkspace(
                 require(title.isNotBlank() && title.length <= 240) { "A concise object title is required" }
                 val body = item.getJSONObject("body")
                 require(body.length() > 0) { "An empty status message is not a research object" }
+                CollaborationReviewContract.validate(kind, body)
                 val headKey = prefix + "head:" + id
                 val head = rows.read(headKey)?.let(::JSONObject)
                 require(requestedId.isBlank() == (head == null)) { "Use a new local id to create, or an existing host object_id to revise" }
@@ -163,7 +164,7 @@ internal class CollaborationResearchWorkspace(
         private val LOCK = Any()
         private const val DATABASE = "galaxyssi_collaboration_workspace_v1"
         private val ID = Regex("[a-f0-9]{64}")
-        val KINDS = setOf("hypothesis", "evidence", "counterexample", "proposal", "experiment", "artifact", "decision", "question")
+        val KINDS = setOf("hypothesis", "evidence", "counterexample", "proposal", "experiment", "artifact", "decision", "question", CollaborationReviewContract.KIND)
         private fun digest(value: String) = AgentNativeJsonCodec.sha256(value)
         private fun prefix(group: String) = "group:${digest(group)}:"
         private fun revisionKey(prefix: String, id: String, revision: Int) = "${prefix}revision:$id:$revision"

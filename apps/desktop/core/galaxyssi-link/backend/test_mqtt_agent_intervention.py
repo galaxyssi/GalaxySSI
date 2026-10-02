@@ -292,6 +292,22 @@ class MqttAgentInterventionTests(unittest.TestCase):
         self.assertEqual([], provider.cancelled)
         self.assertEqual("plan_only", manager.created_execution_policy["execution_mode"])
 
+    def test_collaboration_assignment_policy_excludes_parent_goal_and_protocol_examples(self):
+        for assignment, artifact in (
+            ("Assess the saved document and its independent review", False),
+            ("Create a downloadable Word document", True),
+            ("Build an Android APK", True),
+        ):
+            with self.subTest(assignment=assignment):
+                manager, _, _ = self._dispatch(
+                    "Supervised Agent team assignment\nOriginal goal: build an Android APK.\n"
+                    "Return JSON with work entries describing future build and install steps.\n"
+                    "Current assignment: " + assignment,
+                    execution_policy_prompt=assignment,
+                )
+                self.assertEqual(artifact, manager.created_execution_policy["requires_artifact"])
+                self.assertEqual("auto_complete", manager.created_execution_policy["execution_mode"])
+
 
 if __name__ == "__main__":
     unittest.main()

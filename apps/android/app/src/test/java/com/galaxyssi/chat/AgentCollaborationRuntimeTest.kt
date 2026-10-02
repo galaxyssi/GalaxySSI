@@ -952,6 +952,7 @@ class AgentCollaborationRuntimeTest {
             members = listOf(
                 AgentTeamMember("primary", AgentDeliveryMode.RESPOND, setOf(AgentCapability.CODE)),
                 AgentTeamMember("observer", AgentDeliveryMode.OBSERVE, setOf(AgentCapability.RESEARCH),
+                    objective = "Review the saved document and report the observed evidence",
                     context = mapOf("collaboration_group_id" to "conversation", "collaboration_model_id" to "selected-model"))
             )
         )
@@ -975,7 +976,8 @@ class AgentCollaborationRuntimeTest {
         assertTrue(observerAction.parameters["prompt"].orEmpty().contains("Respond only as this one member"))
         assertTrue(observerAction.parameters["prompt"].orEmpty().contains("You are not the coordinator"))
         assertNull(primaryAction.parameters["manual_model_id"])
-        assertEquals(policyPrompt, observerAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
+        assertEquals("Review the saved document and report the observed evidence",
+            observerAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertEquals(policyPrompt, primaryAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains("verified evidence"))
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains(

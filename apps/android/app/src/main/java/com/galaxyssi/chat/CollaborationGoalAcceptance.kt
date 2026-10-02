@@ -52,7 +52,8 @@ internal class CollaborationGoalAcceptance(
                 val before = prior.getJSONObject(index)
                 val after = requireNotNull(byId[before.getString("id")]) { "An original criterion was dropped" }
                 require(before.getString("requirement") == after.getString("requirement") &&
-                    before.optString("verification") == after.optString("verification")) { "An original criterion was weakened" }
+                    before.optString("verification") == after.optString("verification") &&
+                    CollaborationEvidenceRequirements.preserved(before, after)) { "An original criterion was weakened" }
             }
             require(assessment.getString("decision") == "achieved" && assessment.getJSONArray("work").length() == 0 &&
                 assessment.getJSONArray("blockers").length() == 0 && (assessment.optJSONArray("recruit")?.length() ?: 0) == 0) {
@@ -78,7 +79,8 @@ internal class CollaborationGoalAcceptance(
         val review = currentRevision(access, reviewRef)
         require(delivery.getString("kind") in setOf("artifact", "proposal", "decision") &&
             delivery.getJSONObject("body").optString("content").isNotBlank()) { "$id: no substantive saved delivery" }
-        require(review.getString("kind") == "decision" && review.getString("person_id") != delivery.getString("person_id")) {
+        require(review.getString("kind") in setOf("decision", CollaborationReviewContract.KIND) &&
+            review.getString("person_id") != delivery.getString("person_id")) {
             "$id: the author cannot independently review their own delivery"
         }
         repeat(delivery.getInt("revision")) { index ->
@@ -103,6 +105,7 @@ internal class CollaborationGoalAcceptance(
         } }) { "$id: review has no preserved delivery reference" }
         require(check.getString("verdict") == "supported" && check.getString("rationale").isNotBlank() &&
             check.getJSONArray("unresolved").length() == 0) { "$id: review is negative, incomplete or has unresolved objections" }
+        val reviewedObservations = mutableListOf<JSONObject>()
         listOf(delivery, review).forEach { revision ->
             val refs = revision.getJSONArray("host_observations")
             repeat(refs.length()) { index ->
@@ -113,8 +116,10 @@ internal class CollaborationGoalAcceptance(
                 require(observation.getString("status") == "returned" && observation.getString("observation_kind") == "tool_output_recorded") {
                     "$id: failed tools and member assessments are not supporting observations"
                 }
+                if (revision === review) reviewedObservations += observation
             }
         }
+        CollaborationEvidenceRequirements.validate(criterion, reviewedObservations)
     }
 
     private fun currentRevision(access: CollaborationWorkspaceAccess, ref: JSONObject): JSONObject {
