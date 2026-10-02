@@ -1,0 +1,16 @@
+{
+  "budget": {
+    "max_wall_time_ms": 180000,
+    "max_total_tokens": 12000,
+    "max_cost_micros": 100000,
+    "max_rework_count": 4,
+    "max_intervention_count": 0,
+    "currency": "USD"
+  },
+  "controls": {
+    "model_policy": "FIXTURE_ONLY-replace-with-pinned-provider-model-and-decoding-settings",
+    "tool_policy": "FIXTURE_ONLY-replace-with-identical-tool-access-policy",
+    "environment": "FIXTURE_ONLY-replace-with-app-build-and-host-profile",
+    "context_policy": "FIXTURE_ONLY-replace-with-clean-context-and-no-cross-trial-memory-policy"
+  }
+}
