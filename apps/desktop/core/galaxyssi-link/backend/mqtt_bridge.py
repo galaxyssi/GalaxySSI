@@ -4982,7 +4982,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     conversation_id=f"{backend_conversation_id}:recovery",
                     source_message_id=source_message_id,
                     response_language=preferred_response_language,
-                    execution_prompt=current_user_request,
+                    execution_prompt=execution_policy_prompt,
                     execution_policy={"execution_mode": "plan_only"},
                     client_route_id=client_route_id,
                     turn_id=client_turn_id,
@@ -5097,7 +5097,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
                         ),
                         response_language=preferred_response_language,
-                        execution_prompt=current_user_request,
+                        execution_prompt=execution_policy_prompt,
                         execution_policy=execution_policy.public(),
                         client_route_id=client_route_id,
                         turn_id=client_turn_id,
@@ -5300,7 +5300,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 if plan_only or read_only_screen_analysis
                 else finalize_task_artifacts(
                     task_id,
-                    current_user_request,
+                    execution_policy_prompt,
                     agent_id,
                     allow_device_install=full_desktop_executor,
                 )
@@ -5451,7 +5451,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             task_disposition="interrupted",
             merged_into_task_id=active_conversation_task.task_id,
             intervention_kind=active_turn_decision.intervention_kind.value,
-            execution_prompt=current_user_request,
+            execution_prompt=execution_policy_prompt,
             execution_policy=execution_policy.public(),
             trace_id=str(payload.get("trace_id") or ""),
             delivery_trace=task_trace_snapshot(),
@@ -5548,7 +5548,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 for item in attachments
                 if isinstance(item, dict) and str(item.get("name") or "").strip()
             ],
-            execution_prompt=current_user_request,
+            execution_prompt=execution_policy_prompt,
             execution_policy=execution_policy.public(),
             trace_id=str(payload.get("trace_id") or ""),
             delivery_trace=task_trace_snapshot(),
@@ -5615,7 +5615,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     for item in attachments
                     if isinstance(item, dict) and str(item.get("name") or "").strip()
                 ],
-                execution_prompt=current_user_request,
+                execution_prompt=execution_policy_prompt,
                 execution_policy=execution_policy.public(),
                 trace_id=str(payload.get("trace_id") or ""),
                 delivery_trace=task_trace_snapshot(),
@@ -6002,7 +6002,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                                     conversation_id=backend_conversation_id,
                                     source_message_id=source_message_id,
                                     response_language=preferred_response_language,
-                                    execution_prompt=current_user_request,
+                                    execution_prompt=execution_policy_prompt,
                                     execution_policy=execution_policy.public(),
                                     client_route_id=client_route_id,
                                     turn_id=client_turn_id,
@@ -6143,7 +6143,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
                 finalization = finalize_task_artifacts(
                     task_id,
-                    current_user_request,
+                    execution_policy_prompt,
                     agent_id,
                     allow_device_install=full_desktop_executor,
                 )

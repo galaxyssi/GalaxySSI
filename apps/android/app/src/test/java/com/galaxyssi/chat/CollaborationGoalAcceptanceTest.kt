@@ -15,7 +15,8 @@ class CollaborationGoalAcceptanceTest {
         override fun page(prefix: String, after: String, limit: Int) = data.keys.filter { it.startsWith(prefix) && it > after }.take(limit)
     }
 
-    private class Fixture(reviewer: String = "reviewer", tool: String? = null, output: String = "{\"status\":\"ok\"}") {
+    private class Fixture(reviewer: String = "reviewer", tool: String? = null, output: String = "{\"status\":\"ok\"}",
+                          reviewKind: String = "decision", requiredOrigin: String = "", reviewCitesOriginal: Boolean = false) {
         val rows = Rows()
         val evidenceRows = Rows()
         var authorized = true
@@ -25,6 +26,8 @@ class CollaborationGoalAcceptanceTest {
         val access = CollaborationWorkspaceAccess("group", "run", "turn", 3, "lead", "lead")
         val criterion = JSONObject().put("id", "document").put("requirement", "Deliver a documented comparison")
             .put("verification", "documentary").put("status", "open").put("evidence_kind", "observed").put("evidence", JSONArray())
+            .apply { if (requiredOrigin.isNotBlank()) put(CollaborationEvidenceRequirements.FIELD, JSONArray()
+                .put(JSONObject().put("origin", requiredOrigin).put("tool", "commandExecution"))) }
         val prior = JSONArray().put(criterion).toString()
         val delivery: JSONObject
         val review: JSONObject
@@ -38,7 +41,8 @@ class CollaborationGoalAcceptanceTest {
                 .put("target", delivery).put("verdict", "supported").put("rationale", "Compared the exact document against the request")
                 .put("unresolved", JSONArray())
             review = publish(access.copy(nodeId = "review-node", personId = reviewer, round = 2),
-                item("review", "decision", JSONObject().put("acceptance_review", check)).put("parents", JSONArray().put(delivery)))
+                item("review", reviewKind, JSONObject().put("acceptance_review", check)).put("parents", JSONArray().put(delivery))
+                    .apply { if (reviewCitesOriginal && observation != null) put("observations", JSONArray().put(observation)) })
         }
         fun item(id: String, kind: String, body: JSONObject) = JSONObject().put("id", id).put("kind", kind).put("title", id).put("body", body)
         fun publish(who: CollaborationWorkspaceAccess, item: JSONObject): JSONObject {
@@ -71,6 +75,34 @@ class CollaborationGoalAcceptanceTest {
         val record = f.record(raw, receipt)
         assertTrue(record.acceptanceVerified(record.events.single().result))
         assertEquals("achieved", CollaborationGoalLoop.disposition(raw, f.prior, acceptanceVerified = true))
+    }
+
+    @Test fun typedReviewUsesTheSameHostAcceptanceChecks() {
+        val independent = Fixture(reviewKind = CollaborationReviewContract.KIND)
+        assertTrue(independent.evaluate().accepted)
+        assertFalse(Fixture(reviewer = "author", reviewKind = CollaborationReviewContract.KIND).evaluate().accepted)
+        assertFalse(Fixture(tool = "fixture", output = "{\"status\":\"failed\"}",
+            reviewKind = CollaborationReviewContract.KIND).evaluate().accepted)
+        val changed = independent.assessment()
+        changed.getJSONArray("criteria").getJSONObject(0).put("requirement", "Easier task")
+        assertFalse(independent.evaluate(changed.toString()).accepted)
+    }
+
+    @Test fun requiredOriginalCannotBeReplacedWithReadingAReportedDocument() {
+        val noOriginal = Fixture(tool = "collaboration_recall", requiredOrigin = "android_cloud_tool", reviewCitesOriginal = true)
+        assertFalse(noOriginal.evaluate().accepted)
+        assertFalse(Fixture(tool = "commandExecution", requiredOrigin = "desktop_codex_tool", reviewCitesOriginal = true).evaluate().accepted)
+        assertFalse(Fixture(tool = "commandExecution", requiredOrigin = "android_cloud_tool").evaluate().accepted)
+        val correct = Fixture(tool = "commandExecution", requiredOrigin = "android_cloud_tool", reviewCitesOriginal = true)
+        assertTrue(correct.evaluate().feedback, correct.evaluate().accepted)
+    }
+
+    @Test fun coordinatorCannotDropRequiredObservationSourceToClaimSuccess() {
+        val f = Fixture(tool = "collaboration_recall", requiredOrigin = "desktop_codex_tool", reviewCitesOriginal = true)
+        val result = f.assessment()
+        result.getJSONArray("criteria").getJSONObject(0).remove(CollaborationEvidenceRequirements.FIELD)
+        assertFalse(f.evaluate(result.toString()).accepted)
+        assertEquals("continue", CollaborationGoalLoop.disposition(result.toString(), f.prior, acceptanceVerified = true))
     }
 
     @Test fun coordinatorTextAndForgedInlineReceiptCannotFinishGoal() {

@@ -17,7 +17,7 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
     stop = fixtures.BlobArtifactPeerTests.stop
     enable = fixtures.BlobArtifactPeerTests.enable
 
-    def callback(self, execution=None):
+    def callback(self, execution=None, policy_prompt="Return the generated file", request="Return the generated file"):
         # Compile the unchanged production callback body; only its surrounding
         # provider loop is omitted, so no external model or real phone is used.
         tree = ast.parse(inspect.getsource(mqtt_bridge._start_remote_agent_task))
@@ -26,12 +26,13 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
         module = ast.Module(body=[function], type_ignores=[])
         execution = execution if execution is not None else SimpleNamespace(accepts=lambda _task: True)
         namespace = {**mqtt_bridge.__dict__, "fast_chat_delivery": False, "plan_only": False,
+            "read_only_screen_analysis": False, "execution_policy_prompt": policy_prompt,
             "managed_task_id": {"value": self.payload["task_id"], "execution": execution},
             "agent_id": "codex", "full_desktop_executor": False, "structured_connector_response": False,
             "contact_id": self.payload["contact_id"], "source_message_id": self.payload["source_message_id"],
             "client_conversation_id": self.payload["conversation_id"], "client_route_id": self.route,
             "wire_payload": {"scheme": "signal", "_client_route_id": self.route}, "mqttc": None,
-            "current_user_request": "Return the generated file", "add_task_trace": Mock(),
+            "current_user_request": request, "add_task_trace": Mock(),
             "task_trace_snapshot": Mock(return_value=[]), "_task_reputation_evidence": Mock(return_value=(None, None)),
             "_log_task_latency": Mock(), "_wire_down_topic": Mock(return_value="test"),
             "response_language_tag": response_policy.response_language_tag}
@@ -84,6 +85,18 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
         publish.assert_not_called()
         self.bridge._publish_to_registered_client.assert_not_called()
         self.assertTrue(self.source.exists())
+
+    def test_finalization_uses_assignment_intent_not_protocol_or_peer_evidence(self):
+        assignment = "Review the saved document against its criterion"
+        envelope = assignment + "\nProtocol examples: build an APK; install it; return the file."
+        task = {**self.payload, "status": "completed", "result": "Document reviewed.",
+                "client_conversation_id": self.payload["conversation_id"], "client_turn_id": self.payload["turn_id"]}
+        with patch("agent_execution_harness.finalize_task_artifacts",
+                   return_value=ArtifactFinalization((), {"status": "passed"})) as finalize, \
+                patch.object(mqtt_bridge, "_publish_or_queue_task_result", return_value=True), \
+                patch("agent_latency.record_task"):
+            self.callback(policy_prompt=assignment, request=envelope)(task)
+        finalize.assert_called_once_with(task["task_id"], assignment, "codex", allow_device_install=False)
 
 
 if __name__ == "__main__":
