@@ -204,6 +204,25 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertFalse(path.contains(CGPoint(x: 3, y: 20)))
     XCTAssertEqual(shape.path(in: CGRect(x: 10, y: 20, width: 48, height: 48)).boundingRect,
       CGRect(x: 16, y: 28, width: 36, height: 34))
+  func testConversationHubDeletedAnchorFallsBackToNearestPosition() {
+    let rows = ["conversation:contact:x", "conversation:agent:x", "conversation:agent:y"]
+    XCTAssertEqual(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: "conversation:agent:x", savedPosition: 0, rowIds: rows), rows[1])
+    XCTAssertEqual(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: "deleted", savedPosition: 1, rowIds: rows), rows[1])
+    XCTAssertEqual(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: "deleted", savedPosition: 99, rowIds: rows), rows[2])
+    XCTAssertEqual(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: "deleted", savedPosition: -1, rowIds: rows), rows[0])
+    XCTAssertNil(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: "deleted", savedPosition: 8, rowIds: []))
+  }
+
+  func testConversationHubAnchorFollowsInsertedRowsWithoutChangingIdentity() {
+    let anchor = "conversation:agent:existing"
+    let rows = ["conversation:agent:new", "conversation:contact:new", anchor]
+    XCTAssertEqual(GalaxySSIConversationHubScrollPolicy.restoredAnchorId(
+      savedId: anchor, savedPosition: 0, rowIds: rows), anchor)
   }
 
   func testConversationHubScrollPolicyRestoresAgentIdentityAndPixelOffset() {

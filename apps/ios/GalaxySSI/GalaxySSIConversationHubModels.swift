@@ -191,6 +191,12 @@ enum GalaxySSIConversationHubBackPolicy {
 }
 
 enum GalaxySSIConversationHubScrollPolicy {
+  static func restoredAnchorId(savedId: String, savedPosition: Int, rowIds: [String]) -> String? {
+    guard !rowIds.isEmpty else { return nil }
+    if rowIds.contains(savedId) { return savedId }
+    return rowIds[min(max(savedPosition, 0), rowIds.count - 1)]
+  }
+
   static func anchorId(positions: [String: CGFloat]) -> String? {
     let partiallyVisible = positions.filter { $0.value < 0 }
     if let nearestAboveTop = partiallyVisible.max(by: { left, right in
