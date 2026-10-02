@@ -535,7 +535,8 @@ object GalaxySSICrypto {
         }
         } catch (exc: Exception) {
             if (exc is InboundCommitRejected) {
-                Log.w(TAG, "Signal receive transaction rolled back: ${exc.cause?.javaClass?.simpleName}")
+                val capacity = (exc.cause as? GalaxySSILinkInbox.CapacityExceeded)?.reason.orEmpty()
+                Log.w(TAG, "Signal receive transaction rolled back: ${exc.cause?.javaClass?.simpleName} reason=$capacity")
                 return EnvelopeDecryptionResult.Rejected
             }
             Log.e(TAG, "Failed to decrypt incoming Signal envelope", exc)

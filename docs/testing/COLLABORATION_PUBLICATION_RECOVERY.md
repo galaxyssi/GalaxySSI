@@ -129,3 +129,6 @@ seconds** at its 900-second harness deadline, not a product research-step limit.
 The next acceptance priority is the remote-evidence/completion wait. Do not rerun
 the original user research to diagnose it, bypass evidence checks, or treat these
 four saved contributions as a passing full end-to-end result.
+
+Follow-up: the receive-capacity root cause, migration and subsequent passing
+real-provider retest are recorded in [Evidence Inbox Recovery](COLLABORATION_EVIDENCE_INBOX_RECOVERY.md).
