@@ -37,14 +37,25 @@ class CollaborationScopedRecallDeviceTest {
             val first = JSONObject(session.execute(CollaborationCloudRecall.NAME, input))
             assertEquals("returned", first.getString("status"))
             assertNotNull(first.getJSONObject("galaxyssi_evidence_receipt"))
+            assertEquals(ref.getString("evidence_id"), first.getJSONObject("source_reference").getString("evidence_id"))
+            assertEquals(ref.getString("sha256"), first.getJSONObject("source_reference").getString("sha256"))
+            assertNotEquals(first.getJSONObject("source_reference").getString("evidence_id"),
+                first.getJSONObject("galaxyssi_evidence_receipt").getString("evidence_id"))
+            assertEquals("desktop_codex_tool", first.getJSONObject("source_reference").getString("origin"))
             assertTrue(first.getString("content").contains("original:"))
             val second = JSONObject(session.execute(CollaborationCloudRecall.NAME, JSONObject(input.toString())
                 .put("offset", first.getInt("next_offset"))))
             val reconstructed = JSONObject(first.getString("content") + second.getString("content"))
+            assertEquals(first.getJSONObject("source_reference").toString(), second.getJSONObject("source_reference").toString())
             assertEquals(original, reconstructed.getString("output_json"))
             val hidden = JSONObject(CollaborationCloudRecall.execute(context,
                 access.copy(nodeId = "independent-node", personId = "independent"), input))
             assertEquals("failed", hidden.getString("status"))
+            assertFalse(hidden.has("source_reference"))
+            val mismatch = JSONObject(CollaborationCloudRecall.execute(context, reviewer,
+                JSONObject(input.toString()).put("sha256", "0".repeat(64))))
+            assertEquals("failed", mismatch.getString("status"))
+            assertFalse(mismatch.has("source_reference"))
             assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, reviewer,
                 JSONObject(input.toString()).put("source_message_id", 902))).getString("status"))
             assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, reviewer,
@@ -56,6 +67,7 @@ class CollaborationScopedRecallDeviceTest {
                 AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = 902))
             assertTrue(native.toJson(), native.isSuccess)
             assertTrue(native.output["content"].toString().contains("original:"))
+            assertEquals(ref.getString("evidence_id"), (native.output["source_reference"] as Map<*, *>)["evidence_id"])
             groups.update(group) { it.copy(members = it.members.filterNot { member -> member.id == "reviewer" }) }
             assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, reviewer, input)).getString("status"))
         } finally { groups.remove(group) }

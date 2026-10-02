@@ -29,7 +29,9 @@ internal object CollaborationResearchArtifact {
             "Keep competing hypotheses as distinct objects. Cross-domain combinations cite parents; repairs cite the counterexamples they address. " +
             "Counterexamples must include the specific weakness, evidence, a proposed correction and an executable discriminating check in body. " +
             "Read full originals through collaboration.recall mode=workspace before modifying them. Authors and revision hashes are assigned by the host. " +
-            "Link observations only by copying galaxyssi_evidence_receipt returned by a tool, or a mode=evidence recall result. " +
+            "Link observations only by copying an actual tool's galaxyssi_evidence_receipt or source_reference from mode=evidence recall. " +
+            "For original-source requirements cite source_reference.evidence_id/sha256, not the recall call's galaxyssi_evidence_receipt; " +
+            "the latter proves a read operation, not execution of the original source tool. Read all needed pages before assessing the source. " +
             "A recorded tool output is not automatically a verified claim; a recorded assessment is still a member assertion. Never invent receipt IDs. " +
             "Workspace versions are reports, not independent validation. A version conflict requires re-reading and reconciling, never blind overwriting. " +
             CollaborationCandidateEvolution.artifactInstructions() + CollaborationReviewContract.instructions() +

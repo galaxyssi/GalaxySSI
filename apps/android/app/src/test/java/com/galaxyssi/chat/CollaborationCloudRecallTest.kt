@@ -21,6 +21,8 @@ class CollaborationCloudRecallTest {
                 ModelStreamProvider.GEMINI -> added.getJSONArray("functionDeclarations").getJSONObject(0)
             }
             assertEquals("collaboration_recall", function.getString("name"))
+            assertTrue(function.getString("description").contains("source_reference"))
+            assertTrue(function.getString("description").contains("only records this recall"))
             val schema = function.getJSONObject(if (provider == ModelStreamProvider.ANTHROPIC) "input_schema" else "parameters")
             val properties = schema.getJSONObject("properties")
             assertEquals(setOf("mode", "cursor", "object_id", "revision", "evidence_id", "sha256", "offset"),

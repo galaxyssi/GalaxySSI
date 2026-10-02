@@ -38,4 +38,14 @@ class CollaborationEvidenceRequirementsTest {
                 .put("observation_kind", "member_assessment_recorded")))
         }
     }
+
+    @Test fun successfulRecallReceiptCannotReplaceTheOriginalExecutionSource() {
+        val readReceipt = requirement("android_cloud_tool", "collaboration_recall")
+            .put("status", "returned").put("observation_kind", "tool_output_recorded")
+        assertThrows(IllegalArgumentException::class.java) {
+            CollaborationEvidenceRequirements.validate(criterion(requirement()), listOf(readReceipt))
+        }
+        val original = requirement().put("status", "returned").put("observation_kind", "tool_output_recorded")
+        CollaborationEvidenceRequirements.validate(criterion(requirement()), listOf(readReceipt, original))
+    }
 }

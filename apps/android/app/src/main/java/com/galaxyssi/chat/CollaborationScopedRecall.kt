@@ -26,7 +26,13 @@ internal object CollaborationScopedRecall {
                 if (id.isNotBlank()) {
                     val saved = ledger.read(access, id, input["sha256"] as? String ?: "")
                         ?: return AgentNativeToolExecutionResult.failure("evidence_unavailable", "Evidence is missing, changed or isolated from this assignment.")
-                    page(saved, input, "execution_observed_not_claim_verified")
+                    val source = listOf("evidence_id", "sha256", "origin", "tool", "status", "observation_kind")
+                        .associateWith { saved.get(it) }
+                    page(saved, input, "execution_observed_not_claim_verified", mapOf(
+                        "source_reference" to source,
+                        "citation_guidance" to "To cite the original observation in workspace.observations, copy source_reference.evidence_id and sha256. " +
+                            "galaxyssi_evidence_receipt describes this recall operation, not the original source. " +
+                            "Follow next_offset to read the complete original; a reference or a read receipt is not verification."))
                 } else {
                     val (refs, next) = ledger.browse(access, input["cursor"] as? String ?: "")
                     AgentNativeToolExecutionResult.success(mapOf("observations" to refs.map { it.toString() },
@@ -50,11 +56,12 @@ internal object CollaborationScopedRecall {
         }
     }
 
-    private fun page(saved: JSONObject, input: Map<String, Any?>, trust: String): AgentNativeToolExecutionResult {
+    private fun page(saved: JSONObject, input: Map<String, Any?>, trust: String,
+                     metadata: Map<String, Any?> = emptyMap()): AgentNativeToolExecutionResult {
         val content = saved.toString()
         val offset = (input["offset"] as? Number)?.toInt()?.coerceIn(0, content.length) ?: 0
         val end = minOf(content.length, offset + 8_000)
         return AgentNativeToolExecutionResult.success(mapOf("content" to content.substring(offset, end),
-            "total_characters" to content.length, "next_offset" to end.takeIf { it < content.length }, "trust" to trust))
+            "total_characters" to content.length, "next_offset" to end.takeIf { it < content.length }, "trust" to trust) + metadata)
     }
 }
