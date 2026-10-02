@@ -2,6 +2,32 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testConversationExecutionPresentationMatchesAndroidStatusFamilies() {
+    typealias Status = GalaxySSIConversationExecutionStatus
+    for status in Status.allCases where status.animated {
+      XCTAssertEqual(status.foregroundRGB, 0x1677FF)
+      XCTAssertEqual(status.backgroundRGB, 0xEAF3FF)
+    }
+    XCTAssertEqual(Status.completeUnread.systemImage, "checkmark.circle")
+    XCTAssertEqual(Status.completeUnread.foregroundRGB, 0x12BD76)
+    XCTAssertEqual(Status.completeUnread.backgroundRGB, 0xECF9F2)
+    for status in [Status.waitingConfirmation, .paused] {
+      XCTAssertEqual(status.systemImage, "pause.circle")
+      XCTAssertEqual(status.foregroundRGB, 0xE59100)
+      XCTAssertEqual(status.backgroundRGB, 0xFFF5E2)
+    }
+    for status in [Status.blocked, .failed] {
+      XCTAssertEqual(status.systemImage, "exclamationmark.circle")
+      XCTAssertEqual(status.foregroundRGB, 0xE53E46)
+      XCTAssertEqual(status.backgroundRGB, 0xFDECEE)
+    }
+    for status in [Status.read, .cancelled] {
+      XCTAssertEqual(status.systemImage, "bubble.left")
+      XCTAssertEqual(status.foregroundRGB, 0x74777D)
+      XCTAssertEqual(status.backgroundRGB, 0xEFF0F3)
+    }
+  }
+
   func testConversationExecutionReadsMatchingDurableWorkspaceWithoutCachedTask() {
     let message = ChatMessage(contactId: "hermes", content: "Question", isMine: true,
       conversationId: "conversation", turnId: "turn")

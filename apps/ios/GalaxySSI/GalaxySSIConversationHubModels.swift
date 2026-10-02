@@ -14,11 +14,30 @@ enum GalaxySSIConversationExecutionStatus: String, CaseIterable {
   var systemImage: String {
     if animated { return "arrow.triangle.2.circlepath" }
     switch self {
-    case .completeUnread: return "checkmark.circle.fill"
-    case .waitingConfirmation, .paused, .blocked: return "pause.circle.fill"
-    case .failed: return "exclamationmark.circle.fill"
-    case .cancelled: return "xmark.circle"
+    case .completeUnread: return "checkmark.circle"
+    case .waitingConfirmation, .paused: return "pause.circle"
+    case .failed, .blocked: return "exclamationmark.circle"
     default: return "bubble.left"
+    }
+  }
+
+  var foregroundRGB: UInt32 {
+    if animated { return 0x1677FF }
+    switch self {
+    case .completeUnread: return 0x12BD76
+    case .waitingConfirmation, .paused: return 0xE59100
+    case .failed, .blocked: return 0xE53E46
+    default: return 0x74777D
+    }
+  }
+
+  var backgroundRGB: UInt32 {
+    if animated { return 0xEAF3FF }
+    switch self {
+    case .completeUnread: return 0xECF9F2
+    case .waitingConfirmation, .paused: return 0xFFF5E2
+    case .failed, .blocked: return 0xFDECEE
+    default: return 0xEFF0F3
     }
   }
 

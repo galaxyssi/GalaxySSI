@@ -8,14 +8,9 @@ private struct GalaxySSIConversationExecutionIcon: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @State private var visible = false
 
-  private var tint: Color {
-    if status.animated { return .blue }
-    switch status {
-    case .completeUnread: return .green
-    case .waitingConfirmation, .paused, .blocked: return .orange
-    case .failed: return .red
-    default: return .galaxySSITextSecondary
-    }
+  private func color(_ rgb: UInt32) -> Color {
+    Color(red: Double((rgb >> 16) & 0xff) / 255,
+      green: Double((rgb >> 8) & 0xff) / 255, blue: Double(rgb & 0xff) / 255)
   }
 
   var body: some View {
@@ -23,17 +18,19 @@ private struct GalaxySSIConversationExecutionIcon: View {
       if status.animated {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !visible || scenePhase != .active || reduceMotion)) { context in
           Circle().trim(from: 0.1, to: 0.85)
-            .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
-            .frame(width: 20, height: 20)
+            .stroke(color(status.foregroundRGB), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+            .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
+            .frame(width: 24, height: 24)
         }
       } else {
         Image(systemName: status.systemImage)
-          .font(.system(size: 20, weight: .medium))
-          .foregroundColor(tint)
+          .font(.system(size: 24, weight: .regular))
+          .foregroundColor(color(status.foregroundRGB))
       }
     }
-    .frame(width: 34, height: 34)
+    .frame(width: 48, height: 48)
+    .background(color(status.backgroundRGB))
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(GalaxySSILocalization.string("galaxyssi.conversation_status." + status.rawValue,
       fallback: status.label, language: language)))
@@ -1060,6 +1057,7 @@ struct GalaxySSIConversationHubView: View {
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
           : "",
         updatedAt: updatedAt,
+        showsDisclosure: false,
         executionStatus: GalaxySSIConversationExecutionPolicy.resolve(
           conversationID: session.id, message: store.latestAgentSessionMessage(session.id),
           tasks: store.agentTaskRecords, unread: store.agentReplyUnreadCount(conversationId: session.id) > 0,
@@ -1449,7 +1447,8 @@ struct GalaxySSIConversationHubView: View {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
           Text(title)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: 15, weight: executionStatus == nil ? .semibold :
+              (executionStatus == .completeUnread ? .bold : .regular)))
             .foregroundColor(.galaxySSITextPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
