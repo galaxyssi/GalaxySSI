@@ -1052,6 +1052,11 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         if (groupId.isNotBlank()) progressContext?.let {
             CollaborationEvidenceLedger(it).bind(AgentTeamDispatchIds.sourceMessageId("member:${context.request.idempotencyKey}"),
                 CollaborationWorkspaceAccess.from(context))
+            CollaborationResearchWorkflow.stage(context.member)?.takeIf { stage ->
+                stage != CollaborationResearchStage.DELIVER && !CollaborationLiveGraph.planner(context.member)
+            }?.let { stage ->
+                CollaborationResearchWorkspace(it).enrollPublication(CollaborationWorkspaceAccess.from(context), stage, candidateTask)
+            }
         }
         val action = AgentAction(
             id = "team-${managedRequest.runId}",
@@ -1184,7 +1189,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             append("For cloud models, use the available collaboration_recall tool for workspace/evidence; do not search the web for internal tool names. ")
             append("Use mode=evidence to inspect host-recorded tool observations by evidence_id and sha256. These prove returned output, not scientific truth. ")
             append("Imported Desktop observations preserve the exact provider payload, not necessarily a complete source. Missing receipts are evidence gaps; never repeat a completed side effect just to obtain one. ")
-            append("Workspace publication receipts identify exact versions, not verification of their claims. A rejected update must be repaired in new work. ")
+            append("Workspace publication receipts identify exact versions, not verification of their claims. Correct an uncommitted draft when the host returns validation feedback; after successful publication, revisions require new work. ")
             append("Use mode=browse with cursor for paginated history when search is insufficient. ")
             append("A summary is a retrieval aid, not a replacement for its source. Older claims may be superseded. ")
             append("Before changing a past decision, recall its original constraints, counterevidence and open questions. ")
