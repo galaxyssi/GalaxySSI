@@ -4,10 +4,13 @@ import android.content.Context
 import java.io.Closeable
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -187,9 +190,13 @@ private fun AgentTeamExecutionRecord.resumeCheckpoint(): AgentTeamExecutionCheck
         events.maxOfOrNull { it.sequence } ?: 0L)
 }
 
+private fun AgentTeamExecutionRecord.liveGraphCheckpoint() = AgentTeamExecutionCheckpoint(definition, request,
+    events.mapNotNull { it.result }.associateBy { it.childId }, events.maxOfOrNull { it.sequence } ?: 0L)
+
 private fun retainTeamEvents(events: List<AgentSubagentEvent>): List<AgentSubagentEvent> {
     val anchors = events.filter { it.childId.isNotBlank() }.groupBy { it.childId }
-        .values.map { it.maxBy(AgentSubagentEvent::sequence) }
+        .values.map { it.maxBy(AgentSubagentEvent::sequence) } + listOfNotNull(events.lastOrNull { it.childId.isBlank() })
+    // Per-node and supervisor checkpoints are required even when a growing graph exceeds the trace-tail target.
     val retained = anchors + events.takeLast((InMemoryAgentTeamExecutionStore.MAX_EVENTS_PER_RUN - anchors.size).coerceAtLeast(0))
     return retained.distinctBy { it.sequence }.sortedBy { it.sequence }
 }
@@ -212,6 +219,8 @@ interface AgentTeamExecutionStore : AgentSubagentEventHook {
     fun snapshots(): List<AgentTeamExecutionSnapshot>
     fun resumeCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = null
     fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean = false): Boolean = false
+    fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
+                            nowMillis: Long): AgentTeamExecutionCheckpoint? = null
     fun reconcileGoalRecruits(supervisorRunId: String, expectedPrimary: String,
                              project: (List<AgentTeamMember>) -> Map<String, String>): Boolean = true
     fun requeueUndispatched(supervisorRunId: String, wasNotDispatched: (String) -> Boolean) = Unit
@@ -278,6 +287,15 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
         val next = CollaborationGoalLoop.advance(current, expectedPrimary, nowMillis, wakeBlocked, recruitmentNames) ?: return false
         records[supervisorRunId] = next
         return true
+    }
+
+    @Synchronized
+    override fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
+                                     nowMillis: Long): AgentTeamExecutionCheckpoint? {
+        val current = records[supervisorRunId]?.takeIf { it.definition.primaryMemberId == expectedPrimary } ?: return null
+        val next = CollaborationLiveGraph.update(current, completedIds, nowMillis)
+        records[supervisorRunId] = next
+        return next.liveGraphCheckpoint()
     }
 
     @Synchronized
@@ -419,6 +437,14 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         true
     }
 
+    override fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
+                                     nowMillis: Long): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
+        val current = record(supervisorRunId)?.takeIf { it.definition.primaryMemberId == expectedPrimary } ?: return@synchronized null
+        val next = CollaborationLiveGraph.update(current, completedIds, nowMillis)
+        if (next != current) write(next)
+        next.liveGraphCheckpoint()
+    }
+
     override fun reconcileGoalRecruits(supervisorRunId: String, expectedPrimary: String,
                                       project: (List<AgentTeamMember>) -> Map<String, String>): Boolean = synchronized(LOCK) {
         val current = record(supervisorRunId) ?: return@synchronized false
@@ -540,7 +566,10 @@ class AgentTeamExecutionHandle internal constructor(
     val isActive: Boolean get() = delegate.isActive
 
     suspend fun await(): AgentTeamExecutionResult {
-        val result = delegate.await()
+        val result = try { delegate.await() } catch (failure: Throwable) {
+            if (!delegate.isActive) store.markInterrupted(supervisorRunId)
+            throw failure
+        }
         val snapshot = requireNotNull(store.snapshot(supervisorRunId)) {
             "Agent team snapshot is missing after completion"
         }
@@ -557,6 +586,27 @@ class AgentTeamExecutionHandle internal constructor(
     }
 }
 
+internal fun CoroutineScope.watchAgentTeamExecution(
+    handle: AgentTeamExecutionHandle,
+    onSettled: () -> Unit,
+    onReleased: () -> Unit
+): Job = launch(start = CoroutineStart.UNDISPATCHED) {
+    try {
+        // Enter before launch returns, including when shutdown has already cancelled the scope.
+        // The runtime can still be persisting terminal events after its watcher is cancelled.
+        withContext(NonCancellable) {
+            runCatching { handle.await() }
+            onSettled()
+        }
+    } finally {
+        onReleased()
+    }
+}
+
+private fun Throwable.isTeamExecutionInterruption(): Boolean =
+    this is CancellationException && generateSequence(cause) { it.cause }
+        .any { it !is CancellationException }
+
 class AgentTeamExecutionRuntime(
     private val store: AgentTeamExecutionStore,
     limits: AgentSubagentLimits = AgentSubagentLimits(),
@@ -564,6 +614,7 @@ class AgentTeamExecutionRuntime(
     private val onSnapshot: ((AgentTeamExecutionSnapshot) -> Unit)? = null
 ) : Closeable {
     private val projectedRuns = ConcurrentHashMap.newKeySet<String>()
+    private val liveGraphs = ConcurrentHashMap<String, (Set<String>) -> AgentSubagentPlan>()
     private val runtime = AgentSubagentRuntime(limits = limits, eventHook = AgentSubagentEventHook { event ->
         store.append(event)
         publishSnapshot(event.supervisorId)
@@ -574,6 +625,9 @@ class AgentTeamExecutionRuntime(
         eventHook = AgentSubagentEventHook { event ->
             store.append(event)
             publishSnapshot(event.supervisorId)
+            if (event.runStatus != null) liveGraphs.remove(event.supervisorId)
+        }, graphExpansion = AgentSubagentExpansionHook { plan, completed ->
+            liveGraphs[plan.supervisorId]?.invoke(completed.keys) ?: plan
         })
 
     private fun publishSnapshot(runId: String) {
@@ -600,6 +654,7 @@ class AgentTeamExecutionRuntime(
         checkpoint: AgentTeamExecutionCheckpoint?,
         worker: AgentTeamMemberWorker
     ): AgentTeamExecutionHandle {
+        require(checkpoint == null || checkpoint.request == request && checkpoint.definition == definition)
         val normalizedMembers = validate(definition)
         val normalizedDefinition = definition.copy(
             members = normalizedMembers,
@@ -610,59 +665,29 @@ class AgentTeamExecutionRuntime(
             projectedRuns.add(request.runId)
             publishSnapshot(request.runId)
         }
-        val memberById = normalizedMembers.associateBy(AgentTeamMember::memberId)
+        val memberById = ConcurrentHashMap(normalizedMembers.associateBy(AgentTeamMember::memberId))
+        val currentGraph = AtomicReference(AgentTeamExecutionCheckpoint(normalizedDefinition, request,
+            checkpoint?.completed.orEmpty(), checkpoint?.lastSequence ?: 0L))
         val research = CollaborationResearchWorkflow.isResearch(normalizedMembers)
-        val observers = normalizedMembers.filter { it.deliveryMode == AgentDeliveryMode.OBSERVE }
-            .mapTo(linkedSetOf(), AgentTeamMember::memberId)
-        val children = normalizedMembers
-            .filter { it.deliveryMode != AgentDeliveryMode.IGNORE }
-            .map { member ->
-                val dependencies = if (!research && member.memberId == normalizedDefinition.primaryMemberId) {
-                    (member.dependsOnAgentIds + observers).filterNot { it == member.memberId }.toSet()
-                } else member.dependsOnAgentIds
-                AgentSubagentChild(
-                    childId = member.memberId,
-                    dependencies = dependencies,
-                    dependencyPolicy = if (research && member.context[CollaborationWorkGraph.POLICY] == "success" &&
-                        member.memberId != normalizedDefinition.primaryMemberId) {
-                        AgentSubagentDependencyPolicy.REQUIRE_SUCCESS
-                    } else if (research || member.memberId == normalizedDefinition.primaryMemberId) {
-                        AgentSubagentDependencyPolicy.ALLOW_TERMINAL
-                    } else AgentSubagentDependencyPolicy.REQUIRE_SUCCESS,
-                    context = member.objective.ifBlank { request.goal }.take(MAX_MEMBER_CONTEXT_CHARS),
-                    provenance = AgentSubagentProvenance(
-                        source = "agent-team",
-                        sourceId = definition.teamId,
-                        traceId = request.runId,
-                        metadata = mapOf(
-                            "delivery_mode" to member.deliveryMode.name,
-                            "role" to member.role.take(80),
-                            "agent_id" to member.agentId,
-                            "instance_id" to member.memberId,
-                            "task_id" to request.taskId.take(160)
-                        )
-                    )
-                )
+        if (research && CollaborationLiveGraph.enabled(normalizedDefinition)) {
+            liveGraphs[request.runId] = { completed ->
+                val next = requireNotNull(store.expandResearchGraph(request.runId, normalizedDefinition.primaryMemberId,
+                    completed, System.currentTimeMillis())) { "The durable research graph was removed or superseded" }
+                validate(next.definition)
+                currentGraph.set(next)
+                memberById.putAll(next.definition.members.associateBy(AgentTeamMember::memberId))
+                publishSnapshot(request.runId)
+                AgentTeamGraphPlan.build(next.definition, next.request)
             }
-        require(checkpoint == null || checkpoint.request == request && checkpoint.definition == definition)
-        val handle = (if (research) researchRuntime else runtime).resume(
-            AgentSubagentPlan(
-                supervisorId = request.runId,
-                children = children,
-                provenance = AgentSubagentProvenance(
-                    source = "agent-team-supervisor",
-                    sourceId = normalizedDefinition.teamId,
-                    traceId = request.runId,
-                    metadata = mapOf(
-                        "primary_agent_id" to normalizedDefinition.primaryAgentId,
-                        "primary_instance_id" to normalizedDefinition.primaryMemberId,
-                        "visibility" to normalizedDefinition.visibilityMode.name
-                    )
-                )
-            ),
+        }
+        val handle = try { (if (research) researchRuntime else runtime).resume(
+            AgentTeamGraphPlan.build(normalizedDefinition, request),
             checkpoint?.completed.orEmpty(),
             checkpoint?.lastSequence ?: 0L
         ) { childContext ->
+            val graph = currentGraph.get()
+            val activeDefinition = graph.definition
+            val activeRequest = graph.request
             val member = requireNotNull(memberById[childContext.childId])
             val pendingMessages = (mailbox
                 ?.messages(request.runId, member.memberId)
@@ -671,7 +696,7 @@ class AgentTeamExecutionRuntime(
                 } else emptyList())
                 .filter { it.state == AgentTeamMessageState.PENDING }
                 .distinctBy { it.messageId }
-            val childRequest = request.copy(
+            val childRequest = activeRequest.copy(
                 runId = stableAgentTeamMemberRunId(request.runId, member.memberId),
                 parentRunId = request.runId,
                 deliveryMode = member.deliveryMode,
@@ -682,7 +707,7 @@ class AgentTeamExecutionRuntime(
                 } else {
                     member.requiredCapabilities
                 },
-                context = request.context + member.context + mapOf(
+                context = activeRequest.context + member.context + mapOf(
                     "team_id" to normalizedDefinition.teamId,
                     "team_role" to member.role,
                     "agent_instance_id" to member.memberId,
@@ -695,7 +720,8 @@ class AgentTeamExecutionRuntime(
                         )
                     },
                     "team_visibility" to definition.visibilityMode.name.lowercase(),
-                    "collaboration_research_roster" to if (research) normalizedMembers
+                    "collaboration_research_live_inventory" to if (CollaborationLiveGraph.planner(member)) CollaborationLiveGraph.inventory(activeDefinition, graph.completed) else "",
+                    "collaboration_research_roster" to if (research) activeDefinition.members
                         .distinctBy { it.context[CollaborationResearchWorkflow.PERSON] }.joinToString("\n") {
                             "${it.context[CollaborationResearchWorkflow.PERSON]}: ${it.context["collaboration_name"]}; " +
                                 "role=${it.role}; provider=${it.context["collaboration_provider"].orEmpty()}; model=${it.context["collaboration_model_id"].orEmpty()}"
@@ -714,9 +740,12 @@ class AgentTeamExecutionRuntime(
                 )
             ).also {
                 pendingMessages.forEach { message -> mailbox?.markDelivered(message.messageId) }
-                if (research) CollaborationDirectedDiscussion.messages(normalizedDefinition, request, member, it.content)
+                if (research) CollaborationDirectedDiscussion.messages(activeDefinition, activeRequest, member, it.content)
                     .forEach { message -> mailbox?.append(message) }
             }
+        } } catch (failure: Throwable) {
+            liveGraphs.remove(request.runId)
+            throw failure
         }
         return AgentTeamExecutionHandle(
             request.runId,
@@ -736,6 +765,7 @@ class AgentTeamExecutionRuntime(
         runtime.close()
         researchRuntime.close()
         projectedRuns.clear()
+        liveGraphs.clear()
     }
 
     private fun validate(definition: AgentTeamDefinition): List<AgentTeamMember> {
@@ -795,7 +825,8 @@ class AgentAdapterTeamMemberWorker(
     private val livenessProbeMillis: Long = DEFAULT_LIVENESS_PROBE_MILLIS,
     private val onWaiting: (AgentTeamMemberExecutionContext, Boolean) -> Unit = { _, _ -> },
     private val beforeDispatch: suspend (AgentTeamMemberExecutionContext) -> Unit = { },
-    private val onDispatch: (AgentTeamMemberExecutionContext) -> Unit = { }
+    private val onDispatch: (AgentTeamMemberExecutionContext) -> Unit = { },
+    private val cancellationRequested: (AgentTeamMemberExecutionContext) -> Boolean = { false }
 ) : AgentTeamMemberWorker {
     override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
         val adapter = requireNotNull(directory.resolveAdapter(context.member.agentId)) {
@@ -842,8 +873,12 @@ class AgentAdapterTeamMemberWorker(
                 terminalOutput(requireNotNull(event))
             }
         } catch (failure: Throwable) {
-            withContext(NonCancellable) {
-                runCatching { adapter.cancelRun(context.request.runId) }
+            // Scheduler storage/expansion interruptions retain their failure cause. Explicit
+            // cancellation and fail-fast have no failure cause and still stop the remote run.
+            if (!failure.isTeamExecutionInterruption() || cancellationRequested(context)) {
+                withContext(NonCancellable) {
+                    runCatching { adapter.cancelRun(context.request.runId) }
+                }
             }
             throw failure
         }
@@ -950,6 +985,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             }
         }, onDispatch = { execution ->
             progressContext?.let { AgentTeamDispatchCheckpoint(it).dispatching(execution.request.runId) }
+        }, cancellationRequested = { execution ->
+            progressContext?.let { AgentTeamDurableControl(it).get(execution.request.parentRunId) } == AgentTeamUserControl.STOP
         })
 
     constructor(
@@ -1025,6 +1062,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             if (groupId.isNotBlank()) progressContext?.let {
                 CollaborationResearchArchive(it, groupId).record(context, result.content)
             }
+            if (CollaborationLiveGraph.planner(context.member)) return result
             CollaborationResearchWorkflow.stage(context.member)?.let { stage ->
                 val artifact = CollaborationResearchArtifact.decode(result.content)
                 artifact?.remove("workspace_receipt")
@@ -1046,7 +1084,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             } ?: result
         } finally {
             provider.discardPrepared(registration.agentId, managedRequest.runId)
-            AgentManagedConnectorResponseRegistry.unregisterOwner(managedRequest.runId)
+            provider.detachRun(registration.agentId, managedRequest.runId)
         }
     }
 
@@ -1059,14 +1097,20 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
     private fun teamPrompt(context: AgentTeamMemberExecutionContext): String = buildString {
         append("Supervised Agent team assignment\n")
         val researchStage = CollaborationResearchWorkflow.stage(context.member)
+        val livePlanner = CollaborationLiveGraph.planner(context.member)
         val goalController = context.member.context[CollaborationGoalLoop.ENABLED] == "1" && researchStage == CollaborationResearchStage.DELIVER
         if (goalController) append(CollaborationGoalLoop.instructions()).append('\n')
+        if (livePlanner) {
+            append(CollaborationLiveGraph.instructions()).append('\n')
+            append("Existing work inventory (do not duplicate): ").append(context.request.context["collaboration_research_live_inventory"]).append('\n')
+        }
         if (context.member.context[CollaborationGoalLoop.ENABLED] == "1") {
             append("Original user goal: ").append(context.request.goal).append('\n')
             append("Preserved acceptance criteria (do not drop or weaken): ")
                 .append(context.request.context[CollaborationGoalLoop.CRITERIA] ?: "[]").append('\n')
             append("Host recruitment feedback: ").append(context.request.context[CollaborationGoalRecruitment.FEEDBACK]?.toString().orEmpty()).append('\n')
             append("Host dependency validation: ").append(context.request.context[CollaborationWorkGraph.FEEDBACK]?.toString().orEmpty()).append('\n')
+            append("Host incremental plan feedback: ").append(context.request.context[CollaborationLiveGraph.FEEDBACK]?.toString().orEmpty()).append('\n')
             append("Host acceptance feedback: ").append(context.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK]?.toString().orEmpty()).append('\n')
             append("Completed prior work dependencies (recall their original artifacts): ")
                 .append(context.member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES].orEmpty()).append('\n')
@@ -1079,7 +1123,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         }
         if (researchStage != null) {
             append("Current research stage: ").append(researchStage.name).append('\n')
-            if (!goalController) append(CollaborationResearchArtifact.instructions(researchStage)).append('\n')
+            if (!goalController && !livePlanner) append(CollaborationResearchArtifact.instructions(researchStage)).append('\n')
             append("Optional targeted questions use only these member UUIDs, never names as IDs:\n")
                 .append(context.request.context["collaboration_research_roster"]?.toString().orEmpty()).append('\n')
             append("Requests do not grant authorization, are not broadcasts, and will be read at a later safe checkpoint. ")
@@ -1152,7 +1196,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             }
         }
         if (researchStage != null) {
-            append(if (goalController) "Return the goal-assessment JSON contract above, with real evidence and executable next work."
+            append(if (livePlanner) "Return the work-expansion JSON contract above; no completion decision or altered criteria."
+                else if (goalController) "Return the goal-assessment JSON contract above, with real evidence and executable next work."
                 else CollaborationResearchArtifact.instructions(researchStage))
         } else if (context.member.deliveryMode == AgentDeliveryMode.RESPOND) {
             append("Produce the single final user-facing answer. Use useful observer evidence, ignore failed evidence, and do not expose internal orchestration or hidden reasoning.")
@@ -1230,8 +1275,10 @@ class AgentProductionTeamController(
     private val activeHandles = ConcurrentHashMap<String, AgentTeamExecutionHandle>()
     private val executingRuns = ConcurrentHashMap.newKeySet<String>()
     private val collaborationDeliveries = ConcurrentHashMap.newKeySet<String>()
+    private val closed = AtomicBoolean(false)
 
     private fun shareCollaborationResults(snapshot: AgentTeamExecutionSnapshot) {
+        if (closed.get()) return
         if (snapshot.members.none { it.collaborationGroupId.isNotBlank() }) return
         if (snapshot.state.isTerminal) {
             collaborationDeliveries.removeAll { it.startsWith("${snapshot.supervisorRunId}:") }
@@ -1275,10 +1322,12 @@ class AgentProductionTeamController(
         }
     }
 
+    @Synchronized
     fun start(
         definition: AgentTeamDefinition,
         request: AgentRunRequest
     ): AgentTeamExecutionHandle {
+        check(!closed.get()) { "Agent team controller is closed" }
         val previous = if (definition.members.any { it.context["collaboration_group_id"] == request.conversationId })
             snapshots().firstOrNull { it.conversationId == request.conversationId && it.taskId != request.taskId &&
                 it.state in setOf(AgentTeamExecutionState.SUCCEEDED, AgentTeamExecutionState.COMPLETED_WITH_FAILURES) &&
@@ -1347,11 +1396,13 @@ class AgentProductionTeamController(
     ): AgentCrossTeamDelegationRecord =
         crossTeamDelegations.prepare(input, destination, registrations)
 
+    @Synchronized
     fun dispatchDelegation(
         delegationId: String,
         destination: AgentTeamDefinition,
         registrations: Collection<AgentRegistration>
     ): AgentCrossTeamDelegationDispatch {
+        check(!closed.get()) { "Agent team controller is closed" }
         val admission = crossTeamDelegations.admit(delegationId, destination, registrations)
         val launch = admission.launchSpec
             ?: return AgentCrossTeamDelegationDispatch(admission.record, admission.decision)
@@ -1409,11 +1460,17 @@ class AgentProductionTeamController(
     }
 
     fun resume(supervisorRunId: String): Boolean {
+        if (closed.get()) return false
         if (store.snapshot(supervisorRunId) == null || durableControl.get(supervisorRunId) == AgentTeamUserControl.STOP) return false
         durableControl.set(supervisorRunId, AgentTeamUserControl.RUN)
         completionScope.launch {
-            if (supervisorRunId !in executingRuns && !activeHandles.containsKey(supervisorRunId)) {
-                store.snapshot(supervisorRunId)?.let { store.advanceGoal(supervisorRunId, it.primaryMemberId, System.currentTimeMillis(), true) }
+            if (closed.get()) return@launch
+            if (executingRuns.add(supervisorRunId)) {
+                try {
+                    if (!activeHandles.containsKey(supervisorRunId)) store.snapshot(supervisorRunId)?.let {
+                        store.advanceGoal(supervisorRunId, it.primaryMemberId, System.currentTimeMillis(), true)
+                    }
+                } finally { executingRuns.remove(supervisorRunId) }
             }
             resumeReadyTeams(); publishTerminalSnapshots()
         }
@@ -1422,26 +1479,34 @@ class AgentProductionTeamController(
 
     @Synchronized
     private fun resumeReadyTeams() {
+        if (closed.get()) return
         store.snapshots().filter { it.goalDisposition == "continue" }.forEach { snapshot ->
-            if (snapshot.supervisorRunId !in executingRuns && !activeHandles.containsKey(snapshot.supervisorRunId) &&
-                durableControl.get(snapshot.supervisorRunId) == AgentTeamUserControl.RUN && parentRecovery.canResume(snapshot)) {
-                store.advanceGoal(snapshot.supervisorRunId, snapshot.primaryMemberId, System.currentTimeMillis())
-            }
+            if (!executingRuns.add(snapshot.supervisorRunId)) return@forEach
+            try {
+                if (!activeHandles.containsKey(snapshot.supervisorRunId) &&
+                    durableControl.get(snapshot.supervisorRunId) == AgentTeamUserControl.RUN && parentRecovery.canResume(snapshot)) {
+                    store.advanceGoal(snapshot.supervisorRunId, snapshot.primaryMemberId, System.currentTimeMillis())
+                }
+            } finally { executingRuns.remove(snapshot.supervisorRunId) }
         }
         store.snapshots().filter { it.state == AgentTeamExecutionState.INTERRUPTED }.forEach { snapshot ->
             if (snapshot.goalDisposition in setOf("continue", "blocked") || snapshot.nextGoalAttemptAtMillis > System.currentTimeMillis()) return@forEach
             if (activeHandles.containsKey(snapshot.supervisorRunId) || durableControl.get(snapshot.supervisorRunId) != AgentTeamUserControl.RUN ||
                 !parentRecovery.canResume(snapshot)) return@forEach
-            store.requeueUndispatched(snapshot.supervisorRunId, dispatchCheckpoint::wasNotDispatched)
-            if (!store.reconcileGoalRecruits(snapshot.supervisorRunId, snapshot.primaryMemberId) {
-                    collaborationGroups.projectRecruits(snapshot.conversationId, it)
-                }) return@forEach
-            val checkpoint = store.resumeCheckpoint(snapshot.supervisorRunId) ?: return@forEach
             if (!executingRuns.add(snapshot.supervisorRunId)) return@forEach
-            val handle = try { runtime.resume(checkpoint, guardedWorker) }
-                catch (failure: Throwable) { executingRuns.remove(snapshot.supervisorRunId); throw failure }
-            activeHandles[handle.supervisorRunId] = handle
-            watch(handle)
+            var handedOff = false
+            try {
+                // Claim before reading the checkpoint: late delivery must not advance its sequence concurrently.
+                store.requeueUndispatched(snapshot.supervisorRunId, dispatchCheckpoint::wasNotDispatched)
+                if (!store.reconcileGoalRecruits(snapshot.supervisorRunId, snapshot.primaryMemberId) {
+                        collaborationGroups.projectRecruits(snapshot.conversationId, it)
+                    }) return@forEach
+                val checkpoint = store.resumeCheckpoint(snapshot.supervisorRunId) ?: return@forEach
+                val handle = runtime.resume(checkpoint, guardedWorker)
+                activeHandles[handle.supervisorRunId] = handle
+                handedOff = true
+                watch(handle)
+            } finally { if (!handedOff) executingRuns.remove(snapshot.supervisorRunId) }
         }
     }
 
@@ -1460,6 +1525,7 @@ class AgentProductionTeamController(
         runtime.recoverInterrupted(nowMillis)
 
     fun reconcileLateResponses(): Int {
+        if (closed.get()) return 0
         val count = managedResponses.completedUnapplied().count(::applyLateResponse)
         publishTerminalSnapshots()
         return count
@@ -1493,64 +1559,73 @@ class AgentProductionTeamController(
         mailbox.clear()
     }
 
+    @Synchronized
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         AgentLateManagedResponseBus.removeListener(lateResponseListener)
-        completionScope.cancel()
         runtime.close()
+        completionScope.cancel()
     }
 
     private fun applyLateResponse(record: AgentManagedResponseRecord): Boolean {
         // The live runtime owns its event sequence. Orphan responses remain durable until it exits.
-        if (record.supervisorRunId in executingRuns || activeHandles.containsKey(record.supervisorRunId)) return false
-        if (AndroidCollaborationRemoteEvidence.pending(evidenceContext, record.conversationId, record.sourceMessageId)) {
-            AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
-            return false
-        }
-        val applied = store.applyLateResponse(record)
-        if (applied) {
-            managedResponses.markApplied(record.ownerRunId)
-            store.snapshot(record.supervisorRunId)?.let(::publishAndRecord)
-        }
-        return applied
+        if (closed.get()) return false
+        if (!executingRuns.add(record.supervisorRunId)) return false
+        try {
+            if (closed.get()) return false
+            if (activeHandles.containsKey(record.supervisorRunId)) return false
+            if (AndroidCollaborationRemoteEvidence.pending(evidenceContext, record.conversationId, record.sourceMessageId)) {
+                AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
+                return false
+            }
+            val applied = store.applyLateResponse(record)
+            if (applied) {
+                managedResponses.markApplied(record.ownerRunId)
+                store.snapshot(record.supervisorRunId)?.let(::publishAndRecord)
+            }
+            return applied
+        } finally { executingRuns.remove(record.supervisorRunId) }
     }
 
     private fun watch(handle: AgentTeamExecutionHandle, delegationId: String = "") {
         if (!watchedRuns.add(handle.supervisorRunId)) return
-        completionScope.launch {
-            try {
-                runCatching { handle.await() }
-                val snapshot = store.snapshot(handle.supervisorRunId)
-                snapshot?.let(::publishAndRecord)
-                if (delegationId.isNotBlank()) {
-                    if (snapshot == null) {
-                        runCatching {
-                            crossTeamDelegations.fail(
-                                delegationId,
-                                "Destination team completed without a persistent snapshot"
-                            )
-                        }
-                    } else {
-                        runCatching {
-                            crossTeamDelegations.finish(delegationId, snapshot)
-                        }.recoverCatching { error ->
-                            val current = crossTeamDelegations.get(delegationId)
-                            if (current?.state?.terminal != true) {
+        completionScope.watchAgentTeamExecution(handle,
+            onSettled = {
+                if (!closed.get()) {
+                    val snapshot = store.snapshot(handle.supervisorRunId)
+                    snapshot?.let(::publishAndRecord)
+                    if (delegationId.isNotBlank()) {
+                        if (snapshot == null) {
+                            runCatching {
                                 crossTeamDelegations.fail(
                                     delegationId,
-                                    error.message ?: "Destination result could not be recorded"
+                                    "Destination team completed without a persistent snapshot"
                                 )
+                            }
+                        } else {
+                            runCatching {
+                                crossTeamDelegations.finish(delegationId, snapshot)
+                            }.recoverCatching { error ->
+                                val current = crossTeamDelegations.get(delegationId)
+                                if (current?.state?.terminal != true) {
+                                    crossTeamDelegations.fail(
+                                        delegationId,
+                                        error.message ?: "Destination result could not be recorded"
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            } finally {
+            }, onReleased = {
                 watchedRuns.remove(handle.supervisorRunId)
                 activeHandles.remove(handle.supervisorRunId, handle)
                 executingRuns.remove(handle.supervisorRunId)
-            }
-            reconcileLateResponses()
-            resumeReadyTeams()
-        }
+                if (!closed.get()) {
+                    reconcileLateResponses()
+                    resumeReadyTeams()
+                }
+            })
     }
 
     private fun publishTerminalSnapshots() {
@@ -1871,7 +1946,7 @@ private object AgentTeamExecutionCodec {
             taskId = json.optString("task_id"),
             runId = runId,
             parentRunId = json.optString("parent_run_id"),
-            goal = json.optString("goal").take(16_000),
+            goal = json.optString("goal"),
             deliveryMode = enumValue(json.optString("delivery_mode"), AgentDeliveryMode.RESPOND),
             requiredCapabilities = strings(json.optJSONArray("required_capabilities"))
                 .mapNotNull { value -> enumOrNull<AgentCapability>(value) }.toSet(),
@@ -1976,7 +2051,7 @@ private object AgentTeamExecutionCodec {
         return json.keys().asSequence()
             .mapNotNull { key ->
                 key.takeIf(::isPersistedAgentTeamContextKey)
-                    ?.let { it to json.optString(it).take(8_000) }
+                    ?.let { it to json.optString(it) }
             }
             .toMap()
     }
