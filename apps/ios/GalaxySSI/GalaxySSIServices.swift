@@ -152,7 +152,16 @@ final class MessageCoordinator: ObservableObject {
     if run.status == .running, previous == nil {
       AgentEvalOpsService.observeRunStarted(run)
     } else if run.status != .running, (previous?.status == .running || previous == nil) {
-      AgentEvalOpsService.observeRunCompleted(run)
+      AgentCompletionWorkQueue.shared.enqueue(runID: run.runId) { [weak self] in
+        let policy = await MainActor.run { () -> (AgentDeviceEvalSnapshot, Bool)? in
+          guard let self, let current = self.store.agentSession(id: run.conversationId),
+                !current.privateMode, !current.trackingPaused else { return nil }
+          return (AgentDeviceEvalProbe.capture(), self.store.agentSafetySettings.memoryCapture)
+        }
+        guard let policy else { return }
+        _ = AgentEvalOpsService.observeRunCompleted(run, completedDevice: policy.0,
+          personalLearningEnabled: policy.1)
+      }
     }
   }
   private lazy var localPlanNodeJournal = EncryptedAgentPlanNodeJournal()
