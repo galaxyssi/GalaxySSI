@@ -183,15 +183,20 @@ final class MqttPeerRoutes {
   func isCurrent(_ packet: VerifiedPacket) -> Bool {
     locked {
       guard let peer = try? authenticatedPeer(packet.ingress, allowDisabled: false) else { return false }
-      return peer.binding.scope == packet.scope && peer.identity == packet.authenticationID
+      return peer.binding.scope == packet.scope && peer.identity == packet.authenticationID &&
+        peer.binding.receiver == packet.sender && peer.binding.sender == packet.receiver
     }
   }
 
   // Synchronous business-inbox/outbox commits can share the same relationship fence as parsing.
   func withCurrent<T>(_ packet: VerifiedPacket, commit: () throws -> T) throws -> T {
+    try withCurrentIdentity(packet) { _ in try commit() }
+  }
+
+  func withCurrentIdentity<T>(_ packet: VerifiedPacket, commit: (MqttBusinessIdentity) throws -> T) throws -> T {
     try locked {
-      guard isCurrent(packet) else { throw MqttRouteError.identityChanged }
-      return try commit()
+      guard isCurrent(packet), let peer = peers[packet.scope] else { throw MqttRouteError.identityChanged }
+      return try commit(MqttBusinessIdentity(peer.binding))
     }
   }
 

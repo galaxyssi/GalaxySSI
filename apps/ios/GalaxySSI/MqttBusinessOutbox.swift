@@ -23,17 +23,20 @@ final class MqttBusinessOutbox {
   struct Page { let entries: [Entry]; let next: Cursor? }
   private let database: MqttChunkDatabase
   private let limits: Limits
+  let completions: MqttDeliveryCompletions
 
-  convenience init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = .init()) throws {
-    try self.init(database: MqttChunkDatabase(fileURL: fileURL, secrets: secrets), limits: limits)
+  convenience init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared, limits: Limits = .init(),
+                   completionLimits: MqttDeliveryCompletions.Limits = .init()) throws {
+    try self.init(database: MqttChunkDatabase(fileURL: fileURL, secrets: secrets), limits: limits, completionLimits: completionLimits)
   }
 
-  init(database: MqttChunkDatabase, limits: Limits = .init()) throws {
+  init(database: MqttChunkDatabase, limits: Limits = .init(), completionLimits: MqttDeliveryCompletions.Limits = .init()) throws {
     guard limits.records > 0, limits.peerRecords > 0, limits.bytes > 0, limits.peerBytes > 0,
           limits.controlReserve >= 0, limits.controlReserve < limits.peerRecords,
           limits.controlReserve < limits.records else { throw MqttChunkStorageError.capacityExceeded }
     self.database = database
     self.limits = limits
+    completions = try MqttDeliveryCompletions(database: database, limits: completionLimits)
   }
 
   @discardableResult
@@ -57,7 +60,10 @@ final class MqttBusinessOutbox {
 
   private func insert(_ entry: Entry, key: String, transaction: MqttChunkDatabase.Transaction?) throws -> Bool {
     let encoded = try encode(entry)
-    return try database.transaction(joining: transaction) {
+    return try database.withTransaction(joining: transaction) { token in
+      guard try completions.event(identity: entry.identity, messageID: entry.message.messageId, transaction: token) == nil else {
+        throw MqttChunkStorageError.alreadyDelivered
+      }
       if let existing = try read(key) {
         guard existing.identity == entry.identity, existing.wireHash == entry.wireHash, existing.traffic == entry.traffic,
               existing.requestHash == entry.requestHash, existing.isPrepared == entry.isPrepared,
@@ -126,11 +132,13 @@ final class MqttBusinessOutbox {
   // Both the authenticated relationship generation and canonical Signal wire hash must match.
   // No payload cleanup or success notification is legal until this transaction returns.
   @discardableResult
-  func acknowledgeVerified(identity: MqttBusinessIdentity, messageID: String, wireHash: String) throws -> Entry? {
+  func acknowledgeVerified(identity: MqttBusinessIdentity, messageID: String, wireHash: String, now: Date = Date()) throws -> Entry? {
     let key = try identity.key(messageID: messageID)
     guard MqttRouteProtocol.hex(wireHash, count: 64) else { throw MqttRouteError.invalidPayload }
-    return try database.transaction {
+    let at = try milliseconds(now)
+    return try database.withTransaction { token in
       guard let stored = try read(key), stored.identity == identity, stored.isPrepared, stored.wireHash == wireHash else { return nil }
+      try completions.record(stored, at: at, transaction: token)
       try database.run("DELETE FROM mqtt_business_outbox WHERE record_key=?", [.text(key)])
       return stored
     }
@@ -187,9 +195,17 @@ final class MqttBusinessOutbox {
   }
   func forget(identity: MqttBusinessIdentity) throws {
     try identity.validate()
-    try database.transaction { try database.run("DELETE FROM mqtt_business_outbox WHERE binding_digest=?", [.text(identity.binding)]) }
+    try database.withTransaction { token in
+      try completions.forget(identity: identity, transaction: token)
+      try database.run("DELETE FROM mqtt_business_outbox WHERE binding_digest=?", [.text(identity.binding)])
+    }
   }
-  func clear() throws { try database.transaction { try database.run("DELETE FROM mqtt_business_outbox") } }
+  func clear() throws {
+    try database.withTransaction { token in
+      try completions.clear(transaction: token)
+      try database.run("DELETE FROM mqtt_business_outbox")
+    }
+  }
 
   private func read(_ key: String) throws -> Entry? {
     try database.query("SELECT binding_digest,next_attempt_at,payload_bytes,encrypted_metadata FROM mqtt_business_outbox WHERE record_key=?",

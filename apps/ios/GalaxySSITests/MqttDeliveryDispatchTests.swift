@@ -2,6 +2,22 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttDeliveryDispatchTests: XCTestCase {
+  func testCommittedReceiptStopsCopiesEvenAfterPolicyObservationReset() async throws {
+    let fixture = DispatchFixture()
+    _ = try await fixture.dispatch.submit(topic: "outbox", delivery: fixture.delivery())
+    let first = try XCTUnwrap(fixture.publications.first)
+    fixture.policy.forgetPeer("pair")
+    var committed = false
+    let accepted = try await fixture.dispatch.acceptVerifiedReceipt(peer: "pair", frame: first.frame) { committed = true }
+    XCTAssertTrue(accepted)
+    XCTAssertTrue(committed)
+    let state = await fixture.dispatch.diagnostics()
+    XCTAssertEqual(state.queuedCopies, 0)
+    fixture.time = 5000
+    await fixture.dispatch.tick()
+    XCTAssertEqual(fixture.publications.count, 1)
+  }
+
   func testBrokerAckDoesNotStopDelayedCopiesOrCreateRTTSamples() async throws {
     let fixture = DispatchFixture()
     let token = try await fixture.dispatch.submit(topic: "outbox", delivery: fixture.delivery())

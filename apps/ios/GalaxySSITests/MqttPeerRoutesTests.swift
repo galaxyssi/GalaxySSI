@@ -2,6 +2,73 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testReceiptWithoutLiveAttemptCommitsCompletionAndDuplicateIsIdempotent() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.packet()
+    let first = try await f.receipts.accept(packet)
+    XCTAssertEqual(first?.messageID, "message")
+    XCTAssertNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+    let duplicate = try await f.receipts.accept(packet)
+    XCTAssertEqual(duplicate?.receivedAt, first?.receivedAt)
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+    XCTAssertTrue(f.peer.pool.policy.diagnostics(now: f.peer.time).verifiedDelivery.values.allSatisfy { $0.samples == 0 })
+  }
+
+  func testRevocationBeforeReceiptCommitKeepsOutgoingMessage() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.packet()
+    f.peer.binding.enabled = false
+    try f.peer.routes.replace([f.peer.binding])
+    do { _ = try await f.receipts.accept(packet); XCTFail("Revoked receipt must fail") }
+    catch MqttRouteError.identityChanged { }
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+    XCTAssertTrue(try f.outbox.completions.pending().isEmpty)
+  }
+
+  func testReceiptHashMismatchCannotDeleteOutboxAfterRestart() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let bad = try MqttDeliveryEnvelope.Frame(message: .init(messageID: "message", contentHash: String(repeating: "e", count: 64),
+      sender: f.entry.identity.local, receiver: f.entry.identity.remote, traffic: "message"), attempt: f.frame.attempt)
+    let packet = try await f.packet(frame: bad)
+    do { _ = try await f.receipts.accept(packet); XCTFail("Wrong hash must fail") }
+    catch MqttRouteError.unsolicitedAcknowledgement { }
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+  }
+
+  func testCompletionWriteFailureDoesNotConfirmLiveDispatch() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    _ = try await f.dispatch.submit(topic: f.peer.binding.sendTopic, delivery: XCTUnwrap(f.peer.prepare()))
+    let frame = try XCTUnwrap(f.publications.first).frame
+    let packet = try await f.packet(frame: frame)
+    try f.storage.execute("CREATE TRIGGER fail_completion BEFORE INSERT ON mqtt_delivery_completions BEGIN SELECT RAISE(ABORT,'forced'); END")
+    do { _ = try await f.receipts.accept(packet); XCTFail("Storage failure must propagate") }
+    catch { XCTAssertTrue(error is MqttChunkStorageError) }
+    XCTAssertTrue(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+    XCTAssertTrue(try f.outbox.completions.pending().isEmpty)
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+    try f.storage.execute("DROP TRIGGER fail_completion")
+    let accepted = try await f.receipts.accept(packet)
+    XCTAssertNotNil(accepted)
+    XCTAssertFalse(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+  }
+
+  func testUnknownPhysicalAttemptCancelsLogicalRetryWithoutInventingRTT() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    _ = try await f.dispatch.submit(topic: f.peer.binding.sendTopic, delivery: XCTUnwrap(f.peer.prepare()))
+    let packet = try await f.packet()
+    let result = try await f.receipts.accept(packet)
+    XCTAssertNotNil(result)
+    XCTAssertFalse(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+    XCTAssertTrue(f.peer.pool.policy.diagnostics(now: f.peer.time).verifiedDelivery.values.allSatisfy { $0.samples == 0 })
+  }
+
   func testApprovedOfflineBindingCanCommitOutboxWithoutRouteReadiness() throws {
     let fixture = try PeerRoutesFixture()
     let identity = try MqttBusinessIdentity(fixture.binding)
@@ -323,5 +390,41 @@ private final class PeerRoutesFixture {
     try routes.prepareDelivery(topic: binding.sendTopic,
       wire: GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "sender", "to": "receiver", "body": "AA=="]),
       messageID: "message", traffic: .message)
+  }
+}
+
+private final class ReceiptBridgeFixture {
+  let peer: PeerRoutesFixture
+  let storage: ChunkFixture
+  let outbox: MqttBusinessOutbox
+  let entry: MqttBusinessOutbox.Entry
+  let frame: MqttDeliveryEnvelope.Frame
+  var publications: [MqttDeliveryDispatch.Publication] = []
+  lazy var dispatch = MqttDeliveryDispatch(policy: peer.pool.policy, publish: { [weak self] packet in
+    self?.publications.append(packet); return true
+  }, brokerCompleted: { _, _ in }, now: { [weak self] in self?.peer.time ?? 0 })
+  lazy var receipts = MqttBusinessReceipts(routes: peer.routes, outbox: outbox, dispatcher: dispatch,
+    now: { Date(timeIntervalSince1970: 1) })
+
+  init() throws {
+    peer = try PeerRoutesFixture()
+    storage = try ChunkFixture()
+    outbox = try MqttBusinessOutbox(fileURL: storage.url, secrets: storage.secrets)
+    let identity = try MqttBusinessIdentity(peer.binding)
+    let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "sender", "to": "receiver", "body": "AA=="])
+    let date = Date(timeIntervalSince1970: 1)
+    let message = PendingLinkMessage(messageId: "message", topic: peer.binding.sendTopic, wirePayload: String(decoding: wire, as: UTF8.self),
+      status: "queued", attempts: 0, nextAttemptAt: date, createdAt: date, updatedAt: date)
+    try outbox.enqueue(identity: identity, message: message, traffic: .message)
+    entry = try XCTUnwrap(outbox.entry(identity: identity, messageID: "message"))
+    frame = try MqttDeliveryEnvelope.Frame(message: .init(messageID: "message", contentHash: entry.wireHash,
+      sender: identity.local, receiver: identity.remote, traffic: "message"),
+      attempt: .init(attemptID: String(repeating: "d", count: 32), brokerID: "emqx", generation: 1))
+  }
+
+  func packet(frame: MqttDeliveryEnvelope.Frame? = nil) async throws -> MqttPeerRoutes.VerifiedPacket {
+    let frame = frame ?? self.frame
+    let reception = try await peer.routes.receive(peer.ingress(frame.receiptAfterStore(messageID: "message", wireHash: frame.message.contentHash)))
+    return try XCTUnwrap(reception.packet)
   }
 }

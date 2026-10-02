@@ -39,7 +39,7 @@ final class MqttSignalStateJournal {
       return state
     }.first
     if saved == nil {
-      let businessRecords = try database.query("SELECT (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox)",
+      let businessRecords = try database.query("SELECT (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_delivery_completions)",
         maximumRows: 1) { try $0.number(0) }.first
       guard businessRecords == 0 else { throw MqttChunkStorageError.corruptState }
     }

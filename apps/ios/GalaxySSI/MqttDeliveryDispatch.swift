@@ -135,7 +135,10 @@ actor MqttDeliveryDispatch {
     try commit()
     let accepted = policy.acceptVerifiedReceipt(peer: peer, messageID: frame.message.messageID,
       contentHash: frame.message.contentHash, attemptID: frame.attempt.attemptID, now: now())
-    guard !accepted.isEmpty else { return false }
+    if accepted.isEmpty {
+      // Expired/reset RTT observations cannot undo an authenticated durable delivery commit.
+      policy.acceptVerifiedMessage(peer: peer, messageID: frame.message.messageID, contentHash: frame.message.contentHash)
+    }
     item.job.accepted = true
     item.job.scheduled.removeAll()
     retire(item.job)

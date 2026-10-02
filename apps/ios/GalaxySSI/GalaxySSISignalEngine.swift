@@ -223,6 +223,9 @@ final class GalaxySSISignalEngine {
     return try store.transaction { token in
       guard let token else { throw MqttChunkStorageError.databaseFailure }
       return try zip(requests, hashes).map { request, hash in
+        guard try journal.outbox.completions.event(identity: request.identity, messageID: request.messageID, transaction: token) == nil else {
+          throw MqttChunkStorageError.alreadyDelivered
+        }
         if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) {
           guard existing.requestHash == hash, existing.traffic == request.traffic.rawValue, request.matches(existing.message) else {
             throw MqttChunkStorageError.corruptState

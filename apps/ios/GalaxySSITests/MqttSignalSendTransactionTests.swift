@@ -3,6 +3,18 @@ import XCTest
 
 #if canImport(LibSignalClient)
 final class MqttSignalSendTransactionTests: XCTestCase {
+  func testDeliveredRequestCannotAdvanceRatchetOrRecreateOutbox() throws {
+    let f = try SignalSendFixture()
+    let request = try f.request()
+    let entry = try f.sender.encryptAndEnqueue(request, now: f.date)
+    _ = try f.journal.outbox.acknowledgeVerified(identity: request.identity, messageID: request.messageID, wireHash: entry.wireHash, now: f.date)
+    let state = try f.journal.load()
+    XCTAssertThrowsError(try f.sender.encryptAndEnqueue(request, now: f.date))
+    XCTAssertEqual(try f.journal.load(), state)
+    XCTAssertEqual(try f.storage.scalar("SELECT COUNT(*) FROM mqtt_business_outbox"), 0)
+    XCTAssertEqual(try f.journal.outbox.completions.pending().count, 1)
+  }
+
   func testAtomicSendReopensWithExactDecryptableWireAndMetadata() throws {
     let f = try SignalSendFixture()
     let request = try f.request()

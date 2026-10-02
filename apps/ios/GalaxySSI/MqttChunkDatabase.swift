@@ -5,6 +5,7 @@ enum MqttChunkStorageError: Error {
   case databaseFailure
   case corruptState
   case capacityExceeded
+  case alreadyDelivered
 }
 
 // Shared storage for MQTT chunk and business delivery journals. Existing chunk key/schema names
@@ -106,6 +107,13 @@ final class MqttChunkDatabase {
         """)
       try execute("CREATE INDEX IF NOT EXISTS mqtt_business_outbox_schedule ON mqtt_business_outbox(binding_digest,next_attempt_at)")
       try execute("CREATE TABLE IF NOT EXISTS mqtt_signal_state (id INTEGER PRIMARY KEY CHECK(id=1), encrypted_state BLOB NOT NULL)")
+      try execute("""
+        CREATE TABLE IF NOT EXISTS mqtt_delivery_completions (
+          record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, consumed INTEGER NOT NULL,
+          retain_until INTEGER NOT NULL, payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
+        """)
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_completion_pending ON mqtt_delivery_completions(consumed,record_key)")
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_completion_scope ON mqtt_delivery_completions(binding_digest)")
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
       try transaction { () }
     } catch {
@@ -150,6 +158,11 @@ final class MqttChunkDatabase {
     }
   }
 
+  func withTransaction<T>(joining transaction: Transaction?, _ body: (Transaction) throws -> T) throws -> T {
+    if let transaction { return try self.transaction(joining: transaction) { try body(transaction) } }
+    return try withTransaction(body)
+  }
+
   func seal(_ data: Data, purpose: String) throws -> Data { try cipher.encrypt(data, purpose: purpose) }
   func open(_ data: Data, purpose: String) throws -> Data { try cipher.decrypt(data, expectedPurpose: purpose) }
 
@@ -180,7 +193,7 @@ final class MqttChunkDatabase {
     if let saved {
       guard try open(saved, purpose: "mqtt-chunk-store-key") == Self.canary else { throw MqttChunkStorageError.corruptState }
     } else {
-      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_signal_state)",
+      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks) + (SELECT COUNT(*) FROM mqtt_business_inbox) + (SELECT COUNT(*) FROM mqtt_business_ciphertexts) + (SELECT COUNT(*) FROM mqtt_business_outbox) + (SELECT COUNT(*) FROM mqtt_signal_state) + (SELECT COUNT(*) FROM mqtt_delivery_completions)",
                             maximumRows: 1) { try $0.number(0) }.first
       guard count == 0 else { throw MqttChunkStorageError.corruptState }
       let encrypted = try seal(Self.canary, purpose: "mqtt-chunk-store-key")
