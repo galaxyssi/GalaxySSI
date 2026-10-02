@@ -99,7 +99,12 @@ internal class CollaborationTranscriptPublisher(context: Context) {
                 paused = snapshot.paused, goalDisposition = if (member.memberId == snapshot.primaryMemberId) snapshot.goalDisposition else "")
             val key = "collaboration:${snapshot.supervisorRunId}:${member.memberId}"
             val assignment = member.role.ifBlank { member.displayName }
-            val detail = if (status == AgentSubagentStatus.FAILED) member.errorMessage else ""
+            val detail = when {
+                member.memberId == snapshot.primaryMemberId && snapshot.goalDisposition == "blocked" &&
+                    snapshot.finalOutput == CollaborationGoalLoop.CONTRACT_RECOVERY_REQUIRED -> snapshot.finalOutput
+                status == AgentSubagentStatus.FAILED -> member.errorMessage
+                else -> ""
+            }
             write(snapshot, "$key:status", listOf(assignment, detail).filter(String::isNotBlank).joinToString("\n"),
                 snapshot.createdAtMillis, metadata)
             if (member.status == AgentSubagentStatus.SUCCEEDED && member.output.isNotBlank()) {

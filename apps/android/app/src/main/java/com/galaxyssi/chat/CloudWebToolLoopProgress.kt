@@ -12,12 +12,25 @@ internal class CloudWebToolLoopProgress {
     private val evidenceKeys = linkedSetOf<String>()
     private val unavailableResources = linkedMapOf<String, String>()
     private val retrievedResources = linkedMapOf<String, String>()
+    private data class GoalPage(val snapshot: String, val reader: String, val index: Long, val hash: String)
+    private val goalPagesByOutput = linkedMapOf<String, GoalPage>()
+    private val observedGoalPages = linkedMapOf<Triple<String, String, Long>, String>()
     private var stagnantBatches = 0
 
     fun observeEvidenceBatch(outputs: List<String>): Boolean {
         var gainedEvidence = false
         outputs.forEach { encoded ->
             val output = runCatching { JSONObject(encoded) }.getOrNull() ?: return@forEach
+            if (output.opt("format") == CollaborationGoalContractStore.PAGE_FORMAT) {
+                val page = goalPagesByOutput[encoded] ?: return@forEach
+                val identity = Triple(page.snapshot, page.reader, page.index)
+                // A pinned page is immutable; changing its digest cannot manufacture new progress.
+                if (identity !in observedGoalPages) {
+                    observedGoalPages[identity] = page.hash
+                    gainedEvidence = true
+                }
+                return@forEach
+            }
             if (output.optString("tool") == CloudImageAnnotationPlan.TOOL &&
                 output.optString("status") == "completed" && output.optBoolean("image_saved")
             ) {
@@ -51,6 +64,12 @@ internal class CloudWebToolLoopProgress {
         val key = semanticKey(toolName, arguments)
         if (outputsByCall.containsKey(key)) return false
         outputsByCall[key] = output
+        // Only executor/checkpoint observations establish provenance, never a tool name in model content.
+        if (toolName == CollaborationCloudRecall.NAME && arguments.opt("mode") == "goal_contract" &&
+            arguments.keys().asSequence().all { it in setOf("mode", "cursor") } &&
+            (!arguments.has("cursor") || arguments.opt("cursor") is String)) {
+            goalPage(output)?.let { goalPagesByOutput[output] = it }
+        }
         val errorCode = runCatching { JSONObject(output).optString("error_code") }.getOrDefault("")
         if (errorCode in setOf("web_source_timeout", "web_tool_timeout", "renderer_unavailable")) {
             resourceKey(toolName, arguments)?.let { unavailableResources[it] = output }
@@ -67,6 +86,25 @@ internal class CloudWebToolLoopProgress {
         }
         return true
     }
+
+    private fun goalPage(encoded: String): GoalPage? = runCatching {
+        val page = JSONObject(encoded)
+        require(page.opt("status") == "returned" && page.opt("format") == CollaborationGoalContractStore.PAGE_FORMAT &&
+            page.opt("trust") == "host_goal_contract_not_comprehension_or_claim_verification" && page.isNull("error"))
+        fun hash(key: String): String = requireNotNull(page.opt(key) as? String).also {
+            require(it.matches(Regex("[a-f0-9]{64}")))
+        }
+        val snapshot = hash("snapshot_id")
+        require(hash("snapshot_sha256") == snapshot)
+        val reader = hash("reader_sha256")
+        val index = requireNotNull(CollaborationRemoteEvidenceProtocol.integer(page, "page_index"))
+        val count = requireNotNull(CollaborationRemoteEvidenceProtocol.integer(page, "page_count"))
+        require(count in 1..Int.MAX_VALUE.toLong() && index in 0 until count)
+        require(page.getJSONArray("fragments").length() > 0 && page.has("next_cursor"))
+        require(if (index + 1 == count) page.isNull("next_cursor")
+            else (page.opt("next_cursor") as? String)?.matches(Regex("[A-Za-z0-9_-]{54}")) == true)
+        GoalPage(snapshot, reader, index, hash("page_sha256"))
+    }.getOrNull()
 
     private fun canReuseBody(toolName: String, arguments: JSONObject): Boolean =
         toolName.lowercase(Locale.ROOT) in setOf("web_fetch", "web_extract") &&

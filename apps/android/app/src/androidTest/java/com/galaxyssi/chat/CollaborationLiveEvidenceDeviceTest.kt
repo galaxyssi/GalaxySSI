@@ -9,8 +9,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -34,8 +38,12 @@ class CollaborationLiveEvidenceDeviceTest {
         var group = ""
         var previous = ""
         val database = AgentEncryptedDatabase(context, run)
+        val store = EncryptedAgentTeamExecutionStore(database)
         var handle: AgentTeamExecutionHandle? = null
         var runtime: AgentTeamExecutionRuntime? = null
+        var keptScreenOn = false
+        var touchedWindow = false
+        var fixtureFailure: Throwable? = null
         try {
             waitUntil("activity hydration") {
                 var ready = false
@@ -44,11 +52,14 @@ class CollaborationLiveEvidenceDeviceTest {
                 ready
             }
             scenario.onActivity {
+                keptScreenOn = (it.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
                 it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                touchedWindow = true
                 previous = it.agentTranscriptStore.activeConversation().id
                 it.createAgentConversation()
                 group = it.agentTranscriptStore.activeConversation().id
             }
+            assertNotEquals("Fixture must not reuse the user's selected conversation", previous, group)
             val transcripts = AgentTranscriptStore(context)
             transcripts.append(AgentTranscriptRole.PROCESS, "Live evidence acceptance fixture",
                 dedupeKey = run, conversationId = group)
@@ -89,7 +100,10 @@ class CollaborationLiveEvidenceDeviceTest {
                     "and compute the sum and mean of 1,2,4,8. In PowerShell use Write-Output '$token'; Write-Output (1+2+4+8); Write-Output ((1+2+4+8)/4). " +
                     "Avoid nested shells and variable quoting. A failed read-only attempt may be corrected; do not repeat a successful command. " +
                     "Do not inspect repository files, use the web, operate the phone, or write files. " +
-                    "Publish one workspace artifact with id=fixture-document and body.content documenting the actual returned output and its limits. " +
+                    "Publish a workspace artifact with id=fixture-document and body.content documenting the actual returned output and its limits. " +
+                    "Also publish a separate artifact id=fixture-goal-map, title=Original goal mapping, with body.semantic_goal_mapping. " +
+                    "Copy goal_sha256 and criteria_sha256 from the host goal-coverage source in acceptance feedback; map every host source ID to criterion doc. " +
+                    "Do not reproduce source text, count offsets or invent hashes. You author this mapping; the other member independently reviews it. " +
                     "This is documentary evidence, not a qualified computational or scientific certification. Do not invent receipt IDs; " +
                     "the host imports Desktop observations after your final reply. Return the research-artifact JSON."),
                 member(reviewer, "review", "RECHECK", "Independently review the author's exact saved document from the dependency workspace_receipt. " +
@@ -101,17 +115,24 @@ class CollaborationLiveEvidenceDeviceTest {
                     "The required source is origin=desktop_codex_tool, tool=codex.commandExecution. Browse mode=evidence, " +
                     "read its original with evidence_id/sha256, and cite that original receipt, not just a receipt for reading the author's document. " +
                     "Use verdict=supported only if the document agrees with the recorded output, otherwise refuted/not_tested with unresolved issues. " +
+                    "Also independently compare every host source segment against criterion doc and the author's saved fixture-goal-map. " +
+                    "Publish a SECOND workspace kind=acceptance_review object id=fixture-coverage-review with body.semantic_coverage_review, " +
+                    "targeting the exact mapping reference, citing it in parents, and explicitly reviewing every source ID and criterion_ids:[doc]. " +
+                    "Keep global and per-segment verdict, rationale and unresolved fields. Do not author or edit the mapping you review. " +
                     "Do not run another command, browse the web, or operate other apps.", setOf("author")),
                 member(author, "deliver", "DELIVER", "Assess only this documentary fixture. Use the exact saved author/review versions " +
-                    "in the dependency workspace receipts. If valid, return achieved with the preserved criterion and delivery/review references. " +
+                    "in the dependency workspace receipts. If valid, return achieved with the preserved criterion and delivery/review references, " +
+                    "plus goal_coverage:{mapping:exact author mapping reference,review:exact peer coverage-review reference}. " +
+                    "The peer's delivery review and coverage review are separate objects; do not interchange them. " +
                     "No new tools, experiments, members or unrelated work. Do not claim scientific or general team superiority.", setOf("author", "review"))
             ), primaryInstanceId = "deliver", visibilityMode = AgentTeamVisibilityMode.VISIBLE)
             val request = AgentRunRequest(group, turn, turn, runId = run,
                 goal = requirement, idempotencyKey = run, context = mapOf(CollaborationGoalLoop.CRITERIA to criteria,
-                    CollaborationGoalLoop.ROUND to "1"))
+                    CollaborationGoalLoop.ROUND to "1", CollaborationGoalLoop.ACCEPTANCE_FEEDBACK to
+                        CollaborationGoalLoop.acceptanceContext(requirement, JSONArray(criteria))))
             val publisher = CollaborationTranscriptPublisher(context)
             // Use the real member worker and graph, but a dedicated store so a failed fixture cannot auto-expand later.
-            runtime = AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(database), onSnapshot = { snapshot ->
+            runtime = AgentTeamExecutionRuntime(store, onSnapshot = { snapshot ->
                 publisher.publish(snapshot)
                 report(snapshot)
             })
@@ -130,8 +151,22 @@ class CollaborationLiveEvidenceDeviceTest {
             assertTrue("Actual Codex observation missing", observations.any { it.getString("origin") == "desktop_codex_tool" &&
                 it.getString("status") == "returned" && it.getString("output_json").contains(token) })
             val reviewed = requireNotNull(CollaborationResearchArtifact.decode(result.snapshot.members.single { it.memberId == "review" }.output))
-            val reviewRef = reviewed.getJSONObject("workspace_receipt").getJSONArray("revisions").getJSONObject(0)
-            val review = CollaborationResearchWorkspace(context).read(access, reviewRef.getString("object_id"), reviewRef.getInt("revision"))!!
+            val workspace = CollaborationResearchWorkspace(context)
+            val reviewRefs = reviewed.getJSONObject("workspace_receipt").getJSONArray("revisions")
+            val savedReviews = (0 until reviewRefs.length()).map { index -> reviewRefs.getJSONObject(index).let { ref ->
+                workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))!!
+            } }
+            val review = savedReviews.single { it.getJSONObject("body").has("acceptance_review") }
+            val coverageReview = savedReviews.single { it.getJSONObject("body").has(CollaborationSemanticGoalCoverage.REVIEW) }
+            assertEquals(reviewer.id, coverageReview.getString("person_id"))
+            val mappingRef = coverageReview.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW).getJSONObject("target")
+            val mapping = workspace.read(access, mappingRef.getString("object_id"), mappingRef.getInt("revision"))!!
+            assertEquals(author.id, mapping.getString("person_id"))
+            assertEquals(CollaborationSemanticGoalCoverage.source(requirement).getString("goal_sha256"),
+                mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING).getString("goal_sha256"))
+            val assessment = requireNotNull(CollaborationGoalLoop.decode(result.snapshot.members.single { it.memberId == "deliver" }.output))
+            assertEquals(coverageReview.getString("object_id"), assessment.getJSONObject("goal_coverage").getJSONObject("review").getString("object_id"))
+            assertEquals(mappingRef.getString("object_id"), assessment.getJSONObject("goal_coverage").getJSONObject("mapping").getString("object_id"))
             assertTrue("Review must reference observed evidence", review.getJSONArray("host_observations").length() > 0)
             val directRefs = review.getJSONArray("host_observations")
             val originals = observations.filter { it.getString("origin") == "desktop_codex_tool" &&
@@ -148,18 +183,83 @@ class CollaborationLiveEvidenceDeviceTest {
             assertTrue(result.subagentResult.results.single { it.childId == "deliver" }.collaborationAcceptance?.accepted == true)
             scenario.onActivity { it.refreshAgentTranscriptWindow(group) }
             screenshot()
+        } catch (failure: Throwable) {
+            fixtureFailure = failure
+            throw failure
         } finally {
-            handle?.let { if (it.isActive) it.cancel("Authorized live fixture finished") }
-            runtime?.close()
-            if (group.isNotBlank()) {
-                CollaborationGroupStore(context).remove(group)
-                AgentTranscriptStore(context).deleteConversation(group)
+            withContext(NonCancellable) {
+                var cleanupFailure: Throwable? = null
+                fun remember(failure: Throwable) {
+                    val original = cleanupFailure
+                    if (original == null) cleanupFailure = failure else original.addSuppressed(failure)
+                }
+                try {
+                    check(stopFixture(run, group, store, handle)) {
+                        "Remote STOP was not acknowledged; retained fixture $run and conversation $group for recovery"
+                    }
+                    runtime?.close()
+                    if (group.isNotBlank()) {
+                        CollaborationGroupStore(context).remove(group)
+                        AgentTranscriptStore(context).deleteConversation(group)
+                    }
+                    database.clear()
+                } catch (failure: Throwable) {
+                    remember(failure)
+                } finally {
+                    runCatching { runtime?.close() }.exceptionOrNull()?.let(::remember)
+                    runCatching {
+                        if (previous.isNotBlank()) {
+                            AgentTranscriptStore(context).switchConversation(previous)
+                            scenario.onActivity {
+                                it.agentTranscriptStore.switchConversation(previous)
+                                it.refreshCollaborationStrip()
+                                it.refreshAgentTranscriptWindow(previous)
+                            }
+                        }
+                    }.exceptionOrNull()?.let(::remember)
+                    runCatching {
+                        if (touchedWindow && !keptScreenOn) scenario.onActivity {
+                            it.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                    }.exceptionOrNull()?.let(::remember)
+                    runCatching { scenario.close() }.exceptionOrNull()?.let(::remember)
+                }
+                cleanupFailure?.let { failure ->
+                    val original = fixtureFailure
+                    if (original == null) throw failure else original.addSuppressed(failure)
+                }
             }
-            if (previous.isNotBlank()) AgentTranscriptStore(context).switchConversation(previous)
-            database.clear()
-            scenario.close()
         }
         Unit
+    }
+
+    private suspend fun stopFixture(run: String, group: String, store: AgentTeamExecutionStore,
+                                    handle: AgentTeamExecutionHandle?): Boolean {
+        val controls = AgentTeamDurableControl(context)
+        controls.set(run, AgentTeamUserControl.STOP)
+        check(controls.get(run) == AgentTeamUserControl.STOP)
+        handle?.let { if (it.isActive) it.cancel("Authorized live fixture finished; durable STOP requested") }
+        val ledger = EncryptedAgentManagedResponseLedger(context)
+        val recovery = AgentTeamRemoteStopRecovery(context)
+        val acknowledged = withTimeoutOrNull(90_000L) {
+            while (true) {
+                val snapshot = store.snapshot(run)
+                if (snapshot != null) recovery.reconcile(listOf(snapshot), ledger) { id ->
+                    id == run && controls.get(id) == AgentTeamUserControl.STOP
+                }
+                val localFinished = handle?.let { !it.isActive } ?: (snapshot == null)
+                if (localFinished && ledger.pendingForSupervisor(run).isEmpty()) break
+                delay(250L)
+            }
+            true
+        } == true
+        store.snapshot(run)?.let(::report)
+        val pending = ledger.pendingForSupervisor(run)
+        File(context.getExternalFilesDir(null), "$run-cleanup.json").writeText(JSONObject()
+            .put("acknowledged", acknowledged).put("execution_database", run).put("conversation_id", group)
+            .put("durable_control", controls.get(run).name).put("retained_for_recovery", !acknowledged)
+            .put("pending_remote_owners", JSONArray(pending.map { it.ownerRunId })).toString())
+        return acknowledged
     }
 
     private fun reportText(snapshot: AgentTeamExecutionSnapshot) = "run=${snapshot.supervisorRunId}\nstate=${snapshot.state}\ndisposition=${snapshot.goalDisposition}\n" +

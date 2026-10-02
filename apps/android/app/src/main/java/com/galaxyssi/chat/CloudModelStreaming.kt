@@ -36,6 +36,16 @@ data class PreparedCloudConversationStream(
     val conversationKey: String
 )
 
+/** Managed member output is one final protocol response, never a concatenation of tool-round drafts. */
+internal class CloudConversationTextPolicy(val managedCollaboration: Boolean) {
+    fun bufferRound(hasEvidence: Boolean): Boolean = managedCollaboration || hasEvidence
+    fun citationPreview(requested: Boolean, hasEvidence: Boolean): Boolean =
+        requested && hasEvidence && !managedCollaboration
+    // Originals and receipts remain in tool evidence. Required artifact references belong inside valid
+    // member JSON; suppressing a presentation suffix neither delivers an artifact nor proves delivery.
+    fun artifactSuffix(suffix: String): String = if (managedCollaboration) "" else suffix
+}
+
 object CloudConversationStreamEngine : CloudModelStreamClient {
     private const val MAX_PARALLEL_TOOL_CALLS = 4
     private val transport = OkHttpCloudModelStreamClient()
@@ -58,15 +68,16 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
     ): Flow<ModelStreamEvent> = flow {
         lifetimes.run(requestId) {
             val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
+            val textPolicy = CloudConversationTextPolicy(collaborationEvidence != null)
             var lastSequence = 0L
             val execute: suspend (AgentModelLoopRecords?) -> Unit = { records ->
                 streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
                     readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled,
-                    imageSession, records).collect { event ->
+                    imageSession, records, textPolicy).collect { event ->
                     if (event is ModelStreamEvent.TextDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.ToolCallDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.Completed) {
-                        val suffix = imageSession.artifactSuffix()
+                        val suffix = textPolicy.artifactSuffix(imageSession.artifactSuffix())
                         if (suffix.isNotEmpty()) emit(ModelStreamEvent.TextDelta(requestId, ++lastSequence, suffix,
                             System.nanoTime() / 1_000_000L))
                     }
@@ -92,7 +103,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         systemPromptOverride: String,
         citationPreviewEnabled: Boolean,
         imageSession: CloudImageAnnotationSession,
-        records: AgentModelLoopRecords?
+        records: AgentModelLoopRecords?,
+        textPolicy: CloudConversationTextPolicy
     ): Flow<ModelStreamEvent> = flow {
         var useStreaming = contact.optBoolean("cloud_streaming_enabled", true)
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -191,7 +203,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 research.beginModelRound()
                 val roundNumber = round++
                 val bufferForCitationVerification = evidenceResults.isNotEmpty()
-                val preview = if (citationPreviewEnabled && bufferForCitationVerification) {
+                val bufferRoundText = textPolicy.bufferRound(bufferForCitationVerification)
+                val preview = if (textPolicy.citationPreview(citationPreviewEnabled, bufferForCitationVerification)) {
                     CloudCitationPreview(evidenceResults.toList())
                 } else null
                 var previewShown = false
@@ -240,7 +253,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                                     previewShown = true
                                     emit(ModelStreamEvent.CitationPreview(requestId, text, event.receivedAtElapsedMs))
                                 }
-                                if (visibleText.isNotEmpty() && !bufferForCitationVerification) {
+                                if (visibleText.isNotEmpty() && !bufferRoundText) {
                                     emittedText = true
                                     emit(
                                         ModelStreamEvent.TextDelta(
@@ -267,7 +280,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                                 roundCompleted = true
                                 lastFinishReason = event.finishReason
                             }
-                            is ModelStreamEvent.Failed -> roundFailure = ModelStreamEvent.Failed(requestId, event.error)
+                            is ModelStreamEvent.Failed -> roundFailure = ModelStreamEvent.Failed(requestId,
+                                if (textPolicy.managedCollaboration) event.error.copy(partialResponse = emittedText) else event.error)
                             is ModelStreamEvent.CitationPreview -> Unit
                         }
                     }
@@ -322,7 +336,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     return@flow
                 }
                 val visibleTail = inlineProtocolGuard.finishVisibleText()
-                if (visibleTail.isNotEmpty() && !bufferForCitationVerification) {
+                if (visibleTail.isNotEmpty() && !bufferRoundText) {
                     emittedText = true
                     emit(
                         ModelStreamEvent.TextDelta(
@@ -335,6 +349,19 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 }
                 val rawRoundText = inlineProtocolGuard.rawText()
                 if (!allowExternalTools) {
+                    if (textPolicy.managedCollaboration) {
+                        if (assembler.completedCalls().isNotEmpty() || CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
+                            AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, "Unexpected tool response")
+                            emit(ModelStreamEvent.Failed(requestId, ModelStreamError("UNEXPECTED_TOOL_CALL",
+                                "The provider returned tool protocol while tools were disabled")))
+                            return@flow
+                        }
+                        if (rawRoundText.isNotEmpty()) {
+                            emittedText = true
+                            emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), rawRoundText,
+                                System.nanoTime() / 1_000_000L))
+                        }
+                    }
                     AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
                     emit(
                         ModelStreamEvent.Completed(
@@ -471,6 +498,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                                 )
                             )
                         }
+                    } else if (textPolicy.managedCollaboration && rawRoundText.isNotEmpty()) {
+                        // No tool or evidence round preceded this final response; there is no citation draft to verify.
+                        emittedText = true
+                        emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), rawRoundText,
+                            System.nanoTime() / 1_000_000L))
                     }
                     AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
                     emit(

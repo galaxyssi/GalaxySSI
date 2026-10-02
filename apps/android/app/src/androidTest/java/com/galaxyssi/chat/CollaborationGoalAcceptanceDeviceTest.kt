@@ -26,32 +26,47 @@ class CollaborationGoalAcceptanceDeviceTest {
         val prior = JSONArray().put(criterion).toString()
         fun seed(): String {
             require(groups.load(group) == null)
-            groups.update(group) { it.copy(members = listOf("lead", "author", "reviewer").map { id ->
+            groups.update(group) { it.copy(members = listOf("lead", "reviewer").map { id ->
                 CollaborationMember(id, id, "fixture", "Fixture") }, coordinatorId = "lead") }
             val workspace = CollaborationResearchWorkspace(context)
-            fun publish(person: String, round: Long, body: JSONObject, parents: JSONArray = JSONArray()): JSONObject {
-                val item = JSONObject().put("id", person).put("kind", if (person == "author") "artifact" else "decision")
+            fun publish(person: String, node: String, kind: String, round: Long, body: JSONObject, parents: JSONArray = JSONArray()): JSONObject {
+                val item = JSONObject().put("id", node).put("kind", kind)
                     .put("title", "Fixture $person").put("body", body).put("parents", parents)
                 val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Fixture")
                     .put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray()).put("workspace", JSONArray().put(item))
-                return workspace.publish(access.copy(nodeId = person, personId = person, round = round), raw.toString())
+                return workspace.publish(access.copy(nodeId = node, personId = person, round = round), raw.toString())
                     .getJSONArray("revisions").getJSONObject(0)
             }
-            val delivery = publish("author", 1, JSONObject().put("content", "Two fixture alternatives and their documented limits"))
-            val review = publish("reviewer", 2, JSONObject().put("acceptance_review", JSONObject()
+            val delivery = publish("lead", "author", "artifact", 1, JSONObject().put("content", "Two fixture alternatives and their documented limits"))
+            val review = publish("reviewer", "review", CollaborationReviewContract.KIND, 2, JSONObject().put("acceptance_review", JSONObject()
                 .put("criterion_id", "doc").put("requirement", criterion.getString("requirement")).put("target", delivery)
                 .put("verdict", "supported").put("rationale", "The fixture document addresses the documentary criterion")
                 .put("unresolved", JSONArray())), JSONArray().put(delivery))
+            val sources = CollaborationSemanticGoalCoverage.source(request().goal)
+            fun segments(reviewing: Boolean) = JSONArray((0 until sources.getJSONArray("segments").length()).map { index ->
+                JSONObject().put("id", sources.getJSONArray("segments").getJSONObject(index).getString("id"))
+                    .put("criterion_ids", JSONArray().put("doc")).put("rationale", "The criterion covers this fixture source requirement")
+                    .apply { if (reviewing) put("verdict", "supported").put("unresolved", JSONArray()) }
+            })
+            val mapping = publish("lead", "mapping", "artifact", 1, JSONObject().put(CollaborationSemanticGoalCoverage.MAPPING,
+                JSONObject().put("format", CollaborationSemanticGoalCoverage.FORMAT).put("goal_sha256", sources.getString("goal_sha256"))
+                    .put("criteria_sha256", CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(prior))).put("segments", segments(false))))
+            val coverageReview = publish("reviewer", "coverage-review", CollaborationReviewContract.KIND, 2,
+                JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, JSONObject().put("target", mapping)
+                    .put("verdict", "supported").put("rationale", "Independent comparison of all host source IDs and preserved criterion")
+                    .put("unresolved", JSONArray()).put("segments", segments(true))), JSONArray().put(mapping))
             return JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Fixture document reviewed")
                 .put("decision", "achieved").put("criteria", JSONArray().put(JSONObject(criterion.toString()).put("status", "met")
                     .put("evidence", JSONArray().put("workspace:" + delivery.getString("object_id"))).put("delivery", delivery).put("review", review)))
+                .put("goal_coverage", JSONObject().put("mapping", mapping).put("review", coverageReview))
                 .put("work", JSONArray()).put("blockers", JSONArray()).toString()
         }
         fun definition() = AgentTeamDefinition("fixture", "fixture", listOf(AgentTeamMember("fixture", AgentDeliveryMode.RESPOND,
             instanceId = "lead", context = mapOf(CollaborationGoalLoop.ENABLED to "1", CollaborationGoalLoop.ROSTER to "true",
                 CollaborationResearchWorkflow.PERSON to "lead", "collaboration_group_id" to group))), primaryInstanceId = "lead")
-        fun request() = AgentRunRequest(group, "turn", "task", runId = "root", goal = "Documentary fixture",
-            context = mapOf(CollaborationGoalLoop.CRITERIA to prior, CollaborationGoalLoop.ROUND to "3"))
+        fun request() = AgentRunRequest(group, "turn", "task", runId = "root", goal = criterion.getString("requirement"),
+            context = mapOf(CollaborationGoalLoop.CRITERIA to prior, CollaborationGoalLoop.ROUND to "3",
+                CollaborationGoalLoop.ACCEPTANCE_FEEDBACK to CollaborationGoalLoop.acceptanceContext(criterion.getString("requirement"), JSONArray(prior))))
         fun clear() { database.clear(); groups.remove(group) }
     }
 
@@ -121,6 +136,19 @@ class CollaborationGoalAcceptanceDeviceTest {
             val reopened = EncryptedAgentTeamExecutionStore(f.database)
             assertEquals("achieved", reopened.snapshot("root")?.goalDisposition)
             assertFalse(reopened.advanceGoal("root", "lead", Long.MAX_VALUE))
+        } finally { f.clear() }
+    }
+
+    @Test fun twoPersonFixtureStillRequiresTheIndependentCoverageContract() {
+        val f = Fixture()
+        try {
+            val raw = f.seed()
+            assertEquals(2, f.groups.load(f.group)!!.members.size)
+            assertTrue(CollaborationGoalAcceptance(f.context).evaluate(f.access, raw, f.prior, f.request().goal).accepted)
+            val incomplete = JSONObject(raw).apply { remove("goal_coverage") }
+            val rejected = CollaborationGoalAcceptance(f.context).evaluate(f.access, incomplete.toString(), f.prior, f.request().goal)
+            assertFalse(rejected.accepted)
+            assertTrue(rejected.feedback.contains("goal_coverage"))
         } finally { f.clear() }
     }
 

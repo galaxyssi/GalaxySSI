@@ -48,6 +48,19 @@ class CollaborationReviewContractTest {
         CollaborationReviewContract.validate("decision", JSONObject().put("content", "A design decision, not an acceptance certificate"))
     }
 
+    @Test fun semanticReviewIsTypedSeparateAndCannotConcealUntestedSegments() {
+        val f = CollaborationGoalAcceptanceTest.Fixture()
+        val value = JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, f.coverageReviewBody(f.mapping))
+        CollaborationReviewContract.validate(CollaborationReviewContract.KIND, value)
+        rejected(JSONObject(value.toString()).put("acceptance_review", body().getJSONObject("acceptance_review")))
+        rejected(JSONObject().put(CollaborationSemanticGoalCoverage.REVIEW, "supported"))
+        value.getJSONObject(CollaborationSemanticGoalCoverage.REVIEW).getJSONArray("segments").getJSONObject(0)
+            .put("verdict", "not_tested")
+        rejected(value)
+        value.getJSONObject(CollaborationSemanticGoalCoverage.REVIEW).put("verdict", "not_tested")
+        CollaborationReviewContract.validate(CollaborationReviewContract.KIND, value)
+    }
+
     @Test fun malformedPublicationIsAtomicAndCanBeRepairedInNewWork() {
         val data = sortedMapOf<String, String>()
         val workspace = CollaborationResearchWorkspace(object : CollaborationWorkspaceRows {

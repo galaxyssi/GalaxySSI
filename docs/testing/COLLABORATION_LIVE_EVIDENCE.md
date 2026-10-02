@@ -8,8 +8,9 @@ This opt-in Android instrumentation fixture uses the phone's paired Codex Deskto
 - Run a read-only arithmetic command with a fresh fixture token on Desktop. Failed read-only commands may be corrected; successful commands must not be repeated solely to obtain receipts.
 - Import the actual Codex completed-item payload using the production evidence protocol, encrypted checkpoints and hashes.
 - Have DeepSeek use the host-bound `collaboration_recall` tool to inspect the original, then publish a review of the exact saved document revision.
+- Have the coordinator/author also publish a goal mapping using host-supplied source IDs and goal/criterion hashes. The peer publishes a separate typed semantic coverage review of that mapping; no third member, model-counted offsets or copied original-goal text is required.
 - Require a direct reference to the original `desktop_codex_tool/codex.commandExecution` observation and a recorded reviewer read of that exact original. Browsing its ID or reading only the author's workspace document is insufficient.
-- Require the program-owned documentary acceptance gate to accept the exact delivery and independent review. A model's `achieved` field alone cannot pass.
+- Require the program-owned acceptance gate to accept the exact delivery/review and mapping/coverage-review references. A model's `achieved` field alone cannot pass. The semantic verdict remains a reviewer judgment, not scientific truth.
 
 The fixture does not send contact messages, operate other devices or physical controls, rerun original research, or start an unbounded goal loop. Its dedicated execution store prevents a failed test from automatically expanding after the test ends. The fixture group and conversation are removed and the previous conversation selection is restored. Content-free dispatch tombstones may remain for duplicate suppression; only dedicated fixture reports are exported.
 
@@ -31,6 +32,8 @@ Reports are stored under the application's external files directory as `collabor
 ## Interpretation
 
 Passing establishes this scoped real-provider path and documentary evidence integrity. It does not establish qualified computational/scientific correctness, natural-language planner quality across arbitrary tasks, superiority over an equal-budget single Agent, device reboot/Doze recovery, other providers, or all remote native recall paths. Test the local member isolation and paging case separately with `CollaborationScopedRecallDeviceTest`.
+
+The host-source-ID mapping contract is newly integrated. Earlier recorded passes below predate that contract and are not retroactive verification of it. The local exact-integer-sum validator is a separate narrow deterministic fixture and is not used to upgrade this live documentary task into computational/scientific acceptance. New-contract verification is recorded separately at the end.
 
 ## Recorded run: 2026-10-02
 
@@ -61,3 +64,56 @@ The corrected fixture passed in **243.898 seconds** on S26U Android **1.4.18 (11
 The saved output was inspected after the test: the review contains an actual `body.acceptance_review` object, the correct original source reference and exact delivery version/hash; the final criteria preserve `required_observations`. The screenshot shows the coordinator result in the two-member conversation. The fixture removed its group/conversation and restored the prior selection. Only this synthetic report and screenshot were exported locally; no user chat history or credentials were uploaded.
 
 This is a single scoped passing sample, not a measured general reliability or superiority score. The approximately four-minute duration still needs latency investigation. The generated discussion remains overly technical in places, including long evidence identifiers; that is not claimed as polished user-facing output. Scientific/computational validators, repeated repair, long-offline/Doze/reboot acceptance and equal-budget outcome comparisons remain outstanding.
+
+## Semantic coverage integration: Android 1.4.20
+
+The first new-contract live attempt on S26U, with Desktop 1.4.2 unchanged,
+**failed final acceptance**. Codex ran the read-only command successfully and
+published the saved document and host-source-ID mapping. DeepSeek fetched the
+original command observation and produced both review objects, but its first
+tool round's prose preface had already been emitted as a final-text delta.
+Concatenating that preface with the final JSON made the complete response
+unstructured; no review publication receipt was issued. The coordinator correctly
+returned `continue` and asked for review publication rather than claiming success.
+
+This exposes a managed cloud stream framing defect, not a reason to weaken JSON
+or acceptance validation. The failed attempt remains a failed sample. The repair
+must separate intermediate tool-round commentary from the final structured
+handoff while retaining progress events and ordinary chat behavior, then pass
+local stream tests and a new full real-provider attempt.
+
+### Framing repair and strict new-contract pass
+
+Managed collaboration now buffers each model round, keeps tool/usage progress,
+and emits only the final response as protocol text. Ordinary chat streaming is
+unchanged. Interrupted drafts and presentation-only artifact suffixes cannot be
+concatenated outside the structured member result. JSON parsing and host
+acceptance checks were not loosened.
+
+The final regression passed **446 JVM tests across 38 suites**. Four additional
+loopback-only S26U stream framing/cancellation cases passed in **6.822 seconds**.
+The first cancellation fixture delayed its request upload unintentionally; moving
+the throttled response into dispatch fixed that test server, without changing
+production cancellation or increasing its deadline.
+
+One authorized real-provider retry passed in **328.873 seconds** on S26U Android
+**1.4.20 (1105)** with Desktop **1.4.2** unchanged. All three dependency nodes
+finished `SUCCEEDED`; the final disposition was `achieved`, and the host-owned
+acceptance receipt was accepted. Assertions verified the actual imported command
+observation, the peer's exact-original read, direct evidence reference, separate
+typed delivery and semantic-coverage reviews, different authorship, exact mapping
+revision and final references. The author ran the read-only command successfully
+once; no extra researchers, unrelated research or physical controls were used.
+
+Manual inspection confirmed that the saved peer response is structured JSON,
+not tool-round prose plus JSON. The final assessment references the host-assigned
+saved versions. Cleanup acknowledged durable STOP with no pending remote owners,
+removed the dedicated fixture and restored the previous selection. Only synthetic
+reports and a screenshot were retained locally, not uploaded.
+
+This is one small documentary/coverage sample, not a general reliability or
+scientific-quality score. At about five and a half minutes, latency remains an
+open issue; the displayed peer summary also contains excessive technical IDs.
+Broad semantic judgments, qualified experiments, large-goal multipart coverage,
+real-provider Doze/reboot/long-outage matrices and equal-budget superiority still
+require separate work.

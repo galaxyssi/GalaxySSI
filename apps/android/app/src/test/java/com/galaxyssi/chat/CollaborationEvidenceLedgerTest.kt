@@ -28,6 +28,29 @@ class CollaborationEvidenceLedgerTest {
         assertTrue(runCatching { ledger.bind(123, access().copy(personId = "spoofed")) }.isFailure)
     }
 
+    @Test fun exactDispatchAuthorizationSurvivesReopenButCannotBroadenItsScope() {
+        val rows = Rows()
+        val ledger = CollaborationEvidenceLedger(rows)
+        val access = access().copy(dependencyNodes = setOf("source"))
+        assertFalse(ledger.authorizes(access))
+        ledger.bind(123, access)
+        assertTrue(CollaborationEvidenceLedger(rows).authorizes(access))
+        listOf(access.copy(groupId = "other"), access.copy(runId = "other"), access.copy(turnId = "other"),
+            access.copy(nodeId = "other"), access.copy(personId = "other"), access.copy(round = 2),
+            access.copy(dependencyNodes = setOf("source", "unassigned"))).forEach { assertFalse(ledger.authorizes(it)) }
+        assertFalse(CollaborationEvidenceLedger(rows, authorized = { false }).authorizes(access))
+        rows.data.remove(rows.data.keys.single { it.endsWith("binding:123") })
+        assertFalse(ledger.authorizes(access))
+    }
+
+    @Test fun failedAtomicBindingCannotLeaveAnAuthorizedDispatchIndex() {
+        val rows = Rows().apply { fail = true }
+        val ledger = CollaborationEvidenceLedger(rows)
+        assertTrue(runCatching { ledger.bind(123, access()) }.isFailure)
+        assertFalse(ledger.authorizes(access()))
+        assertTrue(rows.data.isEmpty())
+    }
+
     @Test fun observationRetainsFullOutputAndHostIdentityAcrossReopen() {
         val rows = Rows()
         val ledger = CollaborationEvidenceLedger(rows)
