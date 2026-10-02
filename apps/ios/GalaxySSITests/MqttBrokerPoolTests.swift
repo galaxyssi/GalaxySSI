@@ -4,6 +4,54 @@ import XCTest
 final class MqttBrokerPoolTests: XCTestCase {
   private let topics: Set<String> = ["incoming", "control"]
 
+  func testNativeClientStopRejectsAllLegacyPublishEntrypoints() async throws {
+    let local = String(repeating: "a", count: 64)
+    let remote = String(repeating: "b", count: 64)
+    let secret = try GalaxySSILinkProtocol.deriveIdentityBoundLinkSecret(sharedSecret: Data(repeating: 7, count: 32),
+      firstFingerprint: local, secondFingerprint: remote)
+    let routeID = try GalaxySSILinkProtocol.deriveIdentityBoundRouteId(linkSecret: secret,
+      firstFingerprint: local, secondFingerprint: remote)
+    let routes = GalaxySSILinkRoutes(clientRouteId: routeID, linkSecret: secret,
+      localFingerprint: local, remoteFingerprint: remote)
+    let client = GalaxySSIMqttClient()
+    let payload = Data("{\"type\":\"test\"}".utf8)
+    // Configure keys without opening sockets. Offline queueing remains supported before an explicit stop.
+    client.updateSubscriptions(serverLinks: [], phoneRoutes: [routes])
+    let before = await client.publishDurable(topic: routes.upTopic, payload: payload, messageId: "pending") { _ in
+      XCTFail("No broker acknowledgement is expected without a connection")
+    }
+    XCTAssertEqual(before, .queued)
+    let pending = await client.outstandingDurableMessageIds()
+    XCTAssertEqual(pending, ["pending"])
+    await client.disconnectAndWait()
+    let afterStop = await client.outstandingDurableMessageIds()
+    XCTAssertTrue(afterStop.isEmpty)
+    let ordinary = await client.publish(topic: routes.upTopic, payload: payload)
+    let durable = await client.publishDurable(topic: routes.upTopic, payload: payload, messageId: "later") { _ in
+      XCTFail("Stopped transport cannot acknowledge")
+    }
+    let receipt = await client.publishTransportReceipt(topic: routes.upTopic, payload: payload) {
+      XCTFail("Stopped transport cannot acknowledge")
+    }
+    let pairing = await client.publishPairing(topic: routes.upTopic, secret: secret, payload: payload)
+    XCTAssertEqual(ordinary, .failed)
+    XCTAssertEqual(durable, .failed)
+    XCTAssertEqual(receipt, .failed)
+    XCTAssertEqual(pairing, .failed)
+    let finalPending = await client.outstandingDurableMessageIds()
+    XCTAssertTrue(finalPending.isEmpty)
+  }
+
+  func testSubscriptionRefreshDoesNotReenableStoppedNativeClient() async throws {
+    let client = GalaxySSIMqttClient()
+    await client.disconnectAndWait()
+    client.updateSubscriptions(serverLinks: [], phoneRoutes: [])
+    let result = await client.publishPairing(topic: String(repeating: "s", count: 43),
+      secret: Data(repeating: 7, count: 32).base64URLEncodedString(), payload: Data("{}".utf8))
+    XCTAssertEqual(result, .failed)
+    await client.disconnectAndWait()
+  }
+
   func testCatalogMatchesAndroidTLSPaths() {
     XCTAssertEqual(Set(MqttBrokerEndpoint.catalog.map(\.id)), MqttRouteProtocol.brokerIDs)
     XCTAssertEqual(MqttBrokerEndpoint.catalog.first { $0.id == "mosquitto" }?.tlsPort, 8886)

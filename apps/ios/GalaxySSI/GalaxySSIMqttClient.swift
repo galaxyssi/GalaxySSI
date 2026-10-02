@@ -212,22 +212,35 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   func disconnect() {
-    queue.async {
-      self.intentionallyDisconnected = true
-      self.reconnectWorkItem?.cancel()
-      self.reconnectWorkItem = nil
-      self.brokerAckWorkItem?.cancel()
-      self.brokerAckWorkItem = nil
-      self.brokerAckWatchdog.clear()
-      self.resetOutboundInflightForReconnect()
-      self.pendingPacketPublishes.removeAll()
-      let previous = self.connection
-      self.connection = nil
-      self.receiveBuffer.removeAll()
-      self.inboundChunkAssembler.clear()
-      self.setConnected(false)
-      previous?.cancel()
+    queue.async { self.stopTransport() }
+  }
+
+  // This fences transport writes only. The coordinator must also stop its business/Signal writers
+  // before taking a migration snapshot; queued UI callbacks are not a persistence barrier.
+  func disconnectAndWait() async {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        self.stopTransport()
+        continuation.resume()
+      }
     }
+  }
+
+  private func stopTransport() {
+    intentionallyDisconnected = true
+    reconnectWorkItem?.cancel()
+    reconnectWorkItem = nil
+    brokerAckWorkItem?.cancel()
+    brokerAckWorkItem = nil
+    brokerAckWatchdog.clear()
+    resetOutboundInflightForReconnect()
+    pendingPacketPublishes.removeAll()
+    let previous = connection
+    connection = nil
+    receiveBuffer.removeAll()
+    inboundChunkAssembler.clear()
+    setConnected(false)
+    previous?.cancel()
   }
 
   private var pathSnapshot: MqttBrokerPathSnapshot {
@@ -315,7 +328,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   func publish(topic: String, payload: Data) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
-        guard let secret = self.relationshipSecret(forSendingTopic: topic),
+        guard !self.intentionallyDisconnected,
+              let secret = self.relationshipSecret(forSendingTopic: topic),
               self.sendWirePayload(topic: topic, payload: payload, secret: secret) else {
           continuation.resume(returning: .failed)
           return
@@ -333,7 +347,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   ) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
-        guard let secret = self.relationshipSecret(forSendingTopic: topic),
+        guard !self.intentionallyDisconnected,
+              let secret = self.relationshipSecret(forSendingTopic: topic),
               self.sendWirePayload(
                 topic: topic,
                 payload: payload,
@@ -366,7 +381,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   ) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
-        guard let secret = self.relationshipSecret(forSendingTopic: topic),
+        guard !self.intentionallyDisconnected,
+              let secret = self.relationshipSecret(forSendingTopic: topic),
               self.sendWirePayload(
                 topic: topic,
                 payload: payload,
@@ -384,7 +400,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   func publishPairing(topic: String, secret: String, payload: Data) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
-        guard GalaxySSILinkProtocol.validTopic(topic),
+        guard !self.intentionallyDisconnected,
+              GalaxySSILinkProtocol.validTopic(topic),
               GalaxySSILinkProtocol.validLinkSecret(secret),
               let sealed = try? GalaxySSILinkProtocol.sealWirePacket(payload, secret: secret) else {
           continuation.resume(returning: .failed)
