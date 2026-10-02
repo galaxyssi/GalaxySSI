@@ -47,6 +47,8 @@ data class AgentModelToolResultContent(
             nativeResult?.get("metadata")?.let { put("metadata", it) }
             nativeResult?.get("verification")?.let { put("verification", it) }
             nativeResult?.get("provenance")?.let { put("provenance", it) }
+            nativeResult?.get("galaxyssi_evidence_receipt")?.let { put("galaxyssi_evidence_receipt", it) }
+            nativeResult?.get("galaxyssi_evidence_recording")?.let { put("galaxyssi_evidence_recording", it) }
         }
         return enveloped(evidence)
     }
@@ -197,7 +199,8 @@ data class AgentModelToolLoopRequest(
     val cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
     val eventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE,
     val loopId: String = "",
-    val recoveryInputIdentity: String = ""
+    val recoveryInputIdentity: String = "",
+    val collaborationSourceMessageId: Long? = null
 ) {
     init {
         validateBoundId("Session", sessionId)
@@ -972,6 +975,7 @@ class AgentModelToolLoop(
                 conversationId = state.request.conversationId,
                 turnId = state.request.turnId,
                 callerId = state.request.callerId,
+                collaborationSourceMessageId = state.request.collaborationSourceMessageId,
                 requestedAtEpochMillis = clock.nowEpochMillis(),
                 deadlineEpochMillis = null,
                 idempotencyKey = invocation.idempotencyKey,

@@ -137,6 +137,10 @@ internal fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatchi
             replayed = receiptJson.optBoolean("replayed"),
             originalInvocationId = receiptJson.nullableString("original_invocation_id")
         ),
+        collaborationObservation = if (has("galaxyssi_evidence_receipt") || has("galaxyssi_evidence_recording")) {
+            AgentNativeToolObservation(optJSONObject("galaxyssi_evidence_receipt")?.toNativeObject(),
+                optJSONObject("galaxyssi_evidence_recording")?.toNativeObject())
+        } else null,
         provenance = AgentNativeToolProvenance(
             toolId = provenanceJson.getString("tool_id"),
             toolVersion = provenanceJson.getString("tool_version"),
@@ -153,7 +157,7 @@ internal fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatchi
 private fun JSONObject.nullableString(key: String): String? =
     if (!has(key) || isNull(key)) null else getString(key).takeIf(String::isNotBlank)
 
-private fun JSONObject?.toNativeObject(): AgentNativeJsonObject {
+internal fun JSONObject?.toNativeObject(): AgentNativeJsonObject {
     val source = this ?: return emptyMap()
     return source.keys().asSequence().associateWith { key -> source.opt(key).toNativeValue() }
 }

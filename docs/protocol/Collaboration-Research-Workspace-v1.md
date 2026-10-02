@@ -49,7 +49,19 @@ A receipt's `returned` status means a tool returned structured output. It does n
 
 Workspace publication resolves `observations` against this ledger. Missing IDs, mismatched hashes, corrupt records and inaccessible current independent work reject publication. The host copies the validated references into `host_observations`; model-supplied values for that field are ignored. The workspace revision itself remains `member_reported_not_verified`. Existing research checkpoints retain the receipt with the saved tool output, so restoring the same observation does not require another lookup.
 
-The optional recorder is absent for ordinary non-collaboration chats. These changes currently cover Android managed streaming cloud research and the tools it actually executes. Native-tool registry observations, legacy non-streaming paths and authenticated Desktop/Codex result receipts still require explicit adapters. Missing adapters must not be represented as observed evidence.
+The optional recorder is absent for ordinary non-collaboration chats. Coverage includes Android managed streaming cloud research and explicitly bound native model-loop invocations. Legacy non-streaming paths, native callers without a managed dispatch identity, and authenticated Desktop/Codex result receipts still require explicit adapters. Missing adapters must not be represented as observed evidence.
+
+### Native execution observations
+
+`AgentNativeToolInvocationContext.collaborationSourceMessageId` is supplied by the host, never parsed from model tool arguments or generic attributes. The native recorder resolves the exact immutable source/group/turn binding before assigning member identity. Managed local-model web loops carry this identity from dispatch; registry subsets retain the recorder. Ordinary invocations do not open the collaboration ledger.
+
+Native observations use `origin=android_native_tool` and preserve the complete native result, including execution status, verifier outcome, input/output hashes, tool version, executor provenance and replay information. `verification_failed`, unavailable, rejected, cancelled and timed-out results are failed evidence. A native verifier normally checks the tool contract; it does not certify a scientific claim or satisfy computational/physical goal criteria by itself.
+
+The registry commits any side-effect outcome first, then records collaboration evidence, then returns host-owned `galaxyssi_evidence_receipt` outside executor-controlled output/metadata. Recording failure preserves the actual outcome and provides `galaxyssi_evidence_recording` with no receipt and `do_not_reexecute=true`. Removed or mismatched group bindings cannot issue evidence. This bookkeeping path does not grant tool permissions or revive revoked group membership.
+
+Each observation ID combines the native invocation ID and exact result digest. Re-observing an identical result is idempotent. A registry replay is a distinct observation of the original effect, explicitly marked `replayed`; it is not counted as a new experiment. Same-member retries retain side-effect deduplication, while different managed members have distinct effect scopes even if a model repeats an idempotency key. Unbound existing effect identities are unchanged.
+
+Typed host metadata survives native-result codecs, compact model projection and encrypted loop checkpoints. Checkpoint bindings include the managed source identity, preventing another member from restoring the same loop as its own. Restoring a committed result does not call the tool or recorder again. Exact referenced observations still undergo the ledger's normal access and hash checks before publication or acceptance.
 
 ## Goal acceptance checkpoint
 

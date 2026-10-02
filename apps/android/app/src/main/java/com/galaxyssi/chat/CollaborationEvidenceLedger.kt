@@ -7,6 +7,10 @@ import java.util.UUID
 
 internal class CollaborationEvidenceAccessRevoked : IllegalStateException("Group access was removed")
 
+internal enum class CollaborationEvidenceOrigin(val wireValue: String) {
+    ANDROID_CLOUD_TOOL("android_cloud_tool"), ANDROID_NATIVE_TOOL("android_native_tool")
+}
+
 /** Host observations establish what ran and what it returned, never the truth of a model's conclusion. */
 internal class CollaborationEvidenceLedger(
     private val rows: CollaborationWorkspaceRows,
@@ -41,7 +45,8 @@ internal class CollaborationEvidenceLedger(
     }
 
     fun record(access: CollaborationWorkspaceAccess, invocationId: String, tool: String, input: String,
-               output: String, started: Long, finished: Long): JSONObject = synchronized(LOCK) {
+               output: String, started: Long, finished: Long,
+               origin: CollaborationEvidenceOrigin = CollaborationEvidenceOrigin.ANDROID_CLOUD_TOOL): JSONObject = synchronized(LOCK) {
         if (!authorized(access.groupId)) throw CollaborationEvidenceAccessRevoked()
         require(access.runId.isNotBlank() && access.turnId.isNotBlank() && access.nodeId.isNotBlank() &&
             access.personId.isNotBlank() && invocationId.isNotBlank() && tool.isNotBlank())
@@ -49,13 +54,13 @@ internal class CollaborationEvidenceLedger(
         val parsed = runCatching { JSONObject(output) }.getOrNull()
         val status = when {
             parsed == null -> "unstructured"
-            parsed.optString("status") in setOf("failed", "error", "cancelled", "timed_out", "unavailable", "rejected") ||
+            parsed.optString("status") in setOf("failed", "error", "cancelled", "timed_out", "unavailable", "rejected", "verification_failed") ||
                 parsed.opt("error")?.let { it != JSONObject.NULL && it.toString().isNotBlank() } == true -> "failed"
             else -> "returned"
         }
         val id = digest(JSONArray(listOf(access.runId, access.nodeId, invocationId)).toString())
         val payload = identity(access).put("evidence_id", id).put("invocation_id", invocationId)
-            .put("tool", tool).put("status", status).put("origin", "android_cloud_tool")
+            .put("tool", tool).put("status", status).put("origin", origin.wireValue)
             .put("observation_kind", if (tool == ResearchEvidenceAudit.TOOL) "member_assessment_recorded" else "tool_output_recorded")
             .put("input_json", input).put("output_json", output)
             .put("input_sha256", digest(input)).put("output_sha256", digest(output))

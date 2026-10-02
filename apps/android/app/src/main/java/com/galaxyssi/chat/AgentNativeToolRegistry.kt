@@ -501,7 +501,8 @@ data class AgentNativeToolInvocationContext(
     val idempotencyKey: String? = null,
     val grantedPermissions: Set<String> = emptySet(),
     val grantedConsents: Set<String> = emptySet(),
-    val attributes: Map<String, String> = emptyMap()
+    val attributes: Map<String, String> = emptyMap(),
+    val collaborationSourceMessageId: Long? = null
 ) {
     init {
         require(invocationId.isNotBlank()) { "Invocation id must not be blank" }
@@ -739,7 +740,8 @@ data class AgentNativeToolResult(
     val error: AgentNativeToolError?,
     val verification: AgentNativeToolVerification?,
     val receipt: AgentNativeToolReceipt,
-    val provenance: AgentNativeToolProvenance
+    val provenance: AgentNativeToolProvenance,
+    val collaborationObservation: AgentNativeToolObservation? = null
 ) {
     val isSuccess: Boolean get() = status == AgentNativeToolResultStatus.SUCCEEDED
 
@@ -786,7 +788,10 @@ data class AgentNativeToolResult(
             "legacy_agent_action_id" to provenance.legacyAgentActionId,
             "metadata" to provenance.metadata
         )
-    )
+    ).apply {
+        collaborationObservation?.receipt?.let { put("galaxyssi_evidence_receipt", it) }
+        collaborationObservation?.recording?.let { put("galaxyssi_evidence_recording", it) }
+    }
 }
 
 class AgentNativeToolInvocationHooks(
@@ -838,7 +843,8 @@ class AgentNativeToolRegistry(
     private val clock: AgentNativeClock = AgentNativeClock.SYSTEM,
     private val replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
     private val auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
-    private val descriptorCacheTtlMillis: Long = DEFAULT_DESCRIPTOR_CACHE_TTL_MILLIS
+    private val descriptorCacheTtlMillis: Long = DEFAULT_DESCRIPTOR_CACHE_TTL_MILLIS,
+    private val observationRecorder: AgentNativeToolObservationRecorder? = null
 ) {
     private val definitions = LinkedHashMap<String, AgentNativeToolDefinition>()
     private var descriptorSnapshot: DescriptorSnapshot? = null
@@ -889,7 +895,7 @@ class AgentNativeToolRegistry(
     /** Creates an independent registry view without exposing executor implementations to callers. */
     @Synchronized
     fun subset(predicate: (AgentNativeToolDescriptor) -> Boolean): AgentNativeToolRegistry =
-        AgentNativeToolRegistry(clock, replayStore, auditStore, descriptorCacheTtlMillis).registerAll(
+        AgentNativeToolRegistry(clock, replayStore, auditStore, descriptorCacheTtlMillis, observationRecorder).registerAll(
             definitions.values.filter { predicate(resolvedDescriptor(it)) }
         )
 
@@ -1093,8 +1099,9 @@ class AgentNativeToolRegistry(
                 auditStore,
                 AgentNativeToolAuditRecord.from(result, context, descriptor.risk)
             )
-            runHook { hooks.onFinished(result) }
-            return result
+            val observed = observeResult(input, context, result)
+            runHook { hooks.onFinished(observed) }
+            return observed
         }
 
         fun observedOutcome(observation: AgentNativeEffectClaim): AgentNativeToolResult {
@@ -1325,8 +1332,18 @@ class AgentNativeToolRegistry(
                 )
             )
         }
-        runHook { hooks.onFinished(result) }
-        return result
+        val observed = observeResult(input, context, result)
+        runHook { hooks.onFinished(observed) }
+        return observed
+    }
+
+    private fun observeResult(input: AgentNativeJsonObject, context: AgentNativeToolInvocationContext,
+                              result: AgentNativeToolResult): AgentNativeToolResult {
+        if (context.collaborationSourceMessageId == null) return result
+        val recorder = observationRecorder ?: return result
+        val observation = try { recorder.record(input, context, result) }
+        catch (_: Exception) { AgentNativeToolObservation.notDurable("observation_storage_failed") }
+        return result.copy(collaborationObservation = observation)
     }
 
     private fun validationDetails(result: AgentNativeValidationResult): AgentNativeJsonObject = mapOf(
