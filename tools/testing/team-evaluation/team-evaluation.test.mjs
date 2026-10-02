@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { readJson } from "../../benchmark/agent-benchmark-lib.mjs";
 import { accountingTemplate, assessQuality, compare, createPlan, digest, importBenchmark,
-  measureRun, renderMarkdown, reviewerPacket, UNKNOWN, validatePlan } from "./lib.mjs";
+  measureRun, renderMarkdown, reviewerPacket, UNKNOWN, validateCorpus, validateExport, validatePlan } from "./lib.mjs";
 import { fixtureExport } from "./fixture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +21,39 @@ const reportFor = ({ plan, input }) => compare(plan, corpus, input, "fixture");
 const observed = (value) => ({ value, complete: true, evidence_ref: "unit-test-only" });
 function firstKnown(data) { return data.input.runs.find((r) => r.accounting.ledger.calls[0].cost_micros.complete); }
 function rowFor(report, run) { return report.records.find((r) => r.slot_id === run.slot_id); }
+
+function makeActual(sourceConfig = { ...config, controls: {
+  model_policy: "pinned-model-parameters", tool_policy: "read-only-tools-v1",
+  environment: "test-build-digest", context_policy: "reset-every-slot-v1"
+} }) {
+  // Independent in-memory schema test data, not captured execution or relabeled fixtures.
+  const { plan } = createPlan(corpus, sourceConfig);
+  const input = { schema_version: 1, evidence_kind: "actual", plan_sha256: plan.plan_sha256,
+    warning: "UNIT_TEST_ONLY: constructed receipts, not observed execution.",
+    runs: plan.slots.map((slot) => {
+      const scenario = corpus.scenarios.find((s) => s.id === slot.scenario_id);
+      const runId = `test-run-${slot.slot_id}`;
+      const ref = (name) => `unit-test-receipts.json#${runId}/${name}`;
+      const receipt = (name, value) => ({ value, complete: true, evidence_ref: ref(name) });
+      const failed = scenario.id === corpus.scenarios[0].id && slot.repetition === 2;
+      return {
+        slot_id: slot.slot_id, run_id: runId, evidence_kind: "actual",
+        controls: structuredClone(plan.controls),
+        budget: { limits: structuredClone(plan.budget), scope: "entire_trial", enforced: true, evidence_ref: ref("budget") },
+        capture: { complete: true, assignment_verified: true, controls_verified: true, reset_verified: true,
+          scope: "entire_trial", order: slot.order, request_sha256: digest(scenario.request), evidence_ref: ref("capture") },
+        result: { run_id: runId, scenario_id: scenario.id, status: failed ? "failed" : "completed",
+          response: failed ? "" : JSON.stringify(scenario.answers), events: [], tools: [],
+          failure_reasons: failed ? ["unit-test-terminal-failure"] : [] },
+        accounting: { wall_time_ms: receipt("wall-time", 1200), rework_count: receipt("rework", failed ? 1 : 0),
+          intervention_count: receipt("intervention", 0),
+          ledger: { complete: true, scope: "entire_trial", evidence_ref: ref("ledger"), participants: ["test-participant"],
+            calls: [{ call_id: `${runId}-call-1`, participant_id: "test-participant",
+              total_tokens: receipt("tokens", 300), cost_micros: receipt("cost", 500) }] } }
+      };
+    }) };
+  return { plan, input };
+}
 
 test("fixed corpus has six types and three repeated paired trials with balanced order", () => {
   const { plan, private_key } = make();
@@ -335,26 +368,159 @@ test("eligible differences use matched pairs, with task-level repetition counts"
   assert.equal(report.by_task.reduce((n, task) => n + task.eligible_pairs, 0), 17);
 });
 
-test("mock actual-shaped evidence stays descriptive, and placeholder policies exclude it", () => {
-  // Unit-test mock only; never emitted as an actual run artifact by the CLI.
-  const realConfig = structuredClone(config);
-  realConfig.controls = { model_policy: "pinned-model-parameters", tool_policy: "read-only-tools-v1",
-    environment: "test-build-digest", context_policy: "reset-every-slot-v1" };
-  const { plan } = createPlan(corpus, realConfig);
-  const input = fixtureExport(plan, corpus);
-  input.evidence_kind = "actual";
-  for (const run of input.runs) {
-    run.evidence_kind = "actual";
-    run.accounting.ledger.calls[0].cost_micros = observed(500);
-  }
+test("independently built actual-shaped receipts stay descriptive and placeholder policies exclude them", () => {
+  const { plan, input } = makeActual();
   const report = compare(plan, corpus, input, "actual");
   assert.equal(report.eligible_pairs, 18);
   assert.equal(report.conclusion, "DESCRIPTIVE_ONLY_NO_SUPERIORITY_CLAIM");
   assert.equal(report.arms.A.failed, 1);
-  const placeholder = make();
-  placeholder.input.evidence_kind = "actual";
-  for (const run of placeholder.input.runs) run.evidence_kind = "actual";
+  assert.equal(report.arms.B.failed, 1);
+  assert.equal(JSON.stringify(input).includes("FIXTURE_ONLY"), false);
+  const placeholder = makeActual(config);
   assert.equal(compare(placeholder.plan, corpus, placeholder.input, "actual").eligible_pairs, 0);
+});
+
+test("actual provenance rejects each explicit fixture receipt field independently", () => {
+  const targets = [
+    (r) => r.budget, (r) => r.capture, (r) => r.accounting.ledger,
+    (r) => r.accounting.wall_time_ms, (r) => r.accounting.rework_count,
+    (r) => r.accounting.intervention_count,
+    (r) => r.accounting.ledger.calls[0].total_tokens,
+    (r) => r.accounting.ledger.calls[0].cost_micros
+  ];
+  const markers = ["FIXTURE_ONLY", "FIXTURE_ONLY:receipt", " fixture_only:receipt \n",
+    "FIXTURE_ONLY-receipt", "FIXTURE_ONLY_receipt", "FIXTURE_ONLY receipt"];
+  for (const target of targets) for (const marker of markers) {
+    const { plan, input } = makeActual();
+    target(input.runs[0]).evidence_ref = marker;
+    assert.throws(() => validateExport(input, plan, "actual"), /Explicit fixture provenance/, marker);
+  }
+});
+
+test("actual provenance checks cover later failed calls and all importing or reporting entry points", () => {
+  const { plan, input } = makeActual();
+  const run = input.runs.at(-1);
+  run.accounting.ledger.calls.push({ call_id: "late-failed-call", participant_id: "test-participant", status: "failed",
+    total_tokens: observed(10), cost_micros: { ...observed(20), evidence_ref: "FIXTURE_ONLY:failed-call" } });
+  assert.throws(() => compare(plan, corpus, input, "actual"), /Explicit fixture provenance/);
+  assert.throws(() => reviewerPacket(plan, corpus, input, "actual"), /Explicit fixture provenance/);
+  const results = input.runs.map((r) => r.result);
+  const accounting = { ...input, runs: input.runs.map(({ result, ...row }) => row) };
+  assert.throws(() => importBenchmark(plan, corpus, { results }, accounting), /Explicit fixture provenance/);
+});
+
+test("fixture marker checks do not scan answer bodies or result metadata", () => {
+  const { plan, input } = makeActual();
+  const run = input.runs.find((r) => r.result.status === "completed");
+  run.result.response = JSON.stringify({ quoted_text: "FIXTURE_ONLY: source text, not a receipt" });
+  run.result.events = [{ message: "FIXTURE_ONLY: quoted source" }];
+  run.result.failure_reasons = ["FIXTURE_ONLY: quoted diagnostic"];
+  assert.equal(validateExport(input, plan, "actual"), input);
+  assert.equal(rowFor(compare(plan, corpus, input, "actual"), run).eligible, true);
+  const packet = reviewerPacket(plan, corpus, input, "actual");
+  assert.equal(packet.items.find((item) => item.slot_id === run.slot_id).response, run.result.response);
+});
+
+test("receipt marker matching is explicit and does not coerce unknown references", () => {
+  const { plan, input } = makeActual();
+  const cost = input.runs[0].accounting.ledger.calls[0].cost_micros;
+  for (const ref of ["NOT_FIXTURE_ONLY:receipt", "FIXTURE_ONLYISH:receipt", "test-receipt-123"]) {
+    cost.evidence_ref = ref;
+    assert.equal(validateExport(input, plan, "actual"), input);
+    assert.equal(measureRun(input.runs[0]).cost_micros, 500);
+  }
+  for (const ref of [undefined, null, 0, false, {}, " "]) {
+    cost.evidence_ref = ref;
+    assert.equal(validateExport(input, plan, "actual"), input);
+    assert.equal(measureRun(input.runs[0]).cost_micros, UNKNOWN);
+  }
+  cost.evidence_ref = "FIXTURE_ONLY:incomplete";
+  cost.complete = false;
+  assert.throws(() => validateExport(input, plan, "actual"), /Explicit fixture provenance/);
+});
+
+test("quality excludes pure latency for either criticality without mutating the scenario", () => {
+  for (const critical of [false, true]) {
+    const scenario = structuredClone(corpus.scenarios[0]);
+    scenario.expect.max_duration_ms = 100;
+    scenario.expect.latency_is_critical = critical;
+    const original = structuredClone(scenario);
+    const result = { status: "completed", response: JSON.stringify(scenario.answers), duration_ms: 99 };
+    const quality = assessQuality(scenario, result);
+    assert.equal(quality.score, 1);
+    assert.equal(quality.passed, true);
+    assert.equal(quality.assertions.some((a) => a.name === "latency_budget"), false);
+    for (const duration of [100, 101, undefined]) {
+      assert.deepEqual(assessQuality(scenario, { ...result, duration_ms: duration }), quality);
+    }
+    assert.deepEqual(scenario, original);
+  }
+});
+
+test("removing latency from quality keeps tool and terminal failures authoritative", () => {
+  const scenario = structuredClone(corpus.scenarios.at(-1));
+  scenario.expect.max_duration_ms = 1;
+  scenario.expect.latency_is_critical = true;
+  const result = { status: "completed", response: JSON.stringify(scenario.answers), duration_ms: 2 };
+  const unsafe = assessQuality(scenario, { ...result, tools: ["upload"] });
+  assert.equal(unsafe.score, 0);
+  assert.equal(unsafe.passed, false);
+  assert.ok(unsafe.assertions.some((a) => a.name === "forbidden_tools" && !a.passed));
+  const failed = assessQuality(scenario, { ...result, status: "failed" });
+  assert.equal(failed.score, 0);
+  assert.equal(failed.passed, false);
+});
+
+test("custom-corpus quality stays separate while whole-trial wall-time eligibility is enforced", () => {
+  const custom = structuredClone(corpus);
+  const scenario = custom.scenarios.find((s) => s.id === "dependency-plan");
+  scenario.expect.max_duration_ms = 100;
+  scenario.expect.latency_is_critical = true;
+  const { plan } = createPlan(custom, config);
+  const input = fixtureExport(plan, custom);
+  const run = input.runs.find((r) => r.result.scenario_id === scenario.id);
+  const row = () => rowFor(compare(plan, custom, input, "fixture"), run);
+  run.result.duration_ms = 101;
+  run.accounting.wall_time_ms = observed(plan.budget.max_wall_time_ms);
+  assert.equal(row().metrics.quality, 1);
+  assert.equal(row().eligible, true);
+  run.accounting.wall_time_ms.value += 1;
+  assert.equal(row().metrics.quality, 1);
+  assert.ok(row().exclusion_reasons.includes("over_budget_wall_time_ms"));
+  assert.equal(row().eligible, false);
+  run.accounting.wall_time_ms = { value: UNKNOWN, complete: false };
+  assert.equal(row().metrics.quality, 1);
+  assert.ok(row().exclusion_reasons.includes("unknown_wall_time_ms"));
+  assert.equal(row().eligible, false);
+});
+
+test("canonical request deduplication ignores nested object key order", () => {
+  const custom = structuredClone(corpus);
+  const prompt = custom.scenarios[0].request.prompt;
+  custom.scenarios[0].request = { prompt, context: { rows: [{ id: "r1", count: 2 }], options: { a: 1, b: 2 } } };
+  custom.scenarios[1].request = { context: { options: { b: 2, a: 1 }, rows: [{ count: 2, id: "r1" }] }, prompt };
+  assert.equal(digest(custom.scenarios[0].request), digest(custom.scenarios[1].request));
+  assert.throws(() => validateCorpus(custom), /Duplicate corpus request/);
+  assert.throws(() => createPlan(custom, config), /Duplicate corpus request/);
+});
+
+test("canonical request deduplication preserves meaningful array content and scheduled repetitions", () => {
+  const custom = structuredClone(corpus);
+  const prompt = custom.scenarios[0].request.prompt;
+  custom.scenarios[0].request = { prompt, context: ["first", "second"] };
+  custom.scenarios[1].request = { prompt, context: ["second", "first"] };
+  assert.notEqual(digest(custom.scenarios[0].request), digest(custom.scenarios[1].request));
+  assert.equal(validateCorpus(custom), custom);
+  for (const repetitions of [3, 4, 10]) {
+    const { plan } = createPlan(custom, config, repetitions);
+    assert.equal(validatePlan(plan, custom), plan);
+    assert.equal(plan.slots.length, custom.scenarios.length * repetitions * 2);
+    for (const scenario of custom.scenarios) for (const arm of ["A", "B"]) {
+      const slots = plan.slots.filter((s) => s.scenario_id === scenario.id && s.arm_label === arm);
+      assert.equal(slots.length, repetitions);
+      assert.equal(new Set(slots.map((s) => s.repetition)).size, repetitions);
+    }
+  }
 });
 
 test("config caps are exact typed limits and four controlled policies are mandatory", () => {
