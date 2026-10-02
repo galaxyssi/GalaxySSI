@@ -28,6 +28,7 @@ struct GalaxySSIAgentComposerView: View {
   var onScan: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
+  var onAnalyzeScreenshot: () -> Void = {}
   var onSend: () -> Void
   var onPendingPrimaryAction: () -> Void
   var onVoiceStart: () -> Void
@@ -516,6 +517,12 @@ struct GalaxySSIAgentComposerView: View {
         title: t("agent_attachment_add_file", "Add file"),
         systemImage: "doc.badge.plus",
         perform: onAddFile
+      ),
+      GalaxySSIComposerTrayAction(
+        id: .screenshot,
+        title: t("galaxyssi.screen_assistant.analyze", "Analyze screenshot"),
+        systemImage: "viewfinder",
+        perform: onAnalyzeScreenshot
       )
     ]
   }
