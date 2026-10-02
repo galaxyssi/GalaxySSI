@@ -112,6 +112,24 @@ final class MqttPeerRouteSessionTests: XCTestCase {
     XCTAssertTrue(try session.maintenance(readyGenerations: paths).isEmpty)
   }
 
+  func testSchedulerRouteRequiresCurrentHandshakeAndDoesNotExtendDuplicateLease() throws {
+    let session = try makeSession()
+    let local = try advertised(session)
+    let inbound = remote()
+    XCTAssertNil(session.schedulingRoute(readyGenerations: paths))
+    _ = try receive(session, ack(local: local, advertisement: inbound))
+    let route = try XCTUnwrap(session.schedulingRoute(readyGenerations: paths))
+    let policy = MqttMultipathPolicy()
+    policy.synchronize(["emqx": .init(brokerID: "emqx", generation: 1, connected: true, subscriptions: ["inbox"])])
+    XCTAssertTrue(policy.acceptVerifiedResume(peer: "pair", route: route, now: uptime))
+    advance(1000)
+    _ = try receive(session, inbound.wire())
+    XCTAssertEqual(session.schedulingRoute(readyGenerations: paths), route)
+    XCTAssertNil(session.schedulingRoute(readyGenerations: ["emqx": 2]))
+    session.setEnabled(false)
+    XCTAssertNil(session.schedulingRoute(readyGenerations: paths))
+  }
+
   func testStalledRecoveryRenewsOnlyTheVerifiedPeerAndRejectsOldACK() throws {
     let first = try makeSession()
     let second = try makeSession(scope: "second")

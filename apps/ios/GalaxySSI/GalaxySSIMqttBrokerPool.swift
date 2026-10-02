@@ -3,6 +3,7 @@ import Foundation
 // Each path owns a TLS connection, packet IDs, SUBACKs and PUBACKs. All aggregate
 // state is confined to queue; an old path callback cannot authorize a new path.
 final class GalaxySSIMqttBrokerPool {
+  let policy: MqttMultipathPolicy
   private let queue = DispatchQueue(label: "com.galaxyssi.ios.mqtt.pool")
   private var paths: [String: MqttBrokerPathTransport] = [:]
   private var snapshots: [String: MqttBrokerPathSnapshot] = [:]
@@ -11,7 +12,9 @@ final class GalaxySSIMqttBrokerPool {
   var onPathState: (([String: MqttBrokerPathSnapshot]) -> Void)?
   var onAuthenticatedIngress: ((MqttAuthenticatedIngress) -> Void)?
 
-  init(factory: (MqttBrokerEndpoint) -> MqttBrokerPathTransport = { GalaxySSIMqttClient(endpoint: $0) }) {
+  init(policy: MqttMultipathPolicy = MqttMultipathPolicy(),
+       factory: (MqttBrokerEndpoint) -> MqttBrokerPathTransport = { GalaxySSIMqttClient(endpoint: $0) }) {
+    self.policy = policy
     for endpoint in MqttBrokerEndpoint.catalog {
       let path = factory(endpoint)
       paths[endpoint.id] = path
@@ -22,6 +25,7 @@ final class GalaxySSIMqttBrokerPool {
                 !snapshot.connected || snapshot.generation > 0,
                 snapshot.generation >= (self.snapshots[endpoint.id]?.generation ?? 0) else { return }
           self.snapshots[endpoint.id] = snapshot
+          self.policy.synchronize(self.snapshots)
           self.onPathState?(self.snapshots)
         }
       }
@@ -43,6 +47,7 @@ final class GalaxySSIMqttBrokerPool {
       self.running = true
       self.configurationID = UUID().uuidString
       self.snapshots.removeAll()
+      self.policy.synchronize([:])
       self.onPathState?([:])
       for (id, path) in self.paths {
         var scoped = configuration
@@ -100,12 +105,14 @@ final class GalaxySSIMqttBrokerPool {
       self.running = false
       self.configurationID = UUID().uuidString
       self.snapshots.removeAll()
+      self.policy.synchronize([:])
       self.paths.values.forEach { $0.disconnect() }
       self.onPathState?([:])
     }
   }
 
   deinit {
+    policy.synchronize([:])
     paths.values.forEach {
       $0.onPathState = nil
       $0.onAuthenticatedIngress = nil

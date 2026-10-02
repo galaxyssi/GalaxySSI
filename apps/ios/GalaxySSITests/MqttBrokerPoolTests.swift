@@ -55,6 +55,7 @@ final class MqttBrokerPoolTests: XCTestCase {
     paths["hivemq"]!.emit(snapshot("hivemq", topics: ["incoming"]))
     let ready = await pool.readyGenerations(for: topics)
     XCTAssertEqual(ready, ["emqx": 1])
+    XCTAssertEqual(pool.policy.readyBrokers(receiveTopics: topics), ["emqx"])
     XCTAssertEqual(Set(paths.values.compactMap { $0.configuration?.clientID }),
                    ["test:emqx", "test:hivemq", "test:mosquitto"])
   }
@@ -101,6 +102,7 @@ final class MqttBrokerPoolTests: XCTestCase {
     pool.disconnect()
     let stopped = await pool.readyGenerations(for: topics)
     XCTAssertTrue(stopped.isEmpty)
+    XCTAssertTrue(pool.policy.readyBrokers(receiveTopics: topics).isEmpty)
     await start(pool)
     paths["emqx"]!.emit(snapshot("emqx", topics: topics), configurationID: oldConfigurationID)
     let stale = await pool.readyGenerations(for: topics)

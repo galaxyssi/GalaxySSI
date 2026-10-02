@@ -161,6 +161,16 @@ final class MqttPeerRouteSession {
     return true
   }
 
+  // Keep the monotonic remote deadline stable across duplicate advertisements.
+  // Physical dispatch must still recheck ready() and the current relationship binding.
+  func schedulingRoute(readyGenerations: [String: Int64]) -> MqttMultipathPolicy.PeerRoute? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard ready(readyGenerations: readyGenerations), let remote else { return nil }
+    return .init(epoch: remote.epoch, receiveBrokers: remote.receiveBrokers, packetBytes: remote.packetBytes,
+                 chunkACKs: true, expiresAt: remoteLeaseUntil)
+  }
+
   // Android #3234: renew only this verified peer after 30s blocked, at most once per 120s.
   // Durable epoch/replay metadata, relationship keys, and other peers remain untouched.
   func recoverBlockedSend(readyGenerations: [String: Int64]) -> Bool {
