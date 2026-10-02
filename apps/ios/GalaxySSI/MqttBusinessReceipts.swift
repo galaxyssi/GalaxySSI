@@ -1,6 +1,6 @@
 import Foundation
 
-// Pair-AEAD ingress only. Signal-encrypted application delivery_ack replay is owned by the inbox consumer.
+// Both raw pair-AEAD receipts and previously decrypted durable application receipts.
 final class MqttBusinessReceipts {
   private let routes: MqttPeerRoutes
   private let outbox: MqttBusinessOutbox
@@ -10,6 +10,35 @@ final class MqttBusinessReceipts {
   init(routes: MqttPeerRoutes, outbox: MqttBusinessOutbox, dispatcher: MqttDeliveryDispatch,
        now: @escaping () -> Date = Date.init) {
     self.routes = routes; self.outbox = outbox; self.dispatcher = dispatcher; self.now = now
+  }
+
+  func consumeStored(identity: MqttBusinessIdentity, receiptMessageID: String,
+                     journal: MqttSignalStateJournal) async throws -> MqttDeliveryCompletions.Event? {
+    guard let event = try routes.consumeStoredReceipt(identity: identity, receiptMessageID: receiptMessageID,
+      journal: journal, now: now()) else { return nil }
+    return try await resumeCompletion(identity: identity, messageID: event.messageID, journal: journal)
+  }
+
+  // Recover the commit-to-dispatch gap without consuming the UI/attachment event. Never trust a
+  // caller-supplied event as delivery proof; reload it under the current relationship fence.
+  func resumeCompletion(identity: MqttBusinessIdentity, messageID: String,
+                        journal: MqttSignalStateJournal) async throws -> MqttDeliveryCompletions.Event? {
+    guard let event = try routes.withIdentity(identity, commit: {
+      try journal.outbox.completions.event(identity: identity, messageID: messageID)
+    }) else { return nil }
+    let verify = {
+      try self.routes.withIdentity(identity) {
+        guard let saved = try journal.outbox.completions.event(identity: identity, messageID: messageID),
+              saved.wireHash == event.wireHash, saved.traffic == event.traffic else {
+          throw MqttRouteError.unsolicitedAcknowledgement
+        }
+      }
+    }
+    // Application receipts prove logical delivery, not the RTT of any physical broker attempt.
+    let accepted = try await dispatcher.acceptVerifiedMessage(peer: identity.scope, messageID: messageID,
+      contentHash: event.wireHash, commit: verify)
+    if !accepted { try verify() }
+    return event
   }
 
   func accept(_ packet: MqttPeerRoutes.VerifiedPacket) async throws -> MqttDeliveryCompletions.Event? {

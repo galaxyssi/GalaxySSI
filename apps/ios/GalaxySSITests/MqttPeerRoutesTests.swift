@@ -2,6 +2,68 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testStoredReceiptCancelsDispatchOnlyAfterDurableConsumption() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    _ = try await f.dispatch.submit(topic: f.peer.binding.sendTopic, delivery: XCTUnwrap(f.peer.prepare()))
+    try f.stageStoredReceipt()
+    try f.storage.execute("CREATE TRIGGER fail_consume BEFORE UPDATE ON mqtt_business_inbox BEGIN SELECT RAISE(ABORT,'forced'); END")
+    do { _ = try await f.receipts.consumeStored(identity: f.entry.identity, receiptMessageID: "ack", journal: f.journal)
+      XCTFail("Consumption failure must propagate") }
+    catch { XCTAssertTrue(error is MqttChunkStorageError) }
+    XCTAssertTrue(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+    try f.storage.execute("DROP TRIGGER fail_consume")
+    let event = try await f.receipts.consumeStored(identity: f.entry.identity, receiptMessageID: "ack", journal: f.journal)
+    XCTAssertNotNil(event)
+    XCTAssertFalse(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+    XCTAssertTrue(try f.journal.inbox.pending().isEmpty)
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+    XCTAssertTrue(f.peer.pool.policy.diagnostics(now: f.peer.time).verifiedDelivery.values.allSatisfy { $0.samples == 0 })
+  }
+
+  func testCompletionReplayClosesCrashGapWithoutReconsumingReceipt() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    _ = try await f.dispatch.submit(topic: f.peer.binding.sendTopic, delivery: XCTUnwrap(f.peer.prepare()))
+    try f.stageStoredReceipt()
+    _ = try f.peer.routes.consumeStoredReceipt(identity: f.entry.identity, receiptMessageID: "ack", journal: f.journal)
+    XCTAssertTrue(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+    let first = try await f.receipts.resumeCompletion(identity: f.entry.identity, messageID: "message", journal: f.journal)
+    let second = try await f.receipts.resumeCompletion(identity: f.entry.identity, messageID: "message", journal: f.journal)
+    XCTAssertEqual(first, second)
+    XCTAssertNotNil(first)
+    XCTAssertFalse(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+    XCTAssertEqual(try f.outbox.completions.pending().count, 1)
+  }
+
+  func testCompletionReplayRequiresPersistedProof() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    try await f.peer.handshake()
+    _ = try await f.dispatch.submit(topic: f.peer.binding.sendTopic, delivery: XCTUnwrap(f.peer.prepare()))
+    let result = try await f.receipts.resumeCompletion(identity: f.entry.identity, messageID: "message", journal: f.journal)
+    XCTAssertNil(result)
+    XCTAssertTrue(f.peer.pool.policy.pending(peer: f.peer.binding.scope, messageID: "message"))
+  }
+
+  func testStoredReceiptAndCompletionReplayRejectRevokedRelationship() async throws {
+    let f = try ReceiptBridgeFixture()
+    try f.stageStoredReceipt()
+    f.peer.binding.enabled = false
+    try f.peer.routes.replace([f.peer.binding])
+    do { _ = try await f.receipts.consumeStored(identity: f.entry.identity, receiptMessageID: "ack", journal: f.journal)
+      XCTFail("Revoked relationship must fail") }
+    catch MqttRouteError.identityChanged { }
+    do { _ = try await f.receipts.resumeCompletion(identity: f.entry.identity, messageID: "message", journal: f.journal)
+      XCTFail("Revoked relationship must fail") }
+    catch MqttRouteError.identityChanged { }
+    XCTAssertEqual(try f.journal.inbox.pending().count, 1)
+    XCTAssertNotNil(try f.outbox.entry(identity: f.entry.identity, messageID: "message"))
+  }
+
   func testReceiptWithoutLiveAttemptCommitsCompletionAndDuplicateIsIdempotent() async throws {
     let f = try ReceiptBridgeFixture()
     await f.peer.start()
@@ -396,6 +458,7 @@ private final class PeerRoutesFixture {
 private final class ReceiptBridgeFixture {
   let peer: PeerRoutesFixture
   let storage: ChunkFixture
+  let journal: MqttSignalStateJournal
   let outbox: MqttBusinessOutbox
   let entry: MqttBusinessOutbox.Entry
   let frame: MqttDeliveryEnvelope.Frame
@@ -409,7 +472,8 @@ private final class ReceiptBridgeFixture {
   init() throws {
     peer = try PeerRoutesFixture()
     storage = try ChunkFixture()
-    outbox = try MqttBusinessOutbox(fileURL: storage.url, secrets: storage.secrets)
+    journal = try MqttSignalStateJournal(fileURL: storage.url, secrets: storage.secrets)
+    outbox = journal.outbox
     let identity = try MqttBusinessIdentity(peer.binding)
     let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "sender", "to": "receiver", "body": "AA=="])
     let date = Date(timeIntervalSince1970: 1)
@@ -426,5 +490,12 @@ private final class ReceiptBridgeFixture {
     let frame = frame ?? self.frame
     let reception = try await peer.routes.receive(peer.ingress(frame.receiptAfterStore(messageID: "message", wireHash: frame.message.contentHash)))
     return try XCTUnwrap(reception.packet)
+  }
+
+  func stageStoredReceipt() throws {
+    var payload = try MqttDeliveryEnvelope.storedReceipt(messageID: "message", wireHash: entry.wireHash)
+    payload["message_id"] = "ack"
+    _ = try journal.inbox.accept(identity: entry.identity, messageID: "ack", payload: payload,
+      ciphertextDigest: String(repeating: "e", count: 64), wireHash: String(repeating: "f", count: 64), receiptRequired: false)
   }
 }

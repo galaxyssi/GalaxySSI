@@ -221,10 +221,16 @@ final class MqttPeerRoutes {
 
   func consumeStoredReceipt(identity: MqttBusinessIdentity, receiptMessageID: String,
                             journal: MqttSignalStateJournal, now: Date = Date()) throws -> MqttDeliveryCompletions.Event? {
+    try withIdentity(identity) {
+      try journal.consumeStoredReceipt(identity: identity, receiptMessageID: receiptMessageID, now: now)
+    }
+  }
+
+  func withIdentity<T>(_ identity: MqttBusinessIdentity, commit: () throws -> T) throws -> T {
     try locked {
       guard let peer = peers[identity.scope], peer.active, peer.binding.enabled,
             try MqttBusinessIdentity(peer.binding) == identity else { throw MqttRouteError.identityChanged }
-      return try journal.consumeStoredReceipt(identity: identity, receiptMessageID: receiptMessageID, now: now)
+      return try commit()
     }
   }
 
