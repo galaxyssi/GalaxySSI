@@ -625,6 +625,29 @@ final class GalaxySSILinkDeliveryStore {
     return result
   }
 
+  // Call only after the legacy publisher is quiesced. Migration must include blocked/future
+  // messages and must not delete file-backed wire bytes before the destination commits.
+  func outboxMigrationSnapshot() throws -> [PendingLinkMessage] {
+    guard let data = defaults.data(forKey: storageKey),
+          let persisted = try? JSONDecoder.linkReliability.decode(PersistedState.self, from: data),
+          persisted.transportEpoch == state.transportEpoch, persisted.outbox == state.outbox,
+          state.outbox.count <= 4096,
+          Set(state.outbox.map(\.messageId)).count == state.outbox.count else {
+      throw MqttChunkStorageError.corruptState
+    }
+    var totalBytes = 0
+    return try state.outbox.map { item in
+      guard var resolved = resolvedMessage(item), !resolved.wirePayload.isEmpty else {
+        throw MqttChunkStorageError.corruptState
+      }
+      totalBytes += resolved.wirePayload.utf8.count
+      guard totalBytes <= 64 * 1024 * 1024 else { throw MqttChunkStorageError.capacityExceeded }
+      // The destination owns encrypted inline storage, not a path into the legacy payload directory.
+      resolved.wirePayloadFile = nil
+      return resolved
+    }
+  }
+
   func nextRetryDelay(
     now: Date = Date(),
     allowValidatedNetworkMessages: Bool = true,

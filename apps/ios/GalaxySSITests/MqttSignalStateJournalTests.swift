@@ -5,6 +5,73 @@ final class MqttSignalStateJournalTests: XCTestCase {
   private let snapshot = Data("test-ratchet-state".utf8)
   private let next = Data("advanced-test-ratchet-state".utf8)
 
+  func testLegacyOutboxImportPreservesWireAndRetriesWithoutAdvancingRatchet() throws {
+    let f = try ChunkFixture()
+    let journal = try makeJournal(f)
+    _ = try journal.commit(expected: nil) { _ in ((), snapshot) }
+    let entry = try legacyEntry("legacy")
+    XCTAssertEqual(try journal.importLegacyOutbox([entry], expectedSignalState: snapshot), 1)
+    XCTAssertEqual(try journal.load(), snapshot)
+    let saved = try XCTUnwrap(journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    XCTAssertEqual(saved.message, entry.message)
+    XCTAssertEqual(try journal.importLegacyOutbox([entry], expectedSignalState: snapshot), 0)
+    let reopened = try makeJournal(f)
+    XCTAssertEqual(try reopened.outbox.entry(identity: entry.identity, messageID: "legacy")?.message, entry.message)
+  }
+
+  func testLegacyOutboxImportRollsBackWholeBatchOnInvalidWire() throws {
+    let f = try ChunkFixture()
+    let journal = try makeJournal(f)
+    _ = try journal.commit(expected: nil) { _ in ((), snapshot) }
+    let first = try legacyEntry("first")
+    var invalid = first.message
+    invalid.messageId = "second"
+    invalid.wirePayload = "not-json"
+    let second = MqttSignalStateJournal.LegacyOutboxEntry(identity: first.identity, message: invalid, traffic: .message)
+    XCTAssertThrowsError(try journal.importLegacyOutbox([first, second], expectedSignalState: snapshot))
+    XCTAssertNil(try journal.outbox.entry(identity: first.identity, messageID: "first"))
+    XCTAssertEqual(try journal.load(), snapshot)
+  }
+
+  func testLegacyOutboxMigrationReplayDoesNotResurrectDeliveredMessage() throws {
+    let f = try ChunkFixture()
+    let journal = try makeJournal(f)
+    _ = try journal.commit(expected: nil) { _ in ((), snapshot) }
+    let entry = try legacyEntry("legacy")
+    _ = try journal.importLegacyOutbox([entry], expectedSignalState: snapshot)
+    let saved = try XCTUnwrap(journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    _ = try journal.outbox.acknowledgeVerified(identity: entry.identity, messageID: "legacy",
+      wireHash: saved.wireHash, now: Date(timeIntervalSince1970: 101))
+    XCTAssertEqual(try journal.importLegacyOutbox([entry], expectedSignalState: snapshot), 0)
+    XCTAssertNil(try journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    XCTAssertNotNil(try journal.outbox.completions.event(identity: entry.identity, messageID: "legacy"))
+  }
+
+  func testLegacyOutboxImportRejectsStaleSignalSnapshotAndConflictingMetadata() throws {
+    let f = try ChunkFixture()
+    let journal = try makeJournal(f)
+    _ = try journal.commit(expected: nil) { _ in ((), snapshot) }
+    let entry = try legacyEntry("legacy")
+    XCTAssertThrowsError(try journal.importLegacyOutbox([entry], expectedSignalState: next))
+    XCTAssertNil(try journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    _ = try journal.importLegacyOutbox([entry], expectedSignalState: snapshot)
+    var changed = entry.message
+    changed.contactId = "another-contact"
+    XCTAssertThrowsError(try journal.importLegacyOutbox([
+      .init(identity: entry.identity, message: changed, traffic: .message)
+    ], expectedSignalState: snapshot))
+  }
+
+  private func legacyEntry(_ id: String) throws -> MqttSignalStateJournal.LegacyOutboxEntry {
+    let date = Date(timeIntervalSince1970: 100)
+    let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "local", "to": "remote", "body": "AA=="])
+    return try .init(identity: identity(), message: PendingLinkMessage(messageId: id,
+      topic: String(repeating: "s", count: 43), wirePayload: String(decoding: wire, as: UTF8.self),
+      status: "published", attempts: 4, nextAttemptAt: date, createdAt: date, updatedAt: date,
+      requiresValidatedNetwork: true, blockedByAttachmentTransferIds: [String(repeating: "c", count: 64)],
+      clientSourceMessageId: "source", contactId: "contact"), traffic: .message)
+  }
+
   func testCheckpointAndInboxCommitTogetherAndReopen() throws {
     let f = try ChunkFixture()
     let journal = try makeJournal(f)

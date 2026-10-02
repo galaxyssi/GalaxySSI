@@ -3,6 +3,20 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testMigrationSnapshotIncludesBlockedNetworkAndFutureMessages() throws {
+    let store = makeDeliveryStore()
+    let future = Date(timeIntervalSince1970: 10_000)
+    store.enqueue(messageId: "attachment", topic: "topic/up", wirePayload: "attachment-wire",
+      blockedByAttachmentTransferIds: [String(repeating: "a", count: 64)], now: future)
+    store.enqueue(messageId: "network", topic: "topic/up", wirePayload: "network-wire",
+      requiresValidatedNetwork: true, now: future)
+    XCTAssertTrue(store.pending(now: Date(timeIntervalSince1970: 1), allowValidatedNetworkMessages: false).isEmpty)
+    let snapshot = try store.outboxMigrationSnapshot()
+    XCTAssertEqual(Set(snapshot.map(\.messageId)), ["attachment", "network"])
+    XCTAssertEqual(snapshot.first?.nextAttemptAt, future)
+    XCTAssertEqual(try store.outboxMigrationSnapshot(), snapshot)
+  }
+
   func testTransportTimingSeparatesQueueBrokerAndPeerMetricsWithBoundedHistory() {
     let store = AgentTransportTimingStore()
     for index in 0..<(AgentTransportTimingStore.maximumEvents + 8) {
@@ -296,6 +310,11 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     let persisted = try XCTUnwrap(defaults.data(forKey: "galaxyssi-ios-link-delivery-v1"))
     XCTAssertFalse(String(decoding: persisted, as: UTF8.self).contains(largePayload))
     XCTAssertEqual(store.pending(now: now).first?.wirePayload, largePayload)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).count, 1)
+
+    let migration = try XCTUnwrap(store.outboxMigrationSnapshot().first)
+    XCTAssertEqual(migration.wirePayload, largePayload)
+    XCTAssertNil(migration.wirePayloadFile)
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).count, 1)
 
     store.acknowledge(messageId: "large")

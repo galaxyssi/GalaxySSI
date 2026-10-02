@@ -264,6 +264,16 @@ final class MqttPeerRoutes {
     }
   }
 
+  func importLegacyOutbox(_ entries: [MqttSignalStateJournal.LegacyOutboxEntry],
+                          journal: MqttSignalStateJournal, expectedSignalState: Data) throws -> Int {
+    try locked {
+      for entry in entries {
+        try withOutgoing(identity: entry.identity, topics: [entry.message.topic]) {}
+      }
+      return try journal.importLegacyOutbox(entries, expectedSignalState: expectedSignalState)
+    }
+  }
+
   func withIdentity<T>(_ identity: MqttBusinessIdentity, commit: () throws -> T) throws -> T {
     try locked {
       guard let peer = peers[identity.scope], peer.active, peer.binding.enabled,

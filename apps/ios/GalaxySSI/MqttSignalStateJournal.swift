@@ -16,6 +16,55 @@ final class MqttSignalStateJournal {
 
   func load() throws -> Data? { try database.transaction { try read() } }
 
+  struct LegacyOutboxEntry {
+    let identity: MqttBusinessIdentity
+    let message: PendingLinkMessage
+    let traffic: MqttMultipathPolicy.Traffic
+  }
+
+  // The owner quiesces legacy writers and holds all current relationship fences. A failed import
+  // leaves the whole source queue intact; no ratchet is advanced or ciphertext regenerated.
+  func importLegacyOutbox(_ entries: [LegacyOutboxEntry], expectedSignalState: Data) throws -> Int {
+    guard entries.count <= 4096 else { throw MqttChunkStorageError.capacityExceeded }
+    let (imported, _) = try commit(expected: expectedSignalState) { token in
+      var imported = 0
+      var keys = Set<String>()
+      for entry in entries {
+        let key = try entry.identity.key(messageID: entry.message.messageId)
+        guard keys.insert(key).inserted, entry.message.wirePayloadFile == nil else {
+          throw MqttChunkStorageError.corruptState
+        }
+        if let completed = try outbox.completions.event(identity: entry.identity,
+          messageID: entry.message.messageId, transaction: token) {
+          guard let wire = try JSONSerialization.jsonObject(with: Data(entry.message.wirePayload.utf8)) as? [String: Any],
+                completed.wireHash == (try MqttDeliveryEnvelope.contentHash(wire)),
+                completed.traffic == entry.traffic.rawValue,
+                completed.sourceMessageID == entry.message.clientSourceMessageId,
+                completed.contactID == entry.message.contactId,
+                completed.attachmentTransferID == entry.message.attachmentTransferId else {
+            throw MqttChunkStorageError.corruptState
+          }
+          continue
+        }
+        if let existing = try outbox.entry(identity: entry.identity, messageID: entry.message.messageId, transaction: token) {
+          guard existing.isPrepared, existing.requestHash == nil, existing.traffic == entry.traffic.rawValue,
+                existing.message.topic == entry.message.topic,
+                existing.message.wirePayload == entry.message.wirePayload,
+                existing.message.clientSourceMessageId == entry.message.clientSourceMessageId,
+                existing.message.contactId == entry.message.contactId,
+                existing.message.attachmentTransferId == entry.message.attachmentTransferId else {
+            throw MqttChunkStorageError.corruptState
+          }
+          continue
+        }
+        if try outbox.enqueue(identity: entry.identity, message: entry.message,
+          traffic: entry.traffic, transaction: token) { imported += 1 }
+      }
+      return (imported, expectedSignalState)
+    }
+    return imported
+  }
+
   // The owner holds the current relationship fence. Read only previously decrypted, durable inbox
   // content; dispatch cancellation and UI/attachment side effects must wait for this COMMIT.
   func consumeStoredReceipt(identity: MqttBusinessIdentity, receiptMessageID: String,
