@@ -1,5 +1,170 @@
 import Foundation
 
+enum GalaxySSIConversationExecutionStatus: String, CaseIterable {
+  case queued, running, waitingResponse, reconnecting, delivering
+  case completeUnread, read, waitingConfirmation, paused, blocked, failed, cancelled
+
+  var animated: Bool {
+    switch self {
+    case .queued, .running, .waitingResponse, .reconnecting, .delivering: return true
+    default: return false
+    }
+  }
+
+  var systemImage: String {
+    if animated { return "arrow.triangle.2.circlepath" }
+    switch self {
+    case .completeUnread: return "checkmark.circle"
+    case .waitingConfirmation, .paused: return "pause.circle"
+    case .failed, .blocked: return "exclamationmark.circle"
+    default: return "bubble.left"
+    }
+  }
+
+  var foregroundRGB: UInt32 {
+    if animated { return 0x1677FF }
+    switch self {
+    case .completeUnread: return 0x12BD76
+    case .waitingConfirmation, .paused: return 0xE59100
+    case .failed, .blocked: return 0xE53E46
+    default: return 0x74777D
+    }
+  }
+
+  var backgroundRGB: UInt32 {
+    if animated { return 0xEAF3FF }
+    switch self {
+    case .completeUnread: return 0xECF9F2
+    case .waitingConfirmation, .paused: return 0xFFF5E2
+    case .failed, .blocked: return 0xFDECEE
+    default: return 0xEFF0F3
+    }
+  }
+
+  var label: String {
+    switch self {
+    case .queued: return "Queued"
+    case .running: return "Running"
+    case .waitingResponse: return "Waiting for response"
+    case .reconnecting: return "Reconnecting"
+    case .delivering: return "Delivering reply"
+    case .completeUnread: return "Completed, unread"
+    case .read: return "Read"
+    case .waitingConfirmation: return "Waiting for confirmation"
+    case .paused: return "Paused"
+    case .blocked: return "Blocked"
+    case .failed: return "Failed"
+    case .cancelled: return "Cancelled"
+    }
+  }
+}
+
+enum GalaxySSIConversationExecutionPolicy {
+  struct Snapshot {
+    let workspaceID: String
+    let conversationID: String
+    let taskID: String
+    let phase: AgentPhase
+    let createdAt: Int64
+    let updatedAt: Int64
+    let recovering: Bool
+
+    init(_ workspace: AgentWorkspace) {
+      workspaceID = workspace.workspaceId
+      conversationID = workspace.conversationId
+      taskID = workspace.taskId
+      phase = GalaxySSIConversationExecutionPolicy.phase(workspace.status)
+      createdAt = workspace.createdAtMillis
+      updatedAt = workspace.updatedAtMillis
+      recovering = GalaxySSIConversationExecutionPolicy.isRecovering(workspace)
+    }
+  }
+
+  static func resolve(conversationID: String, message: ChatMessage?, tasks: [AgentTaskRecord], unread: Bool,
+                      workspaces: [Snapshot] = []) -> GalaxySSIConversationExecutionStatus {
+    if let message, message.conversationId == conversationID, message.deliveryStatus == .failed { return .failed }
+    let latest = message.flatMap { message -> AgentTranscriptEntry? in
+      guard message.conversationId == conversationID else { return nil }
+      let role: AgentTranscriptRole = message.isMine ? .user : (AgentReplyUnreadPolicy.token(message) == nil ? .process : .assistant)
+      return AgentTranscriptEntry(id: message.remoteMessageId.ifBlank(message.id.uuidString), role: role,
+        text: "", timestampMillis: Int64(message.createdAt.timeIntervalSince1970 * 1000),
+        dedupeKey: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
+    }
+    let selected = task(conversationID: conversationID, latest: latest, tasks: tasks)
+    let workspace = workspaces.filter { workspace in
+      guard workspace.conversationID == conversationID else { return false }
+      guard let turn = latest?.turnId, !turn.isEmpty else { return true }
+      return workspace.workspaceID == turn || workspace.taskID == turn
+    }.max {
+      if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+      return $0.updatedAt < $1.updatedAt
+    }
+    if let workspace, workspace.updatedAt >= (selected?.updatedAtMillis ?? Int64.min) {
+      return resolve(phase: workspace.phase, latest: latest, unread: unread,
+        recovering: workspace.recovering)
+    }
+    return resolve(phase: selected?.phase, latest: latest, unread: unread)
+  }
+
+  static func isRecovering(_ workspace: AgentWorkspace) -> Bool {
+    let recovery: Set<String> = [AgentTaskEventKinds.recoveryWaitingResponse,
+      AgentTaskEventKinds.recoveredInterrupted, AgentTaskEventKinds.interrupted]
+    let relevant = recovery.union([AgentTaskEventKinds.progress, AgentTaskEventKinds.running, AgentTaskEventKinds.waitingResponse])
+    guard workspace.status == .waitingResponse,
+          let last = workspace.eventJournal.last(where: { relevant.contains($0.kind) }) else { return false }
+    return recovery.contains(last.kind)
+  }
+
+  private static func phase(_ status: AgentWorkspaceStatus) -> AgentPhase {
+    switch status {
+    case .created, .queued: return .planning
+    case .running: return .executing
+    case .waitingResponse: return .waitingResponse
+    case .waitingConfirmation: return .waitingConfirmation
+    case .paused: return .paused
+    case .blocked: return .blocked
+    case .failed: return .failed
+    case .cancelled: return .cancelled
+    case .completed: return .completed
+    }
+  }
+
+  static func task(conversationID: String, latest: AgentTranscriptEntry?, tasks: [AgentTaskRecord]) -> AgentTaskRecord? {
+    tasks.filter { task in
+      guard task.sessionId == conversationID else { return false }
+      guard let latest else { return true }
+      guard latest.conversationId.isEmpty || latest.conversationId == conversationID else { return false }
+      if !latest.taskId.isEmpty { return task.taskId == latest.taskId }
+      return latest.turnId.isEmpty || task.taskId == latest.turnId
+    }.max {
+      if $0.createdAtMillis != $1.createdAtMillis { return $0.createdAtMillis < $1.createdAtMillis }
+      return $0.updatedAtMillis < $1.updatedAtMillis
+    }
+  }
+
+  static func resolve(phase: AgentPhase?, latest: AgentTranscriptEntry?, unread: Bool,
+                      recovering: Bool = false) -> GalaxySSIConversationExecutionStatus {
+    let finalReply = latest.map {
+      $0.role == .assistant && !AgentTranscriptRenderPolicy.isLiveStream($0) &&
+        !$0.dedupeKey.hasPrefix("approval:") && !$0.dedupeKey.hasPrefix("remote-approval:")
+    } ?? false
+    switch phase {
+    case .observing, .planning: return .queued
+    case .executing, .verifying: return .running
+    case .waitingResponse: return recovering ? .reconnecting : .waitingResponse
+    case .waitingConfirmation: return .waitingConfirmation
+    case .paused: return .paused
+    case .blocked: return .blocked
+    case .failed: return .failed
+    case .cancelled: return .cancelled
+    case .completed: return finalReply ? (unread ? .completeUnread : .read) : .delivering
+    case nil:
+      if latest?.role == .user { return .waitingResponse }
+      return finalReply && unread ? .completeUnread : .read
+    }
+  }
+}
+
 enum GalaxySSIConversationHubTab: String, CaseIterable, Identifiable {
   case conversations
   case contacts
