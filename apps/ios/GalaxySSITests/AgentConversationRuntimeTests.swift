@@ -2,6 +2,60 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testConversationExecutionReadsMatchingDurableWorkspaceWithoutCachedTask() {
+    let message = ChatMessage(contactId: "hermes", content: "Question", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    var workspace = AgentWorkspace(workspaceId: "turn", sessionId: "session", conversationId: "conversation",
+      taskId: "executor-task", status: .waitingResponse,
+      eventJournal: [.init(kind: AgentTaskEventKinds.recoveryWaitingResponse)])
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
+      tasks: [], unread: false, workspaces: [workspace]), .reconnecting)
+    workspace.eventJournal.append(.init(kind: AgentTaskEventKinds.progress))
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
+      tasks: [], unread: false, workspaces: [workspace]), .waitingResponse)
+    workspace.status = .paused
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
+      tasks: [], unread: false, workspaces: [workspace]), .paused)
+  }
+
+  func testConversationExecutionIgnoresOtherTurnsAndUsesNewerStatus() {
+    let message = ChatMessage(contactId: "hermes", content: "Question", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    var workspace = AgentWorkspace(workspaceId: "old-turn", sessionId: "session", conversationId: "conversation",
+      taskId: "old-task", status: .failed, updatedAtMillis: 100)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
+      tasks: [], unread: false, workspaces: [workspace]), .waitingResponse)
+    workspace.workspaceId = "turn"
+    workspace.status = .paused
+    let record = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "goal", phase: .executing,
+      routeKind: .localSystem, targetTitle: "Local", risk: .low, blocked: false, updatedAtMillis: 200)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
+      tasks: [record], unread: false, workspaces: [workspace]), .running)
+    workspace.updatedAtMillis = 300
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "conversation", message: message,
+      tasks: [record], unread: false, workspaces: [workspace]), .paused)
+  }
+
+  func testWorkspacePersistenceNotifiesOnlyAfterSuccessfulWrite() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("workspaces.json")
+    let store = FileAgentWorkspaceStore(fileURL: file)
+    var writes = 0
+    let observer = NotificationCenter.default.addObserver(forName: .galaxySSIWorkspaceDidPersist, object: nil, queue: nil) { notification in
+      guard let source = notification.object as? FileAgentWorkspaceStore, source === store else { return }
+      XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+      writes += 1
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+    let workspace = AgentWorkspace(workspaceId: "turn", sessionId: "session", conversationId: "conversation", taskId: "task")
+    _ = try store.upsert(workspace, expectedRevision: 0)
+    XCTAssertEqual(writes, 1)
+    XCTAssertThrowsError(try store.upsert(workspace, expectedRevision: 0))
+    XCTAssertEqual(writes, 1)
+  }
+
   func testConversationExecutionUsesPersistedReplyEligibility() {
     var reply = ChatMessage(contactId: "hermes", content: "Done", isMine: false, conversationId: "session")
     reply.deliveryStatus = .delivered

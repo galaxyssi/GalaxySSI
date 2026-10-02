@@ -108,6 +108,7 @@ struct GalaxySSIConversationHubView: View {
   @State private var addContactPresentation: GalaxySSIAddContactPresentation?
   @State private var cloudModelOnboardingPresented = false
   @State private var hubRefreshToken = UUID()
+  @State private var executionWorkspaces: [AgentWorkspace] = []
   @State private var pendingFriendRequestsPresented = false
   @State private var smartDeviceOnboardingPresented = false
   @State private var groupsPresented = false
@@ -514,7 +515,12 @@ struct GalaxySSIConversationHubView: View {
     .onReceive(
       NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     ) { _ in
+      executionWorkspaces = store.agentWorkspaceStore.list()
       refreshAfterAppActivation()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
+      .debounce(for: .milliseconds(100), scheduler: RunLoop.main)) { _ in
+      executionWorkspaces = store.agentWorkspaceStore.list()
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       refreshAfterRemotePairingRevocation()
@@ -523,6 +529,7 @@ struct GalaxySSIConversationHubView: View {
       }
     }
     .onAppear {
+      executionWorkspaces = store.agentWorkspaceStore.list()
       openInitialContactIfNeeded()
     }
     .onChange(of: initialContactId) { _ in
@@ -1054,7 +1061,8 @@ struct GalaxySSIConversationHubView: View {
         updatedAt: updatedAt,
         executionStatus: GalaxySSIConversationExecutionPolicy.resolve(
           conversationID: session.id, message: store.latestAgentSessionMessage(session.id),
-          tasks: store.agentTaskRecords, unread: store.agentReplyUnreadCount(conversationId: session.id) > 0)
+          tasks: store.agentTaskRecords, unread: store.agentReplyUnreadCount(conversationId: session.id) > 0,
+          workspaces: executionWorkspaces)
       )
     }
     .buttonStyle(.plain)

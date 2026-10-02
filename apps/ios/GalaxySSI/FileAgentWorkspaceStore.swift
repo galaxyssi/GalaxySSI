@@ -149,6 +149,7 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
       withIntermediateDirectories: true
     )
     try store.serializedSnapshot().write(to: fileURL, atomically: true, encoding: .utf8)
+    NotificationCenter.default.post(name: .galaxySSIWorkspaceDidPersist, object: self)
   }
 
   private func locked<T>(_ body: () throws -> T) rethrows -> T {

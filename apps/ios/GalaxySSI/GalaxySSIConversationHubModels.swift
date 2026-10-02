@@ -41,7 +41,8 @@ enum GalaxySSIConversationExecutionStatus: String, CaseIterable {
 }
 
 enum GalaxySSIConversationExecutionPolicy {
-  static func resolve(conversationID: String, message: ChatMessage?, tasks: [AgentTaskRecord], unread: Bool) -> GalaxySSIConversationExecutionStatus {
+  static func resolve(conversationID: String, message: ChatMessage?, tasks: [AgentTaskRecord], unread: Bool,
+                      workspaces: [AgentWorkspace] = []) -> GalaxySSIConversationExecutionStatus {
     if let message, message.conversationId == conversationID, message.deliveryStatus == .failed { return .failed }
     let latest = message.flatMap { message -> AgentTranscriptEntry? in
       guard message.conversationId == conversationID else { return nil }
@@ -51,7 +52,42 @@ enum GalaxySSIConversationExecutionPolicy {
         dedupeKey: message.remoteMessageId, conversationId: message.conversationId, turnId: message.turnId)
     }
     let selected = task(conversationID: conversationID, latest: latest, tasks: tasks)
+    let workspace = workspaces.filter { workspace in
+      guard workspace.conversationId == conversationID else { return false }
+      guard let turn = latest?.turnId, !turn.isEmpty else { return true }
+      return workspace.workspaceId == turn || workspace.taskId == turn
+    }.max {
+      if $0.createdAtMillis != $1.createdAtMillis { return $0.createdAtMillis < $1.createdAtMillis }
+      return $0.updatedAtMillis < $1.updatedAtMillis
+    }
+    if let workspace, workspace.updatedAtMillis >= (selected?.updatedAtMillis ?? Int64.min) {
+      return resolve(phase: phase(workspace.status), latest: latest, unread: unread,
+        recovering: isRecovering(workspace))
+    }
     return resolve(phase: selected?.phase, latest: latest, unread: unread)
+  }
+
+  static func isRecovering(_ workspace: AgentWorkspace) -> Bool {
+    let recovery: Set<String> = [AgentTaskEventKinds.recoveryWaitingResponse,
+      AgentTaskEventKinds.recoveredInterrupted, AgentTaskEventKinds.interrupted]
+    let relevant = recovery.union([AgentTaskEventKinds.progress, AgentTaskEventKinds.running, AgentTaskEventKinds.waitingResponse])
+    guard workspace.status == .waitingResponse,
+          let last = workspace.eventJournal.last(where: { relevant.contains($0.kind) }) else { return false }
+    return recovery.contains(last.kind)
+  }
+
+  private static func phase(_ status: AgentWorkspaceStatus) -> AgentPhase {
+    switch status {
+    case .created, .queued: return .planning
+    case .running: return .executing
+    case .waitingResponse: return .waitingResponse
+    case .waitingConfirmation: return .waitingConfirmation
+    case .paused: return .paused
+    case .blocked: return .blocked
+    case .failed: return .failed
+    case .cancelled: return .cancelled
+    case .completed: return .completed
+    }
   }
 
   static func task(conversationID: String, latest: AgentTranscriptEntry?, tasks: [AgentTaskRecord]) -> AgentTaskRecord? {

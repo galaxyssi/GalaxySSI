@@ -1,5 +1,9 @@
 import Foundation
 
+extension Notification.Name {
+  static let galaxySSIWorkspaceDidPersist = Notification.Name("galaxySSIWorkspaceDidPersist")
+}
+
 struct AgentWorkspaceRevisionConflictError: LocalizedError, Equatable {
   var workspaceId: String
   var expectedRevision: Int64
