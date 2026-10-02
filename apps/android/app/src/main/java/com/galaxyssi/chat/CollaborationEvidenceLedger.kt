@@ -133,7 +133,7 @@ internal class CollaborationEvidenceLedger(
 
 internal class CollaborationCloudEvidence(
     private val ledger: CollaborationEvidenceLedger,
-    private val access: CollaborationWorkspaceAccess,
+    val access: CollaborationWorkspaceAccess,
     private val clock: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() }
 ) {

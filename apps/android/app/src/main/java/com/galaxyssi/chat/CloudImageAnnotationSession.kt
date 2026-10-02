@@ -27,6 +27,10 @@ internal class CloudImageAnnotationSession(
     private val completed = linkedMapOf<Int, AgentRichBlock>()
     private val rendered = mutableMapOf<String, AgentRichBlock>()
 
+    fun installCollaborationTools(prepared: PreparedCloudConversationStream) {
+        if (collaborationEvidence != null) CollaborationCloudRecall.install(prepared)
+    }
+
     fun execute(
         name: String, arguments: JSONObject,
         token: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
@@ -39,6 +43,10 @@ internal class CloudImageAnnotationSession(
         token: AgentNativeToolCancellationToken,
         checkpoint: () -> Unit
     ): String {
+        if (name == CollaborationCloudRecall.NAME && collaborationEvidence != null) {
+            checkpoint()
+            return CollaborationCloudRecall.execute(context, collaborationEvidence.access, arguments)
+        }
         if (name == ResearchEvidenceAudit.TOOL) {
             checkpoint()
             return researchAudit.submit(arguments).toString()

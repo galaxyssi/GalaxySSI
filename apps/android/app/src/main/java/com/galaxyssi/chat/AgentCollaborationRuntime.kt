@@ -1097,6 +1097,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                     context.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L)).append('\n')
             append("Use galaxyssi.phone.collaboration.recall to search earlier group evidence or read full originals by record_id and offset. ")
             append("Use mode=workspace to browse shared hypotheses, proposals, counterexamples and artifacts; read object_id and revision with offset for full content. ")
+            append("For cloud models, use the available collaboration_recall tool for workspace/evidence; do not search the web for internal tool names. ")
             append("Use mode=evidence to inspect host-recorded tool observations by evidence_id and sha256. These prove returned output, not scientific truth. ")
             append("Imported Desktop observations preserve the exact provider payload, not necessarily a complete source. Missing receipts are evidence gaps; never repeat a completed side effect just to obtain one. ")
             append("Workspace publication receipts identify exact versions, not verification of their claims. A rejected update must be repaired in new work. ")
