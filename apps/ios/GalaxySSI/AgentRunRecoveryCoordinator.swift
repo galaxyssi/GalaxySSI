@@ -123,7 +123,17 @@ struct AgentRunRecoveryCoordinatorError: LocalizedError, Equatable {
 
 protocol AgentRunControlStore {
   func appendNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent
+  func appendRecoveryIfCurrent(_ event: AgentRunControlEvent, expectedSequence: Int64) -> AgentRunControlEvent?
   func recoverableRuns() -> [AgentRunControlSnapshot]
+}
+
+extension AgentRunControlStore {
+  func appendRecoveryIfCurrent(_ event: AgentRunControlEvent, expectedSequence: Int64) -> AgentRunControlEvent? {
+    guard let current = recoverableRuns().first(where: { $0.runId == event.runId }),
+          !current.state.isTerminal, current.lastSequence == expectedSequence else { return nil }
+    let committed = appendNext(event)
+    return committed.eventId == event.eventId ? committed : nil
+  }
 }
 
 extension AgentRunRecoveryRegistration {
@@ -147,6 +157,7 @@ final class AgentRunRecoveryCoordinator {
   private let registration: RegistrationResolver
   private let adapterResolver: AdapterResolver
   private let markInterrupted: (String, String) -> Void
+  private let terminalDeliveries: () -> [AgentTerminalDelivery]
 
   init(
     runStore: AgentRunControlStore,
@@ -154,7 +165,10 @@ final class AgentRunRecoveryCoordinator {
     recordedRun: @escaping RecordedRunResolver,
     registration: @escaping RegistrationResolver,
     adapterResolver: @escaping AdapterResolver,
-    markInterrupted: @escaping (String, String) -> Void = { _, _ in }
+    markInterrupted: @escaping (String, String) -> Void = { _, _ in },
+    terminalDeliveries: @escaping () -> [AgentTerminalDelivery] = {
+      UserDefaultsAgentTerminalDeliveryStore().records()
+    }
   ) {
     self.runStore = runStore
     self.workspaceStore = workspaceStore
@@ -162,6 +176,7 @@ final class AgentRunRecoveryCoordinator {
     self.registration = registration
     self.adapterResolver = adapterResolver
     self.markInterrupted = markInterrupted
+    self.terminalDeliveries = terminalDeliveries
   }
 
   func recover() async throws -> [AgentRunRecoveryResult] {
@@ -205,6 +220,8 @@ final class AgentRunRecoveryCoordinator {
   }
 
   private func recover(_ snapshot: AgentRunControlSnapshot) async throws -> AgentRunRecoveryResult {
+    try Task.checkCancellation()
+    if let terminal = try reconcileDeliveryFailure(snapshot) { return terminal }
     let run = recordedRun(snapshot.runId)
     let decision = AgentRunRecoveryPolicy.decide(
       snapshot: snapshot,
@@ -300,6 +317,7 @@ final class AgentRunRecoveryCoordinator {
     }
     queryTiming.finish(recoverable.isEmpty ? "failed" : "completed")
     try Task.checkCancellation()
+    if let terminal = try reconcileDeliveryFailure(snapshot) { return terminal }
     let matches = exactRemoteMatches(
       recoverable,
       snapshot: snapshot,
@@ -414,7 +432,40 @@ final class AgentRunRecoveryCoordinator {
   }
 
   private func workspaceFor(_ snapshot: AgentRunControlSnapshot) -> AgentWorkspace? {
-    workspaceStore.find(snapshot.runId) ?? workspaceStore.list().first { $0.taskId == snapshot.taskId }
+    let candidates = [workspaceStore.find(snapshot.runId)].compactMap { $0 } + workspaceStore.list()
+    return candidates.first {
+      $0.taskId == snapshot.taskId && $0.conversationId == snapshot.lastEvent.conversationId &&
+        ($0.agentId.isEmpty || $0.agentId == snapshot.agentId) &&
+        ($0.deviceId.isEmpty || $0.deviceId == snapshot.deviceId)
+    }
+  }
+
+  private func reconcileDeliveryFailure(_ snapshot: AgentRunControlSnapshot) throws -> AgentRunRecoveryResult? {
+    guard let workspace = workspaceFor(snapshot),
+          let failure = AgentTerminalDeliveryFailurePolicy.failure(
+            for: workspace,
+            records: terminalDeliveries(),
+            executionGeneration: snapshot.lastEvent.payload["execution_generation"]?.intValue ?? 1
+          ) else { return nil }
+    let reason = failure.reason.ifBlank("terminal_delivery_failure")
+    var terminal = event(from: snapshot, type: .runFailed, payload: snapshot.lastEvent.payload.adding([
+      "reason": .string(reason),
+      "replay_safe": .bool(false),
+      "recovery_source": .string("terminal_delivery")
+    ]))
+    terminal.timestampMillis = failure.terminalAtMillis
+    guard let committed = runStore.appendRecoveryIfCurrent(terminal, expectedSequence: snapshot.lastSequence) else {
+      return AgentRunRecoveryResult(runId: snapshot.runId, outcome: .alreadyCurrent, reason: "recovery_snapshot_changed")
+    }
+    markInterrupted(snapshot.runId, reason)
+    try restoreWorkspace(
+      snapshot: snapshot, status: .failed, eventKind: AgentTaskEventKinds.failed,
+      checkpoint: "", remoteHandle: nil, remoteSequence: committed.sequence, reason: reason
+    )
+    return AgentRunRecoveryResult(
+      runId: snapshot.runId, outcome: .ignoredTerminal,
+      lastRemoteEventSequence: committed.sequence, reason: reason
+    )
   }
 
   private func restoreWorkspace(
@@ -573,21 +624,13 @@ final class AgentRunRecoveryCoordinator {
     type: AgentRunControlEventType,
     payload: AgentRunControlPayload
   ) -> AgentRunControlEvent {
-    AgentRunControlEvent(
-      eventId: UUID().uuidString,
-      conversationId: snapshot.lastEvent.conversationId,
-      messageId: snapshot.lastEvent.messageId,
-      taskId: snapshot.lastEvent.taskId,
-      runId: snapshot.lastEvent.runId,
-      stepId: snapshot.lastEvent.stepId,
-      toolCallId: snapshot.lastEvent.toolCallId,
-      agentId: snapshot.lastEvent.agentId,
-      deviceId: snapshot.lastEvent.deviceId,
-      type: type,
-      sequence: 0,
-      timestampMillis: snapshot.lastEvent.timestampMillis,
-      payload: payload
-    )
+    var recovered = snapshot.lastEvent
+    recovered.eventId = UUID().uuidString
+    recovered.idempotencyKey = recovered.eventId
+    recovered.type = type
+    recovered.sequence = 0
+    recovered.payload = payload
+    return recovered
   }
 
   private func terminalWorkspaceStatus(_ status: AgentRecordedRunStatus?) -> AgentWorkspaceStatus? {

@@ -2,6 +2,81 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentConnectorLateResponseReducerTests: XCTestCase {
+  func testTerminalFailureRequiresExactIdentityAndExecutionGeneration() {
+    let waiting = workspace(status: .waitingResponse)
+    let failure = AgentTerminalDelivery(
+      sourceMessageId: 71, conversationId: "conversation", turnId: "workspace",
+      taskId: "task", terminalAtMillis: 2_000, executionGeneration: 2, isFailure: true
+    )
+    XCTAssertEqual(AgentTerminalDeliveryFailurePolicy.failure(
+      for: waiting, records: [failure], executionGeneration: 2
+    ), failure)
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(
+      for: waiting, records: [failure], executionGeneration: 3
+    ))
+    var unrelated = failure
+    unrelated.conversationId = "another-conversation"
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(for: waiting, records: [unrelated]))
+    unrelated = failure
+    unrelated.taskId = "child-task"
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(for: waiting, records: [unrelated]))
+    unrelated = failure
+    unrelated.turnId = "another-turn"
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(for: waiting, records: [unrelated]))
+    unrelated = failure
+    unrelated.terminalAtMillis = 999
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(for: waiting, records: [unrelated]))
+  }
+
+  func testUUIDTransportFailureIsAcceptedButCancelledCompletedAndResumedTasksAreNot() {
+    let failure = AgentTerminalDelivery(
+      sourceMessageId: 0, conversationId: "conversation", turnId: "workspace",
+      taskId: "task", terminalAtMillis: 2_000, isFailure: true
+    )
+    XCTAssertNotNil(AgentTerminalDeliveryFailurePolicy.failure(
+      for: workspace(status: .waitingResponse), records: [failure]
+    ))
+    for status in [AgentWorkspaceStatus.cancelled, .completed, .paused, .waitingConfirmation] {
+      XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(
+        for: workspace(status: status), records: [failure]
+      ))
+    }
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(
+      for: workspace(status: .running, cancellationRequested: true), records: [failure]
+    ))
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(
+      for: workspace(status: .running, events: [event(1, AgentTaskEventKinds.resumed, 2_001)]),
+      records: [failure]
+    ))
+  }
+
+  func testLegacyTerminalRecordsAreNotAssumedToBeFailures() throws {
+    let raw = #"{"sourceMessageId":71,"conversationId":"conversation","turnId":"workspace","taskId":"task","terminalAtMillis":2000}"#
+    let legacy = try JSONDecoder().decode(AgentTerminalDelivery.self, from: Data(raw.utf8))
+    XCTAssertFalse(legacy.isFailure)
+    XCTAssertNil(AgentTerminalDeliveryFailurePolicy.failure(
+      for: workspace(status: .running), records: [legacy]
+    ))
+    var failure = legacy
+    failure.isFailure = true
+    XCTAssertEqual(try JSONDecoder().decode(
+      AgentTerminalDelivery.self, from: JSONEncoder().encode(failure)
+    ), failure)
+  }
+
+  func testTransportFailureBusPersistsFailureClassification() {
+    let terminals = InMemoryAgentTerminalDeliveryStore()
+    let bus = AgentConnectorResponseBus(
+      managedLedger: nil, store: AgentConnectorResponseStore(), terminalStore: terminals
+    )
+    XCTAssertTrue(bus.markTransportFailure(AgentTerminalDelivery(
+      sourceMessageId: 71, conversationId: "conversation", turnId: "workspace", taskId: "task"
+    )))
+    XCTAssertEqual(terminals.find(sourceMessageId: 71)?.isFailure, true)
+    bus.markTerminal(AgentTerminalDelivery(sourceMessageId: 72, reason: "cancelled"))
+    XCTAssertEqual(terminals.find(sourceMessageId: 72)?.isFailure, false)
+  }
+
   func testReconcilesFailedWorkspaceWithMatchingHandoff() {
     let failed = workspace(
       status: .failed,

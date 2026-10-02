@@ -11,7 +11,8 @@ protocol AgentRunEventPersistence: AgentRunControlStore {
 final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   private let defaults: UserDefaults
   private let storageKey: String
-  private let lock = NSRecursiveLock()
+  private static let persistenceLock = NSRecursiveLock()
+  private let lock = UserDefaultsAgentRunEventStore.persistenceLock
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private var cachedEventsByRunId: [String: [AgentRunControlEvent]] = [:]
@@ -29,6 +30,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   func appendNext(_ event: AgentRunControlEvent) -> AgentRunControlEvent {
     lock.lock()
     defer { lock.unlock() }
+    invalidateWriteCache()
     guard let canonical = AgentRunKernelContract.canonical(event) else { return event }
     let runId = canonical.runId
     var current = eventsLocked(runId)
@@ -65,6 +67,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     let runId = first.runId
     lock.lock()
     defer { lock.unlock() }
+    invalidateWriteCache()
     var current = eventsLocked(runId)
     if let root = current.first, !AgentRunKernelContract.hasSameRoot(root, first) { return [] }
     var knownEventsByIdempotencyKey: [String: AgentRunControlEvent] = [:]
@@ -92,6 +95,22 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
     guard !appended.isEmpty else { return [] }
     persistLocked(runId: runId, events: Array(current.suffix(Self.maxEventsPerRun)))
     return appended
+  }
+
+  func appendRecoveryIfCurrent(_ event: AgentRunControlEvent, expectedSequence: Int64) -> AgentRunControlEvent? {
+    lock.lock()
+    defer { lock.unlock() }
+    invalidateWriteCache()
+    guard let current = snapshotLocked(event.runId), !current.state.isTerminal,
+          current.lastSequence == expectedSequence else { return nil }
+    let committed = appendNext(event)
+    return committed.eventId == event.eventId ? committed : nil
+  }
+
+  private func invalidateWriteCache() {
+    cachedEventsByRunId.removeAll()
+    cachedRunIds = nil
+    cachedRecoverableRunIds = nil
   }
 
   func events(runId: String) -> [AgentRunControlEvent] {
@@ -123,6 +142,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   func recoverableRuns() -> [AgentRunControlSnapshot] {
     lock.lock()
     defer { lock.unlock() }
+    invalidateWriteCache()
     return recoverableRunIdsLocked().compactMap(snapshotLocked).filter { !$0.state.isTerminal }
   }
 
@@ -135,6 +155,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   func removeRuns(_ runIds: Set<String>) {
     lock.lock()
     defer { lock.unlock() }
+    invalidateWriteCache()
     let normalized = Set(runIds.map(clean).filter { !$0.isEmpty })
     guard !normalized.isEmpty else { return }
     let retained = runIdsLocked().filter { !normalized.contains($0) }
@@ -149,6 +170,7 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   func clear() {
     lock.lock()
     defer { lock.unlock() }
+    invalidateWriteCache()
     runIdsLocked().forEach { defaults.removeObject(forKey: eventKey($0)) }
     defaults.removeObject(forKey: runIdsKey)
     defaults.removeObject(forKey: recoverableRunIdsKey)

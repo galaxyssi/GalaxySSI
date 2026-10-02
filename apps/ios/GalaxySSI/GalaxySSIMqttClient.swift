@@ -187,7 +187,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     phoneContactInboxTopic: String? = nil,
     phoneRoutes: [GalaxySSILinkRoutes]? = nil,
     rendezvousSecrets: [String: String]? = nil,
-    rendezvousExpirations: [String: Date]? = nil
+    rendezvousExpirations: [String: Date]? = nil,
+    notifyWhenReady: Bool = false
   ) {
     queue.async {
       self.serverLinks = serverLinks.filter { $0.routes.isOpaqueV2Valid }
@@ -199,6 +200,9 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
       }
       if let rendezvousExpirations { self.rendezvousExpirations = rendezvousExpirations }
       self.refreshRotatingSubscriptions()
+      if notifyWhenReady {
+        self.notifyRelationshipSubscriptionsReady(force: true)
+      }
     }
   }
 
@@ -604,22 +608,26 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
         }
       } else {
         activeSubscriptions.formUnion(topics.intersection(Set(subscriptions)))
-        let expected = Set(subscriptions)
-        if !expected.isEmpty, activeSubscriptions.isSuperset(of: expected) {
-          readySubscriptionGeneration = connectionGeneration
-          let generation = connectionGeneration
-          DispatchQueue.main.async {
-            guard self.isConnected, self.connectionGeneration == generation else { return }
-            self.relationshipSubscriptionsReady = true
-            self.onRelationshipSubscriptionReadinessChanged?(true)
-            self.onRelationshipSubscriptionsReady?()
-          }
-        }
+        notifyRelationshipSubscriptionsReady()
       }
     case 11, 13:
       break
     default:
       break
+    }
+  }
+
+  private func notifyRelationshipSubscriptionsReady(force: Bool = false) {
+    guard connected, !subscriptions.isEmpty,
+          activeSubscriptions.isSuperset(of: Set(subscriptions)),
+          force || readySubscriptionGeneration != connectionGeneration else { return }
+    readySubscriptionGeneration = connectionGeneration
+    let generation = connectionGeneration
+    DispatchQueue.main.async {
+      guard self.isConnected, self.connectionGeneration == generation else { return }
+      self.relationshipSubscriptionsReady = true
+      self.onRelationshipSubscriptionReadinessChanged?(true)
+      self.onRelationshipSubscriptionsReady?()
     }
   }
 

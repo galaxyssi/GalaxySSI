@@ -1056,7 +1056,9 @@ final class AgentConnectorResponseBus {
   @discardableResult
   func markTransportFailure(_ delivery: AgentTerminalDelivery) -> Bool {
     guard !store.hasReceivedDelivery(delivery) else { return false }
-    terminalStore.mark(delivery)
+    var failure = delivery
+    failure.isFailure = true
+    terminalStore.mark(failure)
     return true
   }
 

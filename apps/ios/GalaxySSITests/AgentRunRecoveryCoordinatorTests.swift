@@ -2,6 +2,100 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRunRecoveryCoordinatorTests: XCTestCase {
+  func testTerminalDeliveryFailureStopsRecoveryBeforeResolvingAdapter() async throws {
+    let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
+    _ = try workspaces.upsert(deliveryWorkspace())
+    var event = runEvent(type: .waitingForDevice, sequence: 8)
+    event.clientRouteId = "opaque-route"
+    event.goalId = "original-goal"
+    event.turnId = "original-turn"
+    event.actionId = "original-action"
+    let events = RecoveryRunControlStore(event: event)
+    let registration = durableRegistration()
+    let results = try await AgentRunRecoveryCoordinator(
+      runStore: events, workspaceStore: workspaces,
+      recordedRun: { _ in self.runningRecordedRun() },
+      registration: { _, _ in AgentRunRecoveryRegistration(registration) },
+      adapterResolver: { _ in XCTFail("Terminal delivery must not reconnect"); return nil },
+      terminalDeliveries: { [self.deliveryFailure()] }
+    ).recover()
+
+    XCTAssertEqual(results.single?.outcome, .ignoredTerminal)
+    XCTAssertEqual(workspaces.find("turn-1")?.status, .failed)
+    XCTAssertEqual(workspaces.find("turn-1")?.errorMessage, "delivery_retry_exhausted")
+    let failed = try XCTUnwrap(events.appended.single)
+    XCTAssertEqual(failed.type, .runFailed)
+    XCTAssertEqual(failed.clientRouteId, event.clientRouteId)
+    XCTAssertEqual(failed.goalId, event.goalId)
+    XCTAssertEqual(failed.turnId, event.turnId)
+    XCTAssertEqual(failed.actionId, event.actionId)
+    XCTAssertNotEqual(failed.eventId, event.eventId)
+  }
+
+  func testFailureArrivingDuringRemoteQueryDoesNotBecomeWaitingAgain() async throws {
+    let workspaces = InMemoryAgentWorkspaceStore(clock: { 1_000 })
+    _ = try workspaces.upsert(deliveryWorkspace())
+    let events = RecoveryRunControlStore(event: runEvent(type: .toolProgress, sequence: 5))
+    let terminals = InMemoryAgentTerminalDeliveryStore()
+    let registration = durableRegistration()
+    let results = try await AgentRunRecoveryCoordinator(
+      runStore: events, workspaceStore: workspaces,
+      recordedRun: { _ in self.runningRecordedRun() },
+      registration: { _, _ in AgentRunRecoveryRegistration(registration) },
+      adapterResolver: { _ in
+        terminals.mark(self.deliveryFailure())
+        return nil
+      },
+      terminalDeliveries: { terminals.records() }
+    ).recover()
+
+    XCTAssertEqual(results.single?.outcome, .ignoredTerminal)
+    XCTAssertEqual(workspaces.find("turn-1")?.status, .failed)
+    XCTAssertEqual(events.appended.map(\.type), [.runFailed])
+  }
+
+  func testRecoveryCASRejectsCrossInstanceProgressAndTerminalUpdates() throws {
+    let suite = "recovery-cas-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let first = UserDefaultsAgentRunEventStore(defaults: defaults)
+    let second = UserDefaultsAgentRunEventStore(defaults: defaults)
+    let started = first.appendNext(runEvent(type: .runStarted, sequence: 0))
+    _ = first.recoverableRuns()
+    var progress = started
+    progress.eventId = UUID().uuidString
+    progress.idempotencyKey = progress.eventId
+    progress.type = .toolProgress
+    let advanced = second.appendNext(progress)
+    var failure = started
+    failure.eventId = UUID().uuidString
+    failure.idempotencyKey = failure.eventId
+    failure.type = .runFailed
+    XCTAssertNil(first.appendRecoveryIfCurrent(failure, expectedSequence: started.sequence))
+    XCTAssertEqual(first.latestEvent(runId: started.runId)?.eventId, advanced.eventId)
+    XCTAssertNotNil(first.appendRecoveryIfCurrent(failure, expectedSequence: advanced.sequence))
+    var resumed = failure
+    resumed.eventId = UUID().uuidString
+    resumed.idempotencyKey = resumed.eventId
+    resumed.type = .runRecovered
+    XCTAssertNil(second.appendRecoveryIfCurrent(resumed, expectedSequence: advanced.sequence + 1))
+  }
+
+  private func deliveryWorkspace() -> AgentWorkspace {
+    AgentWorkspace(
+      workspaceId: "turn-1", sessionId: "session-1", conversationId: "conversation-1",
+      taskId: "turn-1", agentId: "codex", deviceId: "desktop-1", status: .waitingResponse,
+      createdAtMillis: 1_000, updatedAtMillis: 1_000
+    )
+  }
+
+  private func deliveryFailure() -> AgentTerminalDelivery {
+    AgentTerminalDelivery(
+      sourceMessageId: 71, conversationId: "conversation-1", turnId: "turn-1", taskId: "turn-1",
+      reason: "delivery_retry_exhausted", terminalAtMillis: 2_000, isFailure: true
+    )
+  }
+
   func testRecoveryWakeCoalescesConcurrentEventsAndRetainsOfflineWake() async throws {
     let firstStarted = expectation(description: "first recovery started")
     let passesFinished = expectation(description: "coalesced recovery passes finished")

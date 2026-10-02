@@ -1162,7 +1162,9 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         taskId: envelope.taskId.ifBlank(active.request.taskId),
         contactId: envelope.contactId.ifBlank(active.contactId),
         reason: settlement.result.message,
-        terminalAtMillis: envelope.nowMillis
+        terminalAtMillis: envelope.nowMillis,
+        executionGeneration: Int64(settlement.result.metadata["execution_generation"] ?? "") ?? 1,
+        isFailure: settlement.eventType == .runFailed
       ))
     }
     if let eventType = settlement.eventType {
@@ -1303,7 +1305,9 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       taskId: metadata["remote_task_id"]?.ifBlank(active.request.taskId) ?? active.request.taskId,
       contactId: metadata["contact_id"]?.ifBlank(active.contactId) ?? active.contactId,
       reason: reason,
-      terminalAtMillis: terminalAtMillis
+      terminalAtMillis: terminalAtMillis,
+      executionGeneration: Int64(metadata["execution_generation"] ?? "") ?? 1,
+      isFailure: result?.success == false && metadata["cancelled"] != "true"
     )
   }
 
