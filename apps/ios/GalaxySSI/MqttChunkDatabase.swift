@@ -70,6 +70,12 @@ final class MqttChunkDatabase {
           chunk_hash TEXT NOT NULL, encrypted_data BLOB NOT NULL,
           PRIMARY KEY(scope_digest, transfer_id, chunk_index))
         """)
+      try execute("""
+        CREATE TABLE IF NOT EXISTS mqtt_outgoing_chunks (
+          scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, expires_at INTEGER NOT NULL,
+          encrypted_metadata BLOB NOT NULL, PRIMARY KEY(scope_digest, transfer_id))
+        """)
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_outgoing_chunk_expiry ON mqtt_outgoing_chunks(expires_at)")
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
       try transaction { () }
     } catch {
@@ -126,7 +132,7 @@ final class MqttChunkDatabase {
     if let saved {
       guard try open(saved, purpose: "mqtt-chunk-store-key") == Self.canary else { throw MqttChunkStorageError.corruptState }
     } else {
-      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts)",
+      let count = try query("SELECT (SELECT COUNT(*) FROM mqtt_wire_transfers) + (SELECT COUNT(*) FROM mqtt_wire_parts) + (SELECT COUNT(*) FROM mqtt_outgoing_chunks)",
                             maximumRows: 1) { try $0.number(0) }.first
       guard count == 0 else { throw MqttChunkStorageError.corruptState }
       let encrypted = try seal(Self.canary, purpose: "mqtt-chunk-store-key")

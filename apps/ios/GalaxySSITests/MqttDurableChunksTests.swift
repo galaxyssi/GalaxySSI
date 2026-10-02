@@ -266,9 +266,9 @@ final class MqttDurableChunksTests: XCTestCase {
   }
 }
 
-private final class ChunkTestClock { var value: Int64 = 1000 }
+final class ChunkTestClock { var value: Int64 = 1000 }
 
-private final class ChunkFixture {
+final class ChunkFixture {
   let root = FileManager.default.temporaryDirectory.appendingPathComponent("mqtt-chunks-\(UUID().uuidString)", isDirectory: true)
   let secrets = InMemorySecretStore()
   let clock = ChunkTestClock()
