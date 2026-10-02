@@ -2,6 +2,98 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testStoredReceiptRequiresCommittedMatchingInboxRecord() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket()
+    XCTAssertNil(try f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+    try f.stageIncoming(packet)
+    let publication = try XCTUnwrap(f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+    let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: publication.payload) as? [String: Any])
+    let frame = try MqttDeliveryEnvelope.parseVerifiedReceipt(payload,
+      originalSender: f.entry.identity.remote, originalReceiver: f.entry.identity.local)
+    XCTAssertEqual(frame.message.messageID, "incoming")
+    XCTAssertEqual(publication.topic, f.peer.binding.sendTopic)
+    XCTAssertEqual(publication.authorized?(), true)
+    // Receiving committed data does not require a completed outgoing resume handshake.
+    XCTAssertFalse(f.peer.routes.isReady(scope: f.peer.binding.scope))
+    let sent = try await f.peer.routes.publishStoredReceipt(packet, inbox: f.journal.inbox)
+    XCTAssertTrue(sent)
+    XCTAssertEqual(f.peer.path.publications.count, 1)
+  }
+
+  func testStoredReceiptCannotEscapeOpenInboxTransaction() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket()
+    let database = try MqttChunkDatabase(fileURL: f.storage.url, secrets: f.storage.secrets)
+    let inbox = try MqttBusinessInbox(database: database)
+    try database.withTransaction { token in
+      let hash = try MqttDeliveryEnvelope.contentHash(packet.payload)
+      _ = try inbox.accept(identity: f.entry.identity, messageID: "incoming",
+        payload: ["message_id": "incoming", "type": "message"], ciphertextDigest: hash,
+        wireHash: hash, receiptRequired: true, transaction: token)
+      XCTAssertThrowsError(try f.peer.routes.prepareStoredReceipt(packet, inbox: inbox))
+    }
+    XCTAssertNotNil(try f.peer.routes.prepareStoredReceipt(packet, inbox: inbox))
+  }
+
+  func testStoredReceiptRejectsDifferentCiphertextForSameMessage() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket()
+    try f.stageIncoming(packet)
+    let changed = try await f.incomingPacket(body: "AQ==")
+    XCTAssertNil(try f.peer.routes.prepareStoredReceipt(changed, inbox: f.journal.inbox))
+  }
+
+  func testStoredReceiptCanReplayCompletedInboxWithoutReapplyingMessage() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket()
+    try f.stageIncoming(packet)
+    _ = try f.journal.inbox.complete(identity: f.entry.identity, messageID: "incoming")
+    XCTAssertNotNil(try f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+    XCTAssertTrue(try f.journal.inbox.pending().isEmpty)
+  }
+
+  func testStoredReceiptAuthorizationRejectsRevocationAndDeletedProof() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket()
+    try f.stageIncoming(packet)
+    let publication = try XCTUnwrap(f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+    try f.journal.inbox.forget(identity: f.entry.identity)
+    XCTAssertEqual(publication.authorized?(), false)
+    try f.stageIncoming(packet)
+    XCTAssertEqual(publication.authorized?(), true)
+    f.peer.binding.enabled = false
+    try f.peer.routes.replace([f.peer.binding])
+    XCTAssertEqual(publication.authorized?(), false)
+    XCTAssertThrowsError(try f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+  }
+
+  func testStoredReceiptAuthorizationRejectsReconnectedPath() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket()
+    try f.stageIncoming(packet)
+    let publication = try XCTUnwrap(f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+    await f.peer.emit(topics: f.peer.binding.receiveTopics, generation: 2)
+    XCTAssertEqual(publication.authorized?(), false)
+    XCTAssertThrowsError(try f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+    let replay = try await f.incomingPacket()
+    XCTAssertNotNil(try f.peer.routes.prepareStoredReceipt(replay, inbox: f.journal.inbox))
+  }
+
+  func testStoredReceiptDoesNotAcknowledgeAnotherReceipt() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    let packet = try await f.incomingPacket(traffic: "receipt")
+    try f.stageIncoming(packet, receiptRequired: false)
+    XCTAssertNil(try f.peer.routes.prepareStoredReceipt(packet, inbox: f.journal.inbox))
+  }
+
   func testDeliveryDrainRetriesBusinessHandoffWhenConsumeWriteFails() async throws {
     let f = try ReceiptBridgeFixture()
     try f.stageStoredReceipt()
@@ -628,6 +720,23 @@ private final class ReceiptBridgeFixture {
     payload["message_id"] = "ack"
     _ = try journal.inbox.accept(identity: entry.identity, messageID: "ack", payload: payload,
       ciphertextDigest: String(repeating: "e", count: 64), wireHash: String(repeating: "f", count: 64), receiptRequired: false)
+  }
+
+  func incomingPacket(body: String = "AA==", traffic: String = "message") async throws -> MqttPeerRoutes.VerifiedPacket {
+    let wire: [String: Any] = ["scheme": "signal", "from": "remote", "to": "local", "body": body]
+    let incoming = try MqttDeliveryEnvelope.Frame(message: .init(messageID: "incoming",
+      contentHash: MqttDeliveryEnvelope.contentHash(wire), sender: entry.identity.remote,
+      receiver: entry.identity.local, traffic: traffic),
+      attempt: .init(attemptID: String(repeating: "e", count: 32), brokerID: "emqx", generation: 4))
+    let reception = try await peer.routes.receive(peer.ingress(incoming.attach(to: wire)))
+    return try XCTUnwrap(reception.packet)
+  }
+
+  func stageIncoming(_ packet: MqttPeerRoutes.VerifiedPacket, receiptRequired: Bool = true) throws {
+    let hash = try MqttDeliveryEnvelope.contentHash(packet.payload)
+    _ = try journal.inbox.accept(identity: entry.identity, messageID: "incoming",
+      payload: ["message_id": "incoming", "type": receiptRequired ? "message" : "delivery_ack"],
+      ciphertextDigest: hash, wireHash: hash, receiptRequired: receiptRequired)
   }
 }
 

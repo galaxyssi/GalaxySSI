@@ -200,6 +200,44 @@ final class MqttPeerRoutes {
     }
   }
 
+  func decryptAndStore(_ packet: VerifiedPacket, using engine: GalaxySSISignalEngine,
+                       remoteName: String) throws -> MqttBusinessInbox.Accepted {
+    try withCurrentIdentity(packet) { identity in
+      try engine.decryptAndStore(packet.payload, identity: identity, remoteName: remoteName,
+        ingressBroker: packet.ingress.brokerID)
+    }
+  }
+
+  // Re-read committed storage, not a caller-retained Accepted value from an unfinished transaction.
+  // Receipts can return before resume completes; they acknowledge storage, not route readiness.
+  func prepareStoredReceipt(_ packet: VerifiedPacket, inbox: MqttBusinessInbox) throws -> MqttPathPublication? {
+    try withCurrentIdentity(packet) { identity in
+      guard packet.payload[MqttDeliveryEnvelope.field] != nil else { return nil }
+      let frame = try MqttDeliveryEnvelope.parseVerifiedFrame(packet.payload, sender: identity.remote,
+        receiver: identity.local, ingressBroker: packet.ingress.brokerID)
+      guard frame.message.traffic != "receipt" else { return nil }
+      guard let receipt = try inbox.storedReceipt(identity: identity, messageID: frame.message.messageID,
+        wireHash: frame.message.contentHash), let peer = peers[identity.scope] else { return nil }
+      let binding = peer.binding
+      return MqttPathPublication(topic: binding.sendTopic,
+        payload: try GalaxySSILinkProtocol.jsonData(frame.receiptAfterStore(messageID: receipt.messageID, wireHash: receipt.wireHash)),
+        generation: packet.ingress.generation, receiveTopics: binding.receiveTopics,
+        secretFingerprint: binding.secretFingerprint, authorized: { [weak self, weak peer] in
+          guard let self, let peer else { return false }
+          return self.locked {
+            guard self.current(peer, binding: binding), self.isCurrent(packet) else { return false }
+            return (try? inbox.storedReceipt(identity: identity, messageID: receipt.messageID,
+              wireHash: receipt.wireHash)) != nil
+          }
+        })
+    }
+  }
+
+  func publishStoredReceipt(_ packet: VerifiedPacket, inbox: MqttBusinessInbox) async throws -> Bool {
+    guard let publication = try prepareStoredReceipt(packet, inbox: inbox) else { return false }
+    return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
+  }
+
   // Queueing is allowed while offline, but approval, relationship key and destination must still be current.
   func withOutgoing<T>(identity: MqttBusinessIdentity, topics: Set<String>, commit: () throws -> T) throws -> T {
     try locked {
