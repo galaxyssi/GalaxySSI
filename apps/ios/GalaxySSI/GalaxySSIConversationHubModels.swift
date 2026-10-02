@@ -68,6 +68,9 @@ enum GalaxySSIConversationExecutionPolicy {
     let createdAt: Int64
     let updatedAt: Int64
     let recovering: Bool
+    let canReconcileDeliveredReply: Bool
+    let cancellationRequested: Bool
+    let latestResumeAt: Int64?
 
     init(_ workspace: AgentWorkspace) {
       workspaceID = workspace.workspaceId
@@ -77,6 +80,10 @@ enum GalaxySSIConversationExecutionPolicy {
       createdAt = workspace.createdAtMillis
       updatedAt = workspace.updatedAtMillis
       recovering = GalaxySSIConversationExecutionPolicy.isRecovering(workspace)
+      canReconcileDeliveredReply = [.created, .queued, .running, .waitingResponse].contains(workspace.status)
+      cancellationRequested = workspace.cancellationRequested
+      latestResumeAt = workspace.eventJournal.filter { $0.kind == AgentTaskEventKinds.resumed }
+        .map(\.timestampMillis).max()
     }
   }
 
@@ -100,8 +107,7 @@ enum GalaxySSIConversationExecutionPolicy {
       return $0.updatedAt < $1.updatedAt
     }
     if let workspace, workspace.updatedAt >= (selected?.updatedAtMillis ?? Int64.min) {
-      return resolve(phase: workspace.phase, latest: latest, unread: unread,
-        recovering: workspace.recovering)
+      return resolve(workspace: workspace, latest: latest, unread: unread)
     }
     return resolve(phase: selected?.phase, latest: latest, unread: unread)
   }
@@ -113,6 +119,27 @@ enum GalaxySSIConversationExecutionPolicy {
     guard workspace.status == .waitingResponse,
           let last = workspace.eventJournal.last(where: { relevant.contains($0.kind) }) else { return false }
     return recovery.contains(last.kind)
+  }
+
+  static func resolve(workspace: Snapshot, latest: AgentTranscriptEntry?, unread: Bool)
+    -> GalaxySSIConversationExecutionStatus {
+    if workspace.canReconcileDeliveredReply, let latest, hasDeliveredReply(workspace: workspace, reply: latest) {
+      return unread ? .completeUnread : .read
+    }
+    return resolve(phase: workspace.phase, latest: latest, unread: unread, recovering: workspace.recovering)
+  }
+
+  private static func hasDeliveredReply(workspace: Snapshot, reply: AgentTranscriptEntry) -> Bool {
+    guard !workspace.cancellationRequested, AgentTaskTerminalReplyPolicy.isTerminalReply(reply),
+          !AgentTranscriptRenderPolicy.isLiveStream(reply),
+          !reply.conversationId.isEmpty, reply.conversationId == workspace.conversationID,
+          reply.timestampMillis >= workspace.createdAt,
+          workspace.latestResumeAt.map({ $0 <= reply.timestampMillis }) ?? true else { return false }
+    let sameTask = !reply.taskId.isEmpty ? reply.taskId == workspace.taskID :
+      (!reply.turnId.isEmpty && (reply.turnId == workspace.workspaceID || reply.turnId == workspace.taskID))
+    let canonicalTurnFinal = !reply.turnId.isEmpty && reply.turnId == workspace.workspaceID &&
+      reply.turnId == workspace.taskID && reply.dedupeKey == AgentFinalResponseIdentity.dedupeKey(turnId: reply.turnId)
+    return sameTask || canonicalTurnFinal
   }
 
   private static func phase(_ status: AgentWorkspaceStatus) -> AgentPhase {

@@ -2,6 +2,93 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDeliveredFinalReconcilesOnlyStaleActiveWorkspaceStates() {
+    let reply = AgentTranscriptEntry(id: "reply", role: .assistant, text: "", timestampMillis: 100,
+      dedupeKey: "assistant-final:turn:t", conversationId: "c", turnId: "t", taskId: "executor")
+    for status in [AgentWorkspaceStatus.created, .queued, .running, .waitingResponse] {
+      let workspace = AgentWorkspace(workspaceId: "t", sessionId: "s", conversationId: "c", taskId: "t",
+        status: status, eventJournal: [.init(kind: AgentTaskEventKinds.progress, timestampMillis: 200)],
+        createdAtMillis: 10, updatedAtMillis: 200)
+      let snapshot = GalaxySSIConversationExecutionPolicy.Snapshot(workspace)
+      XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: snapshot, latest: reply, unread: false), .read)
+      XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: snapshot, latest: reply, unread: true), .completeUnread)
+      XCTAssertEqual(workspace.status, status)
+      XCTAssertEqual(workspace.eventJournal.count, 1)
+    }
+    let preserved: [AgentWorkspaceStatus: GalaxySSIConversationExecutionStatus] = [
+      .paused: .paused, .waitingConfirmation: .waitingConfirmation, .blocked: .blocked,
+      .failed: .failed, .cancelled: .cancelled]
+    for (status, expected) in preserved {
+      let workspace = AgentWorkspace(workspaceId: "t", sessionId: "s", conversationId: "c", taskId: "t", status: status)
+      XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: true), expected)
+    }
+  }
+
+  func testDeliveredFinalHonorsTaskIdentityResumeAndCancellation() {
+    var workspace = AgentWorkspace(workspaceId: "t", sessionId: "s", conversationId: "c", taskId: "t",
+      status: .running, createdAtMillis: 10)
+    var reply = AgentTranscriptEntry(id: "reply", role: .assistant, text: "", timestampMillis: 100,
+      dedupeKey: "result:other", conversationId: "c", turnId: "t", taskId: "other")
+    func state() -> GalaxySSIConversationExecutionStatus {
+      GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: false)
+    }
+    XCTAssertEqual(state(), .running)
+    reply.dedupeKey = AgentFinalResponseIdentity.dedupeKey(turnId: "t")
+    XCTAssertEqual(state(), .read)
+    workspace.taskId = "child"
+    XCTAssertEqual(state(), .running)
+    workspace.taskId = "t"
+    workspace.cancellationRequested = true
+    XCTAssertEqual(state(), .running)
+    workspace.cancellationRequested = false
+    workspace.eventJournal = [.init(kind: AgentTaskEventKinds.resumed, timestampMillis: 101)]
+    XCTAssertEqual(state(), .running)
+    reply.timestampMillis = 102
+    XCTAssertEqual(state(), .read)
+    workspace.createdAtMillis = 103
+    XCTAssertEqual(state(), .running)
+    workspace.createdAtMillis = 10
+    reply.conversationId = "other"
+    XCTAssertEqual(state(), .running)
+    reply.conversationId = ""
+    XCTAssertEqual(state(), .running)
+  }
+
+  func testOnlyTerminalReplyFormatsReconcileAndLegacyTurnMustMatch() {
+    let workspace = AgentWorkspace(workspaceId: "t", sessionId: "s", conversationId: "c", taskId: "t", status: .running)
+    var reply = AgentTranscriptEntry(id: "reply", role: .assistant, text: "", timestampMillis: 100,
+      conversationId: "c", turnId: "t")
+    for prefix in ["assistant-final:", "result:", "direct-system:", "fast-local:", "skill-command:", "skill-result:"] {
+      reply.dedupeKey = prefix + "t"
+      XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: false), .read)
+    }
+    for key in ["", "approval:t", "remote-approval:t", "delivery-failed:t", "task-watchdog-timeout:t"] {
+      reply.dedupeKey = key
+      XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: false), .running)
+    }
+    reply.dedupeKey = "assistant-final:t"
+    reply.turnId = "old"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: false), .running)
+    reply.turnId = "t"
+    reply.id = "agent-stream-t"
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: false), .running)
+    reply.id = "reply"
+    reply.role = .process
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(workspace: .init(workspace), latest: reply, unread: false), .running)
+  }
+
+  func testPersistedChatFinalReconcilesProductionWorkspaceProjection() {
+    let workspace = AgentWorkspace(workspaceId: "t", sessionId: "s", conversationId: "c", taskId: "t",
+      status: .waitingResponse, eventJournal: [.init(kind: AgentTaskEventKinds.recoveryWaitingResponse, timestampMillis: 200)])
+    let reply = ChatMessage(contactId: "hermes", content: "Done", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 0.1), deliveryStatus: .delivered,
+      conversationId: "c", turnId: "t", remoteMessageId: "assistant-final:turn:t")
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "c", message: reply,
+      tasks: [], unread: false, workspaces: [.init(workspace)]), .read)
+    XCTAssertEqual(GalaxySSIConversationExecutionPolicy.resolve(conversationID: "c", message: reply,
+      tasks: [], unread: true, workspaces: [.init(workspace)]), .completeUnread)
+  }
+
   func testConversationExecutionPresentationMatchesAndroidStatusFamilies() {
     typealias Status = GalaxySSIConversationExecutionStatus
     for status in Status.allCases where status.animated {
@@ -155,7 +242,7 @@ extension GalaxySSIStoreTests {
     for state in GalaxySSIConversationExecutionStatus.allCases {
       XCTAssertEqual(state.animated, animated.contains(state))
     }
-    XCTAssertEqual(GalaxySSIConversationExecutionStatus.completeUnread.systemImage, "checkmark.circle.fill")
+    XCTAssertEqual(GalaxySSIConversationExecutionStatus.completeUnread.systemImage, "checkmark.circle")
   }
 
   func testAgentProcessClockStopsOnceAtMatchingFinalReply() {
