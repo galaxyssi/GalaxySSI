@@ -35,12 +35,13 @@ internal object AgentSessionPersistencePolicy {
 
     fun compactAuditText(value: String): String = value.take(MAX_AUDIT_TEXT_CHARACTERS)
 
-    fun compactMetadata(metadata: Map<String, String>): Map<String, String> = metadata.entries
-        .sortedBy { (key, _) -> if (key in RECOVERY_METADATA_KEYS) 0 else 1 }
-        .take(MAX_METADATA_ENTRIES)
+    fun compactMetadata(metadata: Map<String, String>): Map<String, String> {
+        val (recovery, ordinary) = metadata.entries.partition { it.key in RECOVERY_METADATA_KEYS }
+        return (recovery + ordinary.take((MAX_METADATA_ENTRIES - recovery.size).coerceAtLeast(0)))
         .associate { (key, value) ->
             key.take(128) to value.take(MAX_METADATA_VALUE_CHARACTERS)
         }
+    }
 
     private val RECOVERY_METADATA_KEYS = setOf(
         "delivery_failed",
@@ -50,6 +51,14 @@ internal object AgentSessionPersistencePolicy {
         "resource_id",
         "failure_domain",
         "resource_started_at",
+        "resource_location",
+        "team_run_id",
+        "team_id",
+        "team_state",
+        "team_recovery_paused",
+        "conversation_id",
+        "turn_id",
+        "task_id",
         "handoff_recovery_attempt",
         "depends_on",
         "use_outputs_from",

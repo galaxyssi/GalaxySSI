@@ -103,6 +103,52 @@ class CollaborationPublicationRecoveryDeviceTest {
         } }
     }
 
+    @Test fun upgradedValidatorAcceptsLegacyDraftWithoutAnyModelRequest(): Unit = runBlocking {
+        Fixture().use { fixture -> MockWebServer().use { server ->
+            server.start()
+            val database = AgentEncryptedDatabase(context, "galaxyssi_collaboration_workspace_v1")
+            val rows = object : CollaborationWorkspaceRows {
+                override fun read(key: String) = database.readString(key, "").takeIf(String::isNotBlank)
+                override fun commit(values: Map<String, String>) = database.mutateStrings(values)
+                override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
+            }
+            val draft = JSONObject(valid).put("findings", JSONArray((1..12).map {
+                JSONObject().put("claim", "Fixture finding $it").put("outcome", "not_tested")
+            })).toString()
+            rows.commit(CollaborationPublicationJournal(rows, fixture.access).outcomeWrites(draft,
+                JSONObject().put("status", "rejected").put("reason", "Return a valid structured artifact"), 1L))
+            val events = fixture.stream(server)
+            assertFalse(events.toString(), events.any { it is ModelStreamEvent.Failed })
+            assertEquals(listOf(draft), events.filterIsInstance<ModelStreamEvent.TextDelta>().map { it.text })
+            assertEquals(1, events.count { it is ModelStreamEvent.Completed })
+            assertEquals(0, server.requestCount)
+            assertEquals("recorded", fixture.workspace.publicationCheckpoint(fixture.access)!!.getJSONObject("receipt").getString("status"))
+        } }
+    }
+
+    @Test fun modelCanRequestAssistanceWithoutAHostRetryThreshold(): Unit = runBlocking {
+        Fixture().use { fixture -> MockWebServer().use { server ->
+            server.start()
+            server.enqueue(reply(invalid))
+            val request = JSONObject().put("format", CollaborationPublicationAssistance.FORMAT)
+                .put("diagnosis", "Unknown workspace kind; JSON is valid")
+                .put("attempted_corrections", "Inspected the saved contract")
+                .put("requested_help", "Coordinator should inspect the host schema")
+            server.enqueue(reply(request.toString()))
+            val events = fixture.stream(server)
+            val failure = events.filterIsInstance<ModelStreamEvent.Failed>().single()
+            assertEquals(CollaborationPublicationAssistanceException.CODE, failure.error.code)
+            assertFalse(events.any { it is ModelStreamEvent.Completed })
+            assertEquals(2, server.requestCount)
+            assertEquals(invalid, fixture.workspace.publicationCheckpoint(fixture.access)!!.getString("raw"))
+            assertTrue(fixture.workspace.browse(fixture.access).revisions.isEmpty())
+            assertEquals(request.toString(), fixture.workspace.publicationAssistance(fixture.access).toString())
+            val resumed = fixture.stream(server)
+            assertEquals(CollaborationPublicationAssistanceException.CODE, resumed.filterIsInstance<ModelStreamEvent.Failed>().single().error.code)
+            assertEquals("Resume must not invent another model attempt after a durable assistance request", 2, server.requestCount)
+        } }
+    }
+
     @Test fun evidenceRoundStillUsesCitationChecksBeforePublication(): Unit = runBlocking {
         Fixture().use { fixture -> MockWebServer().use { server ->
             server.start()

@@ -174,12 +174,13 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             repeat(2) { prepared.conversation.put(publicationDraftTurn + it, replacement.conversation.get(it)) }
             restrictPublicationRepairTools(prepared, allowExternalTools)
         }
-        suspend fun finishPublication(raw: String): Boolean {
+        suspend fun finishPublication(raw: String, revalidate: Boolean = false): Boolean {
             val current = requireNotNull(publication)
-            if (!current.accept(raw)) {
+            if (!current.accept(raw, revalidate)) {
                 preparePublicationRepair()
                 onToolEvent?.invoke(CloudToolEvent("collaboration_publication", "repairing",
                     "\u6b63\u5728\u4fee\u6b63\u6210\u679c\u63d0\u4ea4\u683c\u5f0f"))
+                current.resumeAssistance()
                 return false
             }
             emittedText = true
@@ -198,7 +199,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     emit(ModelStreamEvent.Completed(requestId, "publication_restored", System.nanoTime() / 1_000_000L))
                     return@flow
                 }
-                preparePublicationRepair()
+                // Revalidate a durable draft after an app/validator update before asking the model again.
+                if (finishPublication(saved.getString("raw"), revalidate = true)) return@flow
             }
             if (allowExternalTools) onToolEvent?.invoke(CloudToolEvent("research", "planning", "\u6b63\u5728\u7406\u89e3\u95ee\u9898\u5e76\u5224\u65ad\u662f\u5426\u9700\u8981\u68c0\u7d22"))
             val restored = checkpoint?.restore().orEmpty()
@@ -438,6 +440,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                 }
                 if (calls.isEmpty()) {
+                    // A member's assistance request is control flow, not a scientific conclusion to citation-check.
+                    if (publication?.repairing == true && runCatching { JSONObject(rawRoundText).optString("format") }
+                            .getOrNull() == CollaborationPublicationAssistance.FORMAT) {
+                        finishPublication(rawRoundText)
+                    }
                     if (publication != null && !bufferForCitationVerification) {
                         if (!finishPublication(rawRoundText)) continue
                         return@flow
@@ -946,7 +953,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
     private fun Throwable?.toStreamError(partialResponse: Boolean = false): ModelStreamError {
         val error = this
         return ModelStreamError(
-            code = error?.javaClass?.simpleName?.uppercase().orEmpty().ifBlank { "MODEL_STREAM_FAILED" },
+            code = if (error is CollaborationPublicationAssistanceException) CollaborationPublicationAssistanceException.CODE
+                else error?.javaClass?.simpleName?.uppercase().orEmpty().ifBlank { "MODEL_STREAM_FAILED" },
             message = error?.message.orEmpty().ifBlank { "Cloud model request failed" },
             retryable = error is java.io.IOException,
             partialResponse = partialResponse

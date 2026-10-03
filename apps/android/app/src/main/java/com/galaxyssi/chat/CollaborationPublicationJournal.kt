@@ -62,6 +62,7 @@ internal class CollaborationPublicationJournal(
         val sequence = Math.addExact(previous?.getLong("sequence") ?: 0L, 1L)
         val value = JSONObject().put("contract_sha256", hash(contract.toString()))
             .put("sequence", sequence).put("raw", raw).put("raw_sha256", hash(raw))
+            .put("problem_state", CollaborationPublicationProblem.observe(raw, receipt, previous))
             .put("receipt", receipt).put("recorded_at", now)
             .put("previous_sha256", previous?.toString()?.let(::hash).orEmpty())
         val key = attemptKey(sequence)
@@ -69,6 +70,25 @@ internal class CollaborationPublicationJournal(
         val encoded = envelope(value)
         return mapOf(key to encoded, prefix + "latest" to encoded)
     }
+
+    fun assistance(): JSONObject? {
+        val state = checkpoint() ?: return null
+        if (state.getJSONObject("receipt").optString("status") != "rejected") return null
+        return read(assistanceKey(state))?.getJSONObject("request")
+    }
+
+    fun assistanceWrites(request: JSONObject, now: Long): Map<String, String> {
+        val state = requireNotNull(checkpoint())
+        require(state.getJSONObject("receipt").optString("status") == "rejected")
+        val key = assistanceKey(state)
+        if (read(key) != null) return emptyMap()
+        return mapOf(key to envelope(JSONObject().put("request", request).put("recorded_at", now)
+            .put("sequence", state.getLong("sequence")).put("raw_sha256", state.getString("raw_sha256"))
+            .put("reason", state.getJSONObject("receipt").optString("reason"))))
+    }
+
+    private fun assistanceKey(state: JSONObject) = prefix + "assistance:" + hash(
+        state.getString("raw_sha256") + ":" + state.getJSONObject("receipt").optString("reason"))
 
     fun retiredOutcomeWrites(raw: String, receipt: JSONObject, now: Long): Map<String, String> {
         require(receipt.optBoolean("retired")) { "A retired audit receipt is required" }
