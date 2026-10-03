@@ -59,6 +59,58 @@ class AgentToolEvidenceTest(unittest.TestCase):
         self.assertEqual("execution_observed_not_claim_verified", receipt["trust"])
         self.assertEqual("provider_payload_as_received", receipt["coverage"])
 
+    def test_phone_import_omits_recall_echo_but_full_audit_and_original_are_retained(self):
+        original = self.observation("recall", type="dynamicToolCall", tool="collaboration_recall",
+                                    result={"contentItems": [{"type": "inputText", "text": "phone-original" * 5000}]})
+        recall = self.archive.record(self.task, original)
+        external = self.archive.record(self.task, self.observation("actual-command"))
+        projected = self.archive.query(self.request(), client_route_id="phone", phone_import=True)
+        self.assertEqual([external], projected["entries"])
+        self.assertEqual("external_execution_observations", projected["projection"])
+        self.assertFalse(projected["provider_history_complete"])
+        self.assertEqual(2, len(self.query()["entries"]))
+        self.assertEqual(original, self.read(recall)["observation"])
+        from codex_tool_evidence_bridge import query
+        manager = SimpleNamespace(tool_evidence=self.archive)
+        self.assertEqual([external], query(manager, self.request(), client_route_id="phone")["entries"])
+        self.assertIsNone(query(manager, self.request(), client_route_id="other-phone"))
+
+    def test_projection_cursor_skips_internal_reads_without_losing_external_observations(self):
+        external = []
+        for i in range(45):
+            self.archive.record(self.task, self.observation(f"read-{i}", type="dynamicToolCall", tool="collaboration_recall"))
+            external.append(self.archive.record(self.task, self.observation(f"command-{i}")))
+        cursor, found = 0, []
+        while True:
+            page = self.archive.query(self.request(after_sequence=cursor), client_route_id="phone", phone_import=True)
+            found.extend(page["entries"])
+            cursor = page["next_sequence"]
+            if not page["has_more"]: break
+        self.assertEqual(external, found)
+        self.assertEqual(90, cursor)
+
+    def test_only_host_registered_internal_recall_type_is_excluded(self):
+        receipts = []
+        for i, (kind, tool) in enumerate((("mcpToolCall", "collaboration_recall"), ("commandExecution", "collaboration_recall"),
+                                         ("dynamicToolCall", "web_fetch"), ("dynamicToolCall", "other"))):
+            receipts.append(self.archive.record(self.task, self.observation(str(i), type=kind, tool=tool)))
+        self.assertEqual(receipts, self.archive.query(self.request(), client_route_id="phone", phone_import=True)["entries"])
+
+    def test_legacy_evidence_schema_adds_projection_without_dropping_observations(self):
+        from secure_state import encrypt_text
+        receipt = self.archive.record(self.task, self.observation(aggregatedOutput="legacy-output" * PAGE_BYTES))
+        receipt.pop("phone_import")
+        with closing(sqlite3.connect(self.path)) as db, db:
+            scope = db.execute("SELECT scope FROM agent_tool_evidence").fetchone()[0]
+            encrypted = encrypt_text(self.path, canonical(receipt).decode(),
+                                     purpose=self.archive._purpose(scope, receipt["evidence_id"], "meta"))
+            db.execute("UPDATE agent_tool_evidence SET descriptor=?", (encrypted,))
+            db.execute("DROP INDEX tool_evidence_phone_import")
+            db.execute("ALTER TABLE agent_tool_evidence DROP COLUMN phone_import")
+        self.archive = AgentToolEvidence(self.path)
+        self.assertEqual([receipt], self.archive.query(self.request(), client_route_id="phone", phone_import=True)["entries"])
+        self.assertEqual("legacy-output" * PAGE_BYTES, self.read(receipt)["observation"]["item"]["aggregatedOutput"])
+
     def test_duplicate_is_exact_replay_and_conflict_cannot_overwrite(self):
         original = self.archive.record(self.task, self.observation())
         self.assertEqual(original, self.archive.record(self.task, self.observation()))

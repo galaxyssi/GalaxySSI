@@ -1,4 +1,5 @@
 import json
+import hashlib
 import unittest
 from unittest.mock import Mock, patch
 
@@ -101,6 +102,62 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
                 server._execute_dynamic_tool_call("task", {"id": 3}, {"tool": TOOL, "arguments": {"mode": "workspace"}}, common)
             self.assertFalse(reply.call_args.args[1]["success"])
             recall.assert_not_called()
+
+    def test_original_is_returned_only_after_phone_confirms_delivery(self):
+        broker, phases = RecallBroker(), []
+        content = "\u8bc1\u636e\n\"quoted\"\U0001f600"
+        delivery = {"receipt_id": "phone-nonce", "content_sha256": "d04a7261a11ea301be4dffc134a83f7bace52437f78289152f19f49d1f452db5"}
+        args = {"mode": "evidence", "evidence_id": "a" * 64, "sha256": "b" * 64}
+        def publish(request):
+            phases.append(request["phase"])
+            if request["phase"] == "read":
+                result = {"success": True, "content": content, "delivery": delivery,
+                          "host_read_coverage": {"complete": False}}
+            else:
+                self.assertEqual(delivery, request["delivery"])
+                result = {"success": True, "status": "confirmed", "delivery": delivery,
+                          "host_read_coverage": {"complete": True}}
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+            return True
+        result = broker.query(task, args, publish)
+        self.assertEqual(["read", "confirm"], phases)
+        self.assertEqual(content, result["content"])
+        self.assertTrue(result["host_read_coverage"]["complete"])
+        self.assertNotIn("delivery", result)
+        self.assertEqual({}, broker._pending)
+
+    def test_missing_corrupt_lost_or_revoked_confirmation_never_returns_an_original(self):
+        args = {"mode": "evidence", "evidence_id": "a" * 64, "sha256": "b" * 64}
+        for fault in ("read_lost", "no_receipt", "corrupt_content", "confirm_lost", "wrong_phase", "revoked", "generation", "cancel"):
+            broker, phases, state, live = RecallBroker(), [], task(), [True]
+            delivery = {"receipt_id": "phone-nonce", "content_sha256": hashlib.sha256(b"original").hexdigest()}
+            def publish(request):
+                phase = request["phase"]
+                phases.append(phase)
+                if fault == "read_lost" or phase == "confirm" and fault == "confirm_lost": return True
+                if phase == "read":
+                    result = {"success": True, "content": "changed" if fault == "corrupt_content" else "original", "delivery": delivery}
+                    if fault == "no_receipt": result.pop("delivery")
+                    if fault == "generation": state["execution_generation"] = 2
+                    if fault == "cancel": live[0] = False
+                else:
+                    result = {"success": fault != "revoked", "status": "confirmed", "delivery": delivery,
+                              "host_read_coverage": {"complete": True}}
+                response = {**request, "type": RESPONSE, "result": result}
+                if phase == "confirm" and fault == "wrong_phase": response["phase"] = "read"
+                accepted = broker.receive(response, "phone")
+                self.assertEqual(not (phase == "confirm" and fault == "wrong_phase"), accepted)
+                return True
+            with self.assertRaises((ValueError, TimeoutError), msg=fault):
+                broker.query(lambda: state, args, publish, active=lambda: live[0], timeout=.005)
+            self.assertEqual({}, broker._pending)
+            if fault in {"read_lost", "no_receipt", "corrupt_content", "generation", "cancel"}:
+                self.assertEqual(["read"], phases)
+
+    def test_evidence_reads_require_exact_browse_references(self):
+        for args in ({"mode": "evidence", "evidence_id": "a" * 64},
+                     {"mode": "evidence", "evidence_id": "a" * 64, "sha256": "x" * 64}):
+            with self.assertRaises(ValueError): validate_arguments(args)
 
 
 if __name__ == "__main__":

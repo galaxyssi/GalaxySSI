@@ -21,7 +21,7 @@ def capture(mutations, event: dict) -> dict | None:
 
 def query(manager, request: dict, *, client_route_id: str) -> dict | None:
     try:
-        return manager.tool_evidence.query(request, client_route_id=client_route_id)
+        return manager.tool_evidence.query(request, client_route_id=client_route_id, phone_import=True)
     except Exception:
         log.warning("Task evidence lookup failed; no task was started or resumed")
         return None

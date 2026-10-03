@@ -5,7 +5,8 @@ import org.json.JSONObject
 
 /** The host supplies access; model arguments can select records, never a group or member identity. */
 internal object CollaborationScopedRecall {
-    fun read(context: Context, input: Map<String, Any?>, access: CollaborationWorkspaceAccess): AgentNativeToolExecutionResult {
+    fun read(context: Context, input: Map<String, Any?>, access: CollaborationWorkspaceAccess,
+             recordCoverage: Boolean = true): AgentNativeToolExecutionResult {
         val group = CollaborationGroupStore(context).load(access.groupId)
         if (group == null || access.personId.isNotBlank() && group.members.none { it.id == access.personId })
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
@@ -27,7 +28,7 @@ internal object CollaborationScopedRecall {
                     val offset = input["offset"] ?: 0
                     if (offset !is Number || offset.toDouble() != offset.toInt().toDouble() || offset.toInt() < 0)
                         return AgentNativeToolExecutionResult.failure("invalid_arguments", "Evidence offset must be a nonnegative integer.")
-                    val page = try { ledger.readPage(access, id, input["sha256"] as? String ?: "", offset.toInt()) }
+                    val page = try { ledger.readPage(access, id, input["sha256"] as? String ?: "", offset.toInt(), recordCoverage) }
                         catch (invalid: IllegalArgumentException) {
                             return AgentNativeToolExecutionResult.failure("invalid_arguments", invalid.message.orEmpty())
                         }

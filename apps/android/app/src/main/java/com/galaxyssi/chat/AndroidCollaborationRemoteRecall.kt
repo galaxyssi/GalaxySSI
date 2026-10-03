@@ -16,6 +16,7 @@ internal object AndroidCollaborationRemoteRecall {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val slots = Semaphore(4)
     private val active = ConcurrentHashMap.newKeySet<String>()
+    private val deliveries = CollaborationRecallDelivery()
 
     fun receive(context: Context, payload: JSONObject, desktop: String) {
         if (!CollaborationRemoteRecallProtocol.valid(payload, System.currentTimeMillis())) return
@@ -28,24 +29,38 @@ internal object AndroidCollaborationRemoteRecall {
         scope.launch {
             try {
                 val binding = access(app, request, desktop)
-                val result = if (binding == null) CollaborationRemoteRecallProtocol.unavailable() else {
-                    val value = JSONObject(CollaborationCloudRecall.execute(app, binding, request.getJSONObject("arguments")))
+                val result = if (binding == null) CollaborationRemoteRecallProtocol.unavailable()
+                else if (request.getString("phase") == "confirm") deliveries.confirm(request, binding) { arguments, hash ->
+                    if (access(app, request, desktop) != binding) null
+                    else CollaborationEvidenceLedger(app).confirmPage(binding, arguments.getString("evidence_id"),
+                        arguments.getString("sha256"), arguments.optInt("offset", 0), hash)
+                } else {
+                    val value = JSONObject(CollaborationCloudRecall.execute(app, binding, request.getJSONObject("arguments"),
+                        recordCoverage = false))
                     value.put("success", value.optString("status") == "returned")
+                    deliveries.prepare(request, binding, value)
                 }
                 // Recheck authorization after disk reads; do not send data from a revoked assignment.
                 val safe = if (binding != null && access(app, request, desktop) != binding)
                     CollaborationRemoteRecallProtocol.unavailable() else result
                 if (paired(app, request, desktop) && CollaborationRemoteRecallProtocol.valid(request, System.currentTimeMillis())) {
-                    val response = CollaborationRemoteRecallProtocol.response(request, safe)
-                    GalaxySSIMqttClient.publishJsonForTransport(response,
-                        GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
+                    reply(request, safe)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 // A failed read must not crash the process or restart the model/effect.
                 Log.w("GalaxySSIRecall", "Scoped recall deferred: ${error.javaClass.simpleName}")
+                runCatching {
+                    if (paired(app, request, desktop) && CollaborationRemoteRecallProtocol.valid(request, System.currentTimeMillis()))
+                        reply(request, CollaborationRemoteRecallProtocol.unavailable())
+                }
             } finally { slots.release(); active.remove(key) }
         }
+    }
+
+    private fun reply(request: JSONObject, result: JSONObject) {
+        GalaxySSIMqttClient.publishJsonForTransport(CollaborationRemoteRecallProtocol.response(request, result),
+            GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
     }
 
     internal fun access(context: Context, request: JSONObject, desktop: String): CollaborationWorkspaceAccess? {

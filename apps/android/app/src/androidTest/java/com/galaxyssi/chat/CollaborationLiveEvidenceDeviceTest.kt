@@ -153,6 +153,9 @@ class CollaborationLiveEvidenceDeviceTest {
                 "{mapping:exact map-b reference,review:exact coverage-review-b reference}]}. Cite all four references in parents. " +
                 "Do not substitute the delivery review for a coverage review. Use only scoped collaboration_recall when receipts are omitted: " +
                 "mode=goal_contract for paged dependency context, or mode=workspace for exact saved versions. " +
+                "Before publishing, also independently read every original Desktop command evidence page using collaboration_recall mode=evidence. " +
+                "Browse first for exact evidence_id and sha256; follow next_offset until null. Reading a document or goal summary is insufficient. " +
+                "Cite that original command reference in the directory workspace object's observations list. " +
                 "Do not run external tools, change mappings, add claims, or certify the result. " +
                 "Return research-artifact JSON only.", setOf("author", "review"))
             val coverageInstruction = if (multipart) "plus goal_coverage:{manifest:exact saved fixture-coverage-directory reference from catalogue}. " else
@@ -228,9 +231,24 @@ class CollaborationLiveEvidenceDeviceTest {
                 CollaborationEvidenceReadCoverage.requireComplete(ref, review, original)
                 assertEquals("scoped_pages", ref.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
             }
+            val remoteRefs = org.json.JSONArray()
+            if (multipart) {
+                val manifest = resolvedCoverage.manifests.single()
+                val directory = workspace.read(access, manifest.getString("object_id"), manifest.getInt("revision"))!!
+                val refs = directory.getJSONArray("host_observations")
+                assertTrue("Codex catalogue must confirm receiving the original evidence", refs.length() > 0)
+                repeat(refs.length()) { index ->
+                    val ref = refs.getJSONObject(index)
+                    val original = originals.single { it.getString("evidence_id") == ref.getString("evidence_id") }
+                    CollaborationEvidenceReadCoverage.requireComplete(ref, directory, original)
+                    assertEquals("scoped_pages", ref.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
+                    remoteRefs.put(ref)
+                }
+            }
             File(context.getExternalFilesDir(null), "collaboration-live-evidence-read-coverage.json").writeText(JSONObject()
                 .put("run_id", run).put("review_node", review.getString("node_id"))
                 .put("observations", directRefs).put("coverage_frozen_at_publication", true)
+                .put("remote_confirmed_observations", remoteRefs)
                 .put("trust", "host_served_pages_not_scientific_validation").toString())
             assertTrue("Reviewer must actually fetch the original, not merely browse or cite its ID", observations.any { observation ->
                 val input = JSONObject(observation.getString("input_json"))

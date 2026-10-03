@@ -34,7 +34,8 @@ internal object CollaborationCloudRecall {
         }
     }
 
-    fun execute(context: Context, access: CollaborationWorkspaceAccess, input: JSONObject): String {
+    fun execute(context: Context, access: CollaborationWorkspaceAccess, input: JSONObject,
+                recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
             require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract")) { "Invalid recall mode" }
@@ -49,7 +50,7 @@ internal object CollaborationCloudRecall {
             fields.minus(setOf("offset", "revision")).filter(input::has).forEach { key ->
                 require(input.opt(key) is String && input.getString(key).length <= 512) { "Invalid reference" }
             }
-            CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access)
+            CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access, recordCoverage)
         } catch (_: IllegalArgumentException) {
             AgentNativeToolExecutionResult.failure("recall_unavailable", "Invalid arguments or revoked member access.")
         }

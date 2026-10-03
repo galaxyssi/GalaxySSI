@@ -38,6 +38,37 @@ class CollaborationEvidenceReadCoverageTest {
         assertEquals(1, f.rows.data.size)
     }
 
+    @Test fun undeliveredRemotePageCannotCertifyAReviewAndConfirmationIsExactAndDurable() {
+        val f = Fixture(100)
+        val page = f.ledger.readPage(f.reader, f.id, f.hash, recordCoverage = false)!!
+        assertFalse(page.coverage.getBoolean("complete"))
+        assertFalse(f.accepts())
+        assertEquals(1, f.rows.data.size)
+        assertTrue(runCatching { f.ledger.confirmPage(f.reader, f.id, f.hash, 0, "0".repeat(64)) }.isFailure)
+        assertFalse(f.accepts())
+        val hash = MqttImmutableContent.sha256(page.content)
+        assertTrue(f.ledger.confirmPage(f.reader, f.id, f.hash, 0, hash)!!.getBoolean("complete"))
+        val stored = f.rows.data.toMap()
+        assertTrue(CollaborationEvidenceLedger(f.rows).confirmPage(f.reader, f.id, f.hash, 0, hash)!!.getBoolean("complete"))
+        assertEquals(stored, f.rows.data)
+        assertTrue(f.accepts())
+        assertFalse(f.coverage(f.reader.copy(nodeId = "another-review")).getBoolean("complete"))
+    }
+
+    @Test fun confirmedLastPageDoesNotCountLostPagesOrBypassRevocation() {
+        val f = Fixture()
+        f.ledger.readPage(f.reader, f.id, f.hash, 0, recordCoverage = false)
+        val last = f.ledger.readPage(f.reader, f.id, f.hash, 24_000, recordCoverage = false)!!
+        val hash = MqttImmutableContent.sha256(last.content)
+        f.allowed = false
+        assertNull(f.ledger.confirmPage(f.reader, f.id, f.hash, 24_000, hash))
+        f.allowed = true
+        val confirmed = f.ledger.confirmPage(f.reader, f.id, f.hash, 24_000, hash)!!
+        assertEquals(last.content.length, confirmed.getInt("covered_characters"))
+        assertEquals(0, confirmed.getInt("first_missing_offset"))
+        assertFalse(f.accepts())
+    }
+
     @Test fun finalPageAndEndOffsetDoNotHideMissingMiddlePages() {
         val f = Fixture()
         val length = f.source.toString().length

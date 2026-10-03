@@ -10,11 +10,12 @@ class CollaborationRemoteRecallProtocolTest {
         put("execution_generation", 1).put("expires_at", 30_000L)
         put("type", CollaborationRemoteRecallProtocol.REQUEST).put("contract", CollaborationRemoteRecallProtocol.CONTRACT)
         put("request_id", "nonce").put("arguments", JSONObject().put("mode", "workspace"))
+        put("phase", "read")
     }
 
     @Test fun requestMustBeFreshAndCompletelyScoped() {
         assertTrue(CollaborationRemoteRecallProtocol.valid(request(), 10_000))
-        for (field in AgentResultRecoveryClient.FIELDS + listOf("execution_generation", "request_id", "arguments", "contract")) {
+        for (field in AgentResultRecoveryClient.FIELDS + listOf("execution_generation", "request_id", "arguments", "contract", "phase")) {
             val changed = request().apply { remove(field) }
             assertFalse(field, CollaborationRemoteRecallProtocol.valid(changed, 10_000))
         }
@@ -22,6 +23,15 @@ class CollaborationRemoteRecallProtocolTest {
         assertFalse(CollaborationRemoteRecallProtocol.valid(request().put("expires_at", 100_000L), 10_000))
         assertFalse(CollaborationRemoteRecallProtocol.valid(request().put("agent_id", "other"), 10_000))
         assertFalse(CollaborationRemoteRecallProtocol.valid(request().put("arguments", "not-object"), 10_000))
+    }
+
+    @Test fun confirmationRequiresAnExactHostChallengeAndReadCannotSmuggleOne() {
+        val delivery = JSONObject().put("receipt_id", "host-token").put("content_sha256", "a".repeat(64))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(request().put("delivery", delivery), 10_000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(request().put("phase", "confirm"), 10_000))
+        assertTrue(CollaborationRemoteRecallProtocol.valid(request().put("phase", "confirm").put("delivery", delivery), 10_000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(request().put("phase", "confirm")
+            .put("delivery", delivery.put("content_sha256", "wrong")), 10_000))
     }
 
     @Test fun responseCopiesOnlyHostIdentityAndNonce() {
