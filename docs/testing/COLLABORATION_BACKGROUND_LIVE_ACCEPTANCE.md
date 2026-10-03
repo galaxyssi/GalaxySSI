@@ -164,3 +164,121 @@ superiority and a complete outage/Doze/reboot matrix remain unproven. An existin
 Desktop reputation-ledger `head_signature_invalid` warning was observed and was
 not suppressed or repaired by this change; the original tool-evidence and host
 acceptance checks passed independently of that reputation ledger.
+
+## Confirmed remote evidence delivery
+
+The follow-up changes the private recall wire contract to
+`galaxyssi.collaboration-recall/2`; update both Android and Desktop together.
+The model-facing tool name and selectors are unchanged. No legacy-contract
+fallback is permitted to credit remote page coverage.
+
+Previously, preparing a remote original-evidence page recorded coverage before
+MQTT delivery. A dropped response could therefore leave coverage for a page the
+Desktop never received. Remote reads now prepare the page without crediting it:
+
+1. The phone sends the page and an opaque, short-lived delivery challenge.
+2. Desktop verifies the full page's UTF-8 SHA-256 and acknowledges the challenge
+   using the same authenticated task scope, execution generation and selectors.
+3. The phone rechecks current authorization, the challenge and the exact saved
+   page. Only then does its existing encrypted ledger merge the confirmed range.
+4. Desktop returns the page to the Codex tool interface only after the phone
+   confirms the coverage commit. A failed exchange returns a retryable read
+   failure, never a successful original-evidence result.
+
+Each exchange retains the existing bounded network timeout. There is no goal
+iteration cap, periodic heartbeat or new persistent message outbox. Challenges
+are bounded to 128 small in-memory records and expire after 60 monotonic seconds;
+they contain selectors and a digest, not page bodies. Confirmed challenges can
+be evicted under pressure so they cannot prevent new work. Duplicate confirmations
+are safe because the existing ledger merges identical ranges idempotently.
+Losing the phone process discards unconfirmed challenges and requires a new
+read; saved originals and already confirmed ranges remain in encrypted storage.
+Pause, stop, membership revocation and task-generation changes remain gates.
+
+This proves delivery to the trusted Desktop executor, not model comprehension,
+source truth or scientific validity. A Desktop crash after acknowledgement can
+precede model consumption. Existing host acceptance still requires independent
+reviews of exact evidence and freezes coverage at publication. Local cloud and
+native recall retain their direct in-process serving behavior.
+
+Fault-injection tests cover missing/corrupt/lost reads and confirmations, phase
+mismatch, scope/generation changes, cancellation, expired challenges, storage
+failure, duplicate confirmation, and unconfirmed pages after store recreation.
+`CollaborationRecallDeliveryDeviceTest` checks the real encrypted phone store.
+The multipart live fixture additionally requires the later Codex catalogue node
+to read and cite the original command, and checks its frozen coverage separately
+from DeepSeek's review. Full device Doze/outage endurance remains a separate
+acceptance requirement, not implied by these injected transport faults.
+
+### Follow-up local checks (2026-10-03)
+
+- Android 1.4.29 (1114): final application and instrumentation APKs built;
+  751 JVM tests across 59 suites passed with zero failures, errors or skips.
+- The cross-platform page digest has a shared fixed UTF-8 test vector containing
+  non-ASCII text, quotes, a newline and a supplementary Unicode character.
+  The existing JSON-value digest is deliberately not used for wire page bytes.
+- Desktop 1.4.4: 104 Python and 68 JavaScript regression tests passed, as did
+  Desktop structure, Kotlin source-size and whitespace checks.
+- Both APKs were installed only on S26U. The new encrypted-store fixture plus
+  existing recall/evidence/acceptance/inbox checks passed: 35 tests in 7.152s.
+- Desktop was updated only after both schedulers and its other task list were
+  empty. Its Signal sidecar and all three MQTT subscriptions became ready.
+
+### Recall-echo import regression
+
+The first live run of confirmed delivery,
+`live-evidence-e3d43ea7-6569-407b-82ed-d0c3bdada0c8`, failed the unchanged
+12-minute fixture deadline. Author, independent review and catalogue succeeded;
+the final Desktop model also completed, but phone-side import had not finished.
+The catalogue's Desktop completion to phone workspace publication took about
+202 seconds. Its 13 imported observations included repeated internal recall
+responses containing evidence already owned by the phone. This is a failed
+sample, not proof of complete delivery acceptance. Cleanup acknowledged STOP,
+removed only fixture data and left no pending remote owners.
+
+Desktop now retains every original observation in its encrypted audit archive,
+but its authenticated phone-import index excludes the host-registered
+`dynamicToolCall` named `collaboration_recall`. Command, file, external MCP and
+other dynamic-tool observations are still imported. Full archive indexing and
+exact original-page reads remain available; the filtered index explicitly labels
+its projection and never claims complete provider history. Old archive entries
+default to importable on schema migration. The model cannot set this projection.
+Tests check archive retention, migration, peer authorization, exact tool-type
+classification and pagination across 90 interleaved internal/external records.
+
+This removes recursive evidence transport, not the original-read acknowledgement
+or host acceptance requirement. The next live run uses the same deadline and
+checks, including frozen full-page coverage for both DeepSeek and remote Codex.
+
+### Follow-up live attempt and test isolation
+
+Run `live-evidence-db39bae8-1aa1-4844-9cd4-1f2a41d7e48a` began on an unlocked,
+interactive S26U. The author and DeepSeek review completed; the catalogue Codex
+node started. USB disconnected and the instrumentation output stream was lost.
+Independently, running the raw Python unit suite while this live task existed
+exposed import-time initialization of the default Desktop task manager. It
+advanced the test task's recovery generation and fenced the original executor.
+This disrupted attempt is **not** a passing real-provider sample.
+
+The Desktop archive confirms that the author's original command remains
+importable, while its one internal recall and the catalogue's thirteen internal
+recalls remain archived but excluded from the phone-import projection. These
+counts verify classification, not end-to-end completion or latency improvement.
+The catalogue was reconciled to a terminal failure by reloading the idle
+Desktop; both execution schedulers were empty and no other nonterminal task was
+present. Phone cleanup and a fresh full live pass still need verification after
+S26U reconnects. Do not reuse a previous run's coverage report as current proof.
+
+Run this regression suite through the isolated entry point from the repository
+root, **not** a raw unittest command against a running user's default state:
+
+```sh
+python apps/desktop/scripts/test-collaboration-evidence.py
+```
+
+The entry point sets temporary home, state, data, configuration, workspace and
+Codex directories in a child process before test discovery or backend imports,
+disables external services, and propagates its exit code. All 104 tests passed
+again in 9.461 seconds in this isolated environment, including migration of
+existing encrypted multi-page observations. No full live success is claimed for
+the delivery-confirmation follow-up until a clean rerun completes.

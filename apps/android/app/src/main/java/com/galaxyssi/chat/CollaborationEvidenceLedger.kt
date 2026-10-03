@@ -109,7 +109,8 @@ internal class CollaborationEvidenceLedger(
 
     data class EvidencePage(val source: JSONObject, val content: String, val total: Int, val next: Int?, val coverage: JSONObject)
 
-    fun readPage(access: CollaborationWorkspaceAccess, id: String, expectedHash: String = "", offset: Int = 0): EvidencePage? = synchronized(LOCK) {
+    fun readPage(access: CollaborationWorkspaceAccess, id: String, expectedHash: String = "", offset: Int = 0,
+                 recordCoverage: Boolean = true): EvidencePage? = synchronized(LOCK) {
         val saved = read(access, id, expectedHash) ?: return@synchronized null
         val content = saved.toString()
         require(offset in 0..content.length) { "Evidence offset must be within the original document" }
@@ -117,9 +118,18 @@ internal class CollaborationEvidenceLedger(
             !Character.isHighSurrogate(content[offset - 1])) { "Evidence offset splits a Unicode character" }
         var end = offset + minOf(8_000, content.length - offset)
         if (end < content.length && Character.isHighSurrogate(content[end - 1]) && Character.isLowSurrogate(content[end])) end--
-        val coverage = CollaborationEvidenceReadCoverage.record(rows, prefix(access.groupId), access, saved, content, offset, end)
+        val coverage = if (recordCoverage)
+            CollaborationEvidenceReadCoverage.record(rows, prefix(access.groupId), access, saved, content, offset, end)
+        else CollaborationEvidenceReadCoverage.snapshot(rows, prefix(access.groupId), access, saved)
         EvidencePage(reference(saved, saved.getString("sha256")), content.substring(offset, end), content.length,
             end.takeIf { it < content.length }, coverage)
+    }
+
+    fun confirmPage(access: CollaborationWorkspaceAccess, id: String, expectedHash: String,
+                    offset: Int, pageHash: String): JSONObject? = synchronized(LOCK) {
+        val page = readPage(access, id, expectedHash, offset, recordCoverage = false) ?: return@synchronized null
+        require(MqttImmutableContent.sha256(page.content) == pageHash) { "Confirmed evidence page differs from the served page" }
+        readPage(access, id, expectedHash, offset)?.coverage
     }
 
     fun references(access: CollaborationWorkspaceAccess, requested: JSONArray): JSONArray = synchronized(LOCK) { JSONArray().apply {

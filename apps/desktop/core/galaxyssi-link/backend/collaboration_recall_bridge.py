@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
 import time
 import uuid
@@ -12,7 +13,7 @@ from agent_task_recovery_query import IDENTITY_FIELDS, TASK_FIELDS
 TOOL = "collaboration_recall"
 REQUEST = "collaboration_recall_request"
 RESPONSE = "collaboration_recall_result"
-CONTRACT = "galaxyssi.collaboration-recall/1"
+CONTRACT = "galaxyssi.collaboration-recall/2"
 ACTIVE = frozenset({"starting", "running", "recovering"})
 
 
@@ -50,6 +51,10 @@ def validate_arguments(arguments):
             raise ValueError("Invalid recall offset/revision")
     if arguments["mode"] == "goal_contract" and set(arguments) - {"mode", "cursor"}:
         raise ValueError("Goal recall accepts only mode and cursor")
+    if arguments["mode"] == "evidence" and arguments.get("evidence_id"):
+        if any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
+               for key in ("evidence_id", "sha256")):
+            raise ValueError("Original evidence recall requires exact evidence_id and sha256 from browse")
     return dict(arguments)
 
 
@@ -80,9 +85,31 @@ class RecallBroker:
     def query(self, snapshot, arguments, publish, *, active=lambda: True, timeout=20.0):
         arguments = validate_arguments(arguments)
         scope = task_scope(snapshot())
+        result = self._exchange(scope, snapshot, arguments, publish, active, timeout, "read")
+        if result.get("success") is not True or arguments["mode"] != "evidence" or not arguments.get("evidence_id"):
+            return result
+        delivery = result.get("delivery")
+        content = result.get("content")
+        if (not isinstance(delivery, dict) or set(delivery) != {"receipt_id", "content_sha256"}
+                or not isinstance(delivery.get("receipt_id"), str) or not 1 <= len(delivery["receipt_id"]) <= 128
+                or not isinstance(content, str)
+                or hashlib.sha256(content.encode("utf-8")).hexdigest() != delivery.get("content_sha256")):
+            raise ValueError("Original evidence delivery was not authenticated; retry the read")
+        confirmed = self._exchange(scope, snapshot, arguments, publish, active, timeout, "confirm", delivery)
+        if (confirmed.get("success") is not True or confirmed.get("status") != "confirmed"
+                or confirmed.get("delivery") != delivery or not isinstance(confirmed.get("host_read_coverage"), dict)):
+            raise ValueError("Phone did not confirm original evidence delivery; retry the read")
+        result.pop("delivery", None)
+        result["host_read_coverage"] = confirmed["host_read_coverage"]
+        result["delivery_status"] = "desktop_received_phone_confirmed_not_comprehension"
+        return result
+
+    def _exchange(self, scope, snapshot, arguments, publish, active, timeout, phase, delivery=None):
         nonce = str(uuid.uuid4())
         request = {**scope, "type": REQUEST, "contract": CONTRACT, "request_id": nonce,
-                   "expires_at": int(time.time() * 1000 + timeout * 1000), "arguments": arguments}
+                   "expires_at": int(time.time() * 1000 + timeout * 1000), "arguments": arguments, "phase": phase}
+        if delivery is not None:
+            request["delivery"] = delivery
         pending = Pending(request)
         with self._lock:
             if len(self._pending) >= 128 or sum(p.request["task_id"] == scope["task_id"] for p in self._pending.values()) >= 4:
@@ -116,6 +143,7 @@ class RecallBroker:
             request = pending.request
             if (authenticated_route != request["client_route_id"] or payload.get("type") != RESPONSE
                     or payload.get("contract") != CONTRACT
+                    or payload.get("phase") != request["phase"]
                     or any(payload.get(key) != request[key] for key in (*IDENTITY_FIELDS, "execution_generation"))
                     or not isinstance(payload.get("result"), dict)
                     or type(payload["result"].get("success")) is not bool):
