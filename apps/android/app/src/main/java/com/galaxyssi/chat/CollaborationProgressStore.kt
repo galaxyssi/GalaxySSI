@@ -36,7 +36,8 @@ internal object CollaborationProgressStore {
                 member.context["collaboration_model_id"].orEmpty()), member.role,
             AgentSubagentStatus.RUNNING, request.parentRunId, activity = true,
             primary = member.deliveryMode == AgentDeliveryMode.RESPOND,
-            researchStage = member.context[CollaborationResearchWorkflow.STAGE].orEmpty(), executionMemberId = member.memberId)
+            researchStage = member.context[CollaborationResearchWorkflow.STAGE].orEmpty(), executionMemberId = member.memberId,
+            startedAtMillis = request.createdAtMillis)
         val binding = JSONObject().put("conversation", request.conversationId).put("turn", request.messageId)
             .put("task", request.taskId).put("metadata", metadata.encode())
         val database = db(context)

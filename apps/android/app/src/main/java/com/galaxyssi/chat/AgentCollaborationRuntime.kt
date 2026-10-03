@@ -71,7 +71,8 @@ data class AgentTeamMemberSnapshot(
     val waitingForDependencies: Boolean = false,
     val objective: String = "",
     val researchStage: String = "",
-    val personId: String = instanceId
+    val personId: String = instanceId,
+    val executionStartedAtMillis: Long = startedAtMillis
 ) {
     val memberId: String get() = instanceId.ifBlank { agentId }
 
@@ -1809,9 +1810,9 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
     val organizationEnabled = CollaborationTeamOrganization.enabled(this)
     val organization = if (organizationEnabled) runCatching { CollaborationTeamOrganizationProjection.current(this) }.getOrNull() else null
     val organizationUncertain = organizationEnabled && (organization == null || !organization.safeToApply)
-    val latestByChild = events.filter { it.childId.isNotBlank() && (!organizationEnabled || it.supervisorId == request.runId) }
+    val eventsByChild = events.filter { it.childId.isNotBlank() && (!organizationEnabled || it.supervisorId == request.runId) }
         .groupBy(AgentSubagentEvent::childId)
-        .mapValues { (_, values) -> values.maxBy(AgentSubagentEvent::sequence) }
+    val latestByChild = eventsByChild.mapValues { (_, values) -> values.maxBy(AgentSubagentEvent::sequence) }
     val members = definition.members.map { member ->
         val event = latestByChild[member.memberId]
         val result = if (organizationEnabled) organization?.verifiedResults?.get(member.memberId) else event?.result
@@ -1826,7 +1827,9 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
             output = result?.output.orEmpty(),
             errorMessage = result?.errorMessage.orEmpty().ifBlank { event?.message.orEmpty() },
             startedAtMillis = result?.startedAtMillis ?: 0L,
-            completedAtMillis = result?.completedAtMillis ?: 0L,
+            completedAtMillis = result?.completedAtMillis?.takeIf { it > 0L }
+                ?: event?.takeIf { !organizationEnabled && it.childStatus?.isTerminal == true }?.timestampMillis ?: 0L,
+            executionStartedAtMillis = CollaborationReplyTiming.executionStart(eventsByChild[member.memberId].orEmpty(), result),
             instanceId = member.memberId,
             displayName = member.context["collaboration_name"] as? String ?: "",
             providerLabel = CollaborationLabelPolicy.provider(member.context["collaboration_provider"].orEmpty(),

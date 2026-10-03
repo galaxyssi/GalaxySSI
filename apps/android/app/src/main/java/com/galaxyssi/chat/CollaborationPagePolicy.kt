@@ -16,7 +16,9 @@ internal object CollaborationPagePolicy {
         val assignments = decoded.filter { !it.second.activity && !it.second.result }.associateBy { it.second.traceTurnId }
         fun withHistory(metadata: CollaborationTranscriptMetadata): CollaborationTranscriptMetadata {
             val history = activities[metadata.traceTurnId].orEmpty().sortedBy { it.first.timestampMillis }
+            val assignment = assignments[metadata.traceTurnId]?.second
             return metadata.copy(summary = history.lastOrNull()?.first?.text.orEmpty(), eventCount = history.size,
+                startedAtMillis = metadata.startedAtMillis.takeIf { it > 0L } ?: assignment?.startedAtMillis ?: 0L,
                 details = (listOfNotNull(assignments[metadata.traceTurnId]?.first?.text) + history.takeLast(100).map { it.first.text })
                     .joinToString("\n\n"))
         }
@@ -43,7 +45,8 @@ internal object CollaborationPagePolicy {
                     }
                     entry.role == AgentTranscriptRole.USER -> add(entry)
                     entry.role == AgentTranscriptRole.ASSISTANT -> add(match(entry)?.let {
-                        entry.copy(collaborationJson = withHistory(it.second).encode())
+                        entry.copy(collaborationJson = withHistory(it.second.copy(completedAtMillis =
+                            it.second.completedAtMillis.takeIf { at -> at > 0L } ?: it.first.timestampMillis)).encode())
                     } ?: entry)
                     // Approval/control cards must stay actionable, but never masquerade as a member search.
                     entry.dedupeKey.startsWith("remote-approval:") || entry.dedupeKey.startsWith("approval:") ||
@@ -54,7 +57,8 @@ internal object CollaborationPagePolicy {
             activities.filterKeys { it !in emittedActivities && it !in results }.values.forEach { history ->
                 val latest = history.maxBy { it.first.timestampMillis }
                 add(latest.first.copy(text = history.sortedBy { it.first.timestampMillis }.joinToString("\n\n") { it.first.text },
-                    collaborationJson = withHistory(latest.second.copy(activity = false)).encode()))
+                    collaborationJson = withHistory(latest.second.copy(activity = false,
+                        clockStoppedAtMillis = latest.first.timestampMillis)).encode()))
             }
         }
     }

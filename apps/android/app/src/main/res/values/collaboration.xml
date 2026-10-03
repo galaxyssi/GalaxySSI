@@ -1,4 +1,5 @@
 <resources>
+    <string name="collaboration_process_duration">Time %1$s</string>
     <string name="collaboration_system_message">Group notice</string>
     <string name="collaboration_synthesizing">Coordinator is checking and combining member results</string>
     <string name="collaboration_title">Collaboration group</string>

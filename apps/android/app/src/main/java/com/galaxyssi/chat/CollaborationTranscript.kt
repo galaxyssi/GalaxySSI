@@ -21,7 +21,10 @@ internal data class CollaborationTranscriptMetadata(
     val researchStage: String = "",
     val executionMemberId: String = memberId,
     val paused: Boolean = false,
-    val goalDisposition: String = ""
+    val goalDisposition: String = "",
+    val startedAtMillis: Long = 0L,
+    val completedAtMillis: Long = 0L,
+    val clockStoppedAtMillis: Long = 0L
 ) {
     fun encode(): String = JSONObject().put("member_id", memberId).put("name", name)
         .put("provider", provider).put("role", role).put("status", status.name)
@@ -29,7 +32,9 @@ internal data class CollaborationTranscriptMetadata(
         .put("primary", primary).put("activity", activity).put("summary", summary)
         .put("event_count", eventCount).put("details", details)
         .put("research_stage", researchStage).put("execution_member_id", executionMemberId).put("paused", paused)
-        .put("goal_disposition", goalDisposition).toString()
+        .put("goal_disposition", goalDisposition)
+        .put("started_at_millis", startedAtMillis).put("completed_at_millis", completedAtMillis)
+        .put("clock_stopped_at_millis", clockStoppedAtMillis).toString()
 
     val traceTurnId: String get() = "collaboration:$runId:$executionMemberId"
 
@@ -44,7 +49,8 @@ internal data class CollaborationTranscriptMetadata(
                     json.optBoolean("result"), json.optBoolean("waiting"), json.optBoolean("primary"),
                     json.optBoolean("activity"), json.optString("summary"), json.optInt("event_count"),
                     json.optString("details"), json.optString("research_stage"),
-                    json.optString("execution_member_id").ifBlank { json.getString("member_id") }, json.optBoolean("paused"), json.optString("goal_disposition"))
+                    json.optString("execution_member_id").ifBlank { json.getString("member_id") }, json.optBoolean("paused"), json.optString("goal_disposition"),
+                    json.optLong("started_at_millis"), json.optLong("completed_at_millis"), json.optLong("clock_stopped_at_millis"))
             }.getOrNull()
         }
     }
@@ -96,7 +102,12 @@ internal class CollaborationTranscriptPublisher(context: Context) {
                 waiting = member.waitingForDependencies, primary = member.memberId == snapshot.primaryMemberId,
                 researchStage = member.researchStage, executionMemberId = member.memberId,
                 summary = if (recovering) appContext.getString(R.string.collaboration_waiting_connection_long) else "",
-                paused = snapshot.paused, goalDisposition = if (member.memberId == snapshot.primaryMemberId) snapshot.goalDisposition else "")
+                paused = snapshot.paused, goalDisposition = if (member.memberId == snapshot.primaryMemberId) snapshot.goalDisposition else "",
+                startedAtMillis = member.executionStartedAtMillis,
+                completedAtMillis = member.completedAtMillis,
+                clockStoppedAtMillis = if (snapshot.paused || snapshot.state.isTerminal) {
+                    snapshot.interruptedAtMillis.takeIf { it > 0L } ?: snapshot.updatedAtMillis
+                } else 0L)
             val key = "collaboration:${snapshot.supervisorRunId}:${member.memberId}"
             val assignment = member.role.ifBlank { member.displayName }
             val detail = when {

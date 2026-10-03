@@ -74,6 +74,23 @@ class CollaborationPagePolicyTest {
         assertEquals("Codex · gpt-6-astra", CollaborationLabelPolicy.provider("Codex · gpt-6-astra", "gpt-6-astra"))
     }
 
+    @Test fun canonicalReplyUsesMemberCompletionTimeNotLaterParentDelivery() {
+        val meta = metadata(result = true, status = AgentSubagentStatus.SUCCEEDED).copy(startedAtMillis = 1_000L)
+        val rows = CollaborationPagePolicy.project(listOf(entry("result", "answer", meta, at = 6_000L),
+            entry("canonical", "answer", role = AgentTranscriptRole.ASSISTANT, at = 99_000L)))
+        val projected = CollaborationTranscriptMetadata.decode(rows.single().collaborationJson)!!
+        assertEquals(6_000L, projected.completedAtMillis)
+        assertEquals(5_000L, CollaborationReplyTiming.elapsedMillis(projected, rows.single().timestampMillis, 999_000L))
+    }
+
+    @Test fun orphanProgressCannotStartAnUnboundedClock() {
+        val rows = CollaborationPagePolicy.project(listOf(entry("tool", meta = metadata(activity = true)
+            .copy(startedAtMillis = 1_000L), at = 6_000L)))
+        val projected = CollaborationTranscriptMetadata.decode(rows.single().collaborationJson)!!
+        assertFalse(CollaborationReplyTiming.isTicking(projected))
+        assertEquals(5_000L, CollaborationReplyTiming.elapsedMillis(projected, 6_000L, 999_000L))
+    }
+
     @Test fun coordinatorResolvesReversibleAmbiguityWithoutInventingCompletion() {
         val instructions = CollaborationGoalPolicy.instructions(true)
         assertTrue(instructions.contains("assumptions immediately"))
