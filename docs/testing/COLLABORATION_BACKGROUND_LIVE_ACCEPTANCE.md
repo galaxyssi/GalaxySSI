@@ -282,3 +282,58 @@ disables external services, and propagates its exit code. All 104 tests passed
 again in 9.461 seconds in this isolated environment, including migration of
 existing encrypted multi-page observations. No full live success is claimed for
 the delivery-confirmation follow-up until a clean rerun completes.
+
+After USB reconnected, a narrowly scoped `cleanupRetainedFixture` device check
+passed in 12.929 seconds for that interrupted fixture. It required the exact
+UUID-prefixed test ID, retained cleanup marker, matching stopped terminal
+snapshot, and a non-active conversation. It reconciled the remote terminal
+acknowledgement before removing fixture data. The new report confirms durable
+STOP, `acknowledged=true`, `retained_for_recovery=false` and no pending remote
+owners; the user's active conversation was unchanged. The check never starts a
+model or retries the original command.
+
+### Completed live workflow and corrected fixture assertion
+
+Run `live-evidence-9ad4d718-d113-44be-b364-a088dde4c90c` completed all four real
+nodes with `state=SUCCEEDED` and `disposition=achieved`. The instrumentation
+fixture ended at 536.173 seconds with a **test assertion failure**, not a model
+or host-acceptance failure: it required every supplementary reviewer observation
+to use `scoped_pages`. The reviewer correctly also cited two of its own local
+recall calls, which have the distinct `same_dispatch_execution` provenance.
+
+The corrected fixture still requires the actual peer command reference, full
+coverage of that original, independent reviewer identity and a real original
+fetch. Every supplementary reference still goes through the existing
+`requireComplete` validator; only the mode assertion is restricted to the peer
+originals it is intended to test. A mixed-own-and-peer regression verifies that
+own tool receipts cannot substitute for unread peer evidence. No production
+acceptance rule was changed.
+
+Read-only inspection of the same run's encrypted Desktop archive, with every
+original payload SHA-256 checked, independently verified:
+
+- The remote Codex response contains the delivery-confirmed marker for the
+  original 3,301-character command record.
+- DeepSeek's review and Codex's saved directory both freeze complete
+  `scoped_pages` coverage for that exact evidence ID, source hash and content
+  hash, with all six reader-identity fields matching their respective document.
+- The two supplementary receipts belong to the reviewer's own dispatch.
+- The catalogue's Desktop completion to phone publication was **8.877 seconds**
+  (1790993477080 to 1790993485957), compared with approximately 202 seconds in
+  the earlier failed sample. This single comparison is not a p95 or success-rate
+  claim; one readonly recall timeout was recovered during the run.
+- Cleanup acknowledged durable STOP, retained no fixture data and reported no
+  pending remote owners. The original research was never run.
+
+The corrected full model-backed instrumentation fixture was **not repeated**
+solely to fix its assertion, avoiding another round of provider usage. Thus the
+real workflow plus archive validation succeeded, but the recorded JUnit live
+run remains failed and must not be relabelled as a clean full-script pass.
+
+After the fixture correction, the instrumentation APK rebuilt successfully and
+was installed only on S26U. The full selected collaboration/MQTT JVM suite passed
+**752 tests across 59 suites** with zero failures, errors or skips; the 35 local
+S26U evidence/acceptance/inbox regressions passed again in **9.776 seconds**.
+These checks make no additional model calls. This follow-up changes only tests
+and this report, so it does not publish another application version: the running
+product remains Android 1.4.29 (1114) and Desktop 1.4.4 from merged PR #3350.

@@ -30,6 +30,30 @@ class CollaborationLiveEvidenceDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
+    @Test fun cleanupRetainedFixture() = runBlocking {
+        val run = InstrumentationRegistry.getArguments().getString("collaborationEvidenceCleanupRun").orEmpty()
+        assumeTrue("Explicit retained fixture ID required", run.isNotBlank())
+        require(Regex("live-evidence-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}").matches(run))
+        val marker = JSONObject(File(context.getExternalFilesDir(null), "$run-cleanup.json").readText())
+        check(marker.getString("execution_database") == run && marker.getBoolean("retained_for_recovery"))
+        check(marker.getString("durable_control") == "STOP" &&
+            AgentTeamDurableControl(context).get(run) == AgentTeamUserControl.STOP)
+        val group = marker.getString("conversation_id")
+        val previous = AgentTranscriptStore(context).activeConversation().id
+        check(group.isNotBlank() && group != previous)
+        val database = AgentEncryptedDatabase(context, run)
+        val store = EncryptedAgentTeamExecutionStore(database)
+        val snapshot = requireNotNull(store.snapshot(run))
+        check(snapshot.supervisorRunId == run && snapshot.conversationId == group && snapshot.state.isTerminal)
+        GalaxySSIMqttClient.connect(context)
+        waitUntil("secure MQTT for fixture cleanup") { GalaxySSIMqttClient.isConnected() && GalaxySSIMqttClient.isSecureReady() }
+        check(stopFixture(run, group, store, null)) { "Remote stop remains unacknowledged; retain fixture" }
+        CollaborationGroupStore(context).remove(group)
+        AgentTranscriptStore(context).deleteConversation(group)
+        database.clear()
+        assertEquals(previous, AgentTranscriptStore(context).activeConversation().id)
+    }
+
     @Test fun remoteAuthorIndependentReviewerAndHostAcceptance() = runBlocking {
         assumeTrue("Requires explicit authorization for real provider calls",
             InstrumentationRegistry.getArguments().getString("collaborationLiveEvidence") == "true")
@@ -229,7 +253,9 @@ class CollaborationLiveEvidenceDeviceTest {
                 val ref = directRefs.getJSONObject(index)
                 val original = ledger.read(access, ref.getString("evidence_id"), ref.getString("sha256"))!!
                 CollaborationEvidenceReadCoverage.requireComplete(ref, review, original)
-                assertEquals("scoped_pages", ref.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
+                // A reviewer may additionally cite its own tool calls; only original peer evidence needs remote pages.
+                if (originals.any { it.getString("evidence_id") == ref.getString("evidence_id") })
+                    assertEquals("scoped_pages", ref.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
             }
             val remoteRefs = org.json.JSONArray()
             if (multipart) {
@@ -340,7 +366,7 @@ class CollaborationLiveEvidenceDeviceTest {
                 if (snapshot != null) recovery.reconcile(listOf(snapshot), ledger) { id ->
                     id == run && controls.get(id) == AgentTeamUserControl.STOP
                 }
-                val localFinished = handle?.let { !it.isActive } ?: (snapshot == null)
+                val localFinished = handle?.let { !it.isActive } ?: (snapshot == null || snapshot.state.isTerminal)
                 if (localFinished && ledger.pendingForSupervisor(run).isEmpty()) break
                 delay(250L)
             }

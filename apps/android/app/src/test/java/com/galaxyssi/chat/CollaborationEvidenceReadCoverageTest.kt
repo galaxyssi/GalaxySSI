@@ -155,6 +155,23 @@ class CollaborationEvidenceReadCoverageTest {
         assertFalse(f.accepts())
     }
 
+    @Test fun mixedOwnAndPeerReferencesStillRequireOriginalPeerPages() {
+        val f = Fixture()
+        val own = f.ledger.record(f.reader, "review-read", "collaboration_recall", "{}", "{}", 3, 4)
+        fun references() = f.ledger.references(f.reader, JSONArray().put(f.ref).put(own))
+        fun validate(refs: JSONArray) = repeat(refs.length()) { index ->
+            val ref = refs.getJSONObject(index)
+            val source = f.ledger.read(f.reader, ref.getString("evidence_id"), ref.getString("sha256"))!!
+            CollaborationEvidenceReadCoverage.requireComplete(ref, CollaborationEvidenceReadCoverage.identity(f.reader), source)
+        }
+        assertTrue(runCatching { validate(references()) }.isFailure)
+        f.all()
+        val refs = references()
+        validate(refs)
+        assertEquals("scoped_pages", refs.getJSONObject(0).getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
+        assertEquals("same_dispatch_execution", refs.getJSONObject(1).getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
+    }
+
     @Test fun invalidOffsetsAndIsolatedOrRevokedAccessDoNotCreateCoverage() {
         val f = Fixture()
         val original = f.rows.data.toMap()
