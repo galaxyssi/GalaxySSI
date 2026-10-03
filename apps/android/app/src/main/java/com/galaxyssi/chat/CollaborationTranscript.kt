@@ -24,7 +24,8 @@ internal data class CollaborationTranscriptMetadata(
     val goalDisposition: String = "",
     val startedAtMillis: Long = 0L,
     val completedAtMillis: Long = 0L,
-    val clockStoppedAtMillis: Long = 0L
+    val clockStoppedAtMillis: Long = 0L,
+    val connectionState: String = ""
 ) {
     fun encode(): String = JSONObject().put("member_id", memberId).put("name", name)
         .put("provider", provider).put("role", role).put("status", status.name)
@@ -34,7 +35,7 @@ internal data class CollaborationTranscriptMetadata(
         .put("research_stage", researchStage).put("execution_member_id", executionMemberId).put("paused", paused)
         .put("goal_disposition", goalDisposition)
         .put("started_at_millis", startedAtMillis).put("completed_at_millis", completedAtMillis)
-        .put("clock_stopped_at_millis", clockStoppedAtMillis).toString()
+        .put("clock_stopped_at_millis", clockStoppedAtMillis).put("connection_state", connectionState).toString()
 
     val traceTurnId: String get() = "collaboration:$runId:$executionMemberId"
 
@@ -50,7 +51,8 @@ internal data class CollaborationTranscriptMetadata(
                     json.optBoolean("activity"), json.optString("summary"), json.optInt("event_count"),
                     json.optString("details"), json.optString("research_stage"),
                     json.optString("execution_member_id").ifBlank { json.getString("member_id") }, json.optBoolean("paused"), json.optString("goal_disposition"),
-                    json.optLong("started_at_millis"), json.optLong("completed_at_millis"), json.optLong("clock_stopped_at_millis"))
+                    json.optLong("started_at_millis"), json.optLong("completed_at_millis"), json.optLong("clock_stopped_at_millis"),
+                    json.optString("connection_state"))
             }.getOrNull()
         }
     }

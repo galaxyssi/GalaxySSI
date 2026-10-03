@@ -856,7 +856,9 @@ class AgentAdapterTeamMemberWorker(
     private val onWaiting: (AgentTeamMemberExecutionContext, Boolean) -> Unit = { _, _ -> },
     private val beforeDispatch: suspend (AgentTeamMemberExecutionContext) -> Unit = { },
     private val onDispatch: (AgentTeamMemberExecutionContext) -> Unit = { },
-    private val cancellationRequested: (AgentTeamMemberExecutionContext) -> Boolean = { false }
+    private val cancellationRequested: (AgentTeamMemberExecutionContext) -> Boolean = { false },
+    private val onReconnected: (AgentTeamMemberExecutionContext) -> Unit = {},
+    private val reconcileOriginal: suspend (AgentTeamMemberExecutionContext) -> Unit = {}
 ) : AgentTeamMemberWorker {
     override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
         val adapter = requireNotNull(directory.resolveAdapter(context.member.agentId)) {
@@ -877,6 +879,7 @@ class AgentAdapterTeamMemberWorker(
                                 AgentEndpointStatus.BUSY, AgentEndpointStatus.DEGRADED) && it.hasCapacity
                         }
                     } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: AgentProviderCircuitOpenException) { null }
                     catch (_: java.io.IOException) { null }
                     if (available != null) { registration = available; break }
                     onWaiting(context, System.currentTimeMillis() - waitStarted >= 5 * 60_000L)
@@ -896,9 +899,29 @@ class AgentAdapterTeamMemberWorker(
                     context.request.copy(context = context.request.context + handoffContext(context.handoff))
                 )
                 var event: AgentRunControlEvent? = null
+                var disconnected = false
+                var lastProbe = System.nanoTime()
                 while (event == null) {
-                    event = withTimeoutOrNull(probeInterval) { terminal.await() }
-                    if (event == null) diagnoseLiveness(adapter, context.request, probeInterval)
+                    val interval = minOf(probeInterval, CONNECTION_CHECK_MILLIS)
+                    if (disconnected) context.suspendExecutionPermit {
+                        event = withTimeoutOrNull(interval) { terminal.await() }
+                    } else event = withTimeoutOrNull(interval) { terminal.await() }
+                    if (event != null) break
+                    val reachable = connectionAvailable(adapter)
+                    if (!reachable) {
+                        if (!disconnected) onWaiting(context, false)
+                        disconnected = true
+                    } else if (disconnected || (System.nanoTime() - lastProbe) / 1_000_000L >= probeInterval) {
+                        if (disconnected) onReconnected(context)
+                        disconnected = false
+                        // Reconcile the original identity. Never submit startRun again on reconnect.
+                        diagnoseLiveness(adapter, context.request, probeInterval)
+                        try { reconcileOriginal(context) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: java.io.IOException) { onWaiting(context, false); disconnected = true }
+                        catch (_: AgentProviderCircuitOpenException) { onWaiting(context, false); disconnected = true }
+                        lastProbe = System.nanoTime()
+                    }
                 }
                 terminalOutput(requireNotNull(event))
             }
@@ -950,7 +973,6 @@ class AgentAdapterTeamMemberWorker(
         probeIntervalMillis: Long
     ) {
         withTimeoutOrNull(probeIntervalMillis.coerceAtMost(MAX_LIVENESS_PROBE_OPERATION_MILLIS)) {
-            runCatching { adapter.status() }
             runCatching {
                 adapter.recoverRuns().firstOrNull { run ->
                     val handle = run.handle
@@ -960,6 +982,15 @@ class AgentAdapterTeamMemberWorker(
             }
         }
     }
+
+    private suspend fun connectionAvailable(adapter: AgentAdapter): Boolean = try {
+        withTimeoutOrNull(MAX_LIVENESS_PROBE_OPERATION_MILLIS) {
+            adapter.status().status in setOf(AgentEndpointStatus.ONLINE, AgentEndpointStatus.IDLE,
+                AgentEndpointStatus.BUSY, AgentEndpointStatus.DEGRADED)
+        } == true
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: AgentProviderCircuitOpenException) { false }
+    catch (_: java.io.IOException) { false }
 
     private fun terminalOutput(event: AgentRunControlEvent): AgentSubagentOutput = when (event.type) {
         AgentRunControlEventType.RUN_FAILED -> throw IllegalStateException(
@@ -983,6 +1014,7 @@ class AgentAdapterTeamMemberWorker(
         const val DEFAULT_LIVENESS_PROBE_MILLIS = 6L * 60L * 1_000L
         const val MIN_LIVENESS_PROBE_MILLIS = 10L
         const val MAX_LIVENESS_PROBE_OPERATION_MILLIS = 30_000L
+        const val CONNECTION_CHECK_MILLIS = 30_000L
         val TERMINAL_EVENTS = setOf(
             AgentRunControlEventType.STEP_COMPLETED,
             AgentRunControlEventType.RUN_COMPLETED,
@@ -1014,9 +1046,24 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                     execution.suspendExecutionPermit { controls.awaitDispatch(execution.request.parentRunId) }
             }
         }, onDispatch = { execution ->
-            progressContext?.let { AgentTeamDispatchCheckpoint(it).dispatching(execution.request.runId) }
+            progressContext?.let {
+                AgentTeamDispatchCheckpoint(it).dispatching(execution.request.runId)
+                CollaborationProgressStore.dispatched(it, execution)
+            }
         }, cancellationRequested = { execution ->
             progressContext?.let { AgentTeamDurableControl(it).get(execution.request.parentRunId) } == AgentTeamUserControl.STOP
+        }, onReconnected = { execution ->
+            progressContext?.let { CollaborationProgressStore.reconnecting(it, execution) }
+        }, reconcileOriginal = { execution ->
+            progressContext?.let { context ->
+                val record = EncryptedAgentManagedResponseLedger(context)
+                    .pendingForSupervisor(execution.request.parentRunId)
+                    .firstOrNull { it.ownerRunId == execution.request.runId &&
+                        it.conversationId == execution.request.conversationId }
+                if (record != null) AndroidAgentRemoteRecovery.recoverPendingReplies(context, listOf(
+                    AgentPendingDelivery(record.sourceMessageId, record.conversationId, record.turnId,
+                        record.taskId, record.contactId)))
+            }
         })
 
     constructor(

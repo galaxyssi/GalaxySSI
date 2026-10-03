@@ -126,7 +126,11 @@ class RecallBroker:
             if not active() or task_scope(snapshot()) != scope:
                 raise ValueError("Recall assignment changed")
             if not publish(request):
-                raise ConnectionError("Originating phone is offline; retry this read when connected")
+                raise ConnectionError(
+                    "Recall transport rejected the request; phone connectivity is unconfirmed. "
+                    "The read was not delivered. Retry this same read after transport recovery; "
+                    "do not restart completed work or infer that the phone is powered off."
+                )
             deadline = time.monotonic() + timeout
             while not pending.event.wait(min(.25, max(0, deadline - time.monotonic()))):
                 if not active() or task_scope(snapshot()) != scope:
