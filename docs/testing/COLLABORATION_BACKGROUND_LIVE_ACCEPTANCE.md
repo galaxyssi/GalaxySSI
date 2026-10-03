@@ -390,3 +390,9 @@ The pass closes the clean-script acceptance gap for this evidence-delivery
 path, not the outstanding Doze/long-outage/reboot matrix, general computational
 or scientific validation, candidate-evolution acceptance, or equal-budget
 single-Agent versus team quality and cost comparison.
+
+A later [real-provider acceptance report](COLLABORATION_REAL_MODEL_ACCEPTANCE_20261003.md)
+records a new multipart pass on Android 1.4.32 / Desktop 1.4.5 in 442.965 seconds,
+plus a separate real candidate challenge, repair and recheck pass. It closes that
+candidate-cycle live-test gap without extending the result to the remaining
+resilience, scientific-validation or comparative-quality matrix.
