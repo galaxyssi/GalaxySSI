@@ -145,6 +145,19 @@ internal class CollaborationEvidenceLedger(
         }
     } }
 
+    /** Recheck the frozen publication snapshot, never refresh it from later reads. */
+    fun requireReadCoverage(access: CollaborationWorkspaceAccess, review: JSONObject) = synchronized(LOCK) {
+        val refs = review.getJSONArray("host_observations")
+        require(refs.length() > 0) { "Independent candidate review requires original evidence" }
+        repeat(refs.length()) { index ->
+            val ref = refs.getJSONObject(index)
+            val original = requireNotNull(read(access, ref.getString("evidence_id"), ref.getString("sha256"))) {
+                "Candidate review original evidence is missing, changed or isolated"
+            }
+            CollaborationEvidenceReadCoverage.requireComplete(ref, review, original)
+        }
+    }
+
     fun browse(access: CollaborationWorkspaceAccess, cursor: String = ""): Pair<List<JSONObject>, String?> = synchronized(LOCK) {
         if (!authorized(access.groupId)) return@synchronized emptyList<JSONObject>() to null
         val prefix = prefix(access.groupId) + "observation:"

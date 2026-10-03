@@ -239,6 +239,8 @@ internal object CollaborationCandidateEvolution {
         "[{target:{object_id,revision,sha256},criterion_id:\"preserved goal criterion ID\",editor:\"person UUID\",reviewer:\"independent person UUID\"}]. " +
         "Use only documentary criteria with required_observations and the exact requirement in candidate.criteria. " +
         "Every applicable refutation may lead to a repair and a fresh independent review, with no fixed repair or review count. " +
+        "Candidate reviewers must read every original evidence page before publishing; a listed ID or summary does not count. " +
+        "Read coverage is frozen at publication, so later reads require a new review rather than validating an old one. " +
         "Host capacity controls execution concurrency; host admission budgets defer requests in durable pending state, never discard them or declare success. " +
         "Do not duplicate this work in work[], solicit extra votes, retire alternatives, or claim candidate reviews are verification. " +
         "Physical/computational criteria need qualified host validators; simulation never satisfies physical requirements. "

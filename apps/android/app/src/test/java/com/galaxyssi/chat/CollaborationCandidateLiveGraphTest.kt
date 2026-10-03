@@ -16,7 +16,8 @@ class CollaborationCandidateLiveGraphTest {
         val rows = Rows()
         val ledger = CollaborationEvidenceLedger(Rows())
         var authorized = true
-        val workspace = CollaborationResearchWorkspace(rows, { authorized }, ledger::references)
+        val workspace = CollaborationResearchWorkspace(rows, { authorized }, ledger::references,
+            evidenceReadCoverage = ledger::requireReadCoverage)
         val access = CollaborationWorkspaceAccess("group", "run", "turn", 5, "lead-dispatch", "lead")
         val people = setOf("lead", "author", "editor", "reviewer")
         val criterion = JSONObject().put("id", "accuracy").put("requirement", "Documented accuracy")
@@ -66,6 +67,9 @@ class CollaborationCandidateLiveGraphTest {
             publish(access.copy(nodeId = addition.dispatchId, personId = task.getString("member"), dependencyNodes = addition.dependencyDispatchIds), item, task)
         }
         private fun publish(who: CollaborationWorkspaceAccess, item: JSONObject, task: JSONObject? = null): JSONObject {
+            if (item.optString("kind") == "candidate_event" &&
+                item.getJSONObject("body").getJSONObject("candidate_event").optString("operation") == "review")
+                assertNull(ledger.readPage(who, source.getString("evidence_id"), source.getString("sha256"))!!.next)
             val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Original research output")
                 .put("candidates", JSONArray()).put("findings", JSONArray()).put("workspace", JSONArray().put(item)).toString()
             val receipt = workspace.publish(who, raw, candidateTask = task)

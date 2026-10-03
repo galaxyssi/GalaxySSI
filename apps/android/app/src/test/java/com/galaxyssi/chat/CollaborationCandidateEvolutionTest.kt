@@ -17,7 +17,7 @@ class CollaborationCandidateEvolutionTest {
         val rows = Rows()
         val evidenceRows = Rows()
         val ledger = CollaborationEvidenceLedger(evidenceRows)
-        val workspace = CollaborationResearchWorkspace(rows, evidence = ledger::references)
+        val workspace = CollaborationResearchWorkspace(rows, evidence = ledger::references, evidenceReadCoverage = ledger::requireReadCoverage)
         val access = CollaborationWorkspaceAccess("group", "run", "turn", 20, "lead", "lead")
         val people = setOf("lead", "author", "editor", "reviewer")
         val criterion = JSONObject().put("id", "accuracy").put("requirement", "Documented accuracy").put("verification", "documentary")
@@ -54,6 +54,9 @@ class CollaborationCandidateEvolutionTest {
             return publish(access.copy(nodeId = node(plan), personId = task.getString("member"), round = ++executionRound), item, task)
         }
         fun publish(who: CollaborationWorkspaceAccess, item: JSONObject, task: JSONObject? = null): JSONObject {
+            if (item.optString("kind") == "candidate_event" &&
+                item.getJSONObject("body").getJSONObject("candidate_event").optString("operation") == "review")
+                assertNull(ledger.readPage(who, source.getString("evidence_id"), source.getString("sha256"))!!.next)
             val result = workspace.publish(who, raw(item), candidateTask = task)
             assertEquals(result.toString(), "recorded", result.getString("status"))
             return result.getJSONArray("revisions").getJSONObject(0)
@@ -637,6 +640,7 @@ class CollaborationCandidateEvolutionTest {
         val f = Fixture(); val first = f.plan(); val task = f.task(first)
         val who = f.access.copy(nodeId = f.node(first), personId = "reviewer")
         val input = raw(f.review(task))
+        assertNull(f.ledger.readPage(who, f.source.getString("evidence_id"), f.source.getString("sha256"))!!.next)
         val before = f.rows.values.toMap()
         f.rows.fail = true
         assertTrue(runCatching { f.workspace.publish(who, input, candidateTask = task) }.isFailure)

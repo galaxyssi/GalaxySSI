@@ -8,7 +8,8 @@ internal class CollaborationResearchCandidates(
     private val access: CollaborationWorkspaceAccess,
     private val read: (String, Int) -> JSONObject?,
     private val current: (String, Int) -> Boolean,
-    private val changingIds: Set<String>
+    private val changingIds: Set<String>,
+    private val reviewEvidence: (JSONObject) -> Unit
 ) {
     fun validate(item: JSONObject, head: JSONObject?, revision: JSONObject) {
         when (revision.getString("kind")) {
@@ -73,6 +74,7 @@ internal class CollaborationResearchCandidates(
                 assessment.getJSONObject("body").getJSONObject(EVENT).getString("outcome") == "refuted") {
                 "A repair basis must be an exact refutation of its parent"
             }
+            reviewEvidence(assessment)
         } else null
         revision.put("host_candidate", JSONObject().put("operation", operation)
             .put("status", if (operation == "retire") "retired" else "active")
@@ -120,6 +122,7 @@ internal class CollaborationResearchCandidates(
             }
             val unresolved = strings(event.getJSONArray("unresolved"))
             require(outcome != "supported" || unresolved.isEmpty()) { "Supported reviews cannot retain blockers" }
+            reviewEvidence(revision)
         }
         // The host retains only resolved identities here; body text is still a member assessment.
         revision.put("parents", JSONArray(targets.map(::reference)))
