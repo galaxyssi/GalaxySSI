@@ -8,6 +8,15 @@ import org.json.JSONObject
 import org.junit.Test
 
 class AgentSessionPersistencePolicyTest {
+    @Test fun teamRecoveryOwnershipAndPauseMarkerSurviveNoisyMetadata() {
+        val recovery = mapOf("team_run_id" to "run", "team_id" to "team", "resource_location" to "distributed",
+            "team_recovery_paused" to "true", "team_state" to "interrupted", "conversation_id" to "group",
+            "turn_id" to "turn", "task_id" to "task")
+        val metadata = (0..100).associate { "noise_$it" to "$it" } + recovery
+        val compact = AgentSessionPersistencePolicy.compactMetadata(metadata)
+        recovery.forEach { (key, value) -> assertEquals(value, compact[key]) }
+        assertEquals(24, compact.size)
+    }
     @Test
     fun recoveryMetadataSurvivesEntryCompaction() {
         val metadata = buildMap {

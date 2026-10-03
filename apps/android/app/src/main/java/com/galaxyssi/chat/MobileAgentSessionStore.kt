@@ -220,7 +220,8 @@ class SharedPreferencesAgentSessionStore internal constructor(
         val raw = prefs.readString(storageKey, "").takeIf { it.isNotBlank() } ?: return null
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         val snapshot = runCatching { decodeSession(root) }.getOrNull() ?: return null
-        return restoreDurableActivePlan(snapshot, root, activePlanPersistence)
+        return AgentTeamParentRecoveryPolicy.restorePauseMarker(
+            restoreDurableActivePlan(snapshot, root, activePlanPersistence))
     }
 
     @Synchronized

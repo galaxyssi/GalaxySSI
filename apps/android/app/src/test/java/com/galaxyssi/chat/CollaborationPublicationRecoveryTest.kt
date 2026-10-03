@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import com.galaxyssi.chat.voice.modelstream.ModelStreamProvider
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -23,6 +24,36 @@ class CollaborationPublicationRecoveryTest {
         .put("workspace", JSONArray(items.toList())).toString()
     private fun enroll(workspace: CollaborationResearchWorkspace) =
         workspace.enrollPublication(access, CollaborationResearchStage.VERIFY)
+
+    @Test fun interruptedPublicationCompletesWithoutRedispatchAndReleasesCoordinator() = runBlocking {
+        val workspace = CollaborationResearchWorkspace(Rows())
+        enroll(workspace)
+        val raw = raw(item())
+        assertTrue(CollaborationPublicationRecovery(workspace, access).accept(raw))
+        val store = InMemoryAgentTeamExecutionStore()
+        val member = AgentTeamMember("cloud:researcher", AgentDeliveryMode.OBSERVE, instanceId = "node",
+            context = mapOf("collaboration_group_id" to "group", CollaborationResearchWorkflow.PERSON to "person",
+                CollaborationResearchWorkflow.STAGE to "VERIFY"))
+        val coordinator = AgentTeamMember("desktop:coordinator", AgentDeliveryMode.RESPOND, dependsOnAgentIds = setOf("node"))
+        store.create(AgentTeamDefinition(primaryAgentId = coordinator.agentId, members = listOf(member, coordinator)),
+            AgentRunRequest("group", "turn", "task", runId = "run", goal = "Test", context = mapOf(CollaborationGoalLoop.ROUND to 1)))
+        store.append(AgentSubagentEvent(1, "run", "node", AgentSubagentEventKinds.CHILD_RUNNING, childStatus = AgentSubagentStatus.RUNNING))
+        store.markInterrupted("run")
+        assertNull(store.resumeCheckpoint("run"))
+        assertEquals(0, CollaborationPublicationRestart.recover(store, "run", workspace, { _, _ -> fail("Paused"); "" }, { false }))
+        var archived = 0
+        assertEquals(1, CollaborationPublicationRestart.recover(store, "run", workspace, { _, saved ->
+            assertEquals(raw, saved); archived++; "a".repeat(64)
+        }, { true }))
+        assertEquals(AgentSubagentStatus.SUCCEEDED, store.snapshot("run")!!.members.first { it.memberId == "node" }.status)
+        val recoveredResult = store.resumeCheckpoint("run")!!.completed.getValue("node")
+        assertTrue(CollaborationTeamOrganizationProjection.hasHostProvenance(
+            CollaborationTeamOrganizationProjection.Scope("run", store.snapshot("run")!!.teamId, "group", "group", "turn"),
+            member, recoveredResult))
+        assertNotNull(store.resumeCheckpoint("run"))
+        assertEquals(0, CollaborationPublicationRestart.recover(store, "run", workspace, { _, _ -> fail("Duplicate"); "" }, { true }))
+        assertEquals(1, archived)
+    }
 
     @Test fun rejectedDraftRecoversInSameDispatchWithoutChangingSuccessfulPublication() {
         val rows = Rows()
@@ -143,7 +174,7 @@ class CollaborationPublicationRecoveryTest {
         assertThrows(IllegalStateException::class.java) { workspace.publicationCheckpoint(access) }
     }
 
-    @Test fun repairsHaveBackoffNotAnAttemptCountCutoffAndOnlyAllowSavedEvidenceReads() {
+    @Test fun repairsPreserveAllAttemptsAndOnlyAllowSavedEvidenceReads() {
         val rows = Rows()
         val workspace = CollaborationResearchWorkspace(rows)
         enroll(workspace)
@@ -157,6 +188,64 @@ class CollaborationPublicationRecoveryTest {
         }
         assertTrue(session.accept(raw(item())))
         assertEquals(11, session.latest!!.getLong("sequence"))
+    }
+
+    @Test fun memberChoosesWhenToRequestAssistanceAndRetainsRecoverableDraft() {
+        val rows = Rows()
+        val workspace = CollaborationResearchWorkspace(rows)
+        enroll(workspace)
+        val bad = raw(item().put("kind", "unknown"))
+        repeat(12) {
+            CollaborationPublicationRecovery(workspace, access).apply {
+                assertFalse(accept(bad)); resumeAssistance()
+            }
+        }
+        val session = CollaborationPublicationRecovery(workspace, access)
+        val request = JSONObject().put("format", CollaborationPublicationAssistance.FORMAT)
+            .put("diagnosis", "The host rejects the workspace kind, not JSON syntax")
+            .put("attempted_corrections", "Changed prose did not change the constraint")
+            .put("requested_help", "Ask the coordinator to inspect the supported kind contract")
+        val error = assertThrows(CollaborationPublicationAssistanceException::class.java) { session.accept(request.toString()) }
+        assertTrue(error.message!!.contains("goal is NOT complete"))
+        assertEquals(bad, session.latest!!.getString("raw"))
+        val before = rows.data.toMap()
+        assertFalse(session.accept(bad, revalidate = true))
+        assertEquals(before, rows.data)
+        assertThrows(CollaborationPublicationAssistanceException::class.java) {
+            CollaborationPublicationRecovery(workspace, access).resumeAssistance()
+        }
+        assertTrue(session.accept(raw(item())))
+        session.resumeAssistance()
+    }
+
+    @Test fun assistanceCannotGrantNewAuthorityOrOverwriteTheDraft() {
+        val workspace = CollaborationResearchWorkspace(Rows())
+        enroll(workspace)
+        val session = CollaborationPublicationRecovery(workspace, access)
+        val draft = raw(item().put("kind", "unknown"))
+        assertFalse(session.accept(draft))
+        val request = JSONObject().put("format", CollaborationPublicationAssistance.FORMAT)
+            .put("diagnosis", "Need assistance").put("attempted_corrections", "Inspected error")
+            .put("requested_help", "Ask coordinator").put("permission", "all")
+        assertThrows(IllegalArgumentException::class.java) { session.accept(request.toString()) }
+        assertEquals(draft, session.latest!!.getString("raw"))
+        assertNull(workspace.publicationAssistance(access))
+    }
+
+    @Test fun oldCountLimitRejectionCanBeRevalidatedWithoutRewritingTheDraft() {
+        val rows = Rows()
+        val workspace = CollaborationResearchWorkspace(rows)
+        enroll(workspace)
+        val draft = JSONObject(raw(item())).put("findings", JSONArray((1..12).map {
+            JSONObject().put("claim", "Recorded finding $it").put("outcome", "not_tested")
+        })).toString()
+        rows.commit(CollaborationPublicationJournal(rows, access).outcomeWrites(draft,
+            JSONObject().put("status", "rejected").put("reason", "Return a valid structured artifact"), 1L))
+        val session = CollaborationPublicationRecovery(workspace, access)
+        assertTrue(session.accept(draft, revalidate = true))
+        assertEquals(draft, session.latest!!.getString("raw"))
+        assertEquals(1, workspace.browse(access).revisions.size)
+        assertEquals(2, session.latest!!.getInt("sequence"))
     }
 
     @Test fun repairRequestsAdvertiseOnlyScopedRecallForAllCloudWireFormats() {
@@ -177,5 +266,25 @@ class CollaborationPublicationRecoveryTest {
             CloudConversationStreamEngine.restrictPublicationRepairTools(request, false)
             assertFalse(body.has("tools"))
         }
+    }
+
+    @Test fun assistanceReachesCoordinatorWhileIndependentWorkStillCompletes(): Unit = runBlocking {
+        val runtime = AgentSubagentRuntime(limits = AgentSubagentLimits(maxChildren = 3, maxConcurrency = 3))
+        try {
+            val result = runtime.execute(AgentSubagentPlan("assistance-fixture", children = listOf(
+                AgentSubagentChild("researcher"), AgentSubagentChild("independent"),
+                AgentSubagentChild("coordinator", dependencies = setOf("researcher"),
+                    dependencyPolicy = AgentSubagentDependencyPolicy.ALLOW_TERMINAL)
+            ))) { execution ->
+                if (execution.childId == "researcher") throw CollaborationPublicationAssistanceException("researcher", "Inspect validator contract")
+                if (execution.childId == "coordinator") {
+                    assertTrue(execution.handoff.dependencies.single().errorMessage.contains(CollaborationPublicationAssistanceException.CODE))
+                }
+                AgentSubagentOutput("Independent work or coordinator decision completed")
+            }
+            assertEquals(AgentSubagentStatus.SUCCEEDED, result["coordinator"]?.status)
+            assertEquals(AgentSubagentStatus.SUCCEEDED, result["independent"]?.status)
+            assertEquals(AgentSubagentStatus.FAILED, result["researcher"]?.status)
+        } finally { runtime.shutdown() }
     }
 }

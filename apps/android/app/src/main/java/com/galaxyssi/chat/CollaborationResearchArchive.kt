@@ -81,6 +81,12 @@ internal class CollaborationResearchArchive(private val context: Context, privat
     }.take(5_500)
 
     companion object {
+        fun visibleToAssignment(record: JSONObject, access: CollaborationWorkspaceAccess): Boolean =
+            access.personId.isNotBlank() && record.optString("group_id") == access.groupId &&
+                (visible(record, access.turnId, access.round) ||
+                    record.optString("run_id") == access.runId && record.optLong("goal_round", -1) == access.round &&
+                    record.optString("node_id") in (access.dependencyNodes + access.nodeId))
+
         fun visible(record: JSONObject, excludedTurn: String, beforeRound: Long): Boolean =
             excludedTurn.isBlank() || record.optString("turn_id") != excludedTurn ||
                 record.has("goal_round") && record.optLong("goal_round") < beforeRound

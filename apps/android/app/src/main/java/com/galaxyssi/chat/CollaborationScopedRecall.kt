@@ -11,6 +11,16 @@ internal object CollaborationScopedRecall {
         if (group == null || access.personId.isNotBlank() && group.members.none { it.id == access.personId })
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
         return when (input["mode"]) {
+            "archive" -> {
+                if (input.keys.any { it !in setOf("mode", "record_id", "offset") })
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Archive recall accepts record_id and offset only.")
+                val record = CollaborationResearchArchive(context, access.groupId).read(input["record_id"] as? String ?: "")
+                    ?: return AgentNativeToolExecutionResult.failure("record_unavailable", "Original is unavailable.")
+                val saved = JSONObject(record.content)
+                if (!CollaborationResearchArchive.visibleToAssignment(saved, access))
+                    return AgentNativeToolExecutionResult.failure("record_isolated", "Original is not an assigned dependency.")
+                page(saved, input, "member_reported_not_verified", mapOf("record_id" to record.id))
+            }
             "goal_contract" -> {
                 if (input.keys.any { it !in setOf("mode", "cursor") } ||
                     input.containsKey("cursor") && input["cursor"] !is String)
@@ -62,7 +72,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence or workspace for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace or archive for scoped recall.")
         }
     }
 
