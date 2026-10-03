@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object CollaborationResourceRecovery {
+    const val FEEDBACK = "collaboration_resource_resolution_feedback"
     private const val PREFIX = "resource-resolution:"
     fun isReservedWorkId(id: String) = id.startsWith(PREFIX)
     fun workId(blocker: JSONObject): String = PREFIX + UUID.nameUUIDFromBytes(
@@ -14,16 +15,68 @@ internal object CollaborationResourceRecovery {
     fun needsResolution(blocker: JSONObject, finished: Set<String>): Boolean =
         blocker.optString("kind") in setOf("resource", "permission") && workId(blocker) !in finished
 
-    fun hasAlternatives(blocker: JSONObject): Boolean {
-        val options = blocker.optJSONArray("alternatives") ?: return false
-        return options.length() > 0 && (0 until options.length()).all { index ->
-            options.optJSONObject(index)?.let {
-                it.optString("option").isNotBlank() && it.optString("result").isNotBlank() &&
-                    it.optString("status") in setOf("unavailable", "needs_approval", "not_applicable") &&
-                    it.optJSONArray("evidence")?.let { evidence -> evidence.length() > 0 &&
-                        (0 until evidence.length()).all { item -> evidence.optString(item).isNotBlank() } } == true
-            } == true
+    fun hasAlternatives(blocker: JSONObject): Boolean = alternativeProblems(blocker, "").length() == 0
+
+    private fun alternativeProblems(blocker: JSONObject, prefix: String): JSONArray = JSONArray().apply {
+        fun issue(path: String, code: String, expected: String) {
+            put(JSONObject().put("path", prefix + path).put("code", code).put("expected", expected))
         }
+        val options = blocker.optJSONArray("alternatives")
+        if (options == null || options.length() == 0) {
+            issue("alternatives", "missing_checked_alternatives", "A non-empty array of checked alternatives with evidence")
+            return@apply
+        }
+        repeat(options.length()) { index ->
+            val path = "alternatives[$index]"
+            val option = options.optJSONObject(index)
+            if (option == null) {
+                issue(path, "invalid_alternative", "An object describing the checked alternative")
+                return@repeat
+            }
+            listOf("option", "result").forEach { field ->
+                if (option.optString(field).isBlank()) issue("$path.$field", "missing_$field", "Non-blank $field")
+            }
+            if (option.optString("status") !in setOf("unavailable", "needs_approval", "not_applicable")) {
+                issue("$path.status", "alternative_not_blocked",
+                    "unavailable, needs_approval or not_applicable; an available alternative needs executable work, not a blocked claim")
+            }
+            val evidence = option.optJSONArray("evidence")
+            if (evidence == null || evidence.length() == 0) {
+                issue("$path.evidence", "missing_evidence", "Non-empty references to actual checked evidence")
+            } else repeat(evidence.length()) { item ->
+                if (evidence.optString(item).isBlank()) issue("$path.evidence[$item]", "missing_evidence", "A non-blank evidence reference")
+            }
+        }
+    }
+
+    /** Facts for the coordinator, not a retry limit, permission grant or scientific verification. */
+    fun feedback(blockers: JSONArray, finished: Set<String>): String {
+        val observations = JSONArray()
+        repeat(blockers.length()) { index ->
+            val blocker = blockers.optJSONObject(index) ?: return@repeat
+            if (blocker.optString("kind") !in setOf("resource", "permission")) return@repeat
+            val problems = alternativeProblems(blocker, "blockers[$index].")
+            listOf("reason", "resume_when").forEach { field ->
+                if (blocker.optString(field).isBlank()) problems.put(JSONObject()
+                    .put("path", "blockers[$index].$field").put("code", "missing_$field").put("expected", "Non-blank $field"))
+            }
+            val completed = workId(blocker) in finished
+            observations.put(JSONObject().put("blocker_index", index).put("blocker_id", blocker.optString("id"))
+                .put("resolution_work_id", workId(blocker)).put("resolution_work_completed", completed)
+                .put("record_status", when {
+                    !completed -> "resolution_not_completed"
+                    problems.length() > 0 -> "assessment_needs_repair"
+                    else -> "blocking_record_complete"
+                }).put("issues", problems))
+        }
+        if (observations.length() == 0) return ""
+        return JSONObject().put("format", "galaxyssi.resource-resolution-feedback.v1")
+            .put("observations", observations)
+            .put("evidence_validation", "Record shape and host work completion only; source truth and capability availability are not verified")
+            .put("guidance", "Read the saved resolution results before repairing the exact fields. Successful exploration does not prove a resource is available. " +
+                "Choose between correcting the assessment from existing evidence, assigning concrete new work with a new work ID, requesting assistance, " +
+                "or reporting a genuine blocker with observable resume conditions. Do not repeat completed side effects or invent evidence to satisfy the schema. " +
+                "Continue independent feasible work. No retry-count termination rule is imposed.").toString()
     }
 
     fun jobs(blockers: JSONArray, people: List<AgentTeamMember>, coordinatorId: String, finished: Set<String>): List<JSONObject> {
