@@ -45,7 +45,7 @@ internal object CollaborationCandidateLiveGraph {
         val pending = CollaborationCandidateVerificationState.requests(checkpoint.pendingRequests, requests).filter { request ->
             val target = request.optJSONObject("target")
             val existing = target?.optString("object_id")?.let { indexes[it] }?.let(cycles::get)
-            existing == null || (target?.optLong("revision") ?: 0) > existing.getJSONObject("target").getLong("revision")
+            CollaborationCandidateReviewRetry.relevant(existing, request)
         }
         if (snapshot.control != Control.RUN) return@runCatching Plan(snapshot, emptyList(),
             CollaborationCandidateVerificationState.encode(JSONArray(cycles), pending), pending,
