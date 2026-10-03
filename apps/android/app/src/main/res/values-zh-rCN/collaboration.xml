@@ -1,4 +1,5 @@
 <resources>
+    <string name="collaboration_process_duration">用时 %1$s</string>
     <string name="collaboration_system_message">协作通知</string>
     <string name="collaboration_synthesizing">协调员正在核对并汇总成员结果</string>
     <string name="collaboration_title">协作群</string>

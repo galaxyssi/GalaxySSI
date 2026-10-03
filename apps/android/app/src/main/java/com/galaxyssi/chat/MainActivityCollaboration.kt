@@ -146,7 +146,8 @@ private fun MainActivity.showCollaborationMentionPicker(group: CollaborationGrou
     }
 }
 
-internal fun MainActivity.collaborationMemberRow(member: CollaborationMember, compact: Boolean = false): View = LinearLayout(this).apply {
+internal fun MainActivity.collaborationMemberRow(member: CollaborationMember, compact: Boolean = false,
+    replyAtMillis: Long = 0L): View = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
     setPadding(if (compact) 0 else dp(12), dp(8), if (compact) 0 else dp(12), dp(8))
@@ -157,11 +158,25 @@ internal fun MainActivity.collaborationMemberRow(member: CollaborationMember, co
     }, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(10) })
     addView(LinearLayout(this@collaborationMemberRow).apply {
         orientation = LinearLayout.VERTICAL
-        addView(TextView(context).apply {
+        val name = TextView(context).apply {
             text = "${member.name}  ${getString(R.string.collaboration_ai)}"
             textSize = 14f; setTypeface(typeface, Typeface.BOLD)
             setTextColor(getColorCompat(R.color.text_primary))
-        })
+        }
+        if (replyAtMillis > 0L) addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            name.maxLines = 2
+            name.ellipsize = android.text.TextUtils.TruncateAt.END
+            addView(name, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(CollaborationTimeTextView(context).apply {
+                tag = "collaboration-reply-time"
+                textSize = 11f
+                maxLines = 1
+                setTextColor(getColorCompat(R.color.text_secondary))
+                bindTime { now -> CollaborationReplyTiming.formatReplyTime(replyAtMillis, now) }
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        }, LinearLayout.LayoutParams(-1, -2)) else addView(name)
         addView(TextView(context).apply {
             text = listOf(CollaborationLabelPolicy.provider(member.providerLabel, member.modelId), member.role)
                 .filter(String::isNotBlank).joinToString(" · ")

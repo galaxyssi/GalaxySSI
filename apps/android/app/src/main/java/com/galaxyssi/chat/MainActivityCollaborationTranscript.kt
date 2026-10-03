@@ -15,7 +15,8 @@ internal fun MainActivity.collaborationTranscriptRow(
     setPadding(0, dp(6), 0, dp(6))
     addView(collaborationMemberRow(CollaborationMember(id = metadata.memberId, name = metadata.name,
         agentId = metadata.memberId, providerLabel = metadata.provider,
-        role = listOf(metadata.role, collaborationStageLabel(metadata.researchStage)).filter(String::isNotBlank).joinToString(" · ")), compact = true))
+        role = listOf(metadata.role, collaborationStageLabel(metadata.researchStage)).filter(String::isNotBlank).joinToString(" · ")), compact = true,
+        replyAtMillis = CollaborationReplyTiming.replyAt(metadata, entry.timestampMillis)))
     if (metadata.result) addView(agentAssistantTranscriptRow(entry.copy(role = AgentTranscriptRole.ASSISTANT)),
         LinearLayout.LayoutParams(-1, -2))
 
@@ -32,14 +33,11 @@ internal fun MainActivity.collaborationTranscriptRow(
         })
         addView(agentResearchTraceRow(entry.copy(turnId = metadata.traceTurnId), if (metadata.result) entry.text else ""))
     }
-    val status = TextView(context).apply {
-        textSize = 13f
+    val status = LinearLayout(context).apply statusRow@ {
+        orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minHeight = dp(44)
-        setTextColor(getColorCompat(R.color.text_secondary))
-        maxLines = 2
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        text = when {
+        minimumHeight = dp(44)
+        val statusLabel = when {
             metadata.goalDisposition == "blocked" -> getString(R.string.collaboration_goal_blocked)
             metadata.result -> getString(R.string.collaboration_view_process)
             metadata.paused -> getString(R.string.collaboration_team_paused)
@@ -52,13 +50,36 @@ internal fun MainActivity.collaborationTranscriptRow(
             metadata.primary -> getString(R.string.collaboration_synthesizing)
             else -> getString(R.string.collaboration_running)
         }
+        addView(TextView(context).apply {
+            text = statusLabel
+            textSize = 13f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(getColorCompat(R.color.text_secondary))
+        }, if (metadata.result) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(0, -2, 1f))
+        val time = CollaborationTimeTextView(context).apply {
+            tag = "collaboration-process-time"
+            textSize = 13f
+            maxLines = 1
+            setTextColor(getColorCompat(R.color.text_secondary))
+            compoundDrawablePadding = dp(8)
+            bindTime(CollaborationReplyTiming.isTicking(metadata)) { now ->
+                val value = CollaborationReplyTiming.elapsedMillis(metadata, entry.timestampMillis, now)?.let { elapsed ->
+                    getString(R.string.collaboration_process_duration, agentProcessedDuration(elapsed))
+                }.orEmpty()
+                this@statusRow.contentDescription = "${metadata.name}: $statusLabel $value, " + getString(if (details.visibility == View.VISIBLE)
+                    R.string.research_trace_collapse else R.string.research_trace_expand)
+                value
+            }
+        }
+        addView(time, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
         fun updateIcon(expanded: Boolean) {
             val chevron = getDrawable(R.drawable.ic_chevron_down)?.mutate()?.apply {
                 setBounds(0, 0, dp(18), dp(18))
                 setTint(getColorCompat(R.color.text_secondary))
             }
-            setCompoundDrawablesRelative(null, null, chevron, null)
-            contentDescription = "${metadata.name}: $text, " + getString(if (expanded)
+            time.setCompoundDrawablesRelative(null, null, chevron, null)
+            contentDescription = "${metadata.name}: $statusLabel ${time.text}, " + getString(if (expanded)
                 R.string.research_trace_collapse else R.string.research_trace_expand)
         }
         updateIcon(details.visibility == View.VISIBLE)
