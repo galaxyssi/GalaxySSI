@@ -21,7 +21,37 @@ internal object CollaborationProgressStore {
         val binding = binding(context, source, request.conversationId, request.messageId) ?: return
         write(context, binding, "connection-wait", context.getString(if (prolonged)
             R.string.collaboration_waiting_connection_long else R.string.collaboration_waiting_connection),
-            System.currentTimeMillis())
+            System.currentTimeMillis(), connectionState = if (AgentTeamDispatchCheckpoint(context)
+                .wasNotDispatched(request.runId)) "" else "waiting")
+    }
+
+    fun dispatched(context: Context, execution: AgentTeamMemberExecutionContext) {
+        val request = execution.request
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
+        val binding = binding(context, source, request.conversationId, request.messageId) ?: return
+        write(context, binding, "connection-wait", context.getString(R.string.collaboration_running), System.currentTimeMillis())
+    }
+
+    fun reconnecting(context: Context, execution: AgentTeamMemberExecutionContext) {
+        val request = execution.request
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
+        val binding = binding(context, source, request.conversationId, request.messageId) ?: return
+        write(context, binding, "connection-wait", context.getString(R.string.collaboration_connection_reconciling),
+            System.currentTimeMillis(), connectionState = "reconciling")
+    }
+
+    /** Only the authenticated recovery observer may replace an unconfirmed connection state. */
+    fun recovered(context: Context, source: Long, conversation: String, turn: String, status: String) {
+        val label = when (status) {
+            "accepted", "queued" -> R.string.collaboration_queued
+            "starting", "running", "recovering" -> R.string.collaboration_running
+            "waiting_input", "waiting_approval" -> R.string.agent_task_status_waiting_approval
+            "pausing", "paused", "takeover", "interrupted" -> R.string.collaboration_team_paused
+            "completed", "failed", "timed_out", "cancelled" -> R.string.agent_status_waiting_response
+            else -> return
+        }
+        val binding = binding(context, source, conversation, turn) ?: return
+        write(context, binding, "connection-wait", context.getString(label), System.currentTimeMillis())
     }
 
     @Synchronized
@@ -86,8 +116,10 @@ internal object CollaborationProgressStore {
     }
 
     @Synchronized
-    private fun write(context: Context, binding: JSONObject, eventId: String, text: String, at: Long) {
+    private fun write(context: Context, binding: JSONObject, eventId: String, text: String, at: Long,
+        connectionState: String = "") {
         val metadata = requireNotNull(CollaborationTranscriptMetadata.decode(binding.getString("metadata")))
+            .copy(connectionState = connectionState)
         val key = "${metadata.traceTurnId}:activity:${AgentNativeJsonCodec.sha256(eventId)}"
         val hash = AgentNativeJsonCodec.sha256(text)
         val previous = seenEvents[key]

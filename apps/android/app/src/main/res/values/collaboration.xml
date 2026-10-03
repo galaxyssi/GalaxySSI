@@ -37,7 +37,9 @@
     <string name="collaboration_queued">Queued</string>
     <string name="collaboration_running">Executing</string>
     <string name="collaboration_completed">Completed</string>
-    <string name="collaboration_failed_status">Interrupted or failed</string>
+    <string name="collaboration_failed_status">This attempt failed</string>
+    <string name="collaboration_connection_lost">Connection interrupted; waiting to reconnect</string>
+    <string name="collaboration_connection_reconciling">Reconnected; checking the original task</string>
     <string name="collaboration_cancelled">Stopped</string>
     <string name="collaboration_skipped">Skipped</string>
     <string name="collaboration_created">Collaboration group created</string>

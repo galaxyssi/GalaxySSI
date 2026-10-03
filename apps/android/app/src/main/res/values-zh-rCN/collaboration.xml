@@ -37,7 +37,9 @@
     <string name="collaboration_queued">排队中</string>
     <string name="collaboration_running">正在执行</string>
     <string name="collaboration_completed">已完成</string>
-    <string name="collaboration_failed_status">已中断或失败</string>
+    <string name="collaboration_failed_status">本次执行失败</string>
+    <string name="collaboration_connection_lost">连接中断，等待恢复</string>
+    <string name="collaboration_connection_reconciling">连接已恢复，正在核对原任务</string>
     <string name="collaboration_cancelled">已停止</string>
     <string name="collaboration_skipped">已跳过</string>
     <string name="collaboration_created">协作群已创建</string>

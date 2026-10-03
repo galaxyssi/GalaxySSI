@@ -46,6 +46,8 @@ internal fun MainActivity.collaborationTranscriptRow(
             metadata.status == AgentSubagentStatus.FAILED -> getString(R.string.collaboration_failed_status)
             metadata.status == AgentSubagentStatus.CANCELLED -> getString(R.string.collaboration_cancelled)
             metadata.status == AgentSubagentStatus.SKIPPED -> getString(R.string.collaboration_skipped)
+            metadata.connectionState == "waiting" -> getString(R.string.collaboration_connection_lost)
+            metadata.connectionState == "reconciling" -> getString(R.string.collaboration_connection_reconciling)
             metadata.summary.isNotBlank() -> metadata.summary.lineSequence().first().take(180)
             metadata.primary -> getString(R.string.collaboration_synthesizing)
             else -> getString(R.string.collaboration_running)
