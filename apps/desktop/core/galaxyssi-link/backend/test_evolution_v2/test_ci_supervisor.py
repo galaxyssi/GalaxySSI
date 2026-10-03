@@ -14,7 +14,7 @@ from evolution_v2.ci_store import CiWatchStore
 from evolution_v2.ci_supervisor import EvolutionCiSupervisor
 from evolution_v2.models import TaskMetadata
 from evolution_v2.storage import EvolutionV2Store
-from test_evolution_v2.test_ci_snapshot import Client, SHA, URL, check, observe
+from test_evolution_v2.test_ci_snapshot import Client, SHA, URL, check, commit_snapshot, observe
 
 
 class Manager:
@@ -105,13 +105,19 @@ class CiSupervisorTests(unittest.TestCase):
     def child(self):
         return self.manager.require(self.store.get("parent")["repair"]["task_id"])
 
+    def integrated_proof(self):
+        return {**{key: self.snapshot.get(key) for key in ("url", "repository", "head_sha", "merge_commit_sha",
+                    "base_ref", "base_repository")}, "version": 1, "task_id": "parent", "passed": True,
+                "integration_commit": "c" * 40, "retained_paths": 1, "retention_fingerprint": "d" * 64,
+                "ci": commit_snapshot("c" * 40)}
+
     def test_merged_failed_ci_rechecks_integration_without_creating_repair(self):
         self.snapshot.update(status="merged", state="closed", merged=True, pending=0)
         with patch("evolution_v2.integration_verification.verify_integration", return_value={"passed": False}) as verify:
             self.tick()
             self.tick()
             self.assertEqual(2, verify.call_count)
-            verify.return_value = {"passed": True}
+            verify.return_value = self.integrated_proof()
             self.tick()
             self.tick()
             self.assertEqual(3, verify.call_count)
@@ -120,6 +126,40 @@ class CiSupervisorTests(unittest.TestCase):
         self.assertEqual([], self.manager.created)
         self.assertEqual([], self.manager.started)
         self.assertEqual([], self.manager.published)
+
+    def test_bare_integration_pass_does_not_stop_the_observer(self):
+        self.snapshot.update(status="merged", state="closed", merged=True, pending=0)
+        with patch("evolution_v2.integration_verification.verify_integration", return_value={"passed": True}):
+            self.tick()
+            self.tick()
+        self.assertEqual(2, self.manager.github.pull_request_ci_snapshot.call_count)
+
+    def test_merged_skipped_checks_keep_polling_until_explicit_rerun_success(self):
+        client = Client([check(conclusion="skipped")])
+        client.pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+        self.snapshot = observe(client, URL)
+        with patch("evolution_v2.integration_verification.verify_integration", return_value={"passed": False}) as verify:
+            self.tick()
+            self.tick()
+            self.assertEqual(2, verify.call_count)
+        client.runs[0]["check_runs"][0] = check()
+        self.snapshot = observe(client, URL)
+        self.tick()
+        calls = self.manager.github.pull_request_ci_snapshot.call_count
+        self.tick()
+        self.assertEqual(calls, self.manager.github.pull_request_ci_snapshot.call_count)
+        self.assertEqual([], self.manager.created)
+
+    def test_skipped_head_can_be_verified_by_explicitly_successful_retained_integration(self):
+        client = Client([check(conclusion="skipped")])
+        client.pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+        self.snapshot = observe(client, URL)
+        with patch("evolution_v2.integration_verification.verify_integration", return_value=self.integrated_proof()) as verify:
+            self.tick()
+            self.tick()
+            verify.assert_called_once()
+        self.assertFalse(self.store.get("parent")["snapshot"]["verification_passed"])
+        self.assertEqual([], self.manager.created)
 
     def test_unavailable_integration_retains_error_and_retries(self):
         self.snapshot.update(status="merged", state="closed", merged=True, pending=0)
