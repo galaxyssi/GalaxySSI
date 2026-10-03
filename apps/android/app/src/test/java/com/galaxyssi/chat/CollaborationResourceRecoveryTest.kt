@@ -75,7 +75,61 @@ class CollaborationResourceRecoveryTest {
             val repair = store.resumeCheckpoint("run")!!
             assertEquals(1, repair.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
             assertTrue(repair.request.context[CollaborationGoalLoop.RETRY_AT].toString().toLong() > 2000)
+            val feedback = JSONObject(repair.request.context.getValue(CollaborationResourceRecovery.FEEDBACK).toString())
+            val observation = feedback.getJSONArray("observations").getJSONObject(0)
+            assertEquals("assessment_needs_repair", observation.getString("record_status"))
+            assertTrue(observation.getBoolean("resolution_work_completed"))
+            assertEquals("blockers[0].alternatives", observation.getJSONArray("issues").getJSONObject(0).getString("path"))
+            assertEquals(assessment().getJSONArray("criteria").toString(), repair.request.context[CollaborationGoalLoop.CRITERIA])
         }
+    }
+
+    @Test fun feedbackDistinguishesUnfinishedExplorationFromInvalidAssessmentWithoutChangingDisposition() {
+        val block = blocker()
+        val raw = assessment(block).toString()
+        val before = block.toString()
+        fun observation(finished: Set<String>) = JSONObject(CollaborationResourceRecovery.feedback(JSONArray().put(block), finished))
+            .getJSONArray("observations").getJSONObject(0)
+        assertEquals("resolution_not_completed", observation(emptySet()).getString("record_status"))
+        val finished = setOf(CollaborationResourceRecovery.workId(block))
+        assertEquals("assessment_needs_repair", observation(finished).getString("record_status"))
+        assertEquals(before, block.toString())
+        assertEquals("continue", CollaborationGoalLoop.disposition(raw, "[]", finished))
+    }
+
+    @Test fun exactAlternativeFieldProblemsDoNotMasqueradeAsJsonErrors() {
+        val block = blocker().put("alternatives", JSONArray().put(JSONObject().put("option", "Local prediction")
+            .put("status", "available").put("result", "").put("evidence", JSONArray().put(""))))
+        val feedback = JSONObject(CollaborationResourceRecovery.feedback(JSONArray().put(block), setOf(CollaborationResourceRecovery.workId(block))))
+        val issues = feedback.getJSONArray("observations").getJSONObject(0).getJSONArray("issues")
+        val paths = (0 until issues.length()).map { issues.getJSONObject(it).getString("path") }.toSet()
+        assertEquals(setOf("blockers[0].alternatives[0].result", "blockers[0].alternatives[0].status", "blockers[0].alternatives[0].evidence[0]"), paths)
+        assertFalse(CollaborationResourceRecovery.hasAlternatives(block))
+        assertTrue(feedback.getString("guidance").contains("new work ID"))
+        assertTrue(feedback.getString("guidance").contains("No retry-count"))
+        assertFalse(feedback.getString("evidence_validation").contains("scientific proof"))
+    }
+
+    @Test fun completeBlockingRecordIsNotAClaimOfScientificVerification() {
+        val block = blocker().put("alternatives", JSONArray().put(JSONObject().put("option", "Experimental platform")
+            .put("status", "needs_approval").put("result", "No authorized connection")
+            .put("evidence", JSONArray().put("artifact:capability-audit"))))
+        val finished = setOf(CollaborationResourceRecovery.workId(block))
+        val feedback = JSONObject(CollaborationResourceRecovery.feedback(JSONArray().put(block), finished))
+        assertEquals("blocking_record_complete", feedback.getJSONArray("observations").getJSONObject(0).getString("record_status"))
+        assertTrue(CollaborationResourceRecovery.hasAlternatives(block))
+        assertTrue(feedback.getString("evidence_validation").contains("not verified"))
+        assertEquals("blocked", CollaborationGoalLoop.disposition(assessment(block).toString(), "[]", finished))
+        assertEquals("", CollaborationResourceRecovery.feedback(JSONArray().put(blocker("connectivity")), emptySet()))
+    }
+
+    @Test fun malformedAlternativesReportTheirExactLocations() {
+        val block = blocker().put("resume_when", "").put("alternatives", JSONArray().put("not an object"))
+        val issues = JSONObject(CollaborationResourceRecovery.feedback(JSONArray().put(block), emptySet()))
+            .getJSONArray("observations").getJSONObject(0).getJSONArray("issues")
+        assertEquals("blockers[0].alternatives[0]", issues.getJSONObject(0).getString("path"))
+        assertEquals("blockers[0].resume_when", issues.getJSONObject(1).getString("path"))
+        assertFalse(CollaborationResourceRecovery.hasAlternatives(block))
     }
 
     @Test fun failedRecoveryIsRetriedWithBackoffInsteadOfFastLoopOrFalseCompletion() = runBlocking {

@@ -68,6 +68,37 @@ class CollaborationResearchPromptTest {
         assertEquals("original excerpt", material.getString("output"))
     }
 
+    @Test fun resourceFeedbackIsPinnedAndRecallableWhenItDoesNotFitThePrompt() {
+        val base = execution("Original goal")
+        val feedback = "host resource feedback ".repeat(6000)
+        val execution = base.copy(request = base.request.copy(context = base.request.context +
+            (CollaborationResourceRecovery.FEEDBACK to feedback)))
+        val rows = MemoryRows()
+        val store = CollaborationGoalContractStore(rows, { true })
+        val materials = CollaborationResearchPrompt.materials(execution, "")
+        assertEquals(feedback, materials["Resource resolution feedback"])
+        val first = CollaborationResearchPrompt.prepare(execution, store) { "" }
+        val recoveredStore = CollaborationGoalContractStore(rows, { true })
+        val restored = CollaborationResearchPrompt.prepare(execution, recoveredStore) { error("Must use pinned context") }
+        assertTrue(first.contains("context section=Resource resolution feedback"))
+        assertTrue(restored.contains("Resource resolution feedback"))
+        assertTrue(restored.contains("mode=goal_contract"))
+        val readBack = StringBuilder()
+        val access = CollaborationWorkspaceAccess.from(execution)
+        var cursor = ""
+        do {
+            val page = recoveredStore.read(access, cursor)
+            val fragments = page.getJSONArray("fragments")
+            repeat(fragments.length()) { index ->
+                val fragment = fragments.getJSONObject(index)
+                if (fragment.optString("kind") == "context" && fragment.optString("id") == "Resource resolution feedback")
+                    readBack.append(fragment.getString("text"))
+            }
+            cursor = page.optString("next_cursor").takeUnless { page.isNull("next_cursor") }.orEmpty()
+        } while (cursor.isNotEmpty())
+        assertEquals(feedback, readBack.toString())
+    }
+
     @Test fun missingDurableSnapshotFailsBeforeAResearchPromptCanBeDispatched() {
         assertTrue(runCatching {
             CollaborationResearchPrompt.build(execution("goal"), JSONObject().put("status", "rejected"), emptyMap())
