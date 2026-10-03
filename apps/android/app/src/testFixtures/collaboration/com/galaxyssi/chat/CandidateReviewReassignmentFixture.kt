@@ -23,6 +23,9 @@ internal object CandidateReviewReassignmentFixture {
         val enrolled = advance()
         val old = enrolled.definition.members.single { it.context.containsKey(CollaborationCandidateEvolution.TASK) &&
             JSONObject(it.context.getValue(CollaborationCandidateEvolution.TASK)).getString("member") == "reviewer-a" }
+        f.workspace.enrollPublication(f.access.copy(nodeId = old.memberId, personId = "reviewer-a",
+            dependencyNodes = old.dependsOnAgentIds), CollaborationResearchStage.VERIFY,
+            JSONObject(old.context.getValue(CollaborationCandidateEvolution.TASK)))
         complete(old.memberId, "Completed response, but no accepted workspace publication")
         val settled = advance()
         val retryPlan = settled.definition.members.single { CollaborationLiveGraph.planner(it) && it.memberId !in completed }

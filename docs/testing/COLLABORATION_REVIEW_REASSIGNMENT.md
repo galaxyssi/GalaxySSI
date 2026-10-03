@@ -52,10 +52,11 @@ qualified scientific validators and equal-budget team comparisons remain separat
 acceptance work. No superiority or scientific-validity claim follows from local
 recovery tests.
 
-This is not a generation-fenced ownership transfer. If an old publication arrives
-after the replacement has already committed, existing immutable records and normal
-review/conflict checks retain the evidence; the new path does not erase either
-record or pretend it can undo an external side effect.
+In 1.4.31 this was not a generation-fenced ownership transfer: an old publication
+could still arrive after replacement publication. The follow-up in
+[1.4.32](COLLABORATION_PUBLICATION_RETIREMENT.md) closes that workspace write race
+with durable publication retirement. It still cannot undo or cancel an external
+side effect and is not general offline task takeover.
 
 ## Results: 2026-10-03
 

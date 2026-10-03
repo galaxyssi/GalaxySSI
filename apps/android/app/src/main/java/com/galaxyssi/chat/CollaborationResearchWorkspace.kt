@@ -69,8 +69,10 @@ internal class CollaborationResearchWorkspace(
     fun enrollPublication(access: CollaborationWorkspaceAccess, stage: CollaborationResearchStage,
                           candidateTask: JSONObject? = null) = synchronized(LOCK) {
         checkAcceptanceAccess(access)
-        candidateTask?.let { CollaborationCandidateEvolution.checkIdentity(access, it) }
-        CollaborationPublicationJournal(rows, access).enroll(stage, candidateTask)
+        candidateTask?.let { CollaborationCandidateEvolution.checkTask(this, access, it) }
+        val enrollment = CollaborationPublicationJournal(rows, access).enrollmentWrites(stage, candidateTask)
+        val retirement = CollaborationPublicationRetirement(rows, access).enrollmentWrites(stage, candidateTask)
+        if (enrollment.isNotEmpty() || retirement.isNotEmpty()) rows.commit(enrollment + retirement)
     }
 
     fun publicationContract(access: CollaborationWorkspaceAccess): JSONObject? = synchronized(LOCK) {
@@ -81,6 +83,11 @@ internal class CollaborationResearchWorkspace(
     fun publicationCheckpoint(access: CollaborationWorkspaceAccess): JSONObject? = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         CollaborationPublicationJournal(rows, access).checkpoint()
+    }
+
+    fun requirePublicationActive(access: CollaborationWorkspaceAccess) = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        require(!CollaborationPublicationRetirement(rows, access).isRetired()) { "Publication dispatch was retired; do not resume it" }
     }
 
     fun submitPublication(access: CollaborationWorkspaceAccess, raw: String): JSONObject = synchronized(LOCK) {
@@ -100,6 +107,15 @@ internal class CollaborationResearchWorkspace(
             access.personId.isNotBlank() && access.nodeId.isNotBlank()) { "A host-owned research identity is required" }
         if (!authorized(access.groupId)) return@synchronized failure("Group access was removed")
         if (candidateTask != null && !accessAuthorized(access)) return@synchronized failure("Candidate member access was removed")
+        val retirement = CollaborationPublicationRetirement(rows, access)
+        if (retirement.isRetired()) {
+            checkAcceptanceAccess(access)
+            val result = failure("Publication dispatch was retired; late output is retained only for audit").put("retired", true)
+            val journal = CollaborationPublicationJournal(rows, access)
+            val audit = journal.retiredOutcomeWrites(raw, result, now)
+            if (audit.isNotEmpty()) rows.commit(audit)
+            return@synchronized result
+        }
         val artifact = CollaborationResearchArtifact.decode(raw)
         if (artifact == null && candidateTask == null && !recoverable) return@synchronized JSONObject()
         val changes = artifact?.optJSONArray("workspace")
@@ -129,6 +145,7 @@ internal class CollaborationResearchWorkspace(
         }
         val writes = linkedMapOf<String, String>()
         val result = runCatching {
+            retirement.requireOwnership(candidateTask)
             requireNotNull(artifact) { "Return a valid ${CollaborationResearchArtifact.FORMAT} object with summary, candidates and findings" }
             val changes = changes ?: if (candidateTask == null) JSONArray() else
                 throw IllegalArgumentException("Candidate task requires a workspace revision/event")
@@ -274,6 +291,7 @@ internal class CollaborationResearchWorkspace(
     fun replayCandidateTask(access: CollaborationWorkspaceAccess, task: JSONObject): JSONObject? = synchronized(LOCK) {
         require(authorized(access.groupId) && accessAuthorized(access)) { "Candidate member access was removed" }
         CollaborationCandidateEvolution.checkIdentity(access, task)
+        require(!CollaborationPublicationRetirement(rows, access).isRetired()) { "Retired candidate work cannot be replayed" }
         val saved = rows.read(prefix(access.groupId) + "publication:" + digest("${access.runId}:${access.nodeId}"))
             ?.let(::JSONObject) ?: return@synchronized null
         require(saved.optString("candidate_task_sha256") == digest(task.toString())) { "Candidate dispatch task changed" }

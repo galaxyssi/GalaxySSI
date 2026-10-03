@@ -9,17 +9,32 @@ internal class CollaborationPublicationJournal(
     private val access: CollaborationWorkspaceAccess
 ) {
     private val prefix = "group:${hash(access.groupId)}:submission:${hash("${access.runId}:${access.nodeId}")}:"
-    private val identity = JSONObject().put("group", access.groupId).put("run", access.runId)
-        .put("turn", access.turnId).put("round", access.round).put("node", access.nodeId)
-        .put("person", access.personId).put("dependencies", JSONArray(access.dependencyNodes.sorted())).toString()
+    private val identity = identityOf(access)
 
-    fun enroll(stage: CollaborationResearchStage, task: JSONObject?) {
+    fun enrollmentWrites(stage: CollaborationResearchStage, task: JSONObject?): Map<String, String> {
         require(stage != CollaborationResearchStage.DELIVER) { "Delivery uses the goal acceptance contract" }
         val contract = JSONObject().put("identity", identity).put("stage", stage.name).put("candidate_task", task)
         val key = prefix + "contract"
         val existing = read(key)
         require(existing == null || existing.toString() == contract.toString()) { "Publication contract changed" }
-        if (existing == null) rows.commit(mapOf(key to envelope(contract)))
+        return if (existing == null) mapOf(key to envelope(contract)) else emptyMap()
+    }
+
+    fun scopedCandidateContract(node: String): JSONObject {
+        require(node.isNotBlank()) { "A publication dispatch is required" }
+        val value = requireNotNull(read("group:${hash(access.groupId)}:submission:${hash("${access.runId}:$node")}:contract")) {
+            "The predecessor has no durable host publication contract"
+        }
+        val saved = JSONObject(value.getString("identity"))
+        require(saved.getString("group") == access.groupId && saved.getString("run") == access.runId &&
+            saved.getString("turn") == access.turnId && saved.getString("node") == node &&
+            saved.getLong("round") >= 0) { "Predecessor publication scope changed" }
+        val task = value.getJSONObject("candidate_task")
+        require(task.getString("group_id") == access.groupId && task.getString("run_id") == access.runId &&
+            task.getString("turn_id") == access.turnId && task.getString("member") == saved.getString("person")) {
+            "Predecessor candidate identity changed"
+        }
+        return value
     }
 
     fun contract(): JSONObject? = read(prefix + "contract")?.also {
@@ -55,6 +70,23 @@ internal class CollaborationPublicationJournal(
         return mapOf(key to encoded, prefix + "latest" to encoded)
     }
 
+    fun retiredOutcomeWrites(raw: String, receipt: JSONObject, now: Long): Map<String, String> {
+        require(receipt.optBoolean("retired")) { "A retired audit receipt is required" }
+        val key = prefix + "retired:" + hash(raw)
+        read(key)?.let { saved ->
+            val attempt = requireNotNull(read(attemptKey(saved.getLong("sequence")))) { "Retired audit attempt is missing" }
+            require(saved.getString("raw_sha256") == hash(raw) && attempt.getString("raw") == raw &&
+                saved.getString("receipt_sha256") == hash(receipt.toString()) &&
+                attempt.getJSONObject("receipt").toString() == receipt.toString()) { "Retired audit binding changed" }
+            return emptyMap()
+        }
+        val writes = outcomeWrites(raw, receipt, now)
+        val latest = JSONObject(JSONObject(writes.getValue(prefix + "latest")).getString("payload"))
+        val index = JSONObject().put("sequence", latest.getLong("sequence")).put("raw_sha256", hash(raw))
+            .put("receipt_sha256", hash(receipt.toString()))
+        return writes + (key to envelope(index))
+    }
+
     private fun attemptKey(sequence: Long) = prefix + "attempt:" + sequence.toString().padStart(20, '0')
     private fun read(key: String): JSONObject? = rows.read(key)?.let { encoded ->
         val envelope = JSONObject(encoded)
@@ -67,4 +99,10 @@ internal class CollaborationPublicationJournal(
         JSONObject().put("payload", it).put("sha256", hash(it)).toString()
     }
     private fun hash(value: String) = AgentNativeJsonCodec.sha256(value)
+
+    companion object {
+        fun identityOf(access: CollaborationWorkspaceAccess): String = JSONObject().put("group", access.groupId).put("run", access.runId)
+            .put("turn", access.turnId).put("round", access.round).put("node", access.nodeId)
+            .put("person", access.personId).put("dependencies", JSONArray(access.dependencyNodes.sorted())).toString()
+    }
 }

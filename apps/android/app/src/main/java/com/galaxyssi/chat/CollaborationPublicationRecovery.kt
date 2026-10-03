@@ -12,12 +12,14 @@ internal class CollaborationPublicationRecovery(
     private val stage = CollaborationResearchStage.valueOf(contract.getString("stage"))
     var latest: JSONObject? = workspace.publicationCheckpoint(access)
         private set
+    init { workspace.requirePublicationActive(access) }
     val repairing: Boolean get() = latest?.getJSONObject("receipt")?.optString("status") == "rejected"
 
     fun accept(raw: String): Boolean {
         val normalized = raw.trim()
         val receipt = workspace.submitPublication(access, normalized)
         latest = requireNotNull(workspace.publicationCheckpoint(access))
+        check(!receipt.optBoolean("retired")) { "This publication was retired; do not retry or repair it" }
         check(latest!!.getString("raw") == normalized && latest!!.getJSONObject("receipt").toString() == receipt.toString()) {
             "A different publication already owns this assignment"
         }
@@ -43,7 +45,10 @@ internal class CollaborationPublicationRecovery(
     fun backoffMillis(): Long = if (!repairing) 0 else
         (1_000L shl (latest!!.getLong("sequence") - 1).coerceIn(0L, 6L).toInt()).coerceAtMost(60_000L)
 
-    fun permitsTool(name: String): Boolean = !repairing || name == CollaborationCloudRecall.NAME
+    fun permitsTool(name: String): Boolean {
+        workspace.requirePublicationActive(access)
+        return !repairing || name == CollaborationCloudRecall.NAME
+    }
 
     companion object {
         fun create(context: Context, access: CollaborationWorkspaceAccess): CollaborationPublicationRecovery? {
