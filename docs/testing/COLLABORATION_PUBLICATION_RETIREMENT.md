@@ -75,3 +75,16 @@ validity and equal-budget team improvement remain separate evaluation goals.
   but not counted as passed.
 - Desktop was not changed/restarted. No paid provider, original research,
   contact message, physical tool or other device was used.
+
+## S26U Follow-up: 2026-10-03
+
+- S26U (`SM-S9480`) reconnected. Both APKs installed with `adb install -r`;
+  existing application data was preserved. Package metadata reports 1.4.32 (1117).
+- The isolated device test passed in two separate instrumentation invocations:
+  `retirementPhase=seed` in PID 15162 (0.445 s), then `retirementPhase=recover`
+  in PID 17851 (0.571 s), each reporting `OK (1 test)`.
+- Recovery verified the durable predecessor fence, retained late raw evidence,
+  successor publication/replay, and duplicate suppression across a real process
+  boundary. Only the dedicated fixture rows/preferences were cleared.
+- This supersedes the installation blocker above, but is not a phone reboot,
+  Doze, network outage or live-provider test. Those acceptance scopes remain open.
