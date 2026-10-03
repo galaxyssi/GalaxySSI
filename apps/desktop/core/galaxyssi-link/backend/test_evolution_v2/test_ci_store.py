@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agent_run_kernel import AgentRunEventLedger
 from evolution_v2.ci_store import CiLeaseLost, CiWatchStore
-from test_evolution_v2.test_ci_snapshot import URL
+from test_evolution_v2.test_ci_snapshot import URL, commit_snapshot
 
 
 class CiStoreTests(unittest.TestCase):
@@ -72,6 +72,26 @@ class CiStoreTests(unittest.TestCase):
         self.store.register("parent", URL)
         # A bare passed flag is not complete, identity-bound integration evidence.
         self.assertEqual("parent", self.store.claim_due(104, "three")[0]["task_id"])
+
+    def test_skipped_green_terminal_watch_reopens_after_database_restart(self):
+        data = self.store.claim_due(100, "one")[0]
+        data.update(status="merged", snapshot={**commit_snapshot(conclusion="skipped"),
+                    "status": "merged", "merge_commit_sha": "b" * 40})
+        self.store.save(data, "one", 101, next_poll=-1)
+        restarted = CiWatchStore(AgentRunEventLedger(self.path))
+        restarted.register("parent", URL)
+        resumed = restarted.claim_due(102, "two")[0]
+        self.assertEqual(data, resumed)
+        # Observation resumes, but the historical result is not rewritten as success.
+        self.assertFalse(resumed["snapshot"]["verification_passed"])
+
+    def test_explicit_success_terminal_watch_stays_complete_after_restart(self):
+        data = self.store.claim_due(100, "one")[0]
+        data.update(status="merged", snapshot={**commit_snapshot(), "merge_commit_sha": "b" * 40})
+        self.store.save(data, "one", 101, next_poll=-1)
+        restarted = CiWatchStore(AgentRunEventLedger(self.path))
+        restarted.register("parent", URL)
+        self.assertEqual([], restarted.claim_due(102, "two"))
 
     def test_concurrent_claim_only_one_owner(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:

@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .common import redact, sha256_text, stable_json
+from .common import redact
+from .ci_verification import fingerprint, verification_issue
 
 
 _PR_URL = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([1-9][0-9]*)/?$")
@@ -103,6 +104,7 @@ def observe_commit(client, repository: str, sha: str) -> dict:
             if not isinstance(output, dict):
                 raise CiObservationError("Invalid check output")
             rows.append({"kind": "check_run", "id": item["id"], "name": item["name"], "outcome": outcome,
+                         "head_sha": sha, "status": state,
                          "conclusion": conclusion, "url": item.get("details_url", ""),
                          "summary": output.get("summary", "")})
     if counts != {len(run_ids)}:
@@ -120,14 +122,14 @@ def observe_commit(client, repository: str, sha: str) -> dict:
     for item in latest.values():
         outcome = {"success": "passed", "pending": "pending", "failure": "failed", "error": "failed"}.get(item.get("state"), "unknown")
         rows.append({"kind": "commit_status", "id": item["id"], "name": item["context"], "outcome": outcome,
+                     "head_sha": sha, "status": item.get("state"),
                      "conclusion": item.get("state"), "url": item.get("target_url", ""), "summary": item.get("description", "")})
     rows = redact(rows, maximum_text=8000)
     failed = sum(row["outcome"] == "failed" for row in rows)
     pending = sum(row["outcome"] in {"pending", "unknown"} for row in rows)
     status = "pending" if pending or not rows else "failed" if failed else "passed"
-    fingerprint = sha256_text(stable_json({"head": sha, "checks": sorted(
-        ({key: row[key] for key in ("kind", "id", "outcome", "conclusion")} for row in rows),
-        key=lambda row: (row["kind"], row["id"]))}))
-    return {"repository": repository, "head_sha": sha, "status": status,
+    result = {"repository": repository, "head_sha": sha, "status": status,
             "passed": status == "passed", "failed": failed, "pending": pending,
-            "checks": rows, "fingerprint": fingerprint}
+            "checks": rows, "fingerprint": fingerprint(sha, rows)}
+    issue = verification_issue(result)
+    return {**result, "verification_passed": not issue, "verification_issue": issue}

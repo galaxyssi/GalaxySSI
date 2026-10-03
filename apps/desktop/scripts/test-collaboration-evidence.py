@@ -38,7 +38,8 @@ def main() -> int:
             "GALAXYSSI_DISABLE_EXTERNAL_SERVICES": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         })
-        return subprocess.run([sys.executable, "-m", "unittest", *MODULES],
+        modules = sys.argv[1:] or MODULES
+        return subprocess.run([sys.executable, "-m", "unittest", *modules],
                               cwd=backend, env=environment, check=False).returncode
 
 

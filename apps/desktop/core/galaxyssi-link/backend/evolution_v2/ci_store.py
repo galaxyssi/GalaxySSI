@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from agent_run_kernel import AgentRunEventLedger
 from .common import stable_json, sha256_text
 from .ci_snapshot import target
+from .ci_verification import verification_issue
 from .ci_owner import CiOwnerLocks, OWNER_PATTERN, OwnerLockUnavailable
 
 
@@ -35,10 +36,13 @@ class CiWatchStore:
                 if old[0] != url:
                     raise ValueError("CI watch task identity cannot be rebound to another PR")
                 previous = json.loads(old[1])
+                snapshot = previous.get("snapshot")
+                if not isinstance(snapshot, dict):
+                    snapshot = {}
                 if (old[2] < 0 and previous.get("status") == "merged" and
-                        ("merge_commit_sha" not in previous.get("snapshot", {}) or
-                         (previous.get("snapshot", {}).get("failed") and
-                          not accepted_integration(previous.get("integration"), previous.get("snapshot", {}), task_id)))):
+                        ("merge_commit_sha" not in snapshot or
+                         (verification_issue(snapshot) and
+                          not accepted_integration(previous.get("integration"), snapshot, task_id)))):
                     connection.execute("UPDATE evolution_ci_watches SET next_poll=0 WHERE task_id=?", (task_id,))
                 return
             connection.execute("INSERT INTO evolution_ci_watches(task_id,url,data_json,next_poll) VALUES(?,?,?,0)",

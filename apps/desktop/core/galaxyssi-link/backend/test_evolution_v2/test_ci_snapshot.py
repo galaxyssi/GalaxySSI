@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from evolution_v2.ci_snapshot import CiObservationError, observe, pull_request, target
+from evolution_v2.ci_snapshot import CiObservationError, observe, observe_commit, pull_request, target
 
 URL = "https://github.com/galaxyssi/GalaxySSI/pull/42"
 SHA = "a" * 40
@@ -37,6 +37,12 @@ class Client:
         return copy.deepcopy(self.after if self.after and len(self.calls) > 1 else self.pr)
 
 
+def commit_snapshot(sha=SHA, conclusion="success", repository="galaxyssi/GalaxySSI"):
+    item = check(conclusion=conclusion)
+    item["head_sha"] = sha
+    return observe_commit(Client([item]), repository, sha)
+
+
 class CiSnapshotTests(unittest.TestCase):
     def test_head_bound_paginated_requests(self):
         client = Client([check()])
@@ -49,6 +55,24 @@ class CiSnapshotTests(unittest.TestCase):
 
     def test_no_checks_is_not_success(self):
         self.assertEqual("pending", observe(Client(), URL)["status"])
+
+    def test_merge_green_skipped_and_neutral_are_not_explicit_verification(self):
+        for conclusion in ("skipped", "neutral"):
+            for checks in ([check(conclusion=conclusion)], [check(), check(2, conclusion=conclusion)]):
+                with self.subTest(conclusion=conclusion, count=len(checks)):
+                    result = observe(Client(checks), URL)
+                    self.assertTrue(result["passed"])
+                    self.assertFalse(result["verification_passed"])
+                    self.assertIn("skipped/neutral", result["verification_issue"])
+
+    def test_explicit_check_and_legacy_status_success_keep_their_observed_kinds(self):
+        for client, kind in ((Client([check()]), "check_run"),
+                             (Client(statuses=[{"context": "external-ci", "id": 4, "state": "success"}]), "commit_status")):
+            with self.subTest(kind=kind):
+                result = observe(client, URL)
+                self.assertTrue(result["verification_passed"])
+                self.assertEqual(kind, result["checks"][0]["kind"])
+                self.assertEqual(SHA, result["checks"][0]["head_sha"])
 
     def test_unknown_conclusion_is_not_success(self):
         self.assertEqual("pending", observe(Client([check(conclusion="new-status")]), URL)["status"])

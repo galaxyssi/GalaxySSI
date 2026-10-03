@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import re
 
-from .ci_snapshot import CiObservationError, observe_commit
+from .ci_snapshot import CiObservationError, observe_commit, target
+from .ci_verification import verification_issue
 from .common import sha256_text, stable_json
 
 
@@ -72,20 +73,27 @@ def verify_integration(manager, task_id, snapshot):
     ci = observe_commit(manager.github, snapshot["repository"], integrated)
     evidence.update(ci=ci, retained_paths=len(paths),
                     retention_fingerprint=sha256_text(stable_json([source, head, integrated, sorted(paths)])))
-    if ci.get("passed") is not True:
-        return unavailable("The integrated commit has not passed all reported CI checks")
+    issue = verification_issue(ci, repository=snapshot["repository"], sha=integrated)
+    if issue:
+        return unavailable("The integrated commit is not CI-verified: " + issue)
     if manager.github._api((endpoint,)) != ref:
         raise CiObservationError("Main changed during integration verification")
     if manager.github.pull_request_head(snapshot["url"]) != {
             key: snapshot[key] for key in ("url", "repository", "number", "head_sha", "head_ref",
                 "head_repository", "base_ref", "base_repository", "state", "merged", "merge_commit_sha")}:
         raise CiObservationError("Published candidate changed during integration verification")
-    evidence.update(passed=True, reason="Candidate paths are unchanged in a green descendant integration")
+    evidence.update(passed=True, reason="Candidate paths are unchanged in an explicitly CI-successful descendant integration")
     return evidence
 
 
 def accepted_integration(proof, snapshot, task_id):
     if not isinstance(proof, dict) or proof.get("version") != 1 or proof.get("passed") is not True:
+        return None
+    try:
+        repository, _ = target(snapshot.get("url"))
+    except CiObservationError:
+        return None
+    if snapshot.get("repository") != repository:
         return None
     if (snapshot.get("merged") is not True or snapshot.get("state") != "closed"
             or snapshot.get("base_ref") != "main" or snapshot.get("base_repository") != snapshot.get("repository")
@@ -94,13 +102,9 @@ def accepted_integration(proof, snapshot, task_id):
             for key in ("url", "repository", "head_sha", "merge_commit_sha", "base_ref", "base_repository"))):
         return None
     ci = proof.get("ci") or {}
-    if not isinstance(ci, dict) or not isinstance(ci.get("checks"), list):
-        return None
     commit = proof.get("integration_commit")
     if (not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit)
-            or ci.get("head_sha") != commit or ci.get("repository") != snapshot.get("repository")
-            or ci.get("passed") is not True or ci.get("failed") != 0 or ci.get("pending") != 0 or not ci["checks"]
-            or any(not isinstance(row, dict) or row.get("outcome") != "passed" for row in ci["checks"])
+            or verification_issue(ci, repository=snapshot.get("repository"), sha=commit)
             or type(proof.get("retained_paths")) is not int or proof["retained_paths"] <= 0
             or not re.fullmatch(r"[0-9a-f]{64}", str(proof.get("retention_fingerprint", "")))):
         return None

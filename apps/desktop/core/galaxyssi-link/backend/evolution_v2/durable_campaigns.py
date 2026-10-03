@@ -177,6 +177,8 @@ class DurableCampaigns:
                     or getattr(task, "pull_request_url", "") != recorded_pr):
                 raise TaskDagError("Recorded publication is unavailable or changed; do not recreate its implementation")
             return
+        if not self._publication_dependencies_ready(campaign_id, key, node):
+            return
         proposal = self.proposal_store.get_proposal(node["action"]["proposal_id"])
         if proposal is None:
             self._apply(campaign_id, "fail", node_id=key, token=node["lease"]["token"],
@@ -191,6 +193,34 @@ class DurableCampaigns:
                             data=terminal_observation(task))
                 return
             self.task_starter(task.task_id)
+
+    def _publication_dependencies_ready(self, campaign_id, key, node):
+        if not node["depends_on"] and node["checkpoint"].get("stage") != "awaiting_dependency_verification":
+            return True
+        graph = self.graph_store.load(self.identity(campaign_id))
+        pending, visited = list(node["depends_on"]), set()
+        while pending:
+            dependency_id = pending.pop()
+            if dependency_id in visited:
+                continue
+            visited.add(dependency_id)
+            dependency = graph["nodes"][dependency_id]
+            pending.extend(dependency["depends_on"])
+            url = dependency["result"].get("pull_request_url")
+            if not url:
+                continue
+            task = self._observe(dependency)
+            outcome = self.published_outcome(task) if task is not None and self.published_outcome else {}
+            if (getattr(task, "pull_request_url", "") != url or outcome.get("stage") != "completed"):
+                checkpoint = {"stage": "awaiting_dependency_verification", "dependency": dependency_id,
+                              "error": outcome.get("error") or "Dependency publication is not currently verified"}
+                if checkpoint != node["checkpoint"]:
+                    self._apply(campaign_id, "checkpoint", node_id=key, token=node["lease"]["token"], data=checkpoint)
+                return False
+        if node["checkpoint"].get("stage") == "awaiting_dependency_verification":
+            self._apply(campaign_id, "checkpoint", node_id=key, token=node["lease"]["token"],
+                        data={"stage": "running", "error": ""})
+        return True
 
     def list(self, limit: int = 100, *, recoverable_only: bool = False) -> list[EvolutionCampaign]:
         rows = []
