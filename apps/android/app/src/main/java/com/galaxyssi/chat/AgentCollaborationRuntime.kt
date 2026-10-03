@@ -227,6 +227,7 @@ interface AgentTeamExecutionStore : AgentSubagentEventHook {
     fun snapshot(supervisorRunId: String): AgentTeamExecutionSnapshot?
     fun snapshots(): List<AgentTeamExecutionSnapshot>
     fun resumeCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = null
+    fun interruptedCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = null
     fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean = false): Boolean = false
     fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
                             nowMillis: Long, candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY): AgentTeamExecutionCheckpoint? = null
@@ -291,6 +292,10 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
     @Synchronized
     override fun resumeCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? =
         records[supervisorRunId]?.resumeCheckpoint()
+
+    @Synchronized
+    override fun interruptedCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? =
+        records[supervisorRunId]?.takeIf { it.toSnapshot().state == AgentTeamExecutionState.INTERRUPTED }?.liveGraphCheckpoint()
 
     @Synchronized
     override fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean): Boolean {
@@ -442,6 +447,10 @@ class EncryptedAgentTeamExecutionStore internal constructor(
 
     override fun resumeCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
         record(supervisorRunId)?.resumeCheckpoint()
+    }
+
+    override fun interruptedCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
+        record(supervisorRunId)?.takeIf { it.toSnapshot().state == AgentTeamExecutionState.INTERRUPTED }?.liveGraphCheckpoint()
     }
 
     override fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean): Boolean = synchronized(LOCK) {
@@ -1094,9 +1103,9 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         return try {
             val result = adapterWorker.execute(context.copy(request = managedRequest))
             progressContext?.let { AndroidCollaborationRemoteEvidence.await(it, context) }
-            if (groupId.isNotBlank()) progressContext?.let {
+            val archiveId = if (groupId.isNotBlank()) progressContext?.let {
                 CollaborationResearchArchive(it, groupId).record(context, result.content)
-            }
+            }.orEmpty() else ""
             if (CollaborationLiveGraph.planner(context.member)) return result
             CollaborationResearchWorkflow.stage(context.member)?.let { stage ->
                 val artifact = CollaborationResearchArtifact.decode(result.content)
@@ -1114,9 +1123,22 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                     CollaborationGoalLoop.decode(result.content)?.optString("decision") == "achieved")
                     CollaborationGoalAcceptance(progressContext).evaluate(CollaborationWorkspaceAccess.from(context), result.content,
                         context.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]", context.request.goal) else null
-                result.copy(content = CollaborationResearchArtifact.handoff(artifact?.toString() ?: result.content, stage),
+                val handoff = CollaborationResearchArtifact.handoff(artifact?.toString() ?: result.content, stage)
+                result.copy(content = if (stage == CollaborationResearchStage.DELIVER) handoff else
+                    CollaborationResearchArtifact.compactHandoff(handoff, archiveId),
                     collaborationAcceptance = acceptance)
             } ?: result
+        } catch (failure: Exception) {
+            if (failure.message?.contains(CollaborationPublicationAssistanceException.CODE) == true &&
+                progressContext != null && groupId.isNotBlank()) {
+                val draft = CollaborationResearchWorkspace(progressContext)
+                    .publicationCheckpoint(CollaborationWorkspaceAccess.from(context))?.optString("raw").orEmpty()
+                val archiveId = if (draft.isNotBlank()) CollaborationResearchArchive(progressContext, groupId)
+                    .record(context, draft) else ""
+                throw IllegalStateException(failure.message + if (archiveId.isNotBlank())
+                    " Rejected draft (NOT accepted evidence): collaboration_recall mode=archive record_id=$archiveId offset=0; follow next_offset." else "", failure)
+            }
+            throw failure
         } finally {
             provider.discardPrepared(registration.agentId, managedRequest.runId)
             provider.detachRun(registration.agentId, managedRequest.runId)
@@ -1542,6 +1564,13 @@ class AgentProductionTeamController(
             var handedOff = false
             try {
                 // Claim before reading the checkpoint: late delivery must not advance its sequence concurrently.
+                if (snapshot.members.any { it.status == AgentSubagentStatus.RUNNING &&
+                        it.agentId.startsWith("cloud:") && it.collaborationGroupId.isNotBlank() }) {
+                    CollaborationPublicationRestart.recover(store, snapshot.supervisorRunId,
+                        CollaborationResearchWorkspace(evidenceContext),
+                        { execution, raw -> CollaborationResearchArchive(evidenceContext, snapshot.conversationId).record(execution, raw) },
+                        { durableControl.get(snapshot.supervisorRunId) == AgentTeamUserControl.RUN })
+                }
                 store.requeueUndispatched(snapshot.supervisorRunId, dispatchCheckpoint::wasNotDispatched)
                 if (!store.reconcileGoalRecruits(snapshot.supervisorRunId, snapshot.primaryMemberId) {
                         collaborationGroups.projectRecruits(snapshot.conversationId, it)

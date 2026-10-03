@@ -14,6 +14,14 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_archive_handoff_uses_exact_record_without_additional_authority(self):
+        arguments = {"mode": "archive", "record_id": "a" * 64, "offset": 8000}
+        self.assertEqual(arguments, validate_arguments(arguments))
+        for invalid in ({"mode": "archive"}, {**arguments, "record_id": "../private"},
+                        {**arguments, "object_id": "b" * 64}, {**arguments, "group_id": "other"}):
+            with self.assertRaises(ValueError):
+                validate_arguments(invalid)
+
     def test_round_trip_and_cleanup(self):
         broker = RecallBroker()
         requests = []

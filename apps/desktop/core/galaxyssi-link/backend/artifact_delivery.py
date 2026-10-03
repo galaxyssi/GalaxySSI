@@ -6,6 +6,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -118,6 +119,10 @@ def prepare_artifacts(
         if source.name.startswith(".") or source.name.lower().endswith(INTERNAL_SUFFIXES):
             continue
         size = source.stat().st_size
+        # Empty captured streams are valid audit evidence, not failed deliverables.
+        # Keep them on disk, but do not let them reject a batch containing a report.
+        if size == 0 and re.search(r"(?:^|[_.-])std(?:out|err)\.(?:txt|log)$", source.name, re.IGNORECASE):
+            continue
         if size <= 0 or size > maximum_bytes:
             if strict:
                 code = ("artifact_source_empty" if size <= 0 else

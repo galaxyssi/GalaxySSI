@@ -3,6 +3,20 @@ package com.galaxyssi.chat
 internal object AgentTeamParentRecoveryPolicy {
     const val PAUSED = "team_recovery_paused"
 
+    fun restorePauseMarker(session: AgentSessionSnapshot): AgentSessionSnapshot {
+        val result = session.lastActionResult ?: return session
+        val metadata = result.metadata
+        val run = metadata["team_run_id"].orEmpty()
+        if (session.phase != AgentPhase.PAUSED || result.success || metadata[PAUSED] != null ||
+            metadata["team_state"] != "interrupted" || metadata["resource_location"] != "distributed" ||
+            run.isBlank() || metadata["source_message_id"]?.toLongOrNull() != AgentTeamDispatchIds.sourceMessageId(run)) return session
+        val lastControl = session.auditTrail.lastOrNull { it.event in setOf(
+            AgentAuditEvent.TASK_PAUSED, AgentAuditEvent.TASK_RESUMED, AgentAuditEvent.TASK_CANCELLED) }
+        if (lastControl?.event != AgentAuditEvent.TASK_PAUSED ||
+            lastControl.detail != "Saved Agent team unavailable; awaiting original outcome") return session
+        return session.copy(lastActionResult = result.copy(metadata = metadata + (PAUSED to "true")))
+    }
+
     fun shouldPause(team: AgentTeamExecutionSnapshot?, conversation: String, turn: String): Boolean =
         team == null || team.state == AgentTeamExecutionState.INTERRUPTED ||
             team.conversationId != conversation || team.taskId != turn

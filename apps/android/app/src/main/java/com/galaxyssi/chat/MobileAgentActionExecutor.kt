@@ -1437,6 +1437,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             var successfulModel: JSONObject? = null
             var successfulContactId = ""
             var lastError: Throwable? = cloudImages.exceptionOrNull()
+            var publicationAssistanceRequested = false
             cloudImages.getOrNull()?.forEach { image ->
                 Log.i(
                     "GalaxySSILatency",
@@ -1458,7 +1459,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 id == contactId || id !in previouslyAttempted
             }
             var streamAttemptOrdinal = 0
-            for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
+            candidateLoop@ for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
                 dispatchLease.checkActive()
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("galaxyssi_id") }
@@ -1662,6 +1663,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             "Model response did not satisfy the live-data route"
                         }
                     )
+                    if (providerError?.code == CollaborationPublicationAssistanceException.CODE) {
+                        publicationAssistanceRequested = true
+                        attempts.finish(elapsedMillis)
+                        break@candidateLoop
+                    }
                     val providerFailure = providerError?.let(AgentProviderFailurePolicy::classify)
                         ?: AgentProviderFailurePolicy.classify(lastError?.message.orEmpty())
                     attempts.finish(elapsedMillis, providerFailure, providerError?.httpStatus)
@@ -1711,7 +1717,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val reply = successfulReply.ifBlank {
                 appContext.getString(
                     R.string.cloud_request_failed,
-                    lastError?.message?.take(220) ?: appContext.getString(R.string.cloud_unknown_error)
+                    lastError?.message?.let { if (publicationAssistanceRequested) it else it.take(220) }
+                        ?: appContext.getString(R.string.cloud_unknown_error)
                 )
             }
             AgentConnectorResponseBus.publish(

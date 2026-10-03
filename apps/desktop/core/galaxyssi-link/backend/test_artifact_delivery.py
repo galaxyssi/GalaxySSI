@@ -16,9 +16,35 @@ from artifact_delivery import (
     should_deliver_task_artifacts,
 )
 from task_workspace import task_workspace
+from blob_protocol import BlobError
 
 
 class ArtifactDeliveryTests(unittest.TestCase):
+    def test_empty_captured_stream_does_not_block_strict_report_delivery(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}
+        ):
+            root = task_workspace("audit-report", "codex")
+            report = root / "outputs" / "report.md"
+            report.write_text("Preserved computation report", encoding="utf-8")
+            log = root / "outputs" / "native_score_posix_stderr.txt"
+            log.write_bytes(b"")
+            entries = [{"relative_path": "outputs/" + file.name} for file in (log, report)]
+            artifacts = prepare_artifacts("audit-report", entries, strict=True)
+            self.assertEqual(["report.md"], [item.name for item in artifacts])
+            self.assertTrue(log.exists())
+            log.write_text("Actual error", encoding="utf-8")
+            self.assertEqual(2, len(prepare_artifacts("audit-report", entries, strict=True)))
+
+    def test_empty_required_report_is_still_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}
+        ):
+            root = task_workspace("empty-report", "codex")
+            (root / "outputs" / "report.md").write_bytes(b"")
+            with self.assertRaisesRegex(BlobError, "artifact_source_empty"):
+                prepare_artifacts("empty-report", [{"relative_path": "outputs/report.md"}], strict=True)
+
     def test_fast_chat_delivers_an_unexpected_generated_artifact(self):
         self.assertTrue(should_deliver_task_artifacts(
             fast_chat_delivery=True,

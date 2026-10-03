@@ -24,9 +24,11 @@ def tool_spec():
         "Use mode=goal_contract and cursor='' to recover omitted dependency receipts; follow next_cursor. "
         "Use mode=workspace to browse exact revisions, then object_id/revision/offset to read them. "
         "Use mode=evidence to browse originals, then evidence_id/sha256/offset; follow next_offset. "
+        "Use mode=archive with record_id/offset to read complete dependency handoffs; follow next_offset. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive"]},
+            "record_id": {"type": "string", "maxLength": 64},
             "cursor": {"type": "string", "maxLength": 512},
             "object_id": {"type": "string", "maxLength": 64},
             "revision": {"type": "integer", "minimum": 1},
@@ -40,7 +42,7 @@ def validate_arguments(arguments):
     properties = tool_spec()["inputSchema"]["properties"]
     if not isinstance(arguments, dict) or set(arguments) - properties.keys():
         raise ValueError("Recall accepts only scoped record selectors")
-    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence"}:
+    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence", "archive"}:
         raise ValueError("Invalid recall mode")
     for key, value in arguments.items():
         spec = properties[key]
@@ -51,6 +53,11 @@ def validate_arguments(arguments):
             raise ValueError("Invalid recall offset/revision")
     if arguments["mode"] == "goal_contract" and set(arguments) - {"mode", "cursor"}:
         raise ValueError("Goal recall accepts only mode and cursor")
+    if arguments["mode"] == "archive":
+        record_id = arguments.get("record_id", "")
+        if (set(arguments) - {"mode", "record_id", "offset"}
+                or len(record_id) != 64 or any(c not in "0123456789abcdef" for c in record_id)):
+            raise ValueError("Archive recall requires an exact record_id and optional offset")
     if arguments["mode"] == "evidence" and arguments.get("evidence_id"):
         if any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
                for key in ("evidence_id", "sha256")):

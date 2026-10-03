@@ -90,19 +90,34 @@ internal class CollaborationResearchWorkspace(
         require(!CollaborationPublicationRetirement(rows, access).isRetired()) { "Publication dispatch was retired; do not resume it" }
     }
 
-    fun submitPublication(access: CollaborationWorkspaceAccess, raw: String): JSONObject = synchronized(LOCK) {
+    fun publicationAssistance(access: CollaborationWorkspaceAccess, request: JSONObject? = null): JSONObject? = synchronized(LOCK) {
+        requirePublicationActive(access)
+        val journal = CollaborationPublicationJournal(rows, access)
+        if (request != null) {
+            CollaborationPublicationAssistance.validate(request)
+            val writes = journal.assistanceWrites(request, System.currentTimeMillis())
+            if (writes.isNotEmpty()) rows.commit(writes)
+        }
+        journal.assistance()
+    }
+
+    fun submitPublication(access: CollaborationWorkspaceAccess, raw: String, revalidate: Boolean = false): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         val contract = requireNotNull(CollaborationPublicationJournal(rows, access).contract()) {
             "Publication repair requires a host-owned contract"
         }
-        publishInternal(access, raw, System.currentTimeMillis(), contract.optJSONObject("candidate_task"), recoverable = true)
+        if (revalidate) require(CollaborationPublicationJournal(rows, access).checkpoint()?.getString("raw") == raw) {
+            "Only the saved publication can be revalidated"
+        }
+        publishInternal(access, raw, System.currentTimeMillis(), contract.optJSONObject("candidate_task"), recoverable = true,
+            revalidate = revalidate)
     }
 
     fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis(),
                 candidateTask: JSONObject? = null): JSONObject = publishInternal(access, raw, now, candidateTask, false)
 
     private fun publishInternal(access: CollaborationWorkspaceAccess, raw: String, now: Long,
-                                candidateTask: JSONObject?, recoverable: Boolean): JSONObject = synchronized(LOCK) {
+                                candidateTask: JSONObject?, recoverable: Boolean, revalidate: Boolean = false): JSONObject = synchronized(LOCK) {
         require(access.groupId.isNotBlank() && access.runId.isNotBlank() && access.turnId.isNotBlank() &&
             access.personId.isNotBlank() && access.nodeId.isNotBlank()) { "A host-owned research identity is required" }
         if (!authorized(access.groupId)) return@synchronized failure("Group access was removed")
@@ -146,7 +161,8 @@ internal class CollaborationResearchWorkspace(
         val writes = linkedMapOf<String, String>()
         val result = runCatching {
             retirement.requireOwnership(candidateTask)
-            requireNotNull(artifact) { "Return a valid ${CollaborationResearchArtifact.FORMAT} object with summary, candidates and findings" }
+            requireNotNull(artifact) { "Return a valid ${CollaborationResearchArtifact.FORMAT} object with summary, candidates and findings: " +
+                CollaborationResearchArtifact.validationError(raw) }
             val changes = changes ?: if (candidateTask == null) JSONArray() else
                 throw IllegalArgumentException("Candidate task requires a workspace revision/event")
             candidateTask?.let { CollaborationCandidateEvolution.checkTask(this, access, it) }
@@ -166,7 +182,7 @@ internal class CollaborationResearchWorkspace(
                 val id = requestedId.ifBlank { digest("${access.groupId}:${access.personId}:$localId") }
                 require(id.matches(ID) && changedIds.add(id)) { "Invalid or duplicated object ID" }
                 val kind = item.getString("kind")
-                require(kind in KINDS) { "Unknown workspace object kind" }
+                require(kind in KINDS) { "Unknown workspace object kind: workspace[$index].kind=$kind; allowed=${KINDS.sorted()}" }
                 val title = item.getString("title")
                 require(title.isNotBlank() && title.length <= 240) { "A concise object title is required" }
                 val body = item.getJSONObject("body")
@@ -239,6 +255,10 @@ internal class CollaborationResearchWorkspace(
             writes.clear()
             failure(it.message ?: "Invalid workspace update")
         }
+        // Restarting is not another model attempt when the saved draft still has the same rejection.
+        if (revalidate && result.optString("status") == "rejected" &&
+            CollaborationPublicationJournal(rows, access).checkpoint()?.getJSONObject("receipt")?.toString() == result.toString())
+            return@synchronized result
         // Heads and the fence token must become visible in the same storage transaction.
         if (writes.isNotEmpty()) writes[mutationKey(access.groupId)] = newMutationToken()
         writes[publicationKey] = JSONObject().put("input_sha256", inputHash).put("result", result)
