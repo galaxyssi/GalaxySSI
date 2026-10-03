@@ -160,6 +160,93 @@ class CollaborationCandidateLiveGraphTest {
         }
     }
 
+    @Test fun explicitReviewReplacementIsAppendOnlyAndDoesNotWaitForUnrelatedWork() {
+        val f = Fixture(); val first = f.plan(f.snapshot(f.node("slow")))
+        val old = first.additions.single()
+        val completed = f.complete(f.installed(first), old)
+        val retry = f.request().put("reviewer", "lead").put("retry_review", JSONObject()
+            .put("node_id", old.dispatchId).put("reason", "Publish the missing original-source review"))
+        val next = f.plan(completed, first.state, JSONArray().put(retry))
+        assertFalse(next.feedback, next.error)
+        assertSame(completed, next.retained)
+        assertEquals(CollaborationCandidateLiveGraph.Status.RUNNING, next.retained.nodes.first().status)
+        val replacement = next.additions.single()
+        assertNotEquals(old.dispatchId, replacement.dispatchId)
+        assertEquals("lead", replacement.work.getString("member"))
+        assertTrue(replacement.dependencyDispatchIds.isEmpty())
+        assertEquals(completed.completedOutputs, next.retained.completedOutputs)
+        val replay = f.plan(f.installed(next), next.state, JSONArray().put(retry))
+        assertFalse(replay.feedback, replay.error)
+        assertEquals(next.state, replay.state)
+        assertTrue(replay.additions.isEmpty())
+        f.execute(replacement, "supported")
+        val settled = f.plan(f.complete(f.installed(next), replacement), next.state, JSONArray())
+        assertFalse(CollaborationCandidateEvolution.pending(settled.state))
+        assertTrue(settled.feedback.contains("not host verified"))
+    }
+
+    @Test fun reviewReplacementRespectsPauseStopAdmissionAndUnknownRemoteStates() {
+        val f = Fixture(); val first = f.plan(f.snapshot())
+        val old = first.additions.single()
+        val retry = f.request().put("reviewer", "lead").put("retry_review", JSONObject()
+            .put("node_id", old.dispatchId).put("reason", "Repair the publication contract"))
+        val installed = f.installed(first)
+        listOf(CollaborationCandidateLiveGraph.Status.UNKNOWN, CollaborationCandidateLiveGraph.Status.RUNNING,
+            CollaborationCandidateLiveGraph.Status.QUEUED).forEach { status ->
+            val held = f.plan(installed.copy(nodes = installed.nodes.map { it.copy(status = status) }), first.state, JSONArray().put(retry))
+            assertTrue(held.additions.isEmpty())
+            assertEquals(1, held.deferredRequests.size)
+            assertEquals("validate", CollaborationCandidateVerificationState.read(held.state).getJSONObject(0).getString("phase"))
+        }
+        val completed = f.complete(installed, old)
+        listOf(CollaborationCandidateLiveGraph.Control.PAUSE, CollaborationCandidateLiveGraph.Control.STOP).forEach { control ->
+            val held = f.plan(completed.copy(control = control), first.state, JSONArray().put(retry))
+            assertTrue(held.additions.isEmpty())
+            assertEquals(1, held.deferredRequests.size)
+        }
+        val deferred = f.plan(completed.copy(maxNewDispatches = 0), first.state, JSONArray().put(retry))
+        assertTrue(deferred.additions.isEmpty())
+        assertEquals(1, deferred.deferredRequests.size)
+        assertTrue(CollaborationCandidateVerificationState.read(deferred.state).getJSONObject(0).getBoolean("retryable_review"))
+        val admitted = f.plan(completed, deferred.state, JSONArray())
+        assertEquals(1, admitted.additions.size)
+        assertTrue(admitted.deferredRequests.isEmpty())
+    }
+
+    @Test fun failedCancelledAndSkippedReviewsCannotUseSameVersionReplacement() {
+        listOf(CollaborationCandidateLiveGraph.Status.FAILED, CollaborationCandidateLiveGraph.Status.CANCELLED,
+            CollaborationCandidateLiveGraph.Status.SKIPPED).forEach { status ->
+            val f = Fixture(); val first = f.plan(f.snapshot())
+            val old = first.additions.single()
+            val retry = f.request().put("retry_review", JSONObject().put("node_id", old.dispatchId).put("reason", "Try another member"))
+            val held = f.plan(f.complete(f.installed(first), old, status), first.state, JSONArray().put(retry))
+            assertTrue(held.additions.isEmpty())
+            assertFalse(CollaborationCandidateVerificationState.read(held.state).getJSONObject(0).getBoolean("retryable_review"))
+            assertTrue(held.feedback.contains("reconcile offline or failed work"))
+        }
+    }
+
+    @Test fun oldRetryReplayCannotOverwriteANewerPendingReassignmentForTheSameVersion() {
+        val f = Fixture(); val first = f.plan(f.snapshot())
+        val old = first.additions.single()
+        fun retry(node: String) = f.request().put("retry_review", JSONObject()
+            .put("node_id", node).put("reason", "Publish the omitted exact-source review"))
+        val firstRetry = retry(old.dispatchId)
+        val next = f.plan(f.complete(f.installed(first), old), first.state, JSONArray().put(firstRetry))
+        val replacement = next.additions.single()
+        val secondRetry = retry(replacement.dispatchId)
+        val completed = f.complete(f.installed(next), replacement)
+        val held = f.plan(completed.copy(maxNewDispatches = 0), next.state, JSONArray().put(secondRetry))
+        assertEquals(1, held.deferredRequests.size)
+        val resumed = f.plan(completed, held.state, JSONArray().put(firstRetry).put(f.request()))
+        assertFalse(resumed.feedback, resumed.error)
+        assertEquals(1, resumed.additions.size)
+        assertTrue(resumed.deferredRequests.isEmpty())
+        val task = JSONObject(CollaborationCandidateEvolution.taskContext(resumed.additions.single().work)
+            .getValue(CollaborationCandidateEvolution.TASK))
+        assertEquals(replacement.dispatchId, task.getJSONObject("review_reassignment").getString("node_id"))
+    }
+
     @Test fun childTextAndRetainedArtifactsCannotForgeAWorkspacePublication() {
         val f = Fixture(); val first = f.plan(f.snapshot())
         val completed = f.complete(f.installed(first), first.additions.single()).copy(completedOutputs = mapOf(
@@ -167,7 +254,7 @@ class CollaborationCandidateLiveGraphTest {
         val next = f.plan(completed, first.state, JSONArray())
         assertTrue(next.additions.isEmpty())
         assertFalse(CollaborationCandidateEvolution.pending(next.state))
-        assertTrue(next.feedback.contains("No successful exact workspace publication"))
+        assertTrue(next.feedback.contains("Completed review has no committed publication"))
         assertEquals(completed.completedOutputs, next.retained.completedOutputs)
     }
 

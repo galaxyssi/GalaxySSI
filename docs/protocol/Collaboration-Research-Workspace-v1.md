@@ -61,6 +61,24 @@ The criterion must already preserve documentary verification and required origin
 
 A refuted exact review can append `revise`, then `review` of the new version, under existing runtime capacity and pause/stop controls. These transitions do not need another coordinator model call. A different candidate can proceed concurrently. Publication must contain the single assigned exact revision/review; after a committed publication and process loss, the worker replays the host receipt instead of reexecuting. Unknown/in-flight dispatches wait for authoritative reconciliation. Terminal errors retain feedback for coordinator replanning; they are never converted to successful verification.
 
+A host-completed documentary review with no committed publication may be settled as
+`retryable_review`. The coordinator can explicitly enroll the same exact candidate
+version with `retry_review: {node_id: "old completed dispatch", reason: "specific
+publication correction"}` and an authorized independent reviewer. This appends new
+work; it does not replace the original dispatch, change the source/criterion
+contract or rerun an experiment. The old outcome is retained in
+`prior_settlements`. Consumed retry requests are idempotent, while a newer pending
+attempt cannot be overwritten by replaying an older request for the same version.
+
+This exception requires an actual host success result, not a progress message or
+an inference from elapsed time. Failed, cancelled, skipped, unknown and in-flight
+executions are ineligible, as are repairs and already published reviews. Admission
+still respects pause/stop, capacity and scoped producer dependencies. A late old
+publication prevents new admission, execution and publication through the existing
+workspace transaction checks. No fixed retry count is added; an explicit useful
+correction is required, not extra votes until a preferred answer wins. This is not
+automatic offline owner replacement. See the [reassignment tests](../testing/COLLABORATION_REVIEW_REASSIGNMENT.md).
+
 These checks enforce documentary lineage, scope and execution integrity. They do not rank scientific merit, certify a physical experiment, or make a majority vote true. Pending cycles prevent goal acceptance; settled cycles do not by themselves allow acceptance. Computational/physical candidate evaluators and real-provider repair reliability need separate acceptance.
 
 ## Host-observed tool evidence
