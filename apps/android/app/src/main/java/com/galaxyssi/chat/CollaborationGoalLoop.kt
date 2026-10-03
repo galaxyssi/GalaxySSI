@@ -321,6 +321,9 @@ internal object CollaborationGoalLoop {
                 CRITERIA to (if (contractError.isBlank()) requireNotNull(criteria).toString() else priorCriteria),
                 PREVIOUS to raw.ifBlank { "Previous attempt failed: ${previousResult?.errorMessage.orEmpty()}" },
                 CollaborationGoalRecruitment.FEEDBACK to recruitment.error,
+                CollaborationResourceRecovery.FEEDBACK to (acceptedAssessment?.getJSONArray("blockers")?.let {
+                    CollaborationResourceRecovery.feedback(it, finished)
+                } ?: ""),
                 CollaborationCandidateEvolution.STATE to if (basePlanValid && graph.error.isBlank()) candidatePlan.state else candidateState,
                 CollaborationCandidateEvolution.FEEDBACK to candidatePlan.feedback,
                 ACCEPTANCE_FEEDBACK to acceptanceContext(record.request.goal, criteria,
