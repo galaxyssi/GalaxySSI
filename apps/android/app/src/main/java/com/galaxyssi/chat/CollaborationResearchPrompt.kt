@@ -118,7 +118,7 @@ internal object CollaborationResearchPrompt {
 
     private const val RECALL_INSTRUCTIONS =
         "This descriptor pins the exact original goal, criteria and assignment context for this dispatch. " +
-        "Use collaboration_recall (cloud) or galaxyssi.phone.collaboration.recall (phone/Desktop) with mode=goal_contract and cursor=\"\". " +
+        "Use collaboration_recall (cloud/Desktop) or galaxyssi.phone.collaboration.recall (phone) with mode=goal_contract and cursor=\"\". " +
         "Follow next_cursor until null. No group, member or snapshot argument is accepted. " +
         "Each page contains fragments with stream, source_id, part, last, start_utf16, end_utf16 and text; reconstruct exact contiguous originals. " +
         "Context fragments also carry kind=context and id=sectionName. " +

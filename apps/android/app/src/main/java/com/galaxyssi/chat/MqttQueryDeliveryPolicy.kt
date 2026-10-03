@@ -4,7 +4,8 @@ package com.galaxyssi.chat
 internal object MqttQueryDeliveryPolicy {
     private val transientQueries = setOf(
         "connector_status_request", "agent_task_recovery_request", "agent_task_result_page_request",
-        "evolution_task_list_request", "desktop_control_authorizations_request", "agent_task_evidence_request"
+        "evolution_task_list_request", "desktop_control_authorizations_request", "agent_task_evidence_request",
+        "collaboration_recall_result"
     )
 
     fun isTransient(type: String): Boolean = type in transientQueries

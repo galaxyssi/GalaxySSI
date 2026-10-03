@@ -49,7 +49,7 @@ from office_preview import TOOL as OFFICE_PREVIEW_TOOL, tool_spec as office_prev
 log = logging.getLogger("galaxyssi.codex")
 TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".galaxyssi" / "codex_conversation_threads.json"
-CONVERSATION_THREAD_VERSION = "v6"
+CONVERSATION_THREAD_VERSION = "v7"
 CODEX_THREAD_CONFIG = {"web_search": "live"}
 CODEX_TASK_POLICY = """
 GalaxySSI execution policy:
@@ -196,10 +196,11 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None) -> None:
         self.executable = executable
         self.env = env
         self.on_event = on_event
+        self._collaboration_recall = collaboration_recall
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
         self._process_start_lock = threading.RLock()
@@ -214,6 +215,9 @@ class CodexAppServer:
         self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
         self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec(), office_preview_tool_spec()]
+        if collaboration_recall is not None:
+            from collaboration_recall_bridge import tool_spec
+            self._dynamic_tools.append(tool_spec())
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -2018,7 +2022,22 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name == RESEARCH_AUDIT_TOOL:
+            if tool_name == "collaboration_recall":
+                with self._lock:
+                    run = self._runs.get(task_id)
+                    if (run is None or run.finished or self._collaboration_recall is None
+                            or common.get("thread_id", run.thread_id) != run.thread_id
+                            or common.get("turn_id", run.turn_id) != run.turn_id):
+                        raise ValueError("Collaboration recall is not available for this task")
+                def active():
+                    with self._lock:
+                        return (self._runs.get(task_id) is run and not run.finished
+                                and common.get("thread_id", run.thread_id) == run.thread_id
+                                and common.get("turn_id", run.turn_id) == run.turn_id)
+                recalled = self._collaboration_recall(task_id, arguments, active)
+                result = {"success": recalled.get("success") is True,
+                    "contentItems": [{"type": "inputText", "text": json.dumps(recalled, ensure_ascii=False)}]}
+            elif tool_name == RESEARCH_AUDIT_TOOL:
                 with self._lock:
                     run = self._runs.get(task_id)
                     if run is None or run.finished:
@@ -2081,6 +2100,12 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
+        if tool_name == "collaboration_recall":
+            # Internal evidence reads must not be misreported as web searches.
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Read saved collaboration evidence" if result.get("success") else "Collaboration evidence read unavailable",
+                "trace_stage": "collaboration_recall_completed", "telemetry_only": True})
+            return
         if tool_name == OFFICE_PREVIEW_TOOL:
             with self._lock:
                 active_run = self._runs.get(task_id)

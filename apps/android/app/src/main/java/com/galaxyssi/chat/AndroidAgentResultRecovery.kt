@@ -23,6 +23,7 @@ internal object AndroidAgentResultRecovery {
             "agent_task_result_page" -> receive(context, payload, desktop)
             "agent_task_recovery_result" -> AndroidAgentRemoteRecovery.receive(context, payload, desktop)
             "agent_task_evidence" -> AndroidCollaborationRemoteEvidence.receive(context, payload, desktop)
+            "collaboration_recall_request" -> AndroidCollaborationRemoteRecall.receive(context, payload, desktop)
             else -> return false
         }
         return true
