@@ -56,6 +56,36 @@ Historical published reviews without coverage are not retroactively certified.
 They remain preserved, and previously completed research is not automatically
 restarted. New formal acceptance of such material requires fresh review.
 
+## Candidate review coverage: Android 1.4.30
+
+Candidate reviews now use the same original-page requirement before publication,
+not only at final goal acceptance. Every cited original must have complete coverage
+for the exact reviewer dispatch, or originate from that same observed dispatch.
+Browsing an evidence index, reading one page, preparing unconfirmed Desktop pages,
+or borrowing another member's coverage is insufficient. Existing source-type,
+independence and exact-version constraints remain unchanged.
+
+Rejected drafts remain in the existing recoverable publication journal. Scoped
+recall can supply the missing pages and repair the draft without repeating tools
+or committing partial workspace updates. An already recorded review is different:
+its coverage is immutable. Later reads cannot qualify a pre-fix unread review.
+Publication replay, candidate applicability and review-based repair all recheck
+the frozen snapshot against the still-accessible original. Missing validators or
+removed originals fail closed; no automatic research restart is introduced.
+
+The gate reuses direct evidence-ID lookups. It does not scan chat history, poll
+providers or add model calls. Candidate directory applicability also checks the
+originals; large-workspace latency still requires measurement and is not claimed
+to be constant in the number or size of citations.
+
+`CollaborationCandidateReadCoverageTest` covers incomplete/borrowed reads, delivery
+confirmation, atomic publication, legacy review replay, repair-basis rejection and
+missing originals. `CollaborationCandidateReadCoverageDeviceTest` uses dedicated
+encrypted production stores to test rejected-draft recovery and confirmed-page
+delivery. The existing candidate runtime fixture exercises two independent routes
+and separate-process replay. These local tests do not prove provider comprehension,
+scientific correctness, automatic offline reassignment or team superiority.
+
 ## Validation
 
 Automated cases cover missing middle pages, duplicate/out-of-order/overlapping
@@ -92,3 +122,33 @@ not restarted or replaced. Prior real-provider passes in
 `COLLABORATION_LIVE_EVIDENCE.md` do not validate this new gate and are not counted
 as new samples. Scientific validation and equal-budget team superiority are also
 not established by these tests.
+
+## Candidate gate results: 2026-10-03
+
+- Android **1.4.30 (1115)** application and instrumentation APKs compiled. S26U
+  was upgraded in place; installed package metadata matches the source and APK.
+- **761 JVM tests in 60 suites** passed, with zero failures, errors or skips
+  (`Collaboration*` and `Mqtt*`). Nine new negative/repair cases cover candidate
+  original-page validation. Existing positive fixtures now explicitly read their
+  cited originals instead of bypassing the new gate.
+- **15 local S26U tests passed in 76.153 seconds**: the two new candidate coverage
+  cases, two-route asynchronous candidate runtime, scoped recall, encrypted source
+  reopening, six goal-acceptance regressions and four publication-repair cases.
+- The separate-process candidate seed/recover pair also passed, in 0.272 and
+  1.066 seconds with distinct process IDs. Previously published revisions were
+  replayed unchanged; completed work was not repeated.
+- An initial 15-case invocation was interrupted by prematurely starting another
+  instrumentation process. It is not counted as passed. The complete sequential
+  rerun is the result above. A test-only opt-in cleanup validated the exact fixture
+  membership, dispatch binding, rejected draft bytes and empty workspace before
+  deleting its one leftover synthetic group; cleanup passed separately.
+- The 153,600-byte source-size policy and `git diff --check` passed. Repository-wide
+  checks were not rerun; prior unrelated i18n findings remain outside this phase.
+
+There were no new paid provider calls, original research executions, contact
+messages or physical actions. Desktop was not changed or restarted. These local
+results do not claim live-model candidate-cycle completion, outage/Doze acceptance,
+large-workspace p95, automatic same-version reassignment, scientific verification
+or a multi-agent advantage. The earlier clean Codex/DeepSeek evidence sample is
+documented separately in `COLLABORATION_LIVE_EVIDENCE.md` and is not a new sample
+of this stricter candidate publication gate.

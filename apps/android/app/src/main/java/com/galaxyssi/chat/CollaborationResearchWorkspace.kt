@@ -47,7 +47,8 @@ internal class CollaborationResearchWorkspace(
     private val rows: CollaborationWorkspaceRows,
     private val authorized: (String) -> Boolean = { true },
     private val evidence: ((CollaborationWorkspaceAccess, JSONArray) -> JSONArray)? = null,
-    private val accessAuthorized: (CollaborationWorkspaceAccess) -> Boolean = { true }
+    private val accessAuthorized: (CollaborationWorkspaceAccess) -> Boolean = { true },
+    private val evidenceReadCoverage: ((CollaborationWorkspaceAccess, JSONObject) -> Unit)? = null
 ) {
     constructor(context: Context) : this(object : CollaborationWorkspaceRows {
         private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
@@ -61,7 +62,7 @@ internal class CollaborationResearchWorkspace(
             val group = CollaborationGroupStore(context.applicationContext).load(access.groupId)
             access.personId.isNotBlank() && group != null && group.conversationId == access.groupId &&
                 group.members.any { it.id == access.personId }
-        })
+        }, { access, review -> CollaborationEvidenceLedger(context).requireReadCoverage(access, review) })
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
@@ -109,8 +110,21 @@ internal class CollaborationResearchWorkspace(
         rows.read(publicationKey)?.let { saved ->
             val prior = JSONObject(saved)
             if (!recoverable || prior.getJSONObject("result").optString("status") == "recorded") {
-                return@synchronized if (prior.getString("input_sha256") == inputHash) prior.getJSONObject("result") else
-                    failure("A different result already owns this dispatch; create new work for a revision")
+                if (prior.getString("input_sha256") != inputHash)
+                    return@synchronized failure("A different result already owns this dispatch; create new work for a revision")
+                val result = prior.getJSONObject("result")
+                if (result.optString("status") == "recorded") {
+                    val refs = result.getJSONArray("revisions")
+                    repeat(refs.length()) { index ->
+                        val ref = refs.getJSONObject(index)
+                        if (ref.optString("kind") == CollaborationResearchCandidates.EVENT) {
+                            val revision = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision")))
+                            require(CollaborationResearchCandidates.same(ref, revision)) { "Candidate publication changed" }
+                            requireCandidateReviewCoverage(access, revision)
+                        }
+                    }
+                }
+                return@synchronized result
             }
         }
         val writes = linkedMapOf<String, String>()
@@ -124,7 +138,8 @@ internal class CollaborationResearchWorkspace(
             val changingIds = (0 until changes.length()).map { changes.getJSONObject(it) }
                 .map { it.optString("object_id").ifBlank { digest("${access.groupId}:${access.personId}:${it.optString("id")}") } }.toSet()
             val candidates = CollaborationResearchCandidates(access, { id, version -> read(access, id, version) },
-                { id, version -> isCurrent(access, id, version) }, changingIds)
+                { id, version -> isCurrent(access, id, version) }, changingIds,
+                { review -> requireCandidateReviewCoverage(access, review) })
             val changedIds = hashSetOf<String>()
             repeat(changes.length()) { index ->
                 val item = changes.getJSONObject(index)
@@ -244,6 +259,7 @@ internal class CollaborationResearchWorkspace(
             check(CollaborationResearchCandidates.same(saved, ref) && saved.getString("run_id") == access.runId &&
                 saved.getString("turn_id") == access.turnId && saved.getString("node_id") == nodeId) { "Publication revision identity changed" }
             observationReferences(access, ref)
+            requireCandidateReviewCoverage(access, saved)
             saved
         }
     }
@@ -277,10 +293,17 @@ internal class CollaborationResearchWorkspace(
             !isCurrent(access, saved.getString("object_id"), saved.getInt("revision"))) return@synchronized false
         val event = saved.optJSONObject("host_candidate_event") ?: return@synchronized false
         if (event.optString("operation") != "review") return@synchronized false
+        if (runCatching { requireCandidateReviewCoverage(access, saved) }.isFailure) return@synchronized false
         val target = event.getJSONArray("targets").getJSONObject(0)
         val candidate = read(access, target.getString("object_id"), target.getInt("revision")) ?: return@synchronized false
         CollaborationResearchCandidates.same(candidate, target) && CollaborationResearchCandidates.active(candidate) &&
             isCurrent(access, target.getString("object_id"), target.getInt("revision"))
+    }
+
+    private fun requireCandidateReviewCoverage(access: CollaborationWorkspaceAccess, revision: JSONObject) {
+        if (revision.getString("kind") == CollaborationResearchCandidates.EVENT &&
+            revision.getJSONObject("body").getJSONObject(CollaborationResearchCandidates.EVENT).optString("operation") == "review")
+            requireNotNull(evidenceReadCoverage) { "Original evidence read validation is unavailable" }.invoke(access, revision)
     }
 
     fun isCurrent(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): Boolean = synchronized(LOCK) {

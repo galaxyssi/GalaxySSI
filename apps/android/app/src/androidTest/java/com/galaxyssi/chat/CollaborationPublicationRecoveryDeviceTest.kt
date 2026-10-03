@@ -181,4 +181,31 @@ class CollaborationPublicationRecoveryDeviceTest {
             putString("publication_phase", phase); putInt("process_id", android.os.Process.myPid())
         })
     }
+
+    @Test fun cleanupInterruptedLocalFixture() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("cleanupInterruptedPublication") == "true")
+        val groups = CollaborationGroupStore(context)
+        val ids = AgentEncryptedDatabase(context, "galaxyssi_collaboration_groups_v1").keys("publication-")
+            .filter { it.matches(Regex("publication-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")) }
+            .filter { id ->
+                val group = groups.load(id) ?: return@filter false
+                val access = CollaborationWorkspaceAccess(id, "run", "turn", 1, "node", "reviewer")
+                val expected = CollaborationMember("reviewer", "Reviewer", "fixture", "Fixture")
+                if (group.members != listOf(expected) || group.coordinatorId != "reviewer" || group.conversationId != id)
+                    return@filter false
+                val workspace = CollaborationResearchWorkspace(context)
+                val checkpoint = workspace.publicationCheckpoint(access) ?: return@filter false
+                CollaborationEvidenceLedger(context).binding(AgentTeamDispatchIds.sourceMessageId(id), id, "turn") == access &&
+                    checkpoint.getString("raw") == invalid && checkpoint.getJSONObject("receipt").getString("status") == "rejected" &&
+                    workspace.browse(access).revisions.isEmpty()
+            }
+        require(ids.size == 1) { "Expected exactly one interrupted local fixture; no records were removed" }
+        val id = ids.single()
+        groups.remove(id)
+        CollaborationEvidenceLedger.remove(context, id)
+        assertNull(groups.load(id))
+        InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+            putString("removed_local_publication_fixture", id)
+        })
+    }
 }
