@@ -577,6 +577,8 @@ class CollaborationCandidateEvolutionTest {
             .getJSONObject(0).getBoolean("retryable_review"))
         assertTrue(f.plan(settled.state).work.isEmpty())
         val retry = f.retry(first)
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(first), personId = "reviewer", round = 1),
+            CollaborationResearchStage.VERIFY, f.task(first))
         val next = f.plan(settled.state, JSONArray().put(retry))
         assertFalse(next.feedback, next.error)
         assertEquals("lead", f.task(next).getString("member"))
@@ -585,6 +587,8 @@ class CollaborationCandidateEvolutionTest {
         val saved = CollaborationCandidateVerificationState.read(next.state).getJSONObject(0)
         assertEquals(f.node(first), saved.getJSONArray("prior_settlements").getJSONObject(0).getString("node_id"))
         assertEquals(retry.getJSONObject("retry_review").toString(), f.task(next).getJSONObject("review_reassignment").toString())
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(next), personId = "lead", round = 2),
+            CollaborationResearchStage.VERIFY, f.task(next))
         f.execute(next)
         val done = f.plan(next.state, JSONArray(), setOf(f.node(next)))
         assertFalse(CollaborationCandidateEvolution.pending(done.state))
@@ -609,6 +613,29 @@ class CollaborationCandidateEvolutionTest {
                 .getJSONArray("prior_settlements").length())
         }
         assertEquals(13, ids.size)
+    }
+
+    @Test fun reassignedRefutationStillAdvancesRepairAndFreshReviewWithoutReclaimingTheOldDispatch() {
+        val f = Fixture(); val first = f.plan()
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(first), personId = "reviewer", round = 1),
+            CollaborationResearchStage.VERIFY, f.task(first))
+        val settled = f.plan(first.state, JSONArray(), setOf(f.node(first)))
+        val replacement = f.plan(settled.state, JSONArray().put(f.retry(first)))
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(replacement), personId = "lead", round = 2),
+            CollaborationResearchStage.VERIFY, f.task(replacement))
+        f.execute(replacement, "refuted")
+        val repair = f.plan(replacement.state, JSONArray(), setOf(f.node(replacement)))
+        assertEquals("revise", f.task(repair).getString("operation"))
+        assertFalse(f.task(repair).has("review_reassignment"))
+        f.execute(repair)
+        val review = f.plan(repair.state, JSONArray(), setOf(f.node(repair)))
+        assertEquals("review", f.task(review).getString("operation"))
+        assertFalse(f.task(review).has("review_reassignment"))
+        f.execute(review)
+        assertFalse(CollaborationCandidateEvolution.pending(f.plan(review.state, JSONArray(), setOf(f.node(review))).state))
+        assertThrows(IllegalArgumentException::class.java) {
+            f.workspace.requirePublicationActive(f.access.copy(nodeId = f.node(first), personId = "reviewer", round = 1))
+        }
     }
 
     @Test fun retryRequiresTheExactCompletedAttemptAndAnIndependentAuthorizedMember() {

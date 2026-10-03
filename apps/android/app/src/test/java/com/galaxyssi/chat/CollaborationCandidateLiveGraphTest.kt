@@ -52,6 +52,7 @@ class CollaborationCandidateLiveGraphTest {
             nodes = snapshot.nodes.map { if (it.dispatchId == addition.dispatchId) it.copy(status = status) else it },
             completedOutputs = snapshot.completedOutputs + (addition.dispatchId to "retained opaque completion"))
         fun execute(addition: CollaborationCandidateLiveGraph.Addition, outcome: String = "refuted") {
+            enroll(addition)
             val task = JSONObject(CollaborationCandidateEvolution.taskContext(addition.work).getValue(CollaborationCandidateEvolution.TASK))
             val target = task.getJSONObject("target")
             val item = if (task.getString("operation") == "review") JSONObject().put("id", AgentNativeJsonCodec.sha256(addition.dispatchId))
@@ -65,6 +66,12 @@ class CollaborationCandidateLiveGraphTest {
                     getJSONObject("body").getJSONObject("candidate").put("operation", "revise").put("basis", task.getJSONObject("basis"))
                 }
             publish(access.copy(nodeId = addition.dispatchId, personId = task.getString("member"), dependencyNodes = addition.dependencyDispatchIds), item, task)
+        }
+        fun enroll(addition: CollaborationCandidateLiveGraph.Addition) {
+            val task = JSONObject(CollaborationCandidateEvolution.taskContext(addition.work).getValue(CollaborationCandidateEvolution.TASK))
+            workspace.enrollPublication(access.copy(nodeId = addition.dispatchId, personId = task.getString("member"),
+                dependencyNodes = addition.dependencyDispatchIds), if (task.getString("operation") == "review")
+                    CollaborationResearchStage.VERIFY else CollaborationResearchStage.REVISE, task)
         }
         private fun publish(who: CollaborationWorkspaceAccess, item: JSONObject, task: JSONObject? = null): JSONObject {
             if (item.optString("kind") == "candidate_event" &&
@@ -163,6 +170,7 @@ class CollaborationCandidateLiveGraphTest {
     @Test fun explicitReviewReplacementIsAppendOnlyAndDoesNotWaitForUnrelatedWork() {
         val f = Fixture(); val first = f.plan(f.snapshot(f.node("slow")))
         val old = first.additions.single()
+        f.enroll(old)
         val completed = f.complete(f.installed(first), old)
         val retry = f.request().put("reviewer", "lead").put("retry_review", JSONObject()
             .put("node_id", old.dispatchId).put("reason", "Publish the missing original-source review"))

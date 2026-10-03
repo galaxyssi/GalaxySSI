@@ -61,6 +61,14 @@ Terminal team delivery has a separate encrypted deduplication ledger. The final 
 
 An explicit retry is a new attempt rather than a replay of the old supervisor. The host rekeys the team, supervisor, idempotency key, and synthetic response identity before execution, then persists those identities with the reset Action.
 
+For the narrower case of an already completed but unpublished documentary candidate
+review, a coordinator can explicitly reassign work without resetting the team.
+The new dispatch atomically enrolls its publication contract and retires the old
+workspace writer. Late old output remains auditable but cannot publish revisions
+or reopen a repair loop. This survives process recreation and does not stop
+unrelated branches. It is not permission to take over an uncertain remote task or
+repeat an external side effect. See [publication retirement](../testing/COLLABORATION_PUBLICATION_RETIREMENT.md).
+
 ## User Experience
 
 Background teams expose only their aggregate status by default. The existing Recent Tasks page includes an Agent teams section. Opening a team now uses a full detail page rather than a text dialog. It shows the aggregate state, role-bound instances, member status, bounded team messages, and one team conclusion. While a Run is active, tapping a member opens a focused composer for constraints, questions, or new evidence.

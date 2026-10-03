@@ -75,9 +75,21 @@ an inference from elapsed time. Failed, cancelled, skipped, unknown and in-fligh
 executions are ineligible, as are repairs and already published reviews. Admission
 still respects pause/stop, capacity and scoped producer dependencies. A late old
 publication prevents new admission, execution and publication through the existing
-workspace transaction checks. No fixed retry count is added; an explicit useful
+workspace transaction checks. At replacement worker enrollment, the host atomically
+stores its publication contract and an immutable retirement record for the old
+dispatch. Both records bind the exact group/run/turn, node, person and contract.
+If the old publication commits first, replacement enrollment fails; if retirement
+commits first, late old output cannot create workspace revisions, even when the
+caller omits candidate metadata. The late raw output is retained in the old
+publication journal with a non-repairable retirement receipt. Repeated identical
+delivery does not add another attempt. Reopening a retired repair session or
+replaying its candidate work fails closed. Subsequent repair/recheck work keeps
+its own identity; the predecessor remains retired across process recreation.
+No fixed retry count is added; an explicit useful
 correction is required, not extra votes until a preferred answer wins. This is not
-automatic offline owner replacement. See the [reassignment tests](../testing/COLLABORATION_REVIEW_REASSIGNMENT.md).
+automatic offline owner replacement or remote side-effect cancellation. See the
+[reassignment tests](../testing/COLLABORATION_REVIEW_REASSIGNMENT.md) and
+[publication retirement tests](../testing/COLLABORATION_PUBLICATION_RETIREMENT.md).
 
 These checks enforce documentary lineage, scope and execution integrity. They do not rank scientific merit, certify a physical experiment, or make a majority vote true. Pending cycles prevent goal acceptance; settled cycles do not by themselves allow acceptance. Computational/physical candidate evaluators and real-provider repair reliability need separate acceptance.
 

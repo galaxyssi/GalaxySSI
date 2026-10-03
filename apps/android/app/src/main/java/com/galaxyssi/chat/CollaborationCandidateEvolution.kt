@@ -184,7 +184,7 @@ internal object CollaborationCandidateEvolution {
                     .put("target", cycle.getJSONObject("target")).put("criterion", cycle.getJSONObject("criterion"))
                     .put("member", member).put("group_id", access.groupId).put("run_id", access.runId).put("turn_id", access.turnId)
                 if (phase == "repair") task.put("basis", cycle.getJSONObject("review"))
-                cycle.optJSONObject("review_reassignment")?.let { task.put("review_reassignment", it) }
+                if (phase == "validate") cycle.optJSONObject("review_reassignment")?.let { task.put("review_reassignment", it) }
                 checkTask(workspace, access.copy(personId = member), task)
                 val workId = workId(cycle)
                 val node = dispatchId(workId)
