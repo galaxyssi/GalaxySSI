@@ -337,3 +337,56 @@ S26U evidence/acceptance/inbox regressions passed again in **9.776 seconds**.
 These checks make no additional model calls. This follow-up changes only tests
 and this report, so it does not publish another application version: the running
 product remains Android 1.4.29 (1114) and Desktop 1.4.4 from merged PR #3350.
+
+## Clean confirmed-delivery rerun: 2026-10-03
+
+After PR #3351 merged, the authorized S26U reran the unchanged multipart,
+headless real-provider fixture. Run
+`live-evidence-b98e0f65-a3a4-437c-8f5e-f050cde67606` passed the complete
+instrumentation script: **OK (1 test), 543.208 seconds**. All four assignments
+were `SUCCEEDED`, the final disposition was `achieved`, and the host-owned
+acceptance receipt was accepted. This is a new clean sample; the earlier
+assertion-failed and interrupted samples remain failures as recorded above.
+
+The run used Android 1.4.29 (1114), Desktop 1.4.4, actual paired Codex and
+configured DeepSeek, and the same 12-minute fixture bound. No production or
+assertion changes were made for this rerun. The following checks passed:
+
+- Codex executed the synthetic command and imported its actual observation.
+- DeepSeek independently reviewed the document and both goal-mapping parts.
+- The later Codex directory assignment also fetched the original evidence.
+- Both readers froze `scoped_pages` coverage of all **3,301 / 3,301 characters**
+  for the same evidence ID, source hash and content hash, under their own exact
+  dispatch identities. A summary or an own-tool receipt did not substitute for
+  the peer original.
+- Exact-version mappings, independent reviews and the coverage directory
+  passed the existing Android host acceptance checks.
+- Mode, snapshot, read-coverage and cleanup reports all refer to this run.
+  Cleanup acknowledged durable `STOP`, reported no pending remote owners, and
+  removed only fixture data (`retained_for_recovery=false`). The user's selected
+  conversation was unchanged. Desktop scheduling ended with zero active and
+  zero pending tasks.
+
+Selected timings from the Desktop task records and phone workspace receipts:
+
+| Assignment | Desktop execution | Desktop completion to phone publication |
+| --- | ---: | ---: |
+| Author | 138.175 s | 36.817 s |
+| Coverage directory | 178.773 s | 7.562 s |
+| Final assessment | 129.116 s | Not measured separately |
+
+For the directory, Desktop completion was `1790995465178` and phone publication
+was `1790995472740`; it imported zero internal recall echoes while retaining
+the required original-read coverage. The author imported one command record:
+completion was `1790995216916`, publication was `1790995253733`. Its **36.817 s**
+post-completion delay remains a latency investigation item. The total fixture
+time includes model work, real transport, validation and cleanup; it is not a
+normal-chat response-time target, a p95, or proof of a general speedup.
+
+Synthetic report files remain local and are not included in this PR. No raw
+user conversation, credentials, pairing material or model reasoning is added.
+This documentation-only follow-up does not change the application versions.
+The pass closes the clean-script acceptance gap for this evidence-delivery
+path, not the outstanding Doze/long-outage/reboot matrix, general computational
+or scientific validation, candidate-evolution acceptance, or equal-budget
+single-Agent versus team quality and cost comparison.
