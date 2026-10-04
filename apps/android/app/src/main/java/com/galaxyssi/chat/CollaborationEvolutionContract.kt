@@ -25,6 +25,10 @@ internal class CollaborationEvolutionContract(
             "Only the author may revise a gap, innovation or capability channel; other members publish a linked alternative"
         }
         val host = when (kind) {
+            CollaborationSelfResearch.CYCLE -> CollaborationSelfResearch.cycle(value,
+                { ref, kinds -> exact(ref, kinds) }, { ref, kinds -> exact(ref, kinds, false) })
+            CollaborationSelfResearch.REVIEW -> CollaborationSelfResearch.review(value, revision, access.personId,
+                { ref, kinds -> exact(ref, kinds) }, { ref, kinds -> exact(ref, kinds, false) }, coverage)
             CollaborationCapabilityRetention.SUITE -> CollaborationCapabilityRetention.suite(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationCapabilityChannel.KIND -> CollaborationCapabilityChannel.validate(value, head, revision,
                 { ref, kinds -> exact(ref, kinds) }, { ref, kinds -> exact(ref, kinds, false) })
@@ -104,6 +108,11 @@ internal class CollaborationEvolutionContract(
         require(head?.optJSONObject(HOST)?.has(CollaborationTeamInvention.SYNTHESIS) != true || value.optJSONObject(CollaborationTeamInvention.SYNTHESIS) != null) {
             "A team-derived method cannot discard its synthesis lineage when revised"
         }
+        head?.optJSONObject(HOST)?.optJSONObject(CollaborationSelfResearch.CYCLE)?.let { cycle ->
+            require(value.optJSONObject(CollaborationSelfResearch.CYCLE)?.let { CollaborationResearchCandidates.same(cycle, it) } == true) {
+                "An innovation cannot discard or change its research-cycle lineage; register a linked new candidate"
+            }
+        }
         val origin = text(value, "origin")
         require(origin in setOf("gap", "contradiction", "limitation", "transfer", "combination")) { "Invalid innovation.origin" }
         listOf("hypothesis", "mechanism", "difference", "prior_art", "falsifier", "domain", "applies_when", "risks")
@@ -164,6 +173,7 @@ internal class CollaborationEvolutionContract(
                 contributors += tool.getString("person_id")
                 put("contributors", JSONArray(contributors.toList())).put(CollaborationExecutableTool.RELEASE, ref)
             } }
+            .apply { CollaborationSelfResearch.idea(value) { ref, kinds -> exact(ref, kinds) }?.let { put(CollaborationSelfResearch.CYCLE, it) } }
     }
 
     private fun lesson(value: JSONObject, revision: JSONObject): JSONObject {
@@ -233,7 +243,8 @@ internal class CollaborationEvolutionContract(
         val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
             CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
             CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT, CollaborationWorkflowMethod.KIND,
-            CollaborationCapabilityRetention.SUITE, CollaborationCapabilityChannel.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
+            CollaborationCapabilityRetention.SUITE, CollaborationCapabilityChannel.KIND, CollaborationSelfResearch.CYCLE,
+            CollaborationSelfResearch.REVIEW) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->
