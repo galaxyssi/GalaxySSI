@@ -187,6 +187,7 @@ internal object CollaborationInnovationValidation {
             CollaborationCapabilityRetention.FIELD to setOf(CollaborationCapabilityRetention.SUITE),
             "previous_suite" to setOf(CollaborationCapabilityRetention.SUITE),
             "suite" to setOf(CollaborationCapabilityRetention.SUITE),
+            CollaborationSelfResearch.CYCLE to setOf(CollaborationSelfResearch.CYCLE),
             "previous_method" to setOf(CollaborationWorkflowMethod.KIND))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
@@ -194,6 +195,12 @@ internal object CollaborationInnovationValidation {
             if (!seen.add(saved.getString("object_id") + ":" + saved.getString("sha256"))) continue
             val host = saved.optJSONObject(HOST) ?: continue
             links.forEach { (field, kinds) -> host.optJSONObject(field)?.let { enqueue(it, kinds) } }
+            if (saved.getString("kind") == CollaborationSelfResearch.CYCLE) {
+                enqueue(host.getJSONObject("opportunity"), setOf(OPPORTUNITY))
+                enqueue(host.getJSONObject("diagnosis"), setOf(CollaborationCapabilityDiagnosis.DIAGNOSIS))
+                enqueue(host.getJSONObject("gap"), setOf(CollaborationEvolutionContract.GAP))
+                enqueue(host.getJSONObject("agenda"), setOf(CollaborationLearningAgenda.KIND))
+            }
             if (saved.getString("kind") == PLAN) objects(saved.getJSONObject("body").getJSONObject(PLAN), "cases").forEach {
                 it.optJSONObject("dataset")?.let { ref -> enqueue(ref, setOf("artifact")) }
             }

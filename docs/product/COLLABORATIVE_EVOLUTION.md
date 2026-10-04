@@ -110,7 +110,7 @@ sandbox and self-evolution review gates remain the only execution authorities.
 | Develop tools | Immutable executable code, preregistered tests, existing-runtime execution and independently reviewed scoped reuse | Real-model tool quality, security review and deployment approval |
 | Improve workflows | Immutable executable method DAGs, live/next-round admission, exact-version feedback and registered comparisons | Sustained gains on real workloads and independent harness review |
 | Prevent regression | Frozen capability banks, original anchors, independently reviewed selection and same-channel version rollback | Broad long-term retention, real workload coverage and independent harness review |
-| Self-improvement research | The same goal controller can investigate an authorized improvement objective through this contract | Long-duration model-backed campaigns and external replication |
+| Self-improvement research | Immutable evidence-linked cycles, actual live/next-round work, independent research decisions and protected selection | Autonomous question quality, long-duration model-backed campaigns and external replication |
 
 The first dedicated increment adds [evidence-driven capability-gap diagnosis](CAPABILITY_GAP_DIAGNOSIS.md):
 scoped original failure discovery, competing causes, agent-selected learning options, preregistered
@@ -157,6 +157,11 @@ The tenth increment adds [capability retention and version selection](COLLABORAT
 fixed measured anchors, non-droppable regression banks, atomic promotion/rollback and actual
 procedure/workflow/tool selection. Existing tasks remain pinned; rollback preserves evidence and
 the newest protection obligations without replaying side effects or granting permissions.
+
+The eleventh increment adds [evidence-bound self-improvement research](COLLABORATION_SELF_RESEARCH.md):
+diagnosed bottlenecks and learning selections become durable cycles on the existing work DAG;
+experiments, independent decisions, protected adoption and preserved rejection feed subsequent
+cycles. No idle model loop, fixed stage count or automatic global deployment is introduced.
 
 ## Runtime Coverage
 

@@ -10,18 +10,18 @@ internal class CollaborationRetentionFixture(val workspace: CollaborationResearc
     var sequence = 0L
     fun access(person: String = "curator", node: String = person) =
         CollaborationWorkspaceAccess(group, "fixture-run", "fixture-turn", sequence + 1, node, person)
-    fun raw(id: String, kind: String, value: JSONObject, refs: JSONArray = JSONArray(), previous: JSONObject? = null) = JSONObject()
+    fun raw(id: String, kind: String, value: JSONObject, refs: JSONArray = JSONArray(), previous: JSONObject? = null, parents: JSONArray = JSONArray()) = JSONObject()
         .put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Synthetic retention test")
         .put("findings", JSONArray()).put("candidates", JSONArray()).put("workspace", JSONArray().put(JSONObject().put("id", id)
             .put("kind", kind).put("title", id).put("body", JSONObject().put("content", "Local fixture only").put(kind, value))
-            .put("observations", refs).apply { previous?.let { put("object_id", it.getString("object_id")).put("base_revision", it.getInt("revision")) } }))
-    fun publish(kind: String, value: JSONObject, person: String = "curator", refs: JSONArray = JSONArray(), previous: JSONObject? = null): JSONObject {
+            .put("observations", refs).put("parents", parents).apply { previous?.let { put("object_id", it.getString("object_id")).put("base_revision", it.getInt("revision")) } }))
+    fun publish(kind: String, value: JSONObject, person: String = "curator", refs: JSONArray = JSONArray(), previous: JSONObject? = null, parents: JSONArray = JSONArray()): JSONObject {
         val id = "fixture-${++sequence}"
         val a = access(person, id).copy(round = sequence)
         repeat(refs.length()) { i -> val ref = refs.getJSONObject(i); var offset: Int? = 0
             while (offset != null) offset = requireNotNull(ledger.readPage(a, ref.getString("evidence_id"), ref.getString("sha256"), offset)).next
         }
-        return workspace.publish(a, raw(id, kind, value, refs, previous).toString(), sequence * 10)
+        return workspace.publish(a, raw(id, kind, value, refs, previous, parents).toString(), sequence * 10)
     }
     fun accepted(receipt: JSONObject): JSONObject {
         check(receipt.optString("status") == "recorded") { receipt.toString() }
@@ -63,8 +63,9 @@ internal class CollaborationRetentionFixture(val workspace: CollaborationResearc
                 .put("quality_oracle", "Exact expected values").put("cost_accounting", "Deterministic counts").put("selection_bias", "Synthetic only"))
             .apply { previous?.let { put(CollaborationCapabilityRetention.FIELD, ref(it.suite)) } }
     }
-    fun study(previous: Retained? = null, editPlan: (JSONObject) -> Unit = {}, editReport: (JSONObject) -> Unit = {}): Study {
-        val method = method("candidate-$sequence"); val idea = idea(method)
+    fun study(previous: Retained? = null, editPlan: (JSONObject) -> Unit = {}, editReport: (JSONObject) -> Unit = {},
+              createIdea: (JSONObject) -> JSONObject = { idea(it) }): Study {
+        val method = method("candidate-$sequence"); val idea = createIdea(method)
         val spec = spec(idea, previous).apply(editPlan)
         val plan = accepted(publish("experiment_plan", spec, "planner"))
         val samples = JSONArray()
@@ -84,13 +85,14 @@ internal class CollaborationRetentionFixture(val workspace: CollaborationResearc
             .put("limitations", "Does not establish real model improvement"), "analyst", refs))
         return Study(method, idea, plan, result, refs, previous?.suite)
     }
-    fun lesson(study: Study) = publish("capability_lesson", JSONObject().put("result", ref(study.result)).put("decision", "retain")
+    fun lesson(study: Study, assessment: JSONObject? = null, decision: String = "retain") = publish("capability_lesson", JSONObject().put("result", ref(study.result)).put("decision", decision)
         .put("rationale", "Original fixture measurements checked").put("applies_when", "Same authorized fixture")
         .put("avoid_when", "Other domains").put("procedure", "Reuse immutable parse and check answers")
-        .put("transfer_test", "Independent new-scope comparison").put("rollback", study.plan.getJSONObject("body").getJSONObject("experiment_plan").getJSONObject("baseline")),
+        .put("transfer_test", "Independent new-scope comparison").put("rollback", study.plan.getJSONObject("body").getJSONObject("experiment_plan").getJSONObject("baseline"))
+        .apply { assessment?.let { put(CollaborationInnovationValidation.ASSESSMENT, ref(it)) } },
         "reviewer", study.observations)
-    fun retain(study: Study): Retained {
-        val lesson = accepted(lesson(study))
+    fun retain(study: Study, assessment: JSONObject? = null): Retained {
+        val lesson = accepted(lesson(study, assessment))
         val skill = accepted(publish(CollaborationProceduralMemory.SKILL, JSONObject().put("lesson", ref(lesson)).put("name", "Fixture reuse")
             .put("keywords", JSONArray().put("fixture")).put("limitations", "Fixture only").put("inputs", JSONArray())))
         val suite = accepted(publish(CollaborationCapabilityRetention.SUITE, JSONObject().put("lesson", ref(lesson))
