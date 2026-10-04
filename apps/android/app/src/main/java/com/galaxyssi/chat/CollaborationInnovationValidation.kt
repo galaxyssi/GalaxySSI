@@ -181,13 +181,22 @@ internal object CollaborationInnovationValidation {
             CollaborationActionPrediction.MODEL to setOf(CollaborationActionPrediction.MODEL),
             CollaborationActionPrediction.FORECAST to setOf(CollaborationActionPrediction.FORECAST),
             CollaborationExecutableTool.TOOL to setOf(CollaborationExecutableTool.TOOL),
-            CollaborationExecutableTool.TEST to setOf(CollaborationExecutableTool.TEST))
+            CollaborationExecutableTool.TEST to setOf(CollaborationExecutableTool.TEST),
+            CollaborationWorkflowMethod.KIND to setOf(CollaborationWorkflowMethod.KIND),
+            "previous_method" to setOf(CollaborationWorkflowMethod.KIND))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
             val saved = pending.removeFirst()
             if (!seen.add(saved.getString("object_id") + ":" + saved.getString("sha256"))) continue
             val host = saved.optJSONObject(HOST) ?: continue
             links.forEach { (field, kinds) -> host.optJSONObject(field)?.let { enqueue(it, kinds) } }
+            if (saved.getString("kind") == CollaborationWorkflowMethod.KIND) host.optJSONArray("feedback")?.let { refs ->
+                repeat(refs.length()) { enqueue(refs.getJSONObject(it), setOf("artifact", "experiment_result", "capability_diagnosis", "failure_experience", "prediction_outcome")) }
+            }
+            host.optJSONObject(CollaborationWorkflowMethod.COMPARISON)?.let { binding ->
+                listOf("baseline_method", "candidate_method").forEach { enqueue(binding.getJSONObject(it), setOf(CollaborationWorkflowMethod.KIND)) }
+                enqueue(binding.getJSONObject("dataset"), setOf("artifact"))
+            }
             for ((field, kinds) in listOf("basis" to SOURCE_KINDS, "results" to setOf(RESULT), "calibration_data" to setOf("artifact"),
                 "prediction_feedback" to setOf(CollaborationActionPrediction.OUTCOME))) {
                 host.optJSONArray(field)?.let { refs -> repeat(refs.length()) { enqueue(refs.getJSONObject(it), kinds) } }
