@@ -14,6 +14,27 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_evolution_selectors_are_read_only_and_scoped(self):
+        for arguments in ({"mode": "evolution", "cursor": ""}, {"mode": "evolution_rules", "offset": 8000}):
+            self.assertEqual(arguments, validate_arguments(arguments))
+        for invalid in ({"mode": "evolution", "group_id": "other"},
+                        {"mode": "evolution", "object_id": "a" * 64},
+                        {"mode": "evolution_rules", "cursor": ""},
+                        {"mode": "evolution_rules", "offset": -1}):
+            with self.assertRaises(ValueError):
+                validate_arguments(invalid)
+
+    def test_evolution_recall_keeps_phone_task_binding(self):
+        broker = RecallBroker()
+        requests = []
+        def publish(request):
+            requests.append(request)
+            broker.receive({**request, "type": RESPONSE, "result": {"success": True, "revisions": []}}, "phone")
+            return True
+        self.assertEqual([], broker.query(task, {"mode": "evolution"}, publish)["revisions"])
+        self.assertEqual("group", requests[0]["conversation_id"])
+        self.assertEqual({}, broker._pending)
+
     def test_publish_rejection_does_not_claim_phone_is_offline(self):
         broker = RecallBroker()
         with self.assertRaises(ConnectionError) as error:

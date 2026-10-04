@@ -9,7 +9,11 @@ internal object CollaborationResearchPrompt {
     const val MAX_CHARACTERS = 32_000
 
     fun prepare(context: Context, execution: AgentTeamMemberExecutionContext): String {
-        return prepare(execution, CollaborationGoalContractStore(context)) {
+        return prepare(execution, CollaborationGoalContractStore(context), evolution = {
+            val page = CollaborationResearchWorkspace(context).browseEvolution(CollaborationWorkspaceAccess.from(execution))
+            JSONObject().put("records", JSONArray(page.revisions)).put("next_cursor", page.next ?: JSONObject.NULL)
+                .put("recall", "mode=evolution; directory only, read originals before reuse").toString()
+        }) {
             val access = CollaborationWorkspaceAccess.from(execution)
             CollaborationResearchArchive(context, access.groupId)
                 .context(execution.request.goal, execution.request.messageId, access.round)
@@ -17,6 +21,7 @@ internal object CollaborationResearchPrompt {
     }
 
     internal fun prepare(execution: AgentTeamMemberExecutionContext, store: CollaborationGoalContractStore,
+                         evolution: () -> String = { "" },
                          history: () -> String): String {
         val access = CollaborationWorkspaceAccess.from(execution)
         val criteria = execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]"
@@ -33,7 +38,9 @@ internal object CollaborationResearchPrompt {
             return build(execution, existing, emptyMap()).text
         }
         require(existing.optString("reason") == "access_not_bound") { "Goal contract is unavailable: ${existing.optString("reason")}" }
-        val materials = materials(execution, history())
+        val materials = materials(execution, history()).toMutableMap().apply {
+            evolution().takeIf(String::isNotBlank)?.let { put("Scoped evolution directory", it) }
+        }
         val published = store.publish(access, execution.request.goal, criteria, materials)
         require(published.optString("status") == "ok") { "Goal contract could not be persisted: ${published.optString("reason")}" }
         val bound = store.bind(access, published.getString("snapshot_id"))
@@ -102,7 +109,8 @@ internal object CollaborationResearchPrompt {
             section("Response protocol", protocol),
             section("Host goal contract", descriptor.toString() + "\n" + RECALL_INSTRUCTIONS),
             section("Execution boundaries", CollaborationGoalPolicy.instructions(execution.member.deliveryMode == AgentDeliveryMode.RESPOND) +
-                "\n" + EVIDENCE_INSTRUCTIONS)
+                "\n" + EVIDENCE_INSTRUCTIONS),
+            section("Collaborative evolution", CollaborationEvolutionProtocol.instructions())
         )
         val optional = mutableListOf(
             section("Original user goal", execution.request.goal),

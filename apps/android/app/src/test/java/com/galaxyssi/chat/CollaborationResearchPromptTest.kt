@@ -6,6 +6,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun everyResearchRoleGetsInnovationPolicyWithoutInliningLargeSchemas() {
+        for (stage in CollaborationResearchStage.entries) {
+            val result = CollaborationResearchPrompt.build(execution("goal", stage), descriptor(), emptyMap())
+            assertTrue(result.text.contains(CollaborationEvolutionProtocol.instructions()))
+            assertTrue(result.text.contains("mode=evolution_rules"))
+            assertFalse(result.text.contains("galaxyssi.experiment-measurements.v1"))
+            assertTrue(result.text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+        }
+    }
+
+    @Test fun evolutionDirectoryIsPinnedAndNotRequeriedOnRecovery() {
+        val store = CollaborationGoalContractStore(MemoryRows(), { true })
+        val execution = execution("goal")
+        val first = CollaborationResearchPrompt.prepare(execution, store, evolution = { "saved exact learning references" }) { "" }
+        assertTrue(first.contains("saved exact learning references"))
+        val restored = CollaborationResearchPrompt.prepare(execution, store, evolution = { error("Must not refresh on retry") }) { "" }
+        assertTrue(restored.contains("mode=goal_contract"))
+    }
+
     @Test fun longGoalsNeverDisplaceCurrentAssignmentOrResponseProtocol() {
         for (size in listOf(10_000, 21_000, 100_000)) {
             val execution = execution("g".repeat(size))
