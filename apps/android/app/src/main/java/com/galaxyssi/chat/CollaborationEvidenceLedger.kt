@@ -70,13 +70,7 @@ internal class CollaborationEvidenceLedger(
         require(access.runId.isNotBlank() && access.turnId.isNotBlank() && access.nodeId.isNotBlank() &&
             access.personId.isNotBlank() && invocationId.isNotBlank() && tool.isNotBlank())
         require(finished >= started && started >= 0)
-        val parsed = runCatching { JSONObject(output) }.getOrNull()
-        val status = when {
-            parsed == null -> "unstructured"
-            parsed.optString("status") in setOf("failed", "error", "cancelled", "timed_out", "unavailable", "rejected", "verification_failed") ||
-                parsed.opt("error")?.let { it != JSONObject.NULL && it.toString().isNotBlank() } == true -> "failed"
-            else -> "returned"
-        }
+        val status = CollaborationEvidenceOutcome.status(output)
         val id = digest(JSONArray(listOf(access.runId, access.nodeId, invocationId)).toString())
         val payload = identity(access).put("evidence_id", id).put("invocation_id", invocationId)
             .put("tool", tool).put("status", status).put("origin", origin.wireValue)

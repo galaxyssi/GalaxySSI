@@ -84,6 +84,71 @@ class CollaborationEvolutionDeviceTest {
         val reopened = CollaborationResearchWorkspace(context)
         assertNotNull(reopened.read(access(group, "reviewer", 6), baseline.getString("object_id"), 1))
         assertEquals(4, reopened.browseEvolution(access(group, "reviewer", 6)).revisions.size)
+        verifyProcedureReuse(group, lesson)
+    }
+
+    private fun verifyProcedureReuse(group: String, lesson: JSONObject) = kotlinx.coroutines.runBlocking {
+        val workspace = CollaborationResearchWorkspace(context)
+        val author = access(group, "reviewer", 6).copy(nodeId = "skill-publication")
+        val spec = JSONObject().put("lesson", lesson).put("name", "Fixture reusable procedure").put("keywords", JSONArray().put("fixture"))
+            .put("limitations", "Synthetic test only").put("inputs", JSONArray().put(JSONObject().put("name", "values")
+                .put("description", "Synthetic numbers").put("required", true)))
+        val receipt = workspace.publish(author, raw("skill", CollaborationProceduralMemory.SKILL, spec), 500)
+        assertEquals(receipt.toString(), "recorded", receipt.getString("status"))
+        val skill = receipt.getJSONArray("revisions").getJSONObject(0)
+        val database = AgentEncryptedDatabase(context, "procedure-fixture-$group")
+        val run = "procedure-run-$group"
+        fun store() = EncryptedAgentTeamExecutionStore(database, candidateWorkspace = { CollaborationResearchWorkspace(context) })
+        fun report(work: JSONArray) = JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Synthetic reuse")
+            .put("decision", "continue").put("criteria", JSONArray().put(JSONObject().put("id", "fixture")
+                .put("requirement", "Compare local fixture").put("status", "open").put("evidence", JSONArray())))
+            .put("work", work).put("blockers", JSONArray()).toString()
+        try {
+            val item = JSONObject().put("id", "reuse-work").put("member", "executor").put("stage", "EXECUTE")
+                .put("assignment", "Run the synthetic procedure with new input").put("procedure_use", JSONObject().put("procedure", skill)
+                    .put("inputs", JSONObject().put("values", JSONArray().put(2).put(3)))
+                    .put("applicability", JSONObject().put("why", "Same fixture").put("conditions_checked", JSONArray().put("Local synthetic values"))
+                        .put("remaining_uncertainty", "Not a model capability test")).put("failures", JSONArray()))
+            val members = CollaborationGoalLoop.initial(listOf(AgentTeamMember("fixture", AgentDeliveryMode.RESPOND, instanceId = "planner"),
+                AgentTeamMember("fixture", AgentDeliveryMode.OBSERVE, instanceId = "executor")), "Compare local fixture").map {
+                it.copy(context = it.context + mapOf("collaboration_group_id" to group, CollaborationTeamOrganization.ENABLED to "0")) }
+            val definition = AgentTeamDefinition("procedure-team", "fixture", members, primaryInstanceId = "planner")
+            val request = AgentRunRequest(group, "new-turn", "task", runId = run, goal = "Compare local fixture", context = mapOf(CollaborationGoalLoop.ROUND to "7"))
+            val first = store()
+            first.create(definition, request)
+            first.append(AgentSubagentEvent(1, run, "planner", AgentSubagentEventKinds.CHILD_SUCCEEDED, childStatus = AgentSubagentStatus.SUCCEEDED,
+                result = AgentSubagentChildResult(run, "planner", run, 1, AgentSubagentStatus.SUCCEEDED, report(JSONArray().put(item)))))
+            first.append(AgentSubagentEvent(2, run, kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED))
+            assertTrue(first.advanceGoal(run, "planner", 1000, true))
+            val checkpoint = store().resumeCheckpoint(run)!!
+            val selected = checkpoint.definition.members.single { CollaborationProcedureWork.TASK in it.context }
+            val seen = mutableListOf<String>()
+            AgentTeamExecutionRuntime(store(), AgentSubagentLimits(maxConcurrency = 1)).use { runtime ->
+                runtime.resume(checkpoint) { execution ->
+                    if (execution.member.memberId != selected.memberId) AgentSubagentOutput(report(JSONArray())) else {
+                        seen += execution.member.memberId
+                        val binding = JSONObject(execution.member.context.getValue(CollaborationProcedureWork.TASK))
+                        assertEquals("Fixture procedure", binding.getString("method"))
+                        assertFalse(binding.getBoolean("grants_permissions"))
+                        val values = binding.getJSONObject("inputs").getJSONArray("values")
+                        val sum = (0 until values.length()).sumOf(values::getInt)
+                        assertEquals(5, sum)
+                        AgentSubagentOutput("Synthetic method executed with new inputs: $sum")
+                    }
+                }.await()
+            }
+            assertEquals(1, seen.size)
+            assertTrue(store().advanceGoal(run, checkpoint.definition.primaryMemberId, 5000, true))
+            val next = store().resumeCheckpoint(run)!!
+            val outcome = JSONObject(next.request.context.getValue(CollaborationProcedureWork.OUTCOMES).toString()).getJSONObject(selected.memberId)
+            assertEquals("succeeded", outcome.getString("status")); assertFalse(outcome.getBoolean("capability_verified"))
+            assertEquals(skill.getString("sha256"), outcome.getJSONObject("binding").getJSONObject("procedure").getString("sha256"))
+            assertTrue(next.definition.members.none { CollaborationProcedureWork.TASK in it.context })
+            val reader = access(group, "reviewer", 0).copy(runId = "another-task", turnId = "another-turn")
+            val directory = JSONObject(CollaborationCloudRecall.execute(context, reader, JSONObject().put("mode", "evolution")))
+            assertTrue(directory.toString().contains("procedure_skill"))
+            assertNotNull(CollaborationProceduralMemory.current(CollaborationResearchWorkspace(context), reader, skill))
+        } finally { database.clear() }
     }
 
     private fun fixture(block: (String) -> Unit) {

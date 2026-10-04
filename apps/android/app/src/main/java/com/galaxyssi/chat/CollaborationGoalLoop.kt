@@ -284,7 +284,10 @@ internal object CollaborationGoalLoop {
         val learning = runCatching { CollaborationLearningWork.plan(record, compiled.work, candidateWorkspace,
             CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
                 record.request.messageId, round, personId = coordinatorPerson)) }
-        val graph = if (compiled.error.isNotBlank()) compiled else learning.fold(
+        val procedure = learning.mapCatching { CollaborationProcedureWork.plan(record, it.work, candidateWorkspace,
+            CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
+                record.request.messageId, round, personId = coordinatorPerson)) }
+        val graph = if (compiled.error.isNotBlank()) compiled else procedure.fold(
             { CollaborationWorkGraph.Plan(it.work) },
             { CollaborationWorkGraph.Plan(emptyList(), it.message ?: "Learning selection needs repair; no partial assignments dispatched") })
         val work = graph.work
@@ -303,7 +306,7 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
                     CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationCandidateEvolution.taskContext(item) +
-                    CollaborationLearningWork.context(item))
+                    CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item))
         }
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
@@ -336,6 +339,10 @@ internal object CollaborationGoalLoop {
                 CollaborationLearningWork.CLAIMS to if (graph.error.isBlank()) learning.getOrThrow().claims
                     else (record.request.context[CollaborationLearningWork.CLAIMS]?.toString() ?: "{}"),
                 CollaborationLearningFeedback.OUTCOMES to CollaborationLearningFeedback.capture(record,
+                    projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result }),
+                CollaborationProcedureWork.CLAIMS to if (graph.error.isBlank()) procedure.getOrThrow().claims
+                    else (record.request.context[CollaborationProcedureWork.CLAIMS]?.toString() ?: "{}"),
+                CollaborationProcedureWork.OUTCOMES to CollaborationProcedureWork.capture(record,
                     projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result }),
                 ACCEPTANCE_FEEDBACK to acceptanceContext(record.request.goal, criteria,
                     if (contractError.isNotBlank()) contractError

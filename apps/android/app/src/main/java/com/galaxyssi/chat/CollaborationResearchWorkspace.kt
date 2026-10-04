@@ -482,7 +482,7 @@ internal class CollaborationResearchWorkspace(
                         if (saved.optJSONObject("host_candidate_event")?.optString("operation") == "review")
                             put("review_applicability", if (candidateReviewApplies(access, this)) "current" else "stale_or_isolated")
                         saved.optJSONObject(CollaborationEvolutionContract.HOST)?.let { evolution ->
-                            val current = listOf("innovation", "baseline", "plan", "result", "rollback", "gap", "diagnosis").all { field ->
+                            val current = listOf("innovation", "baseline", "plan", "result", "rollback", "gap", "diagnosis", "lesson").all { field ->
                                 evolution.optJSONObject(field)?.let { ref ->
                                     val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
                                     target != null && CollaborationResearchCandidates.same(target, ref) &&

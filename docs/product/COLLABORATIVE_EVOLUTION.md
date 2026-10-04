@@ -120,6 +120,10 @@ The second increment adds [evidence-bound learning priorities](COLLABORATION_LEA
 immutable compared alternatives, exact selection-to-work bindings, priority-aware graph projection,
 resource uncertainty and durable execution feedback in both live and next-round planning.
 
+The third increment adds [evidence-bound procedural memory](COLLABORATION_PROCEDURAL_MEMORY.md):
+retained methods and original failure experiences, explicit input/applicability bindings for new
+tasks, actual worker context delivery and durable reuse outcomes without installing executable packages.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop
