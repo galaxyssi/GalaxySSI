@@ -99,7 +99,9 @@ data class AgentSubagentPlan(
     val failurePolicy: AgentSubagentFailurePolicy = AgentSubagentFailurePolicy.CONTINUE,
     val provenance: AgentSubagentProvenance = AgentSubagentProvenance(),
     /** Nonblank opts this plan into expansion when the runtime has a graph hook. */
-    val completionBarrierChildId: String = ""
+    val completionBarrierChildId: String = "",
+    /** Host-selected admission order; the default retains deterministic ID ordering. */
+    val preserveChildOrder: Boolean = false
 )
 
 /** Persists an append-only update before returning; called serially only for explicitly barrier-enabled plans. */
@@ -1034,7 +1036,7 @@ class AgentSubagentRuntime(
                 context = child.context,
                 provenance = normalizeProvenance(child.provenance)
             )
-        }.sortedBy { it.childId }
+        }.let { if (plan.preserveChildOrder) it else it.sortedBy { child -> child.childId } }
 
         val byId = children.associateBy { it.childId }
         require(byId.size == children.size) { "Child IDs must be unique" }
@@ -1068,7 +1070,8 @@ class AgentSubagentRuntime(
             children = withDepth,
             failurePolicy = plan.failurePolicy,
             provenance = normalizeProvenance(plan.provenance),
-            completionBarrierChildId = barrierId
+            completionBarrierChildId = barrierId,
+            preserveChildOrder = plan.preserveChildOrder
         )
     }
 
@@ -1134,7 +1137,8 @@ class AgentSubagentRuntime(
         val children: List<NormalizedChild>,
         val failurePolicy: AgentSubagentFailurePolicy,
         val provenance: AgentSubagentProvenance,
-        val completionBarrierChildId: String
+        val completionBarrierChildId: String,
+        val preserveChildOrder: Boolean
     ) {
         fun toPublicPlan() = AgentSubagentPlan(
             supervisorId = supervisorId,
@@ -1145,7 +1149,8 @@ class AgentSubagentRuntime(
             },
             failurePolicy = failurePolicy,
             provenance = provenance.copy(metadata = provenance.metadata.toMap()),
-            completionBarrierChildId = completionBarrierChildId
+            completionBarrierChildId = completionBarrierChildId,
+            preserveChildOrder = preserveChildOrder
         )
     }
 

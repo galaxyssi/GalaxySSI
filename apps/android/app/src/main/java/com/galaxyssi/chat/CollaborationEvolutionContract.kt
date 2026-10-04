@@ -26,6 +26,7 @@ internal class CollaborationEvolutionContract(
         }
         val host = when (kind) {
             GAP -> gap(value)
+            CollaborationLearningAgenda.KIND -> CollaborationLearningAgenda.validate(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationCapabilityDiagnosis.DIAGNOSIS -> CollaborationCapabilityDiagnosis.diagnosis(value, revision,
                 { ref, kinds -> exact(ref, kinds) }, original, coverage)
             CollaborationCapabilityDiagnosis.PROBE -> CollaborationCapabilityDiagnosis.probe(value, revision,
@@ -172,7 +173,8 @@ internal class CollaborationEvolutionContract(
         const val RESULT = "experiment_result"
         const val LESSON = "capability_lesson"
         const val HOST = "host_evolution"
-        val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE)
+        val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
+            CollaborationLearningAgenda.KIND)
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->

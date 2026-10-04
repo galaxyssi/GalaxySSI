@@ -74,7 +74,7 @@ internal object CollaborationLiveGraph {
                     "Incremental coordinator failed or returned truncated work; preserve existing work and repair at the next checkpoint"
                 }
                 val decoded = decode(result.output)
-                CollaborationCandidateRuntime.update(appendWork(next, decoded.getJSONArray("work")), candidateWorkspace,
+                CollaborationCandidateRuntime.update(appendWork(next, decoded.getJSONArray("work"), candidateWorkspace, member), candidateWorkspace,
                     completedIds, control, admissionLeft,
                     decoded.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray(), member.dependsOnAgentIds)
             }
@@ -119,7 +119,8 @@ internal object CollaborationLiveGraph {
         return changed(record, append(next, listOf(plan)), now)
     }
 
-    private fun appendWork(record: AgentTeamExecutionRecord, requested: JSONArray): AgentTeamExecutionRecord {
+    private fun appendWork(record: AgentTeamExecutionRecord, requested: JSONArray,
+                           workspace: (() -> CollaborationResearchWorkspace)?, planner: AgentTeamMember): AgentTeamExecutionRecord {
         val members = record.definition.members
         val people = members.filter { it.context[CollaborationGoalLoop.ROSTER] == "true" }
             .associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
@@ -159,6 +160,11 @@ internal object CollaborationLiveGraph {
         if (history != null) CollaborationTeamOrganization.validateWork(fresh, history.checkpoint)
         val graph = CollaborationWorkGraph.compile(current.values.map { workItem(it, members) } + fresh, finished, authors)
         require(graph.error.isBlank()) { graph.error }
+        val selection = CollaborationLearningWork.plan(record, work, workspace, CollaborationWorkspaceAccess(
+            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
+            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
+            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
+        val selected = selection.work.associateBy { it.getString("id") }
         val organization = history?.let { CollaborationTeamOrganization.allocate(people.values.toList(), graph.work, it.checkpoint) }
         val allocated = organization?.people?.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) } ?: people
         val dispatch = current.mapValues { it.value.memberId } + fresh.associate { it.getString("id") to nodeId(record, "work:${it.getString("id")}") }
@@ -170,7 +176,8 @@ internal object CollaborationLiveGraph {
                     CollaborationGoalLoop.WORK_ID to item.getString("id"), CollaborationResearchWorkflow.STAGE to item.getString("stage"),
                     CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
-                    CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to JSONArray(CollaborationWorkGraph.dependencies(item).filter { it !in current && it in finished }).toString()))
+                    CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to JSONArray(CollaborationWorkGraph.dependencies(item).filter { it !in current && it in finished }).toString()) +
+                    CollaborationLearningWork.context(selected.getValue(item.getString("id"))))
         }
         val updated = if (projection != null && history != null && organization != null)
             record.copy(definition = record.definition.copy(members = members.map { member ->
@@ -179,7 +186,8 @@ internal object CollaborationLiveGraph {
             }), request = record.request.copy(context = record.request.context +
                 CollaborationTeamOrganizationProjection.finishedContext(projection) +
                 CollaborationTeamOrganizationContext.checkpointContext(record, history, organization))) else record
-        return append(updated, nodes)
+        return append(updated, nodes).let { if (selection.claims == "{}") it else it.copy(request = it.request.copy(context = it.request.context +
+            (CollaborationLearningWork.CLAIMS to selection.claims))) }
     }
 
     private fun workItem(member: AgentTeamMember, all: List<AgentTeamMember>): JSONObject {
@@ -222,8 +230,16 @@ internal object CollaborationLiveGraph {
         return record.copy(definition = record.definition.copy(members = all))
     }
 
-    private fun changed(before: AgentTeamExecutionRecord, after: AgentTeamExecutionRecord, now: Long) =
-        if (before == after) before else after.copy(updatedAtMillis = maxOf(before.updatedAtMillis, now))
+    private fun changed(before: AgentTeamExecutionRecord, after: AgentTeamExecutionRecord, now: Long): AgentTeamExecutionRecord {
+        if (after.definition.members.none { CollaborationLearningWork.TASK in it.context })
+            return if (before == after) before else after.copy(updatedAtMillis = maxOf(before.updatedAtMillis, now))
+        val verified = if (CollaborationTeamOrganization.enabled(after)) CollaborationTeamOrganizationProjection.current(after).verifiedResults.values
+            else after.events.mapNotNull { it.result }
+        val outcomes = CollaborationLearningFeedback.capture(after, verified)
+        val updated = if (outcomes == "{}" || outcomes == after.request.context[CollaborationLearningFeedback.OUTCOMES]) after
+            else after.copy(request = after.request.copy(context = after.request.context + (CollaborationLearningFeedback.OUTCOMES to outcomes)))
+        return if (before == updated) before else updated.copy(updatedAtMillis = maxOf(before.updatedAtMillis, now))
+    }
 
     internal fun nodeId(record: AgentTeamExecutionRecord, suffix: String) = UUID.nameUUIDFromBytes(
         "${record.request.runId}:live:${record.request.context[CollaborationGoalLoop.ROUND]}:$suffix".toByteArray(Charsets.UTF_8)).toString()
