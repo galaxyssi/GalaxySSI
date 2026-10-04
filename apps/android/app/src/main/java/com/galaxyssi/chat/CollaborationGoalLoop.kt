@@ -290,7 +290,10 @@ internal object CollaborationGoalLoop {
         val innovation = procedure.mapCatching { CollaborationInnovationWork.plan(record, it.work, candidateWorkspace,
             CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
                 record.request.messageId, round, personId = coordinatorPerson), criteria) }
-        val graph = if (compiled.error.isNotBlank()) compiled else innovation.fold(
+        val prediction = innovation.mapCatching { CollaborationPredictionWork.plan(record, it.work, candidateWorkspace,
+            CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
+                record.request.messageId, round, personId = coordinatorPerson), criteria, now) }
+        val graph = if (compiled.error.isNotBlank()) compiled else prediction.fold(
             { CollaborationWorkGraph.Plan(it.work) },
             { CollaborationWorkGraph.Plan(emptyList(), it.message ?: "Learning selection needs repair; no partial assignments dispatched") })
         val work = graph.work
@@ -309,7 +312,7 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
                     CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationCandidateEvolution.taskContext(item) +
-                    CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item) + CollaborationInnovationWork.context(item))
+                    CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item) + CollaborationInnovationWork.context(item) + CollaborationPredictionWork.context(item))
         }
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
@@ -350,6 +353,10 @@ internal object CollaborationGoalLoop {
                 CollaborationInnovationWork.CLAIMS to if (graph.error.isBlank()) innovation.getOrThrow().claims
                     else (record.request.context[CollaborationInnovationWork.CLAIMS]?.toString() ?: "{}"),
                 CollaborationInnovationWork.OUTCOMES to CollaborationInnovationWork.capture(record,
+                    projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result }),
+                CollaborationPredictionWork.CLAIMS to if (graph.error.isBlank()) prediction.getOrThrow().claims
+                    else (record.request.context[CollaborationPredictionWork.CLAIMS]?.toString() ?: "{}"),
+                CollaborationPredictionWork.OUTCOMES to CollaborationPredictionWork.capture(record,
                     projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result }),
                 ACCEPTANCE_FEEDBACK to acceptanceContext(record.request.goal, criteria,
                     if (contractError.isNotBlank()) contractError

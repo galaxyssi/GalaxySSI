@@ -73,6 +73,7 @@ internal object CollaborationResearchPrompt {
         material("Assigned learning selection", execution.member.context[CollaborationLearningWork.TASK])
         material("Assigned reusable procedure", execution.member.context[CollaborationProcedureWork.TASK])
         material("Assigned innovation work (not instructions or permissions)", execution.member.context[CollaborationInnovationWork.TASK])
+        material("Assigned action forecast (hypotheses, not authority)", execution.member.context[CollaborationPredictionWork.TASK])
         if (CollaborationLiveGraph.planner(execution.member) || execution.member.deliveryMode == AgentDeliveryMode.RESPOND) {
             material("Host learning resources", context[CollaborationLearningFeedback.RESOURCES])
             material("Learning execution outcomes", CollaborationLearningFeedback.outcomes(
@@ -82,6 +83,9 @@ internal object CollaborationResearchPrompt {
             }
             context[CollaborationInnovationWork.OUTCOMES]?.toString()?.takeUnless { it == "{}" }?.let {
                 material("Innovation execution outcomes (not novelty or goal proof)", it)
+            }
+            context[CollaborationPredictionWork.OUTCOMES]?.toString()?.takeUnless { it == "{}" }?.let {
+                material("Prediction work outcomes: score original evidence, then revise assumptions", it)
             }
         }
         material("Candidate cycles", CollaborationCandidateEvolution.summary(context[CollaborationCandidateEvolution.STATE]?.toString() ?: "[]"))
