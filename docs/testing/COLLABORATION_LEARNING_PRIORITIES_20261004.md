@@ -11,6 +11,7 @@ Android v1.4.42 (1127), based on main after PR #3366. No UI changes, Desktop res
 - Debug APK and instrumentation APK assembled successfully.
 - Eight S26U instrumentation tests passed (`OK (8 tests)`, 2.171 seconds reported by JUnit).
 - Kotlin source-size policy and whitespace checks passed.
+- Repository-wide `npm run check` reached the i18n policy and failed on unchanged source/doc files and local runtime state (including Watch, AR Glass and `.galaxyssi-state`). None of the 19 files changed by this increment contains Chinese text. No unrelated files or local state were modified to bypass this check.
 
 Commands used from `apps/android`:
 
@@ -41,3 +42,5 @@ Device regression classes:
 ## Not Proven
 
 These fixtures do not establish optimal autonomous learning choices, real-model quality improvements, cost reduction, scientific novelty or team superiority. Cross-provider actual token/monetary accounting remains unavailable in this common result contract; those fields are null, not zero. Priority projection is not preemption or a wall-clock ordering guarantee. Full device reboot, extended Doze and real-provider network-failure campaigns were not run in this increment.
+
+The general UI/contact/background and packaged Desktop smoke commands were not run: this increment uses focused runtime/instrumentation coverage, with approval limited to synthetic local tests and no user-task/provider side effects. Gradle unit/build tasks were run directly with the existing native-memory build excluded; no native or embedded-runtime code changed.
