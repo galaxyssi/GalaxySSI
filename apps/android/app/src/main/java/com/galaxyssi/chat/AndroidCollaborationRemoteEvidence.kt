@@ -10,6 +10,10 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
@@ -21,6 +25,9 @@ import org.json.JSONObject
 internal object AndroidCollaborationRemoteEvidence {
     private val client = CollaborationRemoteEvidenceClient()
     private val recoveryLock = Mutex()
+    private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val liveRecovery = java.util.concurrent.atomic.AtomicBoolean()
+    @Volatile private var nextLiveRecoveryAt = 0L
     private const val PREFERENCES = "collaboration_remote_evidence_capabilities"
 
     fun manifest(context: Context, desktop: String, payload: JSONObject) {
@@ -93,9 +100,27 @@ internal object AndroidCollaborationRemoteEvidence {
     }
 
     fun enqueue(context: Context, wake: Boolean = false) {
+        // WorkManager backoff survives disconnects. A live task must not wait hours for that old backoff.
+        nudge(context, wake)
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("collaboration-remote-evidence-v1",
-            if (wake) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<CollaborationRemoteEvidenceWorker>()
+            ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<CollaborationRemoteEvidenceWorker>()
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS).build())
+    }
+
+    private fun nudge(context: Context, wake: Boolean) {
+        if (!wake && android.os.SystemClock.elapsedRealtime() < nextLiveRecoveryAt) return
+        if (!liveRecovery.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        recoveryScope.launch {
+            try {
+                withTimeoutOrNull(120_000) { recover(app) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { Log.w("GalaxySSIEvidence", "Live evidence sync deferred: ${error.javaClass.simpleName}") }
+            finally {
+                nextLiveRecoveryAt = android.os.SystemClock.elapsedRealtime() + 30_000
+                liveRecovery.set(false)
+            }
+        }
     }
 
     internal suspend fun recover(context: Context): Boolean = recoveryLock.withLock { recoverSerially(context) }
@@ -130,12 +155,13 @@ internal object AndroidCollaborationRemoteEvidence {
                 store.save(key, job.put("status", status)); AgentTeamBackgroundRecovery.enqueue(context); continue
             }
             if (control.get(job.getString("run_id")) == AgentTeamUserControl.PAUSE) continue
+            CollaborationProgressStore.evidenceTransfer(context, fields, job.getLong("imported"))
             val finished = importer.run(key, allowed = { latest ->
                 control.get(latest.getString("run_id")) == AgentTeamUserControl.RUN &&
                     paired(context, desktop, fields) && current(context, fields) &&
                     CollaborationGroupStore(context).load(group)?.members?.any { it.id == binding?.personId } == true
-            }) { target, scope, selection ->
-                query(context, target, scope, selection)
+            }, progress = { latest -> CollaborationProgressStore.evidenceTransfer(context, fields, latest.getLong("imported")) }) {
+                target, scope, selection -> query(context, target, scope, selection)
             }
             if (finished) AgentTeamBackgroundRecovery.enqueue(context)
         }

@@ -36,13 +36,14 @@ internal class AgentTeamParentDeliveryRecovery(private val context: Context) {
     }
 
     fun canResume(team: AgentTeamExecutionSnapshot): Boolean {
+        if (AgentTeamDurableControl(context).get(team.supervisorRunId) != AgentTeamUserControl.RUN) return false
         val workspace = EncryptedAgentWorkspaceStore(context).find(team.taskId) ?: return false
         if (workspace.conversationId != team.conversationId || workspace.cancellationRequested ||
             workspace.status == AgentWorkspaceStatus.CANCELLED) return false
         if (workspace.status == AgentWorkspaceStatus.FAILED) return prepare(team)
         val session = SharedPreferencesAgentSessionStore(context, "task:${team.taskId}").load() ?: return false
         val metadata = session.lastActionResult?.metadata.orEmpty()
-        if (metadata["team_run_id"] != team.supervisorRunId) return false
+        if (metadata["team_run_id"] != team.supervisorRunId) return AgentTeamClearedParentRecovery(context).restore(team)
         return session.phase == AgentPhase.WAITING_RESPONSE || AgentTeamParentRecoveryPolicy.acceptsLateResult(
             session.phase, metadata, AgentTeamDispatchIds.sourceMessageId(team.supervisorRunId))
     }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="collaboration_evidence_transfer_count">Reply received · %1$d tool observations synced</string>
     <string name="collaboration_evidence_transfer">Reply received; recovering original tool evidence without rerunning the task</string>
     <string name="collaboration_goal_blocked">Goal unfinished: waiting for the stated resource or authorization</string>
     <string name="collaboration_waiting_connection">Waiting for connection or available capacity; retrying automatically</string>

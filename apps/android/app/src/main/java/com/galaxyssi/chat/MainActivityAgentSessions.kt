@@ -224,6 +224,13 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+internal fun MainActivity.newWindowAgentRuntime() = MobileNativeAgent(
+    this,
+    actionExecutor = directAgentActionExecutor,
+    sessionStore = SharedPreferencesAgentSessionStore(this, "window:${conversationWindow.key}"),
+    nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
+)
+
 internal fun MainActivity.createAgentConversation(preselectedTarget: AgentCallableTarget? = null) {
     conversationWindow.beforeSelection()
     agentInputAttachments.clear()
@@ -256,6 +263,10 @@ internal fun MainActivity.createAgentConversation(preselectedTarget: AgentCallab
         agentTranscriptStore.setSelectedModelOrAgent(conversation.id, displayName)
     }
     lastRenderedAgentState = null
+    // The displayed runtime may belong to an executing task. Reset only the window's runtime.
+    if ((mobileNativeAgent.sessionStore as? SharedPreferencesAgentSessionStore)?.storageKey != "window:${conversationWindow.key}") {
+        mobileNativeAgent = newWindowAgentRuntime()
+    }
     renderAgentState(mobileNativeAgent.startNewConversation(conversation.id), conversation.id, syncTranscript = false)
     resetAgentTranscriptRendering(conversation.id)
     refreshAgentConversationHeader()

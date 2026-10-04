@@ -3,6 +3,31 @@ package com.galaxyssi.chat
 internal object AgentTeamParentRecoveryPolicy {
     const val PAUSED = "team_recovery_paused"
 
+    /** Older generic resume/watchdog results lost the receiver identity, but the waiting action retains it. */
+    fun restoreWaitingIdentity(session: AgentSessionSnapshot): AgentSessionSnapshot {
+        val result = session.lastActionResult ?: return session
+        if (session.phase !in setOf(AgentPhase.WAITING_RESPONSE, AgentPhase.PAUSED) || userStopped(session.auditTrail) ||
+            result.metadata["team_run_id"].orEmpty().isNotBlank() ||
+            (result.actionId !in setOf("agent-resumed", "agent-interrupted") &&
+                result.metadata["failure_kind"] != "liveness_assessment_required")) return session
+        val action = session.currentPlan?.actions?.singleOrNull {
+            it.kind == AgentActionKind.CALL_CONNECTOR && it.status == AgentActionStatus.WAITING_RESPONSE &&
+                it.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank()
+        } ?: return session
+        val spec = AgentTeamDispatchSpecCodec.decode(action.parameters.getValue(AGENT_TEAM_SPEC_PARAMETER)) ?: return session
+        val run = spec.supervisorRunId.takeIf(String::isNotBlank) ?: return session
+        val turn = action.parameters[INTERNAL_TURN_ID].orEmpty()
+        if (turn.isBlank() || action.parameters[INTERNAL_CONVERSATION_ID].isNullOrBlank() ||
+            session.executionLoopSnapshot?.taskId != turn) return session
+        return session.copy(phase = AgentPhase.WAITING_RESPONSE,
+            lastActionResult = AgentActionResult(action.id, false, "Awaiting the original team result", mapOf(
+                "resource_location" to "distributed", "team_run_id" to run, "team_id" to spec.definition.teamId,
+                "source_message_id" to AgentTeamDispatchIds.sourceMessageId(run).toString(),
+                "contact_id" to AgentTeamDispatchIds.responseContactId(spec.definition.teamId), "team_state" to "interrupted")),
+            executionLoopSnapshot = session.executionLoopSnapshot?.copy(
+                phase = AgentExecutionLoopPhase.WAITING_RESPONSE, lastActionId = action.id))
+    }
+
     fun restorePauseMarker(session: AgentSessionSnapshot): AgentSessionSnapshot {
         val result = session.lastActionResult ?: return session
         val metadata = result.metadata

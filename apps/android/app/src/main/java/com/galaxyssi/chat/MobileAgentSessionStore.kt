@@ -220,12 +220,19 @@ class SharedPreferencesAgentSessionStore internal constructor(
         val raw = prefs.readString(storageKey, "").takeIf { it.isNotBlank() } ?: return null
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         val snapshot = runCatching { decodeSession(root) }.getOrNull() ?: return null
-        return AgentTeamParentRecoveryPolicy.restorePauseMarker(
-            restoreDurableActivePlan(snapshot, root, activePlanPersistence))
+        return AgentTeamParentRecoveryPolicy.restoreWaitingIdentity(AgentTeamParentRecoveryPolicy.restorePauseMarker(
+            restoreDurableActivePlan(snapshot, root, activePlanPersistence)))
     }
 
     @Synchronized
     override fun save(snapshot: AgentSessionSnapshot) = synchronized(persistenceLock) { saveLocked(snapshot) }
+
+    internal fun restoreIfUnchanged(expected: AgentSessionSnapshot, restored: AgentSessionSnapshot): Boolean =
+        synchronized(persistenceLock) {
+            if (loadLocked() != expected) return@synchronized false
+            saveLocked(restored)
+            true
+        }
 
     private fun saveLocked(snapshot: AgentSessionSnapshot) {
         val plan = snapshot.currentPlan

@@ -888,12 +888,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             }
         }
         traceStartup("app_store")
-        mobileNativeAgent = MobileNativeAgent(
-            this,
-            actionExecutor = directAgentActionExecutor,
-            sessionStore = SharedPreferencesAgentSessionStore(this, "window:${conversationWindow.key}"),
-            nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
-        )
+        mobileNativeAgent = newWindowAgentRuntime()
         navigationContentExecutor.execute {
             runCatching { mobileNativeAgent.nativeToolCatalog() }
                 .onFailure { Log.w("GalaxySSILatency", "native_tool_catalog_prewarm_failed", it) }

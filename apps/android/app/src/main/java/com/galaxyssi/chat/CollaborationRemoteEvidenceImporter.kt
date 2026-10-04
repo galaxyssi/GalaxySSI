@@ -11,7 +11,7 @@ internal class CollaborationRemoteEvidenceImporter(
     private val ledger: CollaborationEvidenceLedger
 ) {
     /** Returns with a durable partial checkpoint on transport failure; never retries an executed operation. */
-    suspend fun run(key: String, allowed: (JSONObject) -> Boolean,
+    suspend fun run(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit = {},
         query: suspend (String, JSONObject, JSONObject) -> JSONObject?): Boolean {
         val job = store.read(key) ?: return true
         if (job.getString("status") != "pending") return true
@@ -98,6 +98,7 @@ internal class CollaborationRemoteEvidenceImporter(
                             CollaborationEvidenceOrigin.DESKTOP_CODEX_TOOL)
                         // Ledger-first ordering is replay-safe if the process dies before the cursor commit.
                         store.advance(key, job, entry, imported = true)
+                        progress(job)
                     } finally { bytes.fill(0) }
                 } finally { buffer.wipe() }
             }
