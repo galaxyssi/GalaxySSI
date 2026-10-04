@@ -26,6 +26,15 @@ internal class CollaborationEvolutionContract(
         }
         val host = when (kind) {
             GAP -> gap(value)
+            CollaborationCapabilityDiagnosis.DIAGNOSIS -> CollaborationCapabilityDiagnosis.diagnosis(value, revision,
+                { ref, kinds -> exact(ref, kinds) }, original, coverage)
+            CollaborationCapabilityDiagnosis.PROBE -> CollaborationCapabilityDiagnosis.probe(value, revision,
+                { ref, kinds -> exact(ref, kinds, requireCurrent = false) }, original, coverage).apply {
+                put("targets_current_at_publication", listOf("diagnosis", "gap").all { field ->
+                    val ref = getJSONObject(field)
+                    ref.getString("object_id") !in changingIds && current(ref.getString("object_id"), ref.getInt("revision"))
+                })
+            }
             IDEA -> idea(value, revision, head)
             PLAN -> CollaborationEvolutionExperiment.plan(value) { ref, kinds -> exact(ref, kinds) }
             RESULT -> CollaborationEvolutionExperiment.result(value, revision,
@@ -44,8 +53,8 @@ internal class CollaborationEvolutionContract(
     }
 
     private fun gap(value: JSONObject): JSONObject {
-        require(text(value, "category") in setOf("knowledge", "tool", "method", "verification", "coordination")) {
-            "capability_gap.category must describe a knowledge/tool/method/verification/coordination gap"
+        require(text(value, "category") in CollaborationCapabilityDiagnosis.CATEGORIES) {
+            "capability_gap.category must be one of ${CollaborationCapabilityDiagnosis.CATEGORIES.sorted()}"
         }
         listOf("symptom", "needed_capability", "chosen_option", "rationale").forEach { text(value, it) }
         val options = objects(value, "learning_options")
@@ -163,7 +172,7 @@ internal class CollaborationEvolutionContract(
         const val RESULT = "experiment_result"
         const val LESSON = "capability_lesson"
         const val HOST = "host_evolution"
-        val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON)
+        val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE)
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->

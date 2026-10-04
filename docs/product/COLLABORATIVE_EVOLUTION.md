@@ -112,6 +112,10 @@ sandbox and self-evolution review gates remain the only execution authorities.
 | Prevent regression | Baseline preservation, regression cases and independent retention | Broad long-term retention and automated runtime rollback |
 | Self-improvement research | The same goal controller can investigate an authorized improvement objective through this contract | Long-duration model-backed campaigns and external replication |
 
+The first dedicated increment adds [evidence-driven capability-gap diagnosis](CAPABILITY_GAP_DIAGNOSIS.md):
+scoped original failure discovery, competing causes, agent-selected learning options, preregistered
+observable probes and durable negative outcomes. It does not equate a returned tool call with learning.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop

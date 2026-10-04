@@ -159,7 +159,7 @@ internal object CollaborationEvolutionExperiment {
     }
 
     // Android's org.json has no JSONPointer; traverse parsed JSON without interpreting report text as code.
-    private fun pointer(root: JSONObject, path: String): Any {
+    internal fun pointer(root: JSONObject, path: String): Any {
         if (path.isEmpty()) return root
         require(path.startsWith('/')) { "Invalid report JSON pointer" }
         return path.drop(1).split('/').fold(root as Any) { current, part ->

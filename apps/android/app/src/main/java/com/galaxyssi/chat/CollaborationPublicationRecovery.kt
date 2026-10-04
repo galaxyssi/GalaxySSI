@@ -48,6 +48,8 @@ internal class CollaborationPublicationRecovery(
             "Only scoped collaboration_recall is available to read already saved originals and references. " +
             "You choose whether to correct this yourself, inspect saved evidence, or ask the coordinator for help. " +
             "Do not guess repeatedly or resubmit unchanged work without a reason it could pass. " +
+            "Separate the observed validator constraint from hypotheses about knowledge, tooling or method; " +
+            "state what new evidence or correction would distinguish these causes when requesting assistance. " +
             "There is no retry-count rule. If help is appropriate, return " +
             "{\"format\":\"${CollaborationPublicationAssistance.FORMAT}\",\"diagnosis\":\"specific obstacle and uncertainty\"," +
             "\"attempted_corrections\":\"what you tried and what the host reported\",\"requested_help\":\"concrete assistance or alternative to consider\"}. " +

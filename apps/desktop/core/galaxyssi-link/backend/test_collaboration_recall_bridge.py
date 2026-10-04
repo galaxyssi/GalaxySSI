@@ -15,11 +15,14 @@ def task(**changes):
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
     def test_evolution_selectors_are_read_only_and_scoped(self):
-        for arguments in ({"mode": "evolution", "cursor": ""}, {"mode": "evolution_rules", "offset": 8000}):
+        for arguments in ({"mode": "evolution", "cursor": ""}, {"mode": "evolution_rules", "offset": 8000},
+                          {"mode": "problems", "cursor": ""}):
             self.assertEqual(arguments, validate_arguments(arguments))
         for invalid in ({"mode": "evolution", "group_id": "other"},
                         {"mode": "evolution", "object_id": "a" * 64},
                         {"mode": "evolution_rules", "cursor": ""},
+                        {"mode": "problems", "group_id": "other"},
+                        {"mode": "problems", "offset": 0},
                         {"mode": "evolution_rules", "offset": -1}):
             with self.assertRaises(ValueError):
                 validate_arguments(invalid)
@@ -41,6 +44,22 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
             broker.query(task, {"mode": "workspace"}, lambda _: False)
         self.assertIn("connectivity is unconfirmed", str(error.exception))
         self.assertNotIn("phone is offline", str(error.exception))
+        self.assertEqual({}, broker._pending)
+
+    def test_problem_directory_round_trip_preserves_bound_phone_and_task(self):
+        broker = RecallBroker()
+        requests = []
+        def publish(request):
+            requests.append(request)
+            result = {"success": True, "observations": [{"evidence_id": "a" * 64}],
+                      "trust": "observed_symptoms_not_diagnosed_causes"}
+            self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": result}, "wrong-phone"))
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+            return True
+        result = broker.query(task, {"mode": "problems", "cursor": ""}, publish)
+        self.assertEqual("a" * 64, result["observations"][0]["evidence_id"])
+        self.assertEqual("group", requests[0]["conversation_id"])
+        self.assertEqual("turn", requests[0]["turn_id"])
         self.assertEqual({}, broker._pending)
 
     def test_archive_handoff_uses_exact_record_without_additional_authority(self):
