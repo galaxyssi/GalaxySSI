@@ -179,7 +179,9 @@ internal object CollaborationInnovationValidation {
             "challenge" to setOf(CollaborationTeamInvention.EXCHANGE), CollaborationTeamInvention.SYNTHESIS to setOf(CollaborationTeamInvention.SYNTHESIS),
             CollaborationTeamInvention.EVALUATION to setOf(CollaborationTeamInvention.EVALUATION),
             CollaborationActionPrediction.MODEL to setOf(CollaborationActionPrediction.MODEL),
-            CollaborationActionPrediction.FORECAST to setOf(CollaborationActionPrediction.FORECAST))
+            CollaborationActionPrediction.FORECAST to setOf(CollaborationActionPrediction.FORECAST),
+            CollaborationExecutableTool.TOOL to setOf(CollaborationExecutableTool.TOOL),
+            CollaborationExecutableTool.TEST to setOf(CollaborationExecutableTool.TEST))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
             val saved = pending.removeFirst()

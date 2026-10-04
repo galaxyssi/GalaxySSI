@@ -1143,13 +1143,19 @@ object AgentOnDeviceRuntimeTools {
                     availability = executionAvailability(manager)
                 ),
                 executor = AgentNativeToolExecutor { invocation ->
+                    val generated = try { CollaborationToolRuntime.prepare(context, invocation) }
+                    catch (error: Exception) {
+                        return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("collaboration_tool_invalid", error.message ?: "Invalid saved tool")
+                    }
                     val verificationKind = AgentRuntimeVerificationKind.fromWireValue(
                         invocation.input["verification_kind"]?.toString().orEmpty()
                     )
-                    val requestedSource = invocation.input["source"]?.toString().orEmpty()
+                    val requestedSource = generated?.source ?: invocation.input["source"]?.toString().orEmpty()
                     val automaticVerification = requestedSource.isBlank() &&
                         verificationKind != AgentRuntimeVerificationKind.NONE
-                    val language = if (automaticVerification) {
+                    val language = if (generated != null) {
+                        AgentRuntimeLanguage.PYTHON
+                    } else if (automaticVerification) {
                         AgentRuntimeLanguage.SHELL
                     } else {
                         AgentRuntimeLanguage.entries.firstOrNull {
@@ -1238,7 +1244,8 @@ object AgentOnDeviceRuntimeTools {
                                     architecture = manager.architecture()
                                 )
                             }
-                            runtimeExecutionResult(response, recoveryCandidates)
+                            val result = runtimeExecutionResult(response, recoveryCandidates)
+                            if (generated == null) result else CollaborationToolRuntime.finish(generated, response, result)
                         },
                         onFailure = { error ->
                             Log.e(
@@ -1504,6 +1511,8 @@ object AgentOnDeviceRuntimeTools {
 
     private fun executionInputSchema() = AgentNativeJsonSchema.objectSchema(
         properties = mapOf(
+            CollaborationToolRuntime.INPUT to AgentNativeJsonSchema.objectSchema(additionalProperties = true,
+                description = "Scoped saved tool: mode=test with tool_test_plan ref, or mode=run with tool_release ref and parameters. Recall evolution_rules for details."),
             "language" to AgentNativeJsonSchema.string(enumValues = AgentRuntimeLanguage.entries.map { it.wireValue }),
             "source" to AgentNativeJsonSchema.string(maxLength = 256 * 1024),
             "arguments" to AgentNativeJsonSchema.array(AgentNativeJsonSchema.string(maxLength = 8 * 1024), maxItems = 256),

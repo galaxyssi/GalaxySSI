@@ -25,6 +25,10 @@ internal class CollaborationEvolutionContract(
             "Only the author may revise a gap or innovation; other members publish a linked alternative"
         }
         val host = when (kind) {
+            CollaborationExecutableTool.TOOL -> CollaborationExecutableTool.definition(value)
+            CollaborationExecutableTool.TEST -> CollaborationExecutableTool.testPlan(value) { ref, kinds -> exact(ref, kinds) }
+            CollaborationExecutableTool.RELEASE -> CollaborationExecutableTool.release(value, revision, access.personId,
+                { ref, kinds -> exact(ref, kinds) }, original, coverage)
             CollaborationActionPrediction.MODEL -> CollaborationActionPrediction.model(value, revision, { ref, kinds -> exact(ref, kinds) }, coverage)
             CollaborationActionPrediction.FORECAST -> CollaborationActionPrediction.forecast(value) { ref, kinds -> exact(ref, kinds) }.also {
                 require(value.getLong("valid_until") >= revision.getLong("recorded_at")) { "Forecast is already expired at publication" }
@@ -212,7 +216,7 @@ internal class CollaborationEvolutionContract(
         const val HOST = "host_evolution"
         val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
             CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
-            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS
+            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->

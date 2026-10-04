@@ -26,7 +26,7 @@ internal object CollaborationEvolutionProtocol {
         Keep full failures, null results and untested ideas. Do not rerun completed side effects just to collect evidence.
         When progress stalls, change the hypothesis/test or seek relevant peers; no fixed research-round count determines success.
         No lesson installs a Skill, changes app code, expands permissions or spends resources by itself. Existing approval and pause rules apply.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions() + "\n" + CollaborationTeamInventionProtocol.instructions() + "\n" + CollaborationPredictionProtocol.instructions()
+    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions() + "\n" + CollaborationTeamInventionProtocol.instructions() + "\n" + CollaborationPredictionProtocol.instructions() + "\n" + CollaborationToolProtocol.instructions()
 
     fun rules(): JSONObject = JSONObject().put("format", "galaxyssi.collaborative-evolution.v1").put("contract", """
         Publish each typed record as an ordinary workspace item: {id,kind,title,body:{content,<kind>:{...}},parents:[],observations:[]}.
@@ -106,5 +106,5 @@ internal object CollaborationEvolutionProtocol {
         Keep applicability narrow, especially when transfer cases are not met. Existing skill/package/tool execution gates still apply.
         Recall prior lessons to improve planning/search/tooling/collaboration/checking. Reevaluate after context or model changes.
         No record here satisfies physical/scientific goal acceptance; the original goal's qualified validator remains authoritative.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules() + "\n" + CollaborationInnovationProtocol.rules() + "\n" + CollaborationTeamInventionProtocol.rules() + "\n" + CollaborationPredictionProtocol.rules())
+    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules() + "\n" + CollaborationInnovationProtocol.rules() + "\n" + CollaborationTeamInventionProtocol.rules() + "\n" + CollaborationPredictionProtocol.rules() + "\n" + CollaborationToolProtocol.rules())
 }

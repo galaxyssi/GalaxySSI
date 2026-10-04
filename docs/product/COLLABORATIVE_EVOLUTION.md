@@ -107,7 +107,7 @@ sandbox and self-evolution review gates remain the only execution authorities.
 | Propose/verify innovation | First-class hypotheses, falsifiers, prior-art scope, preregistration and measured comparisons | Real novel discoveries, domain-specific validation |
 | Team invention | Independent proposals, peer work and combination lineage on the existing DAG | Same-budget team superiority |
 | Predict before action | Predictions bound to registered tests and observed outcomes | A calibrated learned world model |
-| Develop tools | Plan sandboxed implementation/testing with artifact versions and existing executors | Autonomous safe tool packaging and deployment approval |
+| Develop tools | Immutable executable code, preregistered tests, existing-runtime execution and independently reviewed scoped reuse | Real-model tool quality, security review and deployment approval |
 | Improve workflows | Methods can be compared and stored as reusable scoped procedures | Sustained gains on real workloads |
 | Prevent regression | Baseline preservation, regression cases and independent retention | Broad long-term retention and automated runtime rollback |
 | Self-improvement research | The same goal controller can investigate an authorized improvement objective through this contract | Long-duration model-backed campaigns and external replication |
@@ -142,6 +142,11 @@ The seventh increment adds [action prediction and observed feedback](COLLABORATI
 scoped environment hypotheses, compared action probabilities, immutable actual DAG admission,
 original outcome scoring, missing/counterfactual separation and evidence-linked model corrections.
 Local fixtures do not prove general calibration, causal identification or learned world knowledge.
+
+The eighth increment adds [evidence-bound executable tools](COLLABORATION_EXECUTABLE_TOOLS.md):
+immutable Python source and input contracts, registered tests, actual existing-runtime execution,
+independent review and exact-version scoped reuse. This is not automatic global Skill activation or
+proof that real models invent safe/useful tools. Device receipts remain explicitly synthetic.
 
 ## Runtime Coverage
 
