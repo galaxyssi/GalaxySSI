@@ -500,6 +500,12 @@ internal class CollaborationResearchWorkspace(
                                         isCurrent(access, ref.getString("object_id"), ref.getInt("revision")))
                                     target
                                 }
+                                CollaborationInnovationValidation.checkRecord(saved) { ref, kinds ->
+                                    val target = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision")))
+                                    require(target.getString("kind") in kinds && CollaborationResearchCandidates.same(target, ref) &&
+                                        isCurrent(access, ref.getString("object_id"), ref.getInt("revision")))
+                                    target
+                                }
                             }.isSuccess
                             put("evolution_applicability", if (current) "inspect_scope_before_reuse" else "historical_requires_revalidation")
                         }

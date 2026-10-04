@@ -30,6 +30,10 @@ internal class CollaborationEvolutionContract(
             CollaborationProceduralMemory.SKILL -> CollaborationProceduralMemory.skill(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationProceduralMemory.FAILURE -> CollaborationProceduralMemory.failure(value, revision, original, coverage)
             CollaborationTransferStudy.KIND -> CollaborationTransferStudy.validate(value) { ref, kinds -> exact(ref, kinds) }
+            CollaborationInnovationValidation.OPPORTUNITY -> CollaborationInnovationValidation.opportunity(value, revision,
+                { ref, kinds -> exact(ref, kinds) }, coverage)
+            CollaborationInnovationValidation.ASSESSMENT -> CollaborationInnovationValidation.assessment(value, revision, access.personId,
+                { ref, kinds -> exact(ref, kinds, value.optString("decision") == "retain") }, original, coverage)
             CollaborationCapabilityDiagnosis.DIAGNOSIS -> CollaborationCapabilityDiagnosis.diagnosis(value, revision,
                 { ref, kinds -> exact(ref, kinds) }, original, coverage)
             CollaborationCapabilityDiagnosis.PROBE -> CollaborationCapabilityDiagnosis.probe(value, revision,
@@ -48,6 +52,7 @@ internal class CollaborationEvolutionContract(
                     ref.getString("object_id") !in changingIds && current(ref.getString("object_id"), ref.getInt("revision"))
                 } && runCatching {
                     CollaborationTransferStudy.currentPlan(exact(getJSONObject("plan"), setOf(PLAN))) { ref, kinds -> exact(ref, kinds) }
+                    CollaborationInnovationValidation.currentIdea(exact(getJSONObject("innovation"), setOf(IDEA))) { ref, kinds -> exact(ref, kinds) }
                 }.isSuccess
                 put("targets_current_at_publication", targetsCurrent)
                 if (!targetsCurrent) put("eligible_for_retention", false)
@@ -119,6 +124,8 @@ internal class CollaborationEvolutionContract(
         return JSONObject().put("state", "hypothesis_unverified").put("novelty", scope).put("contributors", JSONArray(contributors.toList()))
             .put("predictions", predictions.size).put("domain", value.getString("domain"))
             .apply { CollaborationTransferStudy.idea(value, revision) { ref, kinds -> exact(ref, kinds) }?.let { put(CollaborationTransferStudy.KIND, it) } }
+            .apply { CollaborationInnovationValidation.idea(value, revision) { ref, kinds -> exact(ref, kinds) }
+                ?.let { put(CollaborationInnovationValidation.OPPORTUNITY, it) } }
     }
 
     private fun lesson(value: JSONObject, revision: JSONObject): JSONObject {
@@ -160,6 +167,8 @@ internal class CollaborationEvolutionContract(
             .put("domain", innovation.getJSONObject("body").getJSONObject(IDEA).getString("domain"))
             .apply { if (retain) CollaborationTransferStudy.retain(plan, value) { ref, kinds -> exact(ref, kinds) }
                 ?.let { put(CollaborationTransferStudy.KIND, it) } }
+            .apply { if (retain) CollaborationInnovationValidation.retention(value, innovation) { ref, kinds -> exact(ref, kinds) }
+                ?.let { put(CollaborationInnovationValidation.ASSESSMENT, it) } }
     }
 
     private fun exact(ref: JSONObject, kinds: Set<String>, requireCurrent: Boolean = true): JSONObject {
@@ -182,7 +191,8 @@ internal class CollaborationEvolutionContract(
         const val LESSON = "capability_lesson"
         const val HOST = "host_evolution"
         val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
-            CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND)
+            CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
+            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT)
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->

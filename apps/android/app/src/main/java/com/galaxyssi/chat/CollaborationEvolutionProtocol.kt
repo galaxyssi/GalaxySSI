@@ -26,7 +26,7 @@ internal object CollaborationEvolutionProtocol {
         Keep full failures, null results and untested ideas. Do not rerun completed side effects just to collect evidence.
         When progress stalls, change the hypothesis/test or seek relevant peers; no fixed research-round count determines success.
         No lesson installs a Skill, changes app code, expands permissions or spends resources by itself. Existing approval and pause rules apply.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions()
+    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions()
 
     fun rules(): JSONObject = JSONObject().put("format", "galaxyssi.collaborative-evolution.v1").put("contract", """
         Publish each typed record as an ordinary workspace item: {id,kind,title,body:{content,<kind>:{...}},parents:[],observations:[]}.
@@ -71,9 +71,9 @@ internal object CollaborationEvolutionProtocol {
 
         experiment_plan: {innovation:<exact innovation ref>,baseline:<exact proposal/artifact/innovation ref>,prediction_id,
           method,environment,budget_unit,budget_limit:<positive decimal>,source:{origin,tool},report_pointer:"JSON pointer, empty=root",
-          cases:[{id,purpose:"target|regression|transfer",prediction,metric,direction:"maximize|minimize",
+          cases:[{id,purpose:"target|regression|transfer|feasibility",prediction,metric,direction:"maximize|minimize",
             minimum_gain:<nonnegative decimal>,tolerance:<nonnegative decimal>,repetitions:<positive integer>}]}.
-        Save the exact baseline implementation/control in a workspace artifact first. At least one target case is needed.
+        Save the exact baseline implementation/control in a workspace artifact first. At least one target or feasibility case is needed.
         Choose useful case coverage/repetitions for the domain, not a fixed platform step count. Retention needs regression cases too.
         One budget ceiling and environment apply equally to baseline and candidate trials. Trial budgets are not new spending authority.
         Register BEFORE executing trials. Copy the returned plan sha256 into your test harness output. Do not post-select trials.
@@ -106,5 +106,5 @@ internal object CollaborationEvolutionProtocol {
         Keep applicability narrow, especially when transfer cases are not met. Existing skill/package/tool execution gates still apply.
         Recall prior lessons to improve planning/search/tooling/collaboration/checking. Reevaluate after context or model changes.
         No record here satisfies physical/scientific goal acceptance; the original goal's qualified validator remains authoritative.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules())
+    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules() + "\n" + CollaborationInnovationProtocol.rules())
 }
