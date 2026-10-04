@@ -125,6 +125,7 @@ internal fun android.content.Context.collaborationCurrentMemberLabel(metadata: C
     metadata.status == AgentSubagentStatus.SKIPPED -> getString(R.string.collaboration_skipped)
     metadata.connectionState == "waiting" -> getString(R.string.collaboration_connection_lost)
     metadata.connectionState == "reconciling" -> getString(R.string.collaboration_connection_reconciling)
+    metadata.connectionState == "evidence_sync" -> metadata.summary.ifBlank { getString(R.string.collaboration_evidence_transfer) }
     metadata.connectionState == "delivering" -> getString(R.string.conversation_status_delivering)
     metadata.connectionState == "remote_paused" -> getString(R.string.collaboration_team_paused)
     metadata.connectionState == "remote_queued" -> getString(R.string.collaboration_queued)

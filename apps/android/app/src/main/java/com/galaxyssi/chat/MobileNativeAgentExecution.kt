@@ -2265,7 +2265,8 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         plan.actions.isNotEmpty() && plan.actions.all { it.status == AgentActionStatus.COMPLETED } -> AgentPhase.COMPLETED
         else -> AgentPhase.PLANNING
     }
-    if (!recoveredNodes) lastActionResult = AgentActionResult(
+    // A waiting dispatch result is also its routing receipt; a generic resume message must not replace it.
+    if (!recoveredNodes && phase != AgentPhase.WAITING_RESPONSE) lastActionResult = AgentActionResult(
         actionId = "agent-resumed",
         success = true,
         message = "Task resumed"

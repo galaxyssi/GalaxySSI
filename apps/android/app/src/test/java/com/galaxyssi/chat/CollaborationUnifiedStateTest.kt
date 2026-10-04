@@ -114,6 +114,16 @@ class CollaborationUnifiedStateTest {
         assertEquals(AgentSubagentStatus.RUNNING, snapshot.members.single().status)
     }
 
+    @Test fun evidenceSynchronizationIsDeliveryAndNeverOverridesUserPause() {
+        val snapshot = team(member("hopper"))
+        val progress = mapOf("hopper" to CollaborationMemberObservation(300, "Synced 12 observations", "evidence_sync"))
+        assertEquals(ConversationHubAgentStatus.DELIVERING, CollaborationCurrentStatePolicy.status(snapshot, progress))
+        assertEquals(ConversationHubAgentStatus.PAUSED,
+            CollaborationCurrentStatePolicy.status(snapshot.copy(paused = true), progress))
+        assertEquals("evidence_sync", CollaborationCurrentStatePolicy.metadata(snapshot, snapshot.members.single(),
+            progress["hopper"]).connectionState)
+    }
+
     @Test fun activeTeamWithConnectionLossUsesTheSameRecoveringState() {
         val snapshot = team(member("hopper")).copy(state = AgentTeamExecutionState.RUNNING)
         assertEquals(ConversationHubAgentStatus.RECONNECTING, CollaborationCurrentStatePolicy.status(snapshot,

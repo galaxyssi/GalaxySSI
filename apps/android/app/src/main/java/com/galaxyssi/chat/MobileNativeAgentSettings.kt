@@ -217,6 +217,9 @@ internal fun MobileNativeAgent.buildReplannedPlan(plan: AgentPlan, reason: Strin
 
 @Synchronized
 internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiState {
+    if (AgentTeamParentRecoveryPolicy.isTeamWait(phase, lastActionResult?.metadata.orEmpty())) {
+        return reconcileSavedAgentTeam() ?: snapshot()
+    }
     if (phase in setOf(
             AgentPhase.COMPLETED,
             AgentPhase.FAILED,

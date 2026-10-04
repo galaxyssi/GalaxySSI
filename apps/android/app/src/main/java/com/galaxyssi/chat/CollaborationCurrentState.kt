@@ -55,7 +55,7 @@ internal object CollaborationCurrentStatePolicy {
             val states = running.map { metadata(team, it, observations[it.memberId]).connectionState }
             when {
                 states.any { it.isBlank() } -> ConversationHubAgentStatus.RUNNING
-                states.isNotEmpty() && states.all { it == "delivering" } -> ConversationHubAgentStatus.DELIVERING
+                states.isNotEmpty() && states.all { it in setOf("delivering", "evidence_sync") } -> ConversationHubAgentStatus.DELIVERING
                 states.isNotEmpty() && states.all { it == "remote_paused" } -> ConversationHubAgentStatus.WAITING_RESPONSE
                 states.isNotEmpty() && states.all { it == "remote_queued" } -> ConversationHubAgentStatus.QUEUED
                 team.state == AgentTeamExecutionState.RUNNING && states.isEmpty() -> ConversationHubAgentStatus.QUEUED
