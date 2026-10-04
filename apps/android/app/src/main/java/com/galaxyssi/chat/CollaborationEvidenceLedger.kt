@@ -90,7 +90,11 @@ internal class CollaborationEvidenceLedger(
         val envelope = JSONObject().put("payload", payload).put("sha256", hash).toString()
         val previous = rows.read(key)
         check(previous == null || previous == envelope) { "An evidence invocation cannot change its recorded outcome" }
-        if (previous == null) rows.commit(mapOf(key to envelope))
+        val writes = linkedMapOf<String, String>()
+        if (previous == null) writes[key] = envelope
+        val problemKey = prefix(access.groupId) + "problem:$id"
+        if (status == "failed" && rows.read(problemKey) == null) writes[problemKey] = id
+        if (writes.isNotEmpty()) rows.commit(writes)
         reference(JSONObject(payload), hash)
     }
 
@@ -168,6 +172,17 @@ internal class CollaborationEvidenceLedger(
             selected.lastOrNull()?.takeIf { keys.size > selected.size }
     }
 
+    /** Indexed original failures, not a scan of all successful calls or a generated diagnosis. */
+    fun problems(access: CollaborationWorkspaceAccess, cursor: String = ""): Pair<List<JSONObject>, String?> = synchronized(LOCK) {
+        if (!authorized(access.groupId)) return@synchronized emptyList<JSONObject>() to null
+        val prefix = prefix(access.groupId) + "problem:"
+        require(cursor.isBlank() || cursor.startsWith(prefix) && cursor.removePrefix(prefix).matches(ID))
+        val keys = rows.page(prefix, cursor, 21)
+        val selected = keys.take(20)
+        selected.mapNotNull { key -> read(access, key.removePrefix(prefix))?.takeIf { it.optString("status") == "failed" }
+            ?.let { reference(it, it.getString("sha256")) } } to selected.lastOrNull()?.takeIf { keys.size > selected.size }
+    }
+
     companion object {
         private val LOCK = Any()
         private const val DATABASE = "galaxyssi_collaboration_evidence_v1"
@@ -180,6 +195,9 @@ internal class CollaborationEvidenceLedger(
         private fun reference(value: JSONObject, hash: String) = JSONObject().put("sha256", hash).apply {
             listOf("evidence_id", "tool", "status", "origin", "observation_kind", "person_id", "node_id", "finished_at", "trust")
                 .forEach { put(it, value.get(it)) }
+            CollaborationCapabilityProblem.describe(value.getString("output_json"), value.getString("status"),
+                CollaborationEvidenceOrigin.entries.first { it.wireValue == value.getString("origin") })
+                ?.let { put(CollaborationCapabilityProblem.FIELD, it) }
         }
         fun remove(context: Context, group: String) = synchronized(LOCK) {
             val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)

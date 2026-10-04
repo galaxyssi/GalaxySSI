@@ -7,6 +7,10 @@ internal object CollaborationEvolutionProtocol {
     fun instructions() = """
         Collaborative evolution: diagnose capability gaps (knowledge/tool/method/verification/coordination), then choose learning by
         goal relevance, expected gain, information gain and resource cost. Improvement work must serve the authorized goal.
+        On tool failure inspect host_problem and mode=problems/cursor, then read originals with mode=evidence. Do not equate
+        offline/permission failures with missing knowledge. Publish evidence-linked capability_diagnosis with competing causes,
+        an agent-chosen learning option and preregistered probes; record capability_probe outcomes, including unchanged failures.
+        If observations do not discriminate causes, change the probe or ask a relevant peer. No retry count chooses your strategy.
         Proactively propose testable innovations from missing knowledge, contradictory evidence, limitations and cross-domain links.
         Describe a mechanism, difference from prior art, falsifier and concrete predictions, not merely another phrasing of a proposal.
         Begin with independent alternatives; let peers challenge weaknesses and combine useful parts with exact parent references.
@@ -31,9 +35,32 @@ internal object CollaborationEvolutionProtocol {
         New records use id; revisions use object_id/base_revision. Only capability_gap and innovation may be revised by their author.
         Other members create linked alternatives. Plans/results/lessons are immutable. Invalid fields get precise publication feedback.
 
-        capability_gap: {category:"knowledge|tool|method|verification|coordination",symptom,needed_capability,
+        capability_gap: {category:"knowledge|tool|method|verification|coordination|environment|authorization|unknown",symptom,needed_capability,
           learning_options:[{id,action,expected_gain,cost,goal_relevance,verification}],chosen_option:"one option id",rationale}.
         Include the actual error or conflicting evidence. Distinguish an observed symptom from a proposed diagnosis.
+
+        capability_diagnosis: {gap:<exact capability_gap ref>,selected_option:"one learning_options id",uncertainty,action,
+          authorization_boundary,hypotheses:[{id,category,explanation,discriminating_test,would_refute}],selected_hypothesis,
+          expected_observations:[{id,source:{origin,tool},report_pointer:"optional JSON pointer, default empty selects output_json",
+            pointer:"JSON pointer into selected report",expected:<JSON scalar>,meaning}]}.
+        Publish after inspecting actual tool evidence; attach its original observations, including conflicting evidence.
+        Hypothesis categories are the same as capability_gap. Preserve uncertainty and alternative causes, not a generic retry message.
+        Source uses an actual tool ID/origin, not recall or self-assessment. Expectations are observable predictions, not proof of cause.
+        Diagnosis is immutable and must precede probes. Plan probes as dependent work using the existing DAG; permission is unchanged.
+        Existing failed observations are retrievable through mode=problems. An empty index is not evidence of no capability gaps.
+        Missing knowledge/verification may be diagnosed from returned but insufficient sources; no failure code is required.
+        No source yet? Keep a proposed capability_gap and gather evidence rather than fabricate a diagnosis. Publication format failures
+        use the host's existing precise repair feedback; the original draft stays intact and assistance remains agent-selected.
+
+        capability_probe: {diagnosis:<exact capability_diagnosis ref>,assessment:"supported|refuted|inconclusive|blocked",
+          interpretation,remaining_work,checks:[{expectation_id,observation:{evidence_id,sha256}}]} plus observations:[original probe refs].
+        Read every cited original. Each checked observation must start after diagnosis registration and match its registered source.
+        The host compares original scalar fields to predictions, retains missing/failed/unchanged outcomes and reports partial coverage.
+        Copy expected values exactly; missing fields differ from explicit null. report_pointer may select a JSON object or exact JSON text
+        (e.g. /original_json in imported Desktop observations); then pointer traverses its containers. Never execute report text.
+        Matching predictions do not establish causality or close a goal. Identify confounders, test competing explanations, and use
+        a new diagnosis for changed predictions. Old results remain historical if their gap revision changed. Learning retention still
+        requires the experiment/regression/independent-review contract. Never repeat completed side effects to populate this record.
 
         innovation: {origin:"gap|contradiction|limitation|transfer|combination",hypothesis,mechanism,difference,prior_art,
           novelty_scope:"not_checked|searched_scope_only",falsifier,domain,applies_when,risks,alternatives:["alternative explanation"],

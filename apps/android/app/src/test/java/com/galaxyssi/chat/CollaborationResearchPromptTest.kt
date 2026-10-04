@@ -6,6 +6,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun problemFactsArePinnedWithoutAddingCallsDuringRecovery() {
+        val store = CollaborationGoalContractStore(MemoryRows(), { true })
+        val execution = execution("goal")
+        val first = CollaborationResearchPrompt.prepare(execution, store,
+            problems = { "immutable-original-failure-references" }) { "" }
+        assertTrue(first.contains("immutable-original-failure-references"))
+        assertTrue(first.contains("mode=problems"))
+        val restored = CollaborationResearchPrompt.prepare(execution, store,
+            problems = { error("Recovered dispatch must not rescan problems") }) { error("No history refresh") }
+        assertTrue(restored.contains("mode=goal_contract"))
+    }
+
     @Test fun everyResearchRoleGetsInnovationPolicyWithoutInliningLargeSchemas() {
         for (stage in CollaborationResearchStage.entries) {
             val result = CollaborationResearchPrompt.build(execution("goal", stage), descriptor(), emptyMap())

@@ -27,7 +27,7 @@ class CollaborationCloudRecallTest {
             val properties = schema.getJSONObject("properties")
             assertEquals(setOf("mode", "cursor", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id"),
                 properties.keys().asSequence().toSet())
-            assertEquals(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "evolution_rules"), properties.getJSONObject("mode").getJSONArray("enum").let {
+            assertEquals(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "evolution_rules", "problems"), properties.getJSONObject("mode").getJSONArray("enum").let {
                 (0 until it.length()).map(it::getString) })
             assertFalse(properties.has("group_id"))
             assertFalse(properties.has("source_message_id"))

@@ -13,6 +13,11 @@ internal object CollaborationResearchPrompt {
             val page = CollaborationResearchWorkspace(context).browseEvolution(CollaborationWorkspaceAccess.from(execution))
             JSONObject().put("records", JSONArray(page.revisions)).put("next_cursor", page.next ?: JSONObject.NULL)
                 .put("recall", "mode=evolution; directory only, read originals before reuse").toString()
+        }, problems = {
+            val page = CollaborationEvidenceLedger(context).problems(CollaborationWorkspaceAccess.from(execution))
+            if (page.first.isEmpty() && page.second == null) "" else
+                JSONObject().put("observations", JSONArray(page.first)).put("next_cursor", page.second ?: JSONObject.NULL)
+                    .put("recall", "mode=problems; original symptoms, not diagnosed capability failures").toString()
         }) {
             val access = CollaborationWorkspaceAccess.from(execution)
             CollaborationResearchArchive(context, access.groupId)
@@ -22,6 +27,7 @@ internal object CollaborationResearchPrompt {
 
     internal fun prepare(execution: AgentTeamMemberExecutionContext, store: CollaborationGoalContractStore,
                          evolution: () -> String = { "" },
+                         problems: () -> String = { "" },
                          history: () -> String): String {
         val access = CollaborationWorkspaceAccess.from(execution)
         val criteria = execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]"
@@ -40,6 +46,7 @@ internal object CollaborationResearchPrompt {
         require(existing.optString("reason") == "access_not_bound") { "Goal contract is unavailable: ${existing.optString("reason")}" }
         val materials = materials(execution, history()).toMutableMap().apply {
             evolution().takeIf(String::isNotBlank)?.let { put("Scoped evolution directory", it) }
+            problems().takeIf(String::isNotBlank)?.let { put("Observed capability problems", it) }
         }
         val published = store.publish(access, execution.request.goal, criteria, materials)
         require(published.optString("status") == "ok") { "Goal contract could not be persisted: ${published.optString("reason")}" }
