@@ -1,4 +1,9 @@
 <resources>
+    <string name="collaboration_team_summary">%1$d 位成员 · %2$s</string>
+    <string name="collaboration_team_counts">%1$d 执行 · %2$d 等待</string>
+    <string name="collaboration_team_idle">待命</string>
+    <string name="collaboration_team_unassigned">尚未分配任务</string>
+    <string name="collaboration_stage_execute">计算与执行</string>
     <string name="collaboration_process_duration">用时 %1$s</string>
     <string name="collaboration_system_message">协作通知</string>
     <string name="collaboration_synthesizing">协调员正在核对并汇总成员结果</string>

@@ -232,19 +232,10 @@
                         android:tint="@color/text_primary" />
                 </LinearLayout>
 
-                <TextView
+                <com.galaxyssi.chat.CollaborationTeamPanelView
                     android:id="@+id/collaborationMemberStrip"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="44dp"
-                    android:gravity="center_vertical"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:drawableEnd="@drawable/ic_hub_contacts_compact"
-                    android:drawablePadding="8dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:background="?android:attr/selectableItemBackground"
                     android:visibility="gone" />
 
                 <FrameLayout

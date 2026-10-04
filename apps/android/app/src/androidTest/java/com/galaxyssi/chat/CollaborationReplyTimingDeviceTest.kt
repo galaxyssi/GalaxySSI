@@ -52,7 +52,14 @@ class CollaborationReplyTimingDeviceTest {
                 listOf(member(first, true), member(second, false)), createdAtMillis = previousDay - 500_000L, updatedAtMillis = now)
             CollaborationTranscriptPublisher(context).publish(snapshot)
             scenario.onActivity { it.refreshAgentTranscriptWindow(id) }
-            waitUntil("both clocks visible") { labels(scenario, "collaboration-process-time").size == 2 }
+            waitUntil("panel ready") {
+                var ready = false
+                scenario.onActivity { ready = it.findViewById<View>(R.id.collaborationMemberStrip).isShown }
+                ready
+            }
+            scenario.onActivity { it.findViewById<ViewGroup>(R.id.collaborationMemberStrip)
+                .findViewWithTag<View>("collaboration-team-toggle").performClick() }
+            waitUntil("both clocks visible") { memberClocks(scenario).size == 2 }
             val initial = memberClocks(scenario)
             val expectedDate = CollaborationReplyTiming.formatReplyTime(previousDay, now)
             assertEquals(listOf(expectedDate), labels(scenario, "collaboration-reply-time"))
@@ -119,7 +126,8 @@ class CollaborationReplyTimingDeviceTest {
     private fun memberClocks(scenario: ActivityScenario<MainActivity>): Map<String, String> {
         var result = emptyMap<String, String>()
         scenario.onActivity { activity ->
-            result = descendants(activity.findViewById(R.id.collaborationOutputList)).filterIsInstance<TextView>()
+            result = (descendants(activity.findViewById(R.id.collaborationMemberStrip)) +
+                descendants(activity.findViewById(R.id.collaborationOutputList))).filterIsInstance<TextView>()
                 .filter { it.tag == "collaboration-process-time" }.associate {
                     (it.parent as View).contentDescription.toString().substringBefore(":") to it.text.toString()
                 }
