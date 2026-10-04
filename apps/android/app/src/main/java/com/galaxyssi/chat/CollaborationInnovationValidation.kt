@@ -16,7 +16,7 @@ internal object CollaborationInnovationValidation {
     const val ASSESSMENT = "innovation_assessment"
     private val SOURCE_KINDS = setOf("artifact", "evidence", "counterexample", "proposal", "question", IDEA, RESULT, ASSESSMENT,
         CollaborationEvolutionContract.GAP, CollaborationCapabilityDiagnosis.DIAGNOSIS,
-        CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND)
+        CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND) + CollaborationTeamInvention.KINDS
 
     fun opportunity(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
                     coverage: (JSONObject) -> Unit): JSONObject {
@@ -72,6 +72,7 @@ internal object CollaborationInnovationValidation {
     fun assessment(value: JSONObject, revision: JSONObject, person: String, exact: (JSONObject, Set<String>) -> JSONObject,
                    original: (JSONObject) -> JSONObject?, coverage: (JSONObject) -> Unit): JSONObject {
         val idea = exact(value.getJSONObject("innovation"), setOf(IDEA))
+        currentIdea(idea, exact)
         val opportunity = currentOpportunity(idea.getJSONObject("body").getJSONObject(IDEA).getJSONObject(OPPORTUNITY), exact)
         listOf("rationale", "feasibility_scope", "value_scope", "limitations", "next_action").forEach { text(value, it) }
         val decision = text(value, "decision")
@@ -147,6 +148,8 @@ internal object CollaborationInnovationValidation {
             .put("results", savedResults).put("novelty", noveltyClaim).put("novelty_certified", false)
             .put("feasibility_measured", feasible).put("value_measured", useful).put("independent_review", independent)
             .put("meaning", "scoped_evidence_review_not_global_novelty_or_goal_acceptance")
+            .apply { if (decision == "retain") CollaborationTeamInvention.retention(value, idea, exact)
+                ?.let { put(CollaborationTeamInvention.EVALUATION, it) } }
     }
 
     fun currentAssessment(ref: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject {
@@ -172,7 +175,9 @@ internal object CollaborationInnovationValidation {
         val links = mapOf("innovation" to setOf(IDEA), "plan" to setOf(PLAN), "result" to setOf(RESULT),
             "baseline" to setOf("artifact", "proposal", IDEA), "rollback" to setOf("artifact", "proposal", IDEA),
             "lesson" to setOf(CollaborationEvolutionContract.LESSON),
-            OPPORTUNITY to setOf(OPPORTUNITY), ASSESSMENT to setOf(ASSESSMENT), CollaborationTransferStudy.KIND to setOf(CollaborationTransferStudy.KIND))
+            OPPORTUNITY to setOf(OPPORTUNITY), ASSESSMENT to setOf(ASSESSMENT), CollaborationTransferStudy.KIND to setOf(CollaborationTransferStudy.KIND),
+            "challenge" to setOf(CollaborationTeamInvention.EXCHANGE), CollaborationTeamInvention.SYNTHESIS to setOf(CollaborationTeamInvention.SYNTHESIS),
+            CollaborationTeamInvention.EVALUATION to setOf(CollaborationTeamInvention.EVALUATION))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
             val saved = pending.removeFirst()
@@ -186,6 +191,11 @@ internal object CollaborationInnovationValidation {
                 .getJSONObject(CollaborationTransferStudy.KIND).getJSONObject("source"), setOf(CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE))
             if (saved.getString("kind") == PLAN && host.has(CollaborationTransferStudy.KIND))
                 objects(saved.getJSONObject("body").getJSONObject(PLAN), "cases").forEach { enqueue(it.getJSONObject("dataset"), setOf("artifact")) }
+            host.optJSONObject(CollaborationTeamComparison.FIELD)?.let { comparison ->
+                comparison.optJSONObject("single_agent")?.let { enqueue(it, setOf("artifact", "proposal", IDEA)) }
+                comparison.optJSONObject(CollaborationTeamInvention.SYNTHESIS)?.let { enqueue(it, setOf(CollaborationTeamInvention.SYNTHESIS)) }
+                comparison.optJSONArray("datasets")?.let { a -> repeat(a.length()) { enqueue(a.getJSONObject(it), setOf("artifact")) } }
+            }
         }
     }
 }

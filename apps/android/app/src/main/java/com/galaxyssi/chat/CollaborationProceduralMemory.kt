@@ -48,6 +48,9 @@ internal object CollaborationProceduralMemory {
         CollaborationInnovationValidation.retention(lesson.getJSONObject("body").getJSONObject(LESSON),
             exact(host.getJSONObject("innovation"), setOf(CollaborationEvolutionContract.IDEA)), exact)
             ?.let { result.put(CollaborationInnovationValidation.ASSESSMENT, it) }
+        CollaborationTeamInvention.retention(lesson.getJSONObject("body").getJSONObject(LESSON),
+            exact(host.getJSONObject("innovation"), setOf(CollaborationEvolutionContract.IDEA)), exact)
+            ?.let { result.put(CollaborationTeamInvention.EVALUATION, it) }
         return result
     }
 

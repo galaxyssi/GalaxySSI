@@ -54,6 +54,7 @@ internal object CollaborationEvolutionExperiment {
             .put("innovation", CollaborationResearchCandidates.reference(idea)).put("baseline", CollaborationResearchCandidates.reference(baseline))
             .put("case_count", cases.size).put("has_regression_suite", cases.any { it.getString("purpose") == "regression" })
             .apply { CollaborationTransferStudy.plan(value, idea, exact)?.let { put(CollaborationTransferStudy.KIND, it) } }
+            .apply { CollaborationTeamComparison.plan(value, idea, baseline, exact)?.let { put(CollaborationTeamComparison.FIELD, it) } }
     }
 
     fun result(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
@@ -70,6 +71,8 @@ internal object CollaborationEvolutionExperiment {
         val samples = linkedMapOf<String, MutableMap<Pair<String, Int>, BigDecimal>>()
         val seenEvidence = hashSetOf<String>()
         val authors = sortedSetOf<String>()
+        val totals = JSONObject()
+        val trialCosts = linkedMapOf<String, BigDecimal>()
         repeat(refs.length()) { index ->
             val ref = refs.getJSONObject(index)
             require(seenEvidence.add(ref.getString("evidence_id"))) { "Duplicate experiment observation" }
@@ -96,6 +99,7 @@ internal object CollaborationEvolutionExperiment {
                 report.optString("environment") == spec.getString("environment") && report.optString("budget_unit") == spec.getString("budget_unit")) {
                 "Measurement report format/plan/environment/budget binding mismatch"
             }
+            if (spec.has(CollaborationTeamComparison.FIELD)) CollaborationTeamComparison.collect(report, totals)
             objects(report, "measurements").forEach { sample ->
                 val case = requireNotNull(cases[text(sample, "case_id")]) { "Measurement uses an unregistered case" }
                 val variant = text(sample, "variant")
@@ -107,11 +111,15 @@ internal object CollaborationEvolutionExperiment {
                 if (spec.has(CollaborationTransferStudy.KIND)) require(
                     sample.optString("dataset_sha256") == case.getJSONObject("dataset").getString("sha256") &&
                         sample.optString("domain") == case.getString("domain")) { "Measurement dataset/domain differs from the registered transfer case" }
+                if (spec.has(CollaborationTeamComparison.FIELD)) require(sample.optString("dataset_sha256") == case.getJSONObject("dataset").getString("sha256")) {
+                    "Team measurement dataset differs from its registered case"
+                }
                 require(sample.opt("repetition") is Int && sample.getInt("repetition") in 1..case.getInt("repetitions")) {
                     "Measurement repetition is outside the preregistered case"
                 }
                 val used = decimal(sample, "budget_used")
                 require(used >= BigDecimal.ZERO && used <= decimal(spec, "budget_limit")) { "Trial exceeded its registered resource budget" }
+                trialCosts[variant] = trialCosts.getOrDefault(variant, BigDecimal.ZERO) + used
                 val values = samples.getOrPut(case.getString("id")) { linkedMapOf() }
                 val key = variant to sample.getInt("repetition")
                 require(key !in values) { "Duplicate case/variant/repetition; do not cherry-pick or count the same trial twice" }
@@ -154,7 +162,9 @@ internal object CollaborationEvolutionExperiment {
             evaluated.put(row)
         }
         val hasRegression = cases.values.any { it.getString("purpose") == "regression" }
+        val accounting = if (spec.has(CollaborationTeamComparison.FIELD)) CollaborationTeamComparison.accounting(spec, totals, trialCosts) else null
         val state = when {
+            accounting != null && !accounting.getBoolean("complete") -> "incomplete"
             incomplete -> "incomplete"
             !feasible -> "infeasible"
             regression -> "regressed"
@@ -168,9 +178,10 @@ internal object CollaborationEvolutionExperiment {
             .put("plan", CollaborationResearchCandidates.reference(registered)).put("cases", evaluated)
             .put("innovation", CollaborationResearchCandidates.reference(idea)).put("baseline", CollaborationResearchCandidates.reference(baseline))
             .put("trial_authors", JSONArray(authors.toList())).put("meaning", "arithmetic_on_observed_reports_not_independent_scientific_validation")
+            .apply { accounting?.let { put(CollaborationTeamComparison.FIELD, it) } }
     }
 
-    private fun decimal(json: JSONObject, key: String): BigDecimal {
+    internal fun decimal(json: JSONObject, key: String): BigDecimal {
         val raw = json.opt(key)
         require(raw is Number || raw is String) { "$key must be a finite decimal number" }
         return try { BigDecimal(raw.toString()).also {

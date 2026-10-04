@@ -133,6 +133,11 @@ evidence-linked opportunities, actual live/next-round innovation work, separate 
 assessment, and independent retention with full lineage. Local synthetic checks do not establish
 autonomous scientific discovery or real-model innovation quality.
 
+The sixth increment adds [evidence-bound team invention](COLLABORATION_TEAM_INVENTION.md):
+directed peer challenges and contributor responses, substantive synthesis, actual bound DAG work,
+same-condition comparisons against every parent and a single-agent control, end-to-end reported
+costs and independent comparative retention. Local fixtures do not demonstrate real-model synergy.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop
