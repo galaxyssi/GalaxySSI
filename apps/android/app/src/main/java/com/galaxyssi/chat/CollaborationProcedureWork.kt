@@ -33,6 +33,9 @@ internal object CollaborationProcedureWork {
             val ref = use.getJSONObject("procedure")
             require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Procedure revision must be an exact integer" }
             val skill = skills.getOrPut(ref.toString()) { CollaborationProceduralMemory.current(workspace, access, ref) }
+            require(CollaborationEvolutionContract.text(use, "domain") == skill.getJSONObject(HOST).getString("domain")) {
+                "Procedure domain differs from its validated scope; register and test a transfer adaptation first"
+            }
             val spec = skill.getJSONObject("body").getJSONObject(CollaborationProceduralMemory.SKILL)
             val inputs = use.getJSONObject("inputs")
             val schema = spec.getJSONArray("inputs")

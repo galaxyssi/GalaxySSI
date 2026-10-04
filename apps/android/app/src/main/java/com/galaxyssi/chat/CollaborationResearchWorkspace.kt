@@ -482,7 +482,7 @@ internal class CollaborationResearchWorkspace(
                         if (saved.optJSONObject("host_candidate_event")?.optString("operation") == "review")
                             put("review_applicability", if (candidateReviewApplies(access, this)) "current" else "stale_or_isolated")
                         saved.optJSONObject(CollaborationEvolutionContract.HOST)?.let { evolution ->
-                            val current = listOf("innovation", "baseline", "plan", "result", "rollback", "gap", "diagnosis", "lesson").all { field ->
+                            val current = listOf("innovation", "baseline", "plan", "result", "rollback", "gap", "diagnosis", "lesson", "transfer_study", "source").all { field ->
                                 evolution.optJSONObject(field)?.let { ref ->
                                     val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
                                     target != null && CollaborationResearchCandidates.same(target, ref) &&
@@ -493,7 +493,14 @@ internal class CollaborationResearchWorkspace(
                                 val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
                                 target != null && CollaborationResearchCandidates.same(target, ref) &&
                                     isCurrent(access, target.getString("object_id"), target.getInt("revision"))
-                            } } != false
+                            } } != false && runCatching {
+                                CollaborationTransferStudy.checkRecord(saved) { ref, kinds ->
+                                    val target = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision")))
+                                    require(target.getString("kind") in kinds && CollaborationResearchCandidates.same(target, ref) &&
+                                        isCurrent(access, ref.getString("object_id"), ref.getInt("revision")))
+                                    target
+                                }
+                            }.isSuccess
                             put("evolution_applicability", if (current) "inspect_scope_before_reuse" else "historical_requires_revalidation")
                         }
                     }

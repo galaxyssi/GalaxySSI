@@ -106,6 +106,7 @@ class CollaborationEvolutionDeviceTest {
         try {
             val item = JSONObject().put("id", "reuse-work").put("member", "executor").put("stage", "EXECUTE")
                 .put("assignment", "Run the synthetic procedure with new input").put("procedure_use", JSONObject().put("procedure", skill)
+                    .put("domain", "fixture")
                     .put("inputs", JSONObject().put("values", JSONArray().put(2).put(3)))
                     .put("applicability", JSONObject().put("why", "Same fixture").put("conditions_checked", JSONArray().put("Local synthetic values"))
                         .put("remaining_uncertainty", "Not a model capability test")).put("failures", JSONArray()))
@@ -148,6 +149,7 @@ class CollaborationEvolutionDeviceTest {
             val directory = JSONObject(CollaborationCloudRecall.execute(context, reader, JSONObject().put("mode", "evolution")))
             assertTrue(directory.toString().contains("procedure_skill"))
             assertNotNull(CollaborationProceduralMemory.current(CollaborationResearchWorkspace(context), reader, skill))
+            CollaborationTransferDeviceFixture.verify(context, group, skill)
         } finally { database.clear() }
     }
 

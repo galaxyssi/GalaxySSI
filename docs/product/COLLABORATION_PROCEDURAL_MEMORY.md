@@ -13,7 +13,7 @@ Failure classification distinguishes explicit failed/false-success outcomes from
 
 ## Actual reuse
 
-The coordinator can attach `procedure_use` to ordinary live or next-round DAG work. It names the exact skill revision and digest, supplies explicit inputs, explains applicability, and references relevant failure experiences. The host validates this before committing any sibling work in the batch.
+The coordinator can attach `procedure_use` to ordinary live or next-round DAG work. It names the exact skill revision and digest, declares the saved `domain`, supplies explicit inputs, explains applicability, and references relevant failure experiences. The host validates this before committing any sibling work in the batch. A different domain requires an [explicit transfer adaptation and experiment](COLLABORATION_EXPERIENCE_TRANSFER.md); it does not inherit the old skill's validation.
 
 The selected worker receives the exact retained method, new inputs, applicability/avoidance conditions, failure notes and rollback reference in its persistent goal-contract materials. This is cognitive procedural guidance for the existing Agent executor, not a new executor, `.gskill` installation, arbitrary script interpolation, or tool-permission bypass. Inputs and retrieved text remain task data. Existing tool authorization, cancellation, side-effect recovery and goal validation remain authoritative.
 

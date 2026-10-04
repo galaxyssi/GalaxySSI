@@ -43,6 +43,8 @@ internal object CollaborationProceduralMemory {
             }
             result.put(field, CollaborationResearchCandidates.reference(exact(ref, kinds)))
         }
+        CollaborationTransferStudy.retain(exact(host.getJSONObject("plan"), setOf(CollaborationEvolutionContract.PLAN)),
+            lesson.getJSONObject("body").getJSONObject(LESSON), exact)?.let { result.put(CollaborationTransferStudy.KIND, it) }
         return result
     }
 
@@ -73,14 +75,14 @@ internal object CollaborationProceduralMemory {
         val saved = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Procedure missing or isolated" }
         require(saved.getString("kind") == SKILL && CollaborationResearchCandidates.same(saved, ref) &&
             workspace.isCurrent(access, ref.getString("object_id"), ref.getInt("revision"))) { "Procedure digest, kind or version changed" }
-        val host = saved.getJSONObject(HOST)
-        TARGETS.forEach { field ->
-            val target = host.getJSONObject(field)
+        CollaborationTransferStudy.source(ref) { target, kinds ->
+            require(target.opt("revision") is Int && target.getInt("revision") > 0) { "Procedure lineage revision must be an exact integer" }
             val original = workspace.read(access, target.getString("object_id"), target.getInt("revision"))
-            require(original != null && CollaborationResearchCandidates.same(original, target) &&
+            require(original != null && original.getString("kind") in kinds && CollaborationResearchCandidates.same(original, target) &&
                 workspace.isCurrent(access, target.getString("object_id"), target.getInt("revision"))) {
-                "Procedure $field changed or became unavailable; revalidate before reuse"
+                "Procedure lineage changed or became unavailable; revalidate before reuse"
             }
+            original
         }
         return saved
     }
@@ -106,7 +108,7 @@ internal object CollaborationProceduralMemory {
           recovery_options:["agent-selected alternative"]} plus observations:[original failed tool refs, relevant other refs].
         Read every original. Tool symptoms are host facts; explanations and remedies remain proposals. Environment changes may justify
         retrying a prior method. Never turn a scoped failure into an unconditional ban. Negative experiment lessons also remain retrievable.
-        To invoke a saved procedure in ordinary DAG work, add procedure_use:{procedure:<exact procedure_skill ref>,inputs:{name:<JSON value>},
+        To invoke a saved procedure in ordinary DAG work, add procedure_use:{procedure:<exact procedure_skill ref>,domain:<saved domain>,inputs:{name:<JSON value>},
           applicability:{why,conditions_checked:["checked condition"],remaining_uncertainty},failures:[<exact failure_experience refs>]}.
         Required inputs must be non-null and unknown inputs are rejected. Inputs are serialized task data, never executable interpolation.
         Select relevant failure experiences explicitly; do not claim exhaustive coverage of the entire history. Explain their applicability.

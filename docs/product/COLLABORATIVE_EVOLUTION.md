@@ -124,6 +124,10 @@ The third increment adds [evidence-bound procedural memory](COLLABORATION_PROCED
 retained methods and original failure experiences, explicit input/applicability bindings for new
 tasks, actual worker context delivery and durable reuse outcomes without installing executable packages.
 
+The fourth increment adds [evidence-bound experience transfer](COLLABORATION_EXPERIENCE_TRANSFER.md):
+explicit cross-task/domain mappings, held-out target comparisons, source regressions, negative-transfer
+preservation and current-lineage checks before admitting an adapted procedure in its new domain.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop
