@@ -5,6 +5,7 @@ import java.math.MathContext
 import org.json.JSONArray
 import org.json.JSONObject
 import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.IDEA
+import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.HOST
 import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.PLAN
 import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.objects
 import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.text
@@ -39,6 +40,7 @@ internal object CollaborationEvolutionExperiment {
         require(cases.any { it.optString("purpose") in setOf("target", "feasibility") }) { "An experiment needs a target or feasibility case" }
         cases.forEach { case ->
             text(case, "metric"); text(case, "prediction")
+            if (case.has("dataset")) exact(case.getJSONObject("dataset"), setOf("artifact"))
             require(text(case, "purpose") in setOf("target", "regression", "transfer", "feasibility")) { "Invalid experiment case purpose" }
             require(text(case, "direction") in setOf("maximize", "minimize")) { "Invalid metric direction" }
             require(decimal(case, "minimum_gain") >= BigDecimal.ZERO && decimal(case, "tolerance") >= BigDecimal.ZERO) {
@@ -56,6 +58,7 @@ internal object CollaborationEvolutionExperiment {
             .apply { CollaborationTransferStudy.plan(value, idea, exact)?.let { put(CollaborationTransferStudy.KIND, it) } }
             .apply { CollaborationTeamComparison.plan(value, idea, baseline, exact)?.let { put(CollaborationTeamComparison.FIELD, it) } }
             .apply { CollaborationWorkflowMethod.comparison(value, idea, baseline, exact)?.let { put(CollaborationWorkflowMethod.COMPARISON, it) } }
+            .apply { CollaborationCapabilityRetention.plan(value, exact)?.let { put(CollaborationCapabilityRetention.FIELD, it) } }
     }
 
     fun result(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
@@ -69,6 +72,10 @@ internal object CollaborationEvolutionExperiment {
         require(refs.length() > 0) { "Experiment result requires original tool observations, not reported scores" }
         coverage(revision)
         val cases = objects(spec, "cases").associateBy { it.getString("id") }
+        val protected = spec.optJSONObject(CollaborationCapabilityRetention.FIELD)?.let { ref ->
+            objects(exact(ref, setOf(CollaborationCapabilityRetention.SUITE)).getJSONObject(HOST), "anchors")
+                .associateBy { it.getString("id") }
+        }.orEmpty()
         val samples = linkedMapOf<String, MutableMap<Pair<String, Int>, BigDecimal>>()
         val seenEvidence = hashSetOf<String>()
         val authors = sortedSetOf<String>()
@@ -117,6 +124,9 @@ internal object CollaborationEvolutionExperiment {
                 if (spec.has(CollaborationTeamComparison.FIELD)) require(sample.optString("dataset_sha256") == case.getJSONObject("dataset").getString("sha256")) {
                     "Team measurement dataset differs from its registered case"
                 }
+                if (case.has("dataset")) require(sample.optString("dataset_sha256") == case.getJSONObject("dataset").getString("sha256")) {
+                    "Measurement dataset differs from the registered case"
+                }
                 require(sample.opt("repetition") is Int && sample.getInt("repetition") in 1..case.getInt("repetitions")) {
                     "Measurement repetition is outside the preregistered case"
                 }
@@ -149,12 +159,16 @@ internal object CollaborationEvolutionExperiment {
                 val control = average("baseline")
                 val candidate = average("candidate")
                 val gain = if (case.getString("direction") == "maximize") candidate - control else control - candidate
-                val passes = when (case.getString("purpose")) {
+                val relativePass = when (case.getString("purpose")) {
                     "regression" -> gain >= -decimal(case, "tolerance")
                     "feasibility" -> if (case.getString("direction") == "maximize") candidate >= decimal(case, "threshold")
                         else candidate <= decimal(case, "threshold")
                     else -> gain > BigDecimal.ZERO && gain >= decimal(case, "minimum_gain")
                 }
+                val retained = protected[case.getString("id")]?.let { CollaborationCapabilityRetention.passes(it, candidate) } ?: true
+                val passes = relativePass && retained
+                if (!retained) regression = true
+                protected[case.getString("id")]?.let { row.put("retained_anchor", it.getString("anchor")).put("retention_passed", retained) }
                 if (case.getString("purpose") == "regression" && !passes) regression = true
                 if (case.getString("purpose") == "target" && !passes) targetsPass = false
                 if (case.getString("purpose") == "transfer" && !passes) transferPass = false

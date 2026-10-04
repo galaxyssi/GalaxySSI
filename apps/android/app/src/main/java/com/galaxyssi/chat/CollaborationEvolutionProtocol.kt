@@ -26,13 +26,13 @@ internal object CollaborationEvolutionProtocol {
         Keep full failures, null results and untested ideas. Do not rerun completed side effects just to collect evidence.
         When progress stalls, change the hypothesis/test or seek relevant peers; no fixed research-round count determines success.
         No lesson installs a Skill, changes app code, expands permissions or spends resources by itself. Existing approval and pause rules apply.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions() + "\n" + CollaborationTeamInventionProtocol.instructions() + "\n" + CollaborationPredictionProtocol.instructions() + "\n" + CollaborationToolProtocol.instructions() + "\n" + CollaborationWorkflowProtocol.instructions()
+    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions() + "\n" + CollaborationTeamInventionProtocol.instructions() + "\n" + CollaborationPredictionProtocol.instructions() + "\n" + CollaborationToolProtocol.instructions() + "\n" + CollaborationWorkflowProtocol.instructions() + "\n" + CollaborationRetentionProtocol.instructions()
 
     fun rules(): JSONObject = JSONObject().put("format", "galaxyssi.collaborative-evolution.v1").put("contract", """
         Publish each typed record as an ordinary workspace item: {id,kind,title,body:{content,<kind>:{...}},parents:[],observations:[]}.
         Exact refs always contain object_id, integer revision and sha256 from host receipts. Never invent them.
         Each publication is atomic and idempotent. Read originals first. Use distinct work IDs and dependent tasks for later records.
-        New records use id; revisions use object_id/base_revision. Only capability_gap and innovation may be revised by their author.
+        New records use id; revisions use object_id/base_revision. capability_gap, innovation and capability_channel may be revised by their author.
         Other members create linked alternatives. Plans/results/lessons are immutable. Invalid fields get precise publication feedback.
 
         capability_gap: {category:"knowledge|tool|method|verification|coordination|environment|authorization|unknown",symptom,needed_capability,
@@ -106,5 +106,5 @@ internal object CollaborationEvolutionProtocol {
         Keep applicability narrow, especially when transfer cases are not met. Existing skill/package/tool execution gates still apply.
         Recall prior lessons to improve planning/search/tooling/collaboration/checking. Reevaluate after context or model changes.
         No record here satisfies physical/scientific goal acceptance; the original goal's qualified validator remains authoritative.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules() + "\n" + CollaborationInnovationProtocol.rules() + "\n" + CollaborationTeamInventionProtocol.rules() + "\n" + CollaborationPredictionProtocol.rules() + "\n" + CollaborationToolProtocol.rules() + "\n" + CollaborationWorkflowProtocol.rules())
+    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules() + "\n" + CollaborationInnovationProtocol.rules() + "\n" + CollaborationTeamInventionProtocol.rules() + "\n" + CollaborationPredictionProtocol.rules() + "\n" + CollaborationToolProtocol.rules() + "\n" + CollaborationWorkflowProtocol.rules() + "\n" + CollaborationRetentionProtocol.rules())
 }

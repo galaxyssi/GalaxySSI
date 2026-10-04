@@ -74,6 +74,7 @@ internal object CollaborationProcedureWork {
                 .put("applies_when", lesson.getString("applies_when")).put("avoid_when", lesson.getString("avoid_when"))
                 .put("transfer_test", lesson.getString("transfer_test")).put("rollback", host.getJSONObject("rollback"))
                 .put("limitations", spec.getString("limitations")).put("grants_permissions", false)
+            CollaborationCapabilityChannel.binding(use, skill, workspace, access, old != null)?.let { binding.put(CollaborationCapabilityChannel.FIELD, it) }
             val digest = AgentNativeJsonCodec.sha256(canonical(binding))
             require(old == null || old.getString("sha256") == digest) { "Cannot rewrite an admitted procedure binding; use a new work ID" }
             claims.put(id, JSONObject().put("sha256", digest).put("procedure", binding.getJSONObject("procedure")))

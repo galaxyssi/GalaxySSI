@@ -29,6 +29,7 @@ internal object CollaborationToolRuntime {
             val record = requireNotNull(workspace.read(access, reference.getString("object_id"), reference.getInt("revision"))) { "Tool record is unavailable or isolated" }
             require(record.getString("kind") == kind && CollaborationResearchCandidates.same(record, reference) &&
                 workspace.isCurrent(access, reference.getString("object_id"), reference.getInt("revision"))) { "Tool version, digest or kind changed" }
+            if (kind == CollaborationCapabilityChannel.KIND) CollaborationCapabilityChannel.requireCurrentLineage(record, workspace, access)
             record
         }
     }
@@ -53,8 +54,13 @@ internal object CollaborationToolRuntime {
             cases = JSONArray(plan.getJSONObject("body").getJSONObject(TEST).getJSONArray("cases").toString())
             identity.put(TEST, CollaborationExecutableTool.ref(plan))
         } else {
-            require(request.keys().asSequence().toSet() == setOf("mode", RELEASE, "parameters")) { "Run accepts only mode, tool_release and parameters" }
-            val release = exact(request.getJSONObject(RELEASE), RELEASE)
+            val selected = if (request.has(CollaborationCapabilityChannel.FIELD)) CollaborationCapabilityChannel.FIELD else RELEASE
+            require(request.keys().asSequence().toSet() == setOf("mode", selected, "parameters")) { "Run accepts mode, either exact tool_release or capability_channel, and parameters" }
+            val channel = if (selected == CollaborationCapabilityChannel.FIELD) exact(request.getJSONObject(selected), selected) else null
+            channel?.let { require(it.getJSONObject(HOST).getString("state") == "selected_scoped_version" &&
+                it.getJSONObject(HOST).getString("implementation_kind") == RELEASE) { "Channel does not select an approved executable tool" } }
+            val release = exact(channel?.getJSONObject(HOST)?.getJSONObject("implementation") ?: request.getJSONObject(RELEASE), RELEASE)
+            channel?.let { identity.put(CollaborationCapabilityChannel.FIELD, CollaborationResearchCandidates.reference(it)) }
             require(release.getJSONObject(HOST).getString("state") == "eligible_for_scoped_tool_execution") { "Tool has not passed release review" }
             val registered = exact(release.getJSONObject(HOST).getJSONObject(TEST), TEST)
             tool = exact(release.getJSONObject(HOST).getJSONObject(TOOL), TOOL)

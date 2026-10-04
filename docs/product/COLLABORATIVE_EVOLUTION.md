@@ -109,7 +109,7 @@ sandbox and self-evolution review gates remain the only execution authorities.
 | Predict before action | Predictions bound to registered tests and observed outcomes | A calibrated learned world model |
 | Develop tools | Immutable executable code, preregistered tests, existing-runtime execution and independently reviewed scoped reuse | Real-model tool quality, security review and deployment approval |
 | Improve workflows | Immutable executable method DAGs, live/next-round admission, exact-version feedback and registered comparisons | Sustained gains on real workloads and independent harness review |
-| Prevent regression | Baseline preservation, regression cases and independent retention | Broad long-term retention and automated runtime rollback |
+| Prevent regression | Frozen capability banks, original anchors, independently reviewed selection and same-channel version rollback | Broad long-term retention, real workload coverage and independent harness review |
 | Self-improvement research | The same goal controller can investigate an authorized improvement objective through this contract | Long-duration model-backed campaigns and external replication |
 
 The first dedicated increment adds [evidence-driven capability-gap diagnosis](CAPABILITY_GAP_DIAGNOSIS.md):
@@ -152,6 +152,11 @@ The ninth increment adds [evidence-bound workflow learning](COLLABORATION_WORKFL
 versioned role/dependency graphs, atomic actual-work bindings, preserved negative outcomes and
 same-dataset quality/regression comparisons. Finishing a workflow is not finishing the goal,
 and observed task success or elapsed time is not evidence of better reasoning.
+
+The tenth increment adds [capability retention and version selection](COLLABORATION_CAPABILITY_RETENTION.md):
+fixed measured anchors, non-droppable regression banks, atomic promotion/rollback and actual
+procedure/workflow/tool selection. Existing tasks remain pinned; rollback preserves evidence and
+the newest protection obligations without replaying side effects or granting permissions.
 
 ## Runtime Coverage
 

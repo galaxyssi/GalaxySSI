@@ -30,7 +30,8 @@ internal object CollaborationWorkflowWork {
         selected.groupBy { it.getJSONObject(FIELD).getString("execution_id") }.forEach { (execution, work) ->
             require(execution.isNotBlank() && execution.length <= 160) { "Use a stable workflow execution ID" }
             val request = work.first().getJSONObject(FIELD)
-            require(request.keys().asSequence().toSet() == setOf("execution_id", "method", "step_id", "inputs")) { "Unexpected workflow dispatch field" }
+            require(request.keys().asSequence().toSet() == setOf("execution_id", "method", "step_id", "inputs") +
+                (if (request.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet())) { "Unexpected workflow dispatch field" }
             val ref = request.getJSONObject("method")
             require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Use exact integer method revision" }
             val method = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Workflow unavailable or isolated" }
@@ -67,6 +68,9 @@ internal object CollaborationWorkflowWork {
                     .put("depends_on", JSONArray(expected.sorted())).put("dependency_policy", item.optString("dependency_policy", "success"))
                     .put("independent_review", item.optBoolean("independent_review")).put("quality_improved", false).put("grants_permissions", false)
                 bindings[id] = binding
+                CollaborationCapabilityChannel.binding(use, method, workspace, access, previouslyBound[id] == execution)?.let {
+                    binding.put(CollaborationCapabilityChannel.FIELD, it)
+                }
                 item
             }
             val checked = CollaborationWorkGraph.compile(graph, emptySet())

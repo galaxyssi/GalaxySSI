@@ -538,6 +538,7 @@ internal class CollaborationResearchWorkspace(
                 put(CollaborationEvolutionContract.HOST, JSONObject(host.toString()).apply {
                     optJSONArray("cases")?.let { put("case_count", it.length()); remove("cases") }
                     optJSONArray("checks")?.let { put("check_count", it.length()); remove("checks") }
+                    optJSONArray("anchors")?.let { put("protected_case_count", it.length()); remove("anchors") }
                 })
             }
         }

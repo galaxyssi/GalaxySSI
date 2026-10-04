@@ -18,13 +18,16 @@ internal class CollaborationEvolutionContract(
         val body = revision.getJSONObject("body")
         text(body, "content")
         val value = body.getJSONObject(kind)
-        require(head == null || kind in setOf(GAP, IDEA)) {
+        require(head == null || kind in setOf(GAP, IDEA, CollaborationCapabilityChannel.KIND)) {
             "$kind is immutable; register new work instead of changing an experiment or learning decision"
         }
         require(head == null || head.getString("person_id") == access.personId) {
-            "Only the author may revise a gap or innovation; other members publish a linked alternative"
+            "Only the author may revise a gap, innovation or capability channel; other members publish a linked alternative"
         }
         val host = when (kind) {
+            CollaborationCapabilityRetention.SUITE -> CollaborationCapabilityRetention.suite(value) { ref, kinds -> exact(ref, kinds) }
+            CollaborationCapabilityChannel.KIND -> CollaborationCapabilityChannel.validate(value, head, revision,
+                { ref, kinds -> exact(ref, kinds) }, { ref, kinds -> exact(ref, kinds, false) })
             CollaborationWorkflowMethod.KIND -> CollaborationWorkflowMethod.definition(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationExecutableTool.TOOL -> CollaborationExecutableTool.definition(value)
             CollaborationExecutableTool.TEST -> CollaborationExecutableTool.testPlan(value) { ref, kinds -> exact(ref, kinds) }
@@ -155,6 +158,12 @@ internal class CollaborationEvolutionContract(
                 put("contributors", JSONArray(contributors.toList()))
                 put(CollaborationWorkflowMethod.KIND, ref)
             } }
+            .apply { CollaborationCapabilityChannel.toolIdea(value) { ref, kinds -> exact(ref, kinds) }?.let { ref ->
+                val release = exact(ref, setOf(CollaborationExecutableTool.RELEASE))
+                val tool = exact(release.getJSONObject(HOST).getJSONObject(CollaborationExecutableTool.TOOL), setOf(CollaborationExecutableTool.TOOL))
+                contributors += tool.getString("person_id")
+                put("contributors", JSONArray(contributors.toList())).put(CollaborationExecutableTool.RELEASE, ref)
+            } }
     }
 
     private fun lesson(value: JSONObject, revision: JSONObject): JSONObject {
@@ -223,7 +232,8 @@ internal class CollaborationEvolutionContract(
         const val HOST = "host_evolution"
         val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
             CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
-            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT, CollaborationWorkflowMethod.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
+            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT, CollaborationWorkflowMethod.KIND,
+            CollaborationCapabilityRetention.SUITE, CollaborationCapabilityChannel.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->
