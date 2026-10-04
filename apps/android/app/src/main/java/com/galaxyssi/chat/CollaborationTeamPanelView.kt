@@ -88,7 +88,7 @@ internal class CollaborationTeamPanelView @JvmOverloads constructor(
             if (nextStatus != null) iconSlot.addView(ConversationHubStatusIcon(context, nextStatus), LayoutParams(-1, -1))
             else iconSlot.addView(ImageView(context).apply { setImageResource(R.drawable.ic_hub_contacts_compact) }, LayoutParams(-1, -1))
         }
-        val state = when (nextStatus) {
+        val state = if (CollaborationTeamPanelPolicy.awaitingPlan(next)) context.getString(R.string.collaboration_team_awaiting_plan) else when (nextStatus) {
             null -> context.getString(R.string.collaboration_team_idle)
             ConversationHubAgentStatus.READ -> context.getString(R.string.agent_team_state_succeeded)
             else -> context.getString(nextStatus.labelRes())

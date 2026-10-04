@@ -10,6 +10,7 @@ internal object CollaborationWorkGraph {
     const val POLICY = "collaboration_research_dependency_policy"
     const val INDEPENDENT = "collaboration_research_independent_review"
     const val PREVIOUS_DEPENDENCIES = "collaboration_research_previous_dependencies"
+    const val REPAIR_OF = "collaboration_research_repair_of"
     data class Plan(val work: List<JSONObject>, val error: String = "")
 
     fun id(item: JSONObject): String = item.optString("id").ifBlank {
@@ -22,11 +23,27 @@ internal object CollaborationWorkGraph {
         } }
     }.orEmpty()
 
+    fun reusedRequestError(work: List<JSONObject>, finished: Set<String>): String {
+        val repeated = work.map(::id).toSet().intersect(finished)
+        return if (repeated.isEmpty()) "" else
+            "COMPLETED_DISPATCH_REUSED: ${repeated.joinToString()}. Execution ended; this does NOT prove delivery or goal acceptance. " +
+                "To repair an incomplete delivery, use a NEW work id with repair_of=<original work id> and repair_reason. " +
+                "Read the saved output and repair only the missing delivery; do not replay completed side effects. No work was dispatched."
+    }
+
     fun compile(work: List<JSONObject>, finished: Set<String>, finishedAuthors: Map<String, String> = emptyMap()): Plan = runCatching {
         val byId = work.associateBy(::id)
         require(byId.size == work.size) { "Duplicate work IDs; use one stable ID per assignment" }
+        // Checkpoint graphs include ended nodes; only admission of new requests diagnoses reused IDs.
         val pending = byId.filterKeys { it !in finished }
         val edges = pending.mapValues { (id, item) ->
+            if (item.has("repair_of")) {
+                require(item.opt("repair_of") is String && item.getString("repair_of") in finished &&
+                    item.getString("repair_of") != id && item.opt("repair_reason") is String &&
+                    item.getString("repair_reason").isNotBlank()) {
+                    "Repair needs a completed original work id, a distinct new id and a concrete repair_reason"
+                }
+            }
             require(!item.has("depends_on") || item.optJSONArray("depends_on") != null) { "depends_on must be an array" }
             require(!item.has("dependency_policy") || item.optString("dependency_policy") in setOf("success", "terminal")) {
                 "dependency_policy must be success or terminal"

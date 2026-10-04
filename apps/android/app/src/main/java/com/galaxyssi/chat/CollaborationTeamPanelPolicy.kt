@@ -70,4 +70,9 @@ internal object CollaborationTeamPanelPolicy {
             else -> ConversationHubAgentStatus.READ
         }
     }
+
+    fun awaitingPlan(rows: List<CollaborationTeamPanelMember>): Boolean = running(rows) == 0 && waiting(rows) == 0 &&
+        rows.mapNotNull { it.metadata }.let { states ->
+            states.any { it.goalDisposition == "continue" } && states.none { it.paused || it.goalDisposition == "blocked" }
+        }
 }

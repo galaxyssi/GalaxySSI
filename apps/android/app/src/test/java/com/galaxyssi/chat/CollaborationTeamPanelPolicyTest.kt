@@ -83,6 +83,16 @@ class CollaborationTeamPanelPolicyTest {
         assertEquals(ConversationHubAgentStatus.READ, CollaborationTeamPanelPolicy.status(completed))
     }
 
+    @Test fun emptyContinuationIsWaitingForAPlanNotActiveResearch() {
+        val ended = entry("Turing", status = AgentSubagentStatus.SUCCEEDED)
+        val metadata = CollaborationTranscriptMetadata.decode(ended.collaborationJson)!!.copy(goalDisposition = "continue")
+        val rows = CollaborationTeamPanelPolicy.rows(group, emptyList(), listOf(ended.copy(collaborationJson = metadata.encode())))
+        assertTrue(CollaborationTeamPanelPolicy.awaitingPlan(rows))
+        assertEquals(0, CollaborationTeamPanelPolicy.running(rows))
+        assertEquals(0, CollaborationTeamPanelPolicy.waiting(rows))
+        assertFalse(CollaborationTeamPanelPolicy.awaitingPlan(rows.map { it.copy(metadata = it.metadata?.copy(paused = true)) }))
+    }
+
     @Test fun processDetailsStayAssociatedWithTheirExactAttempt() {
         val rows = CollaborationTeamPanelPolicy.rows(group, listOf(entry("old", "Euclid", details = "Observed evidence")),
             listOf(entry("current", "Euclid")))
