@@ -1,5 +1,9 @@
 # Multi-Agent Collaboration Architecture
 
+Evidence-driven innovation and learning extend this architecture through the existing work graph,
+workspace and executor boundaries. See [Collaborative Evolution](COLLABORATIVE_EVOLUTION.md) for
+typed capability gaps, innovation hypotheses, preregistered comparisons and regression-gated lessons.
+
 GalaxySSI treats an Agent team as one host-owned Run, not as several unrelated chat messages. The host owns the team graph, identity, delivery policy, evidence handoff, final response, persistence, and cancellation boundary.
 
 ## Agent Profiles And Instances

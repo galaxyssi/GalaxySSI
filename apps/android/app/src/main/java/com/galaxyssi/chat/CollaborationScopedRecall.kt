@@ -11,6 +11,18 @@ internal object CollaborationScopedRecall {
         if (group == null || access.personId.isNotBlank() && group.members.none { it.id == access.personId })
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
         return when (input["mode"]) {
+            "evolution_rules" -> {
+                if (input.keys.any { it !in setOf("mode", "offset") })
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Evolution rules accept only offset.")
+                page(CollaborationEvolutionProtocol.rules(), input, "host_schema_not_execution_authority")
+            }
+            "evolution" -> {
+                if (input.keys.any { it !in setOf("mode", "cursor") })
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Evolution directory accepts only cursor.")
+                val result = CollaborationResearchWorkspace(context).browseEvolution(access, input["cursor"] as? String ?: "")
+                AgentNativeToolExecutionResult.success(mapOf("revisions" to result.revisions.map { it.toString() },
+                    "next_cursor" to result.next, "trust" to "scoped_learning_not_scientific_certification"))
+            }
             "archive" -> {
                 if (input.keys.any { it !in setOf("mode", "record_id", "offset") })
                     return AgentNativeToolExecutionResult.failure("invalid_arguments", "Archive recall accepts record_id and offset only.")
@@ -72,7 +84,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace or archive for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution or evolution_rules for scoped recall.")
         }
     }
 

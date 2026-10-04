@@ -48,7 +48,8 @@ internal class CollaborationResearchWorkspace(
     private val authorized: (String) -> Boolean = { true },
     private val evidence: ((CollaborationWorkspaceAccess, JSONArray) -> JSONArray)? = null,
     private val accessAuthorized: (CollaborationWorkspaceAccess) -> Boolean = { true },
-    private val evidenceReadCoverage: ((CollaborationWorkspaceAccess, JSONObject) -> Unit)? = null
+    private val evidenceReadCoverage: ((CollaborationWorkspaceAccess, JSONObject) -> Unit)? = null,
+    private val evidenceOriginal: ((CollaborationWorkspaceAccess, JSONObject) -> JSONObject?)? = null
 ) {
     constructor(context: Context) : this(object : CollaborationWorkspaceRows {
         private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
@@ -62,7 +63,8 @@ internal class CollaborationResearchWorkspace(
             val group = CollaborationGroupStore(context.applicationContext).load(access.groupId)
             access.personId.isNotBlank() && group != null && group.conversationId == access.groupId &&
                 group.members.any { it.id == access.personId }
-        }, { access, review -> CollaborationEvidenceLedger(context).requireReadCoverage(access, review) })
+        }, { access, review -> CollaborationEvidenceLedger(context).requireReadCoverage(access, review) },
+        { access, ref -> CollaborationEvidenceLedger(context).read(access, ref.getString("evidence_id"), ref.getString("sha256")) })
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
@@ -173,6 +175,10 @@ internal class CollaborationResearchWorkspace(
             val candidates = CollaborationResearchCandidates(access, { id, version -> read(access, id, version) },
                 { id, version -> isCurrent(access, id, version) }, changingIds,
                 { review -> requireCandidateReviewCoverage(access, review) })
+            val evolution = CollaborationEvolutionContract(access, { id, version -> read(access, id, version) },
+                { id, version -> isCurrent(access, id, version) }, changingIds,
+                { ref -> evidenceOriginal?.invoke(access, ref) },
+                { review -> requireNotNull(evidenceReadCoverage) { "Original evidence page coverage is unavailable" }.invoke(access, review) })
             val changedIds = hashSetOf<String>()
             repeat(changes.length()) { index ->
                 val item = changes.getJSONObject(index)
@@ -183,6 +189,7 @@ internal class CollaborationResearchWorkspace(
                 require(id.matches(ID) && changedIds.add(id)) { "Invalid or duplicated object ID" }
                 val kind = item.getString("kind")
                 require(kind in KINDS) { "Unknown workspace object kind: workspace[$index].kind=$kind; allowed=${KINDS.sorted()}" }
+                if (kind in CollaborationEvolutionContract.KINDS) require(accessAuthorized(access)) { "Evolution member access was removed" }
                 val title = item.getString("title")
                 require(title.isNotBlank() && title.length <= 240) { "A concise object title is required" }
                 val body = item.getJSONObject("body")
@@ -234,6 +241,7 @@ internal class CollaborationResearchWorkspace(
                     .put("recorded_at", now).put("evidence_state", "member_reported_not_verified")
                     .put("previous_sha256", head?.optString("sha256").orEmpty())
                 candidates.validate(item, head, revision)
+                evolution.validate(head, revision)
                 listOf("parents", "resolves").forEach { key ->
                     val links = revision.getJSONArray(key)
                     revision.put(key, JSONArray((0 until links.length()).map { linkIndex ->
@@ -244,6 +252,7 @@ internal class CollaborationResearchWorkspace(
                 revision.put("sha256", digest(revision.toString()))
                 writes[revisionKey(prefix, id, base + 1)] = revision.toString()
                 writes[headKey] = revision.toString()
+                if (kind in CollaborationEvolutionContract.KINDS) writes[prefix + "evolution:" + id] = id
                 refs.put(reference(revision))
                 revisions += revision
             }
@@ -448,13 +457,21 @@ internal class CollaborationResearchWorkspace(
     }
 
     fun browse(access: CollaborationWorkspaceAccess, cursor: String = "", limit: Int = 20): Page = synchronized(LOCK) {
-        if (!authorized(access.groupId)) return@synchronized Page(emptyList(), null)
-        val prefix = prefix(access.groupId) + "head:"
+        browseHeads(access, cursor, limit, "head:")
+    }
+
+    fun browseEvolution(access: CollaborationWorkspaceAccess, cursor: String = "", limit: Int = 20): Page = synchronized(LOCK) {
+        browseHeads(access, cursor, limit, "evolution:")
+    }
+
+    private fun browseHeads(access: CollaborationWorkspaceAccess, cursor: String, limit: Int, namespace: String): Page {
+        if (!authorized(access.groupId)) return Page(emptyList(), null)
+        val prefix = prefix(access.groupId) + namespace
         require(cursor.isBlank() || cursor.startsWith(prefix) && cursor.removePrefix(prefix).matches(ID)) { "Invalid workspace cursor" }
         val keys = rows.page(prefix, cursor, limit.coerceIn(1, 100) + 1)
         val selected = keys.take(limit.coerceIn(1, 100))
         val revisions = selected.mapNotNull { key ->
-            var candidate = rows.read(key)?.let(::JSONObject)
+            var candidate = rows.read(prefix(access.groupId) + "head:" + key.removePrefix(prefix))?.let(::JSONObject)
             while (candidate != null && !access.canRead(candidate)) {
                 val previous = candidate.getInt("revision") - 1
                 candidate = if (previous > 0) rows.read(revisionKey(prefix(access.groupId), candidate.getString("object_id"), previous))?.let(::JSONObject) else null
@@ -464,11 +481,21 @@ internal class CollaborationResearchWorkspace(
                     reference(saved).apply {
                         if (saved.optJSONObject("host_candidate_event")?.optString("operation") == "review")
                             put("review_applicability", if (candidateReviewApplies(access, this)) "current" else "stale_or_isolated")
+                        saved.optJSONObject(CollaborationEvolutionContract.HOST)?.let { evolution ->
+                            val current = listOf("innovation", "baseline", "plan", "result", "rollback").all { field ->
+                                evolution.optJSONObject(field)?.let { ref ->
+                                    val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
+                                    target != null && CollaborationResearchCandidates.same(target, ref) &&
+                                        isCurrent(access, target.getString("object_id"), target.getInt("revision"))
+                                } ?: true
+                            }
+                            put("evolution_applicability", if (current) "inspect_scope_before_reuse" else "historical_requires_revalidation")
+                        }
                     }
                 }
             }
         }
-        Page(revisions, selected.lastOrNull()?.takeIf { keys.size > selected.size })
+        return Page(revisions, selected.lastOrNull()?.takeIf { keys.size > selected.size })
     }
 
     companion object {
@@ -476,7 +503,8 @@ internal class CollaborationResearchWorkspace(
         private const val DATABASE = "galaxyssi_collaboration_workspace_v1"
         private val ID = Regex("[a-f0-9]{64}")
         val KINDS = setOf("hypothesis", "evidence", "counterexample", "proposal", "experiment", "artifact", "decision", "question",
-            CollaborationReviewContract.KIND, CollaborationResearchCandidates.CANDIDATE, CollaborationResearchCandidates.EVENT)
+            CollaborationReviewContract.KIND, CollaborationResearchCandidates.CANDIDATE, CollaborationResearchCandidates.EVENT) +
+            CollaborationEvolutionContract.KINDS
         private fun digest(value: String) = AgentNativeJsonCodec.sha256(value)
         private fun prefix(group: String) = "group:${digest(group)}:"
         private fun mutationKey(group: String) = "mutation:${digest(group)}"
@@ -488,6 +516,11 @@ internal class CollaborationResearchWorkspace(
             listOf("object_id", "revision", "kind", "title", "person_id", "node_id", "sha256", "evidence_state", "recorded_at")
                 .forEach { key -> put(key, revision.get(key)) }
             listOf("host_candidate", "host_candidate_event").forEach { key -> revision.optJSONObject(key)?.let { put(key, it) } }
+            revision.optJSONObject(CollaborationEvolutionContract.HOST)?.let { host ->
+                put(CollaborationEvolutionContract.HOST, JSONObject(host.toString()).apply {
+                    optJSONArray("cases")?.let { put("case_count", it.length()); remove("cases") }
+                })
+            }
         }
 
         fun remove(context: Context, group: String) = CollaborationResearchWorkspace(context).removeGroup(group)

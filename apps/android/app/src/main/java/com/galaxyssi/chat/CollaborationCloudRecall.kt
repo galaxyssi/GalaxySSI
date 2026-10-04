@@ -12,7 +12,7 @@ internal object CollaborationCloudRecall {
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive"))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "evolution_rules"))))
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
@@ -24,6 +24,7 @@ internal object CollaborationCloudRecall {
                 "Evidence pages expose source_reference for citing the original observation; galaxyssi_evidence_receipt only records this recall. " +
                 "mode=goal_contract takes only cursor and returns the host-pinned original goal, criteria and context fragments; follow next_cursor. " +
                 "mode=archive with record_id and offset reads full originals of assigned dependency handoffs; follow next_offset. " +
+                "mode=evolution browses scoped learning records; mode=evolution_rules reads their typed schemas with offset. " +
                 "Returned output is not proof of a claim.")
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
         when (prepared.provider) {
@@ -39,7 +40,7 @@ internal object CollaborationCloudRecall {
                 recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive")) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "evolution_rules")) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }

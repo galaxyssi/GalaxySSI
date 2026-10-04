@@ -29,7 +29,7 @@ internal object CollaborationRecallNativeTool {
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
-            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive")) {
+            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "evolution_rules")) {
                 val source = call.context.collaborationSourceMessageId
                 if (source == null && call.input["mode"] in setOf("goal_contract", "archive"))
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "Goal contract recall requires an exact member binding.")

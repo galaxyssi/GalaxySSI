@@ -21,7 +21,7 @@ internal object CollaborationResearchArtifact {
             "\"memory\":[{\"kind\":\"constraint|decision|rejected_route|open_question\",\"text\":\"important item to preserve\"," +
             "\"source\":\"original evidence reference\",\"supersedes\":\"earlier record_id, or empty\"}]," +
             "\"workspace\":[{\"id\":\"stable local ID for a NEW object\",\"object_id\":\"existing host ID when revising, otherwise empty\"," +
-            "\"base_revision\":0,\"kind\":\"hypothesis|evidence|counterexample|proposal|experiment|artifact|decision|question|acceptance_review|candidate|candidate_event\"," +
+            "\"base_revision\":0,\"kind\":\"hypothesis|evidence|counterexample|proposal|experiment|artifact|decision|question|acceptance_review|candidate|candidate_event|capability_gap|innovation|experiment_plan|experiment_result|capability_lesson\"," +
             "\"title\":\"concise title\",\"body\":{\"content\":\"substantive design, data, finding or experiment specification\"}," +
             "\"parents\":[{\"object_id\":\"source object ID\",\"revision\":1}]," +
             "\"resolves\":[{\"object_id\":\"counterexample or question ID\",\"revision\":1}]," +
