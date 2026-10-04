@@ -25,6 +25,7 @@ internal class CollaborationEvolutionContract(
             "Only the author may revise a gap or innovation; other members publish a linked alternative"
         }
         val host = when (kind) {
+            CollaborationWorkflowMethod.KIND -> CollaborationWorkflowMethod.definition(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationExecutableTool.TOOL -> CollaborationExecutableTool.definition(value)
             CollaborationExecutableTool.TEST -> CollaborationExecutableTool.testPlan(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationExecutableTool.RELEASE -> CollaborationExecutableTool.release(value, revision, access.personId,
@@ -148,6 +149,12 @@ internal class CollaborationEvolutionContract(
                 ?.let { put(CollaborationInnovationValidation.OPPORTUNITY, it) } }
             .apply { CollaborationTeamInvention.idea(value, revision) { ref, kinds -> exact(ref, kinds) }
                 ?.let { put(CollaborationTeamInvention.SYNTHESIS, it) } }
+            .apply { CollaborationWorkflowMethod.idea(value) { ref, kinds -> exact(ref, kinds) }?.let { ref ->
+                val method = exact(ref, setOf(CollaborationWorkflowMethod.KIND))
+                contributors += method.getString("person_id")
+                put("contributors", JSONArray(contributors.toList()))
+                put(CollaborationWorkflowMethod.KIND, ref)
+            } }
     }
 
     private fun lesson(value: JSONObject, revision: JSONObject): JSONObject {
@@ -216,7 +223,7 @@ internal class CollaborationEvolutionContract(
         const val HOST = "host_evolution"
         val KINDS = setOf(GAP, IDEA, PLAN, RESULT, LESSON, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
             CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
-            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
+            CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT, CollaborationWorkflowMethod.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->

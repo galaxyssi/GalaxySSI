@@ -55,6 +55,7 @@ internal object CollaborationEvolutionExperiment {
             .put("case_count", cases.size).put("has_regression_suite", cases.any { it.getString("purpose") == "regression" })
             .apply { CollaborationTransferStudy.plan(value, idea, exact)?.let { put(CollaborationTransferStudy.KIND, it) } }
             .apply { CollaborationTeamComparison.plan(value, idea, baseline, exact)?.let { put(CollaborationTeamComparison.FIELD, it) } }
+            .apply { CollaborationWorkflowMethod.comparison(value, idea, baseline, exact)?.let { put(CollaborationWorkflowMethod.COMPARISON, it) } }
     }
 
     fun result(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
@@ -108,6 +109,8 @@ internal object CollaborationEvolutionExperiment {
                 require(sample.optString("variant_sha256") == expected.getString("sha256") && sample.optString("metric") == case.getString("metric")) {
                     "Measurement variant/metric changed"
                 }
+                registered.getJSONObject(CollaborationEvolutionContract.HOST).optJSONObject(CollaborationWorkflowMethod.COMPARISON)
+                    ?.let { CollaborationWorkflowMethod.sample(it, sample, variant) }
                 if (spec.has(CollaborationTransferStudy.KIND)) require(
                     sample.optString("dataset_sha256") == case.getJSONObject("dataset").getString("sha256") &&
                         sample.optString("domain") == case.getString("domain")) { "Measurement dataset/domain differs from the registered transfer case" }

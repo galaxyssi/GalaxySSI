@@ -35,6 +35,7 @@ internal fun AgentAction.managedTeamAssignmentPrompt(): String? =
 
 internal fun isPersistedAgentTeamContextKey(key: String): Boolean = key.startsWith("_galaxyssi_") ||
     key.startsWith("collaboration_research_") ||
+    key == CollaborationWorkflowWork.TASK || key == CollaborationPredictionWork.TASK ||
     key in setOf("collaboration_group_id", "collaboration_name", "collaboration_provider",
         "collaboration_receive_results", "collaboration_model_id")
 
