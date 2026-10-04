@@ -7,8 +7,8 @@ internal object CollaborationLabelPolicy {
 
 /** A group has its own projection; single-Agent process collapsing must never select its rows. */
 internal object CollaborationPagePolicy {
-    fun project(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
-        val canonical = AgentFinalResponseIdentity.coalesce(entries)
+    fun project(entries: List<AgentTranscriptEntry>, currentEntries: List<AgentTranscriptEntry> = emptyList()): List<AgentTranscriptEntry> {
+        val canonical = AgentFinalResponseIdentity.coalesce(entries + currentEntries)
         val positions = canonical.withIndex().associate { it.value.id to it.index }
         val decoded = canonical.mapNotNull { entry ->
             CollaborationTranscriptMetadata.decode(entry.collaborationJson)?.let { entry to it }
@@ -20,7 +20,7 @@ internal object CollaborationPagePolicy {
         // Task IDs identify attempts; a person ID identifies the one current member status.
         // Late activity from an older attempt must not make it current again.
         val attempts = decoded.groupBy { it.second.traceTurnId }.values.map { rows ->
-            rows.firstOrNull { !it.second.activity && !it.second.result } ?: rows.first()
+            rows.firstOrNull { it.second.current } ?: rows.firstOrNull { !it.second.activity && !it.second.result } ?: rows.first()
         }
         val attemptByTrace = attempts.associateBy { it.second.traceTurnId }
         val resultTraces = decoded.filter { it.second.result }.mapTo(hashSetOf()) { it.second.traceTurnId }
@@ -30,7 +30,7 @@ internal object CollaborationPagePolicy {
         val latestByPerson = attempts.groupBy(::person).mapValues { (_, rows) ->
             val newest = rows.maxWith(attemptOrder)
             // A newer parallel result must not hide this person's still-running work.
-            rows.filter { it.second.runId == newest.second.runId && it.second.status == AgentSubagentStatus.RUNNING &&
+            rows.firstOrNull { it.second.current } ?: rows.filter { it.second.runId == newest.second.runId && it.second.status == AgentSubagentStatus.RUNNING &&
                 it.second.traceTurnId !in resultTraces }.maxWithOrNull(attemptOrder) ?: newest
         }
         val priorAssignments = assignments.values.groupBy(::person)
@@ -46,11 +46,11 @@ internal object CollaborationPagePolicy {
                     .flatMap { prior -> listOf("[${prior.second.status.name} / ${prior.second.researchStage}] ${prior.first.text}") +
                         activities[prior.second.traceTurnId].orEmpty().sortedBy { it.first.timestampMillis }.map { it.first.text } }
                 else emptyList()
-            val summary = if (metadata.summary.isNotBlank() &&
+            val summary = if (metadata.current) metadata.summary else if (metadata.summary.isNotBlank() &&
                 (latestActivity?.first?.timestampMillis ?: 0L) <= metadata.clockStoppedAtMillis) metadata.summary
                 else latestActivity?.first?.text ?: metadata.summary
             return metadata.copy(summary = summary, eventCount = history.size,
-                connectionState = if (metadata.result || metadata.status.isTerminal) "" else connection,
+                connectionState = if (metadata.result || metadata.status.isTerminal) "" else if (metadata.current) metadata.connectionState else connection,
                 startedAtMillis = metadata.startedAtMillis.takeIf { it > 0L } ?: assignment?.startedAtMillis ?: 0L,
                 details = (previous + listOfNotNull(assignments[metadata.traceTurnId]?.first?.text) + history.takeLast(100).map { it.first.text })
                     .joinToString("\n\n"))
@@ -73,7 +73,7 @@ internal object CollaborationPagePolicy {
                         add(entry.copy(collaborationJson = withHistory(metadata).encode()))
                     metadata != null -> {
                         emittedActivities += metadata.traceTurnId
-                        if (latestByPerson[entry.conversationId to metadata.memberId]?.second?.traceTurnId == metadata.traceTurnId &&
+                        if (latestByPerson[entry.conversationId to metadata.memberId]?.first?.id == entry.id &&
                             metadata.traceTurnId !in results && metadata.status != AgentSubagentStatus.SUCCEEDED)
                             add(entry.copy(collaborationJson = withHistory(metadata).encode()))
                     }

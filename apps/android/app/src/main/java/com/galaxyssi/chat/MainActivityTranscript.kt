@@ -772,7 +772,8 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         filteredEntries
     )
     renderedAgentTranscriptSourceEntries = filteredEntries
-    val collapsedEntries = if (collaboration) CollaborationPagePolicy.project(filteredEntries)
+    val collapsedEntries = if (collaboration) CollaborationPagePolicy.project(filteredEntries,
+        CollaborationCurrentStateStore.entries(activeConversationId))
         else AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
     val waitingResult = AgentReplyWaitingIndicatorPolicy.apply(
         entries = collapsedEntries,

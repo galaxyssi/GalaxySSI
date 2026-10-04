@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="collaboration_waiting_members">等待：%1$s</string>
+    <string name="collaboration_state_updated">更新于 %1$s</string>
+</resources>

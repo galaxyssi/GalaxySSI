@@ -25,7 +25,10 @@ internal data class CollaborationTranscriptMetadata(
     val startedAtMillis: Long = 0L,
     val completedAtMillis: Long = 0L,
     val clockStoppedAtMillis: Long = 0L,
-    val connectionState: String = ""
+    val connectionState: String = "",
+    val current: Boolean = false,
+    val updatedAtMillis: Long = 0L,
+    val dependencies: String = ""
 ) {
     fun encode(): String = JSONObject().put("member_id", memberId).put("name", name)
         .put("provider", provider).put("role", role).put("status", status.name)
@@ -35,7 +38,8 @@ internal data class CollaborationTranscriptMetadata(
         .put("research_stage", researchStage).put("execution_member_id", executionMemberId).put("paused", paused)
         .put("goal_disposition", goalDisposition)
         .put("started_at_millis", startedAtMillis).put("completed_at_millis", completedAtMillis)
-        .put("clock_stopped_at_millis", clockStoppedAtMillis).put("connection_state", connectionState).toString()
+        .put("clock_stopped_at_millis", clockStoppedAtMillis).put("connection_state", connectionState)
+        .put("current", current).put("updated_at_millis", updatedAtMillis).put("dependencies", dependencies).toString()
 
     val traceTurnId: String get() = "collaboration:$runId:$executionMemberId"
 
@@ -52,7 +56,8 @@ internal data class CollaborationTranscriptMetadata(
                     json.optString("details"), json.optString("research_stage"),
                     json.optString("execution_member_id").ifBlank { json.getString("member_id") }, json.optBoolean("paused"), json.optString("goal_disposition"),
                     json.optLong("started_at_millis"), json.optLong("completed_at_millis"), json.optLong("clock_stopped_at_millis"),
-                    json.optString("connection_state"))
+                    json.optString("connection_state"), json.optBoolean("current"), json.optLong("updated_at_millis"),
+                    json.optString("dependencies"))
             }.getOrNull()
         }
     }
@@ -94,6 +99,7 @@ internal class CollaborationTranscriptPublisher(context: Context) {
         if (snapshot.conversationId.isBlank()) return
         if (snapshot.members.none { it.collaborationGroupId == snapshot.conversationId } ||
             groups.load(snapshot.conversationId) == null) return
+        CollaborationCurrentStateStore.publish(appContext, snapshot)
         snapshot.members.filter { it.collaborationGroupId == snapshot.conversationId }.forEach { member ->
             if (member.deliveryMode == AgentDeliveryMode.IGNORE) return@forEach
             if (member.researchStage.isNotBlank() && member.status == AgentSubagentStatus.QUEUED) return@forEach

@@ -72,7 +72,9 @@ data class AgentTeamMemberSnapshot(
     val objective: String = "",
     val researchStage: String = "",
     val personId: String = instanceId,
-    val executionStartedAtMillis: Long = startedAtMillis
+    val executionStartedAtMillis: Long = startedAtMillis,
+    val updatedAtMillis: Long = 0L,
+    val pendingDependencyNames: List<String> = emptyList()
 ) {
     val memberId: String get() = instanceId.ifBlank { agentId }
 
@@ -1906,6 +1908,12 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
             completedAtMillis = result?.completedAtMillis?.takeIf { it > 0L }
                 ?: event?.takeIf { !organizationEnabled && it.childStatus?.isTerminal == true }?.timestampMillis ?: 0L,
             executionStartedAtMillis = CollaborationReplyTiming.executionStart(eventsByChild[member.memberId].orEmpty(), result),
+            updatedAtMillis = event?.timestampMillis ?: request.createdAtMillis,
+            pendingDependencyNames = member.dependsOnAgentIds.filter { dependencyId ->
+                if (organizationEnabled) organization?.verifiedResults?.get(dependencyId)?.status?.isTerminal != true
+                else latestByChild[dependencyId]?.childStatus?.isTerminal != true
+            }.map { dependencyId -> definition.members.firstOrNull { it.memberId == dependencyId }
+                ?.let { it.context["collaboration_name"].orEmpty().ifBlank { it.role } } ?: dependencyId }.distinct(),
             instanceId = member.memberId,
             displayName = member.context["collaboration_name"] as? String ?: "",
             providerLabel = CollaborationLabelPolicy.provider(member.context["collaboration_provider"].orEmpty(),
