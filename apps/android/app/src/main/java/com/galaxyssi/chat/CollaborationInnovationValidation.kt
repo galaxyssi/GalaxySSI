@@ -182,7 +182,11 @@ internal object CollaborationInnovationValidation {
             CollaborationActionPrediction.FORECAST to setOf(CollaborationActionPrediction.FORECAST),
             CollaborationExecutableTool.TOOL to setOf(CollaborationExecutableTool.TOOL),
             CollaborationExecutableTool.TEST to setOf(CollaborationExecutableTool.TEST),
+            CollaborationExecutableTool.RELEASE to setOf(CollaborationExecutableTool.RELEASE),
             CollaborationWorkflowMethod.KIND to setOf(CollaborationWorkflowMethod.KIND),
+            CollaborationCapabilityRetention.FIELD to setOf(CollaborationCapabilityRetention.SUITE),
+            "previous_suite" to setOf(CollaborationCapabilityRetention.SUITE),
+            "suite" to setOf(CollaborationCapabilityRetention.SUITE),
             "previous_method" to setOf(CollaborationWorkflowMethod.KIND))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
@@ -190,6 +194,9 @@ internal object CollaborationInnovationValidation {
             if (!seen.add(saved.getString("object_id") + ":" + saved.getString("sha256"))) continue
             val host = saved.optJSONObject(HOST) ?: continue
             links.forEach { (field, kinds) -> host.optJSONObject(field)?.let { enqueue(it, kinds) } }
+            if (saved.getString("kind") == PLAN) objects(saved.getJSONObject("body").getJSONObject(PLAN), "cases").forEach {
+                it.optJSONObject("dataset")?.let { ref -> enqueue(ref, setOf("artifact")) }
+            }
             if (saved.getString("kind") == CollaborationWorkflowMethod.KIND) host.optJSONArray("feedback")?.let { refs ->
                 repeat(refs.length()) { enqueue(refs.getJSONObject(it), setOf("artifact", "experiment_result", "capability_diagnosis", "failure_experience", "prediction_outcome")) }
             }
