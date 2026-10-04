@@ -12,7 +12,7 @@ import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.LESSON
 import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.HOST
 
 class CollaborationEvolutionTest {
-    private class Rows : CollaborationWorkspaceRows {
+    internal class Rows : CollaborationWorkspaceRows {
         val data = sortedMapOf<String, String>()
         var fail = false
         override fun read(key: String) = data[key]
@@ -39,7 +39,7 @@ class CollaborationEvolutionTest {
     private fun case(id: String, purpose: String = "target") = JSONObject().put("id", id).put("purpose", purpose)
         .put("prediction", "Equal or better measured result").put("metric", "score").put("direction", "maximize")
         .put("minimum_gain", 1).put("tolerance", 0).put("repetitions", 2)
-    private class Fixture(val owner: CollaborationEvolutionTest, val planChange: (JSONObject) -> Unit = {}) {
+    internal class Fixture(val owner: CollaborationEvolutionTest, val planChange: (JSONObject) -> Unit = {}) {
         val rows = Rows()
         val ledger = CollaborationEvidenceLedger(Rows())
         fun workspace() = CollaborationResearchWorkspace(rows, evidence = ledger::references,

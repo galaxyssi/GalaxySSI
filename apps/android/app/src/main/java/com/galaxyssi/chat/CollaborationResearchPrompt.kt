@@ -71,10 +71,14 @@ internal object CollaborationResearchPrompt {
         material("Acceptance feedback", context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK])
         material("Candidate evolution feedback", context[CollaborationCandidateEvolution.FEEDBACK])
         material("Assigned learning selection", execution.member.context[CollaborationLearningWork.TASK])
+        material("Assigned reusable procedure", execution.member.context[CollaborationProcedureWork.TASK])
         if (CollaborationLiveGraph.planner(execution.member) || execution.member.deliveryMode == AgentDeliveryMode.RESPOND) {
             material("Host learning resources", context[CollaborationLearningFeedback.RESOURCES])
             material("Learning execution outcomes", CollaborationLearningFeedback.outcomes(
                 context[CollaborationLearningFeedback.OUTCOMES]?.toString() ?: "{}"))
+            context[CollaborationProcedureWork.OUTCOMES]?.toString()?.takeUnless { it == "{}" }?.let {
+                material("Procedure execution outcomes (not learning proof)", it)
+            }
         }
         material("Candidate cycles", CollaborationCandidateEvolution.summary(context[CollaborationCandidateEvolution.STATE]?.toString() ?: "[]"))
         material("Prior work dependencies", execution.member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES])
