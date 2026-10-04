@@ -138,6 +138,11 @@ directed peer challenges and contributor responses, substantive synthesis, actua
 same-condition comparisons against every parent and a single-agent control, end-to-end reported
 costs and independent comparative retention. Local fixtures do not demonstrate real-model synergy.
 
+The seventh increment adds [action prediction and observed feedback](COLLABORATION_ACTION_PREDICTION.md):
+scoped environment hypotheses, compared action probabilities, immutable actual DAG admission,
+original outcome scoring, missing/counterfactual separation and evidence-linked model corrections.
+Local fixtures do not prove general calibration, causal identification or learned world knowledge.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop

@@ -15,8 +15,8 @@ internal object CollaborationInnovationValidation {
     const val OPPORTUNITY = "innovation_opportunity"
     const val ASSESSMENT = "innovation_assessment"
     private val SOURCE_KINDS = setOf("artifact", "evidence", "counterexample", "proposal", "question", IDEA, RESULT, ASSESSMENT,
-        CollaborationEvolutionContract.GAP, CollaborationCapabilityDiagnosis.DIAGNOSIS,
-        CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND) + CollaborationTeamInvention.KINDS
+        CollaborationEvolutionContract.GAP, CollaborationCapabilityDiagnosis.DIAGNOSIS, CollaborationCapabilityDiagnosis.PROBE,
+        CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS
 
     fun opportunity(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
                     coverage: (JSONObject) -> Unit): JSONObject {
@@ -177,14 +177,17 @@ internal object CollaborationInnovationValidation {
             "lesson" to setOf(CollaborationEvolutionContract.LESSON),
             OPPORTUNITY to setOf(OPPORTUNITY), ASSESSMENT to setOf(ASSESSMENT), CollaborationTransferStudy.KIND to setOf(CollaborationTransferStudy.KIND),
             "challenge" to setOf(CollaborationTeamInvention.EXCHANGE), CollaborationTeamInvention.SYNTHESIS to setOf(CollaborationTeamInvention.SYNTHESIS),
-            CollaborationTeamInvention.EVALUATION to setOf(CollaborationTeamInvention.EVALUATION))
+            CollaborationTeamInvention.EVALUATION to setOf(CollaborationTeamInvention.EVALUATION),
+            CollaborationActionPrediction.MODEL to setOf(CollaborationActionPrediction.MODEL),
+            CollaborationActionPrediction.FORECAST to setOf(CollaborationActionPrediction.FORECAST))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
             val saved = pending.removeFirst()
             if (!seen.add(saved.getString("object_id") + ":" + saved.getString("sha256"))) continue
             val host = saved.optJSONObject(HOST) ?: continue
             links.forEach { (field, kinds) -> host.optJSONObject(field)?.let { enqueue(it, kinds) } }
-            for ((field, kinds) in listOf("basis" to SOURCE_KINDS, "results" to setOf(RESULT), "calibration_data" to setOf("artifact"))) {
+            for ((field, kinds) in listOf("basis" to SOURCE_KINDS, "results" to setOf(RESULT), "calibration_data" to setOf("artifact"),
+                "prediction_feedback" to setOf(CollaborationActionPrediction.OUTCOME))) {
                 host.optJSONArray(field)?.let { refs -> repeat(refs.length()) { enqueue(refs.getJSONObject(it), kinds) } }
             }
             if (saved.getString("kind") == CollaborationTransferStudy.KIND) enqueue(saved.getJSONObject("body")

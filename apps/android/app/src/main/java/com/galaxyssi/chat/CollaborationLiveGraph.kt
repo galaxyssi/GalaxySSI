@@ -172,7 +172,11 @@ internal object CollaborationLiveGraph {
             planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
             record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
             planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
-        val selected = innovation.work.associateBy { it.getString("id") }
+        val prediction = CollaborationPredictionWork.plan(record, innovation.work, workspace, CollaborationWorkspaceAccess(
+            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
+            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
+            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
+        val selected = prediction.work.associateBy { it.getString("id") }
         val organization = history?.let { CollaborationTeamOrganization.allocate(people.values.toList(), graph.work, it.checkpoint) }
         val allocated = organization?.people?.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) } ?: people
         val dispatch = current.mapValues { it.value.memberId } + fresh.associate { it.getString("id") to nodeId(record, "work:${it.getString("id")}") }
@@ -187,7 +191,8 @@ internal object CollaborationLiveGraph {
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to JSONArray(CollaborationWorkGraph.dependencies(item).filter { it !in current && it in finished }).toString()) +
                     CollaborationLearningWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationProcedureWork.context(selected.getValue(item.getString("id"))) +
-                    CollaborationInnovationWork.context(selected.getValue(item.getString("id"))))
+                    CollaborationInnovationWork.context(selected.getValue(item.getString("id"))) +
+                    CollaborationPredictionWork.context(selected.getValue(item.getString("id"))))
         }
         val updated = if (projection != null && history != null && organization != null)
             record.copy(definition = record.definition.copy(members = members.map { member ->
@@ -200,6 +205,7 @@ internal object CollaborationLiveGraph {
             if (selection.claims != "{}") put(CollaborationLearningWork.CLAIMS, selection.claims)
             if (procedure.claims != "{}") put(CollaborationProcedureWork.CLAIMS, procedure.claims)
             if (innovation.claims != "{}") put(CollaborationInnovationWork.CLAIMS, innovation.claims)
+            if (prediction.claims != "{}") put(CollaborationPredictionWork.CLAIMS, prediction.claims)
         }
         return append(updated, nodes).let { if (claims.isEmpty()) it else it.copy(request = it.request.copy(context = it.request.context + claims)) }
     }
@@ -246,7 +252,7 @@ internal object CollaborationLiveGraph {
 
     private fun changed(before: AgentTeamExecutionRecord, after: AgentTeamExecutionRecord, now: Long): AgentTeamExecutionRecord {
         if (after.definition.members.none { CollaborationLearningWork.TASK in it.context || CollaborationProcedureWork.TASK in it.context ||
-                CollaborationInnovationWork.TASK in it.context })
+                CollaborationInnovationWork.TASK in it.context || CollaborationPredictionWork.TASK in it.context })
             return if (before == after) before else after.copy(updatedAtMillis = maxOf(before.updatedAtMillis, now))
         val verified = if (CollaborationTeamOrganization.enabled(after)) CollaborationTeamOrganizationProjection.current(after).verifiedResults.values
             else after.events.mapNotNull { it.result }
@@ -257,8 +263,11 @@ internal object CollaborationLiveGraph {
         val procedures = if (used == "{}" || used == learned.request.context[CollaborationProcedureWork.OUTCOMES]) learned
             else learned.copy(request = learned.request.copy(context = learned.request.context + (CollaborationProcedureWork.OUTCOMES to used)))
         val explored = CollaborationInnovationWork.capture(procedures, verified)
-        val updated = if (explored == "{}" || explored == procedures.request.context[CollaborationInnovationWork.OUTCOMES]) procedures
+        val innovations = if (explored == "{}" || explored == procedures.request.context[CollaborationInnovationWork.OUTCOMES]) procedures
             else procedures.copy(request = procedures.request.copy(context = procedures.request.context + (CollaborationInnovationWork.OUTCOMES to explored)))
+        val predicted = CollaborationPredictionWork.capture(innovations, verified)
+        val updated = if (predicted == "{}" || predicted == innovations.request.context[CollaborationPredictionWork.OUTCOMES]) innovations
+            else innovations.copy(request = innovations.request.copy(context = innovations.request.context + (CollaborationPredictionWork.OUTCOMES to predicted)))
         return if (before == updated) before else updated.copy(updatedAtMillis = maxOf(before.updatedAtMillis, now))
     }
 
