@@ -641,8 +641,9 @@ private fun MainActivity.toConversationHubItems(
     conversations.map { conversation ->
         val latest = runCatching { agentTranscriptStore.previewEntry(conversation.latestMessageEntryId) }.getOrNull()
         val workspace = ConversationHubAgentStatusPolicy.workspace(conversation.id, latest, workspaces)
+        val team = CollaborationCurrentStateStore.latest(conversation.id)
         val state = ConversationHubAgentStatusPolicy.resolve(workspace, latest,
-            AgentReplyUnreadStore.hasUnread(this, conversation.id))
+            AgentReplyUnreadStore.hasUnread(this, conversation.id), team, team?.let(CollaborationCurrentStateStore::status))
         val progress = workspace?.eventJournal?.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS }
             ?.message?.takeIf { state == ConversationHubAgentStatus.RUNNING || state == ConversationHubAgentStatus.WAITING_RESPONSE }
             ?.let(::localizedAgentProcessText)?.replace(Regex("\\s+"), " ")?.take(160).orEmpty()

@@ -16,7 +16,7 @@ internal fun MainActivity.collaborationTranscriptRow(
     addView(collaborationMemberRow(CollaborationMember(id = metadata.memberId, name = metadata.name,
         agentId = metadata.memberId, providerLabel = metadata.provider,
         role = listOf(metadata.role, collaborationStageLabel(metadata.researchStage)).filter(String::isNotBlank).joinToString(" · ")), compact = true,
-        replyAtMillis = CollaborationReplyTiming.replyAt(metadata, entry.timestampMillis)))
+        replyAtMillis = if (metadata.current) metadata.updatedAtMillis else CollaborationReplyTiming.replyAt(metadata, entry.timestampMillis)))
     if (metadata.result) addView(agentAssistantTranscriptRow(entry.copy(role = AgentTranscriptRole.ASSISTANT)),
         LinearLayout.LayoutParams(-1, -2))
 
@@ -37,21 +37,7 @@ internal fun MainActivity.collaborationTranscriptRow(
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(44)
-        val statusLabel = when {
-            metadata.goalDisposition == "blocked" -> getString(R.string.collaboration_goal_blocked)
-            metadata.result -> getString(R.string.collaboration_view_process)
-            metadata.paused -> getString(R.string.collaboration_team_paused)
-            metadata.status == AgentSubagentStatus.QUEUED -> getString(if (metadata.waiting)
-                R.string.collaboration_waiting_dependencies else R.string.collaboration_queued)
-            metadata.status == AgentSubagentStatus.FAILED -> getString(R.string.collaboration_failed_status)
-            metadata.status == AgentSubagentStatus.CANCELLED -> getString(R.string.collaboration_cancelled)
-            metadata.status == AgentSubagentStatus.SKIPPED -> getString(R.string.collaboration_skipped)
-            metadata.connectionState == "waiting" -> getString(R.string.collaboration_connection_lost)
-            metadata.connectionState == "reconciling" -> getString(R.string.collaboration_connection_reconciling)
-            metadata.summary.isNotBlank() -> metadata.summary.lineSequence().first().take(180)
-            metadata.primary -> getString(R.string.collaboration_synthesizing)
-            else -> getString(R.string.collaboration_running)
-        }
+        val statusLabel = collaborationCurrentMemberLabel(metadata)
         addView(TextView(context).apply {
             text = statusLabel
             textSize = 13f
@@ -123,6 +109,28 @@ internal fun MainActivity.collaborationTranscriptRow(
     }
     addView(status)
     addView(details)
+}
+
+internal fun android.content.Context.collaborationCurrentMemberLabel(metadata: CollaborationTranscriptMetadata): String = when {
+    metadata.result -> getString(R.string.collaboration_view_process)
+    metadata.status == AgentSubagentStatus.SUCCEEDED -> getString(R.string.agent_team_state_succeeded)
+    metadata.status == AgentSubagentStatus.CANCELLED -> getString(R.string.collaboration_cancelled)
+    metadata.paused -> getString(R.string.collaboration_team_paused)
+    metadata.goalDisposition == "blocked" -> getString(R.string.collaboration_goal_blocked)
+    metadata.status == AgentSubagentStatus.QUEUED && metadata.dependencies.isNotBlank() ->
+        getString(R.string.collaboration_waiting_members, metadata.dependencies)
+    metadata.status == AgentSubagentStatus.QUEUED -> getString(if (metadata.waiting)
+        R.string.collaboration_waiting_dependencies else R.string.collaboration_queued)
+    metadata.status == AgentSubagentStatus.FAILED -> getString(R.string.collaboration_failed_status)
+    metadata.status == AgentSubagentStatus.SKIPPED -> getString(R.string.collaboration_skipped)
+    metadata.connectionState == "waiting" -> getString(R.string.collaboration_connection_lost)
+    metadata.connectionState == "reconciling" -> getString(R.string.collaboration_connection_reconciling)
+    metadata.connectionState == "delivering" -> getString(R.string.conversation_status_delivering)
+    metadata.connectionState == "remote_paused" -> getString(R.string.collaboration_team_paused)
+    metadata.connectionState == "remote_queued" -> getString(R.string.collaboration_queued)
+    metadata.summary.isNotBlank() -> metadata.summary.lineSequence().first().take(180)
+    metadata.primary -> getString(R.string.collaboration_synthesizing)
+    else -> getString(R.string.collaboration_running)
 }
 
 internal fun MainActivity.collaborationStageLabel(stage: String): String = when (stage) {

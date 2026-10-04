@@ -17,7 +17,9 @@ internal object ConversationHubAgentStatusPolicy {
             }
             .maxWithOrNull(compareBy<AgentWorkspace> { it.createdAtMillis }.thenBy { it.updatedAtMillis })
 
-    fun resolve(workspace: AgentWorkspace?, latest: AgentTranscriptEntry?, unread: Boolean): ConversationHubAgentStatus {
+    fun resolve(workspace: AgentWorkspace?, latest: AgentTranscriptEntry?, unread: Boolean,
+        team: AgentTeamExecutionSnapshot? = null,
+        teamStatus: ConversationHubAgentStatus? = null): ConversationHubAgentStatus {
         if (latest != null && AgentDeliveryFailurePolicy.sourceMessageId(latest) != null &&
             (workspace == null || ((workspace.status in ACTIVE_STATUSES || workspace.status == AgentWorkspaceStatus.COMPLETED) &&
                 AgentDeliveryFailurePolicy.matches(workspace, latest)))) {
@@ -30,6 +32,11 @@ internal object ConversationHubAgentStatusPolicy {
         if (workspace != null && workspace.status in ACTIVE_STATUSES &&
             finalReply && hasDeliveredReply(workspace, requireNotNull(latest))) {
             return if (unread) ConversationHubAgentStatus.COMPLETE_UNREAD else ConversationHubAgentStatus.READ
+        }
+        if (workspace != null && workspace.status in ACTIVE_STATUSES && !workspace.cancellationRequested &&
+            team != null && teamStatus != null && team.conversationId == workspace.conversationId &&
+            team.taskId == workspace.taskId && (team.state == AgentTeamExecutionState.INTERRUPTED || !team.state.isTerminal)) {
+            return teamStatus
         }
         return when (workspace?.status) {
             AgentWorkspaceStatus.CREATED, AgentWorkspaceStatus.QUEUED -> ConversationHubAgentStatus.QUEUED

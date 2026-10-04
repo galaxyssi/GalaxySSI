@@ -66,12 +66,12 @@ internal object AgentLongTaskRecoveryPolicy {
         if (workspace.workspaceId in activeWorkspaceIds || workspace.status.isTerminal ||
             workspace.cancellationRequested || session == null ||
             session.phase in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) ||
-            session.lastActionResult?.actionId == "agent-paused" ||
-            session.lastActionResult?.metadata?.get(AgentTeamParentRecoveryPolicy.PAUSED) == "true"
+            session.lastActionResult?.actionId == "agent-paused"
         ) {
             return null
         }
         if (AgentTeamParentRecoveryPolicy.isTeamWait(session.phase, session.lastActionResult?.metadata.orEmpty())) {
+            if (AgentTeamParentRecoveryPolicy.userStopped(session.auditTrail)) return null
             return AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.TEAM_RECONCILIATION,
                 "Reconcile the original local Agent team without redispatch")
         }
