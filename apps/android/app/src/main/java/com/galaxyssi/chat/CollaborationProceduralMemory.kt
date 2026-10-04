@@ -45,6 +45,9 @@ internal object CollaborationProceduralMemory {
         }
         CollaborationTransferStudy.retain(exact(host.getJSONObject("plan"), setOf(CollaborationEvolutionContract.PLAN)),
             lesson.getJSONObject("body").getJSONObject(LESSON), exact)?.let { result.put(CollaborationTransferStudy.KIND, it) }
+        CollaborationInnovationValidation.retention(lesson.getJSONObject("body").getJSONObject(LESSON),
+            exact(host.getJSONObject("innovation"), setOf(CollaborationEvolutionContract.IDEA)), exact)
+            ?.let { result.put(CollaborationInnovationValidation.ASSESSMENT, it) }
         return result
     }
 

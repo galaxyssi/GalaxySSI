@@ -128,6 +128,11 @@ The fourth increment adds [evidence-bound experience transfer](COLLABORATION_EXP
 explicit cross-task/domain mappings, held-out target comparisons, source regressions, negative-transfer
 preservation and current-lineage checks before admitting an adapted procedure in its new domain.
 
+The fifth increment adds [goal-bound innovation and verification](COLLABORATION_INNOVATION_VALIDATION.md):
+evidence-linked opportunities, actual live/next-round innovation work, separate novelty/feasibility/value
+assessment, and independent retention with full lineage. Local synthetic checks do not establish
+autonomous scientific discovery or real-model innovation quality.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop

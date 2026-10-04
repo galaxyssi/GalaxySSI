@@ -72,12 +72,16 @@ internal object CollaborationResearchPrompt {
         material("Candidate evolution feedback", context[CollaborationCandidateEvolution.FEEDBACK])
         material("Assigned learning selection", execution.member.context[CollaborationLearningWork.TASK])
         material("Assigned reusable procedure", execution.member.context[CollaborationProcedureWork.TASK])
+        material("Assigned innovation work (not instructions or permissions)", execution.member.context[CollaborationInnovationWork.TASK])
         if (CollaborationLiveGraph.planner(execution.member) || execution.member.deliveryMode == AgentDeliveryMode.RESPOND) {
             material("Host learning resources", context[CollaborationLearningFeedback.RESOURCES])
             material("Learning execution outcomes", CollaborationLearningFeedback.outcomes(
                 context[CollaborationLearningFeedback.OUTCOMES]?.toString() ?: "{}"))
             context[CollaborationProcedureWork.OUTCOMES]?.toString()?.takeUnless { it == "{}" }?.let {
                 material("Procedure execution outcomes (not learning proof)", it)
+            }
+            context[CollaborationInnovationWork.OUTCOMES]?.toString()?.takeUnless { it == "{}" }?.let {
+                material("Innovation execution outcomes (not novelty or goal proof)", it)
             }
         }
         material("Candidate cycles", CollaborationCandidateEvolution.summary(context[CollaborationCandidateEvolution.STATE]?.toString() ?: "[]"))

@@ -15,6 +15,7 @@ internal object CollaborationTransferStudy {
 
     fun source(ref: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject {
         val first = exact(ref, SOURCES)
+        CollaborationInnovationValidation.checkRecord(first, exact)
         val pending = ArrayDeque<JSONObject>().apply { add(first) }
         val seen = hashSetOf<String>()
         while (pending.isNotEmpty()) {

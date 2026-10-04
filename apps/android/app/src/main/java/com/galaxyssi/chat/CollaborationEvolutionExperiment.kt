@@ -15,6 +15,7 @@ internal object CollaborationEvolutionExperiment {
 
     fun plan(value: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject {
         val idea = exact(value.getJSONObject("innovation"), setOf(IDEA))
+        CollaborationInnovationValidation.currentIdea(idea, exact)
         val baseline = exact(value.getJSONObject("baseline"), setOf("proposal", "artifact", IDEA))
         require(idea.getString("object_id") != baseline.getString("object_id")) { "Compare against a distinct preserved baseline" }
         val predictions = idea.getJSONObject("body").getJSONObject(IDEA).getJSONArray("predictions")
@@ -35,15 +36,19 @@ internal object CollaborationEvolutionExperiment {
         }
         val cases = objects(value, "cases")
         require(cases.map { text(it, "id") }.distinct().size == cases.size) { "Experiment case IDs must be unique" }
-        require(cases.any { it.optString("purpose") == "target" }) { "An experiment needs a target case" }
+        require(cases.any { it.optString("purpose") in setOf("target", "feasibility") }) { "An experiment needs a target or feasibility case" }
         cases.forEach { case ->
             text(case, "metric"); text(case, "prediction")
-            require(text(case, "purpose") in setOf("target", "regression", "transfer")) { "Invalid experiment case purpose" }
+            require(text(case, "purpose") in setOf("target", "regression", "transfer", "feasibility")) { "Invalid experiment case purpose" }
             require(text(case, "direction") in setOf("maximize", "minimize")) { "Invalid metric direction" }
             require(decimal(case, "minimum_gain") >= BigDecimal.ZERO && decimal(case, "tolerance") >= BigDecimal.ZERO) {
                 "minimum_gain and tolerance must be nonnegative"
             }
             require(case.opt("repetitions") is Int && case.getInt("repetitions") > 0) { "repetitions must be a positive integer chosen for this experiment" }
+            if (case.getString("purpose") == "feasibility") decimal(case, "threshold")
+            if (case.has("dimension")) require(text(case, "dimension") in setOf("value", "mechanism", "feasibility", "regression", "transfer")) {
+                "Unknown registered innovation dimension"
+            }
         }
         return JSONObject().put("state", "preregistered_not_executed")
             .put("innovation", CollaborationResearchCandidates.reference(idea)).put("baseline", CollaborationResearchCandidates.reference(baseline))
@@ -118,6 +123,7 @@ internal object CollaborationEvolutionExperiment {
         var regression = false
         var targetsPass = true
         var transferPass = true
+        var feasible = true
         cases.values.forEach { case ->
             val repetitions = case.getInt("repetitions")
             val values = samples[case.getString("id")].orEmpty()
@@ -132,11 +138,16 @@ internal object CollaborationEvolutionExperiment {
                 val control = average("baseline")
                 val candidate = average("candidate")
                 val gain = if (case.getString("direction") == "maximize") candidate - control else control - candidate
-                val passes = if (case.getString("purpose") == "regression") gain >= -decimal(case, "tolerance")
-                    else gain > BigDecimal.ZERO && gain >= decimal(case, "minimum_gain")
+                val passes = when (case.getString("purpose")) {
+                    "regression" -> gain >= -decimal(case, "tolerance")
+                    "feasibility" -> if (case.getString("direction") == "maximize") candidate >= decimal(case, "threshold")
+                        else candidate <= decimal(case, "threshold")
+                    else -> gain > BigDecimal.ZERO && gain >= decimal(case, "minimum_gain")
+                }
                 if (case.getString("purpose") == "regression" && !passes) regression = true
                 if (case.getString("purpose") == "target" && !passes) targetsPass = false
                 if (case.getString("purpose") == "transfer" && !passes) transferPass = false
+                if (case.getString("purpose") == "feasibility" && !passes) feasible = false
                 row.put("baseline_mean", control.toPlainString()).put("candidate_mean", candidate.toPlainString())
                     .put("gain", gain.toPlainString()).put("state", if (passes) "passed" else "not_met")
             }
@@ -145,9 +156,11 @@ internal object CollaborationEvolutionExperiment {
         val hasRegression = cases.values.any { it.getString("purpose") == "regression" }
         val state = when {
             incomplete -> "incomplete"
+            !feasible -> "infeasible"
             regression -> "regressed"
             spec.has(CollaborationTransferStudy.KIND) && !transferPass -> "transfer_not_demonstrated"
             !targetsPass -> "inconclusive"
+            cases.values.none { it.getString("purpose") == "target" } -> "feasibility_measured"
             !hasRegression -> "improved_without_regression_suite"
             else -> "measured_improvement"
         }
