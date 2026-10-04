@@ -278,9 +278,15 @@ internal object CollaborationGoalLoop {
             CollaborationCandidateEvolution.Plan(emptyList(), candidateState,
                 it.message ?: "Candidate checkpoint cannot be advanced safely", true)
         }
-        val graph = if (contractError.isNotBlank()) CollaborationWorkGraph.Plan(emptyList(), contractError)
+        val compiled = if (contractError.isNotBlank()) CollaborationWorkGraph.Plan(emptyList(), contractError)
             else if (candidatePlan.error) CollaborationWorkGraph.Plan(emptyList(), candidatePlan.feedback)
             else CollaborationWorkGraph.compile(planned + recovery + candidatePlan.work, finished, authors)
+        val learning = runCatching { CollaborationLearningWork.plan(record, compiled.work, candidateWorkspace,
+            CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
+                record.request.messageId, round, personId = coordinatorPerson)) }
+        val graph = if (compiled.error.isNotBlank()) compiled else learning.fold(
+            { CollaborationWorkGraph.Plan(it.work) },
+            { CollaborationWorkGraph.Plan(emptyList(), it.message ?: "Learning selection needs repair; no partial assignments dispatched") })
         val work = graph.work
         val organization = organizationHistory?.let { CollaborationTeamOrganization.allocate(
             if (graph.error.isBlank()) people else existingPeople, work, it.checkpoint) }
@@ -296,7 +302,8 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
-                    CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationCandidateEvolution.taskContext(item))
+                    CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationCandidateEvolution.taskContext(item) +
+                    CollaborationLearningWork.context(item))
         }
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
@@ -326,6 +333,10 @@ internal object CollaborationGoalLoop {
                 } ?: ""),
                 CollaborationCandidateEvolution.STATE to if (basePlanValid && graph.error.isBlank()) candidatePlan.state else candidateState,
                 CollaborationCandidateEvolution.FEEDBACK to candidatePlan.feedback,
+                CollaborationLearningWork.CLAIMS to if (graph.error.isBlank()) learning.getOrThrow().claims
+                    else (record.request.context[CollaborationLearningWork.CLAIMS]?.toString() ?: "{}"),
+                CollaborationLearningFeedback.OUTCOMES to CollaborationLearningFeedback.capture(record,
+                    projection?.verifiedResults?.values ?: record.events.mapNotNull { it.result }),
                 ACCEPTANCE_FEEDBACK to acceptanceContext(record.request.goal, criteria,
                     if (contractError.isNotBlank()) contractError
                     else if (assessment?.optString("decision") == "achieved") previousResult?.collaborationAcceptance?.feedback

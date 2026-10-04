@@ -116,6 +116,10 @@ The first dedicated increment adds [evidence-driven capability-gap diagnosis](CA
 scoped original failure discovery, competing causes, agent-selected learning options, preregistered
 observable probes and durable negative outcomes. It does not equate a returned tool call with learning.
 
+The second increment adds [evidence-bound learning priorities](COLLABORATION_LEARNING_PRIORITIES.md):
+immutable compared alternatives, exact selection-to-work bindings, priority-aware graph projection,
+resource uncertainty and durable execution feedback in both live and next-round planning.
+
 ## Runtime Coverage
 
 The common Android research prompt and publication validator apply to managed cloud and Desktop

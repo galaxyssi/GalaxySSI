@@ -488,7 +488,12 @@ internal class CollaborationResearchWorkspace(
                                     target != null && CollaborationResearchCandidates.same(target, ref) &&
                                         isCurrent(access, target.getString("object_id"), target.getInt("revision"))
                                 } ?: true
-                            }
+                            } && evolution.optJSONArray("gaps")?.let { gaps -> (0 until gaps.length()).all { index ->
+                                val ref = gaps.getJSONObject(index)
+                                val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
+                                target != null && CollaborationResearchCandidates.same(target, ref) &&
+                                    isCurrent(access, target.getString("object_id"), target.getInt("revision"))
+                            } } != false
                             put("evolution_applicability", if (current) "inspect_scope_before_reuse" else "historical_requires_revalidation")
                         }
                     }

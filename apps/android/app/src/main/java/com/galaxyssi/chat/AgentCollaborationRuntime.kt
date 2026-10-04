@@ -752,6 +752,8 @@ class AgentTeamExecutionRuntime(
                         )
                     },
                     "team_visibility" to definition.visibilityMode.name.lowercase(),
+                    CollaborationLearningFeedback.RESOURCES to if (research) CollaborationLearningFeedback.resources(
+                        activeDefinition, graph.completed.keys, candidateAdmission) else "",
                     "collaboration_research_live_inventory" to if (CollaborationLiveGraph.planner(member)) CollaborationLiveGraph.inventory(activeDefinition, graph.completed) else "",
                     "collaboration_research_roster" to if (research) activeDefinition.members
                         .distinctBy { it.context[CollaborationResearchWorkflow.PERSON] }.joinToString("\n") {

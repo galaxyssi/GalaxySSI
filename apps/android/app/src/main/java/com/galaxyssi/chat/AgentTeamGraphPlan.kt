@@ -6,7 +6,9 @@ internal object AgentTeamGraphPlan {
         val research = CollaborationResearchWorkflow.isResearch(definition.members)
         val observers = definition.members.filter { it.deliveryMode == AgentDeliveryMode.OBSERVE }
             .mapTo(linkedSetOf(), AgentTeamMember::memberId)
-        val children = definition.members.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }.map { member ->
+        val learning = research && definition.members.any { CollaborationLearningWork.TASK in it.context }
+        val ordered = if (learning) CollaborationLearningWork.ordered(definition.members.sortedBy { it.memberId }) else definition.members
+        val children = ordered.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }.map { member ->
             val primary = member.memberId == definition.primaryMemberId
             AgentSubagentChild(childId = member.memberId,
                 dependencies = if (!research && primary) (member.dependsOnAgentIds + observers) - member.memberId else member.dependsOnAgentIds,
@@ -22,6 +24,7 @@ internal object AgentTeamGraphPlan {
             provenance = AgentSubagentProvenance(source = "agent-team-supervisor", sourceId = definition.teamId, traceId = request.runId,
                 metadata = mapOf("primary_agent_id" to definition.primaryAgentId, "primary_instance_id" to definition.primaryMemberId,
                     "visibility" to definition.visibilityMode.name)),
-            completionBarrierChildId = if (research && CollaborationLiveGraph.enabled(definition)) definition.primaryMemberId else "")
+            completionBarrierChildId = if (research && CollaborationLiveGraph.enabled(definition)) definition.primaryMemberId else "",
+            preserveChildOrder = learning)
     }
 }
