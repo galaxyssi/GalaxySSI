@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationProcedureTest {
-    private class Fixture {
+    internal class Fixture {
         val experiment = CollaborationEvolutionTest.Fixture(CollaborationEvolutionTest())
         val workspace = experiment.workspace
         init { experiment.trial(); experiment.publishResult() }
@@ -35,7 +35,7 @@ class CollaborationProcedureTest {
         }
         fun work(skill: JSONObject) = JSONObject().put("id", "reuse").put("member", "peer").put("stage", "EXECUTE")
             .put("assignment", "Use the indexed method on the new corpus and verify the output").put("procedure_use", JSONObject()
-                .put("procedure", skill).put("inputs", JSONObject().put("corpus", "fixture-b"))
+                .put("procedure", skill).put("domain", "retrieval").put("inputs", JSONObject().put("corpus", "fixture-b"))
                 .put("applicability", JSONObject().put("why", "Same authorized format").put("conditions_checked", JSONArray().put("Fixture schema matches"))
                     .put("remaining_uncertainty", "New input not yet verified")).put("failures", JSONArray()))
         fun report(work: List<JSONObject>) = JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Reuse a tested method")

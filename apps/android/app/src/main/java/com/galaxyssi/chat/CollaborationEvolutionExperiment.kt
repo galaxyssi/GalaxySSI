@@ -48,6 +48,7 @@ internal object CollaborationEvolutionExperiment {
         return JSONObject().put("state", "preregistered_not_executed")
             .put("innovation", CollaborationResearchCandidates.reference(idea)).put("baseline", CollaborationResearchCandidates.reference(baseline))
             .put("case_count", cases.size).put("has_regression_suite", cases.any { it.getString("purpose") == "regression" })
+            .apply { CollaborationTransferStudy.plan(value, idea, exact)?.let { put(CollaborationTransferStudy.KIND, it) } }
     }
 
     fun result(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
@@ -98,6 +99,9 @@ internal object CollaborationEvolutionExperiment {
                 require(sample.optString("variant_sha256") == expected.getString("sha256") && sample.optString("metric") == case.getString("metric")) {
                     "Measurement variant/metric changed"
                 }
+                if (spec.has(CollaborationTransferStudy.KIND)) require(
+                    sample.optString("dataset_sha256") == case.getJSONObject("dataset").getString("sha256") &&
+                        sample.optString("domain") == case.getString("domain")) { "Measurement dataset/domain differs from the registered transfer case" }
                 require(sample.opt("repetition") is Int && sample.getInt("repetition") in 1..case.getInt("repetitions")) {
                     "Measurement repetition is outside the preregistered case"
                 }
@@ -113,6 +117,7 @@ internal object CollaborationEvolutionExperiment {
         var incomplete = false
         var regression = false
         var targetsPass = true
+        var transferPass = true
         cases.values.forEach { case ->
             val repetitions = case.getInt("repetitions")
             val values = samples[case.getString("id")].orEmpty()
@@ -131,6 +136,7 @@ internal object CollaborationEvolutionExperiment {
                     else gain > BigDecimal.ZERO && gain >= decimal(case, "minimum_gain")
                 if (case.getString("purpose") == "regression" && !passes) regression = true
                 if (case.getString("purpose") == "target" && !passes) targetsPass = false
+                if (case.getString("purpose") == "transfer" && !passes) transferPass = false
                 row.put("baseline_mean", control.toPlainString()).put("candidate_mean", candidate.toPlainString())
                     .put("gain", gain.toPlainString()).put("state", if (passes) "passed" else "not_met")
             }
@@ -140,6 +146,7 @@ internal object CollaborationEvolutionExperiment {
         val state = when {
             incomplete -> "incomplete"
             regression -> "regressed"
+            spec.has(CollaborationTransferStudy.KIND) && !transferPass -> "transfer_not_demonstrated"
             !targetsPass -> "inconclusive"
             !hasRegression -> "improved_without_regression_suite"
             else -> "measured_improvement"
