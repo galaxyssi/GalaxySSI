@@ -744,7 +744,7 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
 }
 
 internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
-    refreshCollaborationStrip()
+    refreshCollaborationStrip(bindPanel = false)
     val renderStartedAt = SystemClock.elapsedRealtime()
     val activeConversationId = agentRenderedConversationId
         .ifBlank { agentTranscriptWindow.conversationId }
@@ -772,9 +772,16 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         filteredEntries
     )
     renderedAgentTranscriptSourceEntries = filteredEntries
-    val collapsedEntries = if (collaboration) CollaborationPagePolicy.project(filteredEntries,
-        CollaborationCurrentStateStore.entries(activeConversationId))
-        else AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
+    val collapsedEntries = if (collaboration) {
+        val current = CollaborationCurrentStateStore.entries(activeConversationId)
+        val projected = CollaborationPagePolicy.project(filteredEntries, current)
+        val panel = findViewById<CollaborationTeamPanelView>(R.id.collaborationMemberStrip)
+        val group = CollaborationGroupStore.cached(activeConversationId)
+        if (panel != null && group?.members?.isNotEmpty() == true) {
+            panel.bind(this, group, projected, current)
+            CollaborationTeamPanelPolicy.replies(projected)
+        } else projected
+    } else AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
     val waitingResult = AgentReplyWaitingIndicatorPolicy.apply(
         entries = collapsedEntries,
         pending = if (collaboration) emptyList() else pendingAgentReplyIndicators.values,

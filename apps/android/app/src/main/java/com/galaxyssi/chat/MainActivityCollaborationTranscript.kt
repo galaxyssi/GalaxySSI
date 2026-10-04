@@ -8,14 +8,15 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 internal fun MainActivity.collaborationTranscriptRow(
-    entry: AgentTranscriptEntry, metadata: CollaborationTranscriptMetadata
+    entry: AgentTranscriptEntry, metadata: CollaborationTranscriptMetadata, showStageInHeader: Boolean = true
 ): View = LinearLayout(this).apply {
     orientation = LinearLayout.VERTICAL
     layoutParams = ViewGroup.LayoutParams(-1, -2)
     setPadding(0, dp(6), 0, dp(6))
     addView(collaborationMemberRow(CollaborationMember(id = metadata.memberId, name = metadata.name,
         agentId = metadata.memberId, providerLabel = metadata.provider,
-        role = listOf(metadata.role, collaborationStageLabel(metadata.researchStage)).filter(String::isNotBlank).joinToString(" · ")), compact = true,
+        role = listOf(metadata.role, if (showStageInHeader) collaborationStageLabel(metadata.researchStage) else "")
+            .filter(String::isNotBlank).joinToString(" · ")), compact = true,
         replyAtMillis = if (metadata.current) metadata.updatedAtMillis else CollaborationReplyTiming.replyAt(metadata, entry.timestampMillis)))
     if (metadata.result) addView(agentAssistantTranscriptRow(entry.copy(role = AgentTranscriptRole.ASSISTANT)),
         LinearLayout.LayoutParams(-1, -2))
@@ -141,8 +142,9 @@ internal fun MainActivity.collaborationStageLabel(stage: String): String = when 
     "REVISE" -> R.string.collaboration_stage_revise
     "COMBINE" -> R.string.collaboration_stage_combine
     "VERIFY" -> R.string.collaboration_stage_verify
+    "EXECUTE" -> R.string.collaboration_stage_execute
     "REPAIR" -> R.string.collaboration_stage_repair
     "RECHECK" -> R.string.collaboration_stage_recheck
     "DELIVER" -> R.string.collaboration_stage_deliver
     else -> null
-}?.let(::getString).orEmpty()
+}?.let(::getString) ?: stage

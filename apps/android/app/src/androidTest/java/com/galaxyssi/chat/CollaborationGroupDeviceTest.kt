@@ -58,6 +58,9 @@ class CollaborationGroupDeviceTest {
         transcript.append(AgentTranscriptRole.PROCESS, "Unattributed old search and global timer",
             dedupeKey = "ordinary-process", conversationId = id, turnId = turn, taskId = task)
         scenario.onActivity { it.refreshAgentTranscriptWindow(id) }
+        waitUntil("team panel ready") { windowTexts().any { it.contains(context.getString(R.string.collaboration_team_counts, 2, 0)) } }
+        scenario.onActivity { it.findViewById<android.view.ViewGroup>(R.id.collaborationMemberStrip)
+            .findViewWithTag<View>("collaboration-team-toggle").performClick() }
         waitUntil("independent group page") {
             var visible = false
             scenario.onActivity { visible = it.findViewById<View>(R.id.collaborationOutputList).visibility == View.VISIBLE &&
@@ -66,6 +69,8 @@ class CollaborationGroupDeviceTest {
         }
         assertFalse(windowTexts().any { it.contains("Unattributed old search") })
         screenshot("collaboration-attributed-search.png")
+        scenario.onActivity { it.findViewById<android.view.ViewGroup>(R.id.collaborationMemberStrip)
+            .findViewWithTag<View>("collaboration-team-toggle").performClick() }
         members.forEachIndexed { index, member ->
             val metadata = CollaborationTranscriptMetadata(member.id, member.name, "Codex", member.role,
                 AgentSubagentStatus.SUCCEEDED, run, primary = index == 0)
@@ -128,6 +133,8 @@ class CollaborationGroupDeviceTest {
         activity.agentTranscriptStore.upsert(AgentTranscriptRole.PROCESS, "Check the test evidence",
             dedupeKey = "collaboration:fixture:status", conversationId = id, collaborationJson = metadata.encode())
         scenario.onActivity { it.refreshAgentTranscriptWindow(id) }
+        scenario.onActivity { it.findViewById<android.view.ViewGroup>(R.id.collaborationMemberStrip)
+            .findViewWithTag<View>("collaboration-team-toggle").performClick() }
         waitUntil("member progress row") { windowTexts().contains(context.getString(R.string.collaboration_running)) }
         screenshot("collaboration-progress.png")
         scenario.recreate()

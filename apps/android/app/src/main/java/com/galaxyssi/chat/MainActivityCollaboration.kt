@@ -196,7 +196,7 @@ internal fun MainActivity.showCollaborationMembers() {
                 if (index == group.members.size) addCollaborationMember(group)
                 else showCollaborationMemberSettings(group, group.members[index])
             }.setNeutralButton(R.string.collaboration_workflow) { _, _ -> showCollaborationWorkflow(group) }
-            .setNegativeButton(R.string.common_cancel, null).show()
+            .setNegativeButton(R.string.common_cancel, null).showCollaborationSheet()
     }
 }
 
@@ -207,7 +207,7 @@ private fun MainActivity.showCollaborationWorkflow(group: CollaborationGroup) {
     AlertDialog.Builder(this).setTitle(R.string.collaboration_workflow)
         .setSingleChoiceItems(labels.map { getString(it) }.toTypedArray(), modes.indexOf(group.workflow)) { dialog, index ->
             collaborationUpdate(group.conversationId, { it.copy(workflow = modes[index]) }) { dialog.dismiss() }
-        }.setNegativeButton(R.string.common_cancel, null).show()
+        }.setNegativeButton(R.string.common_cancel, null).showCollaborationSheet()
 }
 
 private fun MainActivity.addCollaborationMember(group: CollaborationGroup) {
@@ -248,15 +248,15 @@ private fun MainActivity.chooseCollaborationProvider(selected: (AgentCallableTar
                     if (models.isEmpty()) selected(target, "")
                     else AlertDialog.Builder(this).setTitle(target.title)
                         .setItems(models.map { it.displayName }.toTypedArray()) { _, model -> selected(target, models[model].id) }
-                        .setNegativeButton(R.string.common_cancel, null).show()
-                }.setNegativeButton(R.string.common_cancel, null).show()
+                        .setNegativeButton(R.string.common_cancel, null).showCollaborationSheet()
+                }.setNegativeButton(R.string.common_cancel, null).showCollaborationSheet()
         }
     }
 }
 
 private fun MainActivity.showCollaborationMemberSettings(group: CollaborationGroup, member: CollaborationMember) {
     val content = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8))
+        orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8))
     }
     content.addView(collaborationMemberRow(member))
     val name = EditText(this).apply {
@@ -322,7 +322,18 @@ private fun MainActivity.showCollaborationMemberSettings(group: CollaborationGro
         }
     }
     dialog.show()
-    dialog.window?.setGravity(Gravity.BOTTOM)
+    dialog.fitCollaborationSheet()
+}
+
+private fun AlertDialog.Builder.showCollaborationSheet(): AlertDialog = show().also { it.fitCollaborationSheet() }
+
+private fun AlertDialog.fitCollaborationSheet() {
+    window?.apply {
+        setBackgroundDrawable(android.graphics.drawable.ColorDrawable(context.getColor(R.color.page_bg)))
+        decorView.setPadding(0, 0, 0, 0)
+        setGravity(Gravity.BOTTOM)
+        setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
 }
 
 internal fun MainActivity.collaborationRequestedMembers(
@@ -342,17 +353,20 @@ internal fun MainActivity.collaborationRequestedMembers(
     return group.requested(selected)
 }
 
-internal fun MainActivity.refreshCollaborationStrip() {
-    val strip = findViewById<TextView>(R.id.collaborationMemberStrip) ?: return
+internal fun MainActivity.refreshCollaborationStrip(bindPanel: Boolean = true) {
+    val strip = findViewById<CollaborationTeamPanelView>(R.id.collaborationMemberStrip) ?: return
     val id = agentRenderedConversationId.ifBlank { agentTranscriptStore.activeConversation().id }
     val group = CollaborationGroupStore.cached(id)
     if (isAgentTranscriptAdapterInitialized()) selectConversationOutputPage(group != null)
     strip.visibility = if (group?.members?.isNotEmpty() == true) View.VISIBLE else View.GONE
     if (group != null) {
-        strip.text = getString(R.string.collaboration_member_summary, group.members.size)
+        if (bindPanel) {
+            val current = CollaborationCurrentStateStore.entries(id)
+            strip.bind(this, group, CollaborationPagePolicy.project(
+                renderedAgentTranscriptSourceEntries.filter { it.conversationId == id }, current), current)
+        }
         collaborationHeaderLabel(group.conversationId)?.let { agentSubtitleText.text = it }
     }
-    strip.setOnClickListener { showCollaborationMembers() }
 }
 
 internal fun MainActivity.loadCollaborationGroup() = collaborationLoad { refreshCollaborationStrip() }
