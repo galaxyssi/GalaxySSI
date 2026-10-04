@@ -53,7 +53,7 @@ internal object CollaborationInnovationWork {
             requireNotNull(criterion) { "Innovation opportunity must preserve an existing goal criterion, not replace it" }
             val requirement = JSONObject(criterion.toString()).apply { remove("status"); remove("evidence") }
             val phase = text(spec, "phase")
-            require(phase in setOf("explore", "compare_prior_art", "prototype", "experiment", "assess", "revise")) { "Unknown innovation work phase" }
+            require(phase in setOf("explore", "compare_prior_art", "prototype", "experiment", "assess", "revise", "challenge", "respond", "combine")) { "Unknown innovation work phase" }
             text(spec, "expected_output"); text(spec, "why_now")
             val idea = spec.optJSONObject("innovation")?.let { exact(it, setOf(IDEA)).also { saved ->
                 CollaborationInnovationValidation.currentIdea(saved, ::exact)
@@ -61,7 +61,7 @@ internal object CollaborationInnovationWork {
                     "Innovation work references a different opportunity"
                 }
             } }
-            if (phase in setOf("prototype", "experiment", "assess", "revise")) requireNotNull(idea) { "$phase needs an exact saved innovation" }
+            if (phase in setOf("prototype", "experiment", "assess", "revise", "challenge", "respond")) requireNotNull(idea) { "$phase needs an exact saved innovation" }
             val plan = spec.optJSONObject("plan")?.let { exact(it, setOf(PLAN)).also { saved ->
                 require(idea != null && CollaborationResearchCandidates.same(idea, saved.getJSONObject("body").getJSONObject(PLAN).getJSONObject("innovation"))) {
                     "Experiment plan belongs to another innovation"
@@ -81,6 +81,8 @@ internal object CollaborationInnovationWork {
             idea?.let { pinnedWork.put("innovation", CollaborationResearchCandidates.reference(it)) }
             plan?.let { pinnedWork.put("plan", CollaborationResearchCandidates.reference(it)) }
             assessment?.let { pinnedWork.put("assessment", CollaborationResearchCandidates.reference(it)) }
+            val team = CollaborationTeamInvention.work(spec, idea, opportunity, text(item, "member"), ::exact)
+            team.keys().forEach { key -> pinnedWork.put(key, team.get(key)) }
             val binding = JSONObject().put("opportunity", CollaborationResearchCandidates.reference(opportunity)).put("question", source.getString("question"))
                 .put("null_hypothesis", source.getString("null_hypothesis")).put("discriminating_test", source.getString("discriminating_test"))
                 .put("alternative_routes", source.getJSONArray("alternative_routes")).put("goal", goal).put("criterion", requirement)

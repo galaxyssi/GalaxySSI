@@ -91,7 +91,9 @@ class CollaborationConnectionRecoveryTest {
 
     @Test fun dispatchedOfflineMemberReleasesCapacityForIndependentWork() = runBlocking {
         val adapter = ConnectionAdapter().apply { offlineOnStart = true }
-        val worker = AgentAdapterTeamMemberWorker(AgentAdapterDirectory().apply { register(adapter) }, livenessProbeMillis = 20)
+        val waiting = CompletableDeferred<Unit>()
+        val worker = AgentAdapterTeamMemberWorker(AgentAdapterDirectory().apply { register(adapter) }, livenessProbeMillis = 20,
+            onWaiting = { _, _ -> waiting.complete(Unit) })
         val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore(), AgentSubagentLimits(maxConcurrency = 1))
         val completed = mutableListOf<String>()
         try {
@@ -102,6 +104,8 @@ class CollaborationConnectionRecoveryTest {
                     AgentTeamMember("lead", AgentDeliveryMode.RESPOND))), execution().request) {
                     if (it.member.memberId == "agent") worker.execute(it)
                     else {
+                        // Coroutine launch order is not admission order; do not emit before the offline run exists.
+                        if (it.member.memberId == "healthy") it.suspendExecutionPermit { waiting.await() }
                         completed += it.member.memberId
                         if (it.member.memberId == "healthy") { adapter.online = true; adapter.finish() }
                         AgentSubagentOutput("independent work completed")
