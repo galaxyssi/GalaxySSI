@@ -53,6 +53,23 @@ class MqttPeerRoutesTest {
         routes.handleVerified(ours.scope, payload, rig.ingress(broker), ours.identity)
     private fun sentCount() = rig.clients.values.flatten().sumOf { it.sent.size }
 
+    @Test fun queryReadinessRequiresTheRequestedPeerEvenWhenAnotherPeerIsReady() {
+        val other = binding.copy(scope = "other", receiver = "d".repeat(64), secret = "e".repeat(43),
+            sendTopic = "other-out", sendTopics = setOf("other-out"), receiveTopics = setOf("other-in"))
+        start(listOf(binding, other))
+        receive(ack(other), other)
+        assertTrue(routes.anyReady())
+        assertEquals("route_unconfirmed_local_epoch", MqttQueryDeliveryPolicy.readiness(true, binding.sendTopic, true, routes))
+        assertEquals("ready", MqttQueryDeliveryPolicy.readiness(true, other.sendTopic, true, routes))
+        assertEquals("route_missing_binding", MqttQueryDeliveryPolicy.readiness(true, "unbound", true, routes))
+        receive(ack())
+        assertEquals("ready", MqttQueryDeliveryPolicy.readiness(true, binding.sendTopic, true, routes))
+        assertEquals("transport_disconnected", MqttQueryDeliveryPolicy.readiness(true, binding.sendTopic, false, routes))
+        assertEquals("context_unavailable", MqttQueryDeliveryPolicy.readiness(false, binding.sendTopic, true, routes))
+        assertEquals("topic_unavailable", MqttQueryDeliveryPolicy.readiness(true, "", true, routes))
+        assertEquals("route_manager_unavailable", MqttQueryDeliveryPolicy.readiness(true, binding.sendTopic, true, null))
+    }
+
     @Test fun localApprovalEnablesExistingHandshakeAndWakesPendingDeliveryOnce() {
         val pending = binding.copy(enabled = false)
         val second = binding.copy(scope = "second", receiver = "d".repeat(64), secret = "e".repeat(43),
