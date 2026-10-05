@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 from agent_task_store import AgentTaskStore, AgentTaskWriteConflict
 from agent_tool_evidence import (AgentToolEvidence, EvidenceConflict, IDENTITY_FIELDS, INDEX_PAGE_SIZE,
                                  PAGE_BYTES, canonical, completed_tool_observation, observation_outcome, task_identity)
-from codex_tool_evidence_bridge import capture
+from codex_tool_evidence_bridge import capture, query as bridge_query
 
 
 class AgentToolEvidenceTest(unittest.TestCase):
@@ -357,6 +357,21 @@ print(json.dumps({'index':index,'original':json.loads(raw)}))
         mutations.snapshot = lambda: None
         self.assertIsNone(capture(mutations, result))
         manager.tool_evidence.record.assert_not_called()
+
+    def test_query_diagnostics_do_not_log_private_request_result_or_exception_text(self):
+        manager = SimpleNamespace(tool_evidence=Mock())
+        request = {"task_id": "private-task", "request_id": "private-nonce"}
+        for response in (None, {"status": "ready", "body": "private-original"}):
+            manager.tool_evidence.query.return_value = response
+            with self.assertLogs("codex_tool_evidence_bridge", level="INFO") as logs:
+                self.assertIs(response, bridge_query(manager, request, client_route_id="private-route"))
+            self.assertNotIn("private-", " ".join(logs.output))
+            self.assertIn("outcome=" + ("ready" if response else "rejected"), " ".join(logs.output))
+        manager.tool_evidence.query.side_effect = OSError("private-file-path")
+        with self.assertLogs("codex_tool_evidence_bridge", level="WARNING") as logs:
+            self.assertIsNone(bridge_query(manager, request, client_route_id="private-route"))
+        self.assertIn("OSError", " ".join(logs.output))
+        self.assertNotIn("private-", " ".join(logs.output))
 
 
 if __name__ == "__main__":

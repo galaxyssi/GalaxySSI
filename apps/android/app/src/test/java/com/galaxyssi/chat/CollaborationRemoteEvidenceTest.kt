@@ -115,6 +115,20 @@ class CollaborationRemoteEvidenceTest {
             assertFalse(client.receive(response(sent).put(key, if (key == "page_index") 0 else "c".repeat(64)), "desktop"))
         assertTrue(client.receive(response(sent), "desktop")); job.await()
     }
+    @Test fun responseDiagnosticsDistinguishRejectionWithoutLeakingIdentityOrContent(): Unit = runBlocking {
+        val client = CollaborationRemoteEvidenceClient()
+        lateinit var sent: JSONObject
+        val outcomes = mutableListOf<String>()
+        val job = async(start = CoroutineStart.UNDISPATCHED) {
+            client.query("desktop", fields(), JSONObject().put("mode", "index")) { sent = it; true }
+        }
+        assertFalse(client.receive(response(sent).put("request_id", "private-nonce"), "desktop", outcomes::add))
+        assertFalse(client.receive(response(sent).put("conversation_id", "private-conversation"), "desktop", outcomes::add))
+        assertFalse(client.receive(response(sent), "private-desktop", outcomes::add))
+        assertTrue(client.receive(response(sent), "desktop", outcomes::add))
+        assertNotNull(job.await())
+        assertEquals(listOf("no_pending_request", "scope_mismatch", "desktop_mismatch", "accepted"), outcomes)
+    }
     @Test fun timeoutCancellationAndPublishFailureRemoveWaiters(): Unit = runBlocking {
         val client = CollaborationRemoteEvidenceClient()
         val selection = JSONObject().put("mode", "index")

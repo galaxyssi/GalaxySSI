@@ -61,14 +61,42 @@ internal object AndroidCollaborationRemoteEvidence {
     }
 
     fun receive(context: Context, payload: JSONObject, desktop: String) {
-        if (paired(context, desktop, payload)) client.receive(payload, desktop)
+        if (!paired(context, desktop, payload)) {
+            Log.w("GalaxySSIEvidence", "Read-only evidence response rejected: paired_route_mismatch")
+            return
+        }
+        client.receive(payload, desktop) { outcome ->
+            Log.i("GalaxySSIEvidence", "Read-only evidence response: $outcome")
+        }
     }
 
-    internal suspend fun query(context: Context, desktop: String, fields: JSONObject, selection: JSONObject): JSONObject? =
-        client.query(desktop, fields, selection) { request ->
-            paired(context, desktop, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
-                GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
+    internal fun queryReadiness(context: Context, desktop: String, fields: JSONObject): String {
+        val link = GalaxySSILinkProtocol.serverLink(context, desktop) ?: return "desktop_unavailable"
+        if (!link.paired) return "desktop_unpaired"
+        if (link.routes.clientRouteId != fields.optString("client_route_id")) return "stale_route_identity"
+        if (AppStore.contactById(context, fields.optString("contact_id"))?.optString("desktop_id") != desktop)
+            return "contact_binding_changed"
+        if (!GalaxySSICrypto.hasDesktopSession(context, desktop)) return "signal_session_unavailable"
+        return GalaxySSIMqttClient.transportQueryReadiness(fields.getString("contact_id"))
+    }
+
+    internal suspend fun query(context: Context, desktop: String, fields: JSONObject, selection: JSONObject,
+        onDiagnostic: (String) -> Unit = {}): JSONObject? {
+        var published = false
+        val response = client.query(desktop, fields, selection) { request ->
+            (paired(context, desktop, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
+                GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id")))
+                .also { published = it }
         }
+        val diagnostic = when {
+            response != null -> "response_${response.optString("status")}"
+            published -> "response_timeout"
+            else -> "publish_rejected:${queryReadiness(context, desktop, fields)}"
+        }
+        onDiagnostic(diagnostic)
+        if (response == null) Log.w("GalaxySSIEvidence", "Read-only evidence query deferred: $diagnostic")
+        return response
+    }
 
     fun pending(context: Context, group: String, source: Long): Boolean =
         CollaborationRemoteEvidenceStore(context).states(group, source).any { it.optString("status") == "pending" }

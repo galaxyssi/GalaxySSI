@@ -33,8 +33,25 @@ class CollaborationEvidenceTransportDeviceTest {
         val file = File(context.getExternalFilesDir(null), "collaboration-evidence-transport.json")
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
+            val readiness = JSONArray()
+            val readyStarted = SystemClock.elapsedRealtime()
             withTimeout(90_000) {
-                while (!GalaxySSIMqttClient.isConnected() || !GalaxySSIMqttClient.isSecureReady()) delay(500)
+                var last = ""
+                while (true) {
+                    val state = AndroidCollaborationRemoteEvidence.queryReadiness(context, desktop, fields)
+                    if (state != last) {
+                        readiness.put(JSONObject().put("elapsed_ms", SystemClock.elapsedRealtime() - readyStarted)
+                            .put("state", state))
+                        report.put("readiness", readiness)
+                        file.writeText(report.toString())
+                        last = state
+                    }
+                    if (state == "ready") break
+                    check(state !in setOf("desktop_unavailable", "desktop_unpaired", "stale_route_identity", "contact_binding_changed")) {
+                        "Dedicated fixture is no longer bound to the paired Desktop: $state"
+                    }
+                    delay(500)
+                }
             }
             val inbox = GalaxySSILinkDeliveryStore.inbox(context)
             val routes = requireNotNull(GalaxySSILinkProtocol.serverLink(context, desktop)).routes
@@ -43,11 +60,13 @@ class CollaborationEvidenceTransportDeviceTest {
                 .put("pending_bytes_before", usage.pendingBytes)
             repeat(3) {
                 val started = SystemClock.elapsedRealtime()
+                var diagnostic = ""
                 val response = AndroidCollaborationRemoteEvidence.query(context, desktop, fields,
                     JSONObject().put("mode", "index").put("after_sequence", 0).apply {
                         if (requireInline) put("inline_page_bytes", CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)
-                    })
+                    }) { diagnostic = it }
                 samples.put(JSONObject().put("elapsed_ms", SystemClock.elapsedRealtime() - started)
+                    .put("diagnostic", diagnostic)
                     .put("received", response != null).put("status", response?.optString("status"))
                     .put("inline_pages", response?.optJSONArray("inline_pages")?.length()))
                 report.put("queries", samples)

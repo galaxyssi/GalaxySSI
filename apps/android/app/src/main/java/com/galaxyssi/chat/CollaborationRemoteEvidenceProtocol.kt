@@ -31,16 +31,19 @@ internal class CollaborationRemoteEvidenceClient {
         } finally { pending.remove(nonce, waiter); waiter.result.cancel() }
     }
 
-    fun receive(payload: JSONObject, authenticatedDesktop: String): Boolean {
-        val waiter = pending[payload.optString("request_id")] ?: return false
+    fun receive(payload: JSONObject, authenticatedDesktop: String, diagnostic: (String) -> Unit = {}): Boolean {
+        fun rejected(reason: String): Boolean { diagnostic(reason); return false }
+        val waiter = pending[payload.optString("request_id")] ?: return rejected("no_pending_request")
         val request = waiter.request
-        if (authenticatedDesktop != waiter.desktop || payload.opt("type") != "agent_task_evidence" ||
-            payload.opt("contract") != CollaborationRemoteEvidenceProtocol.CONTRACT ||
-            !CollaborationRemoteEvidenceProtocol.sameScope(request, payload) ||
-            payload.opt("mode") != request.opt("mode") || payload.opt("status") !in setOf("ready", "unavailable")) return false
+        if (authenticatedDesktop != waiter.desktop) return rejected("desktop_mismatch")
+        if (payload.opt("type") != "agent_task_evidence" || payload.opt("contract") != CollaborationRemoteEvidenceProtocol.CONTRACT)
+            return rejected("contract_mismatch")
+        if (!CollaborationRemoteEvidenceProtocol.sameScope(request, payload)) return rejected("scope_mismatch")
+        if (payload.opt("mode") != request.opt("mode")) return rejected("mode_mismatch")
+        if (payload.opt("status") !in setOf("ready", "unavailable")) return rejected("invalid_status")
         if (payload.opt("status") == "ready" && request.opt("mode") == "page" &&
-            listOf("page_index", "sha256", "evidence_id").any { payload.opt(it) != request.opt(it) }) return false
-        return waiter.result.complete(JSONObject(payload.toString()))
+            listOf("page_index", "sha256", "evidence_id").any { payload.opt(it) != request.opt(it) }) return rejected("page_mismatch")
+        return waiter.result.complete(JSONObject(payload.toString())).also { diagnostic(if (it) "accepted" else "already_completed") }
     }
 
     internal val pendingCount get() = pending.size

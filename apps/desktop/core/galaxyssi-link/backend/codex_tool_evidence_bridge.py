@@ -1,5 +1,6 @@
 """Host-only capture/query boundary; evidence failure never repeats a tool."""
 import logging
+import time
 
 log = logging.getLogger(__name__)
 
@@ -20,8 +21,12 @@ def capture(mutations, event: dict) -> dict | None:
 
 
 def query(manager, request: dict, *, client_route_id: str) -> dict | None:
+    started = time.monotonic()
     try:
-        return manager.tool_evidence.query(request, client_route_id=client_route_id, phone_import=True)
-    except Exception:
-        log.warning("Task evidence lookup failed; no task was started or resumed")
+        response = manager.tool_evidence.query(request, client_route_id=client_route_id, phone_import=True)
+        outcome = response.get("status") if response is not None else "rejected"
+        log.info("Read-only evidence lookup outcome=%s elapsed_ms=%.1f", outcome, (time.monotonic() - started) * 1000)
+        return response
+    except Exception as error:
+        log.warning("Task evidence lookup failed (%s); no task was started or resumed", type(error).__name__)
         return None

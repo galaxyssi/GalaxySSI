@@ -199,6 +199,9 @@ object GalaxySSIMqttClient {
     internal fun transportDiagnostics(): MqttMultipathPolicy.Diagnostics? = client?.diagnostics()
     internal fun transportPathDiagnostics(): Map<String, MqttBrokerPool.PathSnapshot> = client?.snapshot().orEmpty()
 
+    internal fun transportQueryReadiness(contactId: String): String = MqttQueryDeliveryPolicy.readiness(
+        appContext != null, outgoingTopic(contactId), client?.isConnected == true, peerRoutes)
+
     fun refreshOpaqueSubscriptions(context: Context) {
         bindApplicationContext(context)
         if (client?.isConnected == true) subscribe() else connect(context)

@@ -3101,6 +3101,7 @@ def _publish_phone_payload(
         return False
     from agent_worker_routing import recipient_allowed
     if not recipient_allowed(sys.modules[__name__], str(reply_payload.get("task_id") or ""), paired_client):
+        log.warning("Phone publish rejected: original task recipient is not authorized")
         return False
     channel = "control" if reply_payload.get("type") in {
         "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
