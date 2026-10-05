@@ -99,6 +99,48 @@ class CodexStartupConcurrencyTests(unittest.TestCase):
                     release.set()
                 self.assertEqual("thread", future.result(timeout=2).thread_id)
 
+    def test_slow_callback_batches_queued_text_before_terminal_notification(self):
+        server = codex.CodexAppServer("codex", {}, lambda *_: None)
+        lines = queue.Queue()
+        entered, release, terminal = threading.Event(), threading.Event(), threading.Event()
+        observed = []
+        server.process = SimpleNamespace(stdout=iter(lines.get, None))
+        reply = queue.Queue()
+        server._pending[123] = reply
+
+        def handle(message):
+            if message["method"] == "turn/started":
+                entered.set()
+                release.wait(5)
+            observed.append(message)
+            if message["method"] == "turn/completed":
+                terminal.set()
+
+        server._handle_event = handle
+        reader = threading.Thread(target=server._read_stdout)
+        reader.start()
+        try:
+            lines.put(json.dumps({"method": "turn/started", "params": {}}))
+            self.assertTrue(entered.wait(2))
+            for _ in range(1024):
+                lines.put(json.dumps({"method": "item/agentMessage/delta", "params": {
+                    "threadId": "thread", "turnId": "turn", "itemId": "item", "delta": "text"}}))
+            lines.put(json.dumps({"method": "turn/completed", "params": {"turn": {"id": "turn"}}}))
+            lines.put(json.dumps({"id": 123, "result": {"ready": True}}))
+            self.assertEqual({"id": 123, "result": {"ready": True}}, reply.get(timeout=3))
+            self.assertFalse(release.is_set(), "RPC reader must not wait for the event callback")
+            release.set()
+            self.assertTrue(terminal.wait(2))
+            self.assertEqual(["turn/started", "item/agentMessage/delta", "turn/completed"],
+                             [message["method"] for message in observed])
+            self.assertEqual("text" * 1024, observed[1]["params"]["delta"])
+        finally:
+            release.set()
+            lines.put(None)
+            reader.join(3)
+            server.process = None
+        self.assertFalse(reader.is_alive())
+
     def test_resume_does_not_hold_global_lock(self):
         server = codex.CodexAppServer("codex", {}, lambda *_: None)
         server._conversation_threads[server._conversation_key("same")] = "existing"
