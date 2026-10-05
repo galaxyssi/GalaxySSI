@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -139,6 +140,36 @@ class AgentProviderUsage:
                 or any(entry.get(key) != value for key, value in fields.items())):
             raise ValueError("Provider usage integrity check failed")
         return entry
+
+    def observed_generations(self, fields: dict, *, client_route_id: str) -> list[int]:
+        """Read observed execution scopes only; absent generations remain unmeasured."""
+        if (not valid_identity(fields) or fields["agent_id"] != "codex"
+                or fields["client_route_id"] != client_route_id):
+            raise ValueError("Exact authenticated Codex task identity required")
+        if not self.path.is_file():
+            return []
+        with self._lock, closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as db:
+            db.execute("BEGIN")
+            task = self._task(db, fields)
+            if task is None:
+                raise ValueError("Usage task identity mismatch")
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_provider_usage'").fetchone():
+                return []
+            rows = db.execute("SELECT scope,event_id,sequence,digest,body FROM agent_provider_usage "
+                              "WHERE task_id=? AND sequence=1", (fields["task_id"],)).fetchall()
+            if not rows:
+                return []
+            self._require_existing_key(db)
+            generations = set()
+            for scope, event_id, sequence, digest, encrypted in rows:
+                value = json.loads(decrypt_text(self.path, encrypted, purpose=self._purpose(scope, event_id)))
+                generation = value.get("execution_generation")
+                if (type(generation) is not int or not 1 <= generation <= task.get("execution_generation", 1)
+                        or self._scope(fields, generation) != scope or generation in generations):
+                    raise ValueError("Invalid usage execution scope")
+                self._decode((sequence, digest, encrypted), scope, event_id, fields, generation)
+                generations.add(generation)
+            return sorted(generations)
 
     def query(self, request: dict, *, client_route_id: str) -> dict | None:
         from agent_task_recovery_query import IDENTITY_FIELDS

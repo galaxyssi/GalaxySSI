@@ -12,17 +12,12 @@ from agent_tool_evidence import canonical, valid_identity
 from codex_provider_usage import MAX_COUNTER
 
 
-def export(database: Path, scope: dict, output: Path) -> dict:
+def collect(database: Path, scope: dict) -> dict:
     fields = {key: scope.get(key) for key in IDENTITY_FIELDS}
     generation = scope.get("execution_generation")
     if (not valid_identity(fields) or fields["agent_id"] != "codex" or type(generation) is not int
             or not 1 <= generation <= MAX_COUNTER):
         raise ValueError("An exact Codex task identity and execution_generation are required")
-    output = Path(output).resolve()
-    if any((parent / ".git").exists() for parent in (output.parent, *output.parents)):
-        raise ValueError("Private audit exports must be outside Git repositories")
-    if output.exists():
-        raise FileExistsError("Refusing to overwrite an existing audit")
     archive = AgentProviderUsage(database)
     request = {**fields, "execution_generation": generation}
     first = archive.query(request, client_route_id=fields["client_route_id"])
@@ -46,6 +41,16 @@ def export(database: Path, scope: dict, output: Path) -> dict:
                                "Thread totals must not be summed or attributed wholly to this task.",
                                "Late, disconnected or unobserved provider events may be missing.",
                                "Requested model is not proof of the model actually served."])
+    return report
+
+
+def export(database: Path, scope: dict, output: Path) -> dict:
+    output = Path(output).resolve()
+    if any((parent / ".git").exists() for parent in (output.parent, *output.parents)):
+        raise ValueError("Private audit exports must be outside Git repositories")
+    if output.exists():
+        raise FileExistsError("Refusing to overwrite an existing audit")
+    report = collect(database, scope)
     encoded = json.dumps(report, ensure_ascii=True, indent=2, allow_nan=False) + "\n"
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", encoding="utf-8", newline="\n") as destination:

@@ -70,6 +70,10 @@ of zero performance impact or physical power-loss durability.
 
 ## Private Offline Export
 
+For an entire Android trial rather than one task generation, use the
+[remote trial collector](CODEX_TRIAL_CAPTURE.md). It retains all scoped
+assignments and observed generations, including failures and missing work.
+
 Run on the same host/user with access to the existing device-bound state key.
 No Desktop restart, device operation or model invocation is needed. The SQLite
 connection uses read-only mode; SQLite may still create WAL/SHM sidecar files.
