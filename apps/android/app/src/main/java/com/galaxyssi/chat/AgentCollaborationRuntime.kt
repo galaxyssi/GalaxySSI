@@ -37,7 +37,7 @@ internal fun isPersistedAgentTeamContextKey(key: String): Boolean = key.startsWi
     key.startsWith("collaboration_research_") ||
     key == CollaborationWorkflowWork.TASK || key == CollaborationPredictionWork.TASK ||
     key in setOf("collaboration_group_id", "collaboration_name", "collaboration_provider",
-        "collaboration_receive_results", "collaboration_model_id")
+        "collaboration_receive_results", "collaboration_model_id", CollaborationReasoningSelection.KEY)
 
 internal fun stableAgentTeamMemberRunId(supervisorRunId: String, instanceId: String): String =
     UUID.nameUUIDFromBytes("$supervisorRunId\u001f$instanceId".toByteArray(Charsets.UTF_8)).toString()
@@ -1124,6 +1124,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         val registration = requireNotNull(provider.registration(context.member.agentId)) {
             "Agent is unavailable: ${context.member.agentId}"
         }
+        val reasoningParameters = CollaborationReasoningSelection.parameters(context.member.context, registration.adapterType)
         val managedRequest = context.request.copy(
             context = context.request.context + (MANAGED_TEAM_CONTEXT_KEY to true)
         )
@@ -1167,7 +1168,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "_galaxyssi_task_id" to context.request.taskId,
                 "idempotency_key" to context.request.idempotencyKey,
                 MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
-            ) + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
+            ) + reasoningParameters + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
                 mapOf("manual_target_locked" to "true",
                     EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to context.member.objective.ifBlank { context.request.goal },
                     "manual_model_id" to context.member.context["collaboration_model_id"].orEmpty())

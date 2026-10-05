@@ -23,24 +23,30 @@ adb -s AUTHORIZED_SERIAL shell am instrument -w -r `
   -e class com.galaxyssi.chat.CollaborationLiveEvidenceDeviceTest `
   -e collaborationLiveEvidence true `
   -e collaborationModel gpt-6-astra `
+  -e collaborationReasoningEffort xhigh `
   com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 The phone must be unlocked and able to reach its paired Desktop. Exactly one available paired Codex target must advertise the requested model; multiple eligible targets fail rather than silently selecting a machine. The fixture refreshes the existing capability manifest after Desktop deployment. It does not bypass pairing or fabricate evidence capabilities. The 12-minute test-harness deadline is not a product goal deadline.
 
-The model argument is mandatory. Missing/automatic IDs fail before creating
+The model and reasoning-effort arguments are mandatory. Missing/automatic IDs fail before creating
 a conversation. The target must advertise the exact requested model, and each
 assignment rechecks availability before dispatch. The fixture explicitly stores
 the model on both the member and execution context, so it does not inherit a
 mutable contact/UI default. An advertised model is not proof of account access
 or the model actually served; provider rejection still fails the fixture.
-The mode report stores the requested model with a null served-model field. Join
+The mode report stores the requested model and reasoning effort with null served fields. Join
 original Desktop observations and provider usage records separately; never fill missing
 provider identity or billing with the requested value. Historical runs below
 keep their original model provenance and are not relabelled as these new models.
-This is a test-only change: no production model defaults or app version change.
-Reasoning effort remains the existing adapter default and is explicitly recorded
-as not pinned. This engineering fixture is not an equal-budget comparison.
+Android 1.4.56 forwards the explicit per-assignment reasoning effort through the
+existing `agent_reasoning_effort`/`agent_invocation` wire path and persists it in
+the encrypted task definition. All fixture members use `xhigh` in this invocation;
+ordinary assignments without that field retain their existing behavior. The
+paired target must advertise the exact model and effort before each assignment.
+Desktop already validates that wire selection; no Desktop release is needed.
+Requested settings do not establish actual provider execution or equal cost.
+This engineering fixture is not an equal-budget comparison.
 Remote original reads must have host-frozen, complete page coverage bound to the
 reviewer's exact dispatch. They are not required to create a direct-cloud HTTP
 tool log. Same-model identities do not establish statistically independent errors.

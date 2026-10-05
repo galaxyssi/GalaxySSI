@@ -58,7 +58,8 @@ class CollaborationLiveEvidenceDeviceTest {
         assumeTrue("Requires explicit authorization for real provider calls",
             InstrumentationRegistry.getArguments().getString("collaborationLiveEvidence") == "true")
         val arguments = InstrumentationRegistry.getArguments()
-        val models = CollaborationLiveModelSelection.from(arguments.getString(CollaborationLiveModelSelection.MODEL_ARGUMENT))
+        val models = CollaborationLiveModelSelection.from(arguments.getString(CollaborationLiveModelSelection.MODEL_ARGUMENT),
+            arguments.getString(CollaborationLiveModelSelection.EFFORT_ARGUMENT))
         val headless = InstrumentationRegistry.getArguments().getString("collaborationLiveHeadless") == "true"
         val multipart = InstrumentationRegistry.getArguments().getString("collaborationLiveMultipart") == "true"
         val scenario = if (headless) null else ActivityScenario.launch(MainActivity::class.java)
@@ -113,7 +114,7 @@ class CollaborationLiveEvidenceDeviceTest {
             waitUntil("paired Codex with the requested model") {
                 targets = AppStoreAgentConnectorRegistry(context).availableTargets()
                     .filter { ':' in it.id && runCatching {
-                        CollaborationLiveModelSelection.requireAvailable(it, models.modelId)
+                        CollaborationLiveModelSelection.requireAvailable(it, models.modelId, models.reasoningEffort)
                     }.isSuccess }
                 targets.isNotEmpty()
             }
@@ -208,7 +209,10 @@ class CollaborationLiveEvidenceDeviceTest {
                         .availableTargets().singleOrNull { it.id == context.member.agentId }) { "Pinned fixture target disappeared" }
                     val requested = requireNotNull(context.member.context["collaboration_model_id"])
                     check(requested == models.modelId) { "Fixture assignment changed the pinned model" }
-                    CollaborationLiveModelSelection.requireAvailable(target, requested)
+                    check(context.member.context[CollaborationReasoningSelection.KEY] == models.reasoningEffort.wireValue) {
+                        "Fixture assignment changed the pinned reasoning effort"
+                    }
+                    CollaborationLiveModelSelection.requireAvailable(target, requested, models.reasoningEffort)
                     return delegate.execute(context)
                 }
 
