@@ -4,18 +4,11 @@ import org.json.JSONObject
 
 /** Test-only open-tool engineering comparison, never the closed-book/equal-cost pilot. */
 internal class CollaborationRemotePilotPlan private constructor(
-    val id: String, val targetId: String, val selection: CollaborationLiveModelSelection,
+    val id: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
     val timeoutMillis: Long, val slots: List<Slot>
-) {
+) : CollaborationRemoteExecutionPolicy {
     data class Slot(val id: String, val caseId: String, val arm: String, val prompt: String)
     val maximumDispatches get() = slots.size * 3
-
-    fun requireAppSelection(current: AgentModelSelection) {
-        require(current.mode == AgentModelSelectionMode.MANUAL && current.targetId == targetId &&
-            current.modelId == selection.modelId && current.reasoningEffort == selection.reasoningEffort) {
-            "Select the protocol target, model and effort in the App conversation before running; no default or substitution allowed"
-        }
-    }
 
     fun members(slot: Slot): List<CollaborationMember> = listOf(
         CollaborationMember(id = "analyst", name = "Analyst", agentId = targetId, providerLabel = "Codex",
@@ -41,7 +34,7 @@ internal class CollaborationRemotePilotPlan private constructor(
         ), primaryInstanceId = "final", visibilityMode = AgentTeamVisibilityMode.VISIBLE)
     }
 
-    fun prompt(context: AgentTeamMemberExecutionContext): String {
+    override fun prompt(context: AgentTeamMemberExecutionContext): String {
         check(!context.handoff.truncated && context.handoff.dependencies.none { it.outputTruncated }) {
             "Remote pilot context was truncated; no silent evidence loss"
         }
