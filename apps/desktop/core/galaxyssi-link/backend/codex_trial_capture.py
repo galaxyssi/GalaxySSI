@@ -16,6 +16,7 @@ from codex_provider_usage import MAX_COUNTER, identifier
 from codex_usage_export import collect
 
 FORMAT = "galaxyssi.codex-trial-scope.v1"
+BOUND_FORMAT = "galaxyssi.codex-trial-scope.v2"
 TERMINAL = frozenset({"completed", "failed", "cancelled", "timed_out"})
 TIMES = ("created_at", "started_at", "completed_at", "updated_at", "elapsed_ms", "first_output_at")
 
@@ -23,9 +24,12 @@ TIMES = ("created_at", "started_at", "completed_at", "updated_at", "elapsed_ms",
 def validate_scope(scope):
     expected = {"format", "trial_id", "client_route_id", "conversation_id", "turn_id", "contact_id",
                 "agent_id", "requested_model", "requested_reasoning_effort", "expected_nodes"}
-    if not isinstance(scope, dict) or set(scope) != expected or scope["format"] != FORMAT:
+    bound = isinstance(scope, dict) and scope.get("format") == BOUND_FORMAT
+    if bound:
+        expected.add("assignments")
+    if not isinstance(scope, dict) or set(scope) != expected or scope["format"] not in (FORMAT, BOUND_FORMAT):
         raise ValueError("Exact trial scope fields required")
-    if any(not identifier(scope[key]) for key in expected - {"format", "expected_nodes"}):
+    if any(not identifier(scope[key]) for key in expected - {"format", "expected_nodes", "assignments"}):
         raise ValueError("Invalid trial scope identifier")
     if scope["agent_id"] != "codex" or scope["requested_reasoning_effort"] not in {"low", "medium", "high", "xhigh"}:
         raise ValueError("Explicit Codex model and reasoning controls required")
@@ -34,6 +38,15 @@ def validate_scope(scope):
     nodes = scope["expected_nodes"]
     if not isinstance(nodes, list) or not nodes or any(not identifier(node) for node in nodes) or len(set(nodes)) != len(nodes):
         raise ValueError("Unique, nonempty planned node identities required")
+    if bound:
+        assignments = scope["assignments"]
+        keys = {"node_id", "transport_instance_id", "source_message_id"}
+        if (not isinstance(assignments, list) or len(assignments) != len(nodes) or
+                any(not isinstance(row, dict) or set(row) != keys or
+                    any(not identifier(row[key]) for key in keys) for row in assignments) or
+                [row["node_id"] for row in assignments] != nodes or
+                len({row["source_message_id"] for row in assignments}) != len(nodes)):
+            raise ValueError("Exact ordered node/source/person bindings required")
 
 
 def read_tasks(database: Path, scope: dict) -> list[dict]:
@@ -57,6 +70,7 @@ def read_tasks(database: Path, scope: dict) -> list[dict]:
             options = (value.get("request_snapshot") or {}).get("options") or {}
             invocation = options.get("agent_invocation") or {}
             tasks.append({**fields, "node_id": options.get("agent_instance_id"),
+                          "transport_instance_id": options.get("agent_instance_id"),
                           "execution_generation": generation, "status": value.get("status"),
                           "storage_revision": value.get("_storage_revision"),
                           "requested_model": invocation.get("model_id"),
@@ -76,6 +90,14 @@ def capture(database: Path, scope: dict) -> dict:
         task = dict(source)
         identity = {key: source[key] for key in IDENTITY_FIELDS}
         task_issues = []
+        if scope["format"] == BOUND_FORMAT:
+            binding = next((row for row in scope["assignments"]
+                            if row["source_message_id"] == source["source_message_id"]), None)
+            task["node_id"] = binding["node_id"] if binding else None
+            if binding is None:
+                task_issues.append("unbound_source_message")
+            elif binding["transport_instance_id"] != source["transport_instance_id"]:
+                task_issues.append("transport_instance_mismatch")
         if source["status"] not in TERMINAL:
             task_issues.append("task_not_terminal")
         for field in ("requested_model", "requested_reasoning_effort"):
@@ -116,7 +138,7 @@ def capture(database: Path, scope: dict) -> dict:
             journals.append(journal)
         task.update(usage_journals=journals, issues=sorted(set(task_issues)))
         tasks.append(task)
-        issues.extend({"node_id": source["node_id"], "task_id": source["task_id"], "code": code} for code in task["issues"])
+        issues.extend({"node_id": task["node_id"], "task_id": source["task_id"], "code": code} for code in task["issues"])
     assignments = []
     for node in scope["expected_nodes"]:
         matches = [item["task_id"] for item in tasks if item["node_id"] == node]
