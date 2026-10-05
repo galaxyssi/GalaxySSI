@@ -26,6 +26,7 @@ class CollaborationEvidenceTransportDeviceTest {
         val fixture = JSONObject(String(Base64.getDecoder().decode(args.getString("remoteEvidenceFixture")), Charsets.UTF_8))
         val fields = fixture.getJSONObject("fields")
         val desktop = fixture.getString("desktop")
+        val requireInline = args.getString("remoteEvidenceInline") == "true"
         require(CollaborationRemoteEvidenceProtocol.validScope(fields))
         val report = JSONObject().put("task_id", fields.getString("task_id")).put("model_calls", 0)
         val samples = JSONArray()
@@ -43,9 +44,12 @@ class CollaborationEvidenceTransportDeviceTest {
             repeat(3) {
                 val started = SystemClock.elapsedRealtime()
                 val response = AndroidCollaborationRemoteEvidence.query(context, desktop, fields,
-                    JSONObject().put("mode", "index").put("after_sequence", 0))
+                    JSONObject().put("mode", "index").put("after_sequence", 0).apply {
+                        if (requireInline) put("inline_page_bytes", CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)
+                    })
                 samples.put(JSONObject().put("elapsed_ms", SystemClock.elapsedRealtime() - started)
-                    .put("received", response != null).put("status", response?.optString("status")))
+                    .put("received", response != null).put("status", response?.optString("status"))
+                    .put("inline_pages", response?.optJSONArray("inline_pages")?.length()))
                 report.put("queries", samples)
                 file.writeText(report.toString())
                 assertNotNull("Read-only index query must complete without another model call", response)
@@ -53,6 +57,19 @@ class CollaborationEvidenceTransportDeviceTest {
                 assertTrue(CollaborationRemoteEvidenceProtocol.sameScope(fields, response))
                 assertEquals(fixture.getInt("expected_entries"), response.getJSONArray("entries").length())
                 assertFalse(response.getBoolean("provider_history_complete"))
+                if (requireInline) {
+                    assertTrue(response.getBoolean("archive_final"))
+                    val entries = response.getJSONArray("entries")
+                    val pages = response.getJSONArray("inline_pages")
+                    assertEquals(fixture.getInt("expected_entries"), pages.length())
+                    repeat(pages.length()) { index ->
+                        val entry = entries.getJSONObject(index)
+                        val page = pages.getJSONObject(index)
+                        assertEquals(entry.getString("evidence_id"), page.getString("evidence_id"))
+                        val decoded = requireNotNull(AgentResultRecoveryPageCodec.decode(page, 0))
+                        decoded.use { CollaborationRemoteEvidenceProtocol.original(it.bytes, fields, entry) }
+                    }
+                }
             }
             report.put("passed", true)
         } finally {

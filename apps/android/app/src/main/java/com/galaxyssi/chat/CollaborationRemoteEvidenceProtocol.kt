@@ -20,7 +20,7 @@ internal class CollaborationRemoteEvidenceClient {
         val nonce = UUID.randomUUID().toString()
         val request = CollaborationRemoteEvidenceProtocol.scope(fields)
             .put("type", "agent_task_evidence_request").put("desktop_id", desktop).put("request_id", nonce)
-        listOf("mode", "after_sequence", "evidence_id", "sha256", "page_index").forEach {
+        listOf("mode", "after_sequence", "evidence_id", "sha256", "page_index", "inline_page_bytes").forEach {
             if (selection.has(it)) request.put(it, selection.get(it))
         }
         val waiter = Pending(desktop, request)
@@ -52,6 +52,7 @@ internal object CollaborationRemoteEvidenceProtocol {
     const val TRUST = "execution_observed_not_claim_verified"
     // A per-object phone parsing guard, not a source-count or research-step limit. Larger originals stay remote.
     const val MAX_BODY_BYTES = 8L * 1024 * 1024
+    const val INLINE_PAGE_BYTES = 16_384L
     val TYPES = setOf("commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch")
     private val HASH = Regex("[a-f0-9]{64}")
     fun integer(value: JSONObject, key: String): Long? = when (val number = value.opt(key)) {

@@ -27,7 +27,8 @@ class CollaborationRemoteEvidenceTest {
     }.put("agent_id", "codex").put("source_message_id", "123").put("conversation_id", "group")
         .put("turn_id", "turn").put("execution_generation", 2)
     private fun access() = CollaborationWorkspaceAccess("group", "run", "turn", 1, "node", "author")
-    private class Provider(val fields: JSONObject, count: Int = 1, size: Int = 20000, failed: Boolean = false) {
+    private class Provider(val fields: JSONObject, count: Int = 1, size: Int = 20000, failed: Boolean = false,
+        val inline: Boolean = false, val sealed: Boolean = false) {
         var queries = 0
         val pagesRead = mutableListOf<Pair<Int, Int>>()
         val bodies = (1..count).map { id ->
@@ -51,18 +52,29 @@ class CollaborationRemoteEvidenceTest {
             if (request.getString("mode") == "index") {
                 val cursor = request.getLong("after_sequence")
                 val selected = entries.filter { it.getLong("sequence") > cursor }.take(20)
+                val inlinePages = JSONArray()
+                var remaining = request.optLong("inline_page_bytes")
+                if (inline) selected.forEach { entry ->
+                    if (entry.getInt("page_count") == 1 && entry.getLong("total_bytes") <= remaining) {
+                        inlinePages.put(page(JSONObject(), entries.indexOf(entry), 0))
+                        remaining -= entry.getLong("total_bytes")
+                    }
+                }
                 return result.put("entries", JSONArray(selected)).put("next_sequence", selected.lastOrNull()?.getLong("sequence") ?: cursor)
                     .put("has_more", entries.size > cursor + selected.size).put("provider_history_complete", false)
-                    .put("coverage", "observed_completed_items_only")
+                    .put("coverage", "observed_completed_items_only").put("archive_final", sealed).put("inline_pages", inlinePages)
             }
             val entryIndex = entries.indexOfFirst { it.getString("evidence_id") == request.getString("evidence_id") }
-            val entry = entries[entryIndex]
             val index = request.getInt("page_index")
             pagesRead.add(entryIndex to index)
+            return page(result, entryIndex, index)
+        }
+        private fun page(result: JSONObject, entryIndex: Int, index: Int): JSONObject {
+            val entry = entries[entryIndex]
             val body = bodies[entryIndex]
             val raw = body.copyOfRange(index * 16384, minOf(body.size, (index + 1) * 16384))
             entry.keys().forEach { result.put(it, entry.get(it)) }
-            return result.put("page_index", index).put("page_sha256", AgentResultRecoveryClient.sha256(raw))
+            return result.put("status", "ready").put("page_index", index).put("page_sha256", AgentResultRecoveryClient.sha256(raw))
                 .put("data_b64", Base64.getEncoder().encodeToString(raw))
         }
     }
@@ -128,6 +140,62 @@ class CollaborationRemoteEvidenceTest {
         assertEquals(CollaborationRemoteEvidenceProtocol.TRUST, saved.getString("trust"))
         assertFalse(f.store.read(f.key)!!.getBoolean("provider_history_complete"))
         assertTrue(f.store.pending().isEmpty()); assertFalse(f.rows.data.keys.any { ":page:" in it })
+    }
+    @Test fun smallSealedEvidenceNeedsOnlyOneRoundTrip(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), count = 3, size = 100, inline = true, sealed = true)
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
+        assertEquals(1, provider.queries); assertTrue(provider.pagesRead.isEmpty())
+        assertEquals(3L, f.store.read(f.key)!!.getLong("imported"))
+        assertEquals("imported", f.store.read(f.key)!!.getString("status"))
+        assertFalse(f.store.read(f.key)!!.getBoolean("provider_history_complete"))
+    }
+    @Test fun unsealedIndexStillChecksForNewObservations(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 100, inline = true)
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
+        assertEquals(2, provider.queries)
+    }
+    @Test fun inlineCheckpointSurvivesCommitFailureWithoutNetworkReplay(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 100, inline = true, sealed = true)
+        f.rows.failAdvance = true
+        assertTrue(runCatching { f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) } }.isFailure)
+        f.rows.failAdvance = false
+        assertTrue(f.importer().run(f.key, { true }) { _, _, _ -> error("Persisted inline page and boundary must survive reopen") })
+        assertEquals(1, provider.queries); assertEquals(1, f.ledger.browse(access()).first.size)
+    }
+    @Test fun malformedInlineEvidenceCannotBypassPageOrScopeChecks(): Unit = runBlocking {
+        for (fault in listOf("hash", "id", "index", "duplicate")) {
+            val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 100, inline = true, sealed = true)
+            assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q).apply {
+                val pages = getJSONArray("inline_pages"); val page = pages.getJSONObject(0)
+                when (fault) {
+                    "hash" -> page.put("page_sha256", "0".repeat(64))
+                    "id" -> page.put("evidence_id", "a".repeat(64))
+                    "index" -> page.put("page_index", 1)
+                    else -> pages.put(JSONObject(page.toString()))
+                }
+            } })
+            assertEquals(fault, "integrity_rejected", f.store.read(f.key)!!.getString("status"))
+            assertTrue(f.ledger.browse(access()).first.isEmpty())
+        }
+    }
+    @Test fun inlineIndexPagingRetainsAllObservations(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), count = 121, size = 1, inline = true, sealed = true)
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
+        assertEquals(7, provider.queries); assertEquals(121L, f.store.read(f.key)!!.getLong("imported"))
+    }
+    @Test fun inlineTotalBudgetAndOriginalScopeRemainMandatory(): Unit = runBlocking {
+        val budget = Fixture(fields(), access()); val large = Provider(fields(), count = 2, size = 7000, sealed = true)
+        assertTrue(large.bodies.sumOf { it.size } > 16_384)
+        assertTrue(budget.importer().run(budget.key, { true }) { _, _, q -> large.reply(q).put("inline_pages",
+            JSONArray(large.entries.map { entry -> large.reply(JSONObject().put("mode", "page")
+                .put("evidence_id", entry.getString("evidence_id")).put("page_index", 0)) })) })
+        assertEquals("integrity_rejected", budget.store.read(budget.key)!!.getString("status"))
+        assertTrue(budget.ledger.browse(access()).first.isEmpty())
+        val scope = Fixture(fields(), access())
+        val other = Provider(fields().put("task_id", "other-task"), size = 100, inline = true, sealed = true)
+        assertTrue(scope.importer().run(scope.key, { true }) { _, _, q -> other.reply(q) })
+        assertEquals("integrity_rejected", scope.store.read(scope.key)!!.getString("status"))
+        assertTrue(scope.ledger.browse(access()).first.isEmpty())
     }
     @Test fun partialTransferResumesAtMissingPageWithoutRepeatingProvider(): Unit = runBlocking {
         val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 50000)
