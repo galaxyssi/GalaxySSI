@@ -12,6 +12,7 @@ import com.galaxyssi.chat.voice.modelstream.ModelStreamRequest
 import com.galaxyssi.chat.voice.modelstream.ModelStreamRequestLifetimes
 import com.galaxyssi.chat.voice.modelstream.ModelStreamTransport
 import com.galaxyssi.chat.voice.modelstream.ModelUsage
+import com.galaxyssi.chat.voice.modelstream.ModelCallAuditSink
 import com.galaxyssi.chat.voice.modelstream.OkHttpCloudModelStreamClient
 import com.galaxyssi.chat.voice.modelstream.ToolCallDeltaAssembler
 import kotlinx.coroutines.CancellationException
@@ -71,11 +72,12 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
             val textPolicy = CloudConversationTextPolicy(collaborationEvidence != null)
             val publication = collaborationEvidence?.let { CollaborationPublicationRecovery.create(context, it.access) }
+            val auditSink = collaborationEvidence?.let { CollaborationModelCallLedger(context).sink(it.access) }
             var lastSequence = 0L
             val execute: suspend (AgentModelLoopRecords?) -> Unit = { records ->
                 streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
                     readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled,
-                    imageSession, records, textPolicy, publication).collect { event ->
+                    imageSession, records, textPolicy, publication, auditSink).collect { event ->
                     if (event is ModelStreamEvent.TextDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.ToolCallDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.Completed) {
@@ -107,7 +109,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         imageSession: CloudImageAnnotationSession,
         records: AgentModelLoopRecords?,
         textPolicy: CloudConversationTextPolicy,
-        publication: CollaborationPublicationRecovery?
+        publication: CollaborationPublicationRecovery?,
+        auditSink: ModelCallAuditSink?
     ): Flow<ModelStreamEvent> = flow {
         var useStreaming = contact.optBoolean("cloud_streaming_enabled", true)
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -263,7 +266,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             roundId = roundId,
                             connectTimeoutMillis = connectTimeoutMillis,
                             readTimeoutMillis = minOf(readTimeoutMillis, roundBudgetMillis)
-                        ), useStreaming)
+                        ), useStreaming).copy(auditSink = auditSink)
                     Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=request " +
                         "prepare_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} input_chars=${roundRequest.bodyJson.length}")
                     Log.i("GalaxySSIWebLatency", "model_payload request=$requestId round=$roundNumber " +

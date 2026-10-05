@@ -298,7 +298,9 @@ class CollaborationLiveEvidenceDeviceTest {
                     if (original == null) cleanupFailure = failure else original.addSuppressed(failure)
                 }
                 try {
-                    check(stopFixture(run, group, store, handle)) {
+                    val stopped = stopFixture(run, group, store, handle)
+                    if (group.isNotBlank()) exportModelCalls(group, run)
+                    check(stopped) {
                         "Remote STOP was not acknowledged; retained fixture $run and conversation $group for recovery"
                     }
                     runtime?.close()
@@ -350,6 +352,21 @@ class CollaborationLiveEvidenceDeviceTest {
         return ActionExecutorAgentTeamMemberWorker(provider, AgentAdapterDirectory().apply { register(provider) },
             screenProvider = { ScreenContext(foregroundApp = "GalaxySSI fixture", pageTitle = "Synthetic evidence acceptance") },
             progressContext = context.applicationContext)
+    }
+
+    private fun exportModelCalls(group: String, run: String) {
+        val ledger = CollaborationModelCallLedger(context)
+        val calls = JSONArray()
+        var cursor = ""
+        do {
+            val page = ledger.page(group, run, cursor)
+            page.first.forEach(calls::put)
+            cursor = page.second.orEmpty()
+        } while (cursor.isNotEmpty())
+        File(context.getExternalFilesDir(null), "$run-model-calls.json").writeText(JSONObject()
+            .put("format", "galaxyssi.model-call-export.v1").put("run_id", run)
+            .put("scope", "android_collaboration_cloud_transport_only").put("whole_trial_complete", false)
+            .put("calls", calls).toString())
     }
 
     private suspend fun stopFixture(run: String, group: String, store: AgentTeamExecutionStore,

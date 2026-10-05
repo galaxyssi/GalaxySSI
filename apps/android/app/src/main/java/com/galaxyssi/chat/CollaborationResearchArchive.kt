@@ -98,6 +98,7 @@ internal class CollaborationResearchArchive(private val context: Context, privat
         fun remove(context: Context, group: String) = synchronized(LOCK) {
             CollaborationResearchWorkspace.remove(context, group)
             CollaborationEvidenceLedger.remove(context, group)
+            CollaborationModelCallLedger.remove(context, group)
             CollaborationRemoteEvidenceStore(context).remove(group)
             CollaborationGoalContractStore(context).remove(group)
             val name = databaseName(group)
