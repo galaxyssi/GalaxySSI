@@ -1,13 +1,13 @@
 # Live Collaboration Evidence Acceptance
 
-This opt-in Android instrumentation fixture uses the phone's paired Codex Desktop and configured DeepSeek provider. It makes real model requests and transfers original tool evidence over the production authenticated MQTT path. It is not part of unattended CI and requires explicit user authorization.
+This opt-in Android instrumentation fixture uses the phone's paired Codex Desktop, with one explicitly selected model for both members. The route remains Android -> Desktop -> Codex -> OpenAI; no phone-side OpenAI API key or DeepSeek configuration is required. It makes real model requests and transfers original tool evidence over the production authenticated MQTT path. It is not part of unattended CI and requires explicit user authorization.
 
 ## Scope
 
 - Create one isolated conversation with two members and a three-node dependency graph: document author, independent reviewer, coordinator acceptance.
 - Run a read-only arithmetic command with a fresh fixture token on Desktop. Failed read-only commands may be corrected; successful commands must not be repeated solely to obtain receipts.
 - Import the actual Codex completed-item payload using the production evidence protocol, encrypted checkpoints and hashes.
-- Have DeepSeek use the host-bound `collaboration_recall` tool to inspect the original, then publish a review of the exact saved document revision.
+- Have a distinct reviewer identity on the same Codex target/model use the host-bound `collaboration_recall` tool to inspect the original, then publish a review of the exact saved document revision.
 - Have the coordinator/author also publish a goal mapping using host-supplied source IDs and goal/criterion hashes. The peer publishes a separate typed semantic coverage review of that mapping; no third member, model-counted offsets or copied original-goal text is required.
 - Require a direct reference to the original `desktop_codex_tool/codex.commandExecution` observation and a recorded reviewer read of that exact original. Browsing its ID or reading only the author's workspace document is insufficient.
 - Require the program-owned acceptance gate to accept the exact delivery/review and mapping/coverage-review references. A model's `achieved` field alone cannot pass. The semantic verdict remains a reviewer judgment, not scientific truth.
@@ -22,10 +22,30 @@ Build and install matching application/instrumentation APKs. Use the explicitly 
 adb -s AUTHORIZED_SERIAL shell am instrument -w -r `
   -e class com.galaxyssi.chat.CollaborationLiveEvidenceDeviceTest `
   -e collaborationLiveEvidence true `
+  -e collaborationModel gpt-6-astra `
   com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-The phone must be unlocked and able to reach its configured providers. The fixture refreshes the existing capability manifest after Desktop deployment. It does not bypass pairing or fabricate evidence capabilities. The 12-minute test-harness deadline is not a product goal deadline.
+The phone must be unlocked and able to reach its paired Desktop. Exactly one available paired Codex target must advertise the requested model; multiple eligible targets fail rather than silently selecting a machine. The fixture refreshes the existing capability manifest after Desktop deployment. It does not bypass pairing or fabricate evidence capabilities. The 12-minute test-harness deadline is not a product goal deadline.
+
+The model argument is mandatory. Missing/automatic IDs fail before creating
+a conversation. The target must advertise the exact requested model, and each
+assignment rechecks availability before dispatch. The fixture explicitly stores
+the model on both the member and execution context, so it does not inherit a
+mutable contact/UI default. An advertised model is not proof of account access
+or the model actually served; provider rejection still fails the fixture.
+The mode report stores the requested model with a null served-model field. Join
+original Desktop observations and provider usage records separately; never fill missing
+provider identity or billing with the requested value. Historical runs below
+keep their original model provenance and are not relabelled as these new models.
+This is a test-only change: no production model defaults or app version change.
+Reasoning effort remains the existing adapter default and is explicitly recorded
+as not pinned. This engineering fixture is not an equal-budget comparison.
+Remote original reads must have host-frozen, complete page coverage bound to the
+reviewer's exact dispatch. They are not required to create a direct-cloud HTTP
+tool log. Same-model identities do not establish statistically independent errors.
+The historical Codex/DeepSeek runs below remain unchanged; they are not evidence
+that this new single-model configuration has passed on a device.
 
 Reports are stored under the application's external files directory as `collaboration-live-evidence.txt` and, on success, `collaboration-live-evidence.png`. These files contain only the dedicated synthetic fixture's results. Do not upload logs from other conversations, provider credentials or pairing state.
 

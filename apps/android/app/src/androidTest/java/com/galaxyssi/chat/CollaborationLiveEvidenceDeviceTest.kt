@@ -57,6 +57,8 @@ class CollaborationLiveEvidenceDeviceTest {
     @Test fun remoteAuthorIndependentReviewerAndHostAcceptance() = runBlocking {
         assumeTrue("Requires explicit authorization for real provider calls",
             InstrumentationRegistry.getArguments().getString("collaborationLiveEvidence") == "true")
+        val arguments = InstrumentationRegistry.getArguments()
+        val models = CollaborationLiveModelSelection.from(arguments.getString(CollaborationLiveModelSelection.MODEL_ARGUMENT))
         val headless = InstrumentationRegistry.getArguments().getString("collaborationLiveHeadless") == "true"
         val multipart = InstrumentationRegistry.getArguments().getString("collaborationLiveMultipart") == "true"
         val scenario = if (headless) null else ActivityScenario.launch(MainActivity::class.java)
@@ -97,6 +99,7 @@ class CollaborationLiveEvidenceDeviceTest {
             }
             File(context.getExternalFilesDir(null), "collaboration-live-evidence-mode.json").writeText(JSONObject()
                 .put("run_id", run).put("headless", headless).put("multipart", multipart).put("activity_launched", scenario != null)
+                .put("model_selection", models.json())
                 .put("device_locked", context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
                 .put("interactive", context.getSystemService(PowerManager::class.java).isInteractive).toString())
             assertNotEquals("Fixture must not reuse the user's selected conversation", previous, group)
@@ -107,18 +110,16 @@ class CollaborationLiveEvidenceDeviceTest {
             waitUntil("secure MQTT") { GalaxySSIMqttClient.isConnected() && GalaxySSIMqttClient.isSecureReady() }
             assertTrue(GalaxySSIMqttClient.requestCapabilityManifestRefresh(force = true))
             var targets = emptyList<AgentCallableTarget>()
-            waitUntil("paired Codex and DeepSeek") {
+            waitUntil("paired Codex with the requested model") {
                 targets = AppStoreAgentConnectorRegistry(context).availableTargets()
-                    .filter { it.status == AgentConnectorStatus.AVAILABLE }
-                targets.any { it.id.contains("codex", true) && ':' in it.id } &&
-                    targets.any { it.id.contains("deepseek", true) || it.title.contains("deepseek", true) }
+                    .filter { ':' in it.id && runCatching {
+                        CollaborationLiveModelSelection.requireAvailable(it, models.modelId)
+                    }.isSuccess }
+                targets.isNotEmpty()
             }
-            val codex = targets.first { it.id.contains("codex", true) && ':' in it.id }
-            val deepseek = targets.first { it.id.contains("deepseek", true) || it.title.contains("deepseek", true) }
-            val author = CollaborationMember(name = "Turing", agentId = codex.id, providerLabel = codex.title,
-                role = "Document author and coordinator")
-            val reviewer = CollaborationMember(name = "Curie", agentId = deepseek.id, providerLabel = deepseek.title,
-                role = "Independent documentary reviewer", independentReview = true)
+            require(targets.size == 1) { "Fixture requires exactly one eligible paired Codex target; refusing ambiguous routing" }
+            val codex = targets.single()
+            val (author, reviewer) = models.members(codex)
             CollaborationGroupStore(context).update(group) { it.copy(members = listOf(author, reviewer),
                 coordinatorId = author.id, workflow = CollaborationWorkflow.RESEARCH) }
             scenario?.onActivity { it.refreshCollaborationStrip(); it.refreshAgentTranscriptWindow(group) }
@@ -134,9 +135,7 @@ class CollaborationLiveEvidenceDeviceTest {
                        dependencies: Set<String> = emptySet()) = AgentTeamMember(person.agentId,
                 if (node == "deliver") AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
                 instanceId = node, role = person.role, objective = objective, dependsOnAgentIds = dependencies,
-                context = mapOf("collaboration_group_id" to group, "collaboration_name" to person.name,
-                    "collaboration_provider" to person.providerLabel, CollaborationResearchWorkflow.PERSON to person.id,
-                    CollaborationResearchWorkflow.STAGE to stage, CollaborationGoalLoop.ENABLED to "1"))
+                context = models.context(person, group, stage))
             val mappingInstruction = if (multipart) "Publish TWO separate mapping artifacts, id=fixture-goal-map-a for source-1/source-2 " +
                 "and id=fixture-goal-map-b for source-3, each with body.semantic_goal_mapping and the same full host goal/criteria hashes. " else
                 "Also publish a separate artifact id=fixture-goal-map, title=Original goal mapping, with body.semantic_goal_mapping. "
@@ -202,7 +201,21 @@ class CollaborationLiveEvidenceDeviceTest {
                 publisher.publish(snapshot)
                 report(snapshot)
             })
-            handle = runtime.start(definition, request, fixtureWorker(headless))
+            val delegate = fixtureWorker(headless)
+            val pinnedWorker = object : AgentTeamMemberWorker {
+                override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
+                    val target = requireNotNull(AppStoreAgentConnectorRegistry(this@CollaborationLiveEvidenceDeviceTest.context)
+                        .availableTargets().singleOrNull { it.id == context.member.agentId }) { "Pinned fixture target disappeared" }
+                    val requested = requireNotNull(context.member.context["collaboration_model_id"])
+                    check(requested == models.modelId) { "Fixture assignment changed the pinned model" }
+                    CollaborationLiveModelSelection.requireAvailable(target, requested)
+                    return delegate.execute(context)
+                }
+
+                override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) =
+                    delegate.sendMessage(member, runId, message)
+            }
+            handle = runtime.start(definition, request, pinnedWorker)
             val result = withTimeout(12 * 60_000L) { handle.await() }
             report(result.snapshot)
             assertEquals(reportText(result.snapshot), AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
@@ -223,6 +236,8 @@ class CollaborationLiveEvidenceDeviceTest {
                 workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))!!
             } }
             val review = savedReviews.single { it.getJSONObject("body").has("acceptance_review") }
+            assertEquals(reviewer.id, review.getString("person_id"))
+            assertEquals("review", review.getString("node_id"))
             val coverageReviews = savedReviews.filter { it.getJSONObject("body").has(CollaborationSemanticGoalCoverage.REVIEW) }
             assertEquals(if (multipart) 2 else 1, coverageReviews.size)
             coverageReviews.forEach { coverageReview ->
@@ -276,12 +291,7 @@ class CollaborationLiveEvidenceDeviceTest {
                 .put("observations", directRefs).put("coverage_frozen_at_publication", true)
                 .put("remote_confirmed_observations", remoteRefs)
                 .put("trust", "host_served_pages_not_scientific_validation").toString())
-            assertTrue("Reviewer must actually fetch the original, not merely browse or cite its ID", observations.any { observation ->
-                val input = JSONObject(observation.getString("input_json"))
-                observation.getString("person_id") == reviewer.id && observation.getString("tool") == CollaborationCloudRecall.NAME &&
-                    input.optString("mode") == "evidence" && originals.any { it.getString("evidence_id") == input.optString("evidence_id") } &&
-                    observation.getString("status") == "returned" && observation.getString("output_json").contains(token)
-            })
+            // Remote reads are proven by frozen, dispatch-bound page confirmations above, not a cloud HTTP tool log.
             assertEquals(reportText(result.snapshot), "achieved", result.snapshot.goalDisposition)
             assertTrue(result.subagentResult.results.single { it.childId == "deliver" }.collaborationAcceptance?.accepted == true)
             scenario?.onActivity { it.refreshAgentTranscriptWindow(group) }
