@@ -34,13 +34,15 @@ internal class ModelCallAccounting(
     private var httpStatus: Int? = null
     private var providerTerminal = false
     private var finished = false
+    private val requestBody = runCatching { JSONObject(request.bodyJson) }.getOrNull()
     private val initial = JSONObject().put("format", "galaxyssi.model-call.v1")
         .put("call_id", callId).put("request_id", request.requestId)
         .put("provider", request.provider.name).put("transport", request.transport.name)
-        .put("requested_model", runCatching { identifier(JSONObject(request.bodyJson).opt("model")) }.getOrNull() ?: JSONObject.NULL)
+        .put("requested_model", identifier(requestBody?.opt("model")) ?: JSONObject.NULL)
         .put("request_sha256", sha256(request.bodyJson)).put("started_at", wall())
         .put("status", "started").put("cost_micros", JSONObject.NULL)
         .put("single_http_request", singleHttpRequest)
+        .put("request_controls", requestControls(requestBody))
         .put("cost_status", "not_measured").put("tokens_complete", false)
 
     fun begin() { sink.write(JSONObject(initial.toString())) }
@@ -130,6 +132,28 @@ internal class ModelCallAccounting(
     }
 
     companion object {
+        private fun requestControls(body: JSONObject?): JSONObject {
+            if (body == null) return JSONObject().put("types_valid", false)
+            return JSONObject().apply {
+                var valid = true
+                listOf("max_tokens", "temperature", "top_p").forEach { key ->
+                    val value = body.opt(key)
+                    if (value != null && value != JSONObject.NULL && value !is Number) valid = false
+                    put(key, if (value is Number) value else JSONObject.NULL)
+                }
+                val effort = body.opt("reasoning_effort")
+                val knownEffort = effort in setOf("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+                if (effort != null && effort != JSONObject.NULL && !knownEffort) valid = false
+                put("reasoning_effort", if (knownEffort) effort else JSONObject.NULL)
+                val thinking = body.optJSONObject("thinking")?.opt("type")
+                if (body.has("thinking") && thinking !in setOf("enabled", "disabled")) valid = false
+                put("thinking_mode", if (thinking in setOf("enabled", "disabled")) thinking else JSONObject.NULL)
+                if (body.has("tools") && body.optJSONArray("tools") == null) valid = false
+                put("tool_definitions", body.optJSONArray("tools")?.length() ?: if (body.has("tools")) JSONObject.NULL else 0)
+                put("types_valid", valid)
+            }
+        }
+
         private fun identifier(value: Any?): String? = (value as? String)?.takeIf {
             it.isNotBlank() && it.length <= 256 && it.all { ch -> ch.isLetterOrDigit() || ch in "-_./:" }
         }

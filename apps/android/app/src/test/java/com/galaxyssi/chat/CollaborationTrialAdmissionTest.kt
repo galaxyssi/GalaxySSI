@@ -185,6 +185,15 @@ class CollaborationTrialAdmissionTest {
         assertEquals(1L, count(ledger))
     }
 
+    @Test fun settlementCannotRewriteCapturedRequestControls() {
+        val ledger = configured()
+        admit(ledger)
+        val started = ledger.page("group", "run").first.single()
+        started.getJSONObject("request_controls").put("temperature", 0.5)
+        assertThrows(IllegalStateException::class.java) { ledger.sink(access).write(started.put("status", "failed")) }
+        assertEquals("started", ledger.page("group", "run").first.single().getString("status"))
+    }
+
     @Test fun policyDecodingRejectsCoercedCountsAndInvalidBounds() {
         assertEquals(policy, CollaborationTrialPolicy.from(JSONObject(policy.json().toString())))
         listOf<Any>("3", 3.5, -1, 0, Long.MAX_VALUE, JSONObject.NULL).forEach { value ->

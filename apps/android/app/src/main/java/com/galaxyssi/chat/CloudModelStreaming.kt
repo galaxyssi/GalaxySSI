@@ -72,12 +72,19 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
             val textPolicy = CloudConversationTextPolicy(collaborationEvidence != null)
             val publication = collaborationEvidence?.let { CollaborationPublicationRecovery.create(context, it.access) }
-            val auditSink = collaborationEvidence?.let { CollaborationModelCallLedger(context).sink(it.access) }
+            val auditLedger = collaborationEvidence?.let { CollaborationModelCallLedger(context) }
+            val auditSink = collaborationEvidence?.let { auditLedger!!.sink(it.access) }
+            val trialProfile = collaborationEvidence?.let {
+                auditLedger!!.trialSnapshot(it.access.groupId, it.access.runId)?.getJSONObject("policy")
+                    ?.let(CollaborationTrialPolicy::from)?.profile
+            }
+            val effectiveTools = allowExternalTools && trialProfile == null
+            val effectiveContact = trialProfile?.contact(contact) ?: contact
             var lastSequence = 0L
             val execute: suspend (AgentModelLoopRecords?) -> Unit = { records ->
-                streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
-                    readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride, citationPreviewEnabled,
-                    imageSession, records, textPolicy, publication, auditSink).collect { event ->
+                streamConversationOwned(context, effectiveContact, turns, requestId, images, connectTimeoutMillis,
+                    readTimeoutMillis, onToolEvent, effectiveTools, systemPromptOverride, citationPreviewEnabled,
+                    imageSession, records, textPolicy, publication, auditSink, trialProfile).collect { event ->
                     if (event is ModelStreamEvent.TextDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.ToolCallDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.Completed) {
@@ -88,7 +95,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     emit(event)
                 }
             }
-            if (recoveryScope != null && images.isEmpty() && allowExternalTools) {
+            if (recoveryScope != null && images.isEmpty() && effectiveTools) {
                 EncryptedAgentModelLoopJournal(context).withLease(recoveryScope) { execute(it) }
             } else execute(null)
         }
@@ -110,7 +117,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         records: AgentModelLoopRecords?,
         textPolicy: CloudConversationTextPolicy,
         publication: CollaborationPublicationRecovery?,
-        auditSink: ModelCallAuditSink?
+        auditSink: ModelCallAuditSink?,
+        trialProfile: CollaborationTrialProfile?
     ): Flow<ModelStreamEvent> = flow {
         var useStreaming = contact.optBoolean("cloud_streaming_enabled", true)
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -152,6 +160,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             imageSession.installCollaborationTools(prepared)
             appendPlainConversationTurn(prepared, "user", CloudEvidenceCitations.instruction)
         }
+        trialProfile?.apply(prepared.body)
         val globalSequence = AtomicLong(0L)
         val toolProgress = CloudWebToolLoopProgress()
         val research = CloudResearchLoop(CloudResearchLimits.from(contact))
