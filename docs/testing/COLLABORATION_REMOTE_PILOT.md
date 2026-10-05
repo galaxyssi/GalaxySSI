@@ -107,8 +107,9 @@ closed. A reserved slot is never automatically rerun under the same protocol ID.
 
 Each slot needs three phone-side delegate dispatches. This allowance is **not**
 an API-request, token, tool-call, or monetary cap: the remote executor can issue
-multiple provider requests within one dispatch. Obtain fresh authorization for
-each protocol. Prior authorization for a different live fixture is not reused.
+multiple provider requests within one dispatch. Each protocol must fit explicit
+per-round authorization or an applicable standing authorization with unchanged
+limits. Authorization for a different live fixture is not implicitly reused.
 Local unit tests and compilation do not authorize live execution.
 
 ## Evidence and cleanup
@@ -144,6 +145,43 @@ equal-budget superiority, a complete six-arm experiment, or longitudinal
 retention. Those require separate protocols, scoring, isolation, accounting,
 repetitions, and analysis of all assigned outcomes.
 
+### Optional frozen candidate artifacts
+
+Explicitly opt in with `remotePilotFreezeArtifacts=true` (omitted or `false`
+preserves the existing cleanup behavior). Record this choice in the private
+experiment plan before execution. This test-only path captures a successful,
+untruncated runtime result before cleaning its conversation and execution store.
+It does not make another model request, change the App selection, or modify
+production evolution/skill acceptance policies.
+
+The captured object contains exact draft, review, and final outputs plus the
+phone-side dispatch journal. Its source binds the protocol digest, case, arm,
+slot, run, conversation, turn, task, target, requested model/effort, and task-text
+digest. Three distinct completed node dispatches must agree with that source.
+The exact serialized payload and final output have SHA-256 digests; restored
+content must match the caller's expected source and reference. These hashes
+detect content changes; they are not signed attestations of model identity or
+truth, and phone dispatch records do not prove provider request counts.
+
+`CollaborationPilotArtifactStore` writes into the separate encrypted test
+database `remote-pilot-artifacts-<pilot_id>`. A transaction permits an identical
+retry but rejects a different payload for an existing source. Corrupt existing
+records fail closed instead of being replaced. The per-slot report records the
+candidate reference and source; a capture failure marks that slot failed and
+preserves its ordinary output/failure report. Normal cleanup never deletes the
+candidate store. Archive this private evidence before explicitly clearing its
+dedicated test namespace; it may contain sensitive output and is not for Git.
+
+Every object is labeled `unverified_candidate` and grants no permissions. It is
+not installed as a procedure skill, automatically supplied to future tasks, or
+treated as a successful innovation. Independent production review remains
+mandatory for retained skills. In particular, an all-single-person arm cannot
+silently invent an independent reviewer to satisfy that rule. A future fair
+learning comparison needs a separately specified external evaluator for both
+arms, fresh target contexts, a withheld-artifact control, and regression tests.
+This increment supplies persistence/retrieval, not that complete experiment or
+proof of cross-task learning.
+
 ## Local verification
 
 Run `CollaborationRemotePilotTest`, `CollaborationPilotPlanTest`,
@@ -151,6 +189,15 @@ Run `CollaborationRemotePilotTest`, `CollaborationPilotPlanTest`,
 plus `:app:compileDebugAndroidTestKotlin`. Tests cover configurable App selection,
 unchanged assignment controls, synthetic execution of both real runtime graphs,
 protocol validation, journaling failure, deadlines, and replay rejection.
+
+`CollaborationPilotArtifactTest` runs local synthetic graphs for both arms and
+checks exact output recovery, attribution, corruption, and invalid-result
+rejection. `CollaborationPilotArtifactDeviceTest`, enabled only by
+`candidateArtifactSynthetic=true` on SM-S9480, uses deterministic local workers
+to check encrypted persistence after source cleanup, reopened-store retrieval,
+atomic competing writes, and corrupt/foreign-source rejection. It makes no model
+or transport call and never operates a user conversation. These synthetic
+results must not be presented as real-model learning or efficacy measurements.
 
 For Kotlin-only checks on machines without the native-memory Rust toolchain,
 `-x :app:buildNativeMemory` excludes that independent build task. This is not a

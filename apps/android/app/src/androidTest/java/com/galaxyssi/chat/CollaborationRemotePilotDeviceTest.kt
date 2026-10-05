@@ -41,6 +41,9 @@ class CollaborationRemotePilotDeviceTest {
         check(digest == args.getString("remotePilotSha256")) { "Frozen remote protocol changed" }
         val authorized = requireNotNull(args.getString("remotePilotMaxDispatches")?.toIntOrNull())
         val plan = CollaborationRemotePilotPlan.from(JSONObject(bytes.toString(Charsets.UTF_8)), authorized)
+        val freezeValue = args.getString("remotePilotFreezeArtifacts")
+        require(freezeValue == null || freezeValue in setOf("true", "false"))
+        val freezeArtifacts = freezeValue == "true"
         val transcripts = AgentTranscriptStore(context)
         val selectionConversation = args.getString("remotePilotSelectionConversationId").orEmpty()
         require(selectionConversation.isNotBlank() && transcripts.conversation(selectionConversation) != null)
@@ -60,6 +63,7 @@ class CollaborationRemotePilotDeviceTest {
             .put("selection_source", "app_conversation_snapshot").put("selection_conversation_id", selectionConversation)
             .put("provider_token_total", JSONObject.NULL).put("billed_cost", JSONObject.NULL)
             .put("tool_isolation_verified", false).put("ready_for_equal_budget_comparison", false)
+            .put("freeze_candidate_artifacts", freezeArtifacts)
             .put("purpose", "remote_engineering_comparison_not_closed_book_or_efficacy")
             .put("started_at", System.currentTimeMillis()).put("finished", false).put("slots", slots)
         val persist = { synchronized(reportLock) { save(reportFile, report) } }
@@ -68,7 +72,7 @@ class CollaborationRemotePilotDeviceTest {
         try {
             for ((index, slot) in plan.slots.withIndex()) {
                 plan.requireAppSelection(AgentModelSelectionSettings.selection(context, selectionConversation))
-                if (!runSlot(plan, slot, slots.getJSONObject(index), persist)) {
+                if (!runSlot(plan, slot, slots.getJSONObject(index), digest, freezeArtifacts, persist)) {
                     for (remaining in index + 1 until slots.length()) slots.getJSONObject(remaining)
                         .put("reason", "previous_trial_cleanup_not_confirmed")
                     break
@@ -82,7 +86,8 @@ class CollaborationRemotePilotDeviceTest {
     }
 
     private suspend fun runSlot(plan: CollaborationRemotePilotPlan, slot: CollaborationRemotePilotPlan.Slot,
-                                outcome: JSONObject, persist: () -> Unit): Boolean {
+                                outcome: JSONObject, protocolSha256: String, freezeArtifacts: Boolean,
+                                persist: () -> Unit): Boolean {
         val run = "remote-pilot-${plan.id}-${slot.id}"
         val turn = "turn-$run"
         val database = AgentEncryptedDatabase(context, run)
@@ -141,6 +146,15 @@ class CollaborationRemotePilotDeviceTest {
                 outcome.put("status", if (result.snapshot.state == AgentTeamExecutionState.SUCCEEDED) "completed" else "failed")
                     .put("result_truncated", result.subagentResult.results.any { it.outputTruncated })
                 if (result.subagentResult.results.any { it.outputTruncated }) outcome.put("status", "invalid_output_envelope")
+                if (freezeArtifacts && outcome.getString("status") == "completed") {
+                    val source = CollaborationPilotArtifact.Source.of(plan, slot, group, run, turn, protocolSha256)
+                    val artifact = CollaborationPilotArtifact.capture(source, result.snapshot, dispatches,
+                        result.subagentResult.results.any { it.outputTruncated })
+                    val ref = CollaborationPilotArtifactStore(context, plan.id).freeze(artifact)
+                    outcome.put("candidate_artifact", ref.json()).put("candidate_source", source.json())
+                        .put("candidate_trust", "unverified_candidate")
+                    persist()
+                }
             }
         } catch (failure: Exception) {
             outcome.put("status", "failed").put("failure_type", failure.javaClass.simpleName)
