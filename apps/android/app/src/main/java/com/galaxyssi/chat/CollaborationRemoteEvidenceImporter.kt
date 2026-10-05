@@ -32,8 +32,11 @@ internal class CollaborationRemoteEvidenceImporter(
                     val cursor = job.getLong("cursor")
                     var entries = job.optJSONArray("index_entries")
                     if (entries == null || entries.length() == 0) {
+                        if (job.opt("index_complete") == true)
+                            return finish(if (job.getLong("skipped_large") == 0L) "imported" else "partial_large_objects")
                         val response = query(job.getString("desktop"), fields,
-                            JSONObject().put("mode", "index").put("after_sequence", cursor)) ?: return false
+                            JSONObject().put("mode", "index").put("after_sequence", cursor)
+                                .put("inline_page_bytes", CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)) ?: return false
                         if (!authorized()) return false
                         if (response.optString("status") == "unavailable") return finish("unavailable")
                         require(response.opt("status") == "ready" && response.opt("coverage") == "observed_completed_items_only" &&
@@ -48,8 +51,11 @@ internal class CollaborationRemoteEvidenceImporter(
                         }
                         require(CollaborationRemoteEvidenceProtocol.integer(response, "next_sequence") == last &&
                             (!response.getBoolean("has_more") || entries.length() > 0))
+                        cacheInlinePages(key, response, entries)
                         if (entries.length() == 0) return finish(if (job.getLong("skipped_large") == 0L) "imported" else "partial_large_objects")
-                        job.put("index_entries", entries)
+                        // Only a sealed execution archive permits skipping the final empty query.
+                        job.put("index_entries", entries).put("index_complete",
+                            response.opt("archive_final") == true && !response.getBoolean("has_more"))
                     }
                     // Keep the remainder of this index page; one query supplies up to twenty observations.
                     descriptor = requireNotNull(entries).getJSONObject(0)
@@ -108,6 +114,25 @@ internal class CollaborationRemoteEvidenceImporter(
         catch (_: org.json.JSONException) { return finish("integrity_rejected") }
         catch (_: java.nio.charset.CharacterCodingException) { return finish("integrity_rejected") }
         // Storage failures propagate to the read-only recovery worker, preserving the exact descriptor/pages.
+    }
+
+    private fun cacheInlinePages(key: String, response: JSONObject, entries: org.json.JSONArray) {
+        if (!response.has("inline_pages")) return
+        val pages = response.getJSONArray("inline_pages")
+        require(pages.length() <= entries.length())
+        val descriptors = (0 until entries.length()).map(entries::getJSONObject)
+            .associateBy { it.getString("evidence_id") }
+        val seen = mutableSetOf<String>()
+        var bytes = 0L
+        repeat(pages.length()) { index ->
+            val page = pages.getJSONObject(index)
+            val id = page.getString("evidence_id")
+            val entry = requireNotNull(descriptors[id])
+            require(seen.add(id) && entry.getInt("page_count") == 1)
+            bytes += entry.getLong("total_bytes")
+            require(bytes <= CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)
+            requireNotNull(decode(page, entry, 0)).use { store.savePage(key, entry, 0, page) }
+        }
     }
 
     private fun decode(page: JSONObject, descriptor: JSONObject, index: Int): AgentResultRecoveryPageCodec.Page? {

@@ -30,7 +30,11 @@ Also required: positive integer `execution_generation` and a 1-128 character `re
 
 ### Index
 
-Set `mode=index` and `after_sequence=0` initially. Responses contain up to 20 immutable descriptors, a monotonic `next_sequence`, and `has_more`. Continue using the last returned cursor; no total-observation cap is imposed. The page size is a transport bound, not a task or research-step limit. The index contains hashes, types, outcomes and timestamps, not raw commands, results or private identifiers.
+Set `mode=index` and `after_sequence=0` initially. Responses contain up to 20 immutable descriptors, a monotonic `next_sequence`, and `has_more`. Continue using the last returned cursor; no total-observation cap is imposed. The page size is a transport bound, not a task or research-step limit. Descriptors contain hashes, types, outcomes and timestamps, not raw commands or results.
+
+The phone may request `inline_page_bytes=16384` (integer 0-16384, default 0). The optional `inline_pages` array carries complete single-page originals from this same index, within that **total decoded-byte budget**. Large or remaining originals still use normal page queries; they are not dropped or truncated. These pages are private evidence and use the same authenticated/encrypted transport, page/full-body hashes and inner-scope verification as separately requested pages. No second model request is made. Old peers that omit the extension retain the original paging flow.
+
+`archive_final=true` means the current execution is terminal and cannot admit new observations under this generation. It does **not** mean provider history is complete or conclusions are verified. After importing every entry of a final index with `has_more=false`, Android persists that boundary and skips the redundant empty-index round trip. Running, paused or takeover archives cannot claim this boundary. On interruption, the boundary and validated inline pages recover from the same existing checkpoints.
 
 ### Original payload page
 
