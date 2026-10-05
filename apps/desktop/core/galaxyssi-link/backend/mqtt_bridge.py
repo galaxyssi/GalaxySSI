@@ -5862,6 +5862,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             if task_id != task.task_id or task.execution_generation != codex_execution_generation:
                 return
             nonlocal result_published, recovery_attempts
+            if event.get("provider_usage_only") is True:
+                from codex_provider_usage import capture
+                capture(codex_mutations, event)
+                return
             if event.get("evidence_only") is True:
                 from codex_tool_evidence_bridge import capture
                 capture(codex_mutations, event)

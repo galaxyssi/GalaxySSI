@@ -363,6 +363,8 @@ class AgentTaskManager:
         self._store = AgentTaskStore(store_path)
         from agent_tool_evidence import AgentToolEvidence
         self.tool_evidence = AgentToolEvidence(store_path)
+        from agent_provider_usage import AgentProviderUsage
+        self.provider_usage = AgentProviderUsage(store_path)
         self._run_events = run_event_sink or AgentTaskRunEventSink(store_path)
         if self._run_events.ledger.path.resolve() != store_path.resolve():
             raise ValueError("Task store and Run ledger must share one database")

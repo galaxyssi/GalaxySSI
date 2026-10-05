@@ -68,6 +68,9 @@ rewrite the admitted controls. Ordinary requests without a profile are unchanged
 The admission policy pins the target and model, disables hidden HTTP retries
 and redirects, and rejects unmetered adapters. Remote Codex is intentionally not
 included until its internal model calls can be collected and bounded correctly.
+The [Codex notification audit](CODEX_PROVIDER_USAGE_AUDIT.md) records official
+usage snapshots but does not yet provide unique response receipts or enforce
+internal request admissions; that exclusion therefore still applies.
 Output/context envelopes are explicit; truncated dependency results fail the
 trial instead of being silently treated as complete evidence. No model-based
 grader runs on the phone. Provider usage remains distinct from billing cost;
