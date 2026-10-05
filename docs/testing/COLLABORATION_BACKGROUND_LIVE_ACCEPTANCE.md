@@ -15,6 +15,7 @@ adb -s <authorized-serial> shell am instrument -w -r
   -e class com.galaxyssi.chat.CollaborationLiveEvidenceDeviceTest
   -e collaborationLiveEvidence true
   -e collaborationModel gpt-6-astra
+  -e collaborationReasoningEffort xhigh
   -e collaborationLiveHeadless true
   -e collaborationLiveMultipart true
   com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
@@ -23,8 +24,9 @@ adb -s <authorized-serial> shell am instrument -w -r
 Join the lines for the local shell. Omitting `collaborationLiveEvidence=true`
 skips the real-provider test. Headless and multipart flags are independently
 selectable; neither silently enables real requests.
-The model argument is explicit and required; the fixture does not inherit contact
-defaults. See [model provenance rules](COLLABORATION_LIVE_EVIDENCE.md#invocation).
+The model and reasoning-effort arguments are explicit and required; all members
+use the same selection and the fixture does not inherit contact defaults.
+See [model provenance rules](COLLABORATION_LIVE_EVIDENCE.md#invocation).
 
 ## Scope
 

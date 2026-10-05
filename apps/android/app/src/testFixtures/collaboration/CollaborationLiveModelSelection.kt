@@ -4,10 +4,11 @@ import org.json.JSONObject
 
 /** Test-only selection: real-provider fixtures must never inherit mutable UI defaults. */
 internal class CollaborationLiveModelSelection private constructor(
-    val modelId: String
+    val modelId: String,
+    val reasoningEffort: AgentModelReasoningEffort
 ) {
     fun members(codex: AgentCallableTarget): List<CollaborationMember> {
-        requireAvailable(codex, modelId)
+        requireAvailable(codex, modelId, reasoningEffort)
         return listOf(
             CollaborationMember(name = "Turing", agentId = codex.id, providerLabel = codex.title,
                 role = "Document author and coordinator", modelId = modelId),
@@ -20,6 +21,7 @@ internal class CollaborationLiveModelSelection private constructor(
         require(person.modelId == modelId) { "Fixture member model is not pinned" }
         return mapOf("collaboration_group_id" to group, "collaboration_name" to person.name,
             "collaboration_provider" to person.providerLabel, "collaboration_model_id" to person.modelId,
+            CollaborationReasoningSelection.KEY to reasoningEffort.wireValue,
             CollaborationResearchWorkflow.PERSON to person.id, CollaborationResearchWorkflow.STAGE to stage,
             CollaborationGoalLoop.ENABLED to "1")
     }
@@ -27,27 +29,30 @@ internal class CollaborationLiveModelSelection private constructor(
     fun json() = JSONObject().put("format", "galaxyssi.live-model-selection.v2")
         .put("requested_model", modelId).put("served_model", JSONObject.NULL)
         .put("execution_route", "android_desktop_codex_openai")
-        .put("same_model_all_members", true).put("reasoning_effort", "existing_adapter_default_not_pinned")
+        .put("same_model_all_members", true).put("requested_reasoning_effort", reasoningEffort.wireValue)
+        .put("served_reasoning_effort", JSONObject.NULL)
         .put("availability", "not_verified_by_this_record")
         .put("provenance", "requested_only_join_original_provider_receipts")
 
     companion object {
         const val MODEL_ARGUMENT = "collaborationModel"
+        const val EFFORT_ARGUMENT = "collaborationReasoningEffort"
 
-        fun from(model: String?): CollaborationLiveModelSelection {
+        fun from(model: String?, effort: String?): CollaborationLiveModelSelection {
             require(model != null && Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,255}").matches(model) &&
                 model.lowercase() !in setOf("auto", "default", "latest")) {
                 "Explicit $MODEL_ARGUMENT model ID required; fixture will not use a default"
             }
-            return CollaborationLiveModelSelection(model)
+            return CollaborationLiveModelSelection(model, CollaborationReasoningSelection.explicit(effort))
         }
 
-        fun requireAvailable(target: AgentCallableTarget, model: String) {
+        fun requireAvailable(target: AgentCallableTarget, model: String, effort: AgentModelReasoningEffort) {
             require(target.kind == AgentConnectorKind.AGENT && target.adapterType == "codex-app-server-or-cli" &&
                 target.status == AgentConnectorStatus.AVAILABLE &&
                 target.invocationProfile.models.any { it.id == model } &&
-                target.invocationProfile.normalizedModelId(model) == model) {
-                "Requested model $model is not advertised by available target ${target.id}; no substitution allowed"
+                target.invocationProfile.normalizedModelId(model) == model &&
+                effort != AgentModelReasoningEffort.AUTO && effort in target.invocationProfile.reasoningEfforts) {
+                "Requested model $model and effort ${effort.wireValue} are not advertised by available target ${target.id}; no substitution allowed"
             }
         }
     }

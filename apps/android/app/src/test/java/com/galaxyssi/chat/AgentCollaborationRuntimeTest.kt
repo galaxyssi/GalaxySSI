@@ -901,7 +901,7 @@ class AgentCollaborationRuntimeTest {
         val managedResponses = InMemoryAgentManagedResponseLedger()
         val registrations = listOf(
             registration("primary", AgentCapability.CODE),
-            registration("observer", AgentCapability.RESEARCH)
+            registration("observer", AgentCapability.RESEARCH).copy(adapterType = "codex-app-server-or-cli")
         )
         val provider = ActionExecutorAgentProvider(
             registrationSource = { registrations },
@@ -953,7 +953,8 @@ class AgentCollaborationRuntimeTest {
                 AgentTeamMember("primary", AgentDeliveryMode.RESPOND, setOf(AgentCapability.CODE)),
                 AgentTeamMember("observer", AgentDeliveryMode.OBSERVE, setOf(AgentCapability.RESEARCH),
                     objective = "Review the saved document and report the observed evidence",
-                    context = mapOf("collaboration_group_id" to "conversation", "collaboration_model_id" to "selected-model"))
+                    context = mapOf("collaboration_group_id" to "conversation", "collaboration_model_id" to "selected-model",
+                        CollaborationReasoningSelection.KEY to "xhigh"))
             )
         )
 
@@ -972,10 +973,12 @@ class AgentCollaborationRuntimeTest {
         assertEquals("respond", observerAction.parameters["delivery_mode"])
         assertEquals("selected-model", observerAction.parameters["agent_model_id"])
         assertEquals("selected-model", observerAction.parameters["manual_model_id"])
+        assertEquals("xhigh", observerAction.parameters["agent_reasoning_effort"])
         assertEquals("true", observerAction.parameters["manual_target_locked"])
         assertTrue(observerAction.parameters["prompt"].orEmpty().contains("Respond only as this one member"))
         assertTrue(observerAction.parameters["prompt"].orEmpty().contains("You are not the coordinator"))
         assertNull(primaryAction.parameters["manual_model_id"])
+        assertNull(primaryAction.parameters["agent_reasoning_effort"])
         assertEquals("Review the saved document and report the observed evidence",
             observerAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertEquals(policyPrompt, primaryAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
