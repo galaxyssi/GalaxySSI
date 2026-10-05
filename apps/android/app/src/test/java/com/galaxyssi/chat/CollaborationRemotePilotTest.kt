@@ -141,6 +141,19 @@ class CollaborationRemotePilotTest {
         assertThrows(IllegalStateException::class.java) { guard.admit(action(ctx).copy(kind = AgentActionKind.READ_SCREEN)) }
     }
 
+    @Test fun optionalExecutionFeedbackIsBoundInTheActualDispatchedPrompt() {
+        val plan = plan()
+        val context = execution(plan, "review")
+        val records = mutableListOf<JSONObject>()
+        val guard = guard(plan, persist = records::add)
+        val feedback = "\nExternal execution observation: case failed."
+        guard.prepare(context, feedback)
+        val actual = guard.admit(action(context)).parameters.getValue("prompt")
+        assertEquals(plan.prompt(context) + feedback, actual)
+        assertEquals(CollaborationRemotePilotDispatch.sha256(actual.toByteArray()), records.single().getString("prepared_prompt_sha256"))
+        assertThrows(IllegalStateException::class.java) { guard(plan).prepare(execution(plan), "x".repeat(60_001)) }
+    }
+
     @Test fun crossRunOrAlteredMemberIsRejected() {
         val plan = plan()
         val ctx = execution(plan)
