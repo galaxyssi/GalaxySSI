@@ -161,17 +161,59 @@ not independently authenticated proof. Audit the receipts before unblinding.
 
 ## Report And Eligibility
 
+Reporting analysis version 2 adds an **all-assigned policy endpoint** before
+the selected-pair diagnostics. The plan, export and interchange schemas remain
+version 1; existing captures need no relabeling. This is reporting-only: no App
+or Desktop release version, scheduler, model call, or user task is changed.
+
+The endpoint is binary verified completion within the assigned entire-trial
+budget. It is distinct from the fractional structured-answer quality score:
+
+| Evidence for a scheduled slot | Policy outcome |
+| --- | --- |
+| Verified full rubric pass, equal enforced caps, complete accounting within all caps | 1 |
+| Verified terminal noncompletion or rubric failure | 0, even when resource totals remain unknown |
+| Verified completed answer with any measured cap exceeded | 0; keep raw answer quality and actual resource use |
+| Missing or unfinished result, invalid assignment/capture/controls | UNKNOWN |
+| Potential success with unverified budget compliance | UNKNOWN |
+
+The budget-excess outcome is a failure of the **observed policy**, not an
+estimate of what that trial would have achieved with a lower budget. A missing
+row is not proof that a goal was left unattempted after exhaustion; an interim
+snapshot does not close collection. Such goals need an auditable terminal
+outcome from the collector under the frozen protocol before they can score zero.
+Accounting remains unknown when unavailable even if noncompletion is known.
+
+For each arm, with N scheduled slots, S verified successes and U unknown
+outcomes, `all_assigned` reports bounds `[S/N, (S+U)/N]`. A point estimate is
+reported only if U=0. For each pair, the B-minus-A lower bound is B.lower minus
+A.upper, and its upper bound is B.upper minus A.lower; these are averaged over
+**all scheduled pairs**. Task slices use the same rule. Bounds are worst-case
+missing-outcome bounds, not confidence intervals, and make no missing-at-random
+assumption. They do not address sampling error, unverified collector testimony,
+or generalization beyond the scheduled corpus. No arm is declared a winner.
+
+`eligible_pair_analysis` explicitly marks the older selected-pair analysis as
+diagnostic. Eligibility depends on events after assignment, so conditioning on
+it can bias a treatment comparison. For example, excluding one otherwise correct
+over-budget B result can make the surviving pairs appear tied while B has fewer
+budget-compliant completions. Use the all-assigned outcome for that policy
+question; do not substitute the selected-pair quality mean.
+
 Each pair is eligible only when both slots have a terminal result, matching
 request/run/scenario/order identity and controlled policies, verified capture
 and total-budget enforcement, exactly equal caps, all five known resource
 metrics, and no exceeded cap. Failure/timeout/partial/cancelled status does not
 itself exclude a trial: known-accounting failures score zero and remain paired.
 Over-budget outcomes and unknown-accounting failures remain in the full report
-but their pair cannot support the equal-budget comparison.
+but their pair cannot support the eligible-only diagnostic comparison.
 
 `report.json` contains all slots, exclusion reasons, assertion-level quality,
-known/unknown counts, all-scheduled descriptive means, paired B-minus-A deltas,
-and per-task repeated-pair coverage. `report.md` summarizes the same evidence.
+known/unknown counts, all-assigned outcomes and bounds, available-observation
+descriptive means, diagnostic paired B-minus-A deltas, and per-task coverage.
+`report.md` summarizes the same evidence. `metrics_all_scheduled` retains its
+existing name for consumers, but each `mean_basis` explicitly says that its
+mean uses available observations only, not all assigned slots.
 Quality is the fraction of exact structured answer fields satisfied, subject to
 the existing critical output/tool contracts; it is not a model-graded opinion.
 No wall-clock cost or success is inferred from fixture execution speed.
@@ -200,3 +242,9 @@ then examine quality and efficiency before unblinding. Where app telemetry or
 budget enforcement is not available, eligibility must remain incomplete; this
 tooling does not claim those app capabilities are implemented. No real collection,
 full build, device test, commit, PR, upload, or push is performed by this work.
+
+The corpus is not a longitudinal task stream. These reporting mechanics do not
+implement six-arm factorial assignment, stream-level learning, sealed audit
+tasks, campaign closure, a symmetric outage rerun policy, cluster uncertainty,
+or confirmatory inference. Those require a separately frozen study protocol and
+collector; the new endpoint must not be presented as such an experiment.

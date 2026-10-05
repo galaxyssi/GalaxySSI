@@ -91,7 +91,8 @@ function main() {
     "reviewer-packet.json": reviewerPacket(plan, corpus, input, expectedKind),
     "audit-input.private.json": input
   });
-  console.log(`${report.conclusion}; eligible pairs ${report.eligible_pairs}/${report.expected_pairs}`);
+  const assigned = report.all_assigned;
+  console.log(`${report.conclusion}; all-assigned unknown outcomes ${assigned.arms.A.unknown + assigned.arms.B.unknown}/${plan.slots.length}; diagnostic eligible pairs ${report.eligible_pairs}/${report.expected_pairs}`);
   process.exitCode = expectedKind === "actual" && report.eligible_pairs === report.expected_pairs ? 0 : 2;
 }
 
