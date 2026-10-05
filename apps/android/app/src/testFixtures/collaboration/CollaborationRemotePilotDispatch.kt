@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /** Reserves each phone-side delegate dispatch before I/O; this is NOT an API-request budget. */
 internal class CollaborationRemotePilotDispatch(
-    private val plan: CollaborationRemotePilotPlan,
+    private val plan: CollaborationRemoteExecutionPolicy,
     private val definition: AgentTeamDefinition,
     private val group: String,
     private val run: String,

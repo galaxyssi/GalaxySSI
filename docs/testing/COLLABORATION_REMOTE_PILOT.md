@@ -182,7 +182,99 @@ arms, fresh target contexts, a withheld-artifact control, and regression tests.
 This increment supplies persistence/retrieval, not that complete experiment or
 proof of cross-task learning.
 
+### Fresh-context artifact availability probes
+
+`CollaborationArtifactProbeDeviceTest#runFreshArtifactProbes` is a separate
+opt-in live fixture (`artifactTransferProbe=true`). It reuses explicit App model
+selection, guarded dispatch, normal remote execution and durable STOP cleanup.
+Each assigned target slot is one new conversation with one solver and at most
+one phone-side dispatch; it cannot reuse a source conversation or run. Actual
+provider thread separation must still be checked from original receipts.
+
+The private input format is `galaxyssi.artifact-transfer-probe.v1`, with exactly
+`format`, `pilot_id`, `target_id`, `model_id`, `reasoning_effort`, `tool_scope`,
+`trial_timeout_ms`, `sources` and `slots`. Each source has `id`, the exact frozen
+`source` metadata, and `reference`. Each slot has `id`, `case_id`, `source_id`,
+`condition` (`available` or `withheld`) and `prompt`. Every source/case pair must
+have both conditions with byte-identical task material. Source target/model/
+effort must match the new explicit selection. The target prompt must differ
+from the acquisition prompt. These structural checks do not establish semantic
+task independence or prevent a poorly designed or answer-leaking protocol.
+
+Use the same device, tools, input hash, selection-conversation and authorization
+arguments as the engineering pilot. This small fixture accepts 2..12 slots and
+60..600 seconds per slot, never more slots than the approved dispatch allowance.
+An acquisition stage and its probes must fit the applicable total authorization;
+separate command invocations do not grant additional budget.
+
+An available slot loads only its expected candidate and includes the exact final
+text as explicitly unverified data. It does not load draft/review text or silently
+replace a missing, corrupt or changed candidate. A withheld slot never calls the
+candidate reader and its prepared prompt contains no artifact text. The report
+`probe-<pilot_id>-report.json` records the planned conditions, actual load flag,
+candidate reference, prepared-prompt hash, unique dispatch identity, timing,
+unchanged raw result, truncation, failures and cleanup. Existing reports are
+rerun barriers. A failed slot stays in the denominator; unconfirmed cleanup stops
+later slots. Source artifacts are retained, not deleted or promoted to skills.
+
+Freeze the target templates, order, reference answers and external evaluator
+before acquisition. After source completion, bind only the observed exact
+references into the already-frozen template. Keep all these files outside Git
+and out of target prompts. To measure method utility instead of withholding
+essential information, provide the same underlying rules and source material to
+both conditions. Account for acquisition, reconstruction, extra prompt tokens,
+retries and tools; these probes are not automatically an equal-cost experiment.
+Passing synthetic tests or one live family is not evidence of general learning,
+domain transfer, capability retention, novelty, or a six-arm longitudinal effect.
+
+Local checks: `CollaborationArtifactProbeTest` covers source round trips, exact
+availability, no-reader withheld controls, one-dispatch admission, fresh IDs,
+truncation and protocol drift. `CollaborationArtifactProbeSyntheticDeviceTest`
+with `artifactProbeSynthetic=true` checks encrypted-source handoff on S26U
+without invoking any model. Existing engineering and artifact tests remain
+required when their shared guard or source codec changes.
+
 ## Local verification
+
+### Shared controls and completed-report recovery
+
+`galaxyssi.artifact-transfer-probe.v2` retains the same fields as v1, but allows
+one shared withheld control per `case_id`. Its `source_id` is the empty string;
+each available slot references a distinct declared candidate. All slots in a
+case have identical task material, and every declared source must be used.
+The shared control has no candidate reference, never reads candidate storage,
+and still cannot reuse any acquisition conversation or run. Target solvers are
+fresh single identities regardless of whether their candidate came from a
+single-person or team source. This is a conditional artifact-availability
+comparison, not a direct multiagent target execution or equal-lifetime-budget
+comparison. Freeze the design and record any prompt-presentation differences
+before observing live results; preserve the original private grading protocol.
+
+Historical pilots without frozen candidates can be imported only through
+`CollaborationPilotReportRecoveryDeviceTest#recoverCompletedReportArtifacts`.
+This requires `candidateReportRecovery=true`, `pilotDeviceModel=SM-S9480`,
+`remotePilotInput`, `remotePilotSha256`, `recoveryReportInput`,
+`recoveryReportSha256`, and the original `remotePilotMaxDispatches`. Input names
+are simple JSON filenames in the App external-files directory. The recovery
+validates pinned report/protocol hashes, App selection provenance, exact slot
+assignment, successful nodes, dispatch attribution, untruncated final text, and
+confirmed STOP cleanup with no pending remote owners. It neither starts a
+connector nor invokes a model. Existing conflicting candidates are not replaced.
+
+Recovered candidates use `galaxyssi.remote-pilot-candidate.v2` and explicitly
+record `completed_test_report` provenance, the original report hash, and
+`provider_attested=false`. This is reconstruction from a pinned test report,
+not a new runtime capture or signed provider evidence. Text is preserved exactly,
+including whitespace. The `recovered-<pilot_id>.json` receipt supplies source
+references and final-text hashes for a separately frozen runtime binding.
+Hashes detect changes relative to the pinned inputs; they do not prove that a
+report author recorded reality. Candidates remain unverified and grant no
+permissions. Reports, recovered text, and research protocols remain outside Git.
+
+`CollaborationSharedArtifactProbeTest` and `CollaborationPilotReportRecoveryTest`
+cover shared-control isolation, source freshness, schema and attribution drift,
+exact-text recovery, unsuccessful/unclean sources, and provenance. These local
+checks are not live-model evidence of transfer or regression retention.
 
 Run `CollaborationRemotePilotTest`, `CollaborationPilotPlanTest`,
 `CollaborationLiveModelSelectionTest`, and `CollaborationReasoningSelectionTest`,
