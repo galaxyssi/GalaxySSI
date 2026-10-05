@@ -248,3 +248,8 @@ implement six-arm factorial assignment, stream-level learning, sealed audit
 tasks, campaign closure, a symmetric outage rerun policy, cluster uncertainty,
 or confirmatory inference. Those require a separately frozen study protocol and
 collector; the new endpoint must not be presented as such an experiment.
+
+The separate [longitudinal capture protocol](../team-longitudinal/README.md)
+now freezes six-arm ordered streams and checks declared state, communication,
+identity and shared-budget contracts. It is offline tooling, not the missing live
+collector, physical isolation layer or confirmatory outcome analysis.
