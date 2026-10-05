@@ -31,6 +31,8 @@ def _validated(observation):
             for key in ("total", "last") if isinstance(observation.get(key), dict)
         }
         params["tokenUsage"]["modelContextWindow"] = observation.get("model_context_window")
+    elif observation.get("kind") == "model_rerouted":
+        params.update(fromModel=observation.get("reported_from_model"), toModel=observation.get("reported_to_model"))
     value = normalize(params, model=observation.get("requested_model"),
                       effort=observation.get("requested_reasoning_effort"), kind=observation.get("kind"),
                       status=observation.get("provider_status", ""))

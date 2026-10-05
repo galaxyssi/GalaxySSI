@@ -200,6 +200,23 @@ class MqttCodexRecoveryTests(unittest.TestCase):
                 self.assertEqual(updates_before, len(manager.updates))
                 publish.assert_not_called()
 
+            manager.provider_usage.record.reset_mock(side_effect=True)
+            reroute = normalize({"threadId": "thread-original", "turnId": "turn-original",
+                                 "fromModel": "fixture-model", "toModel": "fixture-fallback"},
+                                model="fixture-model", effort="high", kind="model_rerouted")
+            with patch.object(mqtt_bridge, "_publish_phone_payload") as publish:
+                mqtt_bridge._dispatch_codex_event("task-recovered", {
+                    "provider_usage_only": True, "provider_usage": reroute})
+                manager.provider_usage.record.assert_called_once()
+                self.assertEqual(reroute, manager.provider_usage.record.call_args.args[1])
+                self.assertEqual(updates_before, len(manager.updates))
+                manager.task.execution_generation = 3
+                mqtt_bridge._dispatch_codex_event("task-recovered", {
+                    "provider_usage_only": True, "provider_usage": reroute})
+                self.assertEqual(1, manager.provider_usage.record.call_count)
+                manager.task.execution_generation = 2
+                publish.assert_not_called()
+
         self.assertFalse(server.started)
         self.assertEqual(1, len(server.recoveries))
         recovery = server.recoveries[0]

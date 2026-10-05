@@ -19,6 +19,11 @@ def observation(value=100):
     return normalize(payload(value), model="fixture-model", effort="high")
 
 
+def reroute_payload(**changes):
+    return dict(threadId="provider-thread", turnId="provider-turn",
+                fromModel="fixture-model", toModel="fixture-fallback", **changes)
+
+
 class CodexProviderUsageTest(unittest.TestCase):
     def test_preserves_counters_without_inventing_requests_cost_or_actual_model(self):
         result = observation()
@@ -83,6 +88,30 @@ class CodexProviderUsageTest(unittest.TestCase):
         self.assertNotIn("private error", str(logs.output))
         self.assertEqual(1, len(manager.mock_calls))
         manager.provider_usage.record.assert_called_once()
+
+    def test_reroute_preserves_reported_models_without_claiming_served_model(self):
+        result = normalize(reroute_payload(reason="PRIVATE-REASON", prompt="PRIVATE-CONTENT"),
+                           model="fixture-model", effort="high", kind="model_rerouted")
+        self.assertEqual("fixture-model", result["reported_from_model"])
+        self.assertEqual("fixture-fallback", result["reported_to_model"])
+        self.assertIsNone(result["actual_model"])
+        self.assertEqual([], result["issues"])
+        self.assertNotIn("PRIVATE-", str(result))
+        self.assertNotIn("total", result)
+
+    def test_reroute_invalid_model_is_redacted_without_losing_change_notice(self):
+        for field in ("fromModel", "toModel"):
+            for invalid in (None, True, 123, {}, [], "", "x" * 201, "model\nPRIVATE-CONTENT", " model "):
+                value = {**reroute_payload(), field: invalid}
+                result = normalize(value, model="m", effort="high", kind="model_rerouted")
+                self.assertEqual("model_rerouted", result["kind"])
+                self.assertIn(field + ":invalid_or_missing_model", result["issues"])
+                self.assertNotIn("PRIVATE-CONTENT", str(result))
+
+    def test_reroute_requires_exact_turn_identity(self):
+        for field in ("threadId", "turnId"):
+            self.assertIsNone(normalize({**reroute_payload(), field: None}, model="m", effort="high",
+                                        kind="model_rerouted"))
 
 
 class CodexProviderUsageRoutingTest(unittest.TestCase):
@@ -161,6 +190,37 @@ class CodexProviderUsageRoutingTest(unittest.TestCase):
             self.server._handle_event(dict(method="turn/completed", params=dict(
                 threadId=self.run.thread_id, turn=dict(id=self.run.turn_id, status="completed"))))
         self.assertEqual("turn_terminal", self.events[0][1]["provider_usage"]["kind"])
+        self.assertFalse(self.run.finished)
+
+    def test_reroute_does_not_change_route_task_progress_or_checkpoint(self):
+        before = vars(self.run).copy()
+        with patch.object(self.server, "_checkpoint_progress") as checkpoint:
+            self.server._handle_event(dict(method="model/rerouted", params=reroute_payload()))
+            checkpoint.assert_not_called()
+        self.assertEqual(before, vars(self.run))
+        self.assertEqual(1, len(self.events))
+        self.assertEqual("task", self.events[0][0])
+        self.assertEqual("model_rerouted", self.events[0][1]["provider_usage"]["kind"])
+        self.assertNotIn("status", self.events[0][1])
+
+    def test_foreign_or_ambiguous_reroutes_are_not_guessed(self):
+        for changes in ({"threadId": "other"}, {"turnId": "other"}, {"turnId": None}, {"threadId": {}}):
+            self.server._handle_event(dict(method="model/rerouted", params={**reroute_payload(), **changes}))
+        self.assertEqual([], self.events)
+
+    def test_late_reroute_is_recorded_without_resurrection(self):
+        self.run.finished = True
+        self.server._turn_tasks.clear()
+        self.server._handle_event(dict(method="model/rerouted", params=reroute_payload()))
+        self.assertTrue(self.run.finished)
+        self.assertEqual("task", self.events[0][0])
+        self.assertEqual({}, self.server._turn_tasks)
+
+    def test_reroute_consumer_failure_does_not_fail_the_model_task(self):
+        self.server.on_event = Mock(side_effect=OSError("PRIVATE-CONTENT"))
+        with self.assertLogs("galaxyssi.codex", level="WARNING") as logs:
+            self.server._handle_event(dict(method="model/rerouted", params=reroute_payload()))
+        self.assertNotIn("PRIVATE-CONTENT", str(logs.output))
         self.assertFalse(self.run.finished)
 
 

@@ -123,15 +123,20 @@ def capture(database: Path, scope: dict) -> dict:
                 coverage.append({"provider_thread_id": thread, "provider_turn_id": turn,
                                  "start_observed": "turn_started" in kinds,
                                  "usage_observed": "usage_snapshot" in kinds,
-                                 "terminal_observed": "turn_terminal" in kinds})
+                                 "terminal_observed": "turn_terminal" in kinds,
+                                 "model_reroute_observed": "model_rerouted" in kinds})
                 for kind, code in (("turn_started", "provider_start_unobserved"),
                                    ("usage_snapshot", "usage_snapshot_missing"),
                                    ("turn_terminal", "provider_terminal_unobserved")):
                     if kind not in kinds:
                         task_issues.append(code)
             journal["observed_turn_coverage"] = coverage
-            if any(item.get("issues") for item in observations):
+            if any(item.get("issues") for item in observations if item["kind"] == "usage_snapshot"):
                 task_issues.append("provider_usage_schema_issues")
+            if any(item["kind"] == "model_rerouted" for item in observations):
+                task_issues.append("provider_model_reroute_observed")
+            if any(item.get("issues") for item in observations if item["kind"] == "model_rerouted"):
+                task_issues.append("provider_model_reroute_schema_issues")
             if any(item[field] != scope[field] for item in observations
                    for field in ("requested_model", "requested_reasoning_effort")):
                 task_issues.append("provider_requested_controls_mismatch")
@@ -161,11 +166,14 @@ def capture(database: Path, scope: dict) -> dict:
               "task_snapshot_after_sha256": hashlib.sha256(canonical(after)).hexdigest(),
               "provider_history_complete": False, "request_count": None, "trial_token_total": None,
               "billed_cost": None, "actual_model": None, "actual_reasoning_effort": None,
+              "model_control_status": "reroute_observed" if any(
+                  row["code"] == "provider_model_reroute_observed" for row in issues) else "not_attested",
               "ready_for_equal_budget_comparison": False,
               "limitations": ["A planned assignment without a task observation is unobserved, not proven unattempted.",
                               "All matching tasks and observed execution generations are retained, including failures and retries.",
                               "Usage snapshots are not unique model requests; cumulative thread totals are not summed.",
                               "Late provider notifications may arrive after each journal watermark; missing observations are not zero.",
+                              "Reported model reroutes violate a fixed-model comparison; absence of a notice is not served-model attestation.",
                               "Scope is an operator declaration; this capture does not prove Android delivery, answer quality or budget enforcement.",
                               "Local hashes detect changes, not an independent attestation of execution."]}
     return {**report, "capture_sha256": hashlib.sha256(canonical(report)).hexdigest()}

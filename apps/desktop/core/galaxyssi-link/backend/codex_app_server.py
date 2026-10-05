@@ -1680,6 +1680,9 @@ class CodexAppServer:
         if method == "thread/tokenUsage/updated":
             self._capture_provider_usage(params)
             return
+        if method == "model/rerouted":
+            self._capture_provider_usage(params, kind="model_rerouted")
+            return
         turn_id = str(params.get("turnId") or (params.get("turn") or {}).get("id") or "")
         thread_id = str(params.get("threadId") or "")
         task_id = self._turn_tasks.get(turn_id, "")

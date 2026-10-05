@@ -46,6 +46,17 @@ The output reports:
 - Uncached input as `input - cached_input`, not a monetary estimate.
 - Observed task, turn and snapshot counts, separately from unknown request count.
 - Explicit issues and the original capture digests.
+- Reported model-reroute notices with their source event/turn identities and
+  bounded from/to model identifiers. Any observed reroute prevents a fixed-model
+  aggregate, including a later return to the requested model. Lifecycle coverage
+  still requires separate start, usage and terminal observations.
+
+Model notices are revalidated from the original journal, not trusted from a
+capture's summary flag. `model_control_status` is `reroute_observed` or
+`not_attested`; neither is a certification of the actual served model. Historical
+captures without these notices retain their original evidence and are not
+retrospectively promoted to fixed-model attestation. Raw journals preserve usage
+even when a control violation prevents the combined summary.
 
 Cached input is a subset of input. Reasoning output is a subset of output. They
 must not be added to the parent counter again. Unknown optional counters remain

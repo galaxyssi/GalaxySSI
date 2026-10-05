@@ -14,7 +14,7 @@ from agent_task_recovery_query import IDENTITY_FIELDS
 from agent_task_store import AgentTaskStore, AgentTaskWriteConflict
 from agent_tool_evidence import task_identity
 from codex_provider_usage import normalize
-from test_codex_provider_usage import observation, payload
+from test_codex_provider_usage import observation, payload, reroute_payload
 
 
 class AgentProviderUsageTest(unittest.TestCase):
@@ -51,6 +51,34 @@ class AgentProviderUsageTest(unittest.TestCase):
         self.archive = AgentProviderUsage(self.path)
         self.assertEqual([first], self.query()["entries"])
         self.assertEqual(first, self.archive.record(self.task, observation()))
+
+    def test_model_reroute_reopens_deduplicates_and_does_not_change_task(self):
+        before = self.store.get("task")
+        value = normalize(reroute_payload(), model="fixture-model", effort="high", kind="model_rerouted")
+        entry = self.archive.record(self.task, {**value, "reason": "PRIVATE-CONTENT", "actual_model": "forged"})
+        self.archive = AgentProviderUsage(self.path)
+        self.assertEqual(entry, self.archive.record(self.task, value))
+        self.assertEqual([entry], self.query()["entries"])
+        self.assertEqual(before, self.store.get("task"))
+        self.assertIsNone(entry["observation"]["actual_model"])
+        self.assertNotIn("PRIVATE-CONTENT", json.dumps(entry))
+
+    def test_malformed_reroute_remains_an_explicit_redacted_observation(self):
+        params = {**reroute_payload(), "toModel": {"private": "PRIVATE-CONTENT"}}
+        value = normalize(params, model="fixture-model", effort="high", kind="model_rerouted")
+        entry = self.archive.record(self.task, value)
+        self.assertIsNone(entry["observation"]["reported_to_model"])
+        self.assertEqual(["toModel:invalid_or_missing_model"], entry["observation"]["issues"])
+        self.assertNotIn("PRIVATE-CONTENT", json.dumps(self.query()))
+
+    def test_model_reroute_respects_generation_fence(self):
+        current = self.store.get("task")
+        current["execution_generation"] = 2
+        self.store.upsert(current)
+        value = normalize(reroute_payload(), model="fixture-model", effort="high", kind="model_rerouted")
+        with self.assertRaises(AgentTaskWriteConflict):
+            self.archive.record(self.task, value)
+        self.assertEqual([], self.query()["entries"])
 
     def test_more_than_100_observations_use_stable_pagination(self):
         for i in range(103):
