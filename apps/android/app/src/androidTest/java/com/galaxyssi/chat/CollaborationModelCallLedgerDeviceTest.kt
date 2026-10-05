@@ -11,6 +11,34 @@ import java.util.UUID
 /** Synthetic persistence checks only: no activity, network, model or user conversation is opened. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationModelCallLedgerDeviceTest {
+    @Test fun encryptedTrialDebitAndClosureSurviveReopen() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = AgentEncryptedDatabase(context, "model-admission-test-${UUID.randomUUID()}")
+        fun ledger() = CollaborationModelCallLedger(object : CollaborationWorkspaceRows {
+            override fun read(key: String) = database.readString(key, "").takeIf(String::isNotBlank)
+            override fun commit(values: Map<String, String>) = database.mutateStrings(values)
+            override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
+        }, { 1_000L })
+        val access = CollaborationWorkspaceAccess("synthetic-group", "synthetic-run", "turn", 1, "node", "member")
+        val policy = CollaborationTrialPolicy("a".repeat(64), "synthetic-cloud", "synthetic-model", 1, 10_000L)
+        val request = ModelStreamRequest("synthetic:r0", ModelStreamProvider.OPENAI_COMPATIBLE,
+            "https://example.invalid", emptyMap(), """{"model":"synthetic-model"}""")
+        try {
+            val original = ledger()
+            original.configureTrial(access.groupId, access.runId, policy)
+            ModelCallAccounting(request, original.sink(access), singleHttpRequest = true).begin()
+            val reopened = ledger()
+            reopened.configureTrial(access.groupId, access.runId, policy)
+            assertEquals(1L, reopened.trialSnapshot(access.groupId, access.runId)!!.getLong("admitted"))
+            assertThrows(ModelCallAdmissionDenied::class.java) {
+                ModelCallAccounting(request, reopened.sink(access), singleHttpRequest = true).begin()
+            }
+            assertEquals(1, reopened.page(access.groupId, access.runId).first.size)
+            reopened.closeTrial(access.groupId, access.runId)
+            assertTrue(ledger().trialSnapshot(access.groupId, access.runId)!!.getBoolean("closed"))
+        } finally { database.clear() }
+    }
+
     @Test fun encryptedReopenPreservesFinishedAndUnfinishedCallsWithoutCrossRunLeakage() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = AgentEncryptedDatabase(context, "model-accounting-test-${UUID.randomUUID()}")

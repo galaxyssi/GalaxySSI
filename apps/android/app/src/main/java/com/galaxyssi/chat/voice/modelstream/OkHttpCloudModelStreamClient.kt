@@ -20,6 +20,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 object SharedCloudModelHttpClient {
     val client: OkHttpClient by lazy {
@@ -51,10 +52,26 @@ class OkHttpCloudModelStreamClient(
 
     override fun stream(request: ModelStreamRequest): Flow<ModelStreamEvent> = channelFlow {
         val timings = ModelStreamTimings(request.requestId)
+        val singleHttpRequest = try { request.auditSink?.singleHttpRequest() == true } catch (_: Exception) {
+            send(ModelStreamEvent.Failed(request.requestId,
+                ModelStreamError("ACCOUNTING_UNAVAILABLE", "Cannot read model admission policy")))
+            return@channelFlow
+        }
+        val dispatched = AtomicBoolean(false)
         val client = baseClient.newBuilder()
             .eventListener(timings)
             .connectTimeout(request.connectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(request.readTimeoutMs, TimeUnit.MILLISECONDS)
+            .apply { if (singleHttpRequest) {
+                retryOnConnectionFailure(false)
+                followRedirects(false)
+                followSslRedirects(false)
+                addNetworkInterceptor { chain ->
+                    // Also stops authentication/503 follow-ups not governed by connection retry settings.
+                    if (!dispatched.compareAndSet(false, true)) throw IOException("Trial HTTP admission already consumed")
+                    chain.proceed(chain.request())
+                }
+            } }
             .build()
         val httpRequest = Request.Builder()
             .url(request.endpoint)
@@ -78,8 +95,12 @@ class OkHttpCloudModelStreamClient(
             var accounting: ModelCallAccounting? = null
             try {
                 if (request.auditSink != null) {
-                    val pending = ModelCallAccounting(request, request.auditSink)
-                    try { pending.begin() } catch (_: Exception) {
+                    val pending = ModelCallAccounting(request, request.auditSink, singleHttpRequest = singleHttpRequest)
+                    try { pending.begin() } catch (denied: ModelCallAdmissionDenied) {
+                        send(ModelStreamEvent.Failed(request.requestId,
+                            ModelStreamError(ModelCallAdmissionDenied.CODE, denied.message.orEmpty())))
+                        return@launch
+                    } catch (_: Exception) {
                         send(ModelStreamEvent.Failed(request.requestId,
                             ModelStreamError("ACCOUNTING_UNAVAILABLE", "Cannot record model request before dispatch")))
                         return@launch
