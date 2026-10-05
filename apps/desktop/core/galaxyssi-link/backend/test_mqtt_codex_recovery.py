@@ -117,6 +117,7 @@ class MqttCodexRecoveryTests(unittest.TestCase):
     def test_recovered_codex_task_reconnects_to_original_turn(self):
         manager = _RecoveredTaskManager()
         manager.tool_evidence = Mock()
+        manager.provider_usage = Mock()
         server = _RecoveredCodexServer()
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             mqtt_bridge,
@@ -175,6 +176,29 @@ class MqttCodexRecoveryTests(unittest.TestCase):
             mqtt_bridge._dispatch_codex_event("task-recovered", {"evidence_only": True, "tool_observation": observation})
             self.assertEqual(1, manager.tool_evidence.record.call_count)
             manager.task.execution_generation = 2
+
+            from codex_provider_usage import normalize
+            usage = normalize({"threadId": "thread-original", "turnId": "turn-original"},
+                              model="fixture-model", effort="high")
+            with patch.object(mqtt_bridge, "_publish_phone_payload") as publish:
+                mqtt_bridge._dispatch_codex_event("task-recovered", {"provider_usage_only": True, "provider_usage": usage})
+                manager.provider_usage.record.assert_called_once()
+                recorded_task, recorded_usage = manager.provider_usage.record.call_args.args
+                self.assertEqual(2, recorded_task["execution_generation"])
+                self.assertEqual("phone-turn-recovered", recorded_task["client_turn_id"])
+                self.assertEqual(usage, recorded_usage)
+                self.assertEqual(updates_before, len(manager.updates))
+                publish.assert_not_called()
+                manager.task.execution_generation = 3
+                mqtt_bridge._dispatch_codex_event("task-recovered", {"provider_usage_only": True, "provider_usage": usage})
+                self.assertEqual(1, manager.provider_usage.record.call_count)
+                manager.task.execution_generation = 2
+                manager.provider_usage.record.side_effect = OSError("fixture audit failure")
+                with self.assertLogs("codex_provider_usage", level="WARNING"):
+                    mqtt_bridge._dispatch_codex_event("task-recovered", {
+                        "provider_usage_only": True, "provider_usage": usage})
+                self.assertEqual(updates_before, len(manager.updates))
+                publish.assert_not_called()
 
         self.assertFalse(server.started)
         self.assertEqual(1, len(server.recoveries))

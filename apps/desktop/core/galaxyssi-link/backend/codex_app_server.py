@@ -1677,6 +1677,9 @@ class CodexAppServer:
     def _handle_event(self, message: dict) -> None:
         method = str(message.get("method") or "")
         params = message.get("params") or {}
+        if method == "thread/tokenUsage/updated":
+            self._capture_provider_usage(params)
+            return
         turn_id = str(params.get("turnId") or (params.get("turn") or {}).get("id") or "")
         thread_id = str(params.get("threadId") or "")
         task_id = self._turn_tasks.get(turn_id, "")
@@ -1741,6 +1744,7 @@ class CodexAppServer:
                 run.turn_id = turn_id
                 self._turn_tasks[turn_id] = task_id
                 run.turn_started_event.set()
+            self._capture_provider_usage({"threadId": run.thread_id, "turnId": run.turn_id}, kind="turn_started")
             self.on_event(task_id, {**common, "turn_id": run.turn_id, "status": "running", "current_step": "Codex is working"})
         elif method == "item/agentMessage/delta":
             item_id = str(params.get("itemId") or "agent-message")
@@ -1872,6 +1876,8 @@ class CodexAppServer:
         elif method == "turn/completed":
             completed_turn = params.get("turn") or {}
             status = str(completed_turn.get("status") or "completed")
+            self._capture_provider_usage({"threadId": run.thread_id, "turnId": turn_id or run.turn_id},
+                                         kind="turn_terminal", status=status)
             mapped = {"completed": "completed", "failed": "failed", "interrupted": "cancelled"}.get(status, status)
             turn_error = self._turn_error(completed_turn)
             if not run.final_text:
@@ -1950,6 +1956,34 @@ class CodexAppServer:
                     self.on_event(task_id, {**common, "status": "running", "current_step": "Codex is working"})
                 elif "waitingOnUserInput" in detail:
                     self.on_event(task_id, {**common, "status": "waiting_input", "current_step": "Waiting for user input"})
+
+    def _capture_provider_usage(self, params: dict, *, kind="usage_snapshot", status="") -> None:
+        from codex_provider_usage import normalize
+        if not isinstance(params, dict):
+            return
+        # Never infer ownership from a reused thread without an exact turn identity.
+        with self._lock:
+            turn_id, thread_id = params.get("turnId"), params.get("threadId")
+            if not isinstance(turn_id, str) or not isinstance(thread_id, str) or not turn_id or not thread_id:
+                return
+            run = self._runs.get(self._turn_tasks.get(turn_id, ""))
+            if run is None:
+                # The active index is removed on completion. Accept a late snapshot
+                # only while its exact finished run is still retained and unique.
+                candidates = [item for item in self._runs.values()
+                              if item.thread_id == thread_id and item.turn_id == turn_id]
+                if len(candidates) != 1:
+                    return
+                run = candidates[0]
+            if run.thread_id != thread_id or run.turn_id != turn_id:
+                return
+            observation = normalize(params, model=run.model, effort=run.reasoning_effort, kind=kind, status=status)
+            task_id = run.task_id
+        if observation is not None:
+            try:
+                self.on_event(task_id, {"provider_usage_only": True, "provider_usage": observation})
+            except Exception:
+                log.warning("Codex usage observer failed; task execution is unchanged")
 
     @staticmethod
     def _is_meaningful_event(method: str, message: dict, params: dict) -> bool:
