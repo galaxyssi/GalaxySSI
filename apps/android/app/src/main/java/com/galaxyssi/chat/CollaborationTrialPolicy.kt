@@ -9,7 +9,8 @@ internal data class CollaborationTrialPolicy(
     val targetId: String,
     val requestedModel: String,
     val maxRequestAdmissions: Int,
-    val admitUntilMillis: Long
+    val admitUntilMillis: Long,
+    val profile: CollaborationTrialProfile? = null
 ) {
     init {
         require(Regex("[a-f0-9]{64}").matches(protocolSha256))
@@ -20,6 +21,7 @@ internal data class CollaborationTrialPolicy(
     fun json() = JSONObject().put("format", "galaxyssi.trial-admission.v1")
         .put("protocol_sha256", protocolSha256).put("target_id", targetId).put("requested_model", requestedModel)
         .put("max_request_admissions", maxRequestAdmissions).put("admit_until", admitUntilMillis)
+        .apply { profile?.let { put("text_profile", it.json()) } }
 
     fun requireTarget(target: String, adapterType: String) {
         if (target != targetId || adapterType != "cloud-model-api") deny("unmetered_or_changed_execution_target")
@@ -30,6 +32,7 @@ internal data class CollaborationTrialPolicy(
         if (receipt.optString("provider") != "OPENAI_COMPATIBLE" ||
             receipt.optString("transport") !in setOf("SSE", "COMPLETE_JSON") ||
             receipt.optString("requested_model") != requestedModel) deny("unmetered_or_changed_model")
+        profile?.requireControls(receipt)
     }
 
     companion object {
@@ -39,7 +42,8 @@ internal data class CollaborationTrialPolicy(
             val cap = strictLong(json.get("max_request_admissions"))
             require(cap <= Int.MAX_VALUE)
             return CollaborationTrialPolicy(json.getString("protocol_sha256"), json.getString("target_id"),
-                json.getString("requested_model"), cap.toInt(), strictLong(json.get("admit_until")))
+                json.getString("requested_model"), cap.toInt(), strictLong(json.get("admit_until")),
+                if (json.has("text_profile")) CollaborationTrialProfile.from(json.getJSONObject("text_profile")) else null)
         }
         fun strictLong(value: Any): Long = when (value) {
             is Int -> value.toLong()

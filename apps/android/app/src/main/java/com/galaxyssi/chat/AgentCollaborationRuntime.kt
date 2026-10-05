@@ -1135,6 +1135,9 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             CollaborationModelCallLedger(it).requireTrialTarget(CollaborationWorkspaceAccess.from(context),
                 registration.agentId, registration.adapterType)
         } == true
+        val trialProfile = if (trialGuarded) CollaborationModelCallLedger(requireNotNull(progressContext))
+            .trialSnapshot(groupId, context.request.parentRunId)?.getJSONObject("policy")
+            ?.let(CollaborationTrialPolicy::from)?.profile else null
         if (groupId.isNotBlank()) progressContext?.let {
             CollaborationEvidenceLedger(it).bind(AgentTeamDispatchIds.sourceMessageId("member:${context.request.idempotencyKey}"),
                 CollaborationWorkspaceAccess.from(context))
@@ -1156,7 +1159,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "agent_instance_id" to context.member.memberId,
                 "agent_model_id" to context.member.context["collaboration_model_id"].orEmpty(),
                 "team_id" to context.request.context["team_id"]?.toString().orEmpty(),
-                "prompt" to teamPrompt(context),
+                "prompt" to if (trialProfile != null) CollaborationTrialPrompt.build(context) else teamPrompt(context),
                 "original_goal" to context.request.goal,
                 "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(),
                 "_galaxyssi_conversation_id" to context.request.conversationId,

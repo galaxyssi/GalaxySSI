@@ -135,6 +135,12 @@ closure, expiry, corrupt state, target changes and HTTP follow-up rejection.
 The encrypted-store device test is also synthetic and must be reported as
 unrun until it has actually executed on an authorized device.
 
+Android v1.4.55 adds an optional typed text profile and a separately authorized
+[paired calibration harness](COLLABORATION_PAIRED_PILOT.md). The profile disables
+tools and model-based summaries, pins generation controls, and records those
+controls immutably. It does not upgrade scoped admissions into measured billing
+or turn local regression tests into live experimental evidence.
+
 ## Verification
 
 Local tests cover count validation, snapshot semantics, subset accounting,

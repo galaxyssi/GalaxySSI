@@ -66,6 +66,8 @@ internal class CollaborationModelCallLedger(
             if (initial.has("single_http_request")) check(initial.get("single_http_request") == payload.opt("single_http_request")) {
                 "Model call admission mode changed"
             }
+            if (initial.has("request_controls")) check(initial.getJSONObject("request_controls").toString() ==
+                payload.optJSONObject("request_controls")?.toString()) { "Model request controls changed" }
             check(old != null) { "Model receipt index is incomplete" }
             if (old.toString() != payload.toString()) {
                 check(old.getString("status") == "started" && payload.getString("status") in TERMINAL) {
