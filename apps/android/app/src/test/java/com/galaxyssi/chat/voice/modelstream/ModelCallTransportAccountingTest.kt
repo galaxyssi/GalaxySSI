@@ -19,6 +19,56 @@ class ModelCallTransportAccountingTest {
             "data: {\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"total_tokens\":13}}\n\n" +
             "data: [DONE]\n\n")
     private fun client() = OkHttpCloudModelStreamClient(onTiming = {})
+    private fun strictSink(rows: MutableList<JSONObject>) = object : ModelCallAuditSink {
+        override fun singleHttpRequest() = true
+        override fun write(receipt: JSONObject) { rows += JSONObject(receipt.toString()) }
+    }
+
+    @Test fun trialTransportDoesNotFollowRedirects() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/final")))
+            server.enqueue(response())
+            val rows = CopyOnWriteArrayList<JSONObject>()
+            val events = client().stream(request(server, strictSink(rows))).toList()
+            assertTrue(events.any { it is ModelStreamEvent.Failed })
+            assertEquals(1, server.requestCount)
+            assertTrue(rows.first().getBoolean("single_http_request"))
+            assertEquals(1L, rows.last().getLong("http_request_attempts"))
+        }
+    }
+
+    @Test fun trialTransportBlocksAutomatic503FollowUpBeforeSecondHttpRequest() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "0"))
+            server.enqueue(response())
+            val rows = CopyOnWriteArrayList<JSONObject>()
+            val events = client().stream(request(server, strictSink(rows))).toList()
+            assertTrue(events.any { it is ModelStreamEvent.Failed })
+            assertEquals(1, server.requestCount)
+            assertEquals("failed", rows.last().getString("status"))
+            assertEquals(1L, rows.last().getLong("http_request_attempts"))
+        }
+    }
+
+    @Test fun trialDenialAndUnreadablePolicyFailBeforeNetwork() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val denied = client().stream(request(server, ModelCallAuditSink {
+                throw ModelCallAdmissionDenied("request_admissions_exhausted")
+            })).toList().filterIsInstance<ModelStreamEvent.Failed>().single().error
+            assertEquals(ModelCallAdmissionDenied.CODE, denied.code)
+            assertFalse(denied.retryable)
+            val broken = object : ModelCallAuditSink {
+                override fun singleHttpRequest(): Boolean = error("corrupt policy")
+                override fun write(receipt: JSONObject) = error("must not admit")
+            }
+            assertEquals("ACCOUNTING_UNAVAILABLE", client().stream(request(server, broken)).toList()
+                .filterIsInstance<ModelStreamEvent.Failed>().single().error.code)
+            assertEquals(0, server.requestCount)
+        }
+    }
 
     @Test fun transportRecordsAdmissionBeforeIoAndSettlesExactlyOnce() = runBlocking {
         MockWebServer().use { server ->

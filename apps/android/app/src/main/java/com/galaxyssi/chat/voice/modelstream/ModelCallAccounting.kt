@@ -8,6 +8,12 @@ import java.util.UUID
 /** Host-only receipts. No prompt, response text, URL, credential or tool argument is retained. */
 fun interface ModelCallAuditSink {
     fun write(receipt: JSONObject)
+    /** Experimental accounting may require one HTTP request per durable admission. */
+    fun singleHttpRequest(): Boolean = false
+}
+
+class ModelCallAdmissionDenied(val reason: String) : IllegalStateException("Trial admission denied: $reason") {
+    companion object { const val CODE = "TRIAL_ADMISSION_DENIED" }
 }
 
 internal class ModelCallAccounting(
@@ -15,7 +21,8 @@ internal class ModelCallAccounting(
     private val sink: ModelCallAuditSink,
     private val elapsed: () -> Long = { System.nanoTime() / 1_000_000L },
     private val wall: () -> Long = System::currentTimeMillis,
-    callId: String = UUID.randomUUID().toString()
+    callId: String = UUID.randomUUID().toString(),
+    singleHttpRequest: Boolean = false
 ) {
     private val startedElapsed = elapsed()
     private val issues = linkedSetOf<String>()
@@ -33,6 +40,7 @@ internal class ModelCallAccounting(
         .put("requested_model", runCatching { identifier(JSONObject(request.bodyJson).opt("model")) }.getOrNull() ?: JSONObject.NULL)
         .put("request_sha256", sha256(request.bodyJson)).put("started_at", wall())
         .put("status", "started").put("cost_micros", JSONObject.NULL)
+        .put("single_http_request", singleHttpRequest)
         .put("cost_status", "not_measured").put("tokens_complete", false)
 
     fun begin() { sink.write(JSONObject(initial.toString())) }

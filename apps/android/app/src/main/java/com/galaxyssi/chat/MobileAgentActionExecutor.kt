@@ -1503,6 +1503,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
                 runCatching {
                     dispatchLease.runRequest {
+                        val collaborationEvidence = if (managedTeamAction) CollaborationEvidenceLedger(appContext).let { ledger ->
+                            ledger.binding(messageId, conversationId, connectorTurnId)?.let { access ->
+                                CollaborationCloudEvidence(ledger, access)
+                            }
+                        } else null
+                        if (action.parameters[CollaborationTrialPolicy.REQUIRED_PARAMETER] == "true" && collaborationEvidence == null)
+                            throw com.galaxyssi.chat.voice.modelstream.ModelCallAdmissionDenied("trial_binding_missing")
                         CloudConversationStreamEngine.streamConversation(
                             context = appContext,
                             contact = model,
@@ -1525,11 +1532,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                     CodexStyleResponsePolicy.prompt(appContext) + "\n" + CodexStyleResponsePolicy.SCREEN_ANALYSIS_PROMPT
                                 else "",
                             citationPreviewEnabled = !managedTeamAction,
-                            collaborationEvidence = if (managedTeamAction) CollaborationEvidenceLedger(appContext).let { ledger ->
-                                ledger.binding(messageId, conversationId, connectorTurnId)?.let { access ->
-                                    CollaborationCloudEvidence(ledger, access)
-                                }
-                            } else null,
+                            collaborationEvidence = collaborationEvidence,
                             recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
                                 AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
@@ -1665,6 +1668,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     )
                     if (providerError?.code == CollaborationPublicationAssistanceException.CODE) {
                         publicationAssistanceRequested = true
+                        attempts.finish(elapsedMillis)
+                        break@candidateLoop
+                    }
+                    if (providerError?.code == com.galaxyssi.chat.voice.modelstream.ModelCallAdmissionDenied.CODE ||
+                        lastError is com.galaxyssi.chat.voice.modelstream.ModelCallAdmissionDenied) {
+                        // A host experiment limit is not a provider outage or permission to change models.
                         attempts.finish(elapsedMillis)
                         break@candidateLoop
                     }

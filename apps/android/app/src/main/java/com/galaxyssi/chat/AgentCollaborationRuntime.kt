@@ -1131,6 +1131,10 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             .filterKeys { it.startsWith("_galaxyssi_") }
             .mapValues { (_, value) -> value?.toString().orEmpty() }
         val groupId = context.member.context["collaboration_group_id"].orEmpty()
+        val trialGuarded = groupId.isNotBlank() && progressContext?.let {
+            CollaborationModelCallLedger(it).requireTrialTarget(CollaborationWorkspaceAccess.from(context),
+                registration.agentId, registration.adapterType)
+        } == true
         if (groupId.isNotBlank()) progressContext?.let {
             CollaborationEvidenceLedger(it).bind(AgentTeamDispatchIds.sourceMessageId("member:${context.request.idempotencyKey}"),
                 CollaborationWorkspaceAccess.from(context))
@@ -1160,11 +1164,11 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "_galaxyssi_task_id" to context.request.taskId,
                 "idempotency_key" to context.request.idempotencyKey,
                 MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
-            ) + if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
+            ) + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
                 mapOf("manual_target_locked" to "true",
                     EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to context.member.objective.ifBlank { context.request.goal },
                     "manual_model_id" to context.member.context["collaboration_model_id"].orEmpty())
-            } else emptyMap(),
+            } else emptyMap()) + (if (trialGuarded) mapOf(CollaborationTrialPolicy.REQUIRED_PARAMETER to "true") else emptyMap()),
             requiresConfirmation = false
         )
         progressContext?.let { CollaborationProgressStore.register(it, context) }

@@ -76,6 +76,65 @@ provider-specific accounting completeness, audited costs, pre-dispatch shared
 budget enforcement, and independent task scoring. Unknown fields must remain
 unknown while those integrations are absent.
 
+## Opt-In Trial Admission (v1.4.54)
+
+The host can configure an immutable `CollaborationTrialPolicy` before the first
+dispatch for one `(group, parent run)`. This is an experiment-only API, not a
+model tool, a user-facing research limit, or an automatically enabled default.
+It pins a protocol digest, connector ID, requested model, positive admission
+count, and deadline for **starting** new requests. The host must retain the
+matching protocol separately; a digest alone does not establish preregistration.
+
+All members, nodes, publication repairs, fallback transport requests and explicit
+retries in that run share the counter. A fresh admission debits once, in the same
+encrypted database transaction as its receipt. Concurrent in-process workers
+share the ledger lock. Cancellation, an unfinished request, a network failure or
+process restart does not refund the debit. Reapplying the same policy does not
+reset its counter or closure state. A changed policy or a policy attached after
+dispatch is rejected. New work is denied after closure, expiry or a clock moving
+behind the policy's creation time; final receipts may still settle.
+
+Configured cloud transports disable connection retries and redirects. A network
+interceptor also prevents OkHttp authentication/status follow-ups from issuing a
+second HTTP request under one admission. An explicit application retry requires
+a new debit. An exhausted quota is a non-retryable `TRIAL_ADMISSION_DENIED`, not
+a provider-health failure or permission to route to another model. A missing
+assignment binding fails before dispatch. Unreadable persisted rows fail closed.
+Normal sessions and unconfigured collaboration runs keep their existing routing,
+retry and redirect behavior.
+
+The first supported target is an Android `cloud-model-api` registration using
+the OpenAI-compatible SSE or complete-JSON transport. A configured trial rejects
+remote Codex/Desktop and other unmetered adapters **before** preparing execution.
+This does not disable those adapters in normal use. It prevents a restricted
+pilot from silently treating one remote Agent task as one model request.
+
+### Limits Of This Limit
+
+- The counter measures request admissions, not successful calls, tokens, provider
+  internal inference operations, money, or whole-trial computational resources.
+- Zero network attempts can still consume an admission; this is conservative.
+  A proxy/provider's internal retries are not controlled by this client.
+- The deadline stops new admissions, not an already-running request or tool.
+  Tools, paid services and unrelated call paths need separate enforcement.
+- Requested model pinning does not freeze the provider's server-side alias.
+- The lock and admission atomicity are for the app's current single-process
+  execution runtime, not a distributed Android/Desktop quota service.
+- The API needs an explicit host trial harness configuration. No existing user
+  conversation is converted into an experiment, and no real model test starts
+  just by installing the APK.
+- The harness must verify that every evaluated assignment retains its registered
+  group/run and binding. This scoped ledger is not a detector of unscoped model
+  invocations and is not sufficient to attest `whole_trial_budget_enforced`.
+- Android/Desktop collection, token/cost caps, independently scored outcomes,
+  and fair single-versus-team experiments remain separate unfinished work.
+
+Local admission tests use synthetic rows and loopback HTTP servers, including
+concurrent exhaustion, rollback, restart-style reopen, retries, cancellation,
+closure, expiry, corrupt state, target changes and HTTP follow-up rejection.
+The encrypted-store device test is also synthetic and must be reported as
+unrun until it has actually executed on an authorized device.
+
 ## Verification
 
 Local tests cover count validation, snapshot semantics, subset accounting,
@@ -87,5 +146,6 @@ store; it does not call a real model or claim process-death/reboot acceptance.
 
 ```powershell
 ./gradlew.bat :app:testDebugUnitTest --tests '*ModelCall*' --tests '*OkHttpCloudModelStreamClientTest' --tests '*ModelStreamCancellationTest' --tests '*CloudConversationTextPolicyTest'
+./gradlew.bat :app:testDebugUnitTest --tests '*CollaborationTrialAdmissionTest'
 adb -s <authorized-device> shell am instrument -w -e class com.galaxyssi.chat.CollaborationModelCallLedgerDeviceTest com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
