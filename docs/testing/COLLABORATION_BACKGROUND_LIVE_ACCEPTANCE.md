@@ -8,12 +8,13 @@ The UI fixture remains available separately.
 ## Invocation
 
 Only run on the explicitly authorized test phone, with authorization for actual
-Codex and DeepSeek requests and an already paired Desktop:
+Codex requests and an already paired Desktop. Both members use the same explicitly selected model:
 
 ```text
 adb -s <authorized-serial> shell am instrument -w -r
   -e class com.galaxyssi.chat.CollaborationLiveEvidenceDeviceTest
   -e collaborationLiveEvidence true
+  -e collaborationModel gpt-6-astra
   -e collaborationLiveHeadless true
   -e collaborationLiveMultipart true
   com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
@@ -22,6 +23,8 @@ adb -s <authorized-serial> shell am instrument -w -r
 Join the lines for the local shell. Omitting `collaborationLiveEvidence=true`
 skips the real-provider test. Headless and multipart flags are independently
 selectable; neither silently enables real requests.
+The model argument is explicit and required; the fixture does not inherit contact
+defaults. See [model provenance rules](COLLABORATION_LIVE_EVIDENCE.md#invocation).
 
 ## Scope
 
@@ -37,7 +40,7 @@ The multipart fixture has two people and four assignments:
 
 1. Codex prints a new random fixture token and computes sum/mean for `1,2,4,8`.
    It publishes the observed document and two disjoint source-ID mappings.
-2. DeepSeek fetches the actual original observation through scoped recall and
+2. A distinct reviewer identity on the same Codex target/model fetches the actual original observation through scoped recall and
    publishes one delivery review and two exact-version coverage reviews.
 3. Codex publishes a saved coverage directory referencing both mapping/review
    pairs, with preserved parent provenance.
@@ -48,6 +51,9 @@ The multipart fixture has two people and four assignments:
 The assertions retain the frozen original-page read-coverage requirement.
 Positive text alone, invented references, a summary-read receipt substituted
 for the original command, or partial goal coverage cannot pass.
+Older recorded Codex/DeepSeek runs below retain their original provenance.
+They are not passes for the new single-model route, and this fixture does not
+change normal user model settings or remove configured cloud providers.
 
 The test uses a dedicated execution database, so a failed fixture does not
 automatically expand into the user's research. Cleanup requests durable STOP,
