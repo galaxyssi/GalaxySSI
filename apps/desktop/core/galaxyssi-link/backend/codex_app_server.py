@@ -27,6 +27,7 @@ from agent_execution_harness import (
 )
 from latency_feature_flags import agent_output_delta_enabled
 from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
+from codex_notification_batch import CodexNotificationBatcher
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -1628,22 +1629,23 @@ class CodexAppServer:
         if process is None or process.stdout is None:
             return
         events: queue.Queue = queue.Queue(maxsize=4096)
+        batches = CodexNotificationBatcher(events, MAX_VISIBLE_OUTPUT_TEXT)
         reader_done = threading.Event()
 
         def dispatch_events() -> None:
             while self.process is process:
                 try:
-                    message = events.get(timeout=0.1)
+                    batch = batches.get(timeout=0.1)
                 except queue.Empty:
                     if reader_done.is_set():
                         return
                     continue
                 try:
-                    self._handle_event(message)
+                    self._handle_event(batch.message)
                 except Exception:
                     log.exception("Codex event handling failed; dispatcher will continue")
                 finally:
-                    events.task_done()
+                    batches.task_done(batch)
 
         # Keep ordered notifications off the RPC reader: checkpoints, MQTT
         # callbacks and dynamic tools must not prevent it receiving replies.
