@@ -20,6 +20,40 @@ pilot in `COLLABORATION_PAIRED_PILOT.md`. Existing cloud-only exclusions remain.
 Production Codex tools and provider-side context are not certified isolated.
 Prompt instructions to use supplied material are not a sandbox.
 
+### Conversation-scoped preparation
+
+The normal model-picker UI also remembers target preferences for later use.
+For an experiment that must leave those preferences unchanged, the opt-in
+`CollaborationRemotePilotSelectionDeviceTest#prepareConversationSelectionWithoutChangingDefaults`
+uses the same App selection store with `rememberAsDefault=false`. It creates a
+dedicated conversation, reads back the saved model and effort, and asserts that
+all `default.*` settings and the active conversation are unchanged. It makes no
+model request and does not connect, stop, or resume other tasks.
+
+Required arguments are `remotePilotPrepareSelection=true`,
+`pilotDeviceModel=SM-S9480`, `remotePilotTarget`, `remotePilotModel`,
+`remotePilotEffort`, and a fresh safe JSON basename in
+`remotePilotSelectionOutput`. Target, model, and effort must be explicitly
+supplied and advertised by the available target; there is no model default.
+The output contains only the saved conversation ID and selection metadata.
+Selection writes are flushed before instrumentation returns; the local marker
+is a static assistant note, not a running-process event.
+Use that conversation ID for the paired fixture and freeze the matching values
+in its private protocol. This is a test setup helper, not a new product UI.
+
+Instrumentation may restart the target App process. Check for existing work
+before running either fixture; do not interrupt active user research without
+authorization. Installing only a test APK is supported when the deployed
+production sources and signature match; this does not constitute a new main
+App build or release.
+
+After archiving the completed report, the opt-in helper method
+`removeSelectionAfterConfirmedPilotCleanup` removes only that dedicated
+configuration conversation. Supply `remotePilotCleanupSelection=true`, the
+device model, `remotePilotSelectionOutput`, and `remotePilotReport`. It requires
+matching selection identity, a finished report, and confirmed STOP/empty pending
+owners for every slot. Reports remain intact and global defaults are unchanged.
+
 ## Protocol and admission
 
 Keep protocols, tasks, reference answers, reports, and provider receipts outside
@@ -44,6 +78,16 @@ task roles. Single uses Analyst for all nodes; team uses Analyst -> Reviewer ->
 Analyst. Nodes use the same target, model, effort, and full supplied dependencies.
 They are sequential. This fixture therefore cannot estimate parallel speedup.
 It tests a narrow identity/coordination treatment, not all collaboration features.
+
+The test-only dispatch guard binds the transport's `agent_instance_id` to the
+stable person, not the graph node. Single uses one remote conversation namespace;
+team uses separate author and reviewer namespaces. Node, owner, idempotency, task,
+and source-message identities remain distinct. Dispatch is sequential, and the
+guard validates the original node before this transport-only adjustment. This
+does not change production member routing. Verify actual provider thread reuse
+from receipts; a requested namespace alone is not proof of context continuity.
+Repeated task material and dependencies can remain in provider history, so this
+is not an equal-token treatment.
 
 Every node is validated against its assigned run, turn, conversation, task,
 member, model, effort, and idempotency identity. Its dispatch is durably reserved
@@ -75,6 +119,14 @@ protocol digest, dispatch identities, prepared-prompt digests, output, truncatio
 execution time, and cleanup time. Requested model/effort are not asserted to be
 the actually served values. Provider requests, tokens, and billed cost remain
 null until independently joined to complete original provider receipts.
+
+Use `codex_trial_capture.py` with scope `galaxyssi.codex-trial-scope.v2`
+when stable people execute several nodes. It retains `expected_nodes` and adds
+an ordered `assignments` list, each with `node_id`, `transport_instance_id`, and
+`source_message_id` (a string). Join by the exact phone journal source identity,
+not member name, task order, or model. Unknown messages and mismatched people
+remain visible as issues. The v1 scope remains available for older node-scoped
+captures. Neither scope starts, resumes, or cancels any task.
 
 The fixture excludes unrelated App handoff memory from its prepared prompt, but
 does not claim isolation of all Desktop/provider context. It does not place

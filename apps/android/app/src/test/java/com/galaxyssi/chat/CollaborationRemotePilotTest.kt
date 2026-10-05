@@ -114,6 +114,10 @@ class CollaborationRemotePilotTest {
         guard.prepare(ctx)
         val adjusted = guard.admit(action(ctx))
         assertEquals(plan.prompt(ctx), adjusted.parameters["prompt"])
+        assertEquals("analyst", adjusted.parameters["agent_instance_id"])
+        assertEquals("analyst", records.single().getString("transport_instance_id"))
+        assertEquals(action(ctx).parameters - setOf("prompt", "agent_instance_id"),
+            adjusted.parameters - setOf("prompt", "agent_instance_id"))
         assertEquals(1, records.size)
         assertEquals("xhigh", records.single().getString("requested_reasoning_effort"))
         assertEquals(CollaborationRemotePilotDispatch.sha256(plan.prompt(ctx).toByteArray()), records.single().getString("prepared_prompt_sha256"))
@@ -182,6 +186,7 @@ class CollaborationRemotePilotTest {
         for (slot in plan.slots) {
             val graph = plan.definition(slot, "group", "run")
             val records = mutableListOf<JSONObject>()
+            val remotePeople = mutableListOf<String>()
             val guard = CollaborationRemotePilotDispatch(plan, graph, "group", "run", "turn", Long.MAX_VALUE, { 1 }, records::add)
             val runtime = AgentTeamExecutionRuntime(InMemoryAgentTeamExecutionStore(), AgentSubagentLimits(maxConcurrency = 1,
                 maxContextChars = 60_000, maxOutputChars = 24_000))
@@ -189,12 +194,17 @@ class CollaborationRemotePilotTest {
                 val result = runtime.start(graph, AgentRunRequest("group", "turn", "task", runId = "run", goal = slot.prompt,
                     idempotencyKey = "run"), AgentTeamMemberWorker { ctx ->
                     guard.prepare(ctx)
-                    guard.admit(action(ctx))
+                    remotePeople.add(guard.admit(action(ctx)).parameters.getValue("agent_instance_id"))
                     AgentSubagentOutput("synthetic-${ctx.member.memberId}")
                 }).await()
                 assertEquals(AgentTeamExecutionState.SUCCEEDED, result.snapshot.state)
                 assertEquals(listOf("draft", "review", "final"), records.map { it.getString("node_id") })
                 assertEquals(if (slot.arm == "single") 1 else 2, records.map { it.getString("person_id") }.distinct().size)
+                assertEquals(if (slot.arm == "single") listOf("analyst", "analyst", "analyst") else
+                    listOf("analyst", "reviewer", "analyst"), remotePeople)
+                assertEquals(remotePeople, records.map { it.getString("transport_instance_id") })
+                assertEquals(3, records.map { it.getLong("source_message_id") }.distinct().size)
+                assertEquals(3, records.map { it.getString("owner_run_id") }.distinct().size)
             } finally { guard.close(); runtime.close() }
         }
     }

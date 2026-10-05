@@ -41,10 +41,13 @@ internal class CollaborationRemotePilotDispatch(
             p["_galaxyssi_task_id"] == context.request.taskId) { "Remote pilot dispatch controls changed" }
         check(context.member.memberId !in admitted && admitted.size < definition.members.size) { "Remote pilot dispatch allowance exhausted" }
         val prompt = plan.prompt(context)
+        val person = requireNotNull(context.member.context[CollaborationResearchWorkflow.PERSON])
+        check(person in setOf("analyst", "reviewer")) { "Unknown remote pilot person" }
         // Consume before persisting; if disk write fails, this object cannot dispatch the same node again.
         admitted.add(context.member.memberId)
         persist(JSONObject().put("node_id", context.member.memberId)
             .put("person_id", context.member.context[CollaborationResearchWorkflow.PERSON])
+            .put("transport_instance_id", person)
             .put("owner_run_id", context.request.runId).put("parent_run_id", run).put("turn_id", turn)
             .put("conversation_id", group).put("task_id", context.request.taskId)
             .put("idempotency_key", context.request.idempotencyKey)
@@ -54,7 +57,9 @@ internal class CollaborationRemotePilotDispatch(
             .put("prepared_prompt_sha256", sha256(prompt.toByteArray()))
             .put("prepared_prompt_characters", prompt.length).put("admitted_elapsed_ms", nowElapsed())
             .put("accounting_scope", "phone_delegate_dispatch_not_provider_request"))
-        return action.copy(parameters = p + ("prompt" to prompt))
+        // The graph keeps distinct node/owner/source identities. Only the remote conversation
+        // namespace follows the person, so sequential work can reuse that person's context.
+        return action.copy(parameters = p + mapOf("prompt" to prompt, "agent_instance_id" to person))
     }
 
     @Synchronized fun close() { closed = true }

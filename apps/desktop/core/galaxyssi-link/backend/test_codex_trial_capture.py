@@ -12,7 +12,7 @@ from agent_provider_usage import AgentProviderUsage
 from agent_task_store import AgentTaskStore
 from agent_tool_evidence import canonical, task_identity
 from codex_provider_usage import normalize
-from codex_trial_capture import FORMAT, capture, export, main, read_tasks
+from codex_trial_capture import BOUND_FORMAT, FORMAT, capture, export, main, read_tasks
 from test_codex_provider_usage import payload
 
 
@@ -207,6 +207,44 @@ class CodexTrialCaptureTest(unittest.TestCase):
         (self.root / ".git").write_text("gitdir: elsewhere")
         with self.assertRaises(ValueError):
             export(self.path, self.scope, self.root / "other.json")
+
+    def bound_scope(self):
+        return {**self.scope, "format": BOUND_FORMAT, "assignments": [
+            {"node_id": node, "source_message_id": f"message-{node}", "transport_instance_id": "analyst"}
+            for node in self.scope["expected_nodes"]]}
+
+    def test_stable_person_context_keeps_three_distinct_node_assignments(self):
+        scope = self.bound_scope()
+        for row in scope["assignments"]:
+            self.task("analyst", task_id=row["node_id"], source_message_id=row["source_message_id"])
+        result = capture(self.path, scope)
+        self.assertEqual([], result["issues"])
+        self.assertEqual([1, 1, 1], [len(row["task_ids"]) for row in result["assignments"]])
+        self.assertEqual({"analyst"}, {row["transport_instance_id"] for row in result["tasks"]})
+        self.assertEqual(set(self.scope["expected_nodes"]), {row["node_id"] for row in result["tasks"]})
+
+    def test_bound_capture_exposes_wrong_person_and_unknown_message(self):
+        scope = self.bound_scope()
+        self.task("reviewer", source_message_id="message-author")
+        self.task("analyst", source_message_id="unknown-message")
+        result = capture(self.path, scope)
+        self.assertTrue({"transport_instance_mismatch", "unbound_source_message", "unexpected_assignment",
+                         "planned_assignment_unobserved"}.issubset(self.codes(result)))
+        self.assertEqual(2, len(result["tasks"]))
+
+    def test_binding_duplicates_malformed_types_and_partial_plans_rejected(self):
+        valid = self.bound_scope()
+        variants = [[], None, valid["assignments"][:1], list(reversed(valid["assignments"]))]
+        for key, value in (("source_message_id", "message-author"), ("node_id", []),
+                           ("transport_instance_id", None), ("extra", "bad")):
+            rows = copy.deepcopy(valid["assignments"])
+            rows[1][key] = value
+            variants.append(rows)
+        for rows in variants:
+            with self.subTest(rows=rows), patch("codex_trial_capture.read_tasks") as reader:
+                with self.assertRaises(ValueError):
+                    capture(self.path, {**valid, "assignments": rows})
+                reader.assert_not_called()
 
     def test_cli_preserves_incomplete_capture_and_returns_two(self):
         self.task()
