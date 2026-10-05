@@ -231,13 +231,15 @@ interface AgentTeamExecutionStore : AgentSubagentEventHook {
     fun snapshots(): List<AgentTeamExecutionSnapshot>
     fun resumeCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = null
     fun interruptedCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = null
+    fun deliveryCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = null
+    fun historicalDeliveryPage(supervisorRunId: String, after: String, limit: Int): List<Pair<String, AgentTeamExecutionCheckpoint>> = emptyList()
     fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean = false): Boolean = false
     fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
                             nowMillis: Long, candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY): AgentTeamExecutionCheckpoint? = null
     fun reconcileGoalRecruits(supervisorRunId: String, expectedPrimary: String,
                              project: (List<AgentTeamMember>) -> Map<String, String>): Boolean = true
     fun requeueUndispatched(supervisorRunId: String, wasNotDispatched: (String) -> Boolean) = Unit
-    fun applyLateResponse(record: AgentManagedResponseRecord): Boolean
+    fun applyLateResponse(record: AgentManagedResponseRecord, prepared: AgentSubagentOutput? = null): Boolean
     fun markInterrupted(
         supervisorRunId: String,
         nowMillis: Long = System.currentTimeMillis()
@@ -335,9 +337,13 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
     }
 
     @Synchronized
-    override fun applyLateResponse(record: AgentManagedResponseRecord): Boolean {
+    override fun deliveryCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? =
+        records[supervisorRunId]?.liveGraphCheckpoint()
+
+    @Synchronized
+    override fun applyLateResponse(record: AgentManagedResponseRecord, prepared: AgentSubagentOutput?): Boolean {
         val current = records[record.supervisorRunId] ?: return false
-        val mutation = current.applyLateResponse(record)
+        val mutation = current.applyLateResponse(record, prepared)
         if (!mutation.accepted) return false
         records[record.supervisorRunId] = if (mutation.record != current) mutation.record.activateAcceptance() else current
         return true
@@ -456,6 +462,20 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         record(supervisorRunId)?.takeIf { it.toSnapshot().state == AgentTeamExecutionState.INTERRUPTED }?.liveGraphCheckpoint()
     }
 
+    override fun deliveryCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
+        record(supervisorRunId)?.liveGraphCheckpoint()
+    }
+
+    override fun historicalDeliveryPage(supervisorRunId: String, after: String, limit: Int): List<Pair<String, AgentTeamExecutionCheckpoint>> = synchronized(LOCK) {
+        val prefix = "goal-cycle:$supervisorRunId:"
+        require(after.isBlank() || after.startsWith(prefix)) { "Delivery recovery cursor belongs to another run" }
+        database.keysAfter(prefix, after, limit.coerceIn(1, 8)).map { key ->
+            val saved = requireNotNull(decode(database.readString(key, ""))) { "Original delivery checkpoint is unreadable" }
+            require(saved.request.runId == supervisorRunId) { "Delivery checkpoint scope mismatch" }
+            key to saved.liveGraphCheckpoint()
+        }
+    }
+
     override fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean): Boolean = synchronized(LOCK) {
         val current = record(supervisorRunId) ?: return@synchronized false
         val next = CollaborationGoalLoop.advance(current, expectedPrimary, nowMillis, wakeBlocked, recruitmentNames,
@@ -495,9 +515,9 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         Unit
     }
 
-    override fun applyLateResponse(response: AgentManagedResponseRecord): Boolean = synchronized(LOCK) {
+    override fun applyLateResponse(response: AgentManagedResponseRecord, prepared: AgentSubagentOutput?): Boolean = synchronized(LOCK) {
         val current = record(response.supervisorRunId) ?: return@synchronized false
-        val mutation = current.applyLateResponse(response)
+        val mutation = current.applyLateResponse(response, prepared)
         if (!mutation.accepted) return@synchronized false
         if (mutation.record != current) write(mutation.record.activateAcceptance())
         true
@@ -1155,30 +1175,11 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         return try {
             val result = adapterWorker.execute(context.copy(request = managedRequest))
             progressContext?.let { AndroidCollaborationRemoteEvidence.await(it, context) }
-            val archiveId = if (groupId.isNotBlank()) progressContext?.let {
-                CollaborationResearchArchive(it, groupId).record(context, result.content)
-            }.orEmpty() else ""
+            if (groupId.isNotBlank() && progressContext != null)
+                return CollaborationResultFinalizer(progressContext).finish(context, result)
             if (CollaborationLiveGraph.planner(context.member)) return result
             CollaborationResearchWorkflow.stage(context.member)?.let { stage ->
-                val artifact = CollaborationResearchArtifact.decode(result.content)
-                artifact?.remove("workspace_receipt")
-                artifact?.remove("remote_evidence_import")
-                if (artifact != null && groupId.isNotBlank() && progressContext != null) {
-                    val remoteEvidence = AndroidCollaborationRemoteEvidence.summary(progressContext, context)
-                    if (remoteEvidence.length() > 0) artifact.put("remote_evidence_import", remoteEvidence)
-                    val receipt = CollaborationResearchWorkspace(progressContext).publish(
-                        CollaborationWorkspaceAccess.from(context), result.content, candidateTask = candidateTask)
-                    if (receipt.length() > 0) artifact.put("workspace_receipt", receipt)
-                }
-                val acceptance = if (stage == CollaborationResearchStage.DELIVER &&
-                    context.member.context[CollaborationGoalLoop.ENABLED] == "1" && progressContext != null &&
-                    CollaborationGoalLoop.decode(result.content)?.optString("decision") == "achieved")
-                    CollaborationGoalAcceptance(progressContext).evaluate(CollaborationWorkspaceAccess.from(context), result.content,
-                        context.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]", context.request.goal) else null
-                val handoff = CollaborationResearchArtifact.handoff(artifact?.toString() ?: result.content, stage)
-                result.copy(content = if (stage == CollaborationResearchStage.DELIVER) handoff else
-                    CollaborationResearchArtifact.compactHandoff(handoff, archiveId),
-                    collaborationAcceptance = acceptance)
+                result.copy(content = CollaborationResearchArtifact.handoff(result.content, stage))
             } ?: result
         } catch (failure: Exception) {
             if (failure.message?.contains(CollaborationPublicationAssistanceException.CODE) == true &&
@@ -1233,7 +1234,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             append("Host acceptance feedback: ").append(context.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK]?.toString().orEmpty()).append('\n')
             append("Completed prior work dependencies (recall their original artifacts): ")
                 .append(context.member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES].orEmpty()).append('\n')
-            append("Already completed work IDs (do not dispatch again; recall archived results instead): ")
+            append("Ended execution IDs (NOT proof of delivery/acceptance; use a new repair id to correct saved results): ")
                 .append(context.request.context[CollaborationGoalLoop.FINISHED_WORK]?.toString()?.let { raw ->
                     runCatching { JSONArray(raw).let { array -> JSONArray((maxOf(0, array.length() - 32) until array.length()).map { array.getString(it) }).toString() } }.getOrDefault("[]")
                 } ?: "[]").append(" (recent subset; host preserves the full deduplication ledger)\n")
@@ -1361,6 +1362,7 @@ class AgentProductionTeamController(
     private val parentRecovery = AgentTeamParentDeliveryRecovery(context)
     private val dispatchCheckpoint = AgentTeamDispatchCheckpoint(context)
     private val remoteStops = AgentTeamRemoteStopRecovery(context)
+    private val historicalDeliveries = CollaborationHistoricalDeliveryRecovery(context)
     private val guardedWorker = object : AgentTeamMemberWorker {
         override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
             if (durableControl.get(context.request.parentRunId) != AgentTeamUserControl.RUN)
@@ -1388,8 +1390,13 @@ class AgentProductionTeamController(
         firewall = AgentPersonalPolicyFirewall.encrypted(context),
         store = EncryptedAgentCrossTeamDelegationStore(context)
     )
-    private val lateResponseListener = AgentLateManagedResponseListener(::applyLateResponse)
     private val completionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lateResponseListener = AgentLateManagedResponseListener { record ->
+        completionScope.launch {
+            runCatching { applyLateResponse(record) }
+                .onFailure { android.util.Log.w("GalaxySSICollaboration", "Result finalization remains pending", it) }
+        }
+    }
     private val watchedRuns = ConcurrentHashMap.newKeySet<String>()
     private val activeHandles = ConcurrentHashMap<String, AgentTeamExecutionHandle>()
     private val executingRuns = ConcurrentHashMap.newKeySet<String>()
@@ -1429,7 +1436,6 @@ class AgentProductionTeamController(
     init {
         runtime.recoverInterrupted()
         AgentLateManagedResponseBus.addListener(lateResponseListener)
-        reconcileLateResponses()
         reconcileDelegations()
         publishTerminalSnapshots()
         completionScope.launch {
@@ -1651,8 +1657,27 @@ class AgentProductionTeamController(
         runtime.recoverInterrupted(nowMillis)
 
     fun reconcileLateResponses(): Int {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            completionScope.launch { runCatching { reconcileLateResponses() }
+                .onFailure { android.util.Log.w("GalaxySSICollaboration", "Result reconciliation remains pending", it) } }
+            return 0
+        }
         if (closed.get()) return 0
-        val count = managedResponses.completedUnapplied().count(::applyLateResponse)
+        val count = managedResponses.completedUnapplied().count { response ->
+            runCatching { applyLateResponse(response) }
+                .onFailure { android.util.Log.w("GalaxySSICollaboration", "Saved result remains pending", it) }
+                .getOrDefault(false)
+        }
+        val recovering = store.snapshots().filter { durableControl.get(it.supervisorRunId) == AgentTeamUserControl.RUN &&
+            (!it.state.isTerminal || it.state == AgentTeamExecutionState.INTERRUPTED || it.goalDisposition in setOf("continue", "blocked")) &&
+            it.members.any { member -> member.collaborationGroupId.isNotBlank() } }
+        for (snapshot in recovering) {
+            // At most two historical rounds per pass across all teams; no work runs on the UI thread.
+            val recovered = runCatching { historicalDeliveries.recoverPage(store, snapshot.supervisorRunId) }
+                .onFailure { android.util.Log.w("GalaxySSICollaboration", "Historical delivery remains pending", it) }
+                .getOrDefault(0)
+            if (recovered > 0) break
+        }
         publishTerminalSnapshots()
         return count
     }
@@ -1704,7 +1729,16 @@ class AgentProductionTeamController(
                 AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
                 return false
             }
-            val applied = store.applyLateResponse(record)
+            val checkpoint = store.deliveryCheckpoint(record.supervisorRunId) ?: return false
+            val execution = CollaborationLateResult.execution(checkpoint, record)
+            if (checkpoint.definition.members.any { it.context["collaboration_group_id"].orEmpty().isNotBlank() } &&
+                execution == null) return false
+            val prepared = if (execution != null && record.response?.success == true &&
+                execution.member.context["collaboration_group_id"].orEmpty().isNotBlank() &&
+                checkpoint.completed[execution.member.memberId] == null)
+                CollaborationResultFinalizer(evidenceContext).finish(execution,
+                    AgentSubagentOutput(record.response.content.ifBlank { record.response.richOutputJson })) else null
+            val applied = store.applyLateResponse(record, prepared)
             if (applied) {
                 managedResponses.markApplied(record.ownerRunId)
                 store.snapshot(record.supervisorRunId)?.let(::publishAndRecord)
@@ -1778,9 +1812,12 @@ private data class AgentTeamLateResponseMutation(
 )
 
 private fun AgentTeamExecutionRecord.applyLateResponse(
-    managed: AgentManagedResponseRecord
+    managed: AgentManagedResponseRecord,
+    prepared: AgentSubagentOutput? = null
 ): AgentTeamLateResponseMutation {
     if (request.runId != managed.supervisorRunId) return AgentTeamLateResponseMutation(this, false)
+    if (managed.conversationId.isNotBlank() && managed.conversationId != request.conversationId)
+        return AgentTeamLateResponseMutation(this, false)
     val member = definition.members.firstOrNull {
         stableAgentTeamMemberRunId(request.runId, it.memberId) == managed.ownerRunId &&
             it.deliveryMode != AgentDeliveryMode.IGNORE
@@ -1798,8 +1835,8 @@ private fun AgentTeamExecutionRecord.applyLateResponse(
     val status = if (response.success) AgentSubagentStatus.SUCCEEDED else AgentSubagentStatus.FAILED
     val completedAt = response.receivedAtMillis.coerceAtLeast(managed.completedAtMillis)
         .coerceAtLeast(managed.createdAtMillis)
-    val sourceOutput = response.content.ifBlank { response.richOutputJson }
-    val output = sourceOutput.take(MAX_LATE_RESPONSE_OUTPUT_CHARS)
+    val sourceOutput = prepared?.content ?: response.content.ifBlank { response.richOutputJson }
+    val output = if (prepared != null) sourceOutput else sourceOutput.take(MAX_LATE_RESPONSE_OUTPUT_CHARS)
     val error = if (response.success) "" else output.take(MAX_LATE_RESPONSE_ERROR_CHARS)
     val provenance = AgentSubagentProvenance(
         source = "late-managed-response",
@@ -1824,7 +1861,9 @@ private fun AgentTeamExecutionRecord.applyLateResponse(
         provenance = provenance,
         startedAtMillis = latestForChild?.result?.startedAtMillis?.takeIf { it > 0L }
             ?: managed.createdAtMillis,
-        completedAtMillis = completedAt
+        completedAtMillis = completedAt,
+        collaborationAcceptance = prepared?.collaborationAcceptance,
+        collaborationDelivery = prepared?.collaborationDelivery
     )
     var nextSequence = (events.maxOfOrNull(AgentSubagentEvent::sequence) ?: 0L) + 1L
     val nextEvents = events.toMutableList().apply {
@@ -2147,6 +2186,7 @@ private object AgentTeamExecutionCodec {
         .put("started_at_millis", result.startedAtMillis)
         .put("completed_at_millis", result.completedAtMillis)
         .put("collaboration_acceptance", result.collaborationAcceptance?.encode())
+        .put("collaboration_delivery", result.collaborationDelivery?.encode())
 
     private fun decodeResult(json: JSONObject?): AgentSubagentChildResult? {
         json ?: return null
@@ -2164,7 +2204,8 @@ private object AgentTeamExecutionCodec {
             provenance = decodeProvenance(json.optJSONObject("provenance")),
             startedAtMillis = json.optLong("started_at_millis"),
             completedAtMillis = json.optLong("completed_at_millis"),
-            collaborationAcceptance = CollaborationAcceptanceReceipt.decode(json.optJSONObject("collaboration_acceptance"))
+            collaborationAcceptance = CollaborationAcceptanceReceipt.decode(json.optJSONObject("collaboration_acceptance")),
+            collaborationDelivery = CollaborationDeliveryReceipt.decode(json.optJSONObject("collaboration_delivery"))
         )
     }
 

@@ -116,13 +116,19 @@ internal object CollaborationResearchArtifact {
         val artifact = decode(raw) ?: return raw
         if (raw.length <= maxCharacters || archiveId.isBlank()) return raw
         artifact.remove("workspace")
+        val receipt = artifact.optJSONObject("workspace_receipt")
+        val workspaceStatus = if (receipt?.optString("status") == "recorded" &&
+            (receipt.optJSONArray("revisions")?.length() ?: 0) > 0) "Workspace revisions are also committed."
+            else "Workspace delivery is not confirmed; inspect the delivery receipt before relying on a shared version."
         artifact.put("archive_record_id", archiveId).put("handoff_projection", true)
-            .put("recall_hint", "Read the complete original using collaboration_recall mode=archive, record_id=archive_record_id, offset=0; follow next_offset. Workspace revisions are also committed. This is a summary, not complete evidence.")
+            .put("recall_hint", "Read the complete original using collaboration_recall mode=archive, record_id=archive_record_id, offset=0; follow next_offset. $workspaceStatus This is a summary, not complete evidence.")
         if (artifact.toString().length <= maxCharacters) return artifact.toString()
         val compact = JSONObject().put("format", FORMAT).put("summary", artifact.getString("summary").take(3000))
             .put("candidates", JSONArray()).put("findings", JSONArray()).put("archive_record_id", archiveId)
             .put("handoff_projection", true).put("recall_hint", artifact.getString("recall_hint"))
             .put("original_characters", raw.length)
+        artifact.optJSONObject("delivery_receipt")?.let { compact.put("delivery_receipt", it) }
+        artifact.optString("delivery_warning").takeIf(String::isNotBlank)?.let { compact.put("delivery_warning", it) }
         artifact.optJSONObject("workspace_receipt")?.let { receipt ->
             compact.put("workspace_publication_status", receipt.optString("status"))
             compact.put("workspace_revision_count", receipt.optJSONArray("revisions")?.length() ?: 0)

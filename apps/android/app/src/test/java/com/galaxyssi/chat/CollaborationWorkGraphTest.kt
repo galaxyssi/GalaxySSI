@@ -41,6 +41,27 @@ class CollaborationWorkGraphTest {
         assertEquals("[\"done\"]", CollaborationWorkGraph.completedDependencies(review, setOf("done")))
     }
 
+    @Test fun completedRepairIdsAreDiagnosedInsteadOfSilentlyDiscarded() {
+        val error = CollaborationWorkGraph.reusedRequestError(listOf(work("restore-report"),
+            work("verify-report", "person-2", "restore-report")), setOf("restore-report", "verify-report"))
+        assertTrue(error.contains("COMPLETED_DISPATCH_REUSED"))
+        assertTrue(error.contains("repair_of"))
+        assertTrue(error.contains("does NOT prove delivery"))
+    }
+
+    @Test fun repairUsesNewAttemptAndPreservesOriginalBusinessReference() {
+        val repair = work("restore-report-repair").put("repair_of", "restore-report")
+            .put("repair_reason", "Saved response has no published workspace version")
+        val verify = work("verify-report-repair", "person-2", "restore-report-repair").put("independent_review", true)
+        val plan = CollaborationWorkGraph.compile(listOf(repair, verify), setOf("restore-report", "verify-report"))
+        assertEquals("", plan.error)
+        assertEquals(2, plan.work.size)
+        assertEquals("restore-report", plan.work.first().getString("repair_of"))
+        assertTrue(CollaborationWorkGraph.compile(listOf(work("repair").put("repair_of", "unknown")
+            .put("repair_reason", "Missing")), setOf("done")).error.isNotBlank())
+        assertTrue(CollaborationWorkGraph.compile(listOf(work("repair").put("repair_of", "done")), setOf("done")).error.isNotBlank())
+    }
+
     @Test fun acceptsLargeAcyclicGraphWithoutRecursiveStackOrStepCeiling() {
         val items = (0..2048).map { index -> if (index == 0) work("item-0") else work("item-$index", "person-1", "item-${index - 1}") }
         val plan = CollaborationWorkGraph.compile(items, emptySet())
@@ -128,6 +149,44 @@ class CollaborationWorkGraphTest {
             val checkpoint = requireNotNull(store.resumeCheckpoint("run"))
             assertEquals(1, checkpoint.definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE })
             assertTrue(checkpoint.request.context[CollaborationWorkGraph.FEEDBACK].toString().contains("dependency"))
+        }
+    }
+
+    @Test fun incompleteDeliveryCanBeRepairedWithoutRepeatingOriginalExecution() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        val calls = mutableListOf<String>()
+        var assessments = 0
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            val worker = AgentTeamMemberWorker { execution ->
+                if (execution.member.deliveryMode == AgentDeliveryMode.RESPOND) {
+                    assessments++
+                    val jobs = when (assessments) {
+                        1, 2 -> listOf(work("report"))
+                        3 -> {
+                            assertTrue(execution.request.context[CollaborationWorkGraph.FEEDBACK].toString().contains("COMPLETED_DISPATCH_REUSED"))
+                            listOf(work("report-repair").put("repair_of", "report").put("repair_reason", "Missing formal delivery"))
+                        }
+                        else -> emptyList()
+                    }
+                    AgentSubagentOutput(assessment(jobs).toString())
+                } else {
+                    val id = execution.member.context.getValue(CollaborationGoalLoop.WORK_ID)
+                    calls += id
+                    if (id == "report-repair") assertEquals("report", execution.member.context[CollaborationWorkGraph.REPAIR_OF])
+                    AgentSubagentOutput("Saved partial result; not scientifically accepted")
+                }
+            }
+            runtime.start(team(), request(), worker).await()
+            var now = System.currentTimeMillis()
+            repeat(3) {
+                now += 3_600_000
+                val primary = store.snapshot("run")!!.primaryMemberId
+                assertTrue(store.advanceGoal("run", primary, now))
+                runtime.resume(requireNotNull(store.resumeCheckpoint("run")), worker).await()
+            }
+            assertEquals(listOf("report", "report-repair"), calls)
+            assertTrue(store.advanceGoal("run", store.snapshot("run")!!.primaryMemberId, now + 3_600_000))
+            assertTrue(store.resumeCheckpoint("run")!!.request.context[CollaborationWorkGraph.FEEDBACK].toString().contains("NO_EXECUTABLE_WORK"))
         }
     }
 }

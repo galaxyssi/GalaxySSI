@@ -2,6 +2,7 @@
     <string name="collaboration_team_summary">%1$d members · %2$s</string>
     <string name="collaboration_team_counts">%1$d running · %2$d waiting</string>
     <string name="collaboration_team_idle">Ready</string>
+    <string name="collaboration_team_awaiting_plan">Awaiting a revised plan</string>
     <string name="collaboration_team_unassigned">No task assigned</string>
     <string name="collaboration_stage_execute">Execute and compute</string>
     <string name="collaboration_process_duration">Time %1$s</string>

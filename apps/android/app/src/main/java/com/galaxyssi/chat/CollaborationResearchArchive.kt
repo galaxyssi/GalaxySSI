@@ -19,6 +19,7 @@ internal class CollaborationResearchArchive(private val context: Context, privat
             .put("roster", execution.request.context["collaboration_research_roster"]?.toString().orEmpty())
             .put("member_id", member.context[CollaborationResearchWorkflow.PERSON].orEmpty().ifBlank { member.memberId })
             .put("name", member.context["collaboration_name"]).put("stage", member.context[CollaborationResearchWorkflow.STAGE])
+            .put("repair_of", member.context[CollaborationWorkGraph.REPAIR_OF].orEmpty())
             .put("record_type", if (input) "assignment" else "result")
             .put("provider_id", member.agentId).put("model_id", member.context["collaboration_model_id"])
             .put("goal", execution.request.goal).put("raw_output", raw)
