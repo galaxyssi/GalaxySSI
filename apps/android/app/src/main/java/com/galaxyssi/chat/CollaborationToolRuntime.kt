@@ -105,41 +105,90 @@ internal object CollaborationToolRuntime {
     fun finish(prepared: Prepared, response: AgentRuntimeExecutionResponse, result: AgentNativeToolExecutionResult): AgentNativeToolExecutionResult {
         val receipt = JSONObject(prepared.identity.toString()).put("passed", false).put("exit_code", response.exitCode)
             .put("duration_ms", response.durationMillis).put("request_id", response.requestId)
-        val report = runCatching { JSONObject(response.stdout.trim()) }.getOrNull()
+        val parsed = runCatching { CollaborationToolFeedback.parse(response.stdout.trim()) }
+        val report = parsed.getOrNull()
+        receipt.put("report_parse_status", if (report != null) "parsed_object" else "rejected")
+            .put("captured_stdout_sha256", AgentNativeJsonCodec.sha256(response.stdout))
+            .put("captured_stderr_sha256", AgentNativeJsonCodec.sha256(response.stderr))
+        val capture = JSONObject().put("captured_chars", response.stdout.length)
+            .put("original_chars", response.stdoutOriginalChars ?: response.stdout.length)
+            .put("limit_chars", response.outputCaptureLimitChars ?: JSONObject.NULL)
+        receipt.put("stdout_capture", capture)
         val checked = runCatching {
-            require(response.exitCode == 0 && report?.optString("format") == FORMAT) { "Tool did not return a complete JSON result" }
+            CollaborationToolFeedback.require(response.exitCode == 0, "process_exit_nonzero", "/exit_code",
+                "Tool process exited unsuccessfully; inspect original stdout and stderr", 0, response.exitCode)
+            CollaborationToolFeedback.require((response.stdoutOriginalChars ?: response.stdout.length) <= response.stdout.length,
+                "report_stdout_truncated", "/stdout", "Runtime stdout was truncated before validation; the complete tool report is unavailable",
+                "complete captured report", capture)
+            parsed.getOrThrow()
+            CollaborationToolFeedback.require(report?.optString("format") == FORMAT, "report_format_mismatch", "/format",
+                "Parsed JSON has an unsupported tool report format", FORMAT, report?.opt("format"))
             if (prepared.plan != null) evaluateTests(prepared.plan.getJSONObject("body").getJSONObject(TEST), report!!) else {
-                require(equalJson(prepared.identity.getJSONObject("tested_runtime"), report!!.getJSONObject("runtime"))) {
-                    "Tool runtime changed since validation; create and execute a new test plan before reuse"
-                }
-                val results = report!!.getJSONArray("results")
-                require(results.length() == 1 && results.getJSONObject(0).getString("id") == "run") { "Tool run output is incomplete" }
-                JSONObject().put("passed", results.getJSONObject(0).has("output") && !results.getJSONObject(0).has("error"))
+                val expectedRuntime = prepared.identity.getJSONObject("tested_runtime")
+                val actualRuntime = report!!.optJSONObject("runtime")
+                CollaborationToolFeedback.require(actualRuntime != null && equalJson(expectedRuntime, actualRuntime),
+                    "runtime_identity_changed", "/runtime", "Tool runtime changed since validation; create and execute a new test plan before reuse",
+                    expectedRuntime, actualRuntime)
+                val results = report.optJSONArray("results")
+                CollaborationToolFeedback.require(results?.length() == 1 && results.optJSONObject(0)?.opt("id") == "run",
+                    "run_result_identity_mismatch", "/results", "Tool run needs exactly one result with id=run", "one run result", results)
+                val row = results!!.getJSONObject(0)
+                val problem = resultProblem(row, "/results/0")
+                JSONObject().put("passed", problem == null).put("problems", JSONArray().apply { problem?.let(::put) })
             }
-        }.getOrElse { JSONObject().put("passed", false).put("diagnosis", it.message ?: "Invalid tool output") }
+        }.getOrElse(CollaborationToolFeedback::failed)
         receipt.put("passed", checked.getBoolean("passed")).put("evaluation", checked)
         report?.let { receipt.put("report", it) }
         return result.copy(output = result.output + (RECEIPT to receipt.toNativeObject()), error = result.error ?: if (receipt.getBoolean("passed")) null
-            else AgentNativeToolError("collaboration_tool_test_failed", "Saved tool failed or returned incomplete output; inspect retained checks and correct the code or test plan.", details = checked.toNativeObject()))
+            else AgentNativeToolError("collaboration_tool_test_failed", "Saved tool validation failed; inspect structured problems and original checks before choosing a repair, probe or delegation.", details = checked.toNativeObject()))
     }
 
     fun evaluateTests(plan: JSONObject, report: JSONObject): JSONObject {
-        require(report.getString("format") == FORMAT) { "Unknown tool report format" }
-        val runtime = report.getJSONObject("runtime")
-        require(runtime.getJSONArray("python").length() == 3 && runtime.getString("implementation").isNotBlank() && runtime.getString("machine").isNotBlank()) { "Missing runtime identity" }
-        val results = report.getJSONArray("results")
-        val rows = (0 until results.length()).map(results::getJSONObject)
-        require(rows.map { it.getString("id") }.distinct().size == rows.size) { "Duplicate tool case results" }
+        CollaborationToolFeedback.require(report.opt("format") == FORMAT, "report_format_mismatch", "/format",
+            "Parsed JSON has an unsupported tool report format", FORMAT, report.opt("format"))
+        val runtime = report.optJSONObject("runtime")
+        CollaborationToolFeedback.require(runtime?.optJSONArray("python")?.length() == 3 &&
+            !runtime.optString("implementation").isNullOrBlank() && !runtime.optString("machine").isNullOrBlank(),
+            "runtime_identity_missing", "/runtime", "Parsed JSON is missing the runtime identity", "python[3], implementation, machine", runtime)
+        val results = report.optJSONArray("results")
+        CollaborationToolFeedback.require(results != null, "case_results_required", "/results", "Parsed JSON requires a results array", "array", report.opt("results"))
+        val rows = (0 until results!!.length()).map { index ->
+            val row = results.optJSONObject(index)
+            CollaborationToolFeedback.require(row?.opt("id") is String && row.optString("id").isNotBlank(),
+                "case_id_required", "/results/$index/id", "Each result needs a nonempty string case ID", "string", row?.opt("id"))
+            row!!
+        }
+        val ids = rows.map { it.getString("id") }
+        val duplicates = ids.groupingBy { it }.eachCount().filterValues { it > 1 }.keys.sorted()
+        CollaborationToolFeedback.require(duplicates.isEmpty(), "duplicate_case_results", "/results", "Duplicate tool case IDs",
+            "one result per registered case", JSONArray(duplicates))
         val cases = plan.getJSONArray("cases")
         val expected = (0 until cases.length()).map(cases::getJSONObject)
-        require(rows.map { it.getString("id") }.toSet() == expected.map { it.getString("id") }.toSet()) { "Missing or unregistered tool case results" }
+        val expectedIds = expected.map { it.getString("id") }.toSet()
+        CollaborationToolFeedback.require(ids.toSet() == expectedIds, "case_coverage_mismatch", "/results",
+            "Missing or unregistered tool case results", JSONArray(expectedIds.sorted()), JSONObject()
+                .put("missing", JSONArray((expectedIds - ids.toSet()).sorted())).put("unexpected", JSONArray((ids.toSet() - expectedIds).sorted())))
         val checks = expected.map { case ->
-            val row = rows.single { it.getString("id") == case.getString("id") }
+            val index = rows.indexOfFirst { it.getString("id") == case.getString("id") }
+            val row = rows[index]
+            val path = "/results/$index"
+            val problem = resultProblem(row, path) ?: CollaborationToolFeedback.difference(case.get("expected"), row.get("output"), "$path/output")
+            problem?.put("case_id", case.getString("id"))
             JSONObject().put("id", case.getString("id")).put("purpose", case.getString("purpose"))
-                .put("passed", !row.has("error") && row.has("output") && equalJson(row.get("output"), case.get("expected")))
-                .put("expected", case.get("expected")).put("actual", row.opt("output") ?: JSONObject.NULL).apply { row.optString("error").takeIf(String::isNotEmpty)?.let { put("error", it) } }
+                .put("passed", problem == null).put("actual_present", row.has("output"))
+                .put("expected", case.get("expected")).put("actual", row.opt("output") ?: JSONObject.NULL).apply {
+                    problem?.let { put("problem", it) }
+                    row.optString("error").takeIf(String::isNotEmpty)?.let { put("error", it) }
+                }
         }
         return JSONObject().put("passed", checks.all { it.getBoolean("passed") }).put("checks", JSONArray(checks))
+            .put("problems", JSONArray(checks.mapNotNull { it.optJSONObject("problem") }))
+    }
+
+    private fun resultProblem(row: JSONObject, path: String): JSONObject? = when {
+        row.has("error") -> CollaborationToolFeedback.problem("case_execution_error", "$path/error", actual = row.opt("error"))
+        !row.has("output") -> CollaborationToolFeedback.problem("case_output_missing", "$path/output", "present including explicit null", "absent")
+        else -> null
     }
 
     private fun equalJson(a: Any, b: Any): Boolean = when {

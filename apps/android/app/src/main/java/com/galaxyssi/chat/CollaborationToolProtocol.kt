@@ -31,6 +31,10 @@ internal object CollaborationToolProtocol {
         are compiled by the host. Existing network settings and artifact output remain explicit; a release grants no authority.
         Setup failure/timeout/partial output is NOT a pass. Read the original evidence receipt, diagnose, repair or delegate with the
         existing problem loop. No fixed retry count chooses the next strategy; never rerun side effects solely for a lost receipt.
+        Validation feedback separates process exit, report parsing, report format, runtime identity, case coverage and value/type
+        mismatch. Read evaluation.problems (code, JSON Pointer path, expected/actual or types, case_id when applicable) and the full
+        retained checks. A parsed-object schema error is not a JSON syntax error. Each failed check names its first mismatch;
+        the original complete expected/actual values remain available. Symptoms are not proof of a diagnosed capability gap.
 
         tool_release: {tool_test_plan:<exact ref>,observation:{evidence_id,sha256},review,applies_when,avoid_when,limitations,
           authorization_boundary,unresolved:[]} plus observations:[the original test observation].

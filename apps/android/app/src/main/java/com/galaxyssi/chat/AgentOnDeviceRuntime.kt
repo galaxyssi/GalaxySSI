@@ -291,8 +291,18 @@ data class AgentRuntimeExecutionResponse(
     val projectFingerprint: String = "",
     val projectFingerprintChecked: Boolean = false,
     val checkpointId: String = "",
-    val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED
-)
+    val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED,
+    val stdoutOriginalChars: Int? = null,
+    val stderrOriginalChars: Int? = null,
+    val outputCaptureLimitChars: Int? = null
+) {
+    internal fun boundedOutput(maxChars: Int, maxArtifacts: Int): AgentRuntimeExecutionResponse {
+        require(maxChars >= 0 && maxArtifacts >= 0)
+        return copy(stdout = stdout.take(maxChars), stderr = stderr.take(maxChars), artifacts = artifacts.take(maxArtifacts),
+            stdoutOriginalChars = maxOf(stdoutOriginalChars ?: 0, stdout.length),
+            stderrOriginalChars = maxOf(stderrOriginalChars ?: 0, stderr.length), outputCaptureLimitChars = maxChars)
+    }
+}
 
 fun interface AgentOnDeviceRuntimeBridge {
     fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse
@@ -582,7 +592,7 @@ class AgentOnDeviceRuntimeManager(
                 projectBytes = durableProject?.totalBytes ?: durableStatus?.totalBytes ?: 0L,
                 checkpointId = commit?.checkpoint?.checkpointId.orEmpty(),
                 workspaceDisposition = disposition
-            ).bounded()
+            ).boundedOutput(MAX_OUTPUT_CHARS, MAX_ARTIFACTS)
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
             runCatching {
                 workspaceManager.markFinished(
@@ -902,12 +912,6 @@ class AgentOnDeviceRuntimeManager(
             integrityCache.edit().putString(cacheKey, "$cacheStamp|$actual").apply()
         }
     }
-
-    private fun AgentRuntimeExecutionResponse.bounded(): AgentRuntimeExecutionResponse = copy(
-        stdout = stdout.take(MAX_OUTPUT_CHARS),
-        stderr = stderr.take(MAX_OUTPUT_CHARS),
-        artifacts = artifacts.take(MAX_ARTIFACTS)
-    )
 
     private fun automaticCheckpointId(requestId: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -1468,12 +1472,17 @@ object AgentOnDeviceRuntimeTools {
         put("exit_code", response.exitCode)
         put("stdout", stdout.text)
         put("stderr", stderr.text)
-        put("stdout_total_chars", stdout.totalChars)
-        put("stderr_total_chars", stderr.totalChars)
-        put("stdout_truncated", stdout.truncated)
-        put("stderr_truncated", stderr.truncated)
-        if (stdout.truncated) put("stdout_omitted_chars", stdout.omittedChars)
-        if (stderr.truncated) put("stderr_omitted_chars", stderr.omittedChars)
+        val stdoutTotal = maxOf(response.stdoutOriginalChars ?: 0, stdout.totalChars)
+        val stderrTotal = maxOf(response.stderrOriginalChars ?: 0, stderr.totalChars)
+        val stdoutOmitted = stdout.omittedChars + stdoutTotal - stdout.totalChars
+        val stderrOmitted = stderr.omittedChars + stderrTotal - stderr.totalChars
+        put("stdout_total_chars", stdoutTotal)
+        put("stderr_total_chars", stderrTotal)
+        put("stdout_truncated", stdoutOmitted > 0)
+        put("stderr_truncated", stderrOmitted > 0)
+        if (stdoutOmitted > 0) put("stdout_omitted_chars", stdoutOmitted)
+        if (stderrOmitted > 0) put("stderr_omitted_chars", stderrOmitted)
+        response.outputCaptureLimitChars?.let { put("output_capture_limit_chars", it) }
         put("duration_ms", response.durationMillis)
         put("workspace_file_count", response.projectFileCount)
         put("workspace_bytes", response.projectBytes)
