@@ -11,6 +11,7 @@ import org.junit.Test
 
 class CollaborationAdaptivePilotTest {
     private fun input() = JSONObject().put("format", CollaborationAdaptivePilotPlan.FORMAT).put("pilot_id", "adaptive-1")
+        .put("device_model", "SM-S9480")
         .put("target_id", "desktop:codex").put("model_id", "gpt-6-astra").put("reasoning_effort", "high")
         .put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE).put("goal", "Diagnose and verify a synthetic update failure")
         .put("trial_timeout_ms", 600_000).put("maximum_dispatches", 8).put("members", JSONArray().put(
@@ -47,6 +48,27 @@ class CollaborationAdaptivePilotTest {
         p.requireAppSelection(AgentModelSelection(AgentModelSelectionMode.MANUAL, p.targetId, "future-model", reasoningEffort = AgentModelReasoningEffort.XHIGH))
         assertTrue(p.definition("group", "root").members.all { it.context["collaboration_model_id"] == "future-model" })
         reject { p.requireAppSelection(AgentModelSelection()) }
+    }
+
+    @Test fun deviceSelectionRequiresFrozenProtocolOperatorAndActualModelAgreement() {
+        for (model in listOf("SM-S9480", "SM-G9880", "Future Phone")) {
+            val p = plan(input().put("device_model", model))
+            p.requireDevice(model, model)
+            reject { p.requireDevice(model, null) }
+            reject { p.requireDevice(model, "") }
+            reject { p.requireDevice("different-phone", model) }
+            reject { p.requireDevice(model, "different-phone") }
+            reject { p.requireDevice("different-phone", "different-phone") }
+        }
+    }
+
+    @Test fun deviceBindingIsMandatoryAndCannotBeAnImplicitMigrationOfAnOldTrial() {
+        reject { plan(input().apply { remove("device_model") }) }
+        reject { plan(input().put("format", "galaxyssi.adaptive-collaboration-pilot.v1")) }
+        for (model in listOf("", " ", " SM-G9880", "SM-G9880 ", "*", "SM-S9480,SM-G9880", "SM-G9880\n", "x".repeat(129))) {
+            reject { plan(input().put("device_model", model)) }
+        }
+        reject { plan(input().put("device_model", 123)) }
     }
 
     @Test fun experimentCannotSupplyHiddenAnswersFixedStepsOrExceedItsAuthorization() {

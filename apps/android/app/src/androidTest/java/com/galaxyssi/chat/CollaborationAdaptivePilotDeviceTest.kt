@@ -27,7 +27,6 @@ class CollaborationAdaptivePilotDeviceTest {
 
     @Test fun runAdaptiveRemotePilot() = runBlocking<Unit> {
         assumeTrue("Separate real-model authorization required", args.getString("adaptiveRemotePilot") == "true")
-        require(Build.MODEL == "SM-S9480" && args.getString("pilotDeviceModel") == "SM-S9480")
         require(args.getString("remotePilotTools") == CollaborationRemotePilotPlan.TOOL_SCOPE)
         val name = args.getString("adaptivePilotInput").orEmpty()
         require(name.matches(Regex("[a-zA-Z0-9_-]+\\.json")))
@@ -39,6 +38,7 @@ class CollaborationAdaptivePilotDeviceTest {
         val plan = CollaborationAdaptivePilotPlan.from(JSONObject(raw.toString(Charsets.UTF_8)),
             requireNotNull(args.getString("adaptivePilotMaxDispatches")?.toIntOrNull()),
             requireNotNull(args.getString("adaptivePilotMaxMillis")?.toLongOrNull()))
+        plan.requireDevice(Build.MODEL, args.getString("pilotDeviceModel"))
         val selectionId = args.getString("remotePilotSelectionConversationId").orEmpty()
         val transcripts = AgentTranscriptStore(context)
         require(selectionId.isNotBlank() && transcripts.conversation(selectionId) != null)
@@ -55,6 +55,7 @@ class CollaborationAdaptivePilotDeviceTest {
         val rounds = JSONArray()
         val report = JSONObject().put("format", "galaxyssi.adaptive-pilot-report.v1").put("pilot_id", plan.id)
             .put("protocol_sha256", digest).put("device", Build.MODEL).put("app_version", BuildConfig.VERSION_NAME)
+            .put("protocol_device_model", plan.deviceModel).put("operator_device_model", args.getString("pilotDeviceModel"))
             .put("app_version_code", BuildConfig.VERSION_CODE).put("run_id", run).put("turn_id", turn)
             .put("selection_source", "app_conversation_snapshot").put("selection_conversation_id", selectionId)
             .put("model_selection", plan.selection.json()).put("phone_dispatch_limit", plan.maximumDispatches)

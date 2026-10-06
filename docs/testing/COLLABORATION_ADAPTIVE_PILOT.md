@@ -25,8 +25,9 @@ recovery, resource isolation, equal cost, scientific novelty, or capability gain
 Keep goals, trial protocols, raw reports, rubrics and paper data outside Git.
 The input JSON has exactly these fields:
 
-- `format`: `galaxyssi.adaptive-collaboration-pilot.v1`
+- `format`: `galaxyssi.adaptive-collaboration-pilot.v2`
 - `pilot_id`: fresh safe identifier, never reused after a trial starts
+- `device_model`: one exact authorized Android `Build.MODEL`, not a wildcard
 - `target_id`, `model_id`, `reasoning_effort`: exact App selection
 - `tool_scope`: `production_tools_not_isolated`
 - `goal`: complete user goal; oversized inputs are rejected, not shortened
@@ -41,20 +42,29 @@ Freeze the protocol before execution and record all mentor interventions.
 ## Invocation
 
 Install matching debug App and instrumentation APKs only on the authorized
-S26U. Instrumentation can restart the App: inspect current work first. Prepare
+phone. Instrumentation can restart the App: inspect current work first. Prepare
 an explicit selection using the normal App store as documented in
 `COLLABORATION_REMOTE_PILOT.md`. Do not change global defaults.
 
 Required instrumentation arguments:
 
 - `adaptiveRemotePilot=true`
-- `pilotDeviceModel=SM-S9480`
+- `pilotDeviceModel=<same exact model as the frozen protocol>`
 - `remotePilotTools=production_tools_not_isolated`
 - `adaptivePilotInput=<safe-basename>.json` in the App external-files directory
 - `adaptivePilotSha256=<frozen input SHA-256>`
 - `adaptivePilotMaxDispatches=<separately authorized phone dispatches>`
 - `adaptivePilotMaxMillis=<separately authorized trial milliseconds>`
 - `remotePilotSelectionConversationId=<App selection conversation>`
+
+Before reserving a report, creating a conversation, connecting MQTT or calling a
+model, the fixture requires the connected `Build.MODEL`, operator argument and
+hash-bound protocol `device_model` to agree. Select the actual device using
+`adb -s <verified serial>`; a model name does not uniquely identify a phone.
+Changing phones requires a fresh authorized protocol and fresh pilot ID, not
+editing an old report or silently migrating a v1 protocol. The fixture has no
+product-wide device allowlist and its parameters do not grant user permission.
+Other legacy live fixtures retain their existing device restrictions.
 
 The envelope is a test-resource bound, not a production autonomy stop rule.
 One phone dispatch may cause multiple provider requests, tool calls and charges.

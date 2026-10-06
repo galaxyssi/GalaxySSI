@@ -4,9 +4,15 @@ import org.json.JSONObject
 
 /** An experiment envelope, not a plan: production coordination chooses all executable work. */
 internal class CollaborationAdaptivePilotPlan private constructor(
-    val id: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
+    val id: String, val deviceModel: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
     val goal: String, val timeoutMillis: Long, val maximumDispatches: Int, val members: List<CollaborationMember>
 ) : CollaborationTrialSelectionPolicy {
+    fun requireDevice(actualModel: String, operatorModel: String?) {
+        require(operatorModel == deviceModel && actualModel == deviceModel) {
+            "Trial device mismatch: the frozen protocol, explicit operator target and connected model must agree"
+        }
+    }
+
     fun definition(group: String, run: String): AgentTeamDefinition {
         val people = members.mapIndexed { index, person ->
             AgentTeamMember(targetId, if (index == 0) AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
@@ -20,13 +26,18 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     }
 
     companion object {
-        const val FORMAT = "galaxyssi.adaptive-collaboration-pilot.v1"
+        const val FORMAT = "galaxyssi.adaptive-collaboration-pilot.v2"
         fun from(value: JSONObject, authorizedDispatches: Int, authorizedMillis: Long): CollaborationAdaptivePilotPlan {
             require(value.keys().asSequence().toSet() == setOf("format", "pilot_id", "target_id", "model_id", "reasoning_effort",
-                "tool_scope", "goal", "trial_timeout_ms", "maximum_dispatches", "members")) { "Unexpected adaptive trial fields" }
+                "tool_scope", "goal", "trial_timeout_ms", "maximum_dispatches", "members", "device_model")) { "Unexpected adaptive trial fields" }
             fun text(key: String) = (value.get(key) as? String)?.takeIf(String::isNotBlank) ?: error("Nonblank string required: $key")
             require(text("format") == FORMAT && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
             val id = text("pilot_id").also { require(it.matches(Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}"))) }
+            val device = text("device_model").also {
+                require(it.length <= 128 && it == it.trim() && it.none { ch -> ch.isISOControl() || ch in "*,;|" }) {
+                    "Use one exact device model in the frozen protocol, not a list or wildcard"
+                }
+            }
             val target = text("target_id").also { require(it.length <= 256 && ':' in it && it.endsWith(":codex")) }
             val selection = CollaborationLiveModelSelection.from(text("model_id"), text("reasoning_effort"))
             val timeout = CollaborationTrialPolicy.strictLong(value.get("trial_timeout_ms"))
@@ -44,7 +55,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     target, "Codex", role = field("role"), modelId = selection.modelId)
             }
             require(members.map { it.id }.distinct().size == members.size) { "Trial person IDs must be distinct" }
-            return CollaborationAdaptivePilotPlan(id, target, selection, goal, timeout, limit.toInt(), members)
+            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members)
         }
     }
 }
