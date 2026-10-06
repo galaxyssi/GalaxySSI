@@ -1,0 +1,93 @@
+# Adaptive Collaboration Pilot
+
+## Purpose
+
+The older paired engineering fixture supplies a draft/review/final graph and
+replaces its prompts. It cannot demonstrate that a team chooses useful work or
+changes its plan. `CollaborationAdaptivePilotDeviceTest#runAdaptiveRemotePilot`
+instead starts the production research coordinator with a goal and member
+roster. Production goal admission, live graph expansion, dependencies, goal
+acceptance and checkpoint advancement choose the executable work.
+
+The fixture does not invent assignments, replace prompts, rewrite member
+transport identities, force acceptance, or force past coordinator backoff.
+It uses the existing Android -> paired Desktop -> Codex execution path and the
+explicit model/effort selected in an App conversation. These are trial inputs,
+not production defaults. New work is admitted only while that selection matches.
+
+This is a production-kernel integration trial, not a complete UI/service
+lifecycle test. The fixture advances saved rounds directly rather than invoking
+the production screen controller. It does not establish process-restart or Doze
+recovery, resource isolation, equal cost, scientific novelty, or capability gain.
+
+## Private Protocol
+
+Keep goals, trial protocols, raw reports, rubrics and paper data outside Git.
+The input JSON has exactly these fields:
+
+- `format`: `galaxyssi.adaptive-collaboration-pilot.v1`
+- `pilot_id`: fresh safe identifier, never reused after a trial starts
+- `target_id`, `model_id`, `reasoning_effort`: exact App selection
+- `tool_scope`: `production_tools_not_isolated`
+- `goal`: complete user goal; oversized inputs are rejected, not shortened
+- `trial_timeout_ms`, `maximum_dispatches`: operator-authorized trial envelope
+- `members`: two or more distinct `id`, `name`, `role` objects
+
+No answer keys, scripted work graph, tool permissions or fixed research rounds
+are supplied by this schema. Arbitrary goal text is still operator-provided
+material; the schema alone cannot certify absence of hints or contamination.
+Freeze the protocol before execution and record all mentor interventions.
+
+## Invocation
+
+Install matching debug App and instrumentation APKs only on the authorized
+S26U. Instrumentation can restart the App: inspect current work first. Prepare
+an explicit selection using the normal App store as documented in
+`COLLABORATION_REMOTE_PILOT.md`. Do not change global defaults.
+
+Required instrumentation arguments:
+
+- `adaptiveRemotePilot=true`
+- `pilotDeviceModel=SM-S9480`
+- `remotePilotTools=production_tools_not_isolated`
+- `adaptivePilotInput=<safe-basename>.json` in the App external-files directory
+- `adaptivePilotSha256=<frozen input SHA-256>`
+- `adaptivePilotMaxDispatches=<separately authorized phone dispatches>`
+- `adaptivePilotMaxMillis=<separately authorized trial milliseconds>`
+- `remotePilotSelectionConversationId=<App selection conversation>`
+
+The envelope is a test-resource bound, not a production autonomy stop rule.
+One phone dispatch may cause multiple provider requests, tool calls and charges.
+Provider usage and billed cost remain unknown until complete receipts are joined.
+Do not label dispatch equality as equal compute or equal cost.
+
+## Evidence And Cleanup
+
+The report marker is reserved before dispatch. Every admitted action is bound to
+the current persisted graph, parent, turn, task, node, model and idempotency key.
+Reservation is recorded before remote I/O; a failed journal write consumes the
+reservation rather than permitting a duplicate side effect.
+
+Reports preserve original goal/context, member assignments, full worker results,
+all archived execution records, prompt hashes and final pending-owner state.
+Graph settlement, host goal acceptance, observable blocking, timeout and the
+phone-dispatch envelope are separate outcomes. Even host acceptance is not an
+independent external evaluator's proof of success.
+
+At the trial boundary only this dedicated run receives STOP. Remote-stop recovery
+must confirm an inactive local handle and no pending managed response before
+removing its test conversation and execution database. Otherwise retain state
+for inspection. The user's active conversation and unrelated research are not
+changed. Reports remain available after successful cleanup.
+
+## What To Evaluate Next
+
+Read the real trajectory, not just its duration: did the team discover the
+actual problem, challenge competing explanations, perform discriminating tests,
+adapt work to observations, preserve negative evidence, and produce a reusable
+method? These are questions, not fixture-generated scores.
+
+Subsequent independent trials must measure unseen-task transfer, retention and
+quality against strong single-agent and mentor-assisted baselines. This pilot
+does not replace the full longitudinal experimental design or justify calling
+GalaxySSI superintelligent.
