@@ -60,6 +60,9 @@ def rpc_diagnostic(message):
 class Client:
     """Own one short-lived app-server process; never start or resume a model turn."""
 
+    METHODS = frozenset({"initialize", "command/exec"})
+    MAX_RESPONSE_CHARS = 1024 * 1024
+
     def __init__(self, executable, cwd, config):
         overrides = [item for value in config for item in ("-c", value)]
         self.process = subprocess.Popen(
@@ -70,14 +73,16 @@ class Client:
         )
         self.responses = queue.Queue(maxsize=64)
         self.next_id = 0
+        self.reader_failure = None
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
 
     def _read(self):
         try:
-            for line in self.process.stdout:
-                if len(line) > 1024 * 1024:
-                    continue
+            while line := self.process.stdout.readline(self.MAX_RESPONSE_CHARS + 1):
+                if len(line) > self.MAX_RESPONSE_CHARS:
+                    self.reader_failure = "response_too_large"
+                    break
                 try:
                     message = json.loads(line)
                 except (ValueError, TypeError):
@@ -86,6 +91,7 @@ class Client:
                     try:
                         self.responses.put_nowait(message)
                     except queue.Full:
+                        self.reader_failure = "response_queue_full"
                         return
         finally:
             try:
@@ -98,7 +104,7 @@ class Client:
         self.process.stdin.flush()
 
     def request(self, method, params, timeout=45):
-        if method not in {"initialize", "command/exec"}:
+        if method not in self.METHODS:
             raise ValueError("Model calls and thread operations are prohibited")
         self.next_id += 1
         request_id = self.next_id
@@ -107,7 +113,7 @@ class Client:
         while True:
             response = self.responses.get(timeout=max(0.001, deadline - time.monotonic()))
             if response is None:
-                raise RuntimeError("Codex app-server exited")
+                raise RuntimeError("Codex RPC reader stopped: " + (getattr(self, "reader_failure", None) or "stream_closed"))
             if response.get("id") != request_id:
                 if "method" in response:
                     raise RuntimeError("Unexpected server request; no approval granted")
