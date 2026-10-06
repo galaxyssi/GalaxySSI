@@ -14,7 +14,6 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,7 +25,7 @@ class CollaborationAdaptivePilotDeviceTest {
     private val args = InstrumentationRegistry.getArguments()
     private val lock = Any()
 
-    @Test fun runAdaptiveRemotePilot() = runBlocking {
+    @Test fun runAdaptiveRemotePilot() = runBlocking<Unit> {
         assumeTrue("Separate real-model authorization required", args.getString("adaptiveRemotePilot") == "true")
         require(Build.MODEL == "SM-S9480" && args.getString("pilotDeviceModel") == "SM-S9480")
         require(args.getString("remotePilotTools") == CollaborationRemotePilotPlan.TOOL_SCOPE)
@@ -80,6 +79,7 @@ class CollaborationAdaptivePilotDeviceTest {
         var runner: CollaborationAdaptivePilotRunner? = null
         var runtime: AgentTeamExecutionRuntime? = null
         var clean = false
+        var executionFailure: Exception? = null
         val started = SystemClock.elapsedRealtime()
         try {
             withTimeout(plan.timeoutMillis) {
@@ -141,6 +141,7 @@ class CollaborationAdaptivePilotDeviceTest {
                 report.put("status", reason)
             }
         } catch (failure: Exception) {
+            executionFailure = failure
             report.put("status", "interrupted_or_failed").put("failure_type", failure.javaClass.simpleName)
                 .put("failure", failure.message.orEmpty())
         } finally {
@@ -178,8 +179,13 @@ class CollaborationAdaptivePilotDeviceTest {
                     persist()
                 } finally { runtime?.close() }
             }
-            assertEquals("Adaptive trial must not switch the user's conversation", previous, transcripts.activeConversation().id)
+            report.put("active_conversation_preserved", previous == transcripts.activeConversation().id)
         }
+        val verdict = CollaborationAdaptivePilotVerdict.evaluate(report)
+        report.put("test_verdict", if (verdict.passed) "passed" else "failed")
+            .put("test_failures", JSONArray(verdict.failures))
+        persist()
+        verdict.requirePassed(executionFailure)
     }
 
     private fun members(checkpoint: AgentTeamExecutionCheckpoint) = JSONArray(checkpoint.definition.members.map { member ->
