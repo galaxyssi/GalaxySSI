@@ -1,5 +1,6 @@
 package com.galaxyssi.glasses
 
+import android.content.Context
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -11,24 +12,24 @@ import java.net.URI
 import java.util.concurrent.TimeUnit
 
 internal data class Profile(val endpoint: String, val model: String, val key: String, val style: String) {
-    fun validated(): Profile {
+    fun validated(message: (Int) -> String): Profile {
         val uri = URI(endpoint)
         require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
-            uri.rawQuery == null && uri.rawFragment == null) { "仅支持不含参数的 HTTPS 地址" }
-        require(style in setOf("openai", "anthropic", "gemini")) { "不支持的接口类型" }
+            uri.rawQuery == null && uri.rawFragment == null) { message(R.string.glasses_copy_only_https_addresses_without_parameters_are_supported) }
+        require(style in setOf("openai", "anthropic", "gemini")) { message(R.string.glasses_copy_unsupported_api_type) }
         require(when (style) {
             "anthropic" -> uri.path.endsWith("/messages")
             "gemini" -> uri.path.endsWith(":generateContent")
             else -> uri.path.endsWith("/chat/completions")
-        }) { "接口地址与类型不匹配" }
+        }) { message(R.string.glasses_copy_api_address_does_not_match_its_type) }
         require(model.isNotBlank() && model.length <= 128 && key.isNotBlank() && key.length <= 4096 &&
-            key.none { it == '\n' || it == '\r' }) { "模型或密钥无效" }
+            key.none { it == '\n' || it == '\r' }) { message(R.string.glasses_copy_invalid_model_or_key) }
         return this
     }
 }
 
 /** Compact direct API path, following the watch's three provider formats and bounded context. */
-internal class ChatClient {
+internal class ChatClient(private val context: Context) {
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS).callTimeout(100, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
@@ -37,7 +38,7 @@ internal class ChatClient {
     fun cancel() { active?.cancel() }
 
     fun answer(profile: Profile, turns: JSONArray): String {
-        profile.validated()
+        profile.validated { context.getString(it) }
         val messages = JSONArray()
         for (i in maxOf(0, turns.length() - 13) until turns.length()) {
             val turn = turns.optJSONObject(i) ?: continue
@@ -46,7 +47,7 @@ internal class ChatClient {
                     .put("content", turn.optString("text").take(6000)))
             }
         }
-        val system = "你是 GalaxySSI AR 眼镜助手。回答简洁、适合横屏阅读和语音播报；按用户语言回答。"
+        val system = context.getString(R.string.glasses_copy_you_are_the_galaxyssi_ar_glasses_assistant_reply)
         val request = Request.Builder().url(profile.endpoint)
         val body = when (profile.style) {
             "anthropic" -> {
@@ -77,15 +78,15 @@ internal class ChatClient {
         active = call
         try {
             call.execute().use { response ->
-                if (!response.isSuccessful) throw IllegalStateException("接口返回 HTTP ${response.code}")
-                val stream = response.body?.byteStream() ?: throw IllegalStateException("接口没有返回内容")
+                if (!response.isSuccessful) throw IllegalStateException(context.getString(R.string.glasses_copy_api_returned_http, response.code))
+                val stream = response.body?.byteStream() ?: throw IllegalStateException(context.getString(R.string.glasses_copy_api_returned_no_content))
                 val output = java.io.ByteArrayOutputStream()
                 stream.use { input ->
                     val buffer = ByteArray(4096)
                     while (true) {
                         val n = input.read(buffer)
                         if (n < 0) break
-                        if (output.size() + n > 256_000) throw IllegalStateException("回复过长")
+                        if (output.size() + n > 256_000) throw IllegalStateException(context.getString(R.string.glasses_copy_reply_is_too_long))
                         output.write(buffer, 0, n)
                     }
                 }
@@ -96,7 +97,7 @@ internal class ChatClient {
                         ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
                     else -> json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
                 }.orEmpty().trim()
-                if (answer.isBlank()) throw IllegalStateException("接口返回了空回复")
+                if (answer.isBlank()) throw IllegalStateException(context.getString(R.string.glasses_copy_api_returned_an_empty_reply))
                 return answer.take(32_000)
             }
         } finally { active = null }
