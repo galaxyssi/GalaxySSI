@@ -85,10 +85,11 @@ def compact_in_transaction(db, route, mid):
 def compact_backlog(db, route=None, limit=16):
     # Never evict unfinished handoffs, uncertain side effects or replay bindings.
     # Filter in SQL so an ineligible old row cannot starve eligible newer rows.
+    # Keep the small queue outermost; planner reordering can scan all received history.
     condition, args = ("q.client_route_id=? AND", (route, limit)) if route is not None else ("", (limit,))
     rows = db.execute(f"""SELECT b.client_route_id,b.message_id FROM inbound_signal_compaction_queue q
-                         JOIN inbound_signal_bodies b USING(client_route_id,message_id)
-                         JOIN inbound_messages m USING(client_route_id,message_id)
+                         CROSS JOIN inbound_signal_bodies b USING(client_route_id,message_id)
+                         CROSS JOIN inbound_messages m USING(client_route_id,message_id)
                          WHERE {condition} m.dispatch_state='dispatched'
                          AND EXISTS (SELECT 1 FROM inbound_signal_handoffs h WHERE h.client_route_id=b.client_route_id
                                      AND h.message_id=b.message_id)
