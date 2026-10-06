@@ -109,8 +109,9 @@ class CollaborationAdaptivePilotDeviceTest {
                     override suspend fun execute(execution: AgentTeamMemberExecutionContext): AgentSubagentOutput {
                         plan.requireAppSelection(AgentModelSelectionSettings.selection(context, selectionId))
                         guard.prepare(execution)
+                        val observed = guard.observeResources(execution, System.currentTimeMillis())
                         val begin = System.currentTimeMillis()
-                        return delegate.execute(execution).also { output -> synchronized(lock) {
+                        return delegate.execute(observed).also { output -> synchronized(lock) {
                             outcomes.put(JSONObject().put("node_id", execution.member.memberId)
                                 .put("person_id", execution.member.context[CollaborationResearchWorkflow.PERSON])
                                 .put("stage", execution.member.context[CollaborationResearchWorkflow.STAGE])

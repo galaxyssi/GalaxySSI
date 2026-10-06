@@ -139,7 +139,8 @@ data class AgentTeamMemberExecutionContext(
     val handoff: AgentSubagentContextHandoff,
     val depth: Int,
     val provenance: AgentSubagentProvenance,
-    val suspendExecutionPermit: suspend (suspend () -> Unit) -> Unit = { wait -> wait() }
+    val suspendExecutionPermit: suspend (suspend () -> Unit) -> Unit = { wait -> wait() },
+    internal val resourceObservation: AgentTeamResourceObservation? = null
 )
 
 fun interface AgentTeamMemberWorker {
@@ -1150,6 +1151,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 CollaborationResearchWorkspace(it).enrollPublication(CollaborationWorkspaceAccess.from(context), stage, candidateTask)
             }
         }
+        val promptContext = if (trialGuarded) context.copy(resourceObservation =
+            CollaborationModelCallLedger(requireNotNull(progressContext)).resourceObservation(context)) else context
         val action = AgentAction(
             id = "team-${managedRequest.runId}",
             kind = AgentActionKind.CALL_CONNECTOR,
@@ -1162,7 +1165,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "agent_instance_id" to context.member.memberId,
                 "agent_model_id" to context.member.context["collaboration_model_id"].orEmpty(),
                 "team_id" to context.request.context["team_id"]?.toString().orEmpty(),
-                "prompt" to if (trialProfile != null) CollaborationTrialPrompt.build(context) else teamPrompt(context),
+                "prompt" to if (trialProfile != null) CollaborationTrialPrompt.build(promptContext) else teamPrompt(promptContext),
                 "original_goal" to context.request.goal,
                 "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(),
                 "_galaxyssi_conversation_id" to context.request.conversationId,
@@ -1224,6 +1227,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
 
     private fun legacyTeamPrompt(context: AgentTeamMemberExecutionContext): String = buildString {
         append("Supervised Agent team assignment\n")
+        context.resourceObservation?.let { append(it.prompt(context)) }
         val researchStage = CollaborationResearchWorkflow.stage(context.member)
         val livePlanner = CollaborationLiveGraph.planner(context.member)
         val goalController = context.member.context[CollaborationGoalLoop.ENABLED] == "1" && researchStage == CollaborationResearchStage.DELIVER

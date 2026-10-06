@@ -104,6 +104,21 @@ internal class CollaborationModelCallLedger(
 
     fun trialSnapshot(group: String, run: String): JSONObject? = synchronized(LOCK) { trial(group, run) }
 
+    fun resourceObservation(execution: AgentTeamMemberExecutionContext): AgentTeamResourceObservation? = synchronized(LOCK) {
+        val access = CollaborationWorkspaceAccess.from(execution)
+        check(authorized(access)) { "Model accounting access revoked" }
+        val trial = trial(access.groupId, access.runId) ?: return@synchronized null
+        val policy = CollaborationTrialPolicy.from(trial.getJSONObject("policy"))
+        val current = now()
+        val created = CollaborationTrialPolicy.strictLong(trial.get("created_at"))
+        val remaining = if (current >= created) (policy.admitUntilMillis - current).coerceAtLeast(0) else null
+        val admitted = CollaborationTrialPolicy.strictLong(trial.get("admitted"))
+        AgentTeamResourceObservation.capture(execution, AgentTeamResourceObservation.Unit.HTTP_REQUEST,
+            policy.maxRequestAdmissions.toLong(), admitted, current, remaining,
+            trial.getBoolean("closed") || remaining == 0L || current < created || admitted >= policy.maxRequestAdmissions,
+            AgentTeamResourceObservation.Window.ADMISSION)
+    }
+
     fun closeTrial(group: String, run: String) = synchronized(LOCK) {
         trial(group, run)?.let { rows.commit(mapOf(trialKey(group, run) to it.put("closed", true).toString())) }
     }

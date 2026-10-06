@@ -71,6 +71,38 @@ class CollaborationAdaptivePilotTest {
         reject { g.admit(action) }; reject { g.prepare(execution) }
     }
 
+    @Test fun resourceObservationUsesTheRealEnvelopeAndIsJournaledWithoutRewritingThePrompt() {
+        val p = plan(); val s = store(p); val entries = mutableListOf<JSONObject>()
+        var now = 25L
+        val g = guard(p, s, { now }, entries::add)
+        val execution = execution(p)
+        reject { g.observeResources(execution, 1_000) }
+        g.prepare(execution)
+        val observed = g.observeResources(execution, 1_000)
+        val resource = observed.resourceObservation!!
+        assertEquals(75L, resource.json(observed).getLong("remaining_window_ms_at_observation"))
+        assertEquals("parent_execution_window", resource.json(observed).getString("window_scope"))
+        assertEquals(8, resource.json(observed).getInt("admissions_remaining_at_observation"))
+        reject { g.admit(action(observed)) }
+        assertEquals(0, g.count())
+        val action = action(observed).let { it.copy(parameters = it.parameters + ("prompt" to resource.prompt(observed))) }
+        now = 40
+        assertSame(action, g.admit(action))
+        assertEquals(resource.json(observed).toString(), entries.single().getJSONObject("resource_observation").toString())
+        reject { g.observeResources(observed, 1_010) }
+    }
+
+    @Test fun expiredOrClosedEnvelopeObservationsDoNotReopenAdmission() {
+        for (expired in listOf(false, true)) {
+            val p = plan(); val s = store(p); var now = 1L; val g = guard(p, s, { now })
+            val execution = execution(p); g.prepare(execution)
+            if (expired) now = 101 else g.close()
+            val observed = g.observeResources(execution, 2_000)
+            assertTrue(observed.resourceObservation!!.json(observed).getBoolean("admission_closed"))
+            reject { g.admit(action(observed)) }
+        }
+    }
+
     @Test fun missingOrStaleGraphAndIncorrectIdentityAreRejectedBeforeIo() {
         val p = plan(); val execution = execution(p)
         reject { guard(p, InMemoryAgentTeamExecutionStore()).prepare(execution) }

@@ -7,6 +7,7 @@ internal object CollaborationTrialPrompt {
         check(context.handoff.dependencies.none { it.outputTruncated }) { "Trial dependency output was truncated" }
         val prompt = buildString {
             append("Closed-book task. Use only the supplied task, sources and prior work. No external tools.\n")
+            context.resourceObservation?.let { append(it.prompt(context)) }
             append("Identity: ").append(context.member.context[CollaborationResearchWorkflow.PERSON]).append('\n')
             append("Assignment: ").append(context.member.objective).append('\n')
             append("Original task and supplied sources:\n").append(context.request.goal).append('\n')

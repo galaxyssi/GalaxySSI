@@ -16,6 +16,16 @@ internal class CollaborationAdaptivePilotAdmission(
     @Synchronized fun exhausted() = admitted.size >= plan.maximumDispatches
     @Synchronized fun close() { closed = true }
 
+    @Synchronized fun observeResources(context: AgentTeamMemberExecutionContext, nowUnixMillis: Long): AgentTeamMemberExecutionContext {
+        check(prepared[context.request.idempotencyKey] == context) { "Resource observation requires the prepared assignment" }
+        check(context.member.memberId !in admitted) { "This dispatch is already reserved" }
+        val current = nowElapsed()
+        val observation = AgentTeamResourceObservation.capture(context, AgentTeamResourceObservation.Unit.PHONE_DISPATCH,
+            plan.maximumDispatches.toLong(), admitted.size.toLong(), nowUnixMillis,
+            (deadlineElapsed - current).coerceAtLeast(0), closed || exhausted() || current >= deadlineElapsed)
+        return context.copy(resourceObservation = observation).also { prepared[context.request.idempotencyKey] = it }
+    }
+
     @Synchronized fun prepare(context: AgentTeamMemberExecutionContext) {
         check(!closed && nowElapsed() < deadlineElapsed) { "Adaptive trial admission closed" }
         check(!exhausted()) { "Adaptive trial phone-dispatch envelope exhausted" }
@@ -58,6 +68,9 @@ internal class CollaborationAdaptivePilotAdmission(
             "Adaptive trial dispatch identity or model changed"
         }
         val prompt = requireNotNull(action.managedTeamAssignmentPrompt())
+        context.resourceObservation?.let {
+            check(prompt.contains(it.prompt(context).trim())) { "Production prompt omitted the host resource observation" }
+        }
         check(context.member.memberId !in admitted)
         admitted.add(context.member.memberId)
         persist(JSONObject().put("node_id", context.member.memberId).put("person_id", context.member.context[CollaborationResearchWorkflow.PERSON])
@@ -70,6 +83,7 @@ internal class CollaborationAdaptivePilotAdmission(
             .put("round", current.request.context[CollaborationGoalLoop.ROUND]?.toString() ?: "0")
             .put("prompt_sha256", CollaborationRemotePilotDispatch.sha256(prompt.toByteArray(Charsets.UTF_8)))
             .put("prompt_characters", prompt.length).put("prompt_replaced_by_harness", false)
+            .put("resource_observation", context.resourceObservation?.json(context) ?: JSONObject.NULL)
             .put("admitted_elapsed_ms", nowElapsed()).put("accounting_scope", "phone_delegate_dispatch_not_provider_request"))
         return action
     }
