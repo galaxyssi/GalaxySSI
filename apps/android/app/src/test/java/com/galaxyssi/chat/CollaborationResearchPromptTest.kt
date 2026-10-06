@@ -6,6 +6,60 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun availabilityReflectsFullAtomicSectionsForEveryRoleAndSize() {
+        for (stage in CollaborationResearchStage.entries) {
+            for (size in listOf(30, 12_000, 100_000)) {
+                val execution = execution("g".repeat(size), stage)
+                val result = CollaborationResearchPrompt.build(execution, descriptor(), emptyMap())
+                val coverage = JSONObject(result.text.substringAfterLast("\n[Context availability]\n"))
+                for ((field, section) in mapOf("original_goal" to "Original user goal",
+                    "acceptance_criteria" to "Preserved acceptance criteria", "source_mapping" to "Goal coverage source")) {
+                    assertEquals(if (section in result.included) "complete_inline" else "not_inlined", coverage.getString(field))
+                    assertEquals(section in result.included, result.text.contains("\n[$section]\n"))
+                }
+                if (coverage.getString("original_goal") == "complete_inline")
+                    assertTrue(result.text.contains("\n[Original user goal]\n${execution.request.goal}\n"))
+                assertEquals("supplied_text_not_comprehension_or_validation", coverage.getString("trust"))
+                assertTrue(result.text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+                assertTrue(result.text.contains("Do not refetch complete inline material"))
+                assertTrue(result.text.contains("output_truncated=true"))
+                assertFalse(result.text.contains("Follow next_cursor until null."))
+            }
+        }
+    }
+
+    @Test fun availabilityNeverPretendsLargeOmittedCriteriaWereSupplied() {
+        val base = execution("Short original goal")
+        val criteria = JSONArray().put(JSONObject().put("id", "criterion").put("requirement", "full requirement ".repeat(5000))
+            .put("status", "open").put("evidence", JSONArray())).toString()
+        val execution = base.copy(request = base.request.copy(context = base.request.context + (CollaborationGoalLoop.CRITERIA to criteria)))
+        val result = CollaborationResearchPrompt.build(execution, descriptor(), emptyMap())
+        val coverage = JSONObject(result.text.substringAfterLast("\n[Context availability]\n"))
+        assertEquals("complete_inline", coverage.getString("original_goal"))
+        assertEquals("not_inlined", coverage.getString("acceptance_criteria"))
+        assertTrue("Preserved acceptance criteria" in result.omitted)
+        assertFalse(result.text.contains(criteria))
+        assertTrue(result.text.contains("read its pages before planning or certifying coverage"))
+    }
+
+    @Test fun recoveredAvailabilityDoesNotRecordDeliveryOrRefreshContext() {
+        val rows = MemoryRows()
+        val store = CollaborationGoalContractStore(rows, { true })
+        val execution = execution("Complete goal with the original constraints")
+        CollaborationResearchPrompt.prepare(execution, store) { "Original dependency material" }
+        val frozen = rows.values.toMap()
+        val recovered = CollaborationResearchPrompt.prepare(execution, store) { error("Do not refresh") }
+        val coverage = JSONObject(recovered.substringAfterLast("\n[Context availability]\n"))
+        assertEquals("complete_inline", coverage.getString("original_goal"))
+        assertEquals("complete_inline", coverage.getString("acceptance_criteria"))
+        assertEquals(frozen, rows.values)
+        assertFalse(recovered.contains("Original dependency material"))
+        val access = CollaborationWorkspaceAccess.from(execution)
+        val delivery = store.delivery(access, store.lookup(access).getString("snapshot_id"))
+        assertEquals(0, delivery.getInt("delivered_page_count"))
+        assertFalse(delivery.getBoolean("all_pages_delivered"))
+    }
+
     @Test fun initialAcceptanceStateCannotBeOmittedWithLargeHistoryOrDuringRecovery() {
         val execution = execution("goal ".repeat(10000), CollaborationResearchStage.DELIVER)
         val store = CollaborationGoalContractStore(MemoryRows(), { true })
