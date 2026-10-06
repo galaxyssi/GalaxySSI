@@ -30,7 +30,11 @@ function readSubmodulePaths() {
 }
 
 const ignoredSubmodulePaths = readSubmodulePaths();
-const ignoredGeneratedPaths = new Set(["apps/android/memory-native/target"]);
+const ignoredGeneratedPaths = new Set([
+  "apps/android/memory-native/target",
+  ".galaxyssi-state",
+  ".local"
+]);
 
 const ignoredDirs = new Set([
   ".git",
@@ -84,9 +88,7 @@ function isTestLanguageCorpus(rel) {
 function isAllowedChineseFile(file) {
   const rel = normalize(path.relative(root, file));
   return (
-    /^apps\/android\/app\/src\/main\/res\/values-zh-rCN\/[^/]+\.xml$/.test(rel) ||
-    /^apps\/watch\/app\/src\/main\/res\/values-zh\/[^/]+\.xml$/.test(rel) ||
-    /^apps\/android\/app\/src\/main\/res\/values-b\+zh\+Hans\+CN\/[^/]+\.xml$/.test(rel) ||
+    /^apps\/(?:android|watch|ar-glasses)\/app\/src\/main\/res\/(?:values-zh(?:-r[A-Z]{2})?|values-b\+zh(?:\+(?:Hans|Hant))?(?:\+[A-Z]{2})?)\/[^/]+\.xml$/.test(rel) ||
     rel === "apps/desktop/src/renderer/locales/zh-CN.json" ||
     /apps\/ios\/.*\/zh-Hans\.lproj\/Localizable\.strings$/.test(rel) ||
     isTestLanguageCorpus(rel) ||

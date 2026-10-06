@@ -19,7 +19,9 @@ internal class WatchWebLookup(private val context: Context, private val api: Wat
         val timer = deadlines.schedule({ operation.expire() }, 300, java.util.concurrent.TimeUnit.SECONDS)
         try {
             return runLoop(profile, task, history, operation, progress) { output ->
-                weatherFallback = WatchWeatherEvidence.fallback(output, java.util.Locale.getDefault().language == "zh") ?: weatherFallback
+                weatherFallback = WatchWeatherEvidence.fallback(output,
+                    context.getString(R.string.weather_evidence_rain_probability),
+                    context.getString(R.string.weather_evidence_summary_unavailable)) ?: weatherFallback
             }
         } catch (failure: Exception) {
             if (weatherFallback != null && operation.permitsEvidenceFallback()) return weatherFallback!!
