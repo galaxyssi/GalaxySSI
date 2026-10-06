@@ -20,6 +20,7 @@ jobs:
       - run: python tools/dev/test-blob-tooling.py -v
       - run: npm run test:trusted-pr-review
       - run: node --test tools/testing/team-evaluation/team-evaluation.test.mjs tools/testing/team-longitudinal/protocol.test.mjs
+      - run: python -B -m unittest discover -s tools/testing/codex-isolation -p test_preflight.py -v
       - run: npm run test:runtime-tools
       - run: npm run test:android:elf-normalizer
       - run: npm run test:guest-runtime
