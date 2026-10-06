@@ -60,6 +60,8 @@ internal object CollaborationWorkflowInstantiation {
                 expanded.put(JSONObject(step.toString()).apply { remove("role") }
                     .put("id", workId(execution, stepId)).put("member", roles.getString(step.getString("role")))
                     .put("depends_on", JSONArray(CollaborationWorkGraph.dependencies(step).map { workId(execution, it) }))
+                    .apply { if (step.has(CollaborationReviewTargets.FIELD)) put(CollaborationReviewTargets.FIELD,
+                        JSONArray(CollaborationReviewTargets.read(step).map { workId(execution, it) })) }
                     .put(CollaborationWorkflowWork.FIELD, binding))
             }
         }

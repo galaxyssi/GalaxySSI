@@ -65,6 +65,8 @@ internal object CollaborationWorkflowWork {
                     item.optBoolean("independent_review") == step.optBoolean("independent_review")) { "Dispatch must match saved workflow step; publish a new method for changes" }
                 val expected = CollaborationWorkGraph.dependencies(step).mapTo(hashSetOf()) { CollaborationWorkGraph.id(byStep.getValue(it)) }
                 require(CollaborationWorkGraph.dependencies(item) == expected) { "Workflow dependencies differ from the saved graph" }
+                val targets = CollaborationReviewTargets.read(step).mapTo(hashSetOf()) { CollaborationWorkGraph.id(byStep.getValue(it)) }
+                require(CollaborationReviewTargets.read(item) == targets) { "Workflow review targets differ from the saved graph" }
                 val id = CollaborationWorkGraph.id(item)
                 require(!bindings.containsKey(id)) { "Workflow work IDs must be unique" }
                 require(id !in knownWork || previouslyBound[id] == execution) { "Cannot retroactively label existing work as a new workflow experiment" }
@@ -73,6 +75,7 @@ internal object CollaborationWorkflowWork {
                     .put("member", person).put("stage", item.getString("stage")).put("assignment", item.getString("assignment"))
                     .put("depends_on", JSONArray(expected.sorted())).put("dependency_policy", item.optString("dependency_policy", "success"))
                     .put("independent_review", item.optBoolean("independent_review")).put("quality_improved", false).put("grants_permissions", false)
+                if (step.has(CollaborationReviewTargets.FIELD)) binding.put(CollaborationReviewTargets.FIELD, JSONArray(targets.sorted()))
                 bindings[id] = binding
                 selection?.let { binding.put(CollaborationWorkflowSelection.DECISION, it) }
                 CollaborationCapabilityChannel.binding(use, method, workspace, access, previouslyBound[id] == execution)?.let {

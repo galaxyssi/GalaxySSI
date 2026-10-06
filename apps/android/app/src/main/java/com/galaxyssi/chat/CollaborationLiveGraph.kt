@@ -27,6 +27,7 @@ internal object CollaborationLiveGraph {
         Add work only when new evidence reveals a useful next step. An empty work array is valid.
         Do not repeat, replace or rename existing work to bypass deduplication. Never repeat a completed side effect.
         Keep competing candidates distinct and assign independent checks to a different author.
+        ${CollaborationReviewTargets.instructions()}
         Use only the existing authorized roster. Missing people/resources can be proposed in the later goal assessment;
         do not invent members, grant permissions or claim that a simulation is a physical experiment.
         Do not change criteria, cancel running work, declare completion or issue a final answer here.
@@ -153,7 +154,8 @@ internal object CollaborationLiveGraph {
                     original.getString("stage") == item.getString("stage") && original.getString("assignment") == item.getString("assignment") &&
                     CollaborationWorkGraph.dependencies(original) == CollaborationWorkGraph.dependencies(item) &&
                     original.optString("dependency_policy", "success") == item.optString("dependency_policy", "success") &&
-                    original.optBoolean("independent_review") == item.optBoolean("independent_review")) {
+                    original.optBoolean("independent_review") == item.optBoolean("independent_review") &&
+                    CollaborationReviewTargets.read(original) == CollaborationReviewTargets.read(item)) {
                     "Cannot rewrite existing work $id; a materially different task needs a new ID"
                 }
             }
@@ -201,7 +203,7 @@ internal object CollaborationLiveGraph {
                     CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to JSONArray(CollaborationWorkGraph.dependencies(item).filter { it !in current && it in finished }).toString()) +
-                    CollaborationLearningWork.context(selected.getValue(item.getString("id"))) +
+                    CollaborationReviewTargets.context(item) + CollaborationLearningWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationProcedureWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationInnovationWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationPredictionWork.context(selected.getValue(item.getString("id"))) +
@@ -229,12 +231,12 @@ internal object CollaborationLiveGraph {
     private fun workItem(member: AgentTeamMember, all: List<AgentTeamMember>): JSONObject {
         val prior = strings(member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES])
         val ids = all.associate { it.memberId to it.context[CollaborationGoalLoop.WORK_ID] }
-        return JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
+        return CollaborationReviewTargets.restore(JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
             .put("member", member.context.getValue(CollaborationResearchWorkflow.PERSON))
             .put("stage", member.context.getValue(CollaborationResearchWorkflow.STAGE)).put("assignment", member.objective)
             .put("depends_on", JSONArray((member.dependsOnAgentIds.mapNotNull { ids[it] } + prior).distinct()))
             .put("dependency_policy", member.context[CollaborationWorkGraph.POLICY] ?: "success")
-            .put("independent_review", member.context[CollaborationWorkGraph.INDEPENDENT] == "true")
+            .put("independent_review", member.context[CollaborationWorkGraph.INDEPENDENT] == "true"), member.context)
     }
 
     fun inventory(definition: AgentTeamDefinition, completed: Map<String, AgentSubagentChildResult>): String {

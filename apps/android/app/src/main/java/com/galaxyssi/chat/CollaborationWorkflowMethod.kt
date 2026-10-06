@@ -23,7 +23,7 @@ internal object CollaborationWorkflowMethod {
         require(inputs.distinct().size == inputs.size) { "Workflow inputs must be unique" }
         val steps = objects(value, "steps")
         val work = steps.map { step ->
-            require(step.keys().asSequence().all { it in setOf("id", "role", "stage", "assignment", "depends_on", "dependency_policy", "independent_review") }) {
+            require(step.keys().asSequence().all { it in setOf("id", "role", "stage", "assignment", "depends_on", "dependency_policy", "independent_review", CollaborationReviewTargets.FIELD) }) {
                 "Workflow steps may not override tools, permissions, models or goal criteria"
             }
             require(text(step, "id").length <= 160 && text(step, "assignment").length <= 8000) { "Workflow step exceeds existing work field size" }

@@ -51,12 +51,18 @@ internal object CollaborationWorkGraph {
             val dependencies = dependencies(item)
             require(id !in dependencies) { "Work cannot depend on itself: $id" }
             require(dependencies.all { it in byId || it in finished }) { "Unknown or unfinished dependency for $id" }
+            val targets = CollaborationReviewTargets.read(item)
             if (item.optBoolean("independent_review")) {
-                require(dependencies.isNotEmpty()) { "Independent review must name the work being reviewed" }
-                require(dependencies.all { dependency ->
+                require(targets.isNotEmpty()) { "Independent review $id must name the work being reviewed" }
+                targets.forEach { dependency ->
                     val author = if (dependency in finished) finishedAuthors[dependency] else byId[dependency]?.optString("member")
-                    !author.isNullOrBlank() && author != item.optString("member")
-                }) { "Independent review requires a known, different author for every target" }
+                    require(!author.isNullOrBlank() && author != item.optString("member")) {
+                        "Independent review $id requires a known, different author for target $dependency; " +
+                            "reviewer=${item.optString("member")}, author=${author ?: "unknown"}. " +
+                            "If this dependency is the reviewer's test data, keep it in depends_on and list only " +
+                            "the actual reviewed artifacts in review_targets; never exclude an artifact you are reviewing."
+                    }
+                }
             }
             dependencies.filterTo(linkedSetOf()) { it in pending }
         }
