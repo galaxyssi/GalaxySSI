@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
+import math
 import threading
 import time
 import uuid
@@ -15,6 +17,9 @@ REQUEST = "collaboration_recall_request"
 RESPONSE = "collaboration_recall_result"
 CONTRACT = "galaxyssi.collaboration-recall/2"
 ACTIVE = frozenset({"starting", "running", "recovering"})
+RETRY_INITIAL_SECONDS = 2.0
+RETRY_MAX_SECONDS = 8.0
+log = logging.getLogger(__name__)
 RULE_TOPICS = ("catalog", "all", "foundation", "learning", "procedures", "transfer", "innovation",
                "team_invention", "prediction", "tools", "workflows", "retention", "self_research")
 
@@ -112,6 +117,7 @@ def task_scope(task):
 @dataclass
 class Pending:
     request: dict
+    deadline: float
     event: threading.Event = field(default_factory=threading.Event)
     response: dict | None = None
 
@@ -144,44 +150,66 @@ class RecallBroker:
         return result
 
     def _exchange(self, scope, snapshot, arguments, publish, active, timeout, phase, delivery=None):
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+            raise ValueError("Recall timeout must be within the phone request lifetime")
+        started = time.monotonic()
+        deadline = started + timeout
         nonce = str(uuid.uuid4())
         request = {**scope, "type": REQUEST, "contract": CONTRACT, "request_id": nonce,
                    "expires_at": int(time.time() * 1000 + timeout * 1000), "arguments": arguments, "phase": phase}
         if delivery is not None:
             request["delivery"] = delivery
-        pending = Pending(request)
+        pending = Pending(request, deadline)
         with self._lock:
             if len(self._pending) >= 128 or sum(p.request["task_id"] == scope["task_id"] for p in self._pending.values()) >= 4:
                 raise ValueError("Recall capacity busy; retry after current reads finish")
             self._pending[nonce] = pending
+        attempts = accepted = 0
+        next_publish, retry_delay = started, RETRY_INITIAL_SECONDS
+        outcome = "aborted"
         try:
-            if not active() or task_scope(snapshot()) != scope:
-                raise ValueError("Recall assignment changed")
-            if not publish(request):
-                raise ConnectionError(
-                    "Recall transport rejected the request; phone connectivity is unconfirmed. "
-                    "The read was not delivered. Retry this same read after transport recovery; "
-                    "do not restart completed work or infer that the phone is powered off."
-                )
-            deadline = time.monotonic() + timeout
-            while not pending.event.wait(min(.25, max(0, deadline - time.monotonic()))):
+            while True:
                 if not active() or task_scope(snapshot()) != scope:
                     raise ValueError("Recall assignment changed")
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Phone recall timed out; saved evidence remains available for a read retry")
-            if not active() or task_scope(snapshot()) != scope:
-                raise ValueError("Recall assignment changed")
-            return pending.response["result"]
+                if pending.event.is_set():
+                    outcome = "returned" if pending.response["result"]["success"] else "phone_rejected"
+                    return pending.response["result"]
+                now = time.monotonic()
+                if now >= deadline:
+                    if not accepted:
+                        outcome = "publish_rejected"
+                        raise ConnectionError(
+                            "Recall transport rejected all publish attempts; phone connectivity is unconfirmed. "
+                            "Retry this read after transport recovery; do not restart completed work "
+                            "or infer that the phone is powered off."
+                        )
+                    outcome = "response_timeout"
+                    raise TimeoutError(
+                        "Phone recall timed out without an authenticated response; publishing is not proof of delivery. "
+                        "Saved evidence remains available for a read retry."
+                    )
+                if now >= next_publish:
+                    # Reuse the nonce and expiry: phone deduplication owns in-flight reads.
+                    # Never create a durable outbox or restart the model to retry an observation.
+                    attempts += 1
+                    accepted += bool(publish(json.loads(json.dumps(request))))
+                    next_publish = time.monotonic() + retry_delay
+                    retry_delay = min(RETRY_MAX_SECONDS, retry_delay * 2)
+                    continue
+                pending.event.wait(min(.25, deadline - now, next_publish - now))
         finally:
             with self._lock:
                 self._pending.pop(nonce, None)
+            log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s",
+                     scope["task_id"], nonce, arguments["mode"], phase, attempts, accepted,
+                     int((time.monotonic() - started) * 1000), outcome)
 
     def receive(self, payload, authenticated_route):
         if not isinstance(payload, dict) or not isinstance(payload.get("request_id"), str):
             return False
         with self._lock:
             pending = self._pending.get(payload.get("request_id"))
-            if pending is None or pending.response is not None:
+            if pending is None or pending.response is not None or time.monotonic() >= pending.deadline:
                 return False
             request = pending.request
             if (authenticated_route != request["client_route_id"] or payload.get("type") != RESPONSE
