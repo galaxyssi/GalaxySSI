@@ -12,6 +12,33 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CollaborationArtifactProbeSyntheticDeviceTest {
+    @Test fun recoveredCandidatesSurviveReopenWithoutLeakingToSharedControl() = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("artifactProbeSynthetic") == "true")
+        require(Build.MODEL == "SM-S9480")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val sourcePlan = CollaborationPilotArtifactFixture.plan("rf-${UUID.randomUUID()}")
+        val raw = CollaborationPilotReportFixture.report(sourcePlan).toString()
+        val digest = CollaborationRemotePilotDispatch.sha256(raw.toByteArray(Charsets.UTF_8))
+        val artifacts = sourcePlan.slots.map {
+            CollaborationPilotArtifact.recoverReport(sourcePlan, it, "a".repeat(64), raw, digest)
+        }
+        val store = CollaborationPilotArtifactStore(context, sourcePlan.id)
+        try {
+            artifacts.forEach { store.freeze(it) }
+            val reopened = CollaborationPilotArtifactStore(context, sourcePlan.id)
+            val plan = CollaborationArtifactProbePlan.from(CollaborationArtifactProbeFixture.sharedInput(artifacts), 3)
+            var reads = 0
+            for (slot in plan.slots) {
+                val bound = plan.bind(slot) { reads++; reopened.read(it.source, it.reference) }
+                val prompt = bound.prompt(CollaborationArtifactProbeFixture.execution(bound, slot.id))
+                assertEquals(slot.condition == "available", prompt.contains("synthetic-final"))
+                if (slot.condition == "withheld") assertNull(bound.candidate)
+                else assertEquals(artifacts.single { it.source["arm"] == slot.sourceId }.finalOutput, bound.candidateText)
+            }
+            assertEquals(2, reads)
+        } finally { store.database.clear() }
+    }
+
     @Test fun onlyAssignedAvailableProbeReadsEncryptedSource() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("artifactProbeSynthetic") == "true")
         require(Build.MODEL == "SM-S9480")

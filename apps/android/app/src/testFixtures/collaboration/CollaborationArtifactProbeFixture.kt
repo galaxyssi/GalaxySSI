@@ -4,6 +4,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object CollaborationArtifactProbeFixture {
+    fun sharedInput(artifacts: List<CollaborationPilotArtifact>): JSONObject {
+        val value = input(artifacts.first())
+        val prompt = value.getJSONArray("slots").getJSONObject(0).getString("prompt")
+        return value.put("format", "galaxyssi.artifact-transfer-probe.v2")
+            .put("sources", JSONArray(artifacts.map { JSONObject().put("id", it.source["arm"])
+                .put("source", it.source.json()).put("reference", it.reference.json()) }))
+            .put("slots", JSONArray(listOf("", "single", "team").map { source ->
+                JSONObject().put("id", source.ifBlank { "control" }).put("case_id", "same-target").put("source_id", source)
+                    .put("condition", if (source.isEmpty()) "withheld" else "available").put("prompt", prompt)
+            }))
+    }
+
     fun input(artifact: CollaborationPilotArtifact, id: String = "probe-fixture") = JSONObject()
         .put("format", "galaxyssi.artifact-transfer-probe.v1").put("pilot_id", id)
         .put("target_id", artifact.source["target_id"]).put("model_id", artifact.source["model_id"])

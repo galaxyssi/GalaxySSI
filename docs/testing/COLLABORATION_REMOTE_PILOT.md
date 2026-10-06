@@ -236,6 +236,46 @@ required when their shared guard or source codec changes.
 
 ## Local verification
 
+### Shared controls and completed-report recovery
+
+`galaxyssi.artifact-transfer-probe.v2` retains the same fields as v1, but allows
+one shared withheld control per `case_id`. Its `source_id` is the empty string;
+each available slot references a distinct declared candidate. All slots in a
+case have identical task material, and every declared source must be used.
+The shared control has no candidate reference, never reads candidate storage,
+and still cannot reuse any acquisition conversation or run. Target solvers are
+fresh single identities regardless of whether their candidate came from a
+single-person or team source. This is a conditional artifact-availability
+comparison, not a direct multiagent target execution or equal-lifetime-budget
+comparison. Freeze the design and record any prompt-presentation differences
+before observing live results; preserve the original private grading protocol.
+
+Historical pilots without frozen candidates can be imported only through
+`CollaborationPilotReportRecoveryDeviceTest#recoverCompletedReportArtifacts`.
+This requires `candidateReportRecovery=true`, `pilotDeviceModel=SM-S9480`,
+`remotePilotInput`, `remotePilotSha256`, `recoveryReportInput`,
+`recoveryReportSha256`, and the original `remotePilotMaxDispatches`. Input names
+are simple JSON filenames in the App external-files directory. The recovery
+validates pinned report/protocol hashes, App selection provenance, exact slot
+assignment, successful nodes, dispatch attribution, untruncated final text, and
+confirmed STOP cleanup with no pending remote owners. It neither starts a
+connector nor invokes a model. Existing conflicting candidates are not replaced.
+
+Recovered candidates use `galaxyssi.remote-pilot-candidate.v2` and explicitly
+record `completed_test_report` provenance, the original report hash, and
+`provider_attested=false`. This is reconstruction from a pinned test report,
+not a new runtime capture or signed provider evidence. Text is preserved exactly,
+including whitespace. The `recovered-<pilot_id>.json` receipt supplies source
+references and final-text hashes for a separately frozen runtime binding.
+Hashes detect changes relative to the pinned inputs; they do not prove that a
+report author recorded reality. Candidates remain unverified and grant no
+permissions. Reports, recovered text, and research protocols remain outside Git.
+
+`CollaborationSharedArtifactProbeTest` and `CollaborationPilotReportRecoveryTest`
+cover shared-control isolation, source freshness, schema and attribution drift,
+exact-text recovery, unsuccessful/unclean sources, and provenance. These local
+checks are not live-model evidence of transfer or regression retention.
+
 Run `CollaborationRemotePilotTest`, `CollaborationPilotPlanTest`,
 `CollaborationLiveModelSelectionTest`, and `CollaborationReasoningSelectionTest`,
 plus `:app:compileDebugAndroidTestKotlin`. Tests cover configurable App selection,

@@ -103,11 +103,65 @@ internal class CollaborationPilotArtifact private constructor(
             return CollaborationPilotArtifact(source, payload)
         }
 
+        /** Exact completed test-report import, not a fresh runtime or provider attestation. */
+        fun recoverReport(plan: CollaborationRemotePilotPlan, slot: CollaborationRemotePilotPlan.Slot,
+                          protocolSha256: String, raw: String, expectedReportSha256: String): CollaborationPilotArtifact {
+            require(digestPattern.matches(expectedReportSha256) && hash(raw) == expectedReportSha256)
+            require(digestPattern.matches(protocolSha256) && slot in plan.slots)
+            val report = JSONObject(raw)
+            require(report.get("format") == "galaxyssi.remote-pilot-report.v1" && report.get("finished") == true &&
+                report.get("pilot_id") == plan.id && report.get("protocol_sha256") == protocolSha256)
+            require(report.get("selection_source") == "app_conversation_snapshot" &&
+                (report.get("selection_conversation_id") as? String)?.isNotBlank() == true)
+            val selection = report.getJSONObject("model_selection")
+            require(selection.get("requested_model") == plan.selection.modelId &&
+                selection.get("requested_reasoning_effort") == plan.selection.reasoningEffort.wireValue)
+            val assigned = report.getJSONArray("slots")
+            require(assigned.length() == plan.slots.size)
+            plan.slots.forEachIndexed { index, expected ->
+                val value = assigned.getJSONObject(index)
+                require(value.get("id") == expected.id && value.get("case_id") == expected.caseId && value.get("arm") == expected.arm)
+            }
+            val outcome = assigned.getJSONObject(plan.slots.indexOf(slot))
+            require(outcome.get("status") == "completed" && outcome.get("state") == "SUCCEEDED" &&
+                outcome.get("result_truncated") == false && outcome.get("cleanup_confirmed") == true &&
+                outcome.get("durable_control") == "STOP" && outcome.getJSONArray("pending_remote_owners").length() == 0)
+            val run = "remote-pilot-${plan.id}-${slot.id}"
+            require(outcome.get("run_id") == run && outcome.get("turn_id") == "turn-$run")
+            val source = Source.of(plan, slot, outcome.getString("conversation_id"), run, "turn-$run", protocolSha256)
+            val savedMembers = outcome.getJSONArray("members")
+            require(savedMembers.length() == nodes.size)
+            val members = JSONArray()
+            nodes.forEachIndexed { index, node ->
+                val member = savedMembers.getJSONObject(index)
+                require(member.get("node") == node && member.get("error") == "")
+                members.put(JSONObject().put("node_id", node).put("person_id", member.get("person_id"))
+                    .put("status", member.get("status")).put("output", member.get("output")))
+            }
+            val output = outcome.get("final_output") as? String ?: error("Report output must be exact text")
+            val body = JSONObject().put("format", "galaxyssi.remote-pilot-candidate.v2")
+                .put("source", source.json()).put("trust", "unverified_candidate").put("grants_permissions", false)
+                .put("final_output", output).put("final_output_sha256", hash(output)).put("members", members)
+                .put("dispatches", JSONArray(outcome.getJSONArray("phone_dispatches").toString()))
+                .put("report_recovery", JSONObject().put("origin", "completed_test_report")
+                    .put("report_sha256", expectedReportSha256).put("provider_attested", false))
+            validate(source, body)
+            return CollaborationPilotArtifact(source, body.toString())
+        }
+
         private fun validate(source: Source, body: JSONObject) {
-            require(body.keys().asSequence().toSet() == setOf("format", "source", "trust", "grants_permissions",
-                "final_output", "final_output_sha256", "members", "dispatches"))
-            require(body.get("format") == "galaxyssi.remote-pilot-candidate.v1" &&
+            val recovered = body.get("format") == "galaxyssi.remote-pilot-candidate.v2"
+            val fields = setOf("format", "source", "trust", "grants_permissions",
+                "final_output", "final_output_sha256", "members", "dispatches")
+            require(body.keys().asSequence().toSet() == fields + if (recovered) setOf("report_recovery") else emptySet())
+            require((recovered || body.get("format") == "galaxyssi.remote-pilot-candidate.v1") &&
                 body.get("trust") == "unverified_candidate" && body.get("grants_permissions") == false)
+            if (recovered) {
+                val provenance = body.getJSONObject("report_recovery")
+                require(provenance.keys().asSequence().toSet() == setOf("origin", "report_sha256", "provider_attested") &&
+                    provenance.get("origin") == "completed_test_report" && provenance.get("provider_attested") == false &&
+                    digestPattern.matches(provenance.get("report_sha256") as? String ?: ""))
+            }
             require(source.matches(body.getJSONObject("source"))) { "Frozen candidate source changed" }
             val output = body.get("final_output") as? String ?: error("Candidate output must be text")
             require(output.isNotBlank() && body.get("final_output_sha256") == hash(output))

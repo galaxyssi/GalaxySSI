@@ -18,8 +18,8 @@ internal object CollaborationPilotArtifactFixture {
     }
 
     suspend fun execute(plan: CollaborationRemotePilotPlan, slot: CollaborationRemotePilotPlan.Slot,
-                        store: AgentTeamExecutionStore = InMemoryAgentTeamExecutionStore()): Result {
-        val run = "fixture-${plan.id}-${slot.id}"
+                        store: AgentTeamExecutionStore = InMemoryAgentTeamExecutionStore(), runPrefix: String = "fixture"): Result {
+        val run = "$runPrefix-${plan.id}-${slot.id}"
         val group = "group-$run"
         val turn = "turn-$run"
         val definition = plan.definition(slot, group, run)

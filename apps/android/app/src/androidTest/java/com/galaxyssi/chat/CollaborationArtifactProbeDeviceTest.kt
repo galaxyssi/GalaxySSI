@@ -99,8 +99,8 @@ class CollaborationArtifactProbeDeviceTest {
                 }
                 policy.requireAppSelection(AgentModelSelectionSettings.selection(context, selection))
                 outcome.put("candidate_loaded", policy.candidateText != null)
-                    .put("candidate_reference", policy.candidate.reference.json())
-                    .put("source_arm", policy.candidate.source["arm"])
+                    .put("candidate_reference", policy.candidate?.reference?.json() ?: JSONObject.NULL)
+                    .put("source_arm", policy.candidate?.source?.get("arm") ?: JSONObject.NULL)
                 persist()
                 GalaxySSIMqttClient.connect(context)
                 while (!GalaxySSIMqttClient.isConnected() || !GalaxySSIMqttClient.isSecureReady()) delay(250)

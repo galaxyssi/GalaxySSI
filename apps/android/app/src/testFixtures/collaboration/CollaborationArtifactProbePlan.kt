@@ -2,7 +2,7 @@ package com.galaxyssi.chat
 
 import org.json.JSONObject
 
-/** Fresh single-person target contexts; availability is the only within-source prompt treatment. */
+/** Fresh single-person targets with per-source pairs or a shared withheld control. */
 internal class CollaborationArtifactProbePlan private constructor(
     val id: String, val targetId: String, val selection: CollaborationLiveModelSelection,
     val timeoutMillis: Long, val sources: Map<String, Candidate>, val slots: List<Slot>
@@ -12,18 +12,18 @@ internal class CollaborationArtifactProbePlan private constructor(
 
     fun bind(slot: Slot, read: (Candidate) -> CollaborationPilotArtifact): Bound {
         require(slot in slots)
-        val candidate = sources.getValue(slot.sourceId)
-        val artifact = if (slot.condition == "available") read(candidate).also {
+        val candidate = sources[slot.sourceId]
+        val artifact = if (slot.condition == "available") read(requireNotNull(candidate)).also {
             require(it.source.artifactId == candidate.source.artifactId && it.reference == candidate.reference)
         } else null
         return Bound(slot, candidate, artifact?.finalOutput)
     }
 
-    inner class Bound(val slot: Slot, val candidate: Candidate, val candidateText: String?) : CollaborationRemoteExecutionPolicy {
+    inner class Bound(val slot: Slot, val candidate: Candidate?, val candidateText: String?) : CollaborationRemoteExecutionPolicy {
         override val targetId get() = this@CollaborationArtifactProbePlan.targetId
         override val selection get() = this@CollaborationArtifactProbePlan.selection
         fun definition(group: String, run: String): AgentTeamDefinition {
-            require(group != candidate.source["conversation_id"] && run != candidate.source["run_id"])
+            require(sources.values.none { group == it.source["conversation_id"] || run == it.source["run_id"] })
             return AgentTeamDefinition(run, targetId, listOf(AgentTeamMember(targetId, AgentDeliveryMode.RESPOND,
                 instanceId = "probe", role = "Independent target solver", objective = "Solve the supplied new task independently.",
                 context = mapOf("collaboration_group_id" to group, "collaboration_name" to "Target solver",
@@ -52,7 +52,9 @@ internal class CollaborationArtifactProbePlan private constructor(
     companion object {
         fun from(value: JSONObject, authorizedDispatches: Int): CollaborationArtifactProbePlan {
             value.exact("format", "pilot_id", "target_id", "model_id", "reasoning_effort", "tool_scope", "trial_timeout_ms", "sources", "slots")
-            require(value.text("format") == "galaxyssi.artifact-transfer-probe.v1")
+            val format = value.text("format")
+            require(format in setOf("galaxyssi.artifact-transfer-probe.v1", "galaxyssi.artifact-transfer-probe.v2"))
+            val sharedControl = format.endsWith(".v2")
             require(value.text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
             val id = value.id("pilot_id")
             val target = value.text("target_id").also { require(it.length <= 256 && ':' in it && it.endsWith(":codex")) }
@@ -74,22 +76,39 @@ internal class CollaborationArtifactProbePlan private constructor(
             require(values.length() in 2..12 && values.length() <= authorizedDispatches)
             val slots = (0 until values.length()).map { index -> values.getJSONObject(index).let {
                 it.exact("id", "case_id", "source_id", "condition", "prompt")
-                Slot(it.id("id"), it.id("case_id"), it.id("source_id"), it.text("condition"), it.text("prompt"))
+                val sourceId = it.text("source_id")
+                require((sharedControl && sourceId.isEmpty()) || sourceId.matches(idPattern))
+                Slot(it.id("id"), it.id("case_id"), sourceId, it.text("condition"), it.text("prompt"))
             } }
-            require(slots.map { it.id }.distinct().size == slots.size && slots.map { it.sourceId }.toSet() == sources.keys)
+            require(slots.map { it.id }.distinct().size == slots.size)
             require(slots.all { it.condition in setOf("available", "withheld") && it.prompt.isNotBlank() &&
                 it.prompt.toByteArray(Charsets.UTF_8).size <= 12_000 &&
-                CollaborationRemotePilotDispatch.sha256(it.prompt.toByteArray(Charsets.UTF_8)) != sources.getValue(it.sourceId).source["goal_sha256"] })
-            slots.groupBy { it.sourceId to it.caseId }.values.forEach { pair ->
-                require(pair.size == 2 && pair.map { it.condition }.toSet() == setOf("available", "withheld") &&
-                    pair.map { it.prompt }.distinct().size == 1) { "Probe pairs need identical fresh target material" }
+                (if (sharedControl && it.condition == "withheld") it.sourceId.isEmpty() else it.sourceId in sources) })
+            require(slots.map { it.sourceId }.filter(String::isNotEmpty).toSet() == sources.keys)
+            slots.forEach { slot ->
+                require(sources.values.none { CollaborationRemotePilotDispatch.sha256(slot.prompt.toByteArray(Charsets.UTF_8)) ==
+                    it.source["goal_sha256"] }) { "Target material must differ from source acquisition" }
+            }
+            if (sharedControl) {
+                slots.groupBy { it.caseId }.values.forEach { group ->
+                    val available = group.filter { it.condition == "available" }
+                    require(group.count { it.condition == "withheld" } == 1 && available.isNotEmpty() &&
+                        available.map { it.sourceId }.distinct().size == available.size &&
+                        group.map { it.prompt }.distinct().size == 1) { "Shared controls need one withheld target and distinct candidates with identical material" }
+                }
+            } else {
+                slots.groupBy { it.sourceId to it.caseId }.values.forEach { pair ->
+                    require(pair.size == 2 && pair.map { it.condition }.toSet() == setOf("available", "withheld") &&
+                        pair.map { it.prompt }.distinct().size == 1) { "Probe pairs need identical fresh target material" }
+                }
             }
             val timeout = CollaborationTrialPolicy.strictLong(value.get("trial_timeout_ms"))
             require(timeout in 60_000..600_000)
             return CollaborationArtifactProbePlan(id, target, selection, timeout, sources, slots)
         }
         private fun JSONObject.text(key: String) = get(key) as? String ?: error("String required: $key")
-        private fun JSONObject.id(key: String) = text(key).also { require(it.matches(Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}"))) }
+        private val idPattern = Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}")
+        private fun JSONObject.id(key: String) = text(key).also { require(it.matches(idPattern)) }
         private fun JSONObject.exact(vararg names: String) = require(keys().asSequence().toSet() == names.toSet())
     }
 }
