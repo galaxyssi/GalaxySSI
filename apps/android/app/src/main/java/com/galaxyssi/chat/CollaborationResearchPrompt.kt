@@ -13,6 +13,8 @@ internal object CollaborationResearchPrompt {
             val page = CollaborationResearchWorkspace(context).browseEvolution(CollaborationWorkspaceAccess.from(execution))
             JSONObject().put("records", JSONArray(page.revisions)).put("next_cursor", page.next ?: JSONObject.NULL)
                 .put("recall", "mode=evolution; directory only, read originals before reuse").toString()
+        }, capabilities = {
+            CollaborationCapabilityRecall.context(CollaborationResearchWorkspace(context), execution)
         }, problems = {
             val page = CollaborationEvidenceLedger(context).problems(CollaborationWorkspaceAccess.from(execution))
             if (page.first.isEmpty() && page.second == null) "" else
@@ -28,6 +30,7 @@ internal object CollaborationResearchPrompt {
     internal fun prepare(execution: AgentTeamMemberExecutionContext, store: CollaborationGoalContractStore,
                          evolution: () -> String = { "" },
                          problems: () -> String = { "" },
+                         capabilities: () -> String = { "" },
                          history: () -> String): String {
         val access = CollaborationWorkspaceAccess.from(execution)
         val criteria = execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]"
@@ -45,6 +48,7 @@ internal object CollaborationResearchPrompt {
         }
         require(existing.optString("reason") == "access_not_bound") { "Goal contract is unavailable: ${existing.optString("reason")}" }
         val materials = materials(execution, history()).toMutableMap().apply {
+            capabilities().takeIf(String::isNotBlank)?.let { put("Task-related capability candidates", it) }
             evolution().takeIf(String::isNotBlank)?.let { put("Scoped evolution directory", it) }
             problems().takeIf(String::isNotBlank)?.let { put("Observed capability problems", it) }
         }

@@ -6,6 +6,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun taskRelatedCapabilitiesArePinnedAndNotSearchedAgainOnRecovery() {
+        val store = CollaborationGoalContractStore(MemoryRows(), { true })
+        val execution = execution("Find evidence without repeating prior failed methods")
+        val first = CollaborationResearchPrompt.prepare(execution, store,
+            capabilities = { "exact-method-ref-and-applicability" }) { "" }
+        assertTrue(first.contains("Task-related capability candidates"))
+        assertTrue(first.contains("exact-method-ref-and-applicability"))
+        assertTrue(first.contains("mode=capabilities"))
+        val retry = CollaborationResearchPrompt.prepare(execution, store,
+            capabilities = { error("Recovery must not silently replace method candidates") }) { error("No history refresh") }
+        assertTrue(retry.contains("mode=goal_contract"))
+    }
+
     @Test fun problemFactsArePinnedWithoutAddingCallsDuringRecovery() {
         val store = CollaborationGoalContractStore(MemoryRows(), { true })
         val execution = execution("goal")

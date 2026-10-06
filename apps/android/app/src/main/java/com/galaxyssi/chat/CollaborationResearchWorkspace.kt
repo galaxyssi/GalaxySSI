@@ -464,6 +464,46 @@ internal class CollaborationResearchWorkspace(
         browseHeads(access, cursor, limit, "evolution:")
     }
 
+    fun searchCapabilities(access: CollaborationWorkspaceAccess, query: String, cursor: String = ""): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        val search = CollaborationCapabilityRecall.query(query)
+        val scope = digest(JSONArray().put(access.groupId).put(access.runId).put(access.turnId).put(access.round)
+            .put(access.nodeId).put(access.personId).put(JSONArray(access.dependencyNodes.sorted())).put(query).toString())
+        val prefix = prefix(access.groupId) + "evolution:"
+        require(cursor.length <= 512) { "Capability cursor is too long" }
+        val after = if (cursor.isBlank()) "" else {
+            val saved = runCatching { JSONObject(cursor).also { value ->
+                listOf("scope", "after").forEach { require(value.opt(it) is String) }
+            } }.getOrElse { throw IllegalArgumentException("Invalid capability cursor; restart without a cursor") }
+            require(saved.getString("scope") == scope) {
+                "Capability query or assignment changed; restart without a cursor"
+            }
+            saved.getString("after").also {
+                require(it.startsWith(prefix) && it.removePrefix(prefix).matches(ID)) { "Invalid capability cursor" }
+            }
+        }
+        val keys = rows.page(prefix, after, CollaborationCapabilityRecall.SCAN_PAGE + 1)
+        val found = mutableListOf<JSONObject>()
+        var processed = 0
+        for (key in keys.take(CollaborationCapabilityRecall.SCAN_PAGE)) {
+            processed++
+            var saved = rows.read(prefix(access.groupId) + "head:" + key.removePrefix(prefix))?.let(::JSONObject)
+            while (saved != null && !access.canRead(saved)) {
+                val previous = saved.getInt("revision") - 1
+                saved = if (previous > 0) readRevision(access.groupId, saved.getString("object_id"), previous) else null
+            }
+            if (saved != null && saved.getString("kind") in CollaborationCapabilityRecall.KINDS) {
+                val original = requireNotNull(read(access, saved.getString("object_id"), saved.getInt("revision")))
+                require(original.toString() == saved.toString()) { "Capability head integrity check failed" }
+                CollaborationCapabilityRecall.match(original, search)?.let(found::add)
+            }
+            if (found.size == CollaborationCapabilityRecall.RESULT_PAGE) break
+        }
+        val next = if (processed < keys.size) JSONObject().put("scope", scope)
+            .put("after", keys[processed - 1]).toString() else null
+        CollaborationCapabilityRecall.page(search, found, next)
+    }
+
     private fun browseHeads(access: CollaborationWorkspaceAccess, cursor: String, limit: Int, namespace: String): Page {
         if (!authorized(access.groupId)) return Page(emptyList(), null)
         val prefix = prefix(access.groupId) + namespace

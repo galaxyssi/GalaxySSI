@@ -14,6 +14,27 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_capability_queries_preserve_phone_scope_and_exact_results(self):
+        arguments = {"mode": "capabilities", "query": "retrieval \u68c0\u7d22", "cursor": ""}
+        self.assertEqual(arguments, validate_arguments(arguments))
+        for invalid in ({"mode": "capabilities"}, {**arguments, "query": " "},
+                        {**arguments, "query": "x" * 1001}, {**arguments, "group_id": "other"},
+                        {**arguments, "offset": 0}, {**arguments, "object_id": "a" * 64},
+                        {"mode": "workspace", "query": "retrieval"}):
+            with self.assertRaises(ValueError):
+                validate_arguments(invalid)
+        broker = RecallBroker()
+        result = {"success": True, "records": [{"object_id": "a" * 64, "revision": 2,
+                  "requires_scope_and_lineage_check": True}], "next_cursor": "next-page"}
+        def publish(request):
+            self.assertEqual(arguments, request["arguments"])
+            self.assertEqual("group", request["conversation_id"])
+            self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": result}, "wrong-phone"))
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+            return True
+        self.assertEqual(result, broker.query(task, arguments, publish))
+        self.assertEqual({}, broker._pending)
+
     def test_evolution_selectors_are_read_only_and_scoped(self):
         for arguments in ({"mode": "evolution", "cursor": ""}, {"mode": "evolution_rules", "offset": 8000},
                           {"mode": "problems", "cursor": ""}):
