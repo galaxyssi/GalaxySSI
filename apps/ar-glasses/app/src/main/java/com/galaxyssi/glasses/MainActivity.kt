@@ -52,13 +52,13 @@ class MainActivity : ComponentActivity() {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val speechWorker = Executors.newSingleThreadExecutor()
-    private val client = ChatClient()
+    private val client by lazy { ChatClient(applicationContext) }
     private lateinit var secure: SecureStore
     private lateinit var state: JSONObject
     private var page = "chat"
     private var draft = ""
     private var livePartial = ""
-    private var status = "就绪"
+    private var status = ""
     private var lastHeard = ""
     private var listening = false
     private var loadingModel = false
@@ -118,13 +118,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        status = getString(R.string.glasses_copy_ready)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         window.setBackgroundDrawableResource(android.R.color.black)
         window.decorView.setBackgroundColor(Color.BLACK)
         secure = SecureStore(this)
         try { state = secure.read() } catch (error: Exception) {
-            setContentView(label(error.message ?: "无法打开加密数据", 18f))
+            setContentView(label(error.message ?: getString(R.string.glasses_copy_cannot_open_encrypted_data), 18f))
             return
         }
         currentSession = state.optString("current")
@@ -165,7 +166,7 @@ class MainActivity : ComponentActivity() {
     private fun newSession(save: Boolean = true) {
         cancelAutoSend(); awake = false; replyVisible = false; livePartial = ""
         currentSession = UUID.randomUUID().toString()
-        sessions().put(JSONObject().put("id", currentSession).put("title", "新对话").put("turns", JSONArray()))
+        sessions().put(JSONObject().put("id", currentSession).put("title", getString(R.string.glasses_copy_new_chat)).put("turns", JSONArray()))
         draft = ""
         if (save) persist()
     }
@@ -225,7 +226,7 @@ class MainActivity : ComponentActivity() {
     private fun header(root: LinearLayout, title: String, back: Boolean = false) {
         val top = row()
         if (back) {
-            top.addView(button("‹ 返回") { navigate("chat") }, LinearLayout.LayoutParams(dp(88), dp(43)))
+            top.addView(button(getString(R.string.glasses_copy_back)) { navigate("chat") }, LinearLayout.LayoutParams(dp(88), dp(43)))
             addSpace(top)
         }
         top.addView(label(title, 22f, green).apply { setTypeface(null, Typeface.BOLD) }, LinearLayout.LayoutParams(0, dp(45), 1f))
@@ -234,12 +235,12 @@ class MainActivity : ComponentActivity() {
 
     private fun renderVoiceHome(root: LinearLayout) {
         val top = row()
-        top.addView(button("会话") { navigate("sessions") }, LinearLayout.LayoutParams(dp(76), dp(38)))
+        top.addView(button(getString(R.string.glasses_copy_chats)) { navigate("sessions") }, LinearLayout.LayoutParams(dp(76), dp(38)))
         top.addView(label("GalaxySSI", 17f, green).apply {
             gravity = Gravity.CENTER; setTypeface(null, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(40), 1f))
-        top.addView(button("拍照/录像") { openCamera() }, LinearLayout.LayoutParams(dp(110), dp(38)))
-        top.addView(button("手机配置") { navigate("settings") }, LinearLayout.LayoutParams(dp(100), dp(38)))
+        top.addView(button(getString(R.string.glasses_copy_camera)) { openCamera() }, LinearLayout.LayoutParams(dp(110), dp(38)))
+        top.addView(button(getString(R.string.glasses_copy_phone_setup)) { navigate("settings") }, LinearLayout.LayoutParams(dp(100), dp(38)))
         root.addView(top)
 
         val center = column().apply { gravity = Gravity.CENTER; setPadding(dp(44), 0, dp(44), 0) }
@@ -254,7 +255,7 @@ class MainActivity : ComponentActivity() {
         mainText = label("Hello Hello", 36f, green).apply {
             gravity = Gravity.CENTER; setTypeface(null, Typeface.BOLD); maxLines = 2
         }.also { center.addView(it, LinearLayout.LayoutParams(-1, dp(65))) }
-        subText = label("说“Hello Hello”开始", 17f, dim).apply {
+        subText = label(getString(R.string.glasses_copy_say_hello_hello_to_start), 17f, dim).apply {
             gravity = Gravity.CENTER; maxLines = 2
         }.also { center.addView(it, LinearLayout.LayoutParams(-1, dp(48))) }
         replyScroll = ScrollView(this).apply {
@@ -263,9 +264,9 @@ class MainActivity : ComponentActivity() {
         replyText = label("", 19f, green).apply { gravity = Gravity.CENTER }.also { replyScroll?.addView(it) }
 
         val bottom = row().apply { gravity = Gravity.CENTER_VERTICAL }
-        bottom.addView(button("新对话") { cancelAutoSend(); awake = false; newSession(); updateConversationView() }, LinearLayout.LayoutParams(dp(92), dp(42)))
+        bottom.addView(button(getString(R.string.glasses_copy_new_chat)) { cancelAutoSend(); awake = false; newSession(); updateConversationView() }, LinearLayout.LayoutParams(dp(92), dp(42)))
         addSpace(bottom)
-        bottom.addView(button("重播回复") { latestAnswer()?.let(::speak) }, LinearLayout.LayoutParams(dp(100), dp(42)))
+        bottom.addView(button(getString(R.string.glasses_copy_replay)) { latestAnswer()?.let(::speak) }, LinearLayout.LayoutParams(dp(100), dp(42)))
         statusLabel = label(status, 12f, dim).apply {
             gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL; maxLines = 2
         }.also { bottom.addView(it, LinearLayout.LayoutParams(0, dp(42), 1f)) }
@@ -281,18 +282,18 @@ class MainActivity : ComponentActivity() {
         when {
             setupPhase == "confirm" -> {
                 title.text = setupCode.chunked(3).joinToString(" ")
-                subtitle.text = "与手机数字一致时说 Hello Hello 确认配对"
+                subtitle.text = getString(R.string.glasses_copy_if_the_digits_match_your_phone_say_hello)
                 answer.text = ""
             }
-            busy -> { title.text = "正在思考…"; subtitle.text = "问题已发送"; answer.text = "" }
-            awake -> { title.text = combinedPrompt().ifBlank { "请说话" }; subtitle.text = if (combinedPrompt().isBlank()) "正在听取问题" else "识别结束后 1.5 秒发送"; answer.text = "" }
-            replyVisible -> { title.text = "GalaxySSI"; subtitle.text = "回复"; answer.text = latestAnswer().orEmpty() }
+            busy -> { title.text = getString(R.string.glasses_copy_thinking); subtitle.text = getString(R.string.glasses_copy_question_sent); answer.text = "" }
+            awake -> { title.text = combinedPrompt().ifBlank { getString(R.string.glasses_copy_please_speak) }; subtitle.text = if (combinedPrompt().isBlank()) getString(R.string.glasses_copy_listening_to_your_question) else getString(R.string.glasses_copy_send_1_5_seconds_after_recognition); answer.text = "" }
+            replyVisible -> { title.text = "GalaxySSI"; subtitle.text = getString(R.string.glasses_copy_reply); answer.text = latestAnswer().orEmpty() }
             else -> {
                 title.text = "Hello Hello"
                 subtitle.text = when {
-                    !listening -> if (loadingModel) "正在加载离线语音模型" else "正在启动麦克风"
-                    profile() == null -> "请在手机 GalaxySSI 配置 AR 眼镜"
-                    else -> "说“Hello Hello”开始"
+                    !listening -> if (loadingModel) getString(R.string.glasses_copy_loading_offline_speech_model) else getString(R.string.glasses_copy_starting_microphone)
+                    profile() == null -> getString(R.string.glasses_copy_configure_ar_glasses_in_galaxyssi_on_your_phone)
+                    else -> getString(R.string.glasses_copy_say_hello_hello_to_start)
                 }
                 answer.text = ""
             }
@@ -300,28 +301,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun renderCamera(root: LinearLayout) {
-        header(root, "相机 · 说 Hello Hello 拍照/开始录像/停止录像", true)
+        header(root, getString(R.string.glasses_copy_camera_say_hello_hello_take_photo_start_video), true)
         val preview = PreviewView(this)
         root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
         val actions = row().apply { gravity = Gravity.CENTER }
-        actions.addView(button("拍照", true) { camera?.takePhoto() }, LinearLayout.LayoutParams(dp(90), dp(44)))
+        actions.addView(button(getString(R.string.glasses_copy_photo), true) { camera?.takePhoto() }, LinearLayout.LayoutParams(dp(90), dp(44)))
         addSpace(actions)
-        actions.addView(button("开始录像") { camera?.startVideo() }, LinearLayout.LayoutParams(dp(105), dp(44)))
+        actions.addView(button(getString(R.string.glasses_copy_record)) { camera?.startVideo() }, LinearLayout.LayoutParams(dp(105), dp(44)))
         addSpace(actions)
-        actions.addView(button("停止录像") { camera?.stopVideo() }, LinearLayout.LayoutParams(dp(105), dp(44)))
+        actions.addView(button(getString(R.string.glasses_copy_stop_video)) { camera?.stopVideo() }, LinearLayout.LayoutParams(dp(105), dp(44)))
         addSpace(actions)
-        wifiScanButton = button(if (pendingWifi == null) "扫描配网码" else "确认联网") {
+        wifiScanButton = button(if (pendingWifi == null) getString(R.string.glasses_copy_scan_wi_fi) else getString(R.string.glasses_copy_connect)) {
             if (pendingWifi == null) camera?.scanWifi() else confirmWifi()
         }.also { actions.addView(it, LinearLayout.LayoutParams(dp(120), dp(44))) }
         addSpace(actions)
-        actions.addView(button("返回") { navigate("chat") }, LinearLayout.LayoutParams(dp(80), dp(44)))
+        actions.addView(button(getString(R.string.glasses_copy_back_2)) { navigate("chat") }, LinearLayout.LayoutParams(dp(80), dp(44)))
         root.addView(actions)
         statusLabel = label(status, 13f, dim).also { root.addView(it, LinearLayout.LayoutParams(-1, dp(28))) }
         camera?.close()
         camera = GlassesCamera(this, preview, { message ->
-            setStatus(if (message.startsWith("相机已就绪") && pendingWifi != null)
-                "Wi-Fi：${pendingWifi?.ssid} · 说 Hello Hello 确认联网" else message)
-            if (message.startsWith("相机已就绪")) {
+            setStatus(if (message.startsWith(getString(R.string.glasses_copy_camera_ready)) && pendingWifi != null)
+                getString(R.string.glasses_copy_wi_fi_say_hello_hello_to_connect, pendingWifi?.ssid) else message)
+            if (message.startsWith(getString(R.string.glasses_copy_camera_ready))) {
                 when (pendingCameraAction) {
                     "photo" -> camera?.takePhoto()
                     "video" -> camera?.startVideo()
@@ -331,31 +332,31 @@ class MainActivity : ComponentActivity() {
             }
         }, { raw ->
             pendingWifi = runCatching { WifiQrProvisioning.parse(raw) }.getOrNull()
-            wifiScanButton?.text = "确认联网"
-            setStatus("已扫描 Wi-Fi：${pendingWifi?.ssid} · 确认后请求连接")
+            wifiScanButton?.text = getString(R.string.glasses_copy_connect)
+            setStatus(getString(R.string.glasses_copy_scanned_wi_fi_confirm_to_request_connection, pendingWifi?.ssid))
         }).also { it.open() }
     }
 
     private fun renderPhoneSetup(root: LinearLayout) {
-        header(root, "通过手机配置 AR 眼镜", true)
+        header(root, getString(R.string.glasses_copy_set_up_ar_glasses_from_your_phone), true)
         val center = column().apply { gravity = Gravity.CENTER }
         root.addView(center, LinearLayout.LayoutParams(-1, 0, 1f))
-        center.addView(label("手机 GalaxySSI → 我的 Agent → 设备 → 配置 AR 眼镜", 21f, green).apply { gravity = Gravity.CENTER },
+        center.addView(label(getString(R.string.glasses_copy_phone_galaxyssi_my_agent_devices_set_up_ar), 21f, green).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(60)))
         state.optJSONObject("profile")?.let { saved ->
-            center.addView(label("当前 Agent：${saved.optString("agent_name").ifBlank { "云端模型" }} · ${saved.optString("model")}", 15f, dim)
+            center.addView(label(getString(R.string.glasses_copy_current_agent, saved.optString("agent_name").ifBlank { getString(R.string.glasses_copy_cloud_model) }, saved.optString("model")), 15f, dim)
                 .apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, dp(38)))
         }
         val instructions = when (setupPhase) {
-            "wifi_required" -> "请先让眼镜与手机连接同一个 Wi-Fi"
-            "waiting" -> "等待手机连接 · $setupHost:$setupPort"
-            "confirm" -> "请核对手机上的数字是否相同"
-            "saved" -> "手机配置已安全保存，可以开始对话"
-            "retry" -> "连接未完成，请在手机重新连接"
-            "expired" -> "配置已超时，请返回后重新打开"
-            "network_changed" -> "Wi-Fi 已改变，请重新打开配置页"
-            "error" -> "配置连接失败，请重新打开配置页"
-            else -> "正在启动手机配置…"
+            "wifi_required" -> getString(R.string.glasses_copy_connect_glasses_and_phone_to_the_same_wi)
+            "waiting" -> getString(R.string.glasses_copy_waiting_for_phone, setupHost, setupPort)
+            "confirm" -> getString(R.string.glasses_copy_check_that_the_digits_match_your_phone)
+            "saved" -> getString(R.string.glasses_copy_phone_configuration_saved_securely_ready_to_chat)
+            "retry" -> getString(R.string.glasses_copy_connection_incomplete_reconnect_from_your_phone)
+            "expired" -> getString(R.string.glasses_copy_setup_timed_out_go_back_and_reopen)
+            "network_changed" -> getString(R.string.glasses_copy_wi_fi_changed_reopen_setup)
+            "error" -> getString(R.string.glasses_copy_setup_connection_failed_reopen_setup)
+            else -> getString(R.string.glasses_copy_starting_phone_setup)
         }
         settingsFeedback = label(instructions, 17f, dim).apply { gravity = Gravity.CENTER }.also {
             center.addView(it, LinearLayout.LayoutParams(-1, dp(48)))
@@ -364,22 +365,22 @@ class MainActivity : ComponentActivity() {
             center.addView(label(setupCode.chunked(3).joinToString(" "), 45f, green).apply { gravity = Gravity.CENTER },
                 LinearLayout.LayoutParams(-1, dp(70)))
             val actions = row().apply { gravity = Gravity.CENTER }
-            actions.addView(button("数字一致，确认", true) { setupServer?.confirm(true); setupPhase = "transferring"; render() },
+            actions.addView(button(getString(R.string.glasses_copy_match_confirm), true) { setupServer?.confirm(true); setupPhase = "transferring"; render() },
                 LinearLayout.LayoutParams(dp(180), dp(48)))
             addSpace(actions)
-            actions.addView(button("取消") { setupServer?.confirm(false); setupPhase = "retry"; render() },
+            actions.addView(button(getString(R.string.glasses_copy_cancel)) { setupServer?.confirm(false); setupPhase = "retry"; render() },
                 LinearLayout.LayoutParams(dp(110), dp(48)))
             center.addView(actions)
         } else if (setupPhase in setOf("wifi_required", "retry", "expired", "network_changed", "error")) {
-            center.addView(button("重新连接手机", true) { stopPhoneSetup(); startPhoneSetup(); render() },
+            center.addView(button(getString(R.string.glasses_copy_reconnect_phone), true) { stopPhoneSetup(); startPhoneSetup(); render() },
                 LinearLayout.LayoutParams(dp(180), dp(46)).apply { gravity = Gravity.CENTER })
         }
-        root.addView(label("设置、模型和密钥均在手机上填写；眼镜只接收加密配对后的配置。", 14f, dim).apply { gravity = Gravity.CENTER },
+        root.addView(label(getString(R.string.glasses_copy_enter_settings_model_and_key_on_your_phone), 14f, dim).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(36)))
     }
 
     private fun renderSessions(root: LinearLayout) {
-        header(root, "最近对话", true)
+        header(root, getString(R.string.glasses_copy_recent_chats), true)
         val scroll = ScrollView(this)
         val list = column()
         scroll.addView(list)
@@ -388,11 +389,11 @@ class MainActivity : ComponentActivity() {
         for (i in all.length() - 1 downTo maxOf(0, all.length() - 30)) {
             val item = all.getJSONObject(i)
             val id = item.getString("id")
-            list.addView(button(item.optString("title", "新对话")) {
+            list.addView(button(item.optString("title", getString(R.string.glasses_copy_new_chat))) {
                 currentSession = id; draft = ""; livePartial = ""; awake = false; replyVisible = false; persist(); navigate("chat")
             }, LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(6) })
         }
-        root.addView(button("＋ 新对话", true) { newSession(); navigate("chat") }, LinearLayout.LayoutParams(-1, dp(48)))
+        root.addView(button(getString(R.string.glasses_copy_new_chat_2), true) { newSession(); navigate("chat") }, LinearLayout.LayoutParams(-1, dp(48)))
         val voiceStatus = label(status, 13f, dim)
         root.addView(voiceStatus, LinearLayout.LayoutParams(-1, dp(28)))
         statusLabel = voiceStatus
@@ -436,7 +437,7 @@ class MainActivity : ComponentActivity() {
                         try {
                             val raw = payload.getJSONObject("profile")
                             val candidate = Profile(raw.getString("endpoint"), raw.getString("model"),
-                                raw.getString("api_key"), raw.optString("api_style", "openai")).validated()
+                                raw.getString("api_key"), raw.optString("api_style", "openai")).validated { getString(it) }
                             state.put("profile", JSONObject().put("endpoint", candidate.endpoint).put("model", candidate.model)
                                 .put("key", candidate.key).put("style", candidate.style)
                                 .put("agent_name", payload.optString("agent_name").filterNot { Character.isISOControl(it) }.trim().take(80)))
@@ -464,7 +465,7 @@ class MainActivity : ComponentActivity() {
         val profile = profile()
         if (profile == null) {
             draft = ""; livePartial = ""; awake = false; replyVisible = false
-            persist(); setStatus("未配置 Agent · 请点右上角“手机配置”")
+            persist(); setStatus(getString(R.string.glasses_copy_no_agent_configured_tap_phone_setup_at_the))
             updateConversationView()
             return
         }
@@ -475,7 +476,7 @@ class MainActivity : ComponentActivity() {
         history.put(JSONObject().put("role", "user").put("text", prompt))
         if (history.length() == 1) conversation.put("title", prompt.take(24))
         draft = ""; livePartial = ""; persist(); updateConversationView()
-        busy = true; setStatus("正在等待回复…"); updateConversationView()
+        busy = true; setStatus(getString(R.string.glasses_copy_waiting_for_reply)); updateConversationView()
         val generation = ++requestGeneration
         val requestSession = currentSession
         val snapshot = JSONArray(history.toString())
@@ -490,9 +491,9 @@ class MainActivity : ComponentActivity() {
                         JSONObject().put("role", "assistant").put("text", answer))
                     persist(); if (requestSession == currentSession) updateConversationView()
                     replyVisible = true; updateConversationView()
-                    setStatus("回复已收到 · 点击回复可朗读")
+                    setStatus(getString(R.string.glasses_copy_reply_received_tap_to_read_aloud))
                     speak(answer)
-                } else { setStatus("请求失败：${result.exceptionOrNull()?.message ?: "未知错误"}"); updateConversationView() }
+                } else { setStatus(getString(R.string.glasses_copy_request_failed, result.exceptionOrNull()?.message ?: getString(R.string.glasses_copy_unknown_error))); updateConversationView() }
                 if (result.isFailure && resumed) startListening()
             }
         }
@@ -504,13 +505,13 @@ class MainActivity : ComponentActivity() {
         if (spoken.isBlank()) { if (resumed) startListening(); return }
         if (systemTtsReady && (systemTts?.isLanguageAvailable(Locale.SIMPLIFIED_CHINESE) ?: -1) >= TextToSpeech.LANG_AVAILABLE) {
             systemTts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "galaxyssi-reply")
-            setStatus("正在播报")
+            setStatus(getString(R.string.glasses_copy_speaking))
         } else {
             if (edgeTts == null) edgeTts = MicrosoftEdgeTts(applicationContext)
-            setStatus("正在合成语音…")
+            setStatus(getString(R.string.glasses_copy_synthesizing_speech))
             edgeTts?.speak(spoken, MicrosoftTtsVoiceCatalog.XIAOXIAO) { success, _ ->
                 runOnUiThread {
-                    setStatus(if (success) "播报完成" else "语音播报失败，请检查网络")
+                    setStatus(if (success) getString(R.string.glasses_copy_speech_complete) else getString(R.string.glasses_copy_speech_playback_failed_check_the_network))
                     if (resumed) startListening()
                 }
             }
@@ -526,7 +527,7 @@ class MainActivity : ComponentActivity() {
         }
         stopSpeaking()
         if (englishModel == null) {
-            loadingModel = true; setStatus("正在加载 Whisper Tiny 和唤醒词模型…")
+            loadingModel = true; setStatus(getString(R.string.glasses_copy_loading_whisper_tiny_and_wake_word_model))
             worker.execute {
                 val loaded = runCatching {
                     WhisperTinyNative.load(WhisperTinyNative.prepareModel(this))
@@ -538,7 +539,7 @@ class MainActivity : ComponentActivity() {
                         englishModel = en
                         if (resumed) startListening()
                     }
-                        .onFailure { setStatus("语音模型加载失败：${it.message}") }
+                        .onFailure { setStatus(getString(R.string.glasses_copy_speech_model_failed_to_load, it.message)) }
                 }
             }
             return
@@ -548,11 +549,11 @@ class MainActivity : ComponentActivity() {
                 onLevel = { level -> if (listening) {
                     waveBars.forEachIndexed { i, bar -> bar.alpha = (0.3f + ((level + i * 13) % 70) / 100f).coerceAtMost(1f) }
                     if (page == "chat" && status in setOf(
-                        "正在听", "正在听问题", "等待 Hello Hello", "再说一次 Hello", "就绪"
+                        getString(R.string.glasses_copy_listening), getString(R.string.glasses_copy_listening_to_question), getString(R.string.glasses_copy_waiting_for_hello_hello), getString(R.string.glasses_copy_say_hello_once_more), getString(R.string.glasses_copy_ready)
                     )) setStatus(when {
-                        awake -> "正在听问题"
-                        firstHelloAt != 0L && SystemClock.elapsedRealtime() - firstHelloAt < 7000 -> "再说一次 Hello"
-                        else -> "等待 Hello Hello"
+                        awake -> getString(R.string.glasses_copy_listening_to_question)
+                        firstHelloAt != 0L && SystemClock.elapsedRealtime() - firstHelloAt < 7000 -> getString(R.string.glasses_copy_say_hello_once_more)
+                        else -> getString(R.string.glasses_copy_waiting_for_hello_hello)
                     })
                 } },
                 onPartial = { partial -> if (listening) {
@@ -568,7 +569,7 @@ class MainActivity : ComponentActivity() {
                 } },
                 onUtterance = { pcm, done ->
                     val generation = speechGeneration
-                    setStatus("正在识别…")
+                    setStatus(getString(R.string.glasses_copy_recognizing))
                     speechWorker.execute {
                         val started = SystemClock.elapsedRealtime()
                         val result = runCatching { WhisperTinyNative.transcribe(pcm) }
@@ -581,26 +582,26 @@ class MainActivity : ComponentActivity() {
                                     if (cleaned.isNotBlank()) {
                                         lastHeard = ""
                                         recognized(cleaned)
-                                    } else setStatus("没有识别到语音 · 请再说一次")
+                                    } else setStatus(getString(R.string.glasses_copy_no_speech_recognized_please_try_again))
                                 }.onFailure {
                                     setStatus(if (it.message?.contains("timed out") == true)
-                                        "识别超时 · 请再说一次" else "Whisper Tiny 识别失败：${it.message}")
+                                        getString(R.string.glasses_copy_recognition_timed_out_please_try_again) else getString(R.string.glasses_copy_whisper_tiny_recognition_failed, it.message))
                                 }
                             }
                         }
                     }
                 },
                 onError = { reason ->
-                    stopListening(); setStatus("语音识别失败：$reason")
+                    stopListening(); setStatus(getString(R.string.glasses_copy_speech_recognition_failed, reason))
                     if (resumed) main.postDelayed({ if (resumed) startListening() }, 1200)
                 })
             listening = true
             recognizer?.start()
-            setStatus(if (awake) "正在听问题" else "等待 Hello Hello")
+            setStatus(if (awake) getString(R.string.glasses_copy_listening_to_question) else getString(R.string.glasses_copy_waiting_for_hello_hello))
             updateConversationView()
         } catch (error: Exception) {
             listening = false; recognizer?.stop(); recognizer = null
-            setStatus("无法使用麦克风：${error.message}")
+            setStatus(getString(R.string.glasses_copy_cannot_use_microphone, error.message))
         }
     }
 
@@ -623,7 +624,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        check(File(target, "am/final.mdl").isFile) { "$name 模型不完整" }
+        check(File(target, "am/final.mdl").isFile) { getString(R.string.glasses_copy_model_is_incomplete, name) }
         return target
     }
 
@@ -632,20 +633,19 @@ class MainActivity : ComponentActivity() {
         speechGeneration++
         listening = false
         recognizer?.stop(); recognizer = null
-        setStatus("语音输入已停止")
+        setStatus(getString(R.string.glasses_copy_voice_input_stopped))
     }
 
     private val wakePhrase = Regex("(?i)\\bhello[\\s,，。.!?]*hello\\b")
     private val singleHello = Regex("(?i)^hello[\\s,，。.!?]*$")
-    private val spokenChineseWake = Regex("^(哈喽|哈罗|你好|海螺)[\\s,，。]*(哈喽|哈罗|你好|海螺)")
-    private fun stripSpokenWake(text: String) = spokenChineseWake.replaceFirst(text.trim(), "").trim()
+    private fun stripSpokenWake(text: String) = VoiceCommandCatalog.stripSpokenWake(text)
     private fun confirmWifi() {
         val wifi = pendingWifi
-        if (wifi == null) { setStatus("请先扫描手机配网码"); return }
+        if (wifi == null) { setStatus(getString(R.string.glasses_copy_scan_the_phone_wi_fi_code_first)); return }
         pendingWifi = null
-        wifiScanButton?.text = "扫描配网码"
+        wifiScanButton?.text = getString(R.string.glasses_copy_scan_wi_fi)
         val accepted = runCatching { wifi.suggest(this) }.getOrDefault(false)
-        setStatus(if (accepted) "已请求连接 ${wifi.ssid} · 请批准系统提示" else "Wi-Fi 请求未被系统接受")
+        setStatus(if (accepted) getString(R.string.glasses_copy_requested_connection_to_approve_the_system_prompt, wifi.ssid) else getString(R.string.glasses_copy_system_did_not_accept_the_wi_fi_request))
     }
     private fun openCamera(action: String? = null) {
         pendingCameraAction = action ?: pendingCameraAction
@@ -665,9 +665,9 @@ class MainActivity : ComponentActivity() {
         }
         cancelAutoSend(); draft = ""; livePartial = ""; awake = false
         when (command) {
-            VoiceCommand.CLEAR -> setStatus("已清空 · 正在听")
-            VoiceCommand.SPEAK_REPLY -> latestAnswer()?.let(::speak) ?: setStatus("没有可朗读的回复")
-            VoiceCommand.STOP_SPEAKING -> { stopSpeaking(); setStatus("已停止播报") }
+            VoiceCommand.CLEAR -> setStatus(getString(R.string.glasses_copy_cleared_listening))
+            VoiceCommand.SPEAK_REPLY -> latestAnswer()?.let(::speak) ?: setStatus(getString(R.string.glasses_copy_no_reply_to_read_aloud))
+            VoiceCommand.STOP_SPEAKING -> { stopSpeaking(); setStatus(getString(R.string.glasses_copy_speech_stopped)) }
             VoiceCommand.NEW_CHAT -> { newSession(); render() }
             VoiceCommand.OPEN_SETTINGS -> navigate("settings")
             VoiceCommand.STOP_CONFIGURATION -> {
@@ -675,13 +675,13 @@ class MainActivity : ComponentActivity() {
                 setupServer?.confirm(false)
                 stopPhoneSetup()
                 navigate("chat")
-                setStatus("已停止配置")
+                setStatus(getString(R.string.glasses_copy_setup_stopped))
             }
             VoiceCommand.CONFIRM_PAIRING -> {
-                if (setupPhase == "confirm") { setupServer?.confirm(true); setupPhase = "transferring"; setStatus("配对已确认") }
-                else setStatus("当前没有待确认的配对")
+                if (setupPhase == "confirm") { setupServer?.confirm(true); setupPhase = "transferring"; setStatus(getString(R.string.glasses_copy_pairing_confirmed)) }
+                else setStatus(getString(R.string.glasses_copy_no_pairing_awaiting_confirmation))
             }
-            VoiceCommand.CANCEL_PAIRING -> { setupServer?.confirm(false); setStatus("已取消配对") }
+            VoiceCommand.CANCEL_PAIRING -> { setupServer?.confirm(false); setStatus(getString(R.string.glasses_copy_pairing_canceled)) }
             VoiceCommand.OPEN_CHAT -> navigate("chat")
             VoiceCommand.OPEN_SESSIONS -> navigate("sessions")
             VoiceCommand.OPEN_CAMERA -> openCamera()
@@ -689,21 +689,21 @@ class MainActivity : ComponentActivity() {
                 if (page != "camera") openCamera("scan") else camera?.scanWifi()
             }
             VoiceCommand.CONFIRM_WIFI -> confirmWifi()
-            VoiceCommand.CANCEL_WIFI -> { pendingWifi = null; wifiScanButton?.text = "扫描配网码"; setStatus("已取消联网") }
+            VoiceCommand.CANCEL_WIFI -> { pendingWifi = null; wifiScanButton?.text = getString(R.string.glasses_copy_scan_wi_fi); setStatus(getString(R.string.glasses_copy_connection_canceled)) }
             VoiceCommand.TAKE_PHOTO -> { if (page != "camera") openCamera("photo") else camera?.takePhoto() }
             VoiceCommand.START_RECORDING -> { if (page != "camera") openCamera("video") else camera?.startVideo() }
-            VoiceCommand.STOP_RECORDING -> camera?.stopVideo() ?: setStatus("当前没有录像")
+            VoiceCommand.STOP_RECORDING -> camera?.stopVideo() ?: setStatus(getString(R.string.glasses_copy_no_recording_in_progress))
             VoiceCommand.OPEN_GALLERY -> runCatching {
                 startActivity(Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply { type = "image/*" })
-            }.onFailure { setStatus("无法打开相册") }
+            }.onFailure { setStatus(getString(R.string.glasses_copy_cannot_open_gallery)) }
             VoiceCommand.HOME -> startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
             VoiceCommand.OPEN_WIFI_SETTINGS -> startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             VoiceCommand.OPEN_BLUETOOTH_SETTINGS -> startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-            VoiceCommand.VOLUME_UP -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); setStatus("音量已调大") }
-            VoiceCommand.VOLUME_DOWN -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0); setStatus("音量已调小") }
-            VoiceCommand.BATTERY -> setStatus("电量 ${getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%")
+            VoiceCommand.VOLUME_UP -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); setStatus(getString(R.string.glasses_copy_volume_increased)) }
+            VoiceCommand.VOLUME_DOWN -> { getSystemService(AudioManager::class.java).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0); setStatus(getString(R.string.glasses_copy_volume_decreased)) }
+            VoiceCommand.BATTERY -> setStatus(getString(R.string.glasses_copy_battery, getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)))
             VoiceCommand.TIME -> setStatus(java.text.SimpleDateFormat("HH:mm", Locale.CHINA).format(java.util.Date()))
-            VoiceCommand.HELP -> setStatus("可说：拍照、录像、停止录像、扫描配网、停止配置、返回、音量、电量、时间")
+            VoiceCommand.HELP -> setStatus(getString(R.string.glasses_copy_say_take_photo_record_video_stop_video_scan))
             VoiceCommand.SEND -> Unit
         }
         updateConversationView()
@@ -716,7 +716,7 @@ class MainActivity : ComponentActivity() {
             val now = SystemClock.elapsedRealtime()
             val twoSeparateHellos = singleHello.matches(text) && now - firstHelloAt in 1..7000
             if (!hasWake && !twoSeparateHellos) {
-                if (singleHello.matches(text)) { firstHelloAt = now; setStatus("再说一次 Hello") }
+                if (singleHello.matches(text)) { firstHelloAt = now; setStatus(getString(R.string.glasses_copy_say_hello_once_more)) }
                 return
             }
             firstHelloAt = 0L
@@ -733,7 +733,7 @@ class MainActivity : ComponentActivity() {
                 val separator = if (draft.isNotBlank() && words.firstOrNull()?.isLetter() == true &&
                     words.first().code < 128 && draft.lastOrNull()?.code?.let { it < 128 } == true) " " else ""
                 draft = (draft + separator + words).take(4000)
-                setStatus("已识别 · 1.5 秒后发送")
+                setStatus(getString(R.string.glasses_copy_recognized_sending_in_1_5_seconds))
                 updateConversationView(); scheduleAutoSend()
         }
     }
@@ -749,11 +749,11 @@ class MainActivity : ComponentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, results)
         if (requestCode == 11) {
             if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) openCamera(pendingCameraAction)
-            else { pendingCameraAction = null; setStatus("需要相机权限才能拍照录像") }
+            else { pendingCameraAction = null; setStatus(getString(R.string.glasses_copy_camera_permission_is_required_for_photos_and_videos)) }
         }
         if (requestCode == 10) {
             if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) startListening()
-            else setStatus("需要麦克风权限才能语音输入")
+            else setStatus(getString(R.string.glasses_copy_microphone_permission_is_required_for_voice_input))
         }
     }
 

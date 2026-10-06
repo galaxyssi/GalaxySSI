@@ -37,7 +37,7 @@ internal class CloudWebToolLoopProgress {
                 seen.set(page.start, page.end)
                 return@forEach
             }
-            if (output.opt("format") == CollaborationGoalContractStore.PAGE_FORMAT) {
+            if (output.opt("format") == CloudGoalPageProtocol.FORMAT) {
                 val page = goalPagesByOutput[encoded] ?: return@forEach
                 val identity = Triple(page.snapshot, page.reader, page.index)
                 // A pinned page is immutable; changing its digest cannot manufacture new progress.
@@ -81,7 +81,7 @@ internal class CloudWebToolLoopProgress {
         if (outputsByCall.containsKey(key)) return false
         outputsByCall[key] = output
         // Only executor/checkpoint observations establish provenance, never a tool name in model content.
-        if (toolName == CollaborationCloudRecall.NAME && arguments.opt("mode") == "goal_contract" &&
+        if (toolName == CloudGoalPageProtocol.RECALL_TOOL && arguments.opt("mode") == "goal_contract" &&
             arguments.keys().asSequence().all { it in setOf("mode", "cursor") } &&
             (!arguments.has("cursor") || arguments.opt("cursor") is String)) {
             goalPage(output)?.let { goalPagesByOutput[output] = it }
@@ -111,7 +111,7 @@ internal class CloudWebToolLoopProgress {
 
     private fun goalPage(encoded: String): GoalPage? = runCatching {
         val page = JSONObject(encoded)
-        require(page.opt("status") == "returned" && page.opt("format") == CollaborationGoalContractStore.PAGE_FORMAT &&
+        require(page.opt("status") == "returned" && page.opt("format") == CloudGoalPageProtocol.FORMAT &&
             page.opt("trust") == "host_goal_contract_not_comprehension_or_claim_verification" && page.isNull("error"))
         fun hash(key: String): String = requireNotNull(page.opt(key) as? String).also {
             require(it.matches(Regex("[a-f0-9]{64}")))
@@ -119,8 +119,8 @@ internal class CloudWebToolLoopProgress {
         val snapshot = hash("snapshot_id")
         require(hash("snapshot_sha256") == snapshot)
         val reader = hash("reader_sha256")
-        val index = requireNotNull(CollaborationRemoteEvidenceProtocol.integer(page, "page_index"))
-        val count = requireNotNull(CollaborationRemoteEvidenceProtocol.integer(page, "page_count"))
+        val index = requireNotNull(CloudGoalPageProtocol.integer(page, "page_index"))
+        val count = requireNotNull(CloudGoalPageProtocol.integer(page, "page_count"))
         require(count in 1..Int.MAX_VALUE.toLong() && index in 0 until count)
         require(page.getJSONArray("fragments").length() > 0 && page.has("next_cursor"))
         require(if (index + 1 == count) page.isNull("next_cursor")

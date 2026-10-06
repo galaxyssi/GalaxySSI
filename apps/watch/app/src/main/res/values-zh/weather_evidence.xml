@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="weather_evidence_rain_probability">降雨概率</string>
+    <string name="weather_evidence_summary_unavailable">已获取以上当地日期的模型预报；文字分析暂未完成。</string>
+</resources>

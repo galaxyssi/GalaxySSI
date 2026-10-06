@@ -7,7 +7,7 @@ import org.json.JSONObject
 
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
-    const val NAME = "collaboration_recall"
+    const val NAME = CloudGoalPageProtocol.RECALL_TOOL
     private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic")
 
     fun install(prepared: PreparedCloudConversationStream) {
