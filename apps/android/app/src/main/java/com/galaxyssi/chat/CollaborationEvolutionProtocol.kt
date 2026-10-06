@@ -16,7 +16,13 @@ internal object CollaborationEvolutionProtocol {
         Begin with independent alternatives; let peers challenge weaknesses and combine useful parts with exact parent references.
         Compare predictions before acting, preregister discriminating experiments, execute only authorized tools, and revise from outcomes.
         Use mode=evolution_rules with offset=0 on collaboration_recall (or galaxyssi.phone.collaboration.recall) for typed schemas;
-        follow next_offset. Use mode=evolution with cursor="" to browse scoped gaps/ideas/plans/results/lessons, then workspace recall
+        follow next_offset. Before inventing a method from scratch, use mode=capabilities with a focused query and cursor="" to
+        find saved procedures, workflows, tools and failure lessons related to this assignment. Task-related capability candidates
+        in the goal contract are only an initial lexical search. Follow next_cursor even on empty pages; broaden with synonyms,
+        other languages or other approaches as useful. No match does not prove no relevant capability exists. Compare alternatives
+        and read full originals, applicability limits, counterevidence and current lineage before proposing a reuse binding.
+        Retrieval neither validates a method for this task nor grants permissions. Do not mistake successful reuse for new learning.
+        Use mode=evolution with cursor="" to browse scoped gaps/ideas/plans/results/lessons, then workspace recall
         for full originals. These records survive future tasks in this group; they grant no cross-group/private-memory access.
         Plan actual work in the existing work DAG. Do not wait for unrelated branches or create a second autonomous execution loop.
         A useful missing tool may be implemented/tested in an authorized sandbox; record its exact artifact as a baseline/candidate.

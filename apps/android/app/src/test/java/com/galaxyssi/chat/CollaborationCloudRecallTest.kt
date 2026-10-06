@@ -25,10 +25,12 @@ class CollaborationCloudRecallTest {
             assertTrue(function.getString("description").contains("only records this recall"))
             val schema = function.getJSONObject(if (provider == ModelStreamProvider.ANTHROPIC) "input_schema" else "parameters")
             val properties = schema.getJSONObject("properties")
-            assertEquals(setOf("mode", "cursor", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id"),
+            assertEquals(setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id"),
                 properties.keys().asSequence().toSet())
-            assertEquals(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "evolution_rules", "problems"), properties.getJSONObject("mode").getJSONArray("enum").let {
+            assertEquals(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "evolution_rules", "problems"), properties.getJSONObject("mode").getJSONArray("enum").let {
                 (0 until it.length()).map(it::getString) })
+            assertEquals("string", properties.getJSONObject("query").getString("type"))
+            assertTrue(function.getString("description").contains("mode=capabilities"))
             assertFalse(properties.has("group_id"))
             assertFalse(properties.has("source_message_id"))
             assertFalse(properties.has("person_id"))

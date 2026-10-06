@@ -26,10 +26,13 @@ def tool_spec():
         "Use mode=evidence to browse originals, then evidence_id/sha256/offset; follow next_offset. "
         "Use mode=archive with record_id/offset to read complete dependency handoffs; follow next_offset. "
         "Use mode=evolution/cursor for scoped learning records, evolution_rules/offset for typed innovation and experiment contracts. "
+        "Use mode=capabilities with query/cursor to find related saved methods, tools and failure lessons; "
+        "follow next_cursor even after an empty page, then read exact workspace originals before reuse. "
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "evolution_rules", "problems"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "evolution_rules", "problems"]},
+            "query": {"type": "string", "maxLength": 1000},
             "record_id": {"type": "string", "maxLength": 64},
             "cursor": {"type": "string", "maxLength": 512},
             "object_id": {"type": "string", "maxLength": 64},
@@ -44,7 +47,7 @@ def validate_arguments(arguments):
     properties = tool_spec()["inputSchema"]["properties"]
     if not isinstance(arguments, dict) or set(arguments) - properties.keys():
         raise ValueError("Recall accepts only scoped record selectors")
-    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence", "archive", "evolution", "evolution_rules", "problems"}:
+    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "evolution_rules", "problems"}:
         raise ValueError("Invalid recall mode")
     for key, value in arguments.items():
         spec = properties[key]
@@ -57,6 +60,11 @@ def validate_arguments(arguments):
         raise ValueError("Goal recall accepts only mode and cursor")
     if arguments["mode"] in {"evolution", "problems"} and set(arguments) - {"mode", "cursor"}:
         raise ValueError("Evolution/problem recall accepts only mode and cursor")
+    if arguments["mode"] == "capabilities":
+        if set(arguments) - {"mode", "query", "cursor"} or not arguments.get("query", "").strip():
+            raise ValueError("Capability search requires query and accepts optional cursor only")
+    elif "query" in arguments:
+        raise ValueError("Query is only supported for capability search")
     if arguments["mode"] == "evolution_rules" and set(arguments) - {"mode", "offset"}:
         raise ValueError("Evolution rules accept only mode and offset")
     if arguments["mode"] == "archive":

@@ -8,11 +8,11 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = "collaboration_recall"
-    private val fields = setOf("mode", "cursor", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id")
+    private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "evolution_rules", "problems"))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "evolution_rules", "problems"))))
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
@@ -25,6 +25,7 @@ internal object CollaborationCloudRecall {
                 "mode=goal_contract takes only cursor and returns the host-pinned original goal, criteria and context fragments; follow next_cursor. " +
                 "mode=archive with record_id and offset reads full originals of assigned dependency handoffs; follow next_offset. " +
                 "mode=evolution browses scoped learning records; mode=evolution_rules reads their typed schemas with offset. " +
+                "mode=capabilities takes query and cursor to find task-related saved methods, tools and failure lessons; follow next_cursor even after an empty page. " +
                 "mode=problems takes cursor and lists original tool failures for evidence-based gap diagnosis. " +
                 "Returned output is not proof of a claim.")
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
@@ -41,7 +42,7 @@ internal object CollaborationCloudRecall {
                 recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "evolution_rules", "problems")) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "evolution_rules", "problems")) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }
@@ -51,8 +52,9 @@ internal object CollaborationCloudRecall {
                 } == true) { "Invalid page number" }
             }
             fields.minus(setOf("offset", "revision")).filter(input::has).forEach { key ->
-                require(input.opt(key) is String && input.getString(key).length <= 512) { "Invalid reference" }
+                require(input.opt(key) is String && input.getString(key).length <= (if (key == "query") 1000 else 512)) { "Invalid reference" }
             }
+            require(!input.has("query") || input.optString("mode") == "capabilities") { "Query is only supported for capability search" }
             CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access, recordCoverage)
         } catch (_: IllegalArgumentException) {
             AgentNativeToolExecutionResult.failure("recall_unavailable", "Invalid arguments or revoked member access.")

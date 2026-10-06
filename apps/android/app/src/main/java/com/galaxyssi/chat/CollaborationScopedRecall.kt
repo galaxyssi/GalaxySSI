@@ -11,6 +11,17 @@ internal object CollaborationScopedRecall {
         if (group == null || access.personId.isNotBlank() && group.members.none { it.id == access.personId })
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
         return when (input["mode"]) {
+            "capabilities" -> {
+                if (input.keys.any { it !in setOf("mode", "query", "cursor") } || input["query"] !is String ||
+                    input.containsKey("cursor") && input["cursor"] !is String)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Capability search accepts query and cursor only.")
+                val result = try { CollaborationResearchWorkspace(context).searchCapabilities(access,
+                    input.getValue("query") as String, input["cursor"] as? String ?: "") }
+                catch (invalid: IllegalArgumentException) {
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", invalid.message.orEmpty())
+                }
+                AgentNativeToolExecutionResult.success(result.toNativeObject())
+            }
             "problems" -> {
                 if (input.keys.any { it !in setOf("mode", "cursor") })
                     return AgentNativeToolExecutionResult.failure("invalid_arguments", "Problem directory accepts only cursor.")
@@ -95,7 +106,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, evolution_rules or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, evolution_rules or problems for scoped recall.")
         }
     }
 
