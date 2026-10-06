@@ -80,6 +80,21 @@ removing its test conversation and execution database. Otherwise retain state
 for inspection. The user's active conversation and unrelated research are not
 changed. Reports remain available after successful cleanup.
 
+## Instrumentation Verdict
+
+Saving a report is not a passing test. After evidence capture and cleanup, the
+instrumentation requires host goal acceptance, a recorded phone dispatch, an
+intact worker result bound to an admitted node, an accepted final checkpoint,
+confirmed remote cleanup, and an unchanged active conversation. Exceptions,
+timeouts, undispatched trials, exhausted envelopes, blockers, incomplete
+reports, and cleanup failures fail the test even when a report was saved.
+
+The report includes `test_verdict` and `test_failures` before the final assertion.
+Execution exceptions remain attached as the assertion cause. Negative and
+interrupted reports are still useful research evidence, but must not be counted
+as passing integration tests. A passing host-level test still does not establish
+scientific quality, capability growth, or external-evaluator acceptance.
+
 ## What To Evaluate Next
 
 Read the real trajectory, not just its duration: did the team discover the
