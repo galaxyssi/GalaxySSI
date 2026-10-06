@@ -36,9 +36,15 @@ class BlobMqttIngressTest(unittest.TestCase):
                             ("touch_client", None)):
             stack.enter_context(patch.object(mqtt_bridge, name, return_value=value))
         stack.enter_context(patch.object(blob_input_bridge, "_get_receiver", return_value=receiver))
-        stack.enter_context(patch.object(mqtt_bridge, "bind_ciphertext", side_effect=lambda *_: events.append("bind")))
-        stack.enter_context(patch.object(mqtt_bridge, "complete_message", side_effect=lambda *_: events.append("accepted")))
-        stack.enter_context(patch.object(mqtt_bridge, "_publish_phone_payload", side_effect=lambda *_: events.append("ack")))
+        original_bind = mqtt_bridge.bind_ciphertext
+        def bind(*args, **kwargs):
+            original_bind(*args, **kwargs)
+            events.append("bind")
+        stack.enter_context(patch.object(mqtt_bridge, "bind_ciphertext", autospec=True, side_effect=bind))
+        stack.enter_context(patch.object(mqtt_bridge, "complete_message", autospec=True,
+                                       side_effect=lambda *_, **kwargs: events.append("accepted")))
+        stack.enter_context(patch.object(mqtt_bridge, "_publish_phone_payload",
+                                       side_effect=lambda *_, **kwargs: events.append("ack")))
         return stack
 
     def test_actual_mqtt_ingress_persists_before_acceptance_and_never_dispatches_agent(self):
