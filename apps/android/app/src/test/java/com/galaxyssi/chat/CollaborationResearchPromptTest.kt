@@ -6,6 +6,40 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun productionDescriptorAndFullMaterialDirectoryFitEveryRole() {
+        for (stage in CollaborationResearchStage.entries) {
+            val base = execution("original goal ".repeat(8000), stage)
+            val metadata = listOf("collaboration_research_live_inventory", "collaboration_research_roster",
+                "collaboration_research_previous_round", CollaborationGoalLoop.PREVIOUS,
+                CollaborationGoalLoop.ACCEPTANCE_FEEDBACK, CollaborationGoalLoop.FINISHED_WORK,
+                CollaborationGoalRecruitment.FEEDBACK, CollaborationResourceRecovery.FEEDBACK,
+                CollaborationWorkGraph.FEEDBACK, CollaborationLiveGraph.FEEDBACK,
+                CollaborationCandidateEvolution.FEEDBACK).associateWith { "complete evidence ".repeat(1000) }
+            val request = base.copy(request = base.request.copy(context = base.request.context + metadata))
+            for (planner in listOf(false, true)) {
+                val execution = if (planner) request.copy(member = request.member.copy(context = request.member.context +
+                    (CollaborationLiveGraph.PLANNER to "1"))) else request
+                val store = CollaborationGoalContractStore(MemoryRows(), { true })
+                val prompt = CollaborationResearchPrompt.prepare(execution, store,
+                    evolution = { "evolution ".repeat(1000) }, problems = { "problem ".repeat(1000) },
+                    capabilities = { "capability ".repeat(1000) }) { "history ".repeat(10000) }
+                assertTrue(prompt.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+                assertTrue(prompt.contains("mode=evolution_rules"))
+                assertTrue(prompt.contains("mode=goal_contract"))
+                assertTrue(prompt.contains("Never repeat a completed side effect"))
+                val descriptor = store.lookup(CollaborationWorkspaceAccess.from(execution))
+                assertTrue(descriptor.getInt("context_section_count") >= 14)
+                assertTrue(prompt.contains(descriptor.getString("snapshot_id")))
+                val protocol = when {
+                    planner -> CollaborationLiveGraph.instructions()
+                    stage == CollaborationResearchStage.DELIVER -> CollaborationGoalLoop.instructions()
+                    else -> CollaborationResearchArtifact.instructions(stage)
+                }
+                assertTrue(prompt.contains(protocol))
+            }
+        }
+    }
+
     @Test fun taskRelatedCapabilitiesArePinnedAndNotSearchedAgainOnRecovery() {
         val store = CollaborationGoalContractStore(MemoryRows(), { true })
         val execution = execution("Find evidence without repeating prior failed methods")

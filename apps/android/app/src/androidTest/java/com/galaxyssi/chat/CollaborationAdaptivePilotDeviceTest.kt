@@ -26,7 +26,7 @@ class CollaborationAdaptivePilotDeviceTest {
     private val args = InstrumentationRegistry.getArguments()
     private val lock = Any()
 
-    @Test fun runAdaptiveRemotePilot() = runBlocking {
+    @Test fun runAdaptiveRemotePilot() = runBlocking<Unit> {
         assumeTrue("Separate real-model authorization required", args.getString("adaptiveRemotePilot") == "true")
         require(Build.MODEL == "SM-S9480" && args.getString("pilotDeviceModel") == "SM-S9480")
         require(args.getString("remotePilotTools") == CollaborationRemotePilotPlan.TOOL_SCOPE)

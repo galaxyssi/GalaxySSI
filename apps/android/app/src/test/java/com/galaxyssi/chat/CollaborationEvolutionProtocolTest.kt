@@ -47,10 +47,25 @@ class CollaborationEvolutionProtocolTest {
         originals.forEach { (topic, original) ->
             val selected = CollaborationEvolutionProtocol.rules(topic)
             assertEquals(topic, selected.getString("topic"))
-            assertEquals(original, selected.getString("contract"))
+            assertTrue(selected.getString("contract").endsWith(original))
             assertTrue(strings(selected.getJSONArray("prerequisites")).contains("foundation"))
         }
         assertFalse(CollaborationEvolutionProtocol.rules("workflows").getString("contract").contains("learning_agenda:"))
+    }
+
+    @Test fun onDemandTopicsRetainAllGuidanceRemovedFromTheInlinePrompt() {
+        val guidance = mapOf("learning" to CollaborationLearningAgenda.instructions(),
+            "procedures" to CollaborationProceduralMemory.instructions(), "transfer" to CollaborationTransferStudy.instructions(),
+            "innovation" to CollaborationInnovationProtocol.instructions(), "team_invention" to CollaborationTeamInventionProtocol.instructions(),
+            "prediction" to CollaborationPredictionProtocol.instructions(), "tools" to CollaborationToolProtocol.instructions(),
+            "workflows" to CollaborationWorkflowProtocol.instructions(), "retention" to CollaborationRetentionProtocol.instructions(),
+            "self_research" to CollaborationSelfResearchProtocol.instructions())
+        val inline = CollaborationEvolutionProtocol.instructions()
+        guidance.forEach { (topic, text) ->
+            assertFalse(inline.contains(text))
+            assertTrue(CollaborationEvolutionProtocol.rules(topic).getString("contract").startsWith(text + "\n"))
+        }
+        println("Evolution inline characters: before=${inline.length + guidance.values.sumOf { it.length + 1 }} after=${inline.length}")
     }
 
     @Test fun invalidTopicsGiveAnActionableDiagnosticWithoutFallingBack() {

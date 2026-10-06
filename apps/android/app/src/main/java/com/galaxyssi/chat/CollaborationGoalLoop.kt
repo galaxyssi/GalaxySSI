@@ -215,6 +215,8 @@ internal object CollaborationGoalLoop {
         val previousResult = if (projection != null) projection.verifiedResults[expectedPrimary] else
             record.events.lastOrNull { it.childId == expectedPrimary && it.result != null }?.result
         val raw = previousResult?.output.orEmpty()
+        val dispatchFailure = CollaborationPromptBudget.failure(previousResult)
+        if (dispatchFailure.isNotBlank() && !wakeBlocked) return null
         val priorCriteria = record.request.context[CRITERIA]?.toString() ?: "[]"
         // A corrupt host contract is not a model planning error. Preserve the checkpoint, not an endless repair dispatch.
         if (preservedCriteriaError(priorCriteria).isNotEmpty()) return null
@@ -231,11 +233,12 @@ internal object CollaborationGoalLoop {
         val merged = if (prior != null && assessment != null)
             runCatching { mergeCriteria(prior, assessment.getJSONArray("criteria")) } else null
         val assessmentError = when {
+            dispatchFailure.isNotBlank() -> dispatchFailure
             prior == null -> "Preserved criteria are malformed; retained unchanged. Repair requires recovery of the original saved contract."
             assessment == null -> "Invalid assessment or validator specification; the original criteria were retained unchanged."
             merged?.isFailure == true -> "${merged.exceptionOrNull()?.message} The original criteria were retained unchanged."
             else -> ""
-        }.let { if (it.isBlank()) it else "$it No assignments, recruitment or resource jobs were dispatched; repair the assessment first." }
+        }.let { if (it.isBlank() || dispatchFailure.isNotBlank()) it else "$it No assignments, recruitment or resource jobs were dispatched; repair the assessment first." }
         val round = (record.request.context[ROUND]?.toString()?.toLongOrNull() ?: 0L) + 1L
         val primaryMember = record.definition.members.first { it.memberId == expectedPrimary }
         val coordinatorPerson = primaryMember.context.getValue(CollaborationResearchWorkflow.PERSON)
@@ -350,7 +353,8 @@ internal object CollaborationGoalLoop {
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,
             dependsOnAgentIds = nodes.mapTo(linkedSetOf()) { it.memberId },
-            objective = if (contractError.isNotBlank())
+            objective = if (dispatchFailure.isNotBlank()) primaryMember.objective
+            else if (contractError.isNotBlank())
                 "Repair the assessment against the preserved original contract. Do not execute rejected assignments, repeat side effects, " +
                     "or invent replacement criteria. Report corrupt saved criteria as requiring recovery of the original contract."
             else "Evaluate the original goal against preserved criteria and actual new evidence. " +
