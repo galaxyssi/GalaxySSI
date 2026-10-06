@@ -188,7 +188,9 @@ internal object CollaborationInnovationValidation {
             "previous_suite" to setOf(CollaborationCapabilityRetention.SUITE),
             "suite" to setOf(CollaborationCapabilityRetention.SUITE),
             CollaborationSelfResearch.CYCLE to setOf(CollaborationSelfResearch.CYCLE),
-            "previous_method" to setOf(CollaborationWorkflowMethod.KIND))
+            "previous_method" to setOf(CollaborationWorkflowMethod.KIND),
+            "baseline_method" to setOf(CollaborationWorkflowMethod.KIND),
+            "candidate_method" to setOf(CollaborationWorkflowMethod.KIND))
         fun enqueue(ref: JSONObject, kinds: Set<String>) { pending.add(exact(ref, kinds)) }
         while (pending.isNotEmpty()) {
             val saved = pending.removeFirst()

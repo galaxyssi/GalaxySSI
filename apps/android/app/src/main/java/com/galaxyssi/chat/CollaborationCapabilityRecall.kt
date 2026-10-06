@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Retrieval aids for learned methods, never automatic adoption or additional authority. */
 internal object CollaborationCapabilityRecall {
     val KINDS = setOf("procedure_skill", "failure_experience", "capability_lesson", "workflow_method",
-        "tool_release", "capability_channel")
+        "tool_release", "capability_channel", CollaborationWorkflowSelection.KIND)
     const val SCAN_PAGE = 100
     const val RESULT_PAGE = 12
 

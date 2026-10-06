@@ -33,6 +33,7 @@ internal class CollaborationEvolutionContract(
             CollaborationCapabilityChannel.KIND -> CollaborationCapabilityChannel.validate(value, head, revision,
                 { ref, kinds -> exact(ref, kinds) }, { ref, kinds -> exact(ref, kinds, false) })
             CollaborationWorkflowMethod.KIND -> CollaborationWorkflowMethod.definition(value) { ref, kinds -> exact(ref, kinds) }
+            CollaborationWorkflowSelection.KIND -> CollaborationWorkflowSelection.definition(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationExecutableTool.TOOL -> CollaborationExecutableTool.definition(value)
             CollaborationExecutableTool.TEST -> CollaborationExecutableTool.testPlan(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationExecutableTool.RELEASE -> CollaborationExecutableTool.release(value, revision, access.personId,
@@ -244,7 +245,7 @@ internal class CollaborationEvolutionContract(
             CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
             CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT, CollaborationWorkflowMethod.KIND,
             CollaborationCapabilityRetention.SUITE, CollaborationCapabilityChannel.KIND, CollaborationSelfResearch.CYCLE,
-            CollaborationSelfResearch.REVIEW) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
+            CollaborationSelfResearch.REVIEW, CollaborationWorkflowSelection.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->

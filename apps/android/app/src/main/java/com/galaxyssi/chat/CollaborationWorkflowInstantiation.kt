@@ -22,13 +22,16 @@ internal object CollaborationWorkflowInstantiation {
             }
             require(item.keys().asSequence().toSet() == setOf(FIELD)) { "workflow_instance cannot override work or host fields" }
             val use = item.getJSONObject(FIELD)
-            val fields = setOf("execution_id", "method", "inputs", "roles") +
+            require(use.has("method") != use.has(CollaborationWorkflowSelection.FIELD)) { "Choose either method or selection_rule, not both" }
+            val selector = if (use.has("method")) "method" else CollaborationWorkflowSelection.FIELD
+            val fields = setOf("execution_id", selector, "inputs", "roles") +
                 if (use.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet()
-            require(use.keys().asSequence().toSet() == fields) { "workflow_instance requires execution_id, method, inputs and roles only" }
+            require(use.keys().asSequence().toSet() == fields) { "workflow_instance requires execution_id, method or selection_rule, inputs and roles only" }
             require(use.opt("execution_id") is String) { "workflow_instance.execution_id must be a string" }
             val execution = use.getString("execution_id")
             require(execution.isNotBlank() && execution.length <= 160 && executions.add(execution)) { "Use a distinct stable workflow execution ID" }
-            val ref = use.getJSONObject("method")
+            val ref = if (selector == "method") use.getJSONObject("method") else CollaborationWorkflowSelection.choose(
+                CollaborationWorkflowSelection.read(use.getJSONObject(selector), workspace, access), use.getJSONObject("inputs")).getJSONObject("method")
             require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Use exact integer method revision" }
             val method = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) {
                 "Workflow unavailable or isolated"
@@ -51,6 +54,8 @@ internal object CollaborationWorkflowInstantiation {
                     .put("step_id", stepId).put("inputs", JSONObject(inputs.toString()))
                 if (use.has(CollaborationCapabilityChannel.FIELD)) binding.put(CollaborationCapabilityChannel.FIELD,
                     JSONObject(use.getJSONObject(CollaborationCapabilityChannel.FIELD).toString()))
+                if (use.has(CollaborationWorkflowSelection.FIELD)) binding.put(CollaborationWorkflowSelection.FIELD,
+                    JSONObject(use.getJSONObject(CollaborationWorkflowSelection.FIELD).toString()))
                 // Inputs stay in their data field; never interpolate them into saved instructions.
                 expanded.put(JSONObject(step.toString()).apply { remove("role") }
                     .put("id", workId(execution, stepId)).put("member", roles.getString(step.getString("role")))

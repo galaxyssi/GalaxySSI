@@ -4,6 +4,8 @@ internal object CollaborationWorkflowProtocol {
     fun instructions() = """
         Improve methods from actual execution feedback, not repeated advice. workflow_method records preserve executable role/dependency graphs.
         Goal and live work entries can use workflow_instance to expand a chosen saved method, inputs and roles into exact executable steps.
+        After a retained method comparison, publish a workflow_selection_rule to use explicit input conditions in future method selection.
+        Rules preserve a baseline for unknown/out-of-scope conditions. Their use changes actual work, not just the summary; read the contract first.
         Read evolution rules before use; workflow_step remains available for explicit whole-graph dispatch.
         Compare exact old/new versions on the same saved dataset with quality regression checks before calling a method better.
         Completion/elapsed time alone is not quality, novelty, scientific validation or permission. A finite workflow is a checkpoint, not a goal step limit.
@@ -36,5 +38,25 @@ internal object CollaborationWorkflowProtocol {
         Use existing experiment_result and independent capability_lesson review; a passing arithmetic report is not proof that model quality improved.
         Host workflow outcomes preserve member results/times/hashes across checkpoints. Inspect output evidence for correctness; missing timing is null,
         not zero, and task success is not goal success. Do not attribute network/provider delays to method quality without controlled trials.
+
+        workflow_selection_rule body: {content,workflow_selection_rule:{purpose,domain,lesson:exact independently retained capability_lessonRef,
+          condition_basis,limitations,prospective_test,when_all:[condition,...],unless_any:[condition,...]}}.
+        condition: {id,input:saved input name,pointer:JSON pointer within that input (empty=root),operator:eq|neq|lt|lte|gt|gte,
+          value:JSON scalar,rationale}. IDs are unique across both arrays; when_all is nonempty, unless_any may be empty.
+        Ordered comparisons need numbers. Equality is typed; missing fields and type mismatches are unknown, not false or null.
+        The rule binds the exact baseline/candidate methods from the lesson's controlled workflow comparison. Both expose the same input/role names;
+        internal steps and information flow may differ. Use explicit planning if the public interfaces differ.
+        The agent proposes conditions and counterconditions from observed evidence; these are scoped hypotheses, not certified causal effects.
+        condition_basis must explain evidence and unresolved assumptions. prospective_test says how to test the rule on new tasks.
+        Reuse with {workflow_instance:{execution_id,selection_rule:exactRef,inputs:{...},roles:{...}}}, without method.
+        The host selects the candidate only if all when_all match, no unless_any matches, and all conditions are known.
+        Otherwise it selects the preserved baseline and records outside_applicability, countercondition_matched or insufficient_condition_data.
+        This fallback is not a claim the baseline is safe in a new domain; the coordinator must check both methods before choosing the rule.
+        Inputs remain declared data, not host-certified facts; gather actual evidence where needed. Never insert expected answers to force a branch.
+        New work validates the complete current lesson/method lineage. Already admitted work replays its pinned decision, not new conditions.
+        Each workflow task and durable method history retain method_selection with exact rule, branch, condition states and unknown quality_effect.
+        Retrieve rules through mode=capabilities; inspect both selected and baseline method histories, failures and counterexamples before reuse.
+        Create a new rule ID for changed conditions, and a new execution_id for a new test. Never relabel an old result as prospective validation.
+        No rule creates a new model request, grants resources, changes models or overrides ordinary pause/stop, role authorization or independent review.
     """.trimIndent()
 }
