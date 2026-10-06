@@ -1,22 +1,22 @@
-# GalaxySSI AR 眼镜版
+# GalaxySSI AR Glasses
 
-独立 Android 应用，放在 `apps/watch` 同级。首个适配设备为 QIDI VENUS / VEN-A0（序列号 `MTT20M170108`），Android 11、API 30、横屏实际布局约 640×360 dp、`armeabi-v7a`。这台设备有麦克风和音频输出，但没有向普通应用提供系统语音识别或 TTS 服务。Watch 版要求 API 33，因此不能直接安装到这台设备。
+A standalone Android application alongside `apps/watch`. The initial adapted device is QIDI VENUS / VEN-A0 (serial `MTT20M170108`), running Android 11 / API 30 with an approximately 640 x 360 dp landscape layout and `armeabi-v7a`. The tested device provides microphone and audio output but no system speech-recognition or TTS service for ordinary apps. The Watch app requires API 33 and cannot be installed directly on this device.
 
-## 已实现
+## Implemented
 
-- 采用适合光学显示的纯黑窗口和页面背景，仅显示居中的 GalaxySSI、声波、Hello Hello、回复及操作控件；黑色像素不发光，并避免 Android 真透明窗口把启动器图标透到应用后面。识别、等待回复和回复内容使用同一视线区域。
-- GalaxySSI 页面支持 VENUS 触摸板导航：单指单击执行高亮控件，双指轻点返回，向左短滑选择下一项，向右短滑选择上一项。控件获得焦点时显示蓝色和白色描边；会话列表会把选中项自动滚动到可见区域。实现同时兼容多点触控、相对移动、鼠标按键和方向键式事件；系统相册及系统设置等外部应用由对应应用处理触摸板。
-- 内置 Vosk 英文轻量模型持续监听 `Hello Hello`（连续说或 7 秒内分两次说）；唤醒后的单次语音录制最长 2 秒，随后由本机多语言 Whisper Tiny Q5_1 识别指令和问题。识别结果出现后等待 1.5 秒发送给 Agent，期间继续说话会重置计时。麦克风在应用前台持续开启，不显示开关。未配置 Agent 时保持监听并提示手机配置。VENUS 实测本机 Tiny 对短句需要约 7–51 秒，部分结果为空，不能视为可用的实时识别方案；解码有 30 秒上限以防长期占满设备 CPU。
-- 语音命令以 `Hello Hello` 唤醒：拍照、开始录像、停止录像、返回、相册、桌面、Wi-Fi/蓝牙设置、音量、电量、时间，以及应用内的发送、取消、朗读、新对话和会话导航。拍照/录像使用应用内相机；录像不采集音轨，让离线识别持续工作。照片和视频保存到 `DCIM/GalaxySSI`。普通应用只能执行 Android 向其开放的操作，不能运行任意 ADB shell 命令。
-- 眼镜 GalaxySSI 在前台且已联网时自动开启手机配对发现，无需进入眼镜设置页。手机「我的 Agent → 设备 → 配置 AR 眼镜」扫描眼镜，两端核对 6 位数字；眼镜可说 `Hello Hello 确认配对`。手机可选已有云端配置或填写新配置，测试后加密传送。该流程复用手表的证书绑定 TLS 配对协议，眼镜使用单独的局域网服务 `_galaxyssi-glasses._tcp.`。
-- 手机「配置 AR 眼镜」首页可先进入「配置 Agent 与云端大模型」，从已有云端 Agent 选择模型，或新增服务商、接口、模型和密钥。眼镜尚未联网时，手机保留本次配置草稿；配网后发现眼镜并核对 6 位数字，再回到同步确认页传送。眼镜设置页显示已同步的 Agent 名称和模型。电脑远端 Agent 的连接运行时尚未移植到眼镜，因此目前只能同步云端 Agent。
-- 首次 Wi-Fi 入网可在手机配置页扫描附近的 WPA2 兼容网络并选择 SSID，或手动填写隐藏网络的名称；密码仍在手机输入并生成二维码。手机扫描需要精确位置权限和系统定位开关，拒绝权限时可手动输入。眼镜说 `Hello Hello 扫描配网` 或点相机页的“扫描配网码”，看向手机，核对 SSID 后说 `Hello Hello 确认联网` 或点按钮确认。眼镜通过 Android Wi-Fi suggestion 请求连接；系统首次授权提示仍需在眼镜上批准。网络由系统选择，不能保证立即连接。
-- 直接连接用户配置的 OpenAI 兼容、Anthropic Messages、Gemini generateContent HTTPS API；限制上下文和回复大小，支持取消请求。
-- API 密钥及会话记录由 Android Keystore AES-GCM 加密存储。系统 TTS 可用时优先使用；否则复用 GalaxySSI Android/Watch 使用的 Microsoft Edge 在线语音合成。使用后者时，播报文字会发送给其服务。
+- Pure-black windows and backgrounds suit the optical display and prevent launcher icons from showing through a genuinely transparent Android window. The centered GalaxySSI title, waveform, wake phrase, replies and controls share one viewing area.
+- VENUS touchpad navigation: one-finger tap activates the highlighted control, two-finger tap goes back, a short left swipe selects the next control, and a short right swipe selects the previous one. Focus uses blue and white outlines; selected conversations scroll into view. The app supports multitouch, relative motion, mouse buttons and directional-key events. External gallery and settings apps handle their own touchpad input.
+- A small English Vosk model listens for `Hello Hello`, spoken together or in two parts within seven seconds. After waking, each recording lasts up to two seconds and local multilingual Whisper Tiny Q5_1 recognizes commands and questions. Recognized text is sent after 1.5 seconds; continued speech resets that timer. The microphone remains enabled while the app is in the foreground, including before Agent setup. Prior VENUS measurements took roughly 7-51 seconds for short utterances and sometimes returned empty results, so this is not established as usable real-time recognition. Decoding has a 30-second bound to avoid monopolizing the device CPU.
+- Wake-prefixed commands cover photos, video recording, back, gallery, home, Wi-Fi/Bluetooth settings, volume, battery, time, send, cancel, reading replies and conversation navigation. Exact localized phrases live in `VoiceCommandCatalog.kt`. The in-app camera records video without audio so offline recognition can continue. Media is saved in `DCIM/GalaxySSI`. Ordinary apps can use only operations exposed by Android, not arbitrary ADB shell commands.
+- Foreground, network-connected glasses automatically advertise phone setup without requiring the glasses settings page. On the phone, open My Agent > Devices > Configure AR glasses and compare the six-digit code on both devices. The glasses support voice confirmation. Existing or new cloud settings are tested on the phone and transferred with encryption, reusing the watch's certificate-bound TLS protocol with a separate `_galaxyssi-glasses._tcp.` discovery service.
+- The phone can prepare an Agent/provider/endpoint/model/key draft before the glasses join Wi-Fi. After discovery and code confirmation, the draft returns to the transfer confirmation page. The glasses show the synchronized Agent and model. Only cloud Agents can currently be synchronized; the Desktop remote-Agent connection runtime has not been ported.
+- Initial Wi-Fi setup scans WPA2-compatible networks on the phone or accepts a hidden SSID manually, then creates a QR code from the entered credentials. Scanning requires precise location permission and the phone Location setting; manual input remains available after denial. On the glasses, use the localized scan-Wi-Fi command or camera-page button, inspect the SSID, and confirm. Android Wi-Fi suggestions request the connection; first-use system approval remains necessary and immediate connection is not guaranteed.
+- Direct calls use user-configured OpenAI-compatible, Anthropic Messages or Gemini generateContent HTTPS endpoints, with bounded context/response size and request cancellation.
+- Android Keystore AES-GCM protects API keys and conversation records. System TTS is preferred when available; otherwise the app reuses Microsoft Edge online speech synthesis from Android/Watch. Online synthesis sends the spoken text to that service.
 
-## 构建与安装
+## Build and Install
 
-需要 JDK 17/21、Android SDK 36、NDK 29 和 CMake 3.22.1。将 SDK 路径写入未跟踪的 `local.properties`。首构建下载并校验 Vosk 英文唤醒词模型和多语言 Whisper Tiny Q5_1，存入 Gradle 缓存，不加入 Git。
+Requires JDK 17/21, Android SDK 36, NDK 29 and CMake 3.22.1. Put the SDK path in untracked `local.properties`. The first build downloads and verifies the English Vosk wake-word model and multilingual Whisper Tiny Q5_1 into the Gradle cache, not Git.
 
 ```powershell
 cd apps/ar-glasses
@@ -25,8 +25,8 @@ adb -s MTT20M170108 install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s MTT20M170108 shell am start -n com.galaxyssi.glasses/.MainActivity
 ```
 
-首次打开应用时，应用将 Vosk 和 Whisper Tiny 从 APK 复制到私有存储并加载，之后不需再次复制。应用仅在前台监听唤醒词，不提供后台唤醒。语音识别可离线工作；手机配置传送需要同一 Wi-Fi，模型答复及 Edge 语音合成需要联网。
+On first launch, Vosk and Whisper Tiny are copied from the APK into private storage and loaded; later launches reuse those files. Wake-word listening is foreground-only. Recognition can work offline; phone configuration transfer requires the same Wi-Fi, while model replies and Edge speech synthesis need Internet access.
 
-## 当前范围
+## Current Scope
 
-此版提供眼镜端语音对话、常用设备操作、手机端 Wi-Fi 二维码和云模型配置。Watch 版的 Desktop QR 配对、Signal 链路、联系人、Web 工具、后台唤醒尚未迁入，因此手机端“扫描添加远端 Agent”尚不能用于眼镜。Android 首次 Wi-Fi 授权和相机/麦克风权限不能由普通应用绕过；不能把系统 `VOICE_COMMAND` 入口等同于全天候唤醒词。未配置 API 凭据时，语音识别和本地设备操作可用，模型回复不可用。VENUS 不稳定断开 ADB 时，相机、二维码配网和端到端语音流程需在设备重新连接后实测。
+This version provides glasses voice chat, common device operations, phone-generated Wi-Fi QR codes and cloud-model configuration. Watch Desktop QR pairing, Signal messaging, contacts, web tools and background wake have not been ported; phone-side remote-Agent pairing therefore does not yet apply to glasses. Ordinary apps cannot bypass first-use Wi-Fi approval or camera/microphone permissions, and a system `VOICE_COMMAND` entry point is not continuous wake-word support. Without API credentials, local recognition and device operations remain available but model replies do not. When VENUS ADB connectivity is unstable, camera, Wi-Fi QR and end-to-end voice behavior still require device verification after reconnecting.

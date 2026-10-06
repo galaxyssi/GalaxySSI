@@ -52,3 +52,41 @@ test("an unrelated directory named target is not excluded", (t) => {
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /apps\/example\/target\/source.rs:1/);
 });
+
+test("Chinese Android resources are recognized for phone, watch and glasses", (t) => {
+  const { write, run } = fixture(t);
+  for (const app of ["android", "watch", "ar-glasses"]) {
+    for (const locale of ["zh", "zh-rCN", "zh-rTW", "b+zh+Hans+CN", "b+zh+Hant+TW"]) {
+      write(`apps/${app}/app/src/main/res/values-${locale}/strings.xml`,
+        '<resources><string name="title">\u4e2d\u6587</string></resources>');
+    }
+  }
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("locale support does not exempt Kotlin UI or unrelated resource directories", (t) => {
+  const { write, run } = fixture(t);
+  const blocked = [
+    "apps/ar-glasses/app/src/main/java/MainActivity.kt",
+    "apps/watch/app/src/main/res/values/strings.xml",
+    "apps/android/app/src/main/res/values-fr/strings.xml",
+    "apps/android/app/src/main/res/values-zh/debug.kt",
+    "apps/example/app/src/main/res/values-zh/strings.xml"
+  ];
+  for (const file of blocked) write(file, "\u4e2d\u6587");
+  const result = run();
+  assert.equal(result.status, 1, result.stderr);
+  for (const file of blocked) assert.ok(result.stderr.includes(file + ":1"), file);
+});
+
+test("local runtime artifacts are excluded only at the repository root", (t) => {
+  const { write, run } = fixture(t);
+  write(".galaxyssi-state/execution-checkpoint.json", "\u4e2d\u6587");
+  write(".local/device-test.txt", "\u4e2d\u6587");
+  assert.equal(run().status, 0);
+  write("apps/example/.local/source.kt", "\u4e2d\u6587");
+  const result = run();
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /apps\/example\/\.local\/source.kt:1/);
+});
