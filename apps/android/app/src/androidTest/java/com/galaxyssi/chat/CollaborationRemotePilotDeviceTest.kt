@@ -44,6 +44,8 @@ class CollaborationRemotePilotDeviceTest {
         val freezeValue = args.getString("remotePilotFreezeArtifacts")
         require(freezeValue == null || freezeValue in setOf("true", "false"))
         val freezeArtifacts = freezeValue == "true"
+        val evaluatorSha256 = args.getString("remotePilotFeedbackEvaluatorSha256")
+        require(evaluatorSha256 == null || Regex("[a-f0-9]{64}").matches(evaluatorSha256))
         val transcripts = AgentTranscriptStore(context)
         val selectionConversation = args.getString("remotePilotSelectionConversationId").orEmpty()
         require(selectionConversation.isNotBlank() && transcripts.conversation(selectionConversation) != null)
@@ -64,6 +66,7 @@ class CollaborationRemotePilotDeviceTest {
             .put("provider_token_total", JSONObject.NULL).put("billed_cost", JSONObject.NULL)
             .put("tool_isolation_verified", false).put("ready_for_equal_budget_comparison", false)
             .put("freeze_candidate_artifacts", freezeArtifacts)
+            .put("external_feedback_evaluator_sha256", evaluatorSha256 ?: JSONObject.NULL)
             .put("purpose", "remote_engineering_comparison_not_closed_book_or_efficacy")
             .put("started_at", System.currentTimeMillis()).put("finished", false).put("slots", slots)
         val persist = { synchronized(reportLock) { save(reportFile, report) } }
@@ -72,7 +75,7 @@ class CollaborationRemotePilotDeviceTest {
         try {
             for ((index, slot) in plan.slots.withIndex()) {
                 plan.requireAppSelection(AgentModelSelectionSettings.selection(context, selectionConversation))
-                if (!runSlot(plan, slot, slots.getJSONObject(index), digest, freezeArtifacts, persist)) {
+                if (!runSlot(plan, slot, slots.getJSONObject(index), digest, freezeArtifacts, evaluatorSha256, persist)) {
                     for (remaining in index + 1 until slots.length()) slots.getJSONObject(remaining)
                         .put("reason", "previous_trial_cleanup_not_confirmed")
                     break
@@ -86,7 +89,7 @@ class CollaborationRemotePilotDeviceTest {
     }
 
     private suspend fun runSlot(plan: CollaborationRemotePilotPlan, slot: CollaborationRemotePilotPlan.Slot,
-                                outcome: JSONObject, protocolSha256: String, freezeArtifacts: Boolean,
+                                outcome: JSONObject, protocolSha256: String, freezeArtifacts: Boolean, evaluatorSha256: String?,
                                 persist: () -> Unit): Boolean {
         val run = "remote-pilot-${plan.id}-${slot.id}"
         val turn = "turn-$run"
@@ -129,11 +132,34 @@ class CollaborationRemotePilotDeviceTest {
                     }
                 }
                 val delegate = CollaborationRemotePilotWorker.create(context, bounded)
+                val feedback = evaluatorSha256?.let { CollaborationPilotExecutionFeedback(plan.id, slot.id, protocolSha256, it) }
+                val observations = JSONArray()
+                outcome.put("execution_feedback", observations)
                 val pinned = object : AgentTeamMemberWorker {
                     override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
                         requireTarget(plan)
-                        activeGuard.prepare(context)
-                        return delegate.execute(context)
+                        activeGuard.prepare(context, feedback?.prompt(context.handoff).orEmpty())
+                        val output = delegate.execute(context)
+                        val node = context.member.memberId
+                        if (feedback != null && node in setOf("draft", "review")) {
+                            val raw = feedback.request(node, output.content)
+                            val prefix = "feedback-${plan.id}-${slot.id}-$node"
+                            val requestFile = File(this@CollaborationRemotePilotDeviceTest.context.getExternalFilesDir(null), "$prefix.request.json")
+                            val responseFile = File(requestFile.parentFile, "$prefix.response.json")
+                            check(!requestFile.exists() && !responseFile.exists()) { "Feedback exchange already exists; do not repeat model work" }
+                            saveRaw(requestFile, raw)
+                            val record = JSONObject().put("node_id", node).put("request_file", requestFile.name)
+                                .put("request_sha256", CollaborationPilotExecutionFeedback.hash(raw)).put("status", "waiting")
+                            observations.put(record)
+                            persist()
+                            while (!responseFile.isFile) delay(250)
+                            require(responseFile.length() in 1..40_000)
+                            val response = responseFile.readText(Charsets.UTF_8)
+                            feedback.accept(node, response)
+                            record.put("status", "accepted").put("response", JSONObject(response))
+                            persist()
+                        }
+                        return output
                     }
                     override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) =
                         delegate.sendMessage(member, runId, message)
@@ -211,9 +237,13 @@ class CollaborationRemotePilotDeviceTest {
     }
 
     private fun save(file: File, value: JSONObject) {
+        saveRaw(file, value.toString())
+    }
+
+    private fun saveRaw(file: File, value: String) {
         val atomic = AtomicFile(file)
         val stream = atomic.startWrite()
-        try { stream.write(value.toString().toByteArray(Charsets.UTF_8)); atomic.finishWrite(stream) }
+        try { stream.write(value.toByteArray(Charsets.UTF_8)); atomic.finishWrite(stream) }
         catch (failure: Throwable) { atomic.failWrite(stream); throw failure }
     }
 }

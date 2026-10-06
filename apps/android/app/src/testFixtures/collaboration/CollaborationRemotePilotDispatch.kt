@@ -15,18 +15,21 @@ internal class CollaborationRemotePilotDispatch(
     private val persist: (JSONObject) -> Unit
 ) {
     private val prepared = mutableMapOf<String, AgentTeamMemberExecutionContext>()
+    private val preparedPrompts = mutableMapOf<String, String>()
     private val admitted = mutableSetOf<String>()
     private var closed = false
 
-    @Synchronized fun prepare(context: AgentTeamMemberExecutionContext) {
+    @Synchronized fun prepare(context: AgentTeamMemberExecutionContext, executionFeedback: String = "") {
         check(!closed && nowElapsed() < deadlineElapsed) { "Remote pilot admission closed" }
         val expected = definition.members.single { it.memberId == context.member.memberId }
         check(context.member == expected && context.request.parentRunId == run && context.request.conversationId == group &&
             context.request.messageId == turn) { "Remote pilot assignment identity changed" }
         val key = context.request.idempotencyKey
         check(key.isNotBlank() && key !in prepared && context.member.memberId !in admitted) { "Remote pilot assignment cannot be repeated" }
-        plan.prompt(context)
+        val prompt = plan.prompt(context) + executionFeedback
+        check(prompt.length <= 60_000) { "Remote pilot prompt including execution feedback exceeds its envelope" }
         prepared[key] = context
+        preparedPrompts[key] = prompt
     }
 
     @Synchronized fun admit(action: AgentAction): AgentAction {
@@ -40,7 +43,7 @@ internal class CollaborationRemotePilotDispatch(
             p["_galaxyssi_conversation_id"] == group && p["_galaxyssi_turn_id"] == turn &&
             p["_galaxyssi_task_id"] == context.request.taskId) { "Remote pilot dispatch controls changed" }
         check(context.member.memberId !in admitted && admitted.size < definition.members.size) { "Remote pilot dispatch allowance exhausted" }
-        val prompt = plan.prompt(context)
+        val prompt = preparedPrompts.getValue(context.request.idempotencyKey)
         val person = requireNotNull(context.member.context[CollaborationResearchWorkflow.PERSON])
         check(person in setOf("analyst", "reviewer")) { "Unknown remote pilot person" }
         // Consume before persisting; if disk write fails, this object cannot dispatch the same node again.
