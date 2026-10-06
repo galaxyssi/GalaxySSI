@@ -56,6 +56,7 @@ class ControllerFixture(WorkerFixture):
         self.journal = WorkerExecutionJournal(self.ledger)
         self.executor = FixtureExecutor(self.journal)
         self.requests, self.losses = [], {}
+        self.controllers = []
         self._wire_lock = threading.Lock()
         self.rpc = AgentWorkerRpcClient(lambda route: self.peer, self.send)
         self.addCleanup(self.rpc.close)
@@ -83,23 +84,26 @@ class ControllerFixture(WorkerFixture):
         return self.rpc.receive(self.peer, self.source, value)
 
     def start(self, **options):
-        options.setdefault("rpc_timeout", 0.1)
+        # Exercise the production deadline, not a 100 ms race against real SQLite IO.
+        options.setdefault("rpc_timeout", 2)
         controller = WorkerController(self.rpc, lambda route: self.peer, "route-a", self.ledger,
             self.executor, **options)
         self.addCleanup(lambda: self.assertTrue(controller.stop()))
+        self.controllers.append(controller)
         controller.start()
         return controller
 
     def enqueue(self, task="task-1", **changes):
         self.protocol.queue.enqueue(record(task, **changes), provider="codex", allowed_workers=["worker-a"])
 
-    def until(self, predicate, *, timeout=12):
+    def until(self, predicate, *, timeout=30):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if predicate():
                 return
             time.sleep(0.02)
-        self.fail("Controller condition not reached before test deadline")
+        self.fail(f"Controller condition not reached before test deadline: "
+                  f"{[controller.snapshot() for controller in self.controllers]}")
 
 
 class WorkerControllerTest(ControllerFixture):
