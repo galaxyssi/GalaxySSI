@@ -12,7 +12,7 @@ internal object CollaborationCloudRecall {
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "evolution_rules", "problems"))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems"))))
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
@@ -28,6 +28,7 @@ internal object CollaborationCloudRecall {
                 "mode=evolution browses scoped learning records; mode=evolution_rules with topic=catalog discovers typed contracts, " +
                 "then topic=<id>/offset reads the chosen schema. Omitted topic reads all; retain the same topic when paging. " +
                 "mode=capabilities takes query and cursor to find task-related saved methods, tools and failure lessons; follow next_cursor even after an empty page. " +
+                "mode=method_history takes exact method object_id/revision/sha256 and cursor; read returned record_id/offset for prior usage conditions, failures and delivery. These are not quality measurements. " +
                 "mode=problems takes cursor and lists original tool failures for evidence-based gap diagnosis. " +
                 "Returned output is not proof of a claim.")
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
@@ -44,7 +45,7 @@ internal object CollaborationCloudRecall {
                 recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "evolution_rules", "problems")) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems")) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }

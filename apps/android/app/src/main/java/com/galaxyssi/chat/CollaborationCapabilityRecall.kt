@@ -64,6 +64,7 @@ internal object CollaborationCapabilityRecall {
             "Concurrent publications do not restart pagination; rerun without cursor to discover additions or revisions behind it. " +
             "Search synonyms, other languages and alternative methods separately; no match is not proof no useful method exists. " +
             "Read exact workspace originals and their evidence, conditions and counterexamples before reuse. " +
+            "For methods, follow usage_recall to inspect prior conditions, failures and delivery; execution success is not a quality gain. " +
             "Check current lineage using the existing procedure/workflow/tool/channel admission; retrieval does not approve adoption.")
 
     fun context(workspace: CollaborationResearchWorkspace, execution: AgentTeamMemberExecutionContext): String {

@@ -464,6 +464,39 @@ internal class CollaborationResearchWorkspace(
         browseHeads(access, cursor, limit, "evolution:")
     }
 
+    fun recordMethodExperience(record: AgentTeamExecutionRecord, result: AgentSubagentChildResult) = synchronized(LOCK) {
+        val member = record.definition.members.singleOrNull { it.memberId == result.childId } ?: return@synchronized
+        val group = member.context["collaboration_group_id"].orEmpty()
+        val access = CollaborationWorkspaceAccess(group, record.request.runId, record.request.messageId,
+            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
+            member.memberId, member.context[CollaborationResearchWorkflow.PERSON].orEmpty(), member.dependsOnAgentIds)
+        if (group.isBlank() || access.personId.isBlank() || !authorized(group) || !accessAuthorized(access)) return@synchronized
+        require(group == record.request.conversationId) { "Method-use group changed" }
+        for ((task, field) in CollaborationMethodExperience.TASKS) {
+            val binding = member.context[task]?.let(::JSONObject) ?: continue
+            require(binding.optString("member") == access.personId && binding.optString("assignment") == member.objective &&
+                binding.optString("stage") == member.context[CollaborationResearchWorkflow.STAGE]) { "Method-use assignment changed" }
+            val ref = binding.getJSONObject(field)
+            val method = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Method-use source is missing or isolated" }
+            require(method.getString("kind") == (if (field == "method") CollaborationWorkflowMethod.KIND else CollaborationProceduralMemory.SKILL) &&
+                CollaborationResearchCandidates.same(method, ref)) { "Method-use source changed" }
+            CollaborationMethodExperience(rows, group).record(access, CollaborationResearchCandidates.reference(method), binding, record, member, result)
+        }
+    }
+
+    fun methodHistory(access: CollaborationWorkspaceAccess, ref: JSONObject, cursor: String = ""): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        val method = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Method is missing or isolated" }
+        require(method.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL) &&
+            CollaborationResearchCandidates.same(method, ref)) { "Method revision or digest changed" }
+        CollaborationMethodExperience(rows, access.groupId).browse(access, CollaborationResearchCandidates.reference(method), cursor)
+    }
+
+    fun methodHistoryRecord(access: CollaborationWorkspaceAccess, id: String): JSONObject? = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationMethodExperience(rows, access.groupId).read(access, id)
+    }
+
     fun searchCapabilities(access: CollaborationWorkspaceAccess, query: String, cursor: String = ""): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         val search = CollaborationCapabilityRecall.query(query)
@@ -495,7 +528,12 @@ internal class CollaborationResearchWorkspace(
             if (saved != null && saved.getString("kind") in CollaborationCapabilityRecall.KINDS) {
                 val original = requireNotNull(read(access, saved.getString("object_id"), saved.getInt("revision")))
                 require(original.toString() == saved.toString()) { "Capability head integrity check failed" }
-                CollaborationCapabilityRecall.match(original, search)?.let(found::add)
+                CollaborationCapabilityRecall.match(original, search)?.let { match ->
+                    if (original.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL))
+                        match.put("usage_recall", JSONObject().put("mode", "method_history").put("object_id", original.getString("object_id"))
+                            .put("revision", original.getInt("revision")).put("sha256", original.getString("sha256")))
+                    found.add(match)
+                }
             }
             if (found.size == CollaborationCapabilityRecall.RESULT_PAGE) break
         }

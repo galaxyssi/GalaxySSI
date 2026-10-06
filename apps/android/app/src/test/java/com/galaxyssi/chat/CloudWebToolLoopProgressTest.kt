@@ -9,6 +9,42 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudWebToolLoopProgressTest {
+    private fun methodPage(offset: Int, hash: String = "b".repeat(64)): GoalPage {
+        val end = minOf(40_000, offset + 8000)
+        return GoalPage(JSONObject().put("mode", "method_history").put("record_id", "a".repeat(64)).put("offset", offset),
+            JSONObject().put("status", "returned").put("trust", "host_execution_observation_not_method_effectiveness")
+                .put("record_id", "a".repeat(64)).put("record_sha256", hash).put("total_characters", 40_000)
+                .put("content", "x".repeat(end - offset)).put("next_offset", if (end < 40_000) end else JSONObject.NULL).toString())
+    }
+
+    @Test fun longMethodHistoryCanBeReadWithoutBeingMistakenForStagnantSearch() {
+        val progress = CloudWebToolLoopProgress()
+        for (offset in 0 until 40_000 step 8000) assertFalse(recordPage(progress, methodPage(offset)))
+        assertStagnant(progress, methodPage(0).output)
+    }
+
+    @Test fun methodHistoryCannotForgeProgressWithRepeatsChangedOriginalsOrUnexecutedPages() {
+        assertStagnant(CloudWebToolLoopProgress(), methodPage(0).output)
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(recordPage(progress, methodPage(0)))
+        val changed = methodPage(8000, "c".repeat(64))
+        assertTrue(progress.record(CollaborationCloudRecall.NAME, changed.arguments, changed.output))
+        assertStagnant(progress, changed.output)
+        val invalid = JSONObject(methodPage(16000).output).put("status", "failed").toString()
+        val other = CloudWebToolLoopProgress()
+        assertTrue(other.record(CollaborationCloudRecall.NAME, methodPage(16000).arguments, invalid))
+        assertStagnant(other, invalid)
+    }
+
+    @Test fun methodHistoryDirectoriesOnlyCountNewRecords() {
+        val arguments = JSONObject().put("mode", "method_history").put("object_id", "d".repeat(64)).put("revision", 1).put("sha256", "e".repeat(64))
+        val output = JSONObject().put("status", "returned").put("trust", "host_execution_observation_not_method_effectiveness")
+            .put("method", JSONObject(arguments.toString())).put("records", JSONArray().put(JSONObject().put("record_id", "a".repeat(64)))).toString()
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(recordPage(progress, GoalPage(arguments, output)))
+        assertStagnant(progress, output)
+    }
+
     private data class GoalPage(val arguments: JSONObject, val output: String)
 
     private fun rulePage(topic: String, offset: Int = 0, explicitTopic: Boolean = true): GoalPage {

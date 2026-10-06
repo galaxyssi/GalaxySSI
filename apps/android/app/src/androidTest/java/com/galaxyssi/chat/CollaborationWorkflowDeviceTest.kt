@@ -55,17 +55,42 @@ class CollaborationWorkflowDeviceTest {
             val parsed = JSONObject("{\"value\":7}").also { candidateCalls++ }
             val candidate = List(4) { parsed.getInt("value") }
             assertEquals(baseline, candidate); assertEquals(4, baselineCalls); assertEquals(1, candidateCalls)
-            val worker = members.last().copy(context = members.last().context + CollaborationWorkflowWork.context(first.work.first()) +
+            val worker = members.last().copy(objective = first.work.first().getString("assignment"),
+                context = members.last().context + CollaborationWorkflowWork.context(first.work.first()) +
+                ("collaboration_group_id" to group) +
+                (CollaborationResearchWorkflow.STAGE to "EXECUTE") +
                 (CollaborationPredictionWork.TASK to "{\"fixture\":\"saved prediction binding\"}"))
-            val executing = restored.copy(definition = restored.definition.copy(members = listOf(members.first(), worker)))
+            val executing = restored.copy(definition = restored.definition.copy(members = listOf(members.first(), worker)),
+                request = restored.request.copy(context = restored.request.context + (CollaborationGoalLoop.ROUND to "2")))
             val failure = AgentSubagentChildResult("run", worker.memberId, "run", 1, AgentSubagentStatus.FAILED, "Fixture failure retained", startedAtMillis = 100, completedAtMillis = 120)
             val feedback = CollaborationWorkflowWork.capture(executing, listOf(failure))
             assertEquals("failed", JSONObject(feedback).getJSONObject(worker.memberId).getString("status"))
             assertFalse(JSONObject(feedback).getJSONObject(worker.memberId).getBoolean("quality_improved"))
             val resumed = executing.copy(request = executing.request.copy(context = executing.request.context + (CollaborationWorkflowWork.OUTCOMES to feedback)))
             assertEquals(feedback, CollaborationWorkflowWork.capture(resumed, listOf(failure.copy(completedAtMillis = 999))))
-            val store = EncryptedAgentTeamExecutionStore(database)
+            val store = EncryptedAgentTeamExecutionStore(database, candidateWorkspace = { CollaborationResearchWorkspace(context) })
             store.create(resumed.definition, resumed.request)
+            kotlinx.coroutines.runBlocking {
+                store.append(AgentSubagentEvent(1, "run", worker.memberId, AgentSubagentEventKinds.CHILD_FAILED,
+                    childStatus = AgentSubagentStatus.FAILED, result = failure))
+            }
+            val future = access(0).copy(runId = "next-run", turnId = "next-turn")
+            val query = JSONObject().put("mode", "method_history").put("object_id", method.getString("object_id"))
+                .put("revision", method.getInt("revision")).put("sha256", method.getString("sha256"))
+            val history = JSONObject(CollaborationCloudRecall.execute(context, future, query))
+            assertEquals(history.toString(), "returned", history.getString("status"))
+            val originalId = history.getJSONArray("records").getJSONObject(0).getString("record_id")
+            val source = AgentTeamDispatchIds.sourceMessageId("method-history:$group")
+            CollaborationEvidenceLedger(context).bind(source, future)
+            val registry = AgentPhoneNativeToolCatalog.defaultRegistry(context, { ScreenContext(foregroundApp = "", pageTitle = "") })
+                .subset { it.id == CollaborationRecallNativeTool.ID }
+            val recalled = registry.invoke(CollaborationRecallNativeTool.ID,
+                mapOf("mode" to "method_history", "record_id" to originalId),
+                AgentNativeToolInvocationContext(conversationId = group, turnId = "next-turn", collaborationSourceMessageId = source))
+            assertTrue(recalled.toJson(), recalled.isSuccess)
+            val original = JSONObject(recalled.output.getValue("content").toString())
+            assertEquals("failed", original.getString("status")); assertTrue(original.isNull("quality_effect"))
+            assertEquals(method.getString("sha256"), original.getJSONObject("method").getString("sha256"))
             store.markInterrupted("run", 500)
             val checkpoint = requireNotNull(EncryptedAgentTeamExecutionStore(database).resumeCheckpoint("run"))
             assertEquals(first.claims, checkpoint.request.context[CollaborationWorkflowWork.CLAIMS])

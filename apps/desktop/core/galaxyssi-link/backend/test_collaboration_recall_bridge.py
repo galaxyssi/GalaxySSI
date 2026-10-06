@@ -14,6 +14,25 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_method_history_requires_exact_selectors_and_preserves_bound_scope(self):
+        listing = {"mode": "method_history", "object_id": "a" * 64, "revision": 1, "sha256": "b" * 64}
+        reading = {"mode": "method_history", "record_id": "c" * 64, "offset": 8000}
+        broker = RecallBroker()
+        for arguments in (listing, reading):
+            self.assertEqual(arguments, validate_arguments(arguments))
+            def publish(request):
+                self.assertEqual(arguments, request["arguments"])
+                result = {"success": True, "quality_effect": None}
+                self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": result}, "other-phone"))
+                self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+                return True
+            self.assertIsNone(broker.query(task, arguments, publish)["quality_effect"])
+        for invalid in ({"mode": "method_history"}, {**listing, "revision": True}, {**listing, "sha256": "wrong"},
+                        {**listing, "offset": 0}, {**reading, "cursor": ""}, {**reading, "record_id": "../x"},
+                        {**listing, "group_id": "other"}, {**listing, "query": "anything"}):
+            with self.assertRaises(ValueError):
+                validate_arguments(invalid)
+
     def test_rule_topics_are_discoverable_and_keep_full_reference_available(self):
         spec = tool_spec()
         self.assertEqual(list(RULE_TOPICS), spec["inputSchema"]["properties"]["topic"]["enum"])

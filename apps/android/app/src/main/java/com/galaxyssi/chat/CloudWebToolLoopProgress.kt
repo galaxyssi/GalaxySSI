@@ -20,12 +20,17 @@ internal class CloudWebToolLoopProgress {
     private val rulePagesByOutput = linkedMapOf<String, RulePage>()
     private val observedRuleCharacters = mutableMapOf<String, BitSet>()
     private val ruleReferences = mutableMapOf<String, String>()
+    private val methodHistory = CloudMethodHistoryProgress()
     private var stagnantBatches = 0
 
     fun observeEvidenceBatch(outputs: List<String>): Boolean {
         var gainedEvidence = false
         outputs.forEach { encoded ->
             val output = runCatching { JSONObject(encoded) }.getOrNull() ?: return@forEach
+            methodHistory.observe(encoded)?.let { gained ->
+                if (gained) gainedEvidence = true
+                return@forEach
+            }
             rulePagesByOutput[encoded]?.let { page ->
                 val seen = observedRuleCharacters.getOrPut(page.topic) { BitSet() }
                 if (seen.nextClearBit(page.start) < page.end) gainedEvidence = true
@@ -83,6 +88,9 @@ internal class CloudWebToolLoopProgress {
         }
         if (toolName == CollaborationCloudRecall.NAME && arguments.opt("mode") == "evolution_rules") {
             rulePage(arguments, output)?.let { rulePagesByOutput[output] = it }
+        }
+        if (toolName == CollaborationCloudRecall.NAME && arguments.opt("mode") == "method_history") {
+            methodHistory.record(arguments, output)
         }
         val errorCode = runCatching { JSONObject(output).optString("error_code") }.getOrDefault("")
         if (errorCode in setOf("web_source_timeout", "web_tool_timeout", "renderer_unavailable")) {
