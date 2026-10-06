@@ -122,7 +122,8 @@ class AgentCollaborationRuntimeTest {
             fromInstanceId = "user",
             toInstanceId = "primary",
             kind = AgentTeamMessageKind.USER_DIRECTIVE,
-            text = "Preserve the public API"
+            text = "Preserve the public API",
+            metadata = mapOf("candidate_id" to "alternative-2", "stage" to "VERIFY")
         ))
         val runtime = AgentTeamExecutionRuntime(
             InMemoryAgentTeamExecutionStore(),
@@ -133,8 +134,9 @@ class AgentCollaborationRuntimeTest {
         runtime.start(teamDefinition(), request()) { context ->
             if (context.member.memberId == "primary") {
                 @Suppress("UNCHECKED_CAST")
-                val messages = context.request.context["team_messages"] as List<Map<String, String>>
-                received = messages.single().getValue("text")
+                val messages = context.request.context["team_messages"] as List<Map<String, Any?>>
+                received = messages.single().getValue("text") as String
+                assertEquals(mapOf("candidate_id" to "alternative-2", "stage" to "VERIFY"), messages.single()["metadata"])
                 AgentSubagentOutput("final")
             } else {
                 AgentSubagentOutput("evidence")

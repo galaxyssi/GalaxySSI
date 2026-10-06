@@ -76,6 +76,35 @@ class CollaborationResultFinalizerTest {
         assertTrue(output.content.contains("repair_of"))
     }
 
+    @Test fun peerRequestsAreDurableBeforeCompactionAndRecoveryDoesNotDuplicateThem() {
+        val workspace = CollaborationResearchWorkspace(Rows())
+        val execution = CollaborationLateResult.execution(store().deliveryCheckpoint("run")!!, managed)!!
+        val peer = member.copy(instanceId = "peer-node", context = member.context + (CollaborationResearchWorkflow.PERSON to "peer"))
+        val team = AgentTeamDefinition("team", member.agentId, listOf(member, peer), primaryInstanceId = member.memberId)
+        val mailbox = InMemoryAgentTeamMailbox()
+        val question = "Check the crucial assumption. ".repeat(450)
+        val original = JSONObject(raw()).put("requests", JSONArray().put(JSONObject()
+            .put("to", JSONArray().put("peer")).put("question", question).put("candidate_id", "second-alternative"))).toString()
+        var archived = ""
+        var failFirstDelivery = true
+        val finalizer = CollaborationResultFinalizer(workspace, { _, text -> archived = text; "archive" },
+            discussion = { _, text ->
+                assertEquals(original, archived)
+                CollaborationDirectedDiscussion.messages(team, request, member, text).forEach(mailbox::append)
+                if (failFirstDelivery) { failFirstDelivery = false; error("Interrupted after durable enqueue") }
+            })
+        assertNotNull(runCatching { finalizer.finish(execution, AgentSubagentOutput(original)) }.exceptionOrNull())
+        val output = finalizer.finish(execution, AgentSubagentOutput(original))
+        assertTrue(output.collaborationDiscussionRouted)
+        assertTrue(output.content.length <= 12_000)
+        assertFalse(JSONObject(output.content).has("requests"))
+        assertEquals(question.trim(), mailbox.messages("run", "peer").single().text)
+        assertEquals("second-alternative", mailbox.messages("run", "peer").single().metadata["candidate_id"])
+        assertEquals(1, workspace.browse(CollaborationWorkspaceAccess.from(execution)).revisions.size)
+        finalizer.finish(execution, AgentSubagentOutput(original))
+        assertEquals(1, mailbox.messages("run", "peer").size)
+    }
+
     @Test fun storageFailureLeavesLateResponseUnappliedAndOriginalArchived() {
         val rows = Rows()
         val workspace = CollaborationResearchWorkspace(rows)

@@ -38,6 +38,8 @@ internal object CollaborationResearchArtifact {
             CollaborationCandidateEvolution.artifactInstructions() + CollaborationReviewContract.instructions() +
             "Cite the reviewed delivery in parents. Review another person's exact current version; do not review your own work or certify unperformed tests. " +
             "Keep top-level candidate/findings notes and targeted requests concise; preserve complete alternatives in versioned workspace originals. Empty arrays are allowed outside proposal/verification stages. " +
+            "All valid targeted requests and recipients are routed, not just a fixed first few. Each question must fit the 16000-character team message envelope; " +
+            "put larger evidence in workspace originals and reference it. Use exact roster member IDs, not names. " +
             "Preserve important memory items, including negative evidence and unresolved disagreements. " +
             "Corrections must cite the earlier record; never silently replace it or promote an assumption to a fact. " +
             "Keep summary concise, but preserve full workspace originals and required typed fields. Summary must include the useful proposal or critique, not just status. " +
@@ -73,7 +75,32 @@ internal object CollaborationResearchArtifact {
             }
         }
         require(!json.has("workspace") || json.optJSONArray("workspace") != null) { "workspace must be an array" }
+        validateRequests(json)
         return json
+    }
+
+    private fun validateRequests(json: JSONObject) {
+        if (!json.has("requests")) return
+        val requests = requireNotNull(json.optJSONArray("requests")) { "requests must be an array" }
+        repeat(requests.length()) { index ->
+            val item = requireNotNull(requests.optJSONObject(index)) { "requests[$index] must be an object" }
+            val question = item.opt("question") as? String
+            require(!question.isNullOrBlank() && question.trim().length <= AgentTeamMessageEnvelope.MAX_TEXT_CHARS) {
+                "requests[$index].question must be a nonblank string of at most ${AgentTeamMessageEnvelope.MAX_TEXT_CHARS} characters; " +
+                    "preserve larger evidence in workspace originals instead of truncating it"
+            }
+            val targets = requireNotNull(item.optJSONArray("to")) { "requests[$index].to must be an array of exact member IDs" }
+            require(targets.length() > 0) { "requests[$index].to must contain at least one exact member ID" }
+            repeat(targets.length()) { target ->
+                val id = targets.opt(target) as? String
+                require(!id.isNullOrBlank() && id == id.trim() && id.length <= AgentTeamMessageEnvelope.MAX_ID_CHARS) {
+                    "requests[$index].to[$target] must be one exact nonblank member ID"
+                }
+            }
+            if (item.has("candidate_id")) require(item.opt("candidate_id") is String && item.getString("candidate_id").length <= 1000) {
+                "requests[$index].candidate_id must be a string of at most 1000 characters"
+            }
+        }
     }
 
     fun decode(raw: String): JSONObject? = runCatching { parse(raw) }.getOrNull()
