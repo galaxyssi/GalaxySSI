@@ -199,7 +199,17 @@ val syncPhoneWebParser by tasks.registering {
             slice(phoneWebRoot.resolve("MobileAgentConnectors.kt").readText(),
                 "object AgentConnectorAvailability {", "    fun cloudModelReady(") + "}\n")
         webFiles.forEach { write(it, phoneWebRoot.resolve(it).readText().let { source ->
-            if (it == "CloudWebGrounding.kt") source.replace("package com.galaxyssi.chat", "package com.galaxyssi.chat\nimport com.galaxyssi.watch.R") else source
+            when (it) {
+                "CloudWebGrounding.kt" -> source.replace("package com.galaxyssi.chat", "package com.galaxyssi.chat\nimport com.galaxyssi.watch.R")
+                // The watch exposes web tools, not the phone's private collaboration-rule service.
+                // Reject its rule pages rather than replacing exact host-reference validation with trust in model text.
+                "CloudWebToolLoopProgress.kt" -> source
+                    .replace("CollaborationGoalContractStore.PAGE_FORMAT", "CloudGoalPageProtocol.FORMAT")
+                    .replace("CollaborationCloudRecall.NAME", "CloudGoalPageProtocol.RECALL_TOOL")
+                    .replace("CollaborationRemoteEvidenceProtocol.integer", "CloudGoalPageProtocol.integer")
+                    .replace("CollaborationEvolutionProtocol.rules(topic).toString()", "error(\"Collaboration rules are unavailable on Watch\")")
+                else -> source
+            }
         }) }
         write("GalaxySSIApplication.kt", phoneWebRoot.resolve("GalaxySSIApplication.kt").readText()
             .replace("class GalaxySSIApplication", "open class GalaxySSIApplication"))
