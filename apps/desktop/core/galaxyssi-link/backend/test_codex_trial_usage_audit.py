@@ -244,6 +244,57 @@ class CodexTrialUsageAuditTest(unittest.TestCase):
         usages(value)[0]["observation"]["requested_model"] = "different-model"
         self.assertIn("requested_controls_mismatch", self.report(value)["threads"][0]["issues"])
 
+    def add_reroute(self, value, target="fixture-fallback"):
+        journal = value["tasks"][0]["usage_journals"][0]
+        entry = copy.deepcopy(journal["entries"][-1])
+        old = entry["observation"]
+        entry["observation"] = normalize(dict(threadId=old["provider_thread_id"], turnId=old["provider_turn_id"],
+                                               fromModel="gpt-6-astra", toModel=target),
+                                          model="gpt-6-astra", effort="xhigh", kind="model_rerouted")
+        entry["sequence"] += 1
+        entry["recorded_at_ms"] += 1
+        journal["entries"].append(entry)
+        journal["observed_through_sequence"] += 1
+        return entry
+
+    def test_reported_reroute_detected_even_without_capture_issue(self):
+        value = self.make_capture()
+        self.add_reroute(value)
+        self.assertEqual([], value["issues"])
+        result = self.report(value)
+        self.assertIn("provider_model_reroute_observed", result["issues"])
+        self.assertEqual("reroute_observed", result["model_control_status"])
+        thread = result["threads"][0]
+        self.assertEqual("fixture-fallback", thread["reported_model_reroutes"][0]["reported_to_model"])
+        self.assertNotIn("incomplete_turn_observations", thread["issues"])
+        self.assertIsNone(result["observed_thread_cumulative_endpoint_sum"])
+        self.assertFalse(result["ready_for_equal_budget_comparison"])
+
+    def test_malformed_and_tampered_reroute_schema_fails_closed(self):
+        value = self.make_capture()
+        entry = self.add_reroute(value, target=None)
+        entry["observation"]["issues"] = []
+        result = self.report(value)
+        self.assertIn("provider_model_reroute_schema_issues", result["threads"][0]["issues"])
+        self.assertEqual("reroute_observed", result["model_control_status"])
+
+    def test_rerouting_back_does_not_erase_intermediate_model(self):
+        value = self.make_capture()
+        self.add_reroute(value)
+        entry = self.add_reroute(value, target="gpt-6-astra")
+        entry["observation"]["reported_from_model"] = "fixture-fallback"
+        result = self.report(value)
+        self.assertEqual(2, len(result["threads"][0]["reported_model_reroutes"]))
+        self.assertEqual("reroute_observed", result["model_control_status"])
+
+    def test_no_notice_or_forged_summary_is_not_model_attestation(self):
+        value = self.make_capture()
+        value["actual_model"] = "gpt-6-astra"
+        value["model_control_status"] = "verified"
+        result = self.report(value)
+        self.assertEqual("not_attested", result["model_control_status"])
+        self.assertFalse(result["ready_for_equal_budget_comparison"])
+
     def test_capture_journal_event_and_sequence_tampering_are_rejected(self):
         original = self.make_capture()
         with self.assertRaises(ValueError):

@@ -51,7 +51,7 @@ class CodexNotificationBatchTests(unittest.TestCase):
                 self.assertEqual(rows, [batch.message for batch in self.drain(rows)])
 
     def test_tool_and_terminal_events_never_move_past_text(self):
-        for method in ("item/completed", "item/tool/call", "turn/completed", "turn/started", "error"):
+        for method in ("item/completed", "item/tool/call", "turn/completed", "turn/started", "model/rerouted", "error"):
             with self.subTest(method=method):
                 barrier = {"method": method, "params": {"threadId": "thread", "turnId": "turn"}}
                 rows = [delta("A"), barrier, delta("B")]

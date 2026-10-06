@@ -38,6 +38,38 @@ The existing estimated execution-harness counters remain separate and unchanged.
 Provider history completeness is always false for this notification-only adapter.
 Exporting an empty journal is not proof of zero usage or zero cost.
 
+## Reported Model Changes (v1.4.14)
+
+The same journal now accepts the official `model/rerouted` event with exact
+`threadId` and `turnId`. It saves only bounded `fromModel` and `toModel` identifiers
+as `reported_from_model` and `reported_to_model`; arbitrary reason text and
+unknown payload fields are not persisted. Invalid model fields remain null with
+diagnostic codes, while the fact that a reroute was reported is preserved.
+The existing `actual_model` stays null: a notice about part of a turn is not
+proof of the actual model serving every request in the whole turn or trial.
+
+This is an additive `model_rerouted` observation under the existing journal
+contract. The adapter routes it through the existing exact-turn ownership check,
+execution-generation fence and encrypted, deduplicated store. It does not rewrite
+the selected model, replay a task, refresh progress/watchdog clocks, send a new
+MQTT message or interrupt normal task completion. The notification is a queue
+barrier and is never coalesced into an adjacent text delta.
+
+The private trial collector and usage auditor flag `provider_model_reroute_observed`
+and set `model_control_status` to `reroute_observed`. Such a trial must not be
+pooled as a fixed-model result. They preserve all original observations and
+completed/failed task states, not relabel a successfully delivered answer as an
+execution failure. Returning to the requested model later does not erase the
+intermediate change. Malformed notices also remain an explicit control issue.
+
+Without any recorded notice the status is `not_attested`, **not verified**.
+Old records were collected before this event was handled and cannot retrospectively
+prove that no fallback occurred. Missing notices, eviction, disconnect and audit
+write failures can still leave coverage incomplete. This change does not provide
+request-level model attestation, whole-trial token totals, billing, or stop a
+provider's internal routing; it prevents observed changes from being silently
+treated as controlled observations.
+
 ## Identity, Durability And Failure
 
 Routing requires the exact provider thread and turn; a reused thread alone is

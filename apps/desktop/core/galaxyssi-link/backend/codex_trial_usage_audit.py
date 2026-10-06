@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent_task_recovery_query import IDENTITY_FIELDS
 from agent_tool_evidence import canonical, valid_identity
-from codex_provider_usage import CONTRACT, COUNTERS, MAX_COUNTER, identifier
+from codex_provider_usage import CONTRACT, COUNTERS, KINDS, MAX_COUNTER, identifier, normalize
 
 
 FORMAT = "galaxyssi.codex-trial-usage-audit.v1"
@@ -101,7 +101,7 @@ def _entries(capture):
                          observation.get("provider") == "codex" and
                          identifier(observation.get("provider_thread_id")) and
                          identifier(observation.get("provider_turn_id")) and
-                         observation.get("kind") in {"turn_started", "usage_snapshot", "turn_terminal"},
+                         observation.get("kind") in KINDS,
                          "Invalid provider observation")
                 entries.append(entry)
     for row in assignments:
@@ -138,7 +138,7 @@ def _counters(observation):
 
 
 def _thread(thread_id, entries, scope):
-    issues, turns, snapshots = set(), {}, []
+    issues, turns, snapshots, reroutes = set(), {}, [], []
     for entry in entries:
         value = entry["observation"]
         turn = turns.setdefault(value["provider_turn_id"], {"owners": set(), "kinds": set(), "statuses": set()})
@@ -151,10 +151,21 @@ def _thread(thread_id, entries, scope):
         if value["kind"] == "usage_snapshot":
             snapshots.append(entry)
             issues.update(_counters(value))
+        if value["kind"] == "model_rerouted":
+            normalized = normalize(dict(threadId=thread_id, turnId=value["provider_turn_id"],
+                                        fromModel=value.get("reported_from_model"), toModel=value.get("reported_to_model")),
+                                   model=value.get("requested_model"), effort=value.get("requested_reasoning_effort"),
+                                   kind="model_rerouted")
+            if normalized != value or value.get("issues"):
+                issues.add("provider_model_reroute_schema_issues")
+            reroutes.append({"event_id": entry["event_id"], "provider_turn_id": value["provider_turn_id"],
+                             "reported_from_model": normalized.get("reported_from_model") if normalized else None,
+                             "reported_to_model": normalized.get("reported_to_model") if normalized else None})
+            issues.add("provider_model_reroute_observed")
     for turn in turns.values():
         if len(turn["owners"]) != 1:
             issues.add("provider_turn_has_multiple_owners")
-        if turn["kinds"] != {"turn_started", "usage_snapshot", "turn_terminal"}:
+        if not {"turn_started", "usage_snapshot", "turn_terminal"}.issubset(turn["kinds"]):
             issues.add("incomplete_turn_observations")
         if len(turn["statuses"]) != 1 or not turn["statuses"].issubset({"completed", "failed", "interrupted"}):
             issues.add("unknown_or_conflicting_terminal_status")
@@ -183,6 +194,8 @@ def _thread(thread_id, entries, scope):
             "observed_cumulative_endpoint": endpoint,
             "endpoint_event_id": snapshots[-1]["event_id"] if endpoint else None,
             "pre_trial_baseline_observed": False, "trial_attributable_tokens": None,
+            "model_control_status": "reroute_observed" if reroutes else "not_attested",
+            "reported_model_reroutes": reroutes,
             "issues": sorted(issues)}
 
 
@@ -220,8 +233,11 @@ def audit(captures):
         threads = [_thread(thread_id, rows, scope) for thread_id, rows in sorted(grouped.items())]
         if any(thread["issues"] for thread in threads):
             issues.add("thread_usage_issues")
+        if any(thread["reported_model_reroutes"] for thread in threads):
+            issues.add("provider_model_reroute_observed")
         trials.append({"trial_id": trial_id, "capture_sha256": capture["capture_sha256"],
-                       "observed_task_count": len(tasks), "threads": threads, "issues": sorted(issues)})
+                       "observed_task_count": len(tasks), "threads": threads, "issues": sorted(issues),
+                       "model_control_status": "reroute_observed" if "provider_model_reroute_observed" in issues else "not_attested"})
     for trial in trials:
         shared = [row["provider_thread_id"] for row in trial["threads"]
                   if len(thread_trials[row["provider_thread_id"]]) > 1]
@@ -242,6 +258,7 @@ def audit(captures):
                   "One last observed endpoint per thread is counted; snapshots, turns and tasks are not API requests.",
                   "Cached input is part of input; reasoning output is part of output. Neither is added twice.",
                   "Missing observations, baselines, requests, billing and actual served models remain unknown.",
+                  "A reported model reroute is a fixed-model control violation; no notice does not attest the served model.",
                   "A terminal notification does not certify that the final usage notification was received.",
                   "Local capture hashes detect accidental changes, not independent provider authenticity.",
                   "Thread separation is not filesystem, tool, memory, evaluator or provider-state isolation.",

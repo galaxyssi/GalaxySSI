@@ -122,6 +122,31 @@ class CodexTrialCaptureTest(unittest.TestCase):
                          "provider_requested_controls_mismatch", "provider_usage_schema_issues",
                          "provider_terminal_unobserved"}.issubset(codes))
 
+    def test_reported_reroute_invalidates_control_not_task_completion(self):
+        tasks = self.all_tasks()
+        data = dict(threadId="provider-author", turnId="turn-1", fromModel="gpt-6-astra", toModel="fixture-fallback")
+        self.archive.record(tasks[0], normalize(data, model="gpt-6-astra", effort="xhigh", kind="model_rerouted"))
+        result = capture(self.path, self.scope)
+        self.assertIn("provider_model_reroute_observed", self.codes(result))
+        self.assertNotIn("provider_usage_schema_issues", self.codes(result))
+        self.assertEqual("reroute_observed", result["model_control_status"])
+        self.assertIsNone(result["actual_model"])
+        self.assertTrue(all(task["status"] == "completed" for task in result["tasks"]))
+        self.assertTrue(result["tasks"][0]["usage_journals"][0]["observed_turn_coverage"][0]["model_reroute_observed"])
+
+    def test_malformed_reroute_is_not_silently_ignored(self):
+        task = self.task()
+        data = dict(threadId="provider-author", turnId="turn-1", fromModel="gpt-6-astra", toModel=None)
+        self.archive.record(task, normalize(data, model="gpt-6-astra", effort="xhigh", kind="model_rerouted"))
+        result = capture(self.path, self.scope)
+        self.assertTrue({"provider_model_reroute_observed", "provider_model_reroute_schema_issues"} <= self.codes(result))
+
+    def test_no_reroute_notice_does_not_attest_actual_model(self):
+        self.all_tasks()
+        result = capture(self.path, self.scope)
+        self.assertEqual("not_attested", result["model_control_status"])
+        self.assertIsNone(result["actual_model"])
+
     def test_every_observed_generation_retained_and_missing_generations_flagged(self):
         value = self.task()
         value["execution_generation"] = 3
