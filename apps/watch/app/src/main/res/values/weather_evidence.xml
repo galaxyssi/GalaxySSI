@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="weather_evidence_rain_probability">Rain probability</string>
+    <string name="weather_evidence_summary_unavailable">Forecast retrieved for these local dates; the model summary could not finish.</string>
+</resources>
