@@ -27,7 +27,7 @@ class BoundaryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         environment = patch.dict(os.environ, {"GALAXYSSI_STATE_DIR": str(self.root / "state"),
             "GALAXYSSI_WORKSPACE_ROOT": str(self.root / "harness")})
         environment.start()
