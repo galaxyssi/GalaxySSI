@@ -345,6 +345,9 @@ class AgentSubagentRuntime(
             }
         }
         val childJobs = mutableListOf<Job>()
+        val admission = if (plan.preserveChildOrder) AgentSubagentOrderedAdmission(executionPermits).also {
+            it.update(admissionCandidates(plan, slots))
+        } else null
         try {
             emit(
                 control = control,
@@ -368,7 +371,7 @@ class AgentSubagentRuntime(
                 val job = runtimeScope.launch(
                     control.childrenJob + CoroutineName("AgentSubagent-${child.childId}")
                 ) {
-                    runChild(control, plan, child, slots, worker)
+                    runChild(control, plan, child, slots, worker, admission = admission)
                 }
                 childJobs += job
             }
@@ -427,6 +430,7 @@ class AgentSubagentRuntime(
         val wake = Channel<Unit>(Channel.CONFLATED)
         val childFailure = AtomicReference<Throwable?>(null)
         var processedCount = -1
+        val admission = if (initialPlan.preserveChildOrder) AgentSubagentOrderedAdmission(executionPermits) else null
 
         fun addSlots() {
             plan.children.forEach { child ->
@@ -445,7 +449,7 @@ class AgentSubagentRuntime(
                 control.childrenJob + CoroutineName("AgentSubagent-${child.childId}")
             ) {
                 try {
-                    runChild(control, executionPlan, child, executionSlots, worker, handoff)
+                    runChild(control, executionPlan, child, executionSlots, worker, handoff, admission)
                 } catch (failure: Throwable) {
                     if (failure !is CancellationException) childFailure.compareAndSet(null, failure)
                     if (failure !is CancellationException ||
@@ -463,6 +467,7 @@ class AgentSubagentRuntime(
 
         addSlots()
         try {
+            admission?.update(admissionCandidates(plan, slots))
             require(plan.completionBarrierChildId !in completed || completed.size == plan.children.size) {
                 "Completed barrier requires all other children to be terminal"
             }
@@ -496,6 +501,7 @@ class AgentSubagentRuntime(
                         plan.completionBarrierChildId in completed)
                     plan = candidate
                     addSlots()
+                    admission?.update(admissionCandidates(plan, slots))
                     processedCount = snapshot.size
                 }
 
@@ -595,8 +601,9 @@ class AgentSubagentRuntime(
     private fun validateExpansion(previous: NormalizedPlan, next: NormalizedPlan, barrierStarted: Boolean) {
         require(previous.supervisorId == next.supervisorId && previous.provenance == next.provenance &&
             previous.failurePolicy == next.failurePolicy &&
+            previous.preserveChildOrder == next.preserveChildOrder &&
             previous.completionBarrierChildId == next.completionBarrierChildId) {
-            "Expansion cannot change supervisor identity, provenance, failure policy, or completion barrier"
+            "Expansion cannot change supervisor identity, provenance, failure policy, admission mode, or completion barrier"
         }
         val nextById = next.children.associateBy { it.childId }
         previous.children.forEach { child ->
@@ -613,13 +620,23 @@ class AgentSubagentRuntime(
         require(!barrierStarted || previous == next) { "Expansion cannot append work after the completion barrier starts" }
     }
 
+    private fun admissionCandidates(plan: NormalizedPlan, slots: Map<String, CompletableDeferred<AgentSubagentChildResult>>) =
+        plan.children.map { child ->
+            val slot = checkNotNull(slots[child.childId])
+            val required = if (child.childId == plan.completionBarrierChildId)
+                slots.filterKeys { it != child.childId }.values.toList()
+            else child.dependencies.map { checkNotNull(slots[it]) }
+            AgentSubagentOrderedAdmission.Candidate(child.childId) { !slot.isCompleted && required.all { it.isCompleted } }
+        }
+
     private suspend fun runChild(
         control: RunControl,
         plan: NormalizedPlan,
         child: NormalizedChild,
         slots: Map<String, CompletableDeferred<AgentSubagentChildResult>>,
         worker: AgentSubagentWorker,
-        handoffResults: List<AgentSubagentChildResult>? = null
+        handoffResults: List<AgentSubagentChildResult>? = null,
+        admission: AgentSubagentOrderedAdmission? = null
     ) {
         val slot = checkNotNull(slots[child.childId])
         val startedAt = now()
@@ -649,7 +666,7 @@ class AgentSubagentRuntime(
                 return
             }
 
-            executionPermits.acquire()
+            if (admission == null) executionPermits.acquire() else admission.acquire(child.childId)
             var permitHeld = true
             try {
                 currentCoroutineContext().ensureActive()
@@ -768,6 +785,8 @@ class AgentSubagentRuntime(
                     control.failFast(child.childId, result.errorMessage)
                 }
             }
+        } finally {
+            if (admission != null) withContext(NonCancellable) { admission.settled(child.childId) }
         }
     }
 
