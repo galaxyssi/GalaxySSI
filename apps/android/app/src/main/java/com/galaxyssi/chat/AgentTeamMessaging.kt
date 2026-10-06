@@ -76,6 +76,10 @@ interface AgentTeamMailbox {
     fun append(message: AgentTeamMessageEnvelope): AgentTeamMessageEnvelope
     fun appendAll(messages: List<AgentTeamMessageEnvelope>): List<AgentTeamMessageEnvelope> = messages.map { it.validated() }.map(::append)
     fun messages(supervisorRunId: String, instanceId: String = "", afterSequence: Long = 0L): List<AgentTeamMessageEnvelope>
+    fun recentMessages(supervisorRunId: String, limit: Int = 20): List<AgentTeamMessageEnvelope> {
+        require(limit in 1..256)
+        return messages(supervisorRunId).takeLast(limit)
+    }
     fun pendingMessages(supervisorRunId: String, instanceId: String = ""): List<AgentTeamMessageEnvelope> =
         messages(supervisorRunId, instanceId).filter { it.state == AgentTeamMessageState.PENDING }
     fun markDelivered(messageId: String, atMillis: Long = System.currentTimeMillis()): AgentTeamMessageEnvelope?
@@ -180,6 +184,7 @@ class EncryptedAgentTeamMailbox internal constructor(database: AgentEncryptedDat
             return value
         }
         override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
+        override fun pageBefore(prefix: String, before: String, limit: Int) = database.keysBefore(prefix, before, limit)
         override fun mutate(values: Map<String, String>, removeKeys: Collection<String>) = database.mutateStrings(values, removeKeys)
     }) {
     constructor(context: Context) : this(AgentEncryptedDatabase(context.applicationContext, "galaxyssi_agent_team_mailbox_v1"))

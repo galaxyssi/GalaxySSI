@@ -30,10 +30,12 @@ class AgentTeamMailboxStorageDeviceTest {
             assertFalse(database.contains("messages"))
             val reopened = EncryptedAgentTeamMailbox(AgentEncryptedDatabase(context, name))
             assertEquals(original, reopened.messages("fixture-run"))
+            assertEquals(original.takeLast(20), reopened.recentMessages("fixture-run"))
             assertEquals(5_006L, reopened.append(message(5_006)).sequence)
             val acknowledged = reopened.acknowledge("message-1", 300L)!!
             assertTrue(EncryptedAgentTeamMailbox(AgentEncryptedDatabase(context, name)).pendingMessages("fixture-run", "peer").isEmpty())
             assertEquals(acknowledged, reopened.append(original.first()))
+            assertEquals((4_987L..5_006L).toList(), reopened.recentMessages("fixture-run").map { it.sequence })
         } finally { database.clear() }
     }
 
@@ -46,6 +48,7 @@ class AgentTeamMailboxStorageDeviceTest {
             val failing = IndexedAgentTeamMailbox(object : AgentTeamMailboxRows {
                 override fun read(key: String) = database.readString(key, "").takeIf(String::isNotEmpty)
                 override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
+                override fun pageBefore(prefix: String, before: String, limit: Int) = database.keysBefore(prefix, before, limit)
                 override fun mutate(values: Map<String, String>, removeKeys: Collection<String>) {
                     var count = 0
                     database.mutateStrings(values, removeKeys, onMutation = { _, _, _ ->
@@ -70,6 +73,19 @@ class AgentTeamMailboxStorageDeviceTest {
             assertTrue(runCatching { EncryptedAgentTeamMailbox(database).append(message(2)) }.isFailure)
             assertTrue(database.contains("messages"))
             assertTrue(database.keys("mailbox.v2/").isEmpty())
+        } finally { database.clear() }
+    }
+
+    @Test fun reverseKeyPaginationUsesKeyOrderNotReceiptRewriteOrder() {
+        val database = AgentEncryptedDatabase(context, "test_team_mailbox_${UUID.randomUUID()}")
+        try {
+            database.mutateStrings(mapOf("p/001" to "one", "p/009" to "nine", "p/004" to "four", "other/999" to "other"))
+            database.writeString("p/001", "late receipt")
+            assertEquals(listOf("p/009", "p/004"), database.keysBefore("p/", "", 2))
+            assertEquals(listOf("p/001"), database.keysBefore("p/", "p/004", 2))
+            assertTrue(database.keysBefore("p/", "p/001", 2).isEmpty())
+            assertTrue(runCatching { database.keysBefore("p/", "other/999", 2) }.isFailure)
+            assertTrue(runCatching { database.keysBefore("p/", "", 257) }.isFailure)
         } finally { database.clear() }
     }
 }

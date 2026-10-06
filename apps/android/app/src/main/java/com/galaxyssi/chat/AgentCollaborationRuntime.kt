@@ -1529,6 +1529,9 @@ class AgentProductionTeamController(
     fun messages(supervisorRunId: String, instanceId: String = ""): List<AgentTeamMessageEnvelope> =
         mailbox.messages(supervisorRunId, instanceId)
 
+    fun recentMessages(supervisorRunId: String, limit: Int = 20): List<AgentTeamMessageEnvelope> =
+        mailbox.recentMessages(supervisorRunId, limit)
+
     fun prepareDelegation(
         input: AgentCrossTeamDelegationInput,
         destination: AgentTeamDefinition,

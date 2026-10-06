@@ -380,6 +380,17 @@ class AgentEncryptedDatabase(
         }
     }
 
+    fun keysBefore(prefix: String, before: String, limit: Int): List<String> = database.operations.withLock {
+        require(prefix.isNotEmpty() && limit in 1..256)
+        require(before.isEmpty() || before.startsWith(prefix))
+        database.readableDatabase.query(TABLE_VALUES, arrayOf("storage_key"),
+            "storage_key >= ? AND storage_key < ?",
+            arrayOf(prefix, before.ifEmpty { "$prefix\uffff" }), null, null,
+            "storage_key DESC", limit.toString()).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+    }
+
     fun entries(prefix: String = ""): List<Pair<String, String>> = withStorage {
         buildList {
             keys(prefix).forEach { key ->
