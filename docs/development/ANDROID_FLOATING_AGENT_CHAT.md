@@ -82,7 +82,7 @@ The same saved 20-screen article was submitted through the real floating compose
 - 15:46:31.707: phone sealed the task for its first send.
 - 15:46:31.959: Desktop task admitted; Codex then ran successfully.
 - 15:48:18.204: Desktop recorded completion, with a Chinese summary covering the article's final troubleshooting section.
-- Phone screenshot: the same summary and final-section details were visible, the pending indicator stopped, and the turn displayed `已处理 5分26秒`.
+- Phone screenshot: the same summary and final-section details were visible, the pending indicator stopped, and the turn displayed the localized equivalent of `Processed in 5 minutes 26 seconds`.
 
 This passes the actual captured-document upload, task admission, model execution, return delivery and UI completion scenario that previously timed out. It is not a claim of universal network reliability or perfect original-document coverage. Upload still took about 209 seconds, Desktop execution about 106 seconds, and the displayed end-to-end time was 326 seconds. The model used the saved OCR text; successful PDF transport does not prove every screenshot was visually inspected. The result retained the warning about hidden or unloaded content. Broader throughput tuning, weak-network repetition and arbitrary document coverage remain separate acceptance work.
 
@@ -98,7 +98,7 @@ The scheduling candidate passed 87 focused unit tests and all three deferred-enc
 - 16:17:00.598: final attachment storage receipt accepted; upload approximately 111 seconds versus 209 seconds in the preceding run.
 - 16:17:00.669: task sealed; Desktop admitted it at 16:17:01.726.
 - 16:18:21.746: Desktop completed the summary, including the article's final section.
-- S26U displayed the completed result and `已处理 3分22秒`, versus 5 minutes 26 seconds previously.
+- S26U displayed the completed result and the localized equivalent of `Processed in 3 minutes 22 seconds`, versus 5 minutes 26 seconds previously.
 
 This single before/after sample reduced upload time by approximately 47% and displayed end-to-end time by 38%. Provider execution also varied (80 versus 106 seconds); do not attribute that portion to the transport fix. It is not a repeated-run median/p95 or weak-network guarantee. The result explicitly said it read the saved text and did not individually zoom/verify the PDF figures; that visual-verification limitation remains.
 
