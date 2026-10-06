@@ -40,6 +40,7 @@ from agent_task_manager import (
     agent_task_manager,
 )
 from codex_app_server import CodexAppServer, CodexConversationBusyError
+import codex_experiment_registry as codex_experiments
 from research_quality import standard as research_quality_standard
 from research_trace import replay_receipts
 import phone_tool_broker as phone_tool
@@ -2011,7 +2012,9 @@ def _codex_collaboration_recall(task_id, arguments, active):
     return broker.query(snapshot, arguments, publish, active=active)
 
 
-def _codex_server(executable: str, env: dict) -> CodexAppServer:
+def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer:
+    if experiment is not None:
+        return experiment.get_server(executable, env, _dispatch_codex_event, CodexAppServer)
     global codex_app_server
     previous = None
     with codex_task_callbacks_lock:
@@ -4422,9 +4425,12 @@ def _interrupt_agent_runtime(task, on_event=None) -> None:
     agent_id = str(getattr(task, "agent_id", "") or "").strip()
     if not task_id:
         return
-    if agent_id == "codex" and codex_app_server is not None:
+    experiment_owned, experiment_server = codex_experiments.active_server(task_id)
+    runtime = experiment_server if experiment_owned else codex_app_server
+    if agent_id == "codex" and (runtime is not None or experiment_owned):
         try:
-            codex_app_server.interrupt(task_id)
+            if runtime is not None:
+                runtime.interrupt(task_id)
         except Exception as exc:
             log.warning("Codex turn interrupt failed task_id=%s: %s", task_id, exc)
     elif agent_id:
@@ -4645,6 +4651,37 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         policy=execution_policy.public(),
     )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    from codex_experiment_boundary import ExperimentBoundaryError, reject as reject_experiment
+    try:
+        codex_experiment = codex_experiments.admit(
+            route=client_route_id, conversation=client_conversation_id,
+            backend_conversation=backend_conversation_id, task_id=requested_task_id,
+            model=selected_agent_model, effort=execution_policy.reasoning_effort.value,
+            agent_id=agent_id, attachments=attachments or mobile_context.attachments,
+            snapshot=getattr(existing_task, "request_snapshot", {}) if existing_task is not None else None,
+            read_only=plan_only or read_only_screen_analysis, full_executor=full_desktop_executor,
+            scope_hint=str(payload.get("codex_experiment_admission") or ""),
+        )
+        if codex_experiment is not None:
+            if not structured_connector_response or read_only_screen_analysis:
+                reject_experiment("structured_text_mode_required")
+            recovery_snapshot[codex_experiments.MARKER] = codex_experiment.marker
+    except ExperimentBoundaryError as error:
+        # Persist and deliver rejection; an admission failure must not leave the phone waiting.
+        def rejected_event(value):
+            _enqueue_task_event(mqttc, wire_payload, value, trace)
+        if existing_task is None:
+            agent_task_manager.create_external(
+                agent_id=agent_id, contact_id=contact_id, source_message_id=source_message_id,
+                prompt=content, on_event=rejected_event, task_id=requested_task_id,
+                request_snapshot=recovery_snapshot, conversation_id=backend_conversation_id,
+                client_conversation_id=client_conversation_id, client_route_id=client_route_id,
+                client_turn_id=client_turn_id, execution_prompt=execution_policy_prompt,
+                execution_policy=execution_policy.public(),
+            )
+        agent_task_manager.update(requested_task_id, "failed", on_event=rejected_event,
+            current_step="", result="", error=str(error))
+        return
     from video_generation_policy import video_creation_requested
     programmatic_video_requested = (
         not plan_only and not structured_connector_response and not read_only_screen_analysis
@@ -5590,8 +5627,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     if agent_id == "codex" and not programmatic_video_requested:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
         codex_conversation_id = backend_conversation_id
-        codex_run_conversation_id = "" if plan_only or read_only_screen_analysis else codex_conversation_id
-        parallel_codex_task = plan_only or read_only_screen_analysis
+        codex_run_conversation_id = (
+            codex_conversation_id if codex_experiment is not None
+            else "" if plan_only or read_only_screen_analysis else codex_conversation_id
+        )
+        parallel_codex_task = codex_experiment is None and (plan_only or read_only_screen_analysis)
         if payload.get("_recovered_task") is True:
             active_conversation_task = None
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
@@ -5958,14 +5998,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 event.get("result"),
                 event.get("error"),
             )
-            if event_status == "completed" and not parallel_codex_task:
+            if event_status == "completed" and not parallel_codex_task and codex_experiment is None:
                 from agent_conversation_sessions import agent_conversation_sessions
 
                 sessions = agent_conversation_sessions()
                 thread_id = str(event.get("thread_id") or "")
                 if thread_id:
                     sessions.put("codex", codex_conversation_id, thread_id)
-            if event_status == "completed" and str(event_result or "").strip():
+            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None:
                 parsed_recovery = parse_model_recovery(
                     str(event_result),
                     mobile_context.attachments,
@@ -6131,7 +6171,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             else "One required detail could not be recovered automatically. Provide it to continue."
                         )
                     )
-            if event_status == "completed" and str(event_result or "").strip():
+            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None:
                 from task_workspace import (
                     import_referenced_task_artifacts,
                     referenced_relative_artifact_paths,
@@ -6157,6 +6197,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         add_task_trace("referenced_artifacts_imported", len(imported))
             if (
                 event_status == "completed"
+                and codex_experiment is None
                 and execution_policy.requires_artifact
                 and not image_artifact_required
             ):
@@ -6250,7 +6291,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         "This run did not produce a valid answer to your latest request."
                     )
                     event["error"] = response_review.diagnostic
-            if event_status == "completed" and not parallel_codex_task:
+            if event_status == "completed" and not parallel_codex_task and codex_experiment is None:
                 completed_task = agent_task_manager.get(task_id)
                 mark_conversation_synced("codex", completed_task)
             if event_status == "running" and visible_progress is not None:
@@ -6344,7 +6385,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id, "starting", on_event=publish_event,
                         current_step="Reconnecting to Codex turn",
                     )
-                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]), codex_experiment)
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
                     started_at = int(task.started_at or task.created_at or 0)
@@ -6390,7 +6431,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 sessions = agent_conversation_sessions()
                 session_binding = (
                     None
-                    if plan_only or read_only_screen_analysis
+                    if plan_only or read_only_screen_analysis or codex_experiment is not None
                     else sessions.get("codex", codex_conversation_id)
                 )
                 restored_context_paths: list[Path] = []
@@ -6408,7 +6449,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         and str(candidate.get("agent_id") or "") == "codex"
                         and str(candidate.get("conversation_id") or "") == codex_conversation_id
                     ]
-                    if not fast_chat_delivery or mobile_context.attachments
+                    if codex_experiment is None and (not fast_chat_delivery or mobile_context.attachments)
                     else []
                 )
                 prior_sources: list[Path] = []
@@ -6550,7 +6591,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 server = None
                 if active_conversation_task is not None:
-                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]), codex_experiment)
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
                     add_task_trace("codex_turn_steer_started", active_conversation_task.task_id)
@@ -6597,7 +6638,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         codex_task_callbacks.pop(task.task_id, None)
                     return
                 if server is None:
-                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]), codex_experiment)
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
                 codex_runtime["server"] = server
@@ -6616,9 +6657,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
                     )
-                    if not parallel_codex_task:
+                    if not parallel_codex_task and codex_experiment is None:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
+                    if codex_experiment is not None:
+                        raise  # Do not turn a busy experimental identity into a new provider thread.
                     busy_task = agent_task_manager.get(busy.active_task_id)
                     busy_decision = (
                         classify_active_turn(
@@ -9769,6 +9812,7 @@ def stop():
     if codex_app_server is not None:
         codex_app_server.close()
         codex_app_server = None
+    codex_experiments.close()
     with codex_task_callbacks_lock:
         codex_task_callbacks.clear()
 

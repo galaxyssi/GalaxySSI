@@ -47,10 +47,18 @@ def workspace_root() -> Path:
     return candidate
 
 
+def _task_directory(task_id: str) -> tuple[Path, Path]:
+    from codex_experiment_registry import registered_workspace
+    registered = registered_workspace(task_id)
+    if registered is not None:
+        return registered.parent, registered
+    tasks_root = (workspace_root() / "tasks").resolve()
+    return tasks_root, (tasks_root / _safe_component(task_id)).resolve()
+
+
 def task_workspace(task_id: str = "", agent_id: str = "") -> Path:
     safe_id = _safe_component(task_id) or f"adhoc-{uuid.uuid4()}"
-    directory = (workspace_root() / "tasks" / safe_id).resolve()
-    tasks_root = (workspace_root() / "tasks").resolve()
+    tasks_root, directory = _task_directory(task_id if _safe_component(task_id) else safe_id)
     if not _is_within(directory, tasks_root):
         raise ValueError("Task workspace escaped the configured workspace root")
     directory.mkdir(parents=True, exist_ok=True)
@@ -74,9 +82,12 @@ def task_workspace(task_id: str = "", agent_id: str = "") -> Path:
 
 
 def cleanup_task_temporary_files(task_ids: list[str] | set[str]) -> list[str]:
+    from codex_experiment_registry import registered_workspace
     tasks_root = (workspace_root() / "tasks").resolve()
     cleaned: list[str] = []
     for task_id in task_ids:
+        if registered_workspace(task_id) is not None:
+            continue
         safe_id = _safe_component(task_id)
         if not safe_id:
             continue
@@ -93,6 +104,9 @@ def cleanup_task_temporary_files(task_ids: list[str] | set[str]) -> list[str]:
 
 def cleanup_task_workspace(task_id: str, *, missing_ok: bool = False) -> bool:
     """Remove one GalaxySSI-owned task workspace after phone handoff."""
+    from codex_experiment_registry import registered_workspace
+    if registered_workspace(task_id) is not None:
+        return False  # Private experiment artifacts require explicit host retention decisions.
     safe_id = _safe_component(task_id)
     if not safe_id:
         return False
@@ -117,8 +131,7 @@ def task_artifact_path(task_id: str, relative_path: str) -> Path | None:
         or any(part in {"", ".", ".."} for part in candidate.parts)
     ):
         return None
-    tasks_root = (workspace_root() / "tasks").resolve()
-    directory = (tasks_root / safe_id).resolve()
+    tasks_root, directory = _task_directory(task_id)
     source = (directory / Path(*candidate.parts)).resolve()
     if (
         not _is_within(directory, tasks_root)
@@ -134,8 +147,7 @@ def task_artifacts(task_id: str, limit: int = 50) -> list[dict]:
     safe_id = _safe_component(task_id)
     if not safe_id:
         return []
-    tasks_root = (workspace_root() / "tasks").resolve()
-    directory = (tasks_root / safe_id).resolve()
+    tasks_root, directory = _task_directory(task_id)
     if not _is_within(directory, tasks_root) or not directory.exists():
         return []
     artifacts: list[dict] = []
