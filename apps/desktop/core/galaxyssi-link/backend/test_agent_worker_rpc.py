@@ -52,19 +52,45 @@ class WorkerRpcTest(unittest.TestCase):
         self.assert_empty()
 
     def test_old_attempt_cannot_complete_retry_or_refresh_lease_timing(self):
+        clock = [100.0]
+        self.client.close()
+        self.client = AgentWorkerRpcClient(self.peers.get, self.send, clock=lambda: clock[0])
+        self.addCleanup(self.client.close)
+
+        def send_then_expire(paired, request):
+            self.send(paired, request)
+            # Expire a request that was actually published, independently of CPU scheduling.
+            clock[0] += 10
+            return True
+
+        self.client._send = send_then_expire
         with self.assertRaisesRegex(WorkerRpcError, "timeout"):
-            self.client.request("route-a", "poll", {"sequence": 1}, request_id="retry", timeout=0.01)
-        old = self.sent.get(timeout=2)
-        with ThreadPoolExecutor(1) as pool:
-            future = pool.submit(self.client.request, "route-a", "poll", {"sequence": 1}, request_id="retry")
-            new = self.sent.get(timeout=2)
-            self.assertEqual(old[1]["request_id"], new[1]["request_id"])
-            self.assertNotEqual(old[1]["attempt_id"], new[1]["attempt_id"])
+            self.client.request("route-a", "poll", {"sequence": 1}, request_id="retry", timeout=10)
+        old = self.sent.get_nowait()
+        self.assert_empty()
+
+        def reply_to_retry(paired, request):
             self.assertFalse(self.deliver(old, job={"stale": True}))
-            self.assertTrue(self.deliver(new, job=None))
-            result = future.result(timeout=2)
-            self.assertIsNone(result.payload["job"])
-            self.assertGreaterEqual(result.received_at, result.sent_at)
+            self.assertTrue(self.deliver((paired, request), job=None))
+            return self.send(paired, request)
+
+        self.client._send = reply_to_retry
+        result = self.client.request("route-a", "poll", {"sequence": 1}, request_id="retry")
+        new = self.sent.get_nowait()
+        self.assertEqual(old[1]["request_id"], new[1]["request_id"])
+        self.assertNotEqual(old[1]["attempt_id"], new[1]["attempt_id"])
+        self.assertIsNone(result.payload["job"])
+        self.assertEqual((110.0, 110.0), (result.sent_at, result.received_at))
+        self.assert_empty()
+
+    def test_expiry_before_publish_does_not_create_a_sent_attempt(self):
+        self.client.close()
+        self.client = AgentWorkerRpcClient(self.peers.get, self.send,
+                                          clock=Mock(side_effect=[100.0, 110.0]))
+        self.addCleanup(self.client.close)
+        with self.assertRaisesRegex(WorkerRpcError, "timeout"):
+            self.client.request("route-a", "poll", timeout=10)
+        self.assertTrue(self.sent.empty())
         self.assert_empty()
 
     def test_reordered_responses_keep_session_task_and_generation_correlated(self):
