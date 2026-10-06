@@ -92,11 +92,17 @@ internal object CollaborationGoalLoop {
         The review body must contain acceptance_review: {criterion_id, requirement, target:{object_id,revision,sha256}, verdict:"supported", rationale, unresolved:[]}.
         The review must cite that delivery in parents. Copy host workspace receipts into delivery/review; current versions only, no invented IDs.
         Preserve any validator specification exactly, including its absence, through every continuation. Unsupported domains remain open.
-        The host checks documentary integrity and one narrow local fixture: exact_integer_sum.v1, not general computational/scientific completion.
+        The host checks documentary integrity and qualified local computations, not general computational/scientific completion.
         That fixture requires verification=computational and validator:{id:"exact_integer_sum.v1",operands:[canonical decimal strings]} in the first preserved criterion.
         It accepts only the literal requirement "Compute the exact integer sum: 2 + 3." for operands ["2","3"] (substitute the actual operands).
         Save body.computation:{validator_id:"exact_integer_sum.v1",result:"5"} alongside body.content; the host recomputes the sum.
         Limits are 2..32 operands of at most 256 digits. Independent delivery review and goal coverage are still mandatory.
+        numeric_model_cases.v1 also replays a saved pure numeric expression against preserved input/expected/tolerance cases.
+        Its literal requirement is: "${CollaborationNumericModelValidator.REQUIREMENT}"
+        Recall mode=evolution_rules, topic=tools for its exact schema and execution envelope. Members can publish numeric_model_trial
+        before final acceptance to obtain host-computed errors and compare revised models; failed trials stay saved.
+        The host checks ALL supplied cases, not a model-written score; these local replay limits are not research step/round limits.
+        Supplied reference values are not certified true, held-out or independent. Keep provenance, oracle validity and generalization as separate requirements.
         Other computational/physical criteria require qualified validators that are not available; keep them open and pursue useful work.
         Do not relabel them documentary or replace them with simulation.
         'blocked' requires NO executable work plus a concrete resource/permission blocker and resumption condition.

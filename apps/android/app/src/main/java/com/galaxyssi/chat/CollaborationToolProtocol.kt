@@ -9,6 +9,7 @@ internal object CollaborationToolProtocol {
         Inspect available tools first; a Desktop-only member can author/review code but must delegate execution to an authorized
         member with the phone runtime and exact native dispatch binding. Do not fabricate a native receipt from a shell command.
         Plan build/test/review/reuse as ordinary dependent work; unrelated members continue. Recall evolution_rules for the schema.
+        Pure numeric candidates can use numeric_model_trial for host-side case replay and exact failed-case feedback before final acceptance.
     """.trimIndent()
 
     fun rules() = """
@@ -46,5 +47,5 @@ internal object CollaborationToolProtocol {
         Recall mode=evolution + cursor to discover releases; page full source/contracts with mode=workspace. Same-group future tasks
         can reuse them; other groups and isolated current branches cannot. Receipt records retain version, member, run, turn, output
         and failure details. No second executor, scheduler, background polling or automatic global Skill activation is introduced.
-    """.trimIndent()
+    """.trimIndent() + "\n" + CollaborationNumericModelTrial.rules()
 }

@@ -69,6 +69,7 @@ class CollaborationAssessmentValidationTest {
         assertTrue(result.syntaxValid)
         assertEquals("$.criteria[0].validator", result.failure?.path)
         assertTrue(requireNotNull(result.failure).detail.contains("exact_integer_sum.v1"))
+        assertTrue(requireNotNull(result.failure).detail.contains("numeric_model_cases.v1"))
         assertNull(result.assessment)
     }
 

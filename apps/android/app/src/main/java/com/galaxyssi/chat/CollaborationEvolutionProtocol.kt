@@ -29,6 +29,7 @@ internal object CollaborationEvolutionProtocol {
         for full originals. These records survive future tasks in this group; they grant no cross-group/private-memory access.
         Plan actual work in the existing work DAG. Do not wait for unrelated branches or create a second autonomous execution loop.
         A useful missing tool may be implemented/tested in an authorized sandbox; record its exact artifact as a baseline/candidate.
+        For pure numeric models, topic=tools describes local numeric_model_trial replay: preserve failed cases and compare actual revisions.
         Before reusing a retained lesson check applicability, negative results and versions; test transfer in a new domain explicitly.
         Compare single-agent versus team methods at the same budget, test regressions, and retain the previous version for rollback.
         Numerical improvement is not scientific truth or global novelty. Text review, simulation and physical validation stay distinct.
