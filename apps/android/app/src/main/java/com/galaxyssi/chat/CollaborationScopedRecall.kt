@@ -12,7 +12,21 @@ internal object CollaborationScopedRecall {
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
         if (input.containsKey("topic") && input["mode"] != "evolution_rules")
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
+        if (input.containsKey("case_filter") && input["mode"] != CollaborationNumericFeedback.MODE)
+            return AgentNativeToolExecutionResult.failure("invalid_arguments", "Case filter is only supported for numeric feedback.")
         return when (input["mode"]) {
+            CollaborationNumericFeedback.MODE -> {
+                val revision = input["revision"]
+                if (input["object_id"] !is String || input["sha256"] !is String || revision !is Number ||
+                    revision.toDouble() != revision.toInt().toDouble() || revision.toInt() < 1)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Numeric feedback requires an exact trial reference.")
+                val saved = CollaborationResearchWorkspace(context).read(access, input["object_id"] as String, revision.toInt())
+                    ?: return AgentNativeToolExecutionResult.failure("object_unavailable", "Numeric trial is missing or isolated.")
+                try { AgentNativeToolExecutionResult.success(CollaborationNumericFeedback.page(saved, input).toNativeObject()) }
+                catch (invalid: IllegalArgumentException) {
+                    AgentNativeToolExecutionResult.failure("invalid_arguments", invalid.message.orEmpty())
+                }
+            }
             "method_history" -> {
                 val workspace = CollaborationResearchWorkspace(context)
                 if (input.containsKey("record_id")) {
@@ -133,7 +147,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules, numeric_cases or problems for scoped recall.")
         }
     }
 

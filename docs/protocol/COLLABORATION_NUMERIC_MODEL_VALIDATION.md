@@ -134,6 +134,57 @@ memory and stack use; they are not research step, round or lifetime limits.
 Larger or unsupported verification requires a suitable plan/adapter without
 weakening the original scientific requirements.
 
+## Selective Counterexample Feedback
+
+New publication receipts and workspace/evolution directories carry compact numeric
+summaries: counts, worst case, exact model/specification hashes and change counts.
+They no longer repeat every check and changed case ID. The immutable record still
+contains all cases, predictions, errors and comparisons. This is a delivery
+projection, not evidence deletion or a change to verification.
+Already persisted publication receipts are not rewritten; browsing the directory
+projects a compact summary while exact original records remain available.
+
+Both cloud members and remote members using the phone recall tool can request:
+
+```json
+{
+  "mode": "numeric_cases",
+  "object_id": "<exact trial object ID>",
+  "revision": 1,
+  "sha256": "<exact trial digest>",
+  "case_filter": "failed",
+  "cursor": ""
+}
+```
+
+Filters are `failed` (default), `all`, `domain_error`, `improved`, `regressed`,
+`error_reduced`, `error_increased`, `domain_recovered` and `domain_failed`.
+Each selected case joins its preserved input, expected value and tolerance to
+the host-observed value/error and change labels. No model or computation is
+rerun by recall. `has_comparison=false` distinguishes missing comparative
+evidence from an actual comparison with no regressions.
+
+Concatenate `content` pages in order and follow `next_cursor` until null before
+decoding the projected JSON. Pages contain at most 8,000 characters; a page may
+split an individual case, but not a UTF-16 surrogate pair. Cursors bind the
+exact immutable trial and selected filter. A cursor cannot silently continue
+against another revision or filter. `matched_case_count` describes the full
+selection, not the current page. Use `mode=workspace` for the complete model and
+original trial. Original group/member/dependency authorization remains in force.
+
+This supports selective diagnosis and revision without filling every handoff
+with thousands of checks. It does not choose the next hypothesis, impose a
+research-step limit, establish read comprehension, or automatically retain a
+method. Local synthetic tests do not establish autonomous use by real models.
+
+Local verification for Android 1.4.78: 1,243 selected collaboration, team-runtime,
+native-tool and batch-executor JVM tests passed, including nine new feedback
+tests. Nine S20U device tests passed with encrypted persistence and both local
+recall adapters; no real model or Desktop transport request was made. In the
+4,096-case synthetic fixture, a 316,629-character full-host receipt became a
+1,377-character summary, and all 4,096 original cases were recovered by paging.
+This is payload reduction, not a measured model-latency or capability gain.
+
 ## Claim Boundary
 
 `observed` refers to actual host recomputation, not a claim that the inputs came

@@ -7,13 +7,14 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.2.0", title = context.getString(R.string.collaboration_recall_title),
+            id = ID, version = "1.3.0", title = context.getString(R.string.collaboration_recall_title),
             description = context.getString(R.string.collaboration_recall_description),
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
                 "query" to AgentNativeJsonSchema.string(maxLength = 1000),
                 "mode" to AgentNativeJsonSchema.string(maxLength = 16),
                 "topic" to AgentNativeJsonSchema.string(maxLength = 32),
+                "case_filter" to AgentNativeJsonSchema.string(maxLength = 32),
                 "cursor" to AgentNativeJsonSchema.string(maxLength = 512),
                 "record_id" to AgentNativeJsonSchema.string(maxLength = 64),
                 "object_id" to AgentNativeJsonSchema.string(maxLength = 64),
@@ -28,13 +29,15 @@ internal object CollaborationRecallNativeTool {
         executor = AgentNativeToolExecutor { call ->
             if (call.input.containsKey("topic") && call.input["mode"] != "evolution_rules")
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
+            if (call.input.containsKey("case_filter") && call.input["mode"] != CollaborationNumericFeedback.MODE)
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Case filter is only supported for numeric feedback.")
             val group = call.context.conversationId
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
-            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems")) {
+            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE)) {
                 val source = call.context.collaborationSourceMessageId
-                if (source == null && call.input["mode"] in setOf("goal_contract", "archive", "capabilities", "method_history"))
+                if (source == null && call.input["mode"] in setOf("goal_contract", "archive", "capabilities", "method_history", CollaborationNumericFeedback.MODE))
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "Goal contract recall requires an exact member binding.")
                 val access = if (source != null) CollaborationEvidenceLedger(context).binding(source, group, call.context.turnId)
                     ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "No exact member binding.")

@@ -8,15 +8,16 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = "collaboration_recall"
-    private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic")
+    private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems"))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE))))
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
         properties.getJSONObject("topic").put("enum", JSONArray(CollaborationEvolutionProtocol.topicIds()))
+        properties.getJSONObject("case_filter").put("enum", JSONArray(CollaborationNumericFeedback.filters))
         val schema = JSONObject().put("type", "object").put("properties", properties)
             .put("required", JSONArray(listOf("mode"))).put("additionalProperties", false)
         val function = JSONObject().put("name", NAME)
@@ -30,6 +31,7 @@ internal object CollaborationCloudRecall {
                 "mode=capabilities takes query and cursor to find task-related saved methods, tools and failure lessons; follow next_cursor even after an empty page. " +
                 "mode=method_history takes exact method object_id/revision/sha256 and cursor; read returned record_id/offset for prior usage conditions, failures and delivery. These are not quality measurements. " +
                 "mode=problems takes cursor and lists original tool failures for evidence-based gap diagnosis. " +
+                "mode=numeric_cases takes exact trial object_id/revision/sha256, case_filter and cursor to inspect host-computed counterexamples or regressions. " +
                 "Returned output is not proof of a claim.")
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
         when (prepared.provider) {
@@ -45,7 +47,7 @@ internal object CollaborationCloudRecall {
                 recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems")) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE)) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }
@@ -59,6 +61,7 @@ internal object CollaborationCloudRecall {
             }
             require(!input.has("query") || input.optString("mode") == "capabilities") { "Query is only supported for capability search" }
             require(!input.has("topic") || input.optString("mode") == "evolution_rules") { "Topic is only supported for evolution rules" }
+            require(!input.has("case_filter") || input.optString("mode") == CollaborationNumericFeedback.MODE) { "Case filter is only supported for numeric feedback" }
             CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access, recordCoverage)
         } catch (_: IllegalArgumentException) {
             AgentNativeToolExecutionResult.failure("recall_unavailable", "Invalid arguments or revoked member access.")
