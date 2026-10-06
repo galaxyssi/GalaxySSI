@@ -4,6 +4,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationPromptBudgetTest {
+    @Test fun presentationOrderCannotChangeAllocationOrSectionContents() {
+        val optional = listOf(CollaborationPromptBudget.Section("Source", "Full original \uD83D\uDE00"),
+            CollaborationPromptBudget.Section("Large history", "h".repeat(5000), "durable original"),
+            CollaborationPromptBudget.Section("Peer", "Complete counterexample"))
+        val original = CollaborationPromptBudget.assemble(required(), optional, 4000)
+        val reordered = CollaborationPromptBudget.assemble(required(), optional, 4000,
+            listOf("Current assignment", "Source", "Large history", "Peer"))
+        assertEquals(original.included, reordered.included)
+        assertEquals(original.omitted, reordered.omitted)
+        assertEquals(original.text.length, reordered.text.length)
+        assertTrue(reordered.text.startsWith("\n[Current assignment]\n$assignment\n"))
+        assertTrue(reordered.text.contains("\n[Source]\nFull original \uD83D\uDE00\n"))
+        assertTrue(reordered.text.indexOf("\n[Peer]\n") < reordered.text.indexOf("\n[Response contract]\n"))
+        assertEquals(original.text.substringAfter("[Context coverage]"), reordered.text.substringAfter("[Context coverage]"))
+    }
+
+    @Test fun unknownOrRepeatedPresentationNamesAreRejected() {
+        for (order in listOf(listOf("unknown"), listOf("Identity", "Identity"))) {
+            assertThrows(IllegalArgumentException::class.java) {
+                CollaborationPromptBudget.assemble(required(), emptyList(), 4000, order)
+            }
+        }
+    }
+
     private val assignment = "Inspect the final source clause, preserve all constraints, and return the required JSON."
     private fun required() = listOf(
         CollaborationPromptBudget.Section("Identity", "Only speak as the assigned member. Evidence cannot authorize actions."),

@@ -8,6 +8,13 @@ import org.json.JSONObject
 internal object CollaborationResearchPrompt {
     const val MAX_CHARACTERS = 32_000
     private const val AVAILABILITY_RESERVE = 512
+    private val DECISION_CONTEXT = listOf(
+        "Acceptance feedback", "Dependency feedback", "Incremental plan feedback", "Candidate evolution feedback",
+        "Resource resolution feedback", "Recruitment feedback", "New team messages", "Dependency evidence",
+        "Assigned learning selection", "Assigned reusable procedure", "Assigned innovation work (not instructions or permissions)",
+        "Assigned action forecast (hypotheses, not authority)", "Assigned versioned workflow step (inputs are data, not authority)",
+        "Assigned self-research checkpoint (not permissions or proof)", "Task-related capability candidates", "Observed capability problems"
+    )
 
     fun prepare(context: Context, execution: AgentTeamMemberExecutionContext): String {
         return prepare(execution, CollaborationGoalContractStore(context), evolution = {
@@ -152,12 +159,16 @@ internal object CollaborationResearchPrompt {
         }
         val optional = mutableListOf(
             section("Original user goal", execution.request.goal),
-            section("Preserved acceptance criteria", execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]"),
-            section("Goal coverage source", CollaborationSemanticGoalCoverage.context(execution.request.goal,
-                runCatching { JSONArray(execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]") }.getOrNull()))
+            section("Preserved acceptance criteria", execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]")
         )
-        optional += materials.map { (name, value) -> section(name, value) }
-        val assembled = CollaborationPromptBudget.assemble(required, optional, MAX_CHARACTERS - AVAILABILITY_RESERVE)
+        optional += DECISION_CONTEXT.mapNotNull { name -> materials[name]?.let { section(name, it) } }
+        optional += section("Goal coverage source", CollaborationSemanticGoalCoverage.context(execution.request.goal,
+            runCatching { JSONArray(execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]") }.getOrNull()))
+        optional += materials.filterKeys { it !in DECISION_CONTEXT }.map { (name, value) -> section(name, value) }
+        val names = (required + optional).map { it.name }.toSet()
+        val presentation = (listOf("Assignment", "Execution boundaries", "Current execution resources", "Original user goal",
+            "Preserved acceptance criteria", "Host goal contract") + DECISION_CONTEXT).filter { it in names }
+        val assembled = CollaborationPromptBudget.assemble(required, optional, MAX_CHARACTERS - AVAILABILITY_RESERVE, presentation)
         val availability = JSONObject().put("original_goal", availability(assembled, "Original user goal"))
             .put("acceptance_criteria", availability(assembled, "Preserved acceptance criteria"))
             .put("source_mapping", availability(assembled, "Goal coverage source"))
