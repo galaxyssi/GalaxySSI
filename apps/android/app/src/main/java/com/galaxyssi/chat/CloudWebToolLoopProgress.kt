@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.BitSet
 import java.util.Locale
 
 /** Tracks semantic tool progress without imposing a fixed round or call count. */
@@ -15,12 +16,22 @@ internal class CloudWebToolLoopProgress {
     private data class GoalPage(val snapshot: String, val reader: String, val index: Long, val hash: String)
     private val goalPagesByOutput = linkedMapOf<String, GoalPage>()
     private val observedGoalPages = linkedMapOf<Triple<String, String, Long>, String>()
+    private data class RulePage(val topic: String, val start: Int, val end: Int)
+    private val rulePagesByOutput = linkedMapOf<String, RulePage>()
+    private val observedRuleCharacters = mutableMapOf<String, BitSet>()
+    private val ruleReferences = mutableMapOf<String, String>()
     private var stagnantBatches = 0
 
     fun observeEvidenceBatch(outputs: List<String>): Boolean {
         var gainedEvidence = false
         outputs.forEach { encoded ->
             val output = runCatching { JSONObject(encoded) }.getOrNull() ?: return@forEach
+            rulePagesByOutput[encoded]?.let { page ->
+                val seen = observedRuleCharacters.getOrPut(page.topic) { BitSet() }
+                if (seen.nextClearBit(page.start) < page.end) gainedEvidence = true
+                seen.set(page.start, page.end)
+                return@forEach
+            }
             if (output.opt("format") == CollaborationGoalContractStore.PAGE_FORMAT) {
                 val page = goalPagesByOutput[encoded] ?: return@forEach
                 val identity = Triple(page.snapshot, page.reader, page.index)
@@ -70,6 +81,9 @@ internal class CloudWebToolLoopProgress {
             (!arguments.has("cursor") || arguments.opt("cursor") is String)) {
             goalPage(output)?.let { goalPagesByOutput[output] = it }
         }
+        if (toolName == CollaborationCloudRecall.NAME && arguments.opt("mode") == "evolution_rules") {
+            rulePage(arguments, output)?.let { rulePagesByOutput[output] = it }
+        }
         val errorCode = runCatching { JSONObject(output).optString("error_code") }.getOrDefault("")
         if (errorCode in setOf("web_source_timeout", "web_tool_timeout", "renderer_unavailable")) {
             resourceKey(toolName, arguments)?.let { unavailableResources[it] = output }
@@ -104,6 +118,24 @@ internal class CloudWebToolLoopProgress {
         require(if (index + 1 == count) page.isNull("next_cursor")
             else (page.opt("next_cursor") as? String)?.matches(Regex("[A-Za-z0-9_-]{54}")) == true)
         GoalPage(snapshot, reader, index, hash("page_sha256"))
+    }.getOrNull()
+
+    private fun rulePage(arguments: JSONObject, encoded: String): RulePage? = runCatching {
+        require(arguments.keys().asSequence().all { it in setOf("mode", "topic", "offset") })
+        val topic = if (arguments.has("topic")) requireNotNull(arguments.opt("topic") as? String) else "all"
+        val offset = if (arguments.has("offset")) requireNotNull(CollaborationRemoteEvidenceProtocol.integer(arguments, "offset")) else 0L
+        require(offset in 0..Int.MAX_VALUE.toLong())
+        val reference = ruleReferences.getOrPut(topic) { CollaborationEvolutionProtocol.rules(topic).toString() }
+        val start = offset.toInt().coerceAtMost(reference.length)
+        val end = minOf(reference.length, start + 8_000)
+        val page = JSONObject(encoded)
+        require(page.opt("status") == "returned" && page.opt("topic") == topic && page.isNull("error") &&
+            page.opt("trust") == "host_schema_not_execution_authority")
+        require(page.opt("content") == reference.substring(start, end) &&
+            CollaborationRemoteEvidenceProtocol.integer(page, "total_characters") == reference.length.toLong())
+        require(page.has("next_offset") && if (end < reference.length)
+            CollaborationRemoteEvidenceProtocol.integer(page, "next_offset") == end.toLong() else page.isNull("next_offset"))
+        RulePage(topic, start, end)
     }.getOrNull()
 
     private fun canReuseBody(toolName: String, arguments: JSONObject): Boolean =

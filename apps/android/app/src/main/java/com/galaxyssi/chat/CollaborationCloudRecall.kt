@@ -8,7 +8,7 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = "collaboration_recall"
-    private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id")
+    private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
@@ -16,6 +16,7 @@ internal object CollaborationCloudRecall {
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
+        properties.getJSONObject("topic").put("enum", JSONArray(CollaborationEvolutionProtocol.topicIds()))
         val schema = JSONObject().put("type", "object").put("properties", properties)
             .put("required", JSONArray(listOf("mode"))).put("additionalProperties", false)
         val function = JSONObject().put("name", NAME)
@@ -24,7 +25,8 @@ internal object CollaborationCloudRecall {
                 "Evidence pages expose source_reference for citing the original observation; galaxyssi_evidence_receipt only records this recall. " +
                 "mode=goal_contract takes only cursor and returns the host-pinned original goal, criteria and context fragments; follow next_cursor. " +
                 "mode=archive with record_id and offset reads full originals of assigned dependency handoffs; follow next_offset. " +
-                "mode=evolution browses scoped learning records; mode=evolution_rules reads their typed schemas with offset. " +
+                "mode=evolution browses scoped learning records; mode=evolution_rules with topic=catalog discovers typed contracts, " +
+                "then topic=<id>/offset reads the chosen schema. Omitted topic reads all; retain the same topic when paging. " +
                 "mode=capabilities takes query and cursor to find task-related saved methods, tools and failure lessons; follow next_cursor even after an empty page. " +
                 "mode=problems takes cursor and lists original tool failures for evidence-based gap diagnosis. " +
                 "Returned output is not proof of a claim.")
@@ -55,6 +57,7 @@ internal object CollaborationCloudRecall {
                 require(input.opt(key) is String && input.getString(key).length <= (if (key == "query") 1000 else 512)) { "Invalid reference" }
             }
             require(!input.has("query") || input.optString("mode") == "capabilities") { "Query is only supported for capability search" }
+            require(!input.has("topic") || input.optString("mode") == "evolution_rules") { "Topic is only supported for evolution rules" }
             CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access, recordCoverage)
         } catch (_: IllegalArgumentException) {
             AgentNativeToolExecutionResult.failure("recall_unavailable", "Invalid arguments or revoked member access.")

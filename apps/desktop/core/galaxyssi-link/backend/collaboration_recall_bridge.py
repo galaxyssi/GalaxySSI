@@ -15,6 +15,8 @@ REQUEST = "collaboration_recall_request"
 RESPONSE = "collaboration_recall_result"
 CONTRACT = "galaxyssi.collaboration-recall/2"
 ACTIVE = frozenset({"starting", "running", "recovering"})
+RULE_TOPICS = ("catalog", "all", "foundation", "learning", "procedures", "transfer", "innovation",
+               "team_invention", "prediction", "tools", "workflows", "retention", "self_research")
 
 
 def tool_spec():
@@ -25,7 +27,8 @@ def tool_spec():
         "Use mode=workspace to browse exact revisions, then object_id/revision/offset to read them. "
         "Use mode=evidence to browse originals, then evidence_id/sha256/offset; follow next_offset. "
         "Use mode=archive with record_id/offset to read complete dependency handoffs; follow next_offset. "
-        "Use mode=evolution/cursor for scoped learning records, evolution_rules/offset for typed innovation and experiment contracts. "
+        "Use mode=evolution/cursor for scoped learning records. Use evolution_rules with topic=catalog to discover typed contracts, "
+        "then topic=<id>/offset to read a chosen schema; keep the same topic while paging. Omitted topic reads all. "
         "Use mode=capabilities with query/cursor to find related saved methods, tools and failure lessons; "
         "follow next_cursor even after an empty page, then read exact workspace originals before reuse. "
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
@@ -33,6 +36,7 @@ def tool_spec():
         "inputSchema": {"type": "object", "properties": {
             "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "evolution_rules", "problems"]},
             "query": {"type": "string", "maxLength": 1000},
+            "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
             "record_id": {"type": "string", "maxLength": 64},
             "cursor": {"type": "string", "maxLength": 512},
             "object_id": {"type": "string", "maxLength": 64},
@@ -65,8 +69,13 @@ def validate_arguments(arguments):
             raise ValueError("Capability search requires query and accepts optional cursor only")
     elif "query" in arguments:
         raise ValueError("Query is only supported for capability search")
-    if arguments["mode"] == "evolution_rules" and set(arguments) - {"mode", "offset"}:
-        raise ValueError("Evolution rules accept only mode and offset")
+    if arguments["mode"] == "evolution_rules":
+        if set(arguments) - {"mode", "offset", "topic"}:
+            raise ValueError("Evolution rules accept only mode, offset and topic")
+        if arguments.get("topic", "all") not in RULE_TOPICS:
+            raise ValueError("Unknown evolution topic; use topic=catalog")
+    elif "topic" in arguments:
+        raise ValueError("Topic is only supported for evolution rules")
     if arguments["mode"] == "archive":
         record_id = arguments.get("record_id", "")
         if (set(arguments) - {"mode", "record_id", "offset"}

@@ -3,7 +3,7 @@ import hashlib
 import unittest
 from unittest.mock import Mock, patch
 
-from collaboration_recall_bridge import CONTRACT, RESPONSE, TOOL, RecallBroker, task_scope, validate_arguments
+from collaboration_recall_bridge import CONTRACT, RESPONSE, RULE_TOPICS, TOOL, RecallBroker, task_scope, tool_spec, validate_arguments
 from codex_app_server import CodexAppServer, CodexRun
 
 
@@ -14,6 +14,40 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_rule_topics_are_discoverable_and_keep_full_reference_available(self):
+        spec = tool_spec()
+        self.assertEqual(list(RULE_TOPICS), spec["inputSchema"]["properties"]["topic"]["enum"])
+        self.assertEqual(len(RULE_TOPICS), len(set(RULE_TOPICS)))
+        self.assertIn("topic=catalog", spec["description"])
+        self.assertIn("same topic", spec["description"])
+        for topic in RULE_TOPICS:
+            arguments = {"mode": "evolution_rules", "topic": topic, "offset": 8000}
+            self.assertEqual(arguments, validate_arguments(arguments))
+        self.assertEqual({"mode": "evolution_rules"}, validate_arguments({"mode": "evolution_rules"}))
+        for topic in (None, 1, True, [], {}, "", "../all", "WORKFLOWS", "workflows ", "unknown"):
+            with self.assertRaises(ValueError):
+                validate_arguments({"mode": "evolution_rules", "topic": topic})
+        for mode in ("workspace", "evidence", "archive", "goal_contract", "evolution", "capabilities", "problems"):
+            with self.assertRaises(ValueError):
+                validate_arguments({"mode": mode, "topic": "catalog"})
+
+    def test_rule_topic_and_offset_survive_authenticated_phone_round_trip(self):
+        broker = RecallBroker()
+        for topic in ("catalog", "workflows", "self_research", "all"):
+            for offset in (0, 8000):
+                arguments = {"mode": "evolution_rules", "topic": topic, "offset": offset}
+                result = {"success": True, "content": "host-selected page", "topic": topic,
+                          "trust": "host_schema_not_execution_authority", "next_offset": None}
+                def publish(request):
+                    self.assertEqual(arguments, request["arguments"])
+                    for key, value in task_scope(task()).items():
+                        self.assertEqual(value, request[key])
+                    self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": result}, "wrong-phone"))
+                    self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+                    return True
+                self.assertEqual(result, broker.query(task, arguments, publish))
+                self.assertEqual({}, broker._pending)
+
     def test_capability_queries_preserve_phone_scope_and_exact_results(self):
         arguments = {"mode": "capabilities", "query": "retrieval \u68c0\u7d22", "cursor": ""}
         self.assertEqual(arguments, validate_arguments(arguments))

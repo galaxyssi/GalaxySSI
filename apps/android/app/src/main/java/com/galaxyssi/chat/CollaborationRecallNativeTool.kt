@@ -7,12 +7,13 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.0.0", title = context.getString(R.string.collaboration_recall_title),
+            id = ID, version = "1.1.0", title = context.getString(R.string.collaboration_recall_title),
             description = context.getString(R.string.collaboration_recall_description),
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
                 "query" to AgentNativeJsonSchema.string(maxLength = 1000),
                 "mode" to AgentNativeJsonSchema.string(maxLength = 16),
+                "topic" to AgentNativeJsonSchema.string(maxLength = 32),
                 "cursor" to AgentNativeJsonSchema.string(maxLength = 512),
                 "record_id" to AgentNativeJsonSchema.string(maxLength = 64),
                 "object_id" to AgentNativeJsonSchema.string(maxLength = 64),
@@ -25,6 +26,8 @@ internal object CollaborationRecallNativeTool {
             risk = AgentNativeToolRisk.LOW, capabilities = setOf("collaboration.recall"),
             timeoutMillis = 20_000, idempotency = AgentNativeToolIdempotency.IDEMPOTENT),
         executor = AgentNativeToolExecutor { call ->
+            if (call.input.containsKey("topic") && call.input["mode"] != "evolution_rules")
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
             val group = call.context.conversationId
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
