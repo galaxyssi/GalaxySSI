@@ -19,6 +19,21 @@ internal class CollaborationPilotArtifact private constructor(
             fields.all { (key, expected) -> value.get(key) == expected }
 
         companion object {
+            fun from(value: JSONObject): Source {
+                val keys = listOf("pilot_id", "slot_id", "case_id", "arm", "protocol_sha256", "run_id",
+                    "conversation_id", "turn_id", "task_id", "target_id", "model_id", "reasoning_effort", "goal_sha256")
+                require(value.keys().asSequence().toSet() == keys.toSet())
+                val fields = keys.associateWith { key ->
+                    (value.get(key) as? String)?.also { require(it.isNotBlank()) } ?: error("Source field must be text: $key")
+                }
+                for (key in listOf("pilot_id", "slot_id", "case_id"))
+                    require(fields.getValue(key).matches(Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}")))
+                require(fields.getValue("arm") in setOf("single", "team"))
+                require(digestPattern.matches(fields.getValue("protocol_sha256")) && digestPattern.matches(fields.getValue("goal_sha256")))
+                require(fields.getValue("task_id") == "task-${fields.getValue("run_id")}")
+                return Source(fields)
+            }
+
             fun of(plan: CollaborationRemotePilotPlan, slot: CollaborationRemotePilotPlan.Slot,
                    group: String, run: String, turn: String, protocolSha256: String): Source {
                 require(slot in plan.slots && listOf(group, run, turn).all { it.isNotBlank() })
@@ -35,6 +50,12 @@ internal class CollaborationPilotArtifact private constructor(
     data class Reference(val artifactId: String, val sha256: String) {
         init { require(artifactId.matches(Regex("candidate-[0-9a-f]{64}")) && digestPattern.matches(sha256)) }
         fun json() = JSONObject().put("artifact_id", artifactId).put("sha256", sha256)
+        companion object {
+            fun from(value: JSONObject): Reference {
+                require(value.keys().asSequence().toSet() == setOf("artifact_id", "sha256"))
+                return Reference(value.get("artifact_id") as String, value.get("sha256") as String)
+            }
+        }
     }
 
     val reference = Reference(source.artifactId, hash(payload))

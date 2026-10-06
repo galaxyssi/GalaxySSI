@@ -128,7 +128,7 @@ class CollaborationRemotePilotDeviceTest {
                         return native.execute(activeGuard.admit(action), screen)
                     }
                 }
-                val delegate = worker(bounded)
+                val delegate = CollaborationRemotePilotWorker.create(context, bounded)
                 val pinned = object : AgentTeamMemberWorker {
                     override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
                         requireTarget(plan)
@@ -207,18 +207,7 @@ class CollaborationRemotePilotDeviceTest {
     }
 
     private fun requireTarget(plan: CollaborationRemotePilotPlan) {
-        val target = requireNotNull(AppStoreAgentConnectorRegistry(context).availableTargets().singleOrNull { it.id == plan.targetId })
-        CollaborationLiveModelSelection.requireAvailable(target, plan.selection.modelId, plan.selection.reasoningEffort)
-    }
-
-    private fun worker(delegate: AgentActionExecutor): ActionExecutorAgentTeamMemberWorker {
-        val provider = ActionExecutorAgentProvider(registrationSource = { AppStoreAgentConnectorRegistry(context).registrations() },
-            delegate = delegate, runStartReceipts = EncryptedAgentRunStartReceiptStore(context),
-            healthLedger = EncryptedAgentProviderHealthLedger(context), managedResponses = EncryptedAgentManagedResponseLedger(context),
-            globalRunSlots = AgentGlobalRunSlotStore(context))
-        return ActionExecutorAgentTeamMemberWorker(provider, AgentAdapterDirectory().apply { register(provider) },
-            screenProvider = { ScreenContext(foregroundApp = "GalaxySSI remote pilot", pageTitle = "Engineering comparison") },
-            progressContext = context.applicationContext)
+        CollaborationRemotePilotWorker.requireTarget(context, plan)
     }
 
     private fun save(file: File, value: JSONObject) {
