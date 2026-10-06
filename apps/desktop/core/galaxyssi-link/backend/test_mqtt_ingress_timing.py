@@ -30,7 +30,8 @@ class MqttIngressTimingTest(unittest.TestCase):
         self.tracer = agent_latency.AgentLatencyTracer(self.sink, monotonic_ns=lambda: self.ns)
         self.stack.enter_context(patch('agent_latency.tracer', return_value=self.tracer))
         self.stack.enter_context(patch.object(mqtt_bridge, 'timing_now_ns', side_effect=lambda: self.ns))
-        self.client = {'client_route_id': 'route', 'signal_name': 'phone', 'link_secret': 'A' * 43}
+        self.client = {'client_route_id': 'route', 'signal_name': 'phone', 'link_secret': 'A' * 43,
+                       'identity_fingerprint': 'b' * 64, 'local_identity_fingerprint': 'c' * 64}
         self.wire = json.dumps({'scheme': 'signal', 'from': 'phone', 'to': 'desktop', 'body': 'private-ciphertext'}).encode()
         self.payload = {'type': 'agent_task', 'client_route_id': 'route', 'conversation_id': 'private-conversation',
                         'task_id': 'private-task', 'turn_id': 'private-turn', 'content': 'private-prompt'}
@@ -44,7 +45,8 @@ class MqttIngressTimingTest(unittest.TestCase):
             13, store_received_envelope("route", copy.deepcopy(self.envelope))))
         self.mock('desktop_id', return_value='desktop')
         self.mock('desktop_name', return_value='Test Desktop')
-        self.mock('bind_ciphertext', side_effect=lambda *_: self.advance(17, None))
+        self.mock('bind_ciphertext', side_effect=lambda *args, **kwargs: self.advance(
+            17, link_delivery.bind_ciphertext(*args, **kwargs)))
         for name in ('touch_client', 'complete_message'):
             self.mock(name)
         self.publish = self.mock('_publish_phone_payload', return_value=True)
@@ -132,7 +134,8 @@ class MqttIngressTimingTest(unittest.TestCase):
     def test_fragment_timing_belongs_only_to_completing_packet(self):
         assembled = self.wire.decode()
         self.wire = json.dumps({'scheme': 'signal-chunk', 'protocol': link_protocol.PROTOCOL_NAME,
-                                'version': link_protocol.PROTOCOL_VERSION, 'from': 'phone', 'to': 'desktop'}).encode()
+                                'version': link_protocol.PROTOCOL_VERSION, 'from': 'phone', 'to': 'desktop',
+                                'transfer_id': 'd' * 64}).encode()
         with patch.object(mqtt_bridge.inbound_chunk_assembler, 'accept', side_effect=[None, assembled]):
             self.run_packet()
             self.assertEqual([], self.sink.points)

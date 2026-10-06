@@ -16,18 +16,19 @@ by the model-free preflight. No model name is hardcoded in the boundary.
 
 The host must own this configuration. Do not create it from model output or an
 untrusted remote task request. Use a separate adapter instance for each experiment
-scope; do not attach it to the shared ordinary-chat singleton. The current change
-does **not** wire automatic scope selection into the MQTT dispatch factory.
-App-selected experimental requests still need that trusted binding before this
-can be claimed as an end-to-end App feature.
+scope; do not attach it to the shared ordinary-chat singleton. The optional
+[host registry](CODEX_EXPERIMENT_DISPATCH.md) now binds exact authenticated App
+tasks to separate instances in MQTT dispatch, recovery and cancellation. This
+code integration is not yet real-phone/model end-to-end acceptance.
 
 Private workspaces and ledgers must be outside Git, not symlinks or junctions.
 The workspace and protected subtree cannot overlap. The constructor and admission
 gate reject paths outside the declared workspace, images, unknown conversations,
 changed model/effort, and incompatible stored state. The current evaluation path
 is deliberately text-only; ordinary multimodal tasks are unaffected.
-Read-only thread requests are rejected rather than widened to the writable
-experiment profile; a separately verified read-only profile is not implemented.
+Use `read_only=true` for structured planning requests. That profile extends
+`:read-only`, not `:workspace`; readonly requests still cannot use a writable
+registration. Optional `denied_roots` exclude other experimental workspaces.
 
 ## Enforcement
 
@@ -81,8 +82,8 @@ installed runtime, but do not establish model behavior or study blinding.
 
 Outstanding before efficacy collection:
 
-- Bind explicit trusted scopes to App-selected MQTT task dispatch and recovery,
-  including repairs, steering and cancellation, without a silent ordinary fallback.
+- Verify the registered App-selected MQTT path on a real phone and model turn,
+  including restored checkpoints, cancellation and input assembly.
 - Verify actual-model negative canaries through every available input/tool path.
 - Enumerate and protect all evaluator copies, caches, logs and auxiliary stores;
   blocking one subtree does not certify that no other copies are readable.

@@ -66,7 +66,7 @@ def _value(config, key):
 
 class CodexExperimentBoundary:
     def __init__(self, *, scope_id, workspace, protected_root, state_path,
-                 model, effort, conversation_ids, mcp_names=(), skill_paths=()):
+                 model, effort, conversation_ids, mcp_names=(), skill_paths=(), read_only=False, denied_roots=()):
         if (not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", str(scope_id))
                 or not isinstance(model, str) or not model.strip() or len(model) > 200
                 or effort not in {"low", "medium", "high", "xhigh"}):
@@ -88,11 +88,17 @@ class CodexExperimentBoundary:
             reject("mcp_names")
         self.skill_paths = tuple(sorted({str(_path(x)) for x in skill_paths}))
         self.mcp_names = tuple(sorted(set(mcp_names)))
-        self.model, self.effort = model, effort
+        if type(read_only) is not bool:
+            reject("invalid_read_only")
+        self.model, self.effort, self.read_only = model, effort, read_only
+        self.denied_roots = tuple(sorted({str(_path(path)) for path in denied_roots}))
+        if any(_within(self.workspace, Path(path)) or _within(Path(path), self.workspace) for path in self.denied_roots):
+            reject("overlapping_denied_roots")
         self.fingerprint = _digest({"scope": scope_id, "workspace": str(self.workspace),
             "protected": str(self.protected_root), "state": str(self.state_path), "model": model,
             "effort": effort, "conversations": sorted(self.conversation_ids),
-            "mcp_names": self.mcp_names, "skill_paths": self.skill_paths, "flags": FLAGS})
+            "mcp_names": self.mcp_names, "skill_paths": self.skill_paths, "flags": FLAGS,
+            "read_only": read_only, "denied_roots": self.denied_roots})
         self.profile = "galaxyssi-eval-" + self.fingerprint[:24]
         self._lock = threading.RLock()
         self._threads, self._conversations, self._verified_threads = {}, {}, set()
@@ -134,8 +140,10 @@ class CodexExperimentBoundary:
         values = {**FLAGS, "model_reasoning_effort": self.effort}
         overrides = [key + "=" + json.dumps(value) for key, value in values.items()]
         fs = {":root": "read", ":minimal": "read", ":tmpdir": "deny", ":slash_tmp": "deny",
-              str(self.protected_root): "deny", str(self.workspace): "write"}
-        overrides.append("permissions." + self.profile + '={extends=":workspace",network={enabled=false},filesystem={'
+              str(self.protected_root): "deny", str(self.workspace): "read" if self.read_only else "write"}
+        fs.update({path: "deny" for path in self.denied_roots})
+        parent = ":read-only" if self.read_only else ":workspace"
+        overrides.append("permissions." + self.profile + '={extends=' + json.dumps(parent) + ',network={enabled=false},filesystem={'
                          + ",".join(json.dumps(k) + "=" + json.dumps(v) for k, v in fs.items()) + "}}")
         overrides.append("mcp_servers={" + ",".join(json.dumps(k) + "={enabled=false}" for k in self.mcp_names) + "}")
         overrides.append("skills.config=[" + ",".join("{path=" + json.dumps(p) + ",enabled=false}" for p in self.skill_paths) + "]")
@@ -191,7 +199,7 @@ class CodexExperimentBoundary:
         if method != "thread/start" and identifier not in self._threads:
             reject("thread_not_owned")
         if method in {"thread/start", "thread/resume"}:
-            if result.get("sandbox") == "read-only":
+            if result.get("sandbox") == "read-only" and not self.read_only:
                 reject("read_only_profile_not_verified")
             cwd = self.check_workspace(result.get("cwd") or self._threads.get(identifier, {}).get("cwd"))
             if result.get("model", self.model) != self.model:
