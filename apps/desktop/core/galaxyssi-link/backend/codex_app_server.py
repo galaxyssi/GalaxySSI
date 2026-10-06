@@ -197,10 +197,11 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, experiment_boundary=None) -> None:
         self.executable = executable
         self.env = env
         self.on_event = on_event
+        self._experiment_boundary = experiment_boundary
         self._collaboration_recall = collaboration_recall
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
@@ -219,6 +220,9 @@ class CodexAppServer:
         if collaboration_recall is not None:
             from collaboration_recall_bridge import tool_spec
             self._dynamic_tools.append(tool_spec())
+        if experiment_boundary is not None:
+            self._dynamic_tools = []
+            self._collaboration_recall = None
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -284,6 +288,10 @@ class CodexAppServer:
         sandbox: str = "workspace-write",
         execution_policy: AgentExecutionPolicy | None = None,
     ) -> CodexRun:
+        if self._experiment_boundary is not None:
+            policy = execution_policy or execution_policy_for(prompt)
+            self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value,
+                [*(image_paths or []), *(fresh_thread_image_paths or [])])
         self._ensure_started()
         local_images = self._existing_image_paths(image_paths)
         restored_images = self._existing_image_paths(
@@ -339,7 +347,7 @@ class CodexAppServer:
                         sandbox=sandbox,
                     )
                 except RuntimeError as exc:
-                    if not self._is_thread_not_found_error(exc):
+                    if self._experiment_boundary is not None or not self._is_thread_not_found_error(exc):
                         raise
                     with self._lock:
                         self._conversation_threads.pop(conversation_key, None)
@@ -391,7 +399,7 @@ class CodexAppServer:
                     include_task_policy=False,
                 )
             except RuntimeError as exc:
-                if not run.thread_id or not self._is_thread_not_found_error(exc):
+                if self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
                     raise
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
@@ -482,6 +490,9 @@ class CodexAppServer:
         image_paths: list[str] | None = None,
     ) -> CodexRun:
         """Reconnect to a turn or continue its goal from the durable checkpoint."""
+        if self._experiment_boundary is not None:
+            policy = execution_policy or execution_policy_for(original_prompt)
+            self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value, image_paths or [])
         clean_thread_id = str(thread_id or "").strip()
         clean_turn_id = str(turn_id or "").strip()
         if not clean_thread_id or not clean_turn_id:
@@ -710,6 +721,9 @@ class CodexAppServer:
         sandbox: str,
         execution_policy: AgentExecutionPolicy | None,
     ) -> CodexRun:
+        if self._experiment_boundary is not None:
+            from codex_experiment_boundary import reject
+            reject("checkpoint_not_reusable")
         clean_conversation_id = str(conversation_id or "").strip()
         if clean_conversation_id:
             with self._lock:
@@ -1101,7 +1115,7 @@ class CodexAppServer:
                 sandbox=sandbox,
             )
         except CodexAppServerRequestTimeout as exc:
-            if exc.method != "thread/start":
+            if self._experiment_boundary is not None or exc.method != "thread/start":
                 raise
             log.warning(
                 "Codex thread startup acknowledgement timed out; retrying once "
@@ -1315,7 +1329,7 @@ class CodexAppServer:
             "input": self._user_input(
                 prompt,
                 image_paths,
-                include_task_policy=include_task_policy,
+                include_task_policy=include_task_policy and self._experiment_boundary is None,
             ),
             "model": model,
             "effort": reasoning_effort,
@@ -1450,6 +1464,8 @@ class CodexAppServer:
         return ""
 
     def _load_conversation_threads(self) -> dict[str, str]:
+        if self._experiment_boundary is not None:
+            return self._experiment_boundary.conversations()
         try:
             data = json.loads(CONVERSATION_THREADS_PATH.read_text(encoding="utf-8"))
             return {
@@ -1461,6 +1477,9 @@ class CodexAppServer:
             return {}
 
     def _save_conversation_threads(self) -> None:
+        if self._experiment_boundary is not None:
+            self._experiment_boundary.save_conversations(self._conversation_threads)
+            return
         try:
             CONVERSATION_THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
             temporary = CONVERSATION_THREADS_PATH.with_suffix(".tmp")
@@ -1546,6 +1565,8 @@ class CodexAppServer:
             self._close_process()
 
     def _close_process(self) -> None:
+        if self._experiment_boundary is not None:
+            self._experiment_boundary.reset_process()
         with self._lock:
             process = self.process
             self.process = None
@@ -1573,6 +1594,10 @@ class CodexAppServer:
                     "-c", "sandbox_workspace_write.network_access=true",
                     "app-server", "--listen", "stdio://",
                 ]
+                if self._experiment_boundary is not None:
+                    self._experiment_boundary.reset_process()
+                    overrides = [item for value in self._experiment_boundary.process_overrides() for item in ("-c", value)]
+                    command = [self.executable, *overrides, "app-server", "--listen", "stdio://"]
                 if os.name == "nt" and self.executable.lower().endswith((".cmd", ".bat")):
                     command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", *command]
                 self.process = subprocess.Popen(
@@ -1591,9 +1616,36 @@ class CodexAppServer:
                 "capabilities": {"experimentalApi": True},
             }, timeout=15)
             self._notify("initialized", {})
+            if self._experiment_boundary is not None:
+                try:
+                    self._experiment_boundary.verify_runtime(self._rpc_request)
+                except Exception:
+                    self._close_process()
+                    raise
             self._initialized_process_pid = self.process.pid
 
     def _request(self, method: str, params: dict, timeout: int) -> dict:
+        boundary = self._experiment_boundary
+        if boundary is not None:
+            params = boundary.prepare(method, params)
+            if method in {"turn/start", "turn/steer"}:
+                try:
+                    boundary.verify_runtime(self._rpc_request)
+                    boundary.verify_capabilities(params["threadId"],
+                        params.get("cwd") or str(boundary.workspace), self._rpc_request)
+                except Exception:
+                    self._close_process()
+                    raise
+        response = self._rpc_request(method, params, timeout)
+        if boundary is not None and method in {"thread/start", "thread/resume"}:
+            try:
+                boundary.verify_thread(method, params, response, self._rpc_request)
+            except Exception:
+                self._close_process()
+                raise
+        return response
+
+    def _rpc_request(self, method: str, params: dict, timeout: int) -> dict:
         with self._lock:
             request_id = self._next_id
             self._next_id += 1
@@ -1677,6 +1729,18 @@ class CodexAppServer:
     def _handle_event(self, message: dict) -> None:
         method = str(message.get("method") or "")
         params = message.get("params") or {}
+        if self._experiment_boundary is not None and "id" in message:
+            if method == "item/tool/call":
+                self._write_server_response(message["id"], {"success": False, "contentItems": [
+                    {"type": "inputText", "text": "experiment_boundary_dynamic_tool_disabled"}]})
+            else:
+                approval = self._pending_approval("", message)
+                if approval is not None:
+                    self._write_server_response(message["id"], self._approval_result(approval, approved=False))
+                else:
+                    self._write({"jsonrpc": "2.0", "id": message["id"],
+                        "error": {"code": -32601, "message": "experiment_boundary_request_disabled"}})
+            return
         if method == "thread/tokenUsage/updated":
             self._capture_provider_usage(params)
             return
