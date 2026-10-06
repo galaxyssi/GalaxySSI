@@ -10,6 +10,8 @@ internal object CollaborationPredictionProtocol {
         Record prediction_outcome from original tools, including missing/failed evidence. Only the chosen action is observed;
         alternative outcomes are untested counterfactuals. Use prediction_calibration to inspect scoped errors, then publish a
         corrected model with previous_model, feedback and a discriminating next test. Do not equate one good score with calibration.
+        When explanations compete, optional hypothesis_test compares expected information gain across experiments and updates
+        declared beliefs from one actual categorical observation. Use the result to choose useful probes, not repeated vague research.
         Reuse preserved outcomes rather than repeat completed side effects. Ordinary direct work does not require forecasting.
     """.trimIndent()
 
@@ -47,6 +49,29 @@ internal object CollaborationPredictionProtocol {
         Tool failure or missing field is unobserved, never a false event. Empty/partial checks preserve incomplete evidence.
         Later evidence uses a new immutable outcome snapshot; never count snapshots of the same forecast twice in an aggregate.
         The host verifies original report provenance, not the semantic correctness of a self-written harness or causal attribution.
+
+        Optional action_forecast.hypothesis_test:{question,assumptions,likelihood_basis,misspecification_check,
+          hypotheses:[{id,claim,prior:<probability>}],event_ids:[registered categorical event IDs],
+          likelihoods:{<action id>:{<hypothesis id>:{<event id>:<probability>}}}}.
+        Register at least two distinct hypotheses and categorical outcomes. Every event classifies the SAME report pointer with a
+        distinct scalar expected value; include a scientifically meaningful other/unknown outcome where needed. Every action,
+        including defer, needs a distribution over the same categories under each hypothesis. Distributions sum to one (1e-12 tolerance);
+        priors/likelihoods are finite decimal probabilities in [0,1], not confidence labels or empirical calibration proof.
+        Action event marginals in choices must equal the prior-weighted likelihoods; errors name inconsistent fields and values.
+        Host action_information computes E[KL(posterior||prior)] in bits under these declared assumptions. Consider cost, risks,
+        feasibility and utility alongside information value; the host does not maximize it for you or execute an experiment.
+        Bind the selected action with existing prediction_work; it carries the immutable comparison into the real task graph.
+        Outcome checks for all these event IDs must cite ONE original observation. Missing/failed/stale observations yield no posterior;
+        unregistered categories and zero prior-predictive mass preserve model-misspecification states, never fabricated certainty.
+        A valid observation computes posterior weights, KL information and entropy change. Individual entropy can increase;
+        a high posterior is conditional on the assumed likelihoods and hypothesis space, not proof the explanation is true.
+        For the next experiment use hypothesis_test.prior_outcome:<exact prediction_outcome ref>, conditional_history:<text>,
+        and omit prior from every hypothesis. The host carries the exact observed posterior; question, hypotheses, original goal,
+        criterion, domain and environment must match. Likelihoods must condition on the entire prior history; explain dependence,
+        overlapping data and confounders in conditional_history. Never treat repeated observations as independent by default.
+        A changed hypothesis space starts a new comparison with explicit priors and provenance, not renamed posterior weights.
+        Use resulting evidence as a basis for innovation_opportunity, corrected environment models or revised methods. A retained
+        workflow_selection_rule still needs its own controlled comparison and independent lesson; posterior confidence cannot bypass it.
 
         prediction_calibration:{task_environment_model:<exact ref>,outcomes:[exact prediction_outcome refs],sampling_scope,
           selection_bias,limitations,next_test}. The host reports event counts, missingness and mean Brier score for that exact model.

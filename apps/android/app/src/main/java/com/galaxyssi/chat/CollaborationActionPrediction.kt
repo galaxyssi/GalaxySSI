@@ -115,5 +115,6 @@ internal object CollaborationActionPrediction {
         return JSONObject().put("state", "preregistered_prediction_not_outcome").put(MODEL, CollaborationResearchCandidates.reference(model))
             .put("selected_action", selected).put("comparisons", compared).put("choice_is_agent_selected", true)
             .put("utility_is_declared_not_measured", true).put("grants_permissions", false)
+            .apply { CollaborationHypothesisTest.forecast(value, exact)?.let { put(CollaborationHypothesisTest.FIELD, it) } }
     }
 }

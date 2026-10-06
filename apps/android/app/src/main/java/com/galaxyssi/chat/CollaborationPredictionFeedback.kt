@@ -76,10 +76,12 @@ internal object CollaborationPredictionFeedback {
             .put(CollaborationActionPrediction.FORECAST, CollaborationResearchCandidates.reference(forecast))
             .put(CollaborationActionPrediction.MODEL, CollaborationResearchCandidates.reference(model)).put("checks", evaluated)
             .put("scored_events", scored.size).put("registered_events", predictions.size)
-            .put("brier_sum", scored.fold(BigDecimal.ZERO) { sum, row -> sum + decimal(row, "brier_score") }.toPlainString())
+            // Squaring a validated input can double its scale; these are host-computed values, not new raw inputs.
+            .put("brier_sum", scored.fold(BigDecimal.ZERO) { sum, row -> sum + BigDecimal(row.getString("brier_score")) }.toPlainString())
             .put("unchosen_actions", JSONArray(objects(spec, "choices").map { it.getString("action_id") }.filter { it != spec.getString("selected_action") }))
             .put("counterfactuals_measured", false).put("causality_proven", false).put("model_improved", false)
             .put("execution_association", "original_run_executor_and_report_binding_not_independent_harness_certification")
+            .apply { CollaborationHypothesisTest.outcome(forecast, evaluated)?.let { put(CollaborationHypothesisTest.FIELD, it) } }
     }
 
     fun calibration(value: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject {
@@ -92,7 +94,7 @@ internal object CollaborationPredictionFeedback {
             val host = it.getJSONObject(HOST)
             require(CollaborationResearchCandidates.same(model, host.getJSONObject(CollaborationActionPrediction.MODEL))) { "Do not pool different model revisions or environments as one calibration" }
             require(seen.add(host.getJSONObject(CollaborationActionPrediction.FORECAST).getString("object_id"))) { "Do not cherry-pick/count two outcome snapshots for one forecast" }
-            score += decimal(host, "brier_sum"); count += host.getInt("scored_events"); expected += host.getInt("registered_events")
+            score += BigDecimal(host.getString("brier_sum")); count += host.getInt("scored_events"); expected += host.getInt("registered_events")
         }
         return JSONObject().put("state", "scoped_forecast_score_not_calibration_proof").put(CollaborationActionPrediction.MODEL, CollaborationResearchCandidates.reference(model))
             .put("prediction_feedback", JSONArray(results.map(CollaborationResearchCandidates::reference)))

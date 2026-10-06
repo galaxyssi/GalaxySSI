@@ -45,7 +45,7 @@ internal object CollaborationEvolutionProtocol {
         Topic("transfer", "Test whether acquired capabilities generalize to new tasks without losing source competence", listOf("foundation", "procedures"), CollaborationTransferStudy::rules),
         Topic("innovation", "Discover opportunities and independently assess novelty, feasibility and value", listOf("foundation"), CollaborationInnovationProtocol::rules),
         Topic("team_invention", "Challenge and combine member contributions into testable new candidates", listOf("foundation", "innovation"), CollaborationTeamInventionProtocol::rules),
-        Topic("prediction", "Predict outcomes before acting and revise hypotheses using actual observations", listOf("foundation"), CollaborationPredictionProtocol::rules),
+        Topic("prediction", "Compare informative experiments, predict action outcomes and revise hypotheses from actual observations", listOf("foundation"), CollaborationPredictionProtocol::rules),
         Topic("tools", "Develop, test, review and reuse versioned tools", listOf("foundation"), CollaborationToolProtocol::rules),
         Topic("workflows", "Reuse and compare executable methods while preserving dependencies and independent checks", listOf("foundation"), CollaborationWorkflowProtocol::rules),
         Topic("retention", "Check regressions and maintain capability versions and rollback channels", listOf("foundation", "procedures"), CollaborationRetentionProtocol::rules),
