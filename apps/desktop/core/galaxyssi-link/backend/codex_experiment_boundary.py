@@ -24,6 +24,7 @@ FLAGS = {
         "computer_use", "in_app_browser", "memories", "multi_agent", "multi_agent_v2",
         "hooks", "image_generation", "skill_search", "view_image", "goals",
     )},
+    **({"windows.sandbox": "elevated"} if os.name == "nt" else {}),
 }
 INSTRUCTIONS = "Work only on the supplied experiment task and permitted workspace. External capabilities are disabled."
 
@@ -64,6 +65,23 @@ def _value(config, key):
     return config
 
 
+def runtime_private_roots(env):
+    """Locations that can hold prior answers, credentials or host task evidence."""
+    home = Path.home()
+    roots = [home / ".codex", home / "GalaxySSI", Path(env.get("APPDATA") or home) / "GalaxySSI",
+             home / "GalaxySSI_Workspace" / "tasks"]
+    for key in ("CODEX_HOME", "GALAXYSSI_STATE_DIR"):
+        if env.get(key, "").strip():
+            roots.append(Path(env[key]).expanduser())
+    if env.get("GALAXYSSI_WORKSPACE_ROOT", "").strip():
+        roots.append(Path(env["GALAXYSSI_WORKSPACE_ROOT"]).expanduser() / "tasks")
+    # SQLite sidecars and Electron's backend.log live beside these paths.
+    for key in ("GALAXYSSI_DATABASE_PATH", "GALAXYSSI_CONFIG_PATH", "GALAXYSSI_DATA_DIR"):
+        if env.get(key, "").strip():
+            roots.append(Path(env[key]).expanduser().parent)
+    return tuple(sorted({str(_path(root, exists=False)) for root in roots}))
+
+
 class CodexExperimentBoundary:
     def __init__(self, *, scope_id, workspace, protected_root, state_path,
                  model, effort, conversation_ids, mcp_names=(), skill_paths=(), read_only=False, denied_roots=()):
@@ -91,7 +109,8 @@ class CodexExperimentBoundary:
         if type(read_only) is not bool:
             reject("invalid_read_only")
         self.model, self.effort, self.read_only = model, effort, read_only
-        self.denied_roots = tuple(sorted({str(_path(path)) for path in denied_roots}))
+        self.denied_roots = tuple(sorted({str(_path(path, exists=False)) for path in denied_roots}
+            | set(runtime_private_roots(os.environ))))
         if any(_within(self.workspace, Path(path)) or _within(Path(path), self.workspace) for path in self.denied_roots):
             reject("overlapping_denied_roots")
         self.fingerprint = _digest({"scope": scope_id, "workspace": str(self.workspace),
@@ -127,6 +146,20 @@ class CodexExperimentBoundary:
             reject("workspace_scope")
         return str(path)
 
+    def verify_storage_environment(self, env):
+        roots = (str(self.protected_root), *self.denied_roots)
+        for root in roots:
+            if str(_path(root, exists=False)) != root:
+                reject("protected_path_changed")
+        self.verify_private_locations(runtime_private_roots(env))
+
+    def verify_private_locations(self, paths):
+        roots = (str(self.protected_root), *self.denied_roots)
+        for value in paths:
+            required = _path(value, exists=False)
+            if not any(_within(Path(required), Path(root)) for root in roots):
+                reject("unprotected_runtime_storage")
+
     def admit(self, conversation_id, cwd, model, effort, images=()):
         if conversation_id not in self.conversation_ids:
             reject("conversation_scope")
@@ -137,7 +170,8 @@ class CodexExperimentBoundary:
         self.check_workspace(cwd)
 
     def process_overrides(self):
-        values = {**FLAGS, "model_reasoning_effort": self.effort}
+        self.verify_storage_environment(os.environ)
+        values = {**FLAGS, "model_reasoning_effort": self.effort, "default_permissions": self.profile}
         overrides = [key + "=" + json.dumps(value) for key, value in values.items()]
         fs = {":root": "read", ":minimal": "read", ":tmpdir": "deny", ":slash_tmp": "deny",
               str(self.protected_root): "deny", str(self.workspace): "read" if self.read_only else "write"}
@@ -159,6 +193,10 @@ class CodexExperimentBoundary:
         config = result.get("config", {})
         if any(type(_value(config, key)) is not type(value) or _value(config, key) != value for key, value in FLAGS.items()):
             reject("effective_flags")
+        if config.get("default_permissions") != self.profile:
+            reject("default_permissions")
+        self.verify_private_locations([config[key] for key in ("sqlite_home", "log_dir")
+                                       if config.get(key) not in (None, "")])
         servers = config.get("mcp_servers", {})
         if not isinstance(servers, dict) or any(not isinstance(v, dict) or v.get("enabled") is not False for v in servers.values()):
             reject("mcp_config")

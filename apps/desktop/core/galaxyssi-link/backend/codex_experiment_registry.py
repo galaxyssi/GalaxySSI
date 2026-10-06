@@ -25,8 +25,13 @@ class ExperimentRegistration:
         required = {"scope_id", "client_route_id", "client_conversation_id", "task_ids",
                     "workspace", "protected_root", "state_path", "model", "effort",
                     "conversation_ids", "mcp_names", "skill_paths", "read_only", "task_conversations"}
-        if not isinstance(row, dict) or set(row) != required:
+        if (not isinstance(row, dict) or not required.issubset(row)
+                or set(row) - required - {"sealed_roots"}):
             reject("registry_fields")
+        sealed_roots = row.get("sealed_roots", [])
+        if (not isinstance(sealed_roots, list)
+                or any(not isinstance(path, str) or not Path(path).is_absolute() for path in sealed_roots)):
+            reject("registry_sealed_roots")
         for key in ("client_route_id", "client_conversation_id"):
             if not isinstance(row[key], str) or not row[key].strip() or len(row[key]) > 200:
                 reject("registry_identity")
@@ -42,8 +47,8 @@ class ExperimentRegistration:
                 or any(not isinstance(v, str) or v not in row["conversation_ids"] for v in self.task_conversations.values())):
             reject("task_conversation_binding")
         self.boundary = CodexExperimentBoundary(**{k: v for k, v in row.items()
-            if k not in {"client_route_id", "client_conversation_id", "task_ids", "task_conversations"}},
-            denied_roots=denied_roots)
+            if k not in {"client_route_id", "client_conversation_id", "task_ids", "task_conversations", "sealed_roots"}},
+            denied_roots=[*denied_roots, *sealed_roots])
         self.marker = hashlib.sha256(json.dumps({"registration": row, "boundary": self.boundary.fingerprint},
             sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.server = None
@@ -60,6 +65,7 @@ class ExperimentRegistration:
 
     def get_server(self, executable, env, callback, factory):
         with self.lock:
+            self.boundary.verify_storage_environment(env)
             if self.server is None:
                 self.server = factory(executable, env, callback, experiment_boundary=self.boundary)
             elif self.server.executable != executable:

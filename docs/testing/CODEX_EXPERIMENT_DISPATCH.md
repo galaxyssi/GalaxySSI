@@ -34,6 +34,7 @@ The shape below uses placeholders, not usable credentials or a model default:
     "model": "EXACT_APP_SELECTED_MODEL",
     "effort": "high",
     "read_only": true,
+    "sealed_roots": ["ABSOLUTE_PRIVATE_EVALUATOR_COPY_DIRECTORY"],
     "mcp_names": [],
     "skill_paths": []
   }]
@@ -50,6 +51,42 @@ The registry freezes for a Desktop lifetime. Editing/removing it or changing
 its configured path does not reload live permissions. End the experiment and
 restart deliberately when changing registrations. Keep the private registry and
 ledgers for checkpoint and artifact recovery; do not delete them during a run.
+
+## Evidence Storage
+
+In experiment mode, the profile additionally denies the default and configured
+Codex home, Desktop state, ordinary task artifact directories, and the parents
+of explicit database/configuration paths and Electron runtime data. Parent
+protection includes SQLite sidecars and the sibling backend log. These locations
+are enumerated from trusted host configuration without reading their contents.
+They are included in the boundary fingerprint, even before a directory exists.
+The child environment is copied, and storage roots are checked again at server
+selection, startup and each model turn. Unregistered storage changes fail closed.
+The ordinary production adapter does none of this extra path inspection.
+
+The experiment process explicitly selects its default permission profile. On
+native Windows it also requires and verifies `windows.sandbox = "elevated"`;
+it does not silently use an unconfigured or weaker sandbox. First-use sandbox
+setup can take longer than a short RPC observation window. Provision it before
+timed experiments and measure setup separately. A successful thread-policy
+response does not by itself prove that command permissions are enforced.
+
+`sealed_roots` is an optional host-only list of additional absolute locations.
+Register every evaluator copy, answer-bearing report, manuscript draft,
+transcript export and custom cache used by the study. These roots cannot overlap
+an arm workspace. Existing symlinks/junctions are rejected and paths are checked
+again before execution. This is not an automatic scan of all host files and is
+not a claim that hardlinks, arbitrary unregistered copies or host-side races are
+contained. Keep model inputs and permitted arm files separate from sealed data.
+Place arm workspaces outside the paper/evaluator root when sealing that whole
+root; do not grant a child exception that makes answer-bearing parents readable.
+Custom provider `sqlite_home` and `log_dir` values must be inside sealed roots,
+or runtime validation rejects them before a model turn.
+
+Filesystem denials cannot remove an answer already placed in a prompt, previous
+turn or compacted context. Before collecting blinded outcomes, independently
+audit input assembly, the exact allowed files and prompt hashes. A non-blinded
+development result must not be relabelled as blinded after adding these rules.
 
 ## Dispatch and Recovery
 
@@ -86,9 +123,11 @@ and eight command canaries: own/peer/protected/unprotected reads and writes.
 
 This is not a claim of real MQTT delivery, real-model checkpoint recovery, full
 host isolation or efficacy. The current Windows profile still allows unprotected
-host reads. Evaluator copies, provider transcripts/caches, logs, input assembly,
+host reads. The sealed directory inventory, input assembly, environment values,
 network behavior and real-turn recovery need independent verification before a
-blinded study. Whole-lifetime provider cost remains unknown.
+blinded study. Whole-lifetime provider cost remains unknown. See the official
+[filesystem deny-path guidance](https://learn.chatgpt.com/docs/permissions#deny-reads-with-exact-paths-or-globs)
+for the runtime mechanism; a configured rule alone is not an empirical check.
 
 Keep protocols, answers, private registrations, reports and manuscripts outside
 GitHub. Preserve failed probes and prior null efficacy findings. More successful

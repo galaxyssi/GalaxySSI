@@ -199,7 +199,7 @@ class CodexRun:
 class CodexAppServer:
     def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, experiment_boundary=None) -> None:
         self.executable = executable
-        self.env = env
+        self.env = dict(env) if experiment_boundary is not None else env
         self.on_event = on_event
         self._experiment_boundary = experiment_boundary
         self._collaboration_recall = collaboration_recall
@@ -1586,6 +1586,8 @@ class CodexAppServer:
 
     def _ensure_started(self) -> None:
         with self._process_start_lock:
+            if self._experiment_boundary is not None:
+                self._experiment_boundary.verify_storage_environment(self.env)
             if self.is_ready():
                 return
             if self.process is None or self.process.poll() is not None:
@@ -1630,6 +1632,7 @@ class CodexAppServer:
             params = boundary.prepare(method, params)
             if method in {"turn/start", "turn/steer"}:
                 try:
+                    boundary.verify_storage_environment(self.env)
                     boundary.verify_runtime(self._rpc_request)
                     boundary.verify_capabilities(params["threadId"],
                         params.get("cwd") or str(boundary.workspace), self._rpc_request)

@@ -124,8 +124,8 @@ class RegistryTests(RegistryFixture):
         factory = Mock(side_effect=lambda *args, **kw: Mock(executable="codex"))
         self.assertIsNot(a.get_server("codex", {}, Mock(), factory), b.get_server("codex", {}, Mock(), factory))
         self.assertNotEqual(a.workspace("task-follow-up"), b.workspace("task-b"))
-        self.assertEqual((str(b.boundary.workspace),), a.boundary.denied_roots)
-        self.assertEqual((str(a.boundary.workspace),), b.boundary.denied_roots)
+        self.assertIn(str(b.boundary.workspace), a.boundary.denied_roots)
+        self.assertIn(str(a.boundary.workspace), b.boundary.denied_roots)
 
     def test_invalid_registry_and_overlapping_grants_fail_before_dispatch(self):
         for changed, code in (({"task_ids": ["x", "x"]}, "registry_tasks"),
@@ -172,6 +172,36 @@ class RegistryTests(RegistryFixture):
         outside.write_bytes(self.path.read_bytes())
         with self.assertRaisesRegex(ExperimentBoundaryError, "unprotected_registry"):
             experiments.CodexExperimentRegistry(outside)
+
+    def test_additional_evaluator_copies_are_sealed_and_bound_to_admission(self):
+        extra = self.root / "evaluator-copy"
+        self.row["sealed_roots"] = [str(extra)]
+        self.write([self.row])
+        first = self.admit()
+        fs = tomllib.loads("\n".join(first.boundary.process_overrides()))["permissions"][first.boundary.profile]["filesystem"]
+        self.assertEqual("deny", fs[str(extra)])
+        marker = first.marker
+        experiments.close()
+        self.row["sealed_roots"] = []
+        self.write([self.row])
+        with self.assertRaisesRegex(ExperimentBoundaryError, "admission_identity"):
+            self.admit(snapshot={experiments.MARKER: marker})
+
+    def test_invalid_or_overlapping_sealed_roots_fail_closed(self):
+        for paths in ("not-a-list", [None], ["relative"], [self.row["workspace"]]):
+            self.write([{**self.row, "sealed_roots": paths}])
+            with self.subTest(paths=paths), self.assertRaises(ExperimentBoundaryError):
+                experiments.CodexExperimentRegistry(self.path)
+
+    def test_factory_checks_runtime_storage_even_when_reusing_server(self):
+        scope = self.admit()
+        factory = Mock(return_value=Mock(executable="codex"))
+        env = dict(os.environ)
+        scope.get_server("codex", env, Mock(), factory)
+        env["CODEX_HOME"] = str(self.root / "unsealed-provider")
+        with self.assertRaisesRegex(ExperimentBoundaryError, "unprotected_runtime_storage"):
+            scope.get_server("codex", env, Mock(), factory)
+        self.assertEqual(1, factory.call_count)
 
     def test_snapshot_roundtrip_retains_marker_but_remote_options_cannot_restore_it(self):
         from agent_request_snapshot import build_request_snapshot, snapshot_copy, restore_request_options

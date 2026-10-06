@@ -8,7 +8,7 @@ from dataclasses import replace
 from unittest.mock import Mock, patch
 
 import codex_app_server as codex
-from codex_experiment_boundary import CodexExperimentBoundary, ExperimentBoundaryError, FLAGS
+from codex_experiment_boundary import CodexExperimentBoundary, ExperimentBoundaryError, FLAGS, runtime_private_roots
 from agent_execution_harness import AgentReasoningEffort, execution_policy_for
 
 
@@ -50,11 +50,18 @@ class BoundaryTests(unittest.TestCase):
         self.calls.append((method, params))
         if method == "config/read":
             config = nested(FLAGS)
+            config["default_permissions"] = self.boundary.profile
             config["mcp_servers"] = {"fixture": {"enabled": False}}
             if self.issue == "flags":
                 config["features"]["apps"] = True
             if self.issue == "instructions":
                 config["model_instructions_file"] = "PRIVATE"
+            if self.issue == "default_permissions":
+                config["default_permissions"] = ":workspace"
+            if self.issue == "provider_storage":
+                config["sqlite_home"] = str(self.root / "unprotected-cache")
+            if self.issue == "sandbox":
+                config["windows"] = {"sandbox": "unelevated"}
             return {"config": config}
         if method == "skills/list":
             return {"data": [{"cwd": params["cwds"][0], "errors": [],
@@ -165,7 +172,10 @@ class BoundaryTests(unittest.TestCase):
         self.assertIn("thread-owned", boundary._verified_threads)
 
     def test_runtime_inventory_drift_blocks_model_dispatch(self):
-        for issue in ("flags", "instructions", "skills", "mcp"):
+        issues = ["flags", "instructions", "skills", "mcp", "default_permissions", "provider_storage"]
+        if os.name == "nt":
+            issues.append("sandbox")
+        for issue in issues:
             self.issue = None
             self.boundary.verify_runtime(self.rpc)
             self.start()
@@ -255,6 +265,76 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual("write", profile["filesystem"][str(self.workspace)])
         self.assertFalse(profile["network"]["enabled"])
         self.assertEqual("read", profile["filesystem"][":root"])
+        self.assertEqual(self.boundary.profile, config["default_permissions"])
+
+    def test_runtime_storage_is_denied_without_reading_private_contents(self):
+        values = {"CODEX_HOME": str(self.root / "provider"),
+                  "GALAXYSSI_STATE_DIR": str(self.root / "state"),
+                  "GALAXYSSI_WORKSPACE_ROOT": str(self.root / "ordinary"),
+                  "GALAXYSSI_DATABASE_PATH": str(self.root / "database" / "db.sqlite"),
+                  "GALAXYSSI_CONFIG_PATH": str(self.root / "config" / "agents.json"),
+                  "GALAXYSSI_DATA_DIR": str(self.root / "electron" / "runtime")}
+        with patch.dict(os.environ, values), patch.object(Path, "read_bytes") as read:
+            boundary = CodexExperimentBoundary(**self.kw)
+            fs = tomllib.loads("\n".join(boundary.process_overrides()))["permissions"][boundary.profile]["filesystem"]
+            for path in runtime_private_roots(os.environ):
+                self.assertEqual("deny", fs[path])
+            self.assertEqual("deny", fs[str(self.root / "electron")])
+            self.assertEqual("deny", fs[str(self.root / "database")])
+            read.assert_not_called()
+
+    def test_changed_child_storage_fails_before_start_or_model_request(self):
+        self.server.env["CODEX_HOME"] = str(self.root / "unprotected-provider")
+        with patch.object(codex.subprocess, "Popen") as process:
+            with self.assertRaisesRegex(ExperimentBoundaryError, "unprotected_runtime_storage"):
+                self.server.warm()
+            process.assert_not_called()
+        self.server.env.pop("CODEX_HOME")
+        self.start()
+        self.server.env["GALAXYSSI_STATE_DIR"] = str(self.root / "unprotected-state")
+        with patch.object(self.server, "_close_process", wraps=self.server._close_process) as close:
+            with self.assertRaisesRegex(ExperimentBoundaryError, "unprotected_runtime_storage"):
+                self.turn()
+            close.assert_called_once()
+        self.assertFalse(any(m == "turn/start" for m, _ in self.calls))
+
+    def test_experiment_copies_environment_and_ordinary_server_keeps_existing_behavior(self):
+        env = dict(os.environ)
+        server = codex.CodexAppServer("codex", env, Mock(), experiment_boundary=self.boundary)
+        ordinary = codex.CodexAppServer("codex", env, Mock())
+        env["CODEX_HOME"] = str(self.root / "changed")
+        self.assertNotEqual(env, server.env)
+        self.assertIs(env, ordinary.env)
+
+    def test_future_sensitive_directory_is_protected_before_creation(self):
+        future = self.root / "future" / "provider"
+        with patch.dict(os.environ, {"CODEX_HOME": str(future)}):
+            first = CodexExperimentBoundary(**self.kw)
+            future.mkdir(parents=True)
+            restored = CodexExperimentBoundary(**self.kw)
+            self.assertEqual(first.fingerprint, restored.fingerprint)
+            self.assertIn(str(future), first.denied_roots)
+
+    def test_storage_path_redirect_is_rejected_at_runtime(self):
+        with patch("codex_experiment_boundary._path", side_effect=ExperimentBoundaryError("experiment_boundary_linked_path")):
+            with self.assertRaisesRegex(ExperimentBoundaryError, "linked_path"):
+                self.boundary.verify_storage_environment({})
+
+    def test_private_storage_cannot_overlap_experiment_workspace(self):
+        with patch.dict(os.environ, {"GALAXYSSI_STATE_DIR": str(self.workspace)}):
+            with self.assertRaisesRegex(ExperimentBoundaryError, "overlapping_denied_roots"):
+                CodexExperimentBoundary(**self.kw)
+
+    def test_custom_provider_database_and_log_locations_must_be_sealed(self):
+        for key in ("sqlite_home", "log_dir"):
+            def configured(method, params, timeout):
+                result = self.rpc(method, params, timeout)
+                if method == "config/read":
+                    result["config"][key] = str(self.sealed / "provider-cache")
+                return result
+            self.boundary.verify_runtime(configured)
+        with self.assertRaisesRegex(ExperimentBoundaryError, "unprotected_runtime_storage"):
+            self.boundary.verify_private_locations([str(self.root / "not-sealed")])
 
 
 if __name__ == "__main__":
