@@ -55,6 +55,23 @@ class CollaborationExecutableToolDeviceTest {
             val report = JSONObject().put("format", CollaborationToolRuntime.FORMAT)
                 .put("runtime", JSONObject().put("python", JSONArray("[3,12,0]")).put("implementation", "fixture").put("machine", "synthetic"))
                 .put("results", JSONArray().put(JSONObject().put("id", "one").put("output", 1)).put(JSONObject().put("id", "zero").put("output", 0)))
+            val clipped = AgentRuntimeExecutionResponse(0, report.toString(), "", 1).boundedOutput(30, 0)
+            val clippedResult = CollaborationToolRuntime.finish(prepared, clipped, AgentNativeToolExecutionResult.success())
+            assertEquals("report_stdout_truncated", JSONObject(clippedResult.error!!.details).getJSONArray("problems").getJSONObject(0).getString("code"))
+            val badReport = JSONObject(report.toString()).apply { getJSONArray("results").getJSONObject(0).put("output", 7) }
+            val failure = CollaborationToolRuntime.finish(prepared, AgentRuntimeExecutionResponse(0, badReport.toString(), "", 1), AgentNativeToolExecutionResult.success())
+            assertFalse(failure.isSuccess)
+            val details = JSONObject(failure.error!!.details)
+            assertEquals("/results/0/output", details.getJSONArray("problems").getJSONObject(0).getString("path"))
+            val originalFailure = JSONObject().put("output", JSONObject(failure.output)).put("error", JSONObject()
+                .put("code", failure.error!!.code).put("details", details)).toString()
+            val failedObservation = ledger.record(access("worker", 3), "synthetic-failed-test", AgentOnDeviceRuntimeTools.EXECUTE,
+                "{}", originalFailure, 30, 31, CollaborationEvidenceOrigin.ANDROID_NATIVE_TOOL)
+            val reopenedEvidence = CollaborationEvidenceLedger(context)
+            assertEquals(originalFailure, reopenedEvidence.read(access("reviewer", 4), failedObservation.getString("evidence_id"))!!.getString("output_json"))
+            val recalledProblem = reopenedEvidence.problems(access("reviewer", 4)).first.single().getJSONObject("host_problem")
+            assertEquals("not_diagnosed", recalledProblem.getString("cause"))
+            assertTrue(recalledProblem.getJSONArray("signals").toString().contains("value_mismatch"))
             val result = CollaborationToolRuntime.finish(prepared, AgentRuntimeExecutionResponse(0, report.toString(), "", 1), AgentNativeToolExecutionResult.success())
             assertTrue(result.isSuccess)
             val observation = ledger.record(access("worker", 3), "synthetic-test", AgentOnDeviceRuntimeTools.EXECUTE, "{}",
@@ -65,6 +82,7 @@ class CollaborationExecutableToolDeviceTest {
                 .put("applies_when", "Fixture").put("avoid_when", "Production").put("limitations", "Not Linux execution")
                 .put("authorization_boundary", "No new permissions").put("unresolved", JSONArray()), "reviewer", 4, JSONArray().put(observation))
             val reopened = CollaborationResearchWorkspace(context)
+            assertEquals(1, reopenedEvidence.problems(access("worker", 5)).first.size)
             assertNotNull(reopened.read(access("worker", 5).copy(runId = "future", turnId = "future"), release.getString("object_id"), 1))
             val nextBinding = binding + 1
             ledger.bind(nextBinding, access("worker", 5).copy(runId = "future", turnId = "future"))

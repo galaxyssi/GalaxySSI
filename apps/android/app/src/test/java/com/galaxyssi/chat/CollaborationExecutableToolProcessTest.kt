@@ -37,7 +37,33 @@ class CollaborationExecutableToolProcessTest {
             val result = execute(f.prepare(JSONObject().put("mode", "test").put(CollaborationExecutableTool.TEST, plan)))
             assertFalse(result.isSuccess)
             assertTrue(result.output.containsKey(CollaborationExecutableTool.RECEIPT))
+            val diagnostic = JSONObject(result.error!!.details).getJSONArray("problems").getJSONObject(0)
+            assertEquals(if (source.contains("raise ValueError")) "case_execution_error" else "value_mismatch", diagnostic.getString("code"))
+            assertEquals("mixed", diagnostic.getString("case_id"))
         }
+    }
+    @Test fun repairedVersionKeepsOriginalExecutedFailure() {
+        val f = CollaborationExecutableToolTest.Fixture()
+        val broken = f.ref(f.publish("broken-source", CollaborationExecutableTool.TOOL,
+            JSONObject(f.spec.toString()).put("source", "def run(parameters):\n    return parameters['values']"), "author", 1))
+        val brokenPlan = f.ref(f.publish("broken-plan", CollaborationExecutableTool.TEST,
+            JSONObject(f.planSpec.toString()).put(CollaborationExecutableTool.TOOL, broken), "reviewer", 2))
+        val failed = execute(f.prepare(JSONObject().put("mode", "test").put(CollaborationExecutableTool.TEST, brokenPlan)))
+        assertFalse(failed.isSuccess)
+        val original = f.observed(failed, id = "actual-failed-python")
+        assertEquals("rejected", f.release(original, value = f.releaseSpec(original).put(CollaborationExecutableTool.TEST, brokenPlan)).getString("status"))
+        val fixed = f.ref(f.publish("fixed-source", CollaborationExecutableTool.TOOL, JSONObject(f.spec.toString()), "author", 4))
+        val fixedPlan = f.ref(f.publish("fixed-plan", CollaborationExecutableTool.TEST,
+            JSONObject(f.planSpec.toString()).put(CollaborationExecutableTool.TOOL, fixed), "reviewer", 5))
+        val fixedAccess = f.access("tester", 6)
+        val passed = execute(f.prepare(JSONObject().put("mode", "test").put(CollaborationExecutableTool.TEST, fixedPlan), access = fixedAccess))
+        assertTrue(passed.toString(), passed.isSuccess)
+        val old = f.ledger.read(f.access(), original.getString("evidence_id"), original.getString("sha256"))!!
+        val oldReceipt = JSONObject(old.getString("output_json")).getJSONObject("output").getJSONObject(CollaborationExecutableTool.RECEIPT)
+        assertFalse(oldReceipt.getBoolean("passed"))
+        assertEquals(broken.getString("sha256"), oldReceipt.getJSONObject(CollaborationExecutableTool.TOOL).getString("sha256"))
+        assertNotEquals(oldReceipt.getString("source_sha256"), JSONObject(passed.output)
+            .getJSONObject(CollaborationExecutableTool.RECEIPT).getString("source_sha256"))
     }
     @Test fun runtimeMismatchStopsBeforeExecutingAnySavedCode() {
         val f = CollaborationExecutableToolTest.Fixture()

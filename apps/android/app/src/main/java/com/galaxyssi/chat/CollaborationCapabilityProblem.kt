@@ -20,6 +20,9 @@ internal object CollaborationCapabilityProblem {
         signal(root, "status", "/status")
         signal(root?.optJSONObject("error"), "code", "/error/code")
         signal(root?.optJSONObject("error"), "retryable", "/error/retryable")
+        val toolProblem = root?.optJSONObject("error")?.optJSONObject("details")?.optJSONArray("problems")?.optJSONObject(0)
+        signal(toolProblem, "code", "/error/details/problems/0/code")
+        signal(toolProblem, "path", "/error/details/problems/0/path")
         signal(root?.optJSONObject("verification"), "status", "/verification/status")
         if (origin == CollaborationEvidenceOrigin.DESKTOP_CODEX_TOOL) {
             val item = runCatching { JSONObject(root!!.getString("original_json"))
