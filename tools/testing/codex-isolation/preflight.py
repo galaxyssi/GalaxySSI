@@ -14,7 +14,8 @@ import time
 import uuid
 
 
-FORMAT = "galaxyssi.codex-command-isolation-preflight.v1"
+FORMAT = "galaxyssi.codex-command-isolation-preflight.v2"
+BOUNDARIES = ("workspace-only", "denied-subtree")
 PROGRAM = """import json, pathlib, sys
 operation, name, expected = sys.argv[1:]
 try:
@@ -151,9 +152,12 @@ def sandbox(workspace):
     }
 
 
-def profile_config(name, python, sealed):
+def profile_config(name, python, sealed, boundary="workspace-only"):
+    if boundary not in BOUNDARIES:
+        raise ValueError("Unknown command boundary")
     # Current runtimes reject legacy readOnlyAccess; use a child-only named profile.
-    rules = {":root": "deny", ":minimal": "read", ":tmpdir": "deny", ":slash_tmp": "deny",
+    rules = {":root": "deny" if boundary == "workspace-only" else "read",
+             ":minimal": "read", ":tmpdir": "deny", ":slash_tmp": "deny",
              str(python.parent): "read", str(sealed): "deny"}
     filesystem = ", ".join(f"{json.dumps(path)}={json.dumps(access)}" for path, access in rules.items())
     # CLI override paths are not TOML quoted keys. Keep path keys inside a parsed table value.
@@ -176,27 +180,43 @@ def classify(result):
     return {"outcome": "inconclusive", "reason": "probe_did_not_confirm_read_or_permission_denial"}
 
 
-def summarize(rows):
+def summarize(rows, boundary="workspace-only"):
+    if boundary not in BOUNDARIES:
+        raise ValueError("Unknown command boundary")
     observed = {(row["profile"], row["case"]): row["observation"]["outcome"] for row in rows}
+    locations = ("inside", "outside", "unprotected") if boundary == "denied-subtree" else ("inside", "outside")
     expected = {(profile, case) for profile in ("legacy", "restricted")
-                for case in ("inside_read", "inside_write", "outside_read", "outside_write")}
+                for case in (f"{location}_{operation}" for location in locations for operation in ("read", "write"))}
     complete = len(rows) == len(expected) and set(observed) == expected
     controls = complete and all(observed[(profile, case)] == "allowed"
                                for profile in ("legacy", "restricted")
                                for case in ("inside_read", "inside_write"))
-    restricted = controls and all(observed[("restricted", case)] == "denied"
-                                  for case in ("outside_read", "outside_write"))
+    outside_denied = controls and all(observed[("restricted", case)] == "denied"
+                                     for case in ("outside_read", "outside_write"))
+    # A subtree-only policy deliberately preserves broad reads. Verify this control
+    # rather than silently upgrading the narrower result to workspace-only isolation.
+    scope_control = boundary == "workspace-only" or (complete and all(
+        observed[(profile, "unprotected_read")] == "allowed" and
+        observed[(profile, "unprotected_write")] == "denied"
+        for profile in ("legacy", "restricted")))
+    restricted = outside_denied and scope_control
     return {
+        "tested_boundary": boundary,
         "all_cases_observed": complete,
         "positive_controls_passed": controls,
         "legacy_external_read_observed": observed.get(("legacy", "outside_read")) == "allowed",
         "restricted_command_boundary_passed": restricted,
+        "workspace_only_command_boundary_passed": restricted and boundary == "workspace-only",
+        "denied_subtree_command_boundary_passed": restricted and boundary == "denied-subtree",
+        "unprotected_sibling_read_observed": observed.get(("restricted", "unprotected_read")) == "allowed",
         "production_turn_isolation_verified": False,
         "ready_for_blind_efficacy_study": False,
     }
 
 
-def run(executable, directory, python, *, client_factory=Client):
+def run(executable, directory, python, *, boundary="workspace-only", client_factory=Client):
+    if boundary not in BOUNDARIES:
+        raise ValueError("Unknown command boundary")
     executable, python = Path(executable).resolve(strict=True), Path(python).resolve(strict=True)
     if not executable.is_file() or not python.is_file():
         raise ValueError("Executable files required")
@@ -207,10 +227,15 @@ def run(executable, directory, python, *, client_factory=Client):
     sealed.mkdir()
     marker = uuid.uuid4().hex
     profile_id = "galaxyssi-eval-probe-" + marker
-    config = profile_config(profile_id, python, sealed)
-    for parent in (workspace, sealed):
+    config = profile_config(profile_id, python, sealed, boundary)
+    locations = [("inside", workspace), ("outside", sealed)]
+    if boundary == "denied-subtree":
+        unprotected = directory / "unprotected"
+        unprotected.mkdir()
+        locations.append(("unprotected", unprotected))
+    for _, parent in locations:
         (parent / "canary.txt").write_text(marker, encoding="utf-8")
-    report = {"format": FORMAT, "evidence_kind": "local_synthetic_command_probe",
+    report = {"format": FORMAT, "evidence_kind": "local_synthetic_command_probe", "boundary": boundary,
               "model_calls": 0, "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
               "python_sha256": hashlib.sha256(python.read_bytes()).hexdigest(),
               "probe_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -227,7 +252,7 @@ def run(executable, directory, python, *, client_factory=Client):
         for restricted in (False, True):
             profile = "restricted" if restricted else "legacy"
             policy = {"permissionProfile": profile_id} if restricted else {"sandboxPolicy": sandbox(workspace)}
-            for location, root in (("inside", workspace), ("outside", sealed)):
+            for location, root in locations:
                 for operation in ("read", "write"):
                     target = root / ("canary.txt" if operation == "read" else f"{profile}-write.txt")
                     row = {"profile": profile, "case": f"{location}_{operation}", "command_policy": policy}
@@ -255,15 +280,19 @@ def run(executable, directory, python, *, client_factory=Client):
                 client.close()
             except Exception as error:
                 report["status"], report["failure_type"] = "failed", "cleanup_" + type(error).__name__
-        report["summary"] = summarize(report["cases"])
+        report["summary"] = summarize(report["cases"], boundary)
         if report["status"] != "completed":
-            report["summary"]["restricted_command_boundary_passed"] = False
+            for key in ("restricted_command_boundary_passed", "workspace_only_command_boundary_passed",
+                        "denied_subtree_command_boundary_passed"):
+                report["summary"][key] = False
         report["limits"] = [
             "Synthetic canaries only; no private evaluator content was read.",
             "No model turns, phone operations, global configuration edits or production restart.",
             "Command probes do not cover image reads, MCP, plugins, network, child agents or model input assembly.",
             "Restricted policy is not yet applied to production or evaluation model turns.",
             "A command launch failure is inconclusive, never proof that protected data was denied.",
+            "Denied-subtree mode allows other root reads and does not prove workspace-only isolation.",
+            "Select each boundary explicitly in a fresh directory; a failed profile is never retried with broader access.",
         ]
         with (directory / "report.json").open("x", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2, ensure_ascii=True, allow_nan=False)
@@ -276,8 +305,9 @@ def main():
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument("--boundary", choices=BOUNDARIES, default="workspace-only")
     args = parser.parse_args()
-    report = run(args.executable, args.directory, args.python)
+    report = run(args.executable, args.directory, args.python, boundary=args.boundary)
     print(json.dumps({"status": report["status"], **report["summary"]}, sort_keys=True))
     return 0 if report["summary"]["restricted_command_boundary_passed"] else 2
 

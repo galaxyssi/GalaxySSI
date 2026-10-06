@@ -41,7 +41,8 @@ class FakeClient:
         outside = target.parent != self.cwd
         restricted = "permissionProfile" in params
         operation = params["command"][-3]
-        denied = outside and (restricted or operation == "write")
+        sealed = target.parent.name == "sealed"
+        denied = outside and ((restricted and sealed) or operation == "write")
         return command_result("denied" if denied else "allowed")
 
     def close(self):
@@ -56,9 +57,9 @@ class PreflightTest(unittest.TestCase):
         FakeClient.instances.clear()
         FakeClient.error_case = None
 
-    def run_fake(self):
+    def run_fake(self, boundary="workspace-only"):
         return preflight.run(sys.executable, self.root / "probe", sys.executable,
-                             client_factory=FakeClient)
+                             boundary=boundary, client_factory=FakeClient)
 
     def test_exact_success_and_denial(self):
         self.assertEqual("allowed", preflight.classify(command_result())["outcome"])
@@ -99,6 +100,59 @@ class PreflightTest(unittest.TestCase):
         self.assertFalse(report["summary"]["production_turn_isolation_verified"])
         self.assertEqual({"initialize", "initialized", "command/exec"}, {row["method"] for row in client.calls})
         self.assertEqual(report, json.loads((self.root / "probe/report.json").read_text()))
+
+    def test_subtree_mode_is_explicit_and_does_not_claim_workspace_isolation(self):
+        report = self.run_fake("denied-subtree")
+        self.assertEqual(12, len(report["cases"]))
+        summary = report["summary"]
+        self.assertEqual("denied-subtree", report["boundary"])
+        self.assertTrue(summary["restricted_command_boundary_passed"])
+        self.assertTrue(summary["denied_subtree_command_boundary_passed"])
+        self.assertTrue(summary["unprotected_sibling_read_observed"])
+        self.assertFalse(summary["workspace_only_command_boundary_passed"])
+        self.assertFalse(summary["production_turn_isolation_verified"])
+        self.assertFalse(summary["ready_for_blind_efficacy_study"])
+        config = FakeClient.instances[0].config[0]
+        profile = next(iter(tomllib.loads(config)["permissions"].values()))
+        self.assertEqual("read", profile["filesystem"][":root"])
+        self.assertEqual("deny", profile["filesystem"][str(self.root / "probe/sealed")])
+        self.assertFalse(profile["network"]["enabled"])
+
+    def test_subtree_scope_control_failures_do_not_pass(self):
+        report = self.run_fake("denied-subtree")
+        for case in ("unprotected_read", "unprotected_write", "outside_read", "outside_write"):
+            rows = json.loads(json.dumps(report["cases"]))
+            row = next(row for row in rows if row["profile"] == "restricted" and row["case"] == case)
+            row["observation"] = {"outcome": "inconclusive"}
+            self.assertFalse(preflight.summarize(rows, "denied-subtree")["restricted_command_boundary_passed"])
+        self.assertFalse(preflight.summarize(report["cases"], "workspace-only")["restricted_command_boundary_passed"])
+
+    def test_subtree_rpc_failure_is_not_retried_or_counted_as_denial(self):
+        FakeClient.error_case = preflight.RpcError(-32603, "unknown runtime error")
+        report = self.run_fake("denied-subtree")
+        self.assertEqual(1, len(FakeClient.instances))
+        self.assertEqual(12, len(report["cases"]))
+        self.assertFalse(report["summary"]["denied_subtree_command_boundary_passed"])
+
+    def test_unknown_boundary_fails_before_output_creation(self):
+        with self.assertRaises(ValueError):
+            self.run_fake("auto")
+        self.assertFalse((self.root / "probe").exists())
+        self.assertEqual([], FakeClient.instances)
+        with self.assertRaises(ValueError):
+            preflight.summarize([], "auto")
+        with self.assertRaises(ValueError):
+            preflight.profile_config("probe", Path(sys.executable), self.root / "sealed", "auto")
+
+    def test_subtree_cleanup_failure_revokes_all_pass_flags(self):
+        class BadCleanup(FakeClient):
+            def close(self):
+                raise RuntimeError("cleanup failed")
+        report = preflight.run(sys.executable, self.root / "failed", sys.executable,
+                               boundary="denied-subtree", client_factory=BadCleanup)
+        for key in ("restricted_command_boundary_passed", "workspace_only_command_boundary_passed",
+                    "denied_subtree_command_boundary_passed"):
+            self.assertFalse(report["summary"][key])
 
     def test_errors_are_retained_without_raw_paths_or_stderr(self):
         FakeClient.error_case = preflight.RpcError(-32602)
