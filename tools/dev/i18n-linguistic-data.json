@@ -2,6 +2,46 @@
   "schema": "galaxyssi.i18n-linguistic-data.v1",
   "files": [
     {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentCodeKeywordPolicy.kt",
+      "reason": "Multilingual coding-intent and negation matching corpus; not UI copy"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentRemoteSilencePolicy.kt",
+      "reason": "Multilingual side-effect and read-only intent matching corpus"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ResearchEvidenceAudit.kt",
+      "reason": "Multilingual research-request matching; not displayed resource text"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleLinkPolicy.kt",
+      "reason": "External WeChat UI and clipboard-success recognition corpus, including traditional Chinese"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleMenuLayout.kt",
+      "reason": "External WeChat menu OCR label matching corpus, not GalaxySSI interface labels"
+    },
+    {
+      "path": "apps/ar-glasses/app/src/main/java/com/galaxyssi/glasses/VoiceCommandCatalog.kt",
+      "reason": "Multilingual voice-command and polite-prefix recognition corpus"
+    },
+    {
+      "path": "apps/watch/app/src/main/java/com/galaxyssi/watch/WatchLocation.kt",
+      "reason": "Multilingual local-location intent and negation recognition corpus"
+    },
+    {
+      "path": "apps/watch/app/src/main/java/com/galaxyssi/watch/WatchSamsungConfirmService.kt",
+      "reason": "External Samsung microphone confirmation accessibility-label recognition corpus"
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/research_contract/research-quality.json",
+      "reason": "Cross-platform multilingual claim-risk recognition patterns"
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/research_contract/quality-cases.json",
+      "reason": "Cross-platform research-quality test corpus with positive and negative Chinese examples"
+    },
+    {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTeamDurableControl.kt",
       "reason": "Exact multilingual team pause, stop and resume command corpus; not UI text"
     },

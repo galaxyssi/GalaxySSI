@@ -13,7 +13,8 @@ internal object WechatArticleExporter {
             maxDownloadBytes = 8L * 1024 * 1024, maxTimeoutMillis = 20_000))
         var remaining = 48L * 1024 * 1024
         // Only image assets are downloaded here, never the browser's article document.
-        val archived = AgentWebOriginalDocument.build(url, article.html.toByteArray()) { address ->
+        val archived = AgentWebOriginalDocument.build(url, article.html.toByteArray(),
+            notice = { missing, address -> context.getString(R.string.agent_web_original_archive_notice, missing, address) }) { address ->
             checkpoint()
             check(remaining > 0) { "article_asset_limit" }
             val image = web.download(address, maxBytes = minOf(8L * 1024 * 1024, remaining), checkpoint = checkpoint)

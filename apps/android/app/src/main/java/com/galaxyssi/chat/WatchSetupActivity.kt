@@ -40,8 +40,7 @@ import java.util.concurrent.Executors
 class WatchSetupActivity : Activity() {
     companion object { const val EXTRA_GLASSES = "configure_glasses" }
     private val glassesMode by lazy { intent.getBooleanExtra(EXTRA_GLASSES, false) }
-    private fun device(zhWatch: String, zhGlasses: String, enWatch: String, enGlasses: String) =
-        tr(if (glassesMode) zhGlasses else zhWatch, if (glassesMode) enGlasses else enWatch)
+    private fun device(watch: Int, glasses: Int) = getString(if (glassesMode) glasses else watch)
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private var client: WatchSetupClient? = null
@@ -83,7 +82,6 @@ class WatchSetupActivity : Activity() {
     private var wifiScanPermissionAsked = false
     private lateinit var content: LinearLayout
     private lateinit var footer: LinearLayout
-    private fun tr(zh: String, en: String) = if (resources.configuration.locales[0].language == "zh") zh else en
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun color(id: Int) = getColor(id)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -171,13 +169,13 @@ class WatchSetupActivity : Activity() {
         val toolbar = layoutInflater.inflate(R.layout.watch_setup_header, root, false)
         toolbar.findViewById<ImageButton>(R.id.watchSetupBack).setOnClickListener { onBackPressed() }
         toolbar.findViewById<TextView>(R.id.watchSetupTitle).text = when (page) {
-            "manual" -> tr("手动连接", "Manual connection"); "confirm" -> tr("核对连接", "Verify connection")
-            "wifi" -> tr("眼镜 Wi-Fi 配网", "Glasses Wi-Fi setup")
-            "skills" -> tr("导入手表 Skill", "Import watch Skill")
-            "cloud" -> tr("云端 API Key", "Cloud API Key"); "edit" -> tr("编辑云端配置", "Edit cloud configuration")
-            "preview" -> tr("确认同步", "Confirm transfer"); "remote" -> tr("添加远端电脑", "Add remote computer")
-            "waiting", "agents" -> tr("远端 Agent", "Remote Agent"); "success" -> tr("同步完成", "Transfer complete")
-            "offline" -> tr("连接已断开", "Disconnected"); else -> device("配置手表", "配置 AR 眼镜", "Configure watch", "Configure AR glasses")
+            "manual" -> getString(R.string.watch_setup_copy_manual_connection); "confirm" -> getString(R.string.watch_setup_copy_verify_connection)
+            "wifi" -> getString(R.string.watch_setup_copy_glasses_wi_fi_setup)
+            "skills" -> getString(R.string.watch_setup_copy_import_watch_skill)
+            "cloud" -> getString(R.string.watch_setup_copy_cloud_api_key); "edit" -> getString(R.string.watch_setup_copy_edit_cloud_configuration)
+            "preview" -> getString(R.string.watch_setup_copy_confirm_transfer); "remote" -> getString(R.string.watch_setup_copy_add_remote_computer)
+            "waiting", "agents" -> getString(R.string.watch_setup_copy_remote_agent); "success" -> getString(R.string.watch_setup_copy_transfer_complete)
+            "offline" -> getString(R.string.watch_setup_copy_disconnected); else -> device(R.string.watch_setup_copy_configure_watch, R.string.watch_setup_copy_configure_ar_glasses)
         }
         root.addView(toolbar)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12)) }
@@ -185,84 +183,84 @@ class WatchSetupActivity : Activity() {
         footer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(14), dp(18)) }; root.addView(footer)
         when (page) {
             "discover" -> {
-                if (glassesMode) card(tr("配置 Agent 与云端大模型", "Configure Agent and cloud model"),
-                    tr("可先在手机选择或新增云端 Agent，眼镜联网后再核对数字并同步。", "Choose or add a cloud Agent on the phone first, then connect and transfer it to the glasses.")) { go("hub") }
-                card(device("连接你的手表", "连接你的 AR 眼镜", "Connect your watch", "Connect your AR glasses"),
-                    device("手机与手表连接同一个 Wi-Fi\n在手表打开 GalaxySSI 配置页", "手机与眼镜连接同一个 Wi-Fi\n在眼镜打开 GalaxySSI 即可自动发现，无需进入设置页", "Join the same Wi-Fi on both devices. Open GalaxySSI setup on the watch.", "Join the same Wi-Fi on both devices. Open GalaxySSI on the glasses; no settings page is needed."))
-                text(device("发现的手表", "发现的眼镜", "Discovered watches", "Discovered glasses"), true)
-                devices.values.forEach { info -> card(info.serviceName, tr("等待连接", "Not connected")) { resolve(info) } }
-                if (devices.isEmpty()) text(tr("正在搜索…也可使用手动连接", "Searching… Manual connection is also available."), true)
-                if (glassesMode) card(tr("眼镜还没有联网？生成配网码", "Glasses offline? Create Wi-Fi QR"),
-                    tr("Wi-Fi 名称和密码只在手机输入；用眼镜语音扫描。", "Enter Wi-Fi details on the phone, then scan using glasses voice control.")) { go("wifi") }
-                card(tr("手动连接", "Manual connection")) { go("manual") }
-                button(tr("重新搜索", "Search again")) { discover() }
+                if (glassesMode) card(getString(R.string.watch_setup_copy_configure_agent_and_cloud_model),
+                    getString(R.string.watch_setup_copy_choose_or_add_a_cloud_agent_on_the_phone)) { go("hub") }
+                card(device(R.string.watch_setup_copy_connect_your_watch, R.string.watch_setup_copy_connect_your_ar_glasses),
+                    device(R.string.watch_setup_copy_join_the_same_wi_fi_on_both_devices_open, R.string.watch_setup_copy_join_the_same_wi_fi_on_both_devices_open_2))
+                text(device(R.string.watch_setup_copy_discovered_watches, R.string.watch_setup_copy_discovered_glasses), true)
+                devices.values.forEach { info -> card(info.serviceName, getString(R.string.watch_setup_copy_not_connected)) { resolve(info) } }
+                if (devices.isEmpty()) text(getString(R.string.watch_setup_copy_searching_manual_connection_is_also_available), true)
+                if (glassesMode) card(getString(R.string.watch_setup_copy_glasses_offline_create_wi_fi_qr),
+                    getString(R.string.watch_setup_copy_enter_wi_fi_details_on_the_phone_then_scan)) { go("wifi") }
+                card(getString(R.string.watch_setup_copy_manual_connection)) { go("manual") }
+                button(getString(R.string.watch_setup_copy_search_again)) { discover() }
             }
             "wifi" -> {
-                text(tr("在手机填写眼镜要连接的 Wi-Fi。眼镜说“Hello Hello 扫描配网”，看向此二维码，核对名称后说“Hello Hello 确认联网”。首次连接仍需批准眼镜上的系统提示。", "Enter the Wi-Fi network for the glasses. Say “Hello Hello scan Wi-Fi” on the glasses, look at this QR code, then confirm the network. Android may require one system approval on the glasses."), true)
-                wifiScanFeedback = text(wifiScanStatus.ifBlank { tr("正在查找附近 Wi-Fi…", "Looking for nearby Wi-Fi…") }, true)
-                text(tr("列表仅显示 WPA2 兼容网络；隐藏的 WPA2 网络可手动输入。", "Only WPA2-compatible networks are listed; hidden WPA2 networks can be entered manually."), true, 12f)
+                text(getString(R.string.watch_setup_copy_enter_the_wi_fi_network_for_the_glasses_say), true)
+                wifiScanFeedback = text(wifiScanStatus.ifBlank { getString(R.string.watch_setup_copy_looking_for_nearby_wi_fi) }, true)
+                text(getString(R.string.watch_setup_copy_only_wpa2_compatible_networks_are_listed_hidden_wpa2_networks), true, 12f)
                 wifiNetworkList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also { content.addView(it) }
                 renderWifiNetworks()
-                wifiSsidInput = input(tr("Wi-Fi 名称（SSID）", "Wi-Fi name (SSID)"), wifiSsid) { wifiSsid = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
-                input(tr("Wi-Fi 密码（WPA2，8–63 位）", "Wi-Fi password (WPA2, 8–63 characters)"), wifiPassword, password = true) { wifiPassword = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
+                wifiSsidInput = input(getString(R.string.watch_setup_copy_wi_fi_name_ssid), wifiSsid) { wifiSsid = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
+                input(getString(R.string.watch_setup_copy_wi_fi_password_wpa2_8_63_characters), wifiPassword, password = true) { wifiPassword = it; wifiQrVisible = false; wifiQrImage?.visibility = View.GONE }
                 if (wifiQrVisible) {
                     val raw = JSONObject().put("type", "galaxyssi_wifi_v1").put("ssid", wifiSsid).put("passphrase", wifiPassword).toString()
                     val matrix = QRCodeWriter().encode(raw, BarcodeFormat.QR_CODE, 512, 512,
                         mapOf(EncodeHintType.CHARACTER_SET to "UTF-8"))
                     val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
                     for (y in 0 until 512) for (x in 0 until 512) bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
-                    wifiQrImage = ImageView(this).apply { setImageBitmap(bitmap); contentDescription = tr("眼镜 Wi-Fi 配网二维码", "Glasses Wi-Fi setup QR") }
+                    wifiQrImage = ImageView(this).apply { setImageBitmap(bitmap); contentDescription = getString(R.string.watch_setup_copy_glasses_wi_fi_setup_qr) }
                     content.addView(wifiQrImage, LinearLayout.LayoutParams(dp(280), dp(280)).apply { gravity = Gravity.CENTER_HORIZONTAL })
                 }
-                button(tr("显示配网码", "Show Wi-Fi QR")) {
+                button(getString(R.string.watch_setup_copy_show_wi_fi_qr)) {
                     if (wifiSsid.isBlank() || wifiSsid.toByteArray(Charsets.UTF_8).size > 32 || wifiPassword.length !in 8..63 || wifiPassword.any { it.code !in 32..126 })
-                        Toast.makeText(this, tr("请检查 SSID 和 WPA2 密码", "Check the SSID and WPA2 password."), Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, getString(R.string.watch_setup_copy_check_the_ssid_and_wpa2_password), Toast.LENGTH_LONG).show()
                     else { wifiQrVisible = true; render() }
                 }
-                button(tr("刷新附近 Wi-Fi", "Refresh nearby Wi-Fi"), primary = false) { beginWifiScan(retryPermission = true) }
-                if (glassesMode) button(tr("继续配置 Agent 与云端模型", "Continue to Agent and cloud model"), primary = false) { go("hub") }
+                button(getString(R.string.watch_setup_copy_refresh_nearby_wi_fi), primary = false) { beginWifiScan(retryPermission = true) }
+                if (glassesMode) button(getString(R.string.watch_setup_copy_continue_to_agent_and_cloud_model), primary = false) { go("hub") }
                 if (!getSystemService(LocationManager::class.java).isLocationEnabled)
-                    button(tr("打开手机定位设置", "Open phone Location settings"), primary = false) {
+                    button(getString(R.string.watch_setup_copy_open_phone_location_settings), primary = false) {
                         startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                     }
             }
             "manual" -> {
-                text(device("输入手表「连接帮助」中显示的地址", "输入眼镜配置页显示的地址", "Enter the address shown in Connection help on the watch.", "Enter the address shown on the glasses setup screen."), true)
-                input(tr("IP 地址", "IP address"), host) { host = it.trim() }
-                input(tr("端口", "Port"), port, numeric = true) { port = it.trim() }
-                button(device("连接手表", "连接眼镜", "Connect watch", "Connect glasses")) { connect() }
+                text(device(R.string.watch_setup_copy_enter_the_address_shown_in_connection_help_on_the, R.string.watch_setup_copy_enter_the_address_shown_on_the_glasses_setup_screen), true)
+                input(getString(R.string.watch_setup_copy_ip_address), host) { host = it.trim() }
+                input(getString(R.string.watch_setup_copy_port), port, numeric = true) { port = it.trim() }
+                button(device(R.string.watch_setup_copy_connect_watch, R.string.watch_setup_copy_connect_glasses)) { connect() }
             }
-            "connecting" -> text(tr("正在建立加密连接…", "Establishing encrypted connection…"))
+            "connecting" -> text(getString(R.string.watch_setup_copy_establishing_encrypted_connection))
             "confirm" -> {
-                text(device("请核对手表上的数字", "请核对眼镜上的数字", "Compare the code on the watch", "Compare the code on the glasses"), size = 20f)
+                text(device(R.string.watch_setup_copy_compare_the_code_on_the_watch, R.string.watch_setup_copy_compare_the_code_on_the_glasses), size = 20f)
                 text(code.chunked(3).joinToString(" "), size = 40f).gravity = Gravity.CENTER
-                text(device("两端数字一致后，也请在手表上点击确认", "两端数字一致后，也请在眼镜上点击确认", "If the codes match, also confirm on the watch.", "If the codes match, also confirm on the glasses."), true)
-                button(tr("一致，继续", "Codes match, continue")) { busy = true; render(); client?.confirm() }
-                button(tr("取消连接", "Cancel"), primary = false) { disconnect(); go("discover"); discover() }
+                text(device(R.string.watch_setup_copy_if_the_codes_match_also_confirm_on_the_watch, R.string.watch_setup_copy_if_the_codes_match_also_confirm_on_the_glasses), true)
+                button(getString(R.string.watch_setup_copy_codes_match_continue)) { busy = true; render(); client?.confirm() }
+                button(getString(R.string.watch_setup_copy_cancel), primary = false) { disconnect(); go("discover"); discover() }
             }
             "hub" -> {
-                card(deviceName, if (connected) tr("● 已连接", "● Connected") else tr("○ 尚未连接眼镜", "○ Glasses not connected"))
-                text(tr("对话方式", "Conversation mode"), true)
-                card(device("云端 API Key", "云端 Agent 与大模型", "Cloud API Key", "Cloud Agent and model"), device("手表直接连接模型服务", "从手机选择已有 Agent 或新增云端模型，眼镜将直接连接模型服务", "Connect the watch directly to a model provider", "Choose a phone Agent or add a model; the glasses connect to the provider directly")) { go("cloud") }
-                if (!glassesMode) card(tr("远端 Agent", "Remote Agent"), tr("由远端电脑处理任务", "Run tasks on your computer")) { go("remote") }
-                if (!glassesMode) card(tr("导入 Skill", "Import Skill"), tr("选择 .gskill 包，传输后由手表确认安装", "Choose a .gskill package, then confirm installation on the watch")) { go("skills") }
-                if (glassesMode && !connected) card(tr("连接眼镜以同步", "Connect glasses to transfer"),
-                    tr("眼镜和手机需处于同一 Wi-Fi；连接时两端核对六位数字。", "Use the same Wi-Fi and compare the six-digit code on both devices.")) { go("discover"); discover() }
-                if (glassesMode) text(tr("云端配置在手机选择和测试，传送后由眼镜直接调用；电脑远端 Agent 仍需要眼镜端连接能力。", "Choose and test cloud settings on the phone; the glasses call the provider after transfer. Desktop Agent needs a glasses connection runtime."), true)
-                else text(tr("配置任意一种方式即可开始", "Configure either option to start."), true)
+                card(deviceName, if (connected) getString(R.string.watch_setup_copy_connected) else getString(R.string.watch_setup_copy_glasses_not_connected))
+                text(getString(R.string.watch_setup_copy_conversation_mode), true)
+                card(device(R.string.watch_setup_copy_cloud_api_key, R.string.watch_setup_copy_cloud_agent_and_model), device(R.string.watch_setup_copy_connect_the_watch_directly_to_a_model_provider, R.string.watch_setup_copy_choose_a_phone_agent_or_add_a_model_the)) { go("cloud") }
+                if (!glassesMode) card(getString(R.string.watch_setup_copy_remote_agent), getString(R.string.watch_setup_copy_run_tasks_on_your_computer)) { go("remote") }
+                if (!glassesMode) card(getString(R.string.watch_setup_copy_import_skill), getString(R.string.watch_setup_copy_choose_a_gskill_package_then_confirm_installation_on_the)) { go("skills") }
+                if (glassesMode && !connected) card(getString(R.string.watch_setup_copy_connect_glasses_to_transfer),
+                    getString(R.string.watch_setup_copy_use_the_same_wi_fi_and_compare_the_six)) { go("discover"); discover() }
+                if (glassesMode) text(getString(R.string.watch_setup_copy_choose_and_test_cloud_settings_on_the_phone_the), true)
+                else text(getString(R.string.watch_setup_copy_configure_either_option_to_start), true)
             }
             "skills" -> {
-                card(deviceName, if (connected) tr("● 已连接", "● Connected") else tr("连接已断开", "Disconnected"))
-                text(tr("在手表打开 Skill 管理 → 导入 Skill。手机与手表需连接同一个 Wi-Fi。", "Open Skill management → Import Skill on the watch. Both devices must use the same Wi-Fi."), true)
-                if (skillBytes == null) text(tr("尚未选择 Skill 包", "No Skill package selected"), true)
-                else card(tr("门禁 Skill", "Door access Skill"), "v$skillVersion")
-                card(tr("选择 .gskill 文件", "Choose .gskill file")) { chooseSkillFile() }
-                text(tr("当前支持门禁 Skill 包。只传输到手表，不会安装到手机。", "Door access packages are currently supported. This sends the package to the watch without installing it on the phone."), true)
-                button(if (busy) tr("正在传输，请在手表确认…", "Transferring; confirm on the watch…") else tr("发送到手表", "Send to watch"),
+                card(deviceName, if (connected) getString(R.string.watch_setup_copy_connected) else getString(R.string.watch_setup_copy_disconnected))
+                text(getString(R.string.watch_setup_copy_open_skill_management_import_skill_on_the_watch_both), true)
+                if (skillBytes == null) text(getString(R.string.watch_setup_copy_no_skill_package_selected), true)
+                else card(getString(R.string.watch_setup_copy_door_access_skill), "v$skillVersion")
+                card(getString(R.string.watch_setup_copy_choose_gskill_file)) { chooseSkillFile() }
+                text(getString(R.string.watch_setup_copy_door_access_packages_are_currently_supported_this_sends_the), true)
+                button(if (busy) getString(R.string.watch_setup_copy_transferring_confirm_on_the_watch) else getString(R.string.watch_setup_copy_send_to_watch),
                     enabled = connected && skillBytes != null && !busy) { sendSkill() }
             }
             "cloud" -> {
-                text(device("使用手机已有配置", "选择手机已有云端 Agent", "Use a phone configuration", "Choose a cloud Agent on the phone"), true)
+                text(device(R.string.watch_setup_copy_use_a_phone_configuration, R.string.watch_setup_copy_choose_a_cloud_agent_on_the_phone), true)
                 val contacts = AppStore.contacts(this)
                 for (i in 0 until contacts.length()) {
                     val raw = contacts.getJSONObject(i)
@@ -271,7 +269,7 @@ class WatchSetupActivity : Activity() {
                     for (j in 0 until models.length()) {
                         val model = models.getJSONObject(j)
                         if (model.optString("api_key").isBlank()) continue
-                        card(raw.optString("name").ifBlank { raw.optString("cloud_provider") } + " · " + model.optString("model_id"), tr("密钥已隐藏", "Key hidden")) {
+                        card(raw.optString("name").ifBlank { raw.optString("cloud_provider") } + " · " + model.optString("model_id"), getString(R.string.watch_setup_copy_key_hidden)) {
                             provider = raw.optString("cloud_provider")
                             selectedCloudAgent = raw.optString("name").ifBlank { provider }
                             profile = JSONObject().put("endpoint", model.optString("endpoint")).put("model", model.optString("model_id"))
@@ -280,56 +278,56 @@ class WatchSetupActivity : Activity() {
                         }
                     }
                 }
-                card(tr("新增配置", "New configuration")) { chooseProvider() }
-                text(tr("仅复制所选配置，不修改手机设置", "Copies the selected configuration without changing phone settings."), true)
-                if (profile.length() > 0) card(tr("继续编辑草稿", "Resume draft")) { go("edit") }
+                card(getString(R.string.watch_setup_copy_new_configuration)) { chooseProvider() }
+                text(getString(R.string.watch_setup_copy_copies_the_selected_configuration_without_changing_phone_settings), true)
+                if (profile.length() > 0) card(getString(R.string.watch_setup_copy_resume_draft)) { go("edit") }
             }
             "edit" -> {
-                card(tr("服务商：", "Provider: ") + provider) { chooseProvider() }
-                input(tr("接口地址（完整请求地址）", "Endpoint (full request URL)"), profile.optString("endpoint")) { profile.put("endpoint", it.trim()); tested = false }
+                card(getString(R.string.watch_setup_copy_provider) + provider) { chooseProvider() }
+                input(getString(R.string.watch_setup_copy_endpoint_full_request_url), profile.optString("endpoint")) { profile.put("endpoint", it.trim()); tested = false }
                 input("API Key", profile.optString("api_key"), password = true) { profile.put("api_key", it.trim()); tested = false }
-                card(tr("选择模型", "Select model"), profile.optString("model")) { chooseModel() }
-                input(tr("模型 ID（可手动填写）", "Model ID (editable)"), profile.optString("model")) { profile.put("model", it.trim()); tested = false }
-                card(tr("深度思考", "Deep thinking"), device("关闭 · 手表默认使用简洁回答", "关闭 · 眼镜默认使用简洁回答", "Off · Concise watch responses", "Off · Concise glasses responses"))
-                button(tr("测试连接", "Test connection"), primary = false) { testCloud() }
-                button(tr("保存并继续", "Save and continue")) { runCatching { WatchSetupCloud.validate(profile) }.onSuccess { go("preview") }.onFailure { invalid() } }
+                card(getString(R.string.watch_setup_copy_select_model), profile.optString("model")) { chooseModel() }
+                input(getString(R.string.watch_setup_copy_model_id_editable), profile.optString("model")) { profile.put("model", it.trim()); tested = false }
+                card(getString(R.string.watch_setup_copy_deep_thinking), device(R.string.watch_setup_copy_off_concise_watch_responses, R.string.watch_setup_copy_off_concise_glasses_responses))
+                button(getString(R.string.watch_setup_copy_test_connection), primary = false) { testCloud() }
+                button(getString(R.string.watch_setup_copy_save_and_continue)) { runCatching { WatchSetupCloud.validate(profile) }.onSuccess { go("preview") }.onFailure { invalid() } }
             }
             "preview" -> {
-                card(if (tested) tr("手机端连接测试通过", "Phone connection test passed") else tr("尚未测试连接", "Connection not tested"), device("还未同步到手表", "还未同步到眼镜", "Not yet transferred to the watch", "Not yet transferred to the glasses"))
-                card(device("目标手表", "目标眼镜", "Watch", "Glasses"), deviceName)
-                card(selectedCloudAgent.ifBlank { provider }, profile.optString("model")); card("API Key", tr("已隐藏", "Hidden"))
-                if (!connected && glassesMode) button(tr("连接眼镜并同步", "Connect glasses and transfer")) {
+                card(if (tested) getString(R.string.watch_setup_copy_phone_connection_test_passed) else getString(R.string.watch_setup_copy_connection_not_tested), device(R.string.watch_setup_copy_not_yet_transferred_to_the_watch, R.string.watch_setup_copy_not_yet_transferred_to_the_glasses))
+                card(device(R.string.watch_setup_copy_watch, R.string.watch_setup_copy_glasses), deviceName)
+                card(selectedCloudAgent.ifBlank { provider }, profile.optString("model")); card("API Key", getString(R.string.watch_setup_copy_hidden))
+                if (!connected && glassesMode) button(getString(R.string.watch_setup_copy_connect_glasses_and_transfer)) {
                     resumePreviewAfterConnect = true; go("discover"); discover()
-                } else button(device("同步到手表", "同步到眼镜", "Transfer to watch", "Transfer to glasses")) { exchange(JSONObject().put("type", "configure").put("kind", "cloud").put("profile", profile)
+                } else button(device(R.string.watch_setup_copy_transfer_to_watch, R.string.watch_setup_copy_transfer_to_glasses)) { exchange(JSONObject().put("type", "configure").put("kind", "cloud").put("profile", profile)
                     .put("agent_name", selectedCloudAgent.ifBlank { provider })) { result -> require(result.optString("status") == "saved"); detail = selectedCloudAgent.ifBlank { provider } + " · " + profile.optString("model"); disconnect(); go("success") } }
             }
             "remote" -> {
-                card(tr("扫描电脑配对码", "Scan computer pairing code"), tr("使用新的配对码，为手表建立独立连接", "Use a fresh pairing code for the watch's own connection.")) {
-                    scanning = true; IntentIntegrator(this).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).setPrompt(tr("对准电脑配对码", "Scan the computer pairing code")).setBeepEnabled(false).initiateScan()
+                card(getString(R.string.watch_setup_copy_scan_computer_pairing_code), getString(R.string.watch_setup_copy_use_a_fresh_pairing_code_for_the_watch_s)) {
+                    scanning = true; IntentIntegrator(this).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).setPrompt(getString(R.string.watch_setup_copy_scan_the_computer_pairing_code)).setBeepEnabled(false).initiateScan()
                 }
-                card(tr("手动输入配对信息", "Enter pairing information")) {
+                card(getString(R.string.watch_setup_copy_enter_pairing_information)) {
                     val field = EditText(this).apply { isSaveEnabled = false; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE }
-                    AlertDialog.Builder(this).setTitle(tr("粘贴电脑配对信息", "Paste computer pairing information")).setView(field).setPositiveButton(tr("继续", "Continue")) { _, _ -> pair(field.text.toString()) }.setNegativeButton(tr("取消", "Cancel"), null).show()
+                    AlertDialog.Builder(this).setTitle(getString(R.string.watch_setup_copy_paste_computer_pairing_information)).setView(field).setPositiveButton(getString(R.string.watch_setup_copy_continue)) { _, _ -> pair(field.text.toString()) }.setNegativeButton(getString(R.string.watch_setup_copy_cancel_2), null).show()
                 }
             }
-            "waiting" -> { card(desktopName, tr("等待电脑授权", "Waiting for computer approval")); text(tr("请在电脑端确认手表的配对请求。授权后将显示可选 Agent。", "Approve the watch pairing request on your computer. Agents appear after approval."), true) }
+            "waiting" -> { card(desktopName, getString(R.string.watch_setup_copy_waiting_for_computer_approval)); text(getString(R.string.watch_setup_copy_approve_the_watch_pairing_request_on_your_computer_agents), true) }
             "agents" -> {
-                card(desktopName, tr("电脑已授权", "Computer authorized"))
+                card(desktopName, getString(R.string.watch_setup_copy_computer_authorized))
                 for (i in 0 until agents.length()) { val agent = agents.getJSONObject(i); card((if (selectedAgent == agent.getString("id")) "● " else "○ ") + agent.optString("name")) { selectedAgent = agent.getString("id"); render() } }
-                button(tr("在手表使用此 Agent", "Use this Agent on watch"), enabled = selectedAgent.isNotBlank()) {
+                button(getString(R.string.watch_setup_copy_use_this_agent_on_watch), enabled = selectedAgent.isNotBlank()) {
                     exchange(JSONObject().put("type", "configure").put("kind", "select_agent").put("agent_id", selectedAgent)) { result -> require(result.optString("status") == "saved"); detail = desktopName + " · " + result.optString("agent_name"); disconnect(); go("success") }
                 }
             }
-            "success" -> { card(device("✓ 手表已确认接收", "✓ 眼镜已确认接收", "✓ Watch confirmed receipt", "✓ Glasses confirmed receipt"), detail); text(if (skillTransferComplete) tr("已安装到手表，可在 Skill 管理中查看、启用或卸载。", "Installed on the watch. Manage, enable, or uninstall it in Skill management.") else device("现在可以在手表开始对话", "现在可以在眼镜说 Hello Hello 开始对话", "You can now chat on the watch.", "Say Hello Hello on the glasses to start chatting."), true); button(tr("完成", "Done")) { finish() } }
+            "success" -> { card(device(R.string.watch_setup_copy_watch_confirmed_receipt, R.string.watch_setup_copy_glasses_confirmed_receipt), detail); text(if (skillTransferComplete) getString(R.string.watch_setup_copy_installed_on_the_watch_manage_enable_or_uninstall_it) else device(R.string.watch_setup_copy_you_can_now_chat_on_the_watch, R.string.watch_setup_copy_say_hello_hello_on_the_glasses_to_start_chatting), true); button(getString(R.string.watch_setup_copy_done)) { finish() } }
             "offline" -> {
-                card(device("尚未收到手表确认", "尚未收到眼镜确认", "No watch acknowledgment", "No glasses acknowledgment"), tr("本次配置草稿仍保留在当前页面", "Your draft remains available in this screen."))
-                text(device("请保持同一 Wi-Fi，并在手表重新打开配置页。重新连接后需再次核对数字。", "请保持同一 Wi-Fi，并在眼镜重新打开手机配置页。重新连接后需再次核对数字。", "Use the same Wi-Fi and reopen watch setup. Compare the new code when reconnecting.", "Use the same Wi-Fi and reopen glasses setup. Compare the new code when reconnecting."), true)
-                button(tr("重新连接", "Reconnect")) { go("discover"); discover() }
+                card(device(R.string.watch_setup_copy_no_watch_acknowledgment, R.string.watch_setup_copy_no_glasses_acknowledgment), getString(R.string.watch_setup_copy_your_draft_remains_available_in_this_screen))
+                text(device(R.string.watch_setup_copy_use_the_same_wi_fi_and_reopen_watch_setup, R.string.watch_setup_copy_use_the_same_wi_fi_and_reopen_glasses_setup), true)
+                button(getString(R.string.watch_setup_copy_reconnect)) { go("discover"); discover() }
             }
         }
         setContentView(root)
     }
-    private fun invalid() { Toast.makeText(this, tr("请检查完整 HTTPS 地址、模型和密钥", "Check the full HTTPS endpoint, model and key."), Toast.LENGTH_LONG).show() }
+    private fun invalid() { Toast.makeText(this, getString(R.string.watch_setup_copy_check_the_full_https_endpoint_model_and_key), Toast.LENGTH_LONG).show() }
     private fun chooseSkillFile() {
         if (busy || pickingSkill) return
         pickingSkill = true
@@ -339,7 +337,7 @@ class WatchSetupActivity : Activity() {
             }, 94)
         } catch (_: android.content.ActivityNotFoundException) {
             pickingSkill = false
-            Toast.makeText(this, tr("手机没有可用的文件选择器", "No file picker is available on the phone."), Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.watch_setup_copy_no_file_picker_is_available_on_the_phone), Toast.LENGTH_LONG).show()
         }
     }
     private fun readSkillFile(uri: android.net.Uri) {
@@ -363,7 +361,7 @@ class WatchSetupActivity : Activity() {
                 if (owner != generation || isDestroyed) return@post
                 busy = false
                 result.onSuccess { (bytes, version) -> skillBytes = bytes; skillVersion = version }
-                    .onFailure { Toast.makeText(this, tr("包无效或此 Skill 暂不支持；原配置未改变", "Invalid or unsupported Skill; existing configuration was not changed."), Toast.LENGTH_LONG).show() }
+                    .onFailure { Toast.makeText(this, getString(R.string.watch_setup_copy_invalid_or_unsupported_skill_existing_configuration_was_not_changed), Toast.LENGTH_LONG).show() }
                 render()
             }
         }
@@ -382,11 +380,11 @@ class WatchSetupActivity : Activity() {
                 busy = false
                 result.onSuccess { response ->
                     if (response.optString("status") == "saved") {
-                        detail = tr("门禁 Skill", "Door access Skill") + " · v$skillVersion"
+                        detail = getString(R.string.watch_setup_copy_door_access_skill) + " · v$skillVersion"
                         skillTransferComplete = true; skillBytes = null; disconnect(); go("success")
                     } else {
                         render()
-                        Toast.makeText(this, tr("手表未安装，请在手表确认后重试", "Not installed. Confirm on the watch and try again."), Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, getString(R.string.watch_setup_copy_not_installed_confirm_on_the_watch_and_try_again), Toast.LENGTH_LONG).show()
                     }
                 }.onFailure { disconnect(); go("offline") }
             }
@@ -394,7 +392,7 @@ class WatchSetupActivity : Activity() {
     }
     private fun chooseProvider() {
         val names = CLOUD_MODEL_PRESETS.map { it.provider }.distinct()
-        AlertDialog.Builder(this).setTitle(tr("选择服务商", "Select provider")).setItems(names.toTypedArray()) { _, n ->
+        AlertDialog.Builder(this).setTitle(getString(R.string.watch_setup_copy_select_provider)).setItems(names.toTypedArray()) { _, n ->
             provider = names[n]; val preset = CLOUD_MODEL_PRESETS.first { it.provider == provider }
             selectedCloudAgent = provider
             profile = JSONObject().put("endpoint", preset.endpoint).put("model", preset.modelId).put("api_style", preset.apiStyle).put("api_key", "")
@@ -403,7 +401,7 @@ class WatchSetupActivity : Activity() {
     }
     private fun chooseModel() {
         val options = CLOUD_MODEL_PRESETS.filter { it.provider == provider }
-        AlertDialog.Builder(this).setTitle(tr("选择模型", "Select model")).setItems(options.map { it.name }.toTypedArray()) { _, n ->
+        AlertDialog.Builder(this).setTitle(getString(R.string.watch_setup_copy_select_model)).setItems(options.map { it.name }.toTypedArray()) { _, n ->
             val option = options[n]; profile.put("model", option.modelId).put("endpoint", option.endpoint).put("api_style", option.apiStyle); tested = false; render()
         }.show()
     }
@@ -413,14 +411,14 @@ class WatchSetupActivity : Activity() {
         busy = true; render(); val owner = generation; val revision = pageRevision
         worker.execute {
             val ok = runCatching { WatchSetupCloud.test(copy) }.getOrDefault(false)
-            main.post { if (owner == generation && revision == pageRevision && !isDestroyed) { busy = false; tested = ok; if (ok) go("preview") else { render(); Toast.makeText(this, tr("连接测试失败，请检查密钥、模型或网络", "Test failed. Check credentials, model or network."), Toast.LENGTH_LONG).show() } } }
+            main.post { if (owner == generation && revision == pageRevision && !isDestroyed) { busy = false; tested = ok; if (ok) go("preview") else { render(); Toast.makeText(this, getString(R.string.watch_setup_copy_test_failed_check_credentials_model_or_network), Toast.LENGTH_LONG).show() } } }
         }
     }
     private fun connect() {
         val cm = getSystemService(ConnectivityManager::class.java)
         val network = cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
         val number = port.toIntOrNull()
-        if (network == null || number == null || number !in 1..65535) { devices.releaseSelection(); busy = false; render(); Toast.makeText(this, tr("请连接 Wi-Fi 并检查 IP 和端口", "Connect to Wi-Fi and check the IP and port."), Toast.LENGTH_LONG).show(); return }
+        if (network == null || number == null || number !in 1..65535) { devices.releaseSelection(); busy = false; render(); Toast.makeText(this, getString(R.string.watch_setup_copy_connect_to_wi_fi_and_check_the_ip_and), Toast.LENGTH_LONG).show(); return }
         stopDiscovery(); disconnect(); val owner = generation
         val connection = WatchSetupClient(); client = connection; go("connecting")
         worker.execute {
@@ -444,8 +442,8 @@ class WatchSetupActivity : Activity() {
     }
     private fun pair(raw: String) {
         val qr = runCatching { require(raw.length <= 32000); val source = JSONObject(raw); (GalaxySSILinkProtocol.normalizePairingQr(source) ?: source).also { require(GalaxySSILinkProtocol.validatePairingQr(it)) } }.getOrNull()
-        if (qr == null) { Toast.makeText(this, tr("配对信息无效或已过期，请在电脑重新生成", "Pairing code is invalid or expired. Generate a new one."), Toast.LENGTH_LONG).show(); return }
-        desktopName = qr.optString("desktop_name").ifBlank { tr("我的电脑", "My computer") }
+        if (qr == null) { Toast.makeText(this, getString(R.string.watch_setup_copy_pairing_code_is_invalid_or_expired_generate_a_new), Toast.LENGTH_LONG).show(); return }
+        desktopName = qr.optString("desktop_name").ifBlank { getString(R.string.watch_setup_copy_my_computer) }
         exchange(JSONObject().put("type", "configure").put("kind", "desktop").put("pairing_offer", qr)) { result ->
             require(result.optString("status") == "pairing_started"); go("waiting"); pollDesktop(generation, 0)
         }
@@ -526,7 +524,7 @@ class WatchSetupActivity : Activity() {
     private fun beginWifiScan(retryPermission: Boolean = false) {
         if (page != "wifi" || isDestroyed) return
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            wifiFeedback(tr("扫描附近 Wi-Fi 需要精确位置权限；也可手动输入名称。", "Nearby Wi-Fi scanning needs precise location permission; you can enter the name manually."))
+            wifiFeedback(getString(R.string.watch_setup_copy_nearby_wi_fi_scanning_needs_precise_location_permission_you))
             if (!wifiScanPermissionAsked || retryPermission) {
                 wifiScanPermissionAsked = true
                 requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), 93)
@@ -535,11 +533,11 @@ class WatchSetupActivity : Activity() {
         }
         val wifi = getSystemService(WifiManager::class.java)
         if (!getSystemService(LocationManager::class.java).isLocationEnabled) {
-            wifiFeedback(tr("手机定位开关未开启；开启后可扫描附近 Wi-Fi，也可手动输入。", "Phone Location is off. Turn it on to scan nearby Wi-Fi, or enter a name manually."))
+            wifiFeedback(getString(R.string.watch_setup_copy_phone_location_is_off_turn_it_on_to_scan))
             return
         }
         if (!wifi.isWifiEnabled) {
-            wifiFeedback(tr("手机 Wi-Fi 未开启；可手动输入网络名称。", "Phone Wi-Fi is off; enter the network name manually."))
+            wifiFeedback(getString(R.string.watch_setup_copy_phone_wi_fi_is_off_enter_the_network_name))
             return
         }
         if (wifiScanReceiver == null) {
@@ -557,20 +555,20 @@ class WatchSetupActivity : Activity() {
         }
         loadWifiNetworks(wifi, false)
         val started = runCatching { wifi.startScan() }.getOrDefault(false)
-        wifiFeedback(if (started) tr("正在扫描附近 Wi-Fi…", "Scanning nearby Wi-Fi…")
-            else tr("系统暂未启动新扫描，显示最近的结果；可稍后刷新。", "The system limited a new scan; showing recent results. Refresh later."))
+        wifiFeedback(if (started) getString(R.string.watch_setup_copy_scanning_nearby_wi_fi)
+            else getString(R.string.watch_setup_copy_the_system_limited_a_new_scan_showing_recent_results))
     }
 
     @Suppress("DEPRECATION")
     private fun loadWifiNetworks(wifi: WifiManager, updated: Boolean) {
         val results = runCatching { wifi.scanResults }.onFailure {
-            wifiFeedback(tr("无法读取附近 Wi-Fi；请检查精确位置权限和手机定位开关。", "Cannot read nearby Wi-Fi. Check precise location permission and phone Location setting."))
+            wifiFeedback(getString(R.string.watch_setup_copy_cannot_read_nearby_wi_fi_check_precise_location_permission))
         }.getOrNull() ?: return
         wifiNetworks = results.asSequence().filter { it.SSID.isNotBlank() && it.capabilities.contains("PSK") }
             .groupBy { it.SSID }
             .entries.sortedByDescending { entry -> entry.value.maxOf { it.level } }
             .map { it.key }.take(20)
-        if (updated) wifiFeedback(tr("选择附近的 Wi-Fi，或手动输入名称。", "Select nearby Wi-Fi or enter a name manually."))
+        if (updated) wifiFeedback(getString(R.string.watch_setup_copy_select_nearby_wi_fi_or_enter_a_name_manually))
         renderWifiNetworks()
     }
 
@@ -579,7 +577,7 @@ class WatchSetupActivity : Activity() {
         list.removeAllViews()
         if (wifiNetworks.isEmpty()) {
             list.addView(TextView(this).apply {
-                text = tr("暂无可选网络，可手动输入。", "No networks listed; enter a name manually.")
+                text = getString(R.string.watch_setup_copy_no_networks_listed_enter_a_name_manually)
                 setTextColor(color(R.color.text_secondary)); textSize = 13f; setPadding(dp(6), dp(8), dp(6), dp(8))
             })
             return
@@ -593,7 +591,7 @@ class WatchSetupActivity : Activity() {
                     wifiSsid = name
                     wifiSsidInput?.setText(name)
                     wifiSsidInput?.setSelection(name.length)
-                    wifiFeedback(tr("已选择：$name", "Selected: $name"))
+                    wifiFeedback(getString(R.string.watch_setup_copy_selected, name))
                 }
             }, LinearLayout.LayoutParams(-1, dp(45)).apply { bottomMargin = dp(5) })
         }
@@ -604,7 +602,7 @@ class WatchSetupActivity : Activity() {
         if (requestCode == 93 && page == "wifi") {
             if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
                 beginWifiScan()
-            else wifiFeedback(tr("未授予精确位置权限，请手动输入 Wi-Fi 名称。", "Precise location was not granted; enter the Wi-Fi name manually."))
+            else wifiFeedback(getString(R.string.watch_setup_copy_precise_location_was_not_granted_enter_the_wi_fi))
         }
     }
 }
