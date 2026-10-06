@@ -6,6 +6,43 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationSemanticGoalLoopTest {
+    @Test fun rejectedInitialDraftGetsTargetedFeedbackAndCorrectedPlanCanDispatch() {
+        val initial = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop").put("tool", "exec_command")))
+        val report = assessment(initial).put("work", JSONArray().put(job("measure")))
+        val rejected = advance(initial, report, "[]")
+        assertRepairOnly(rejected, "[]")
+        assertEquals(report.toString(), rejected.request.context[CollaborationGoalLoop.PREVIOUS])
+        val feedback = rejected.request.context.getValue(CollaborationGoalLoop.ACCEPTANCE_FEEDBACK).toString()
+        assertTrue(feedback.contains("initial_criteria_pending"))
+        assertTrue(feedback.contains("$.criteria[0].required_observations[0].origin"))
+        assertTrue(feedback.contains("desktop_codex_tool"))
+        val instruction = rejected.definition.members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }.objective
+        assertTrue(instruction.contains("empty array is not corruption"))
+        val corrected = JSONObject(report.toString())
+        corrected.getJSONArray("criteria").getJSONObject(0).getJSONArray("required_observations").getJSONObject(0)
+            .put("origin", "desktop_codex_tool").put("tool", "codex.commandExecution")
+        val next = requireNotNull(CollaborationGoalLoop.advance(complete(rejected, corrected),
+            rejected.definition.primaryMemberId, 100_000, false))
+        assertEquals(1, next.definition.members.count { it.deliveryMode == AgentDeliveryMode.OBSERVE })
+        assertEquals("measure", next.definition.members.single { it.deliveryMode == AgentDeliveryMode.OBSERVE }.context[CollaborationGoalLoop.WORK_ID])
+        assertEquals("desktop_codex_tool", JSONArray(next.request.context[CollaborationGoalLoop.CRITERIA].toString())
+            .getJSONObject(0).getJSONArray("required_observations").getJSONObject(0).getString("origin"))
+    }
+
+    @Test fun rejectedEstablishedDraftKeepsExactPriorAndDoesNotRequestContractRecovery() {
+        val original = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop_codex_tool").put("tool", "codex.commandExecution")))
+        val proposed = JSONObject(original.toString())
+        proposed.getJSONArray("required_observations").getJSONObject(0).put("origin", "desktop")
+        val next = advance(original, assessment(proposed))
+        assertRepairOnly(next, JSONArray().put(original).toString())
+        val instruction = next.definition.members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }.objective
+        assertTrue(instruction.contains("preserving every established"))
+        assertFalse(instruction.contains("requiring recovery"))
+        assertTrue(next.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK].toString().contains("\"contract_state\":\"established\""))
+    }
+
     @Test fun preDispatchOverflowPreservesCheckpointWithoutInventingJsonRepairRounds() {
         val error = CollaborationPromptBudget.Overflow(listOf(
             CollaborationPromptBudget.Section("Assignment", "large assignment")), 100, 10).message.orEmpty()

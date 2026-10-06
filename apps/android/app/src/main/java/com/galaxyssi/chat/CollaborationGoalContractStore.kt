@@ -431,7 +431,9 @@ internal class CollaborationGoalContractStore(
             CollaborationSemanticGoalCoverage.criteriaHash(it)
         }
 
-        private fun strictCriteria(raw: String): JSONArray {
+        private fun strictCriteria(raw: String): JSONArray = parseJson(raw) as JSONArray
+
+        internal fun parseJson(raw: String): Any {
             require(validUnicode(raw))
             var index = 0
             fun whitespace() { while (index < raw.length && raw[index] in " \t\r\n") index++ }
@@ -488,7 +490,7 @@ internal class CollaborationGoalContractStore(
                     }
                 }
             }
-            return JSONTokener(raw).nextValue() as JSONArray
+            return JSONTokener(raw).nextValue()
         }
 
         private val JSON_NUMBER = Regex("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
