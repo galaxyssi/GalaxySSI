@@ -173,9 +173,9 @@ val webFiles = listOf(
     "voice/metrics/VoiceLatencyTracer.kt", "voice/audio/VoiceCommunicationAudioSession.kt",
     "voice/modelstream/SentenceCommitter.kt", "ui/AgentComposerUiPolicy.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
     "AgentWebReadingWindow.kt", "AgentResearchTrace.kt", "ResearchEvidenceAudit.kt",
-    "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudGoalPageProtocol.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
+    "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudGoalPageProtocol.kt", "CloudMethodHistoryProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
-val webSlices = listOf("AgentModelSelectionSettings.kt", "MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
+val webSlices = listOf("CollaborationResearchCandidates.kt", "AgentModelSelectionSettings.kt", "MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt", "AgentRemoteOutcomeCodec.kt", "AgentResultReceipt.kt")
 val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
 val syncPhoneWebParser by tasks.registering {
@@ -208,9 +208,15 @@ val syncPhoneWebParser by tasks.registering {
                     .replace("CollaborationCloudRecall.NAME", "CloudGoalPageProtocol.RECALL_TOOL")
                     .replace("CollaborationRemoteEvidenceProtocol.integer", "CloudGoalPageProtocol.integer")
                     .replace("CollaborationEvolutionProtocol.rules(topic).toString()", "error(\"Collaboration rules are unavailable on Watch\")")
+                "CloudMethodHistoryProgress.kt" -> source
+                    .replace("CollaborationRemoteEvidenceProtocol.integer", "CloudGoalPageProtocol.integer")
+                    .replace("CollaborationResearchCandidates.same", "WatchSharedMethodIdentity.same")
                 else -> source
             }
         }) }
+        // Share the exact pure identity comparison without compiling the phone's candidate store.
+        write("WatchSharedMethodIdentity.kt", "package com.galaxyssi.chat\nimport org.json.JSONObject\ninternal object WatchSharedMethodIdentity {\n" +
+            slice(phoneWebRoot.resolve("CollaborationResearchCandidates.kt").readText(), "        fun same(", "        fun reference(") + "}\n")
         write("GalaxySSIApplication.kt", phoneWebRoot.resolve("GalaxySSIApplication.kt").readText()
             .replace("class GalaxySSIApplication", "open class GalaxySSIApplication"))
         // The UI response bus below this boundary belongs to the phone; version fencing is shared.
