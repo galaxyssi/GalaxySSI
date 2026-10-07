@@ -317,7 +317,8 @@ enum AgentEvalOpsService {
     store: AgentEvalOpsStore = AgentEvalOpsStore(),
     memoryTrustStore: AgentMemoryTrustStore = AgentMemoryTrustStore(),
     completedDevice: AgentDeviceEvalSnapshot? = nil,
-    events: [AgentRunControlEvent]? = nil
+    events: [AgentRunControlEvent]? = nil,
+    personalLearningEnabled: Bool = true
   ) -> AgentEvalSample? {
     guard store.settings().captureRealRuns,
           !AgentLearningAnalyzer.containsSensitiveData(run.originalRequest),
@@ -339,13 +340,15 @@ enum AgentEvalOpsService {
       )
     )
     let answeredAtMillis = run.completedAtMillis > 0 ? run.completedAtMillis : AgentEvalClock.nowMillis()
-    _ = memoryTrustStore.attachAnswer(
-      conversationId: run.conversationId,
-      runId: run.runId,
-      answer: finalText(run.finalOutput),
-      query: run.originalRequest,
-      answeredAtMillis: answeredAtMillis
-    )
+    if personalLearningEnabled {
+      _ = memoryTrustStore.attachAnswer(
+        conversationId: run.conversationId,
+        runId: run.runId,
+        answer: finalText(run.finalOutput),
+        query: run.originalRequest,
+        answeredAtMillis: answeredAtMillis
+      )
+    }
     let memoryProvenanceVerified = memoryTrustStore.verifiedUsageForRun(
       runId: run.runId,
       requiredHorizonDays: start.contract.memoryHorizonDays,
@@ -361,7 +364,7 @@ enum AgentEvalOpsService {
     store.saveSample(sample)
     AgentEvolutionLabService.observe(sample: sample)
     AgentBenchmarkService.observe(run: run, sample: sample)
-    if AgentEvalSideEffectPolicy.allowsPersonalLearning(conversationId: run.conversationId) {
+    if personalLearningEnabled && AgentEvalSideEffectPolicy.allowsPersonalLearning(conversationId: run.conversationId) {
       AgentTrajectoryLearningService.observe(run: run, sample: sample)
       AgentContinuousEvalCoordinator.observeCompletedRun(run: run, sample: sample)
     }

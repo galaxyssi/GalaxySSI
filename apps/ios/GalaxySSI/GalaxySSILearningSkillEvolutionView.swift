@@ -3,10 +3,11 @@ import SwiftUI
 
 final class UserDefaultsAgentLearningProposalStore: AgentLearningProposalStoring {
   static let defaultKey = "galaxyssi-ios-agent-learning-proposals-v1"
+  static let didChange = Notification.Name("galaxySSI.learningProposalsChanged")
 
   private let defaults: UserDefaults
   private let key: String
-  private let lock = NSRecursiveLock()
+  private static let lock = NSRecursiveLock()
 
   init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentLearningProposalStore.defaultKey) {
     self.defaults = defaults
@@ -32,9 +33,18 @@ final class UserDefaultsAgentLearningProposalStore: AgentLearningProposalStoring
     }
   }
 
+  func updateProposals(_ mutate: (inout [AgentLearningProposal]) -> Void) {
+    locked {
+      var proposals = loadProposals()
+      mutate(&proposals)
+      saveProposals(proposals)
+    }
+    NotificationCenter.default.post(name: Self.didChange, object: nil)
+  }
+
   private func locked<T>(_ work: () -> T) -> T {
-    lock.lock()
-    defer { lock.unlock() }
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
     return work()
   }
 }
@@ -224,6 +234,8 @@ struct GalaxySSILearningSkillEvolutionView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear(perform: refreshProposals)
+    .onReceive(NotificationCenter.default.publisher(for: UserDefaultsAgentLearningProposalStore.didChange)
+      .receive(on: DispatchQueue.main)) { _ in refreshProposals() }
     .alert(
       selectedProposal?.title.ifBlank(t("galaxyssi.learning.proposal", "Learning proposal")) ??
         t("galaxyssi.learning.proposal", "Learning proposal"),
@@ -367,14 +379,11 @@ struct GalaxySSILearningSkillEvolutionView: View {
   }
 
   private func review(_ proposal: AgentLearningProposal, status: AgentLearningProposalStatus) {
-    var current = proposalStore.loadProposals()
-    guard let index = current.firstIndex(where: { $0.id == proposal.id && $0.status == .pending }) else {
-      refreshProposals()
-      return
+    proposalStore.updateProposals { current in
+      guard let index = current.firstIndex(where: { $0.id == proposal.id && $0.status == .pending }) else { return }
+      current[index].status = status
+      current[index].reviewedAtMillis = AgentMemoryClock.nowMillis()
     }
-    current[index].status = status
-    current[index].reviewedAtMillis = AgentMemoryClock.nowMillis()
-    proposalStore.saveProposals(current)
     refreshProposals()
   }
 

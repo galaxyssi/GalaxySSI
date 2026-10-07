@@ -4,6 +4,30 @@ import XCTest
 
 @MainActor
 final class AgentEvalOpsTests: XCTestCase {
+  func testCompletionWorkerDoesNotBlockMainActorAndDeduplicatesPendingRuns() async {
+    let queue = AgentCompletionWorkQueue()
+    let release = DispatchSemaphore(value: 0)
+    let started = expectation(description: "background learning started")
+    let finished = expectation(description: "later work runs after failure")
+    enum ExpectedFailure: Error { case observation }
+    XCTAssertTrue(queue.enqueue(runID: "first") {
+      XCTAssertFalse(Thread.isMainThread)
+      started.fulfill()
+      XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+      throw ExpectedFailure.observation
+    })
+    defer { release.signal() }
+    XCTAssertFalse(queue.enqueue(runID: "first") { XCTFail("duplicate observation") })
+    XCTAssertTrue(queue.enqueue(runID: "second") {
+      // A worker may recheck UI-owned policy without a synchronous wait on the main thread.
+      await MainActor.run { finished.fulfill() }
+    })
+    await fulfillment(of: [started], timeout: 3)
+    release.signal()
+    await fulfillment(of: [finished], timeout: 3)
+    XCTAssertFalse(queue.enqueue(runID: " ") { XCTFail("blank run") })
+  }
+
   func testOutcomeContractClassifiesCodeAndRecoveryEvidence() {
     let code = AgentOutcomeContractCompiler.compile(runId: "code-1", goal: "Write and test Swift code")
     XCTAssertEqual(code.taskClass, .code)
