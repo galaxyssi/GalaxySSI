@@ -24,27 +24,35 @@ internal object CollaborationPromptBudget {
             (it.errorMessage.startsWith(FAILURE_CODE) || it.errorMessage == LEGACY_FAILURE)
     }?.errorMessage.orEmpty()
 
-    fun assemble(required: List<Section>, optional: List<Section>, maxChars: Int): Result {
+    fun assemble(required: List<Section>, optional: List<Section>, maxChars: Int,
+                 presentationOrder: List<String> = emptyList()): Result {
         require(maxChars > 0)
         val sections = required + optional
         require(sections.all { it.name.isNotBlank() && it.name.length <= 120 && it.recall.length <= 512 })
         require(sections.map { it.name }.distinct().size == sections.size) { "Prompt section identities must be unique" }
+        require(presentationOrder.distinct().size == presentationOrder.size &&
+            presentationOrder.all { name -> sections.any { it.name == name } }) { "Presentation order must name distinct known sections" }
         val included = linkedSetOf<String>()
         val omitted = linkedSetOf<String>()
-        val text = StringBuilder()
+        var selectedCharacters = 0
         required.forEach { section ->
-            text.append(render(section))
+            selectedCharacters += render(section).length
             included += section.name
         }
         val reserve = omissionNote(optional.sortedByDescending { reference(it).toString().length }).length
-        if (text.length + reserve > maxChars) throw Overflow(required, reserve, maxChars)
+        if (selectedCharacters + reserve > maxChars) throw Overflow(required, reserve, maxChars)
         optional.forEach { section ->
             val rendered = render(section)
-            if (text.length + rendered.length + reserve <= maxChars) {
-                text.append(rendered)
+            if (selectedCharacters + rendered.length + reserve <= maxChars) {
+                selectedCharacters += rendered.length
                 included += section.name
             } else omitted += section.name
         }
+        // Presentation cannot change which complete sections the budget admitted.
+        val ranks = presentationOrder.withIndex().associate { it.value to it.index }
+        val text = StringBuilder(selectedCharacters + reserve)
+        sections.filter { it.name in included }.sortedBy { ranks[it.name] ?: Int.MAX_VALUE }
+            .forEach { text.append(render(it)) }
         if (omitted.isNotEmpty()) text.append(omissionNote(optional.filter { it.name in omitted }))
         check(text.length <= maxChars)
         return Result(text.toString(), included, omitted)
