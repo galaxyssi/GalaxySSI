@@ -63,23 +63,31 @@ class ExchangeObservations:
 
 
 class PublicationRejected(ConnectionError):
-    def __init__(self, observation):
+    def __init__(self, observation, *, guidance=None):
+        if not isinstance(observation, dict):
+            raise TypeError("Transport observation must be a structured object")
         self.observation = observation
         self.explanation = (
             "Collaboration transport rejected all publish attempts; phone connectivity is unconfirmed. "
             "Retry this exchange after transport recovery; do not restart completed work "
             "or infer that the phone is powered off."
         )
+        if guidance is not None:
+            self.explanation += " " + guidance
         super().__init__(self.explanation + " " + json.dumps(observation, separators=(",", ":")))
 
 
 class ResponseUnconfirmed(TimeoutError):
-    def __init__(self, observation):
+    def __init__(self, observation, *, guidance=None):
+        if not isinstance(observation, dict):
+            raise TypeError("Transport observation must be a structured object")
         self.observation = observation
         self.explanation = (
             "Collaboration exchange timed out without an authenticated response; publishing is not proof of delivery. "
             "Preserve saved work and retry the exchange without repeating completed work."
         )
+        if guidance is not None:
+            self.explanation += " " + guidance
         super().__init__(self.explanation + " " + json.dumps(observation, separators=(",", ":")))
 
 

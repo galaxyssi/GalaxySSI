@@ -2,6 +2,7 @@
 import json
 
 from collaboration_recall_bridge import RecallBroker, task_scope
+from collaboration_transport_feedback import PublicationRejected, ResponseUnconfirmed
 
 TOOL = "collaboration_publish"
 REQUEST = "collaboration_publish_request"
@@ -66,12 +67,21 @@ class MilestoneBroker(RecallBroker):
         # The durable phone milestone ID owns idempotency across transport nonces and restarts.
         try:
             return self._exchange(task_scope(snapshot()), snapshot, arguments, publish, active, timeout, arguments["mode"])
+        except (PublicationRejected, ResponseUnconfirmed) as error:
+            raise type(error)(error.observation, guidance=failure_guidance(arguments["mode"])) from error
         except (TimeoutError, ConnectionError) as error:
-            if arguments["mode"] == "status":
-                raise type(error)("Publication capability status unavailable; no artifact was submitted. "
-                                  "Continue the required assignment response; a transport failure does not grant publication.") from error
-            raise type(error)("Publication response unavailable; outcome is uncertain. Retry the SAME milestone_id and artifact "
-                              "or list saved milestones after reconnecting. Do not repeat completed effects.") from error
+            raise type(error)(failure_guidance(arguments["mode"])) from error
+
+
+def failure_guidance(mode):
+    if mode == "status":
+        return ("Publication capability status unavailable; no artifact was submitted. "
+                "Continue the required assignment response; a transport failure does not grant publication.")
+    if mode == "list":
+        return ("Saved milestone list unavailable; this read submitted no artifact. Retry listing after reconnecting. "
+                "Do not infer that an earlier publication failed or repeat completed effects.")
+    return ("Publication response unavailable; outcome is uncertain. Retry the SAME milestone_id and artifact "
+            "or list saved milestones after reconnecting. Do not repeat completed effects.")
 
 
 broker = MilestoneBroker()

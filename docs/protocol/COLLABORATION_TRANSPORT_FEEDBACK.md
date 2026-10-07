@@ -36,6 +36,14 @@ so JSON and essential diagnostic fields cannot be cut off before reaching the
 Agent. Original-evidence confirmation still must succeed before the tool returns
 an original page as confirmed delivery.
 
+The milestone wrapper preserves the typed observation object through the Codex
+dynamic-tool response and adds guidance for the actual mode. An uncertain
+`publish` keeps the same milestone ID and artifact on retry. Failed `list` or
+`status` reads explicitly report that they submitted no artifact; neither read
+is evidence that an earlier publication failed. They must not acquire publication
+authority from a transport failure. The observation constructors reject plain
+strings instead of silently losing structured failure facts.
+
 ## Local Operational Diagnostics
 
 `/health` and `/api/link/transport-diagnostics` expose aggregate
