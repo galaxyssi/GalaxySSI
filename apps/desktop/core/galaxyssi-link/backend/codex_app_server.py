@@ -27,7 +27,7 @@ from agent_execution_harness import (
 )
 from latency_feature_flags import agent_output_delta_enabled
 from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
-from codex_notification_batch import CodexNotificationBatcher
+from codex_notification_batch import CodexNotificationBatcher, QueuedNotification
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -1699,6 +1699,7 @@ class CodexAppServer:
         reader_done = threading.Event()
 
         def dispatch_events() -> None:
+            last_slow_log = 0.0
             while self.process is process:
                 try:
                     batch = batches.get(timeout=0.1)
@@ -1706,12 +1707,31 @@ class CodexAppServer:
                     if reader_done.is_set():
                         return
                     continue
+                started = time.monotonic()
                 try:
                     self._handle_event(batch.message)
                 except Exception:
                     log.exception("Codex event handling failed; dispatcher will continue")
                 finally:
                     batches.task_done(batch)
+                    ended = time.monotonic()
+                    received = started if batch.received_monotonic is None else batch.received_monotonic
+                    wait_ms = max(0.0, started - received) * 1000
+                    handling_ms = max(0.0, ended - started) * 1000
+                    method = str(batch.message.get("method") or "")
+                    terminal = method == "turn/completed"
+                    if terminal or ((wait_ms >= 1000 or handling_ms >= 100) and ended - last_slow_log >= 5):
+                        last_slow_log = ended
+                        params = batch.message.get("params") or {}
+                        params = params if isinstance(params, dict) else {}
+                        turn = params.get("turn") or {}
+                        turn = turn if isinstance(turn, dict) else {}
+                        # Content-free timing: never log prompts, tool data or reasoning.
+                        log.info("Codex event dispatch method=%s thread_id=%s turn_id=%s "
+                                 "queue_wait_ms=%.1f handler_ms=%.1f batch_entries=%s queued=%s",
+                                 method, params.get("threadId", ""),
+                                 params.get("turnId") or turn.get("id", ""),
+                                 wait_ms, handling_ms, batch.entries, events.qsize())
 
         # Keep ordered notifications off the RPC reader: checkpoints, MQTT
         # callbacks and dynamic tools must not prevent it receiving replies.
@@ -1730,10 +1750,11 @@ class CodexAppServer:
                         waiter.put_nowait(message)
                     continue
                 if "method" in message:
+                    queued = QueuedNotification(message, time.monotonic())
                     # Bounded backpressure, never silently drop terminal events.
                     while self.process is process:
                         try:
-                            events.put(message, timeout=0.1)
+                            events.put(queued, timeout=0.1)
                             break
                         except queue.Full:
                             continue
@@ -1789,6 +1810,7 @@ class CodexAppServer:
             self._checkpoint_progress(
                 run,
                 self._checkpoint_phase(method),
+                stream=method == "item/agentMessage/delta" and "id" not in message,
                 app_server_event=method,
             )
         common = {"thread_id": run.thread_id, "turn_id": turn_id or run.turn_id}
@@ -2555,11 +2577,15 @@ class CodexAppServer:
     def _checkpoint_progress(
         run: CodexRun,
         phase: str,
+        *,
+        stream: bool = False,
         **verification: object,
     ) -> None:
         if run.execution_harness is not None:
             try:
-                run.execution_harness.progress(phase, **verification)
+                progress = (run.execution_harness.stream_progress if stream
+                            else run.execution_harness.progress)
+                progress(phase, **verification)
             except Exception:
                 log.exception(
                     "Codex checkpoint update failed task_id=%s phase=%s",

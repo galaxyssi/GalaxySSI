@@ -2,7 +2,7 @@ import copy
 import queue
 import unittest
 
-from codex_notification_batch import CodexNotificationBatcher
+from codex_notification_batch import CodexNotificationBatcher, QueuedNotification
 
 
 def delta(text, **fields):
@@ -80,6 +80,16 @@ class CodexNotificationBatchTests(unittest.TestCase):
         for limit in (0, -1):
             with self.assertRaises(ValueError):
                 CodexNotificationBatcher(queue.Queue(), limit)
+
+    def test_receipt_time_stays_with_oldest_fragment_and_pending_barrier(self):
+        terminal = {"method": "turn/completed", "params": {"turn": {"id": "turn"}}}
+        batches = self.drain([QueuedNotification(delta("A"), 10.0),
+                              QueuedNotification(delta("B"), 11.0),
+                              QueuedNotification(terminal, 12.0)])
+        self.assertEqual([10.0, 12.0], [b.received_monotonic for b in batches])
+        self.assertEqual([2, 1], [b.entries for b in batches])
+        self.assertEqual("AB", batches[0].message["params"]["delta"])
+        self.assertEqual(terminal, batches[1].message)
 
 
 if __name__ == "__main__":
