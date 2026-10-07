@@ -3256,6 +3256,9 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         instanceId: String = ""
     ): List<AgentTeamMessageEnvelope> = agentTeamController.messages(supervisorRunId, instanceId)
 
+    fun recentAgentTeamMessages(supervisorRunId: String, limit: Int = 20): List<AgentTeamMessageEnvelope> =
+        agentTeamController.recentMessages(supervisorRunId, limit)
+
     fun agentReputation(
         agentId: String,
         capabilities: Set<AgentCapability> = emptySet()

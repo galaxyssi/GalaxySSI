@@ -23,6 +23,11 @@ class IndexedAgentTeamMailboxTest {
             return data.tailMap(maxOf(prefix, after), after < prefix).keys.asSequence()
                 .takeWhile { it.startsWith(prefix) }.take(minOf(limit, pageSize)).toList()
         }
+        override fun pageBefore(prefix: String, before: String, limit: Int): List<String> {
+            pages++
+            return data.headMap(before.ifEmpty { "$prefix\uffff" }, false).descendingKeySet().asSequence()
+                .takeWhile { it.startsWith(prefix) }.take(minOf(limit, pageSize)).toList()
+        }
         override fun mutate(values: Map<String, String>, removeKeys: Collection<String>) {
             check(!fail) { "Synthetic transaction failure" }
             removeKeys.forEach(data::remove)
@@ -54,6 +59,54 @@ class IndexedAgentTeamMailboxTest {
         assertEquals(history.first(), reopened.append(message("message-1")))
         assertEquals(10_001L, reopened.append(message("after-reopen")).sequence)
         assertEquals(10_001, reopened.messages("run").size)
+        rows.resetCounts()
+        assertEquals((9_982L..10_001L).toList(), reopened.recentMessages("run").map { it.sequence })
+        assertEquals(21, rows.reads)
+        assertEquals(1, rows.pages)
+        assertEquals(0, rows.written)
+    }
+
+    @Test fun recentHistoryIsScopedChronologicalAndUnaffectedByLateReceipts() {
+        val rows = Rows()
+        val mailbox = IndexedAgentTeamMailbox(rows)
+        mailbox.appendAll((1..40).map { message("own-$it") })
+        mailbox.appendAll((1..80).map { message("other-$it", run = "other") })
+        mailbox.acknowledge("own-1", 999L)
+        mailbox.markDelivered("own-40", 1_000L)
+        assertEquals((21L..40L).toList(), mailbox.recentMessages("run").map { it.sequence })
+        assertEquals(AgentTeamMessageState.DELIVERED, mailbox.recentMessages("run", 1).single().state)
+        assertTrue(mailbox.recentMessages("missing").isEmpty())
+        assertEquals((79L..80L).toList(), mailbox.recentMessages("other", 2).map { it.sequence })
+        assertEquals(40, mailbox.messages("run").size)
+    }
+
+    @Test fun recentHistoryHandlesShortPagesAndLegacySequenceGapsWithoutRenumbering() {
+        val rows = Rows().also { it.pageSize = 1 }
+        val original = listOf(message("first").copy(sequence = 4_900L),
+            message("second").copy(sequence = 20_000L), message("third").copy(sequence = Long.MAX_VALUE))
+        rows.data["messages"] = AgentTeamMessageCodec.encode(original).toString()
+        val mailbox = IndexedAgentTeamMailbox(rows)
+        assertEquals(original.takeLast(2), mailbox.recentMessages("run", 2))
+        assertEquals(original, mailbox.recentMessages("run", 20))
+        assertEquals(InMemoryAgentTeamMailbox(original).recentMessages("run", 2), mailbox.recentMessages("run", 2))
+        for (limit in listOf(-1, 0, 257)) {
+            assertTrue(runCatching { mailbox.recentMessages("run", limit) }.isFailure)
+            assertTrue(runCatching { InMemoryAgentTeamMailbox(original).recentMessages("run", limit) }.isFailure)
+        }
+    }
+
+    @Test fun recentReadSurfacesCorruptRowsAndRejectsNonAdvancingReversePages() {
+        val rows = Rows()
+        val mailbox = IndexedAgentTeamMailbox(rows)
+        mailbox.append(message("one"))
+        val key = rows.data.keys.single { it.contains("/message/") }
+        val repeating = object : AgentTeamMailboxRows by rows {
+            override fun pageBefore(prefix: String, before: String, limit: Int) = listOf(key)
+        }
+        assertTrue(runCatching { IndexedAgentTeamMailbox(repeating).recentMessages("run", 2) }.isFailure)
+        rows.data[key] = "{broken"
+        assertTrue(runCatching { mailbox.recentMessages("run") }.isFailure)
+        assertEquals("{broken", rows.data[key])
     }
 
     @Test fun pendingReadAndSingleAppendDoNotScanOrRewriteAcknowledgedHistory() {

@@ -5,6 +5,7 @@ import java.security.MessageDigest
 internal interface AgentTeamMailboxRows {
     fun read(key: String): String?
     fun page(prefix: String, after: String, limit: Int): List<String>
+    fun pageBefore(prefix: String, before: String, limit: Int): List<String>
     /** The whole mutation succeeds or no rows change. */
     fun mutate(values: Map<String, String>, removeKeys: Collection<String> = emptyList())
 }
@@ -63,6 +64,30 @@ internal class IndexedAgentTeamMailbox(private val rows: AgentTeamMailboxRows) :
                 check(index in pendingKeys(message)) { "Team mailbox pending sequence mismatch" }
             }
         }.sortedBy { it.sequence }.toList()
+    }
+
+    override fun recentMessages(supervisorRunId: String, limit: Int): List<AgentTeamMessageEnvelope> = synchronized(LOCK) {
+        require(limit in 1..PAGE_SIZE)
+        migrate()
+        val prefix = runPrefix(supervisorRunId) + "message/"
+        var before = ""
+        val recent = mutableListOf<AgentTeamMessageEnvelope>()
+        while (recent.size < limit) {
+            val remaining = limit - recent.size
+            val page = rows.pageBefore(prefix, before, remaining)
+            if (page.isEmpty()) break
+            check(page.size <= remaining) { "Team mailbox reverse page exceeds requested size" }
+            page.forEach { key ->
+                check(key.startsWith(prefix) && (before.isEmpty() || key < before)) {
+                    "Team mailbox reverse pagination did not advance"
+                }
+                recent += readMessage(key).also {
+                    check(it.supervisorRunId == supervisorRunId) { "Team mailbox run mismatch" }
+                }
+                before = key
+            }
+        }
+        recent.asReversed().toList()
     }
 
     override fun markDelivered(messageId: String, atMillis: Long) = update(messageId) { current ->

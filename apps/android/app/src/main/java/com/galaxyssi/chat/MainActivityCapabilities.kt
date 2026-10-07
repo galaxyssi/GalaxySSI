@@ -312,26 +312,7 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
         })
     }
 
-    val messages = globalSuperAgentRuntime.agentTeamMessages(team.supervisorRunId)
-    if (messages.isNotEmpty()) {
-        addSectionTitle(getString(R.string.agent_team_messages_label))
-        messages.takeLast(20).forEach { message ->
-            featureContent.addView(featureRow(
-                title = getString(
-                    R.string.agent_team_message_route,
-                    message.fromInstanceId,
-                    message.toInstanceId.ifBlank { getString(R.string.agent_team_everyone) }
-                ),
-                subtitle = message.text,
-                iconRes = R.drawable.ic_composer_send_plane,
-                action = when (message.state) {
-                    AgentTeamMessageState.PENDING -> getString(R.string.agent_team_message_pending)
-                    AgentTeamMessageState.DELIVERED -> getString(R.string.agent_team_message_delivered)
-                    AgentTeamMessageState.ACKNOWLEDGED -> getString(R.string.agent_team_message_acknowledged)
-                }
-            ))
-        }
-    }
+    addAgentTeamMessageHistory(team.supervisorRunId)
 
     if (projection.finalOutput.isNotBlank()) {
         addSectionTitle(getString(R.string.agent_team_result_label))

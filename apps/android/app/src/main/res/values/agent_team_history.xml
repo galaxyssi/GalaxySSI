@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_team_history_load_failed">Could not load team messages</string>
+</resources>
