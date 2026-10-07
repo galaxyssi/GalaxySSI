@@ -24,12 +24,14 @@ internal data class CollaborationWorkspaceAccess(
     val round: Long,
     val nodeId: String = "",
     val personId: String = "",
-    val dependencyNodes: Set<String> = emptySet()
+    val dependencyNodes: Set<String> = emptySet(),
+    val pinnedReads: Set<String> = emptySet()
 ) {
     fun canRead(revision: JSONObject): Boolean = revision.optString("group_id") == groupId &&
         (revision.optString("turn_id") != turnId || revision.optString("run_id") == runId &&
             (revision.optLong("round") < round || nodeId.isNotBlank() && revision.optString("node_id") == nodeId ||
-                revision.optString("node_id") in dependencyNodes))
+                revision.optString("node_id") in dependencyNodes ||
+                pinnedReads.isNotEmpty() && CollaborationMilestoneDispatch.grant(revision)?.let(pinnedReads::contains) == true))
 
     companion object {
         fun from(execution: AgentTeamMemberExecutionContext) = CollaborationWorkspaceAccess(
@@ -38,7 +40,8 @@ internal data class CollaborationWorkspaceAccess(
             round = execution.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
             nodeId = execution.member.memberId,
             personId = execution.member.context[CollaborationResearchWorkflow.PERSON].orEmpty(),
-            dependencyNodes = execution.member.dependsOnAgentIds)
+            dependencyNodes = execution.member.dependsOnAgentIds,
+            pinnedReads = CollaborationMilestoneDispatch.strings(execution.member.context[CollaborationMilestoneDispatch.GRANTS]))
     }
 }
 
@@ -116,16 +119,41 @@ internal class CollaborationResearchWorkspace(
     }
 
     fun publishMilestone(access: CollaborationWorkspaceAccess, id: String, raw: String,
-                         now: Long = System.currentTimeMillis()): JSONObject = synchronized(LOCK) {
-        requirePublicationActive(access)
-        CollaborationMilestoneJournal.validateId(id)
-        val contract = requireNotNull(publicationContract(access)) { "A host-enrolled assignment is required" }
-        require(!contract.has("candidate_task")) { "Host candidate transitions use final publication, not interim milestones" }
-        val finalKey = prefix(access.groupId) + "publication:" + digest("${access.runId}:${access.nodeId}")
-        require(rows.read(finalKey)?.let(::JSONObject)?.getJSONObject("result")?.optString("status") != "recorded") {
-            "This assignment has already published its final result"
+                         now: Long = System.currentTimeMillis()): JSONObject {
+        val result = synchronized(LOCK) {
+            requirePublicationActive(access)
+            CollaborationMilestoneJournal.validateId(id)
+            val contract = requireNotNull(publicationContract(access)) { "A host-enrolled assignment is required" }
+            require(!contract.has("candidate_task")) { "Host candidate transitions use final publication, not interim milestones" }
+            val finalKey = prefix(access.groupId) + "publication:" + digest("${access.runId}:${access.nodeId}")
+            require(rows.read(finalKey)?.let(::JSONObject)?.getJSONObject("result")?.optString("status") != "recorded") {
+                "This assignment has already published its final result"
+            }
+            publishInternal(access, raw, now, null, false, milestoneId = id)
         }
-        publishInternal(access, raw, now, null, false, milestoneId = id)
+        // Never call a scheduler/store while holding the workspace lock.
+        if (result.optString("status") == "recorded") CollaborationMilestoneSignals.committed(access.runId)
+        return result
+    }
+
+    fun pendingMilestones(access: CollaborationWorkspaceAccess, covered: Set<String>, producers: Set<String>): List<JSONObject> = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationMilestoneJournal.pending(rows, access, covered, producers).map { descriptor ->
+            val refs = descriptor.getJSONArray("revisions")
+            val grants = linkedSetOf<String>()
+            repeat(refs.length()) { index ->
+                val ref = refs.getJSONObject(index)
+                val original = requireNotNull(readRevision(access.groupId, ref.getString("object_id"), ref.getInt("revision")))
+                require(original.getString("run_id") == access.runId && original.getString("turn_id") == access.turnId &&
+                    original.getLong("round") == access.round && original.getString("node_id") == descriptor.getString("producer_node") &&
+                    original.getString("person_id") == descriptor.getString("person_id") &&
+                    CollaborationResearchCandidates.same(original, ref)) { "Milestone original identity changed" }
+                grants += requireNotNull(CollaborationMilestoneDispatch.grant(original))
+                val observations = original.getJSONArray("host_observations")
+                repeat(observations.length()) { at -> grants += requireNotNull(CollaborationMilestoneDispatch.grant(observations.getJSONObject(at))) }
+            }
+            descriptor.put("grants", JSONArray(grants.sorted()))
+        }
     }
 
     fun milestones(access: CollaborationWorkspaceAccess, cursor: String = ""): JSONObject = synchronized(LOCK) {
@@ -530,7 +558,8 @@ internal class CollaborationResearchWorkspace(
         checkAcceptanceAccess(access)
         val search = CollaborationCapabilityRecall.query(query)
         val scope = digest(JSONArray().put(access.groupId).put(access.runId).put(access.turnId).put(access.round)
-            .put(access.nodeId).put(access.personId).put(JSONArray(access.dependencyNodes.sorted())).put(query).toString())
+            .put(access.nodeId).put(access.personId).put(JSONArray(access.dependencyNodes.sorted()))
+            .put(JSONArray(access.pinnedReads.sorted())).put(query).toString())
         val prefix = prefix(access.groupId) + "evolution:"
         require(cursor.length <= 512) { "Capability cursor is too long" }
         val after = if (cursor.isBlank()) "" else {

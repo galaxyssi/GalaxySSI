@@ -24,6 +24,11 @@ internal object CollaborationLiveGraph {
         "work":[{"id":"stable new work ID","member":"existing authorized person UUID",
         "stage":"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE","assignment":"concrete verification or improvement with evidence",
         "depends_on":["stable work IDs"],"dependency_policy":"success|terminal","independent_review":false}]}.
+        To consume a published interim version before its author finishes, add uses_milestones:["exact host token"]
+        to the new work item. This grants ONLY the listed versions and their recorded observations; it does not
+        wait for, finish, or reveal the author's other work. Use depends_on when the entire assignment must finish.
+        For an independent milestone review, use a different author; all listed milestones are review subjects.
+        Interim checks use new work items; candidate_cycles still require their completed-producer contract.
         Add work only when new evidence reveals a useful next step. An empty work array is valid.
         ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
         Do not repeat, replace or rename existing work to bypass deduplication. Never repeat a completed side effect.
@@ -57,7 +62,8 @@ internal object CollaborationLiveGraph {
 
     fun update(record: AgentTeamExecutionRecord, completedIds: Set<String>, now: Long,
                candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null, control: AgentTeamUserControl = AgentTeamUserControl.RUN,
-               candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY): AgentTeamExecutionRecord {
+               candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY,
+               milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null): AgentTeamExecutionRecord {
         if (!enabled(record.definition) || record.events.any { it.runStatus != null }) return record
         val primary = record.definition.primaryMemberId
         if (record.events.any { it.childId == primary && it.childStatus != AgentSubagentStatus.QUEUED }) return record
@@ -69,7 +75,8 @@ internal object CollaborationLiveGraph {
         val applied = strings(record.request.context[APPLIED]?.toString()).toMutableSet()
         var next = record
         var admissionLeft = candidateAdmission
-        record.definition.members.filter { planner(it) && it.memberId in results && it.memberId !in applied }.forEach { member ->
+        record.definition.members.filter { planner(it) && it.memberId in results && it.memberId !in applied &&
+            (control == AgentTeamUserControl.RUN || CollaborationMilestoneDispatch.inputs(it).isEmpty()) }.forEach { member ->
             val result = results.getValue(member.memberId)
             val expansion = runCatching {
                 require(result.status == AgentSubagentStatus.SUCCEEDED && !result.outputTruncated) {
@@ -105,28 +112,35 @@ internal object CollaborationLiveGraph {
         // The host already owns intermediate review/repair transitions; wake the coordinator on their outcome.
         val newResults = work.filter { it.memberId in results && it.memberId !in covered &&
             (!it.context.containsKey(CollaborationCandidateEvolution.TASK) || it.memberId in settledCandidates) }
-        // When the graph is already quiescent, the normal final assessment owns continuation.
-        if (newResults.isEmpty() || work.none { it.memberId !in results }) return changed(record, next, now)
         val final = members.single { it.memberId == primary }
+        val coveredMilestones = members.filter(::planner).flatMap { CollaborationMilestoneDispatch.inputs(it) }
+            .mapTo(hashSetOf()) { it.getString("token") }
+        val milestones = if (control == AgentTeamUserControl.RUN) milestoneWorkspace?.invoke()?.pendingMilestones(
+            CollaborationMilestoneDispatch.access(next, final), coveredMilestones, work.mapTo(hashSetOf()) { it.memberId }).orEmpty()
+            else emptyList()
+        // When the graph is already quiescent, the normal final assessment owns continuation.
+        if (newResults.isEmpty() && milestones.isEmpty() || work.none { it.memberId !in results }) return changed(record, next, now)
         val person = final.context.getValue(CollaborationResearchWorkflow.PERSON)
         val coordinator = members.single { it.context[CollaborationGoalLoop.ROSTER] == "true" &&
             it.context[CollaborationResearchWorkflow.PERSON] == person }
         val sources = newResults.map { it.memberId }.sorted()
-        val id = nodeId(next, "plan:${sources.joinToString(",")}")
+        val milestoneIdentity = milestones.map { it.getString("token") }.sorted()
+        val id = nodeId(next, "plan:${sources.joinToString(",")}" +
+            if (milestoneIdentity.isEmpty()) "" else ":milestones:${milestoneIdentity.joinToString(",")}")
         val plan = coordinator.copy(instanceId = id, deliveryMode = AgentDeliveryMode.OBSERVE,
-            objective = "Inspect newly completed work and append useful independent checks or repairs now, while unrelated work continues.",
+            objective = "Inspect newly completed work and published interim versions; append useful independent checks or repairs while other work continues.",
             dependsOnAgentIds = work.filter { it.memberId in results }.mapTo(linkedSetOf()) { it.memberId },
             context = coordinator.context + mapOf(CollaborationGoalLoop.ROSTER to "false", PLANNER to "1",
-                SOURCES to JSONArray(sources).toString(), CollaborationResearchWorkflow.STAGE to "BRIEF"))
+                SOURCES to JSONArray(sources).toString(), CollaborationResearchWorkflow.STAGE to "BRIEF") +
+                CollaborationMilestoneDispatch.context(milestones))
         return changed(record, append(next, listOf(plan)), now)
     }
 
     private fun appendWork(record: AgentTeamExecutionRecord, rawRequested: JSONArray,
                            workspace: (() -> CollaborationResearchWorkspace)?, planner: AgentTeamMember): AgentTeamExecutionRecord {
-        val requested = CollaborationWorkflowInstantiation.expand(rawRequested, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
+        val access = CollaborationMilestoneDispatch.access(record, planner)
+        val availableMilestones = CollaborationMilestoneDispatch.inherited(record, planner)
+        val requested = CollaborationWorkflowInstantiation.expand(rawRequested, workspace, access)
         val members = record.definition.members
         val people = members.filter { it.context[CollaborationGoalLoop.ROSTER] == "true" }
             .associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
@@ -156,7 +170,8 @@ internal object CollaborationLiveGraph {
                     CollaborationWorkGraph.dependencies(original) == CollaborationWorkGraph.dependencies(item) &&
                     original.optString("dependency_policy", "success") == item.optString("dependency_policy", "success") &&
                     original.optBoolean("independent_review") == item.optBoolean("independent_review") &&
-                    CollaborationReviewTargets.read(original) == CollaborationReviewTargets.read(item)) {
+                    CollaborationReviewTargets.read(original) == CollaborationReviewTargets.read(item) &&
+                    CollaborationMilestoneDispatch.uses(original) == CollaborationMilestoneDispatch.uses(item)) {
                     "Cannot rewrite existing work $id; a materially different task needs a new ID"
                 }
             }
@@ -165,32 +180,15 @@ internal object CollaborationLiveGraph {
         val projection = if (CollaborationTeamOrganization.enabled(record)) CollaborationTeamOrganizationProjection.current(record) else null
         val history = projection?.let { CollaborationTeamOrganizationHistory.capture(record, it) }
         if (history != null) CollaborationTeamOrganization.validateWork(fresh, history.checkpoint)
-        val graph = CollaborationWorkGraph.compile(current.values.map { workItem(it, members) } + fresh, finished, authors)
+        val graph = CollaborationWorkGraph.compile(current.values.map { workItem(it, members) } + fresh, finished, authors,
+            availableMilestones.mapValues { it.value.getString("person_id") })
         require(graph.error.isBlank()) { graph.error }
-        val selection = CollaborationLearningWork.plan(record, work, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
-        val procedure = CollaborationProcedureWork.plan(record, selection.work, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
-        val innovation = CollaborationInnovationWork.plan(record, procedure.work, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
-        val prediction = CollaborationPredictionWork.plan(record, innovation.work, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
-        val workflow = CollaborationWorkflowWork.plan(record, prediction.work, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
-        val selfResearch = CollaborationSelfResearchWork.plan(record, workflow.work, workspace, CollaborationWorkspaceAccess(
-            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
-            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
-            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
+        val selection = CollaborationLearningWork.plan(record, work, workspace, access)
+        val procedure = CollaborationProcedureWork.plan(record, selection.work, workspace, access)
+        val innovation = CollaborationInnovationWork.plan(record, procedure.work, workspace, access)
+        val prediction = CollaborationPredictionWork.plan(record, innovation.work, workspace, access)
+        val workflow = CollaborationWorkflowWork.plan(record, prediction.work, workspace, access)
+        val selfResearch = CollaborationSelfResearchWork.plan(record, workflow.work, workspace, access)
         val selected = selfResearch.work.associateBy { it.getString("id") }
         val organization = history?.let { CollaborationTeamOrganization.allocate(people.values.toList(), graph.work, it.checkpoint) }
         val allocated = organization?.people?.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) } ?: people
@@ -209,7 +207,8 @@ internal object CollaborationLiveGraph {
                     CollaborationInnovationWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationPredictionWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationWorkflowWork.context(selected.getValue(item.getString("id"))) +
-                    CollaborationSelfResearchWork.context(selected.getValue(item.getString("id"))))
+                    CollaborationSelfResearchWork.context(selected.getValue(item.getString("id"))) +
+                    CollaborationMilestoneDispatch.context(CollaborationMilestoneDispatch.uses(item).sorted().map { availableMilestones.getValue(it) }))
         }
         val updated = if (projection != null && history != null && organization != null)
             record.copy(definition = record.definition.copy(members = members.map { member ->
@@ -237,6 +236,7 @@ internal object CollaborationLiveGraph {
             .put("stage", member.context.getValue(CollaborationResearchWorkflow.STAGE)).put("assignment", member.objective)
             .put("depends_on", JSONArray((member.dependsOnAgentIds.mapNotNull { ids[it] } + prior).distinct()))
             .put("dependency_policy", member.context[CollaborationWorkGraph.POLICY] ?: "success")
+            .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.inputs(member).map { it.getString("token") }))
             .put("independent_review", member.context[CollaborationWorkGraph.INDEPENDENT] == "true"), member.context)
     }
 

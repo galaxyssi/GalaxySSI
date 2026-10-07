@@ -32,7 +32,7 @@ internal object CollaborationReviewTargets {
     }
 
     fun context(item: JSONObject): Map<String, String> = mapOf(CONTEXT to
-        if (item.optBoolean("independent_review")) JSONArray(read(item).sorted()).toString() else "")
+        if (item.optBoolean("independent_review") && read(item).isNotEmpty()) JSONArray(read(item).sorted()).toString() else "")
 
     fun restore(item: JSONObject, context: Map<String, String>): JSONObject = item.apply {
         context[CONTEXT]?.takeIf(String::isNotBlank)?.let { put(FIELD, JSONArray(it)) }

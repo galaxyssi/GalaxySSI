@@ -260,6 +260,14 @@ class AgentSubagentRuntime(
 
     fun activeSupervisorIds(): Set<String> = activeRuns.keys.toSet()
 
+    /** Reconcile durable external inputs without completing or restarting any child. */
+    fun requestExpansion(supervisorId: String): Boolean {
+        val control = activeRuns[supervisorId] ?: return false
+        if (control.completion.isCompleted || control.cancellationReason.get() != null) return false
+        control.expansionVersion.incrementAndGet()
+        return control.expansionWake.trySend(Unit).isSuccess
+    }
+
     fun start(
         plan: AgentSubagentPlan,
         worker: AgentSubagentWorker
@@ -428,9 +436,10 @@ class AgentSubagentRuntime(
         val slots = linkedMapOf<String, CompletableDeferred<AgentSubagentChildResult>>()
         val jobs = linkedMapOf<String, Job>()
         val queued = mutableSetOf<String>()
-        val wake = Channel<Unit>(Channel.CONFLATED)
+        val wake = control.expansionWake
         val childFailure = AtomicReference<Throwable?>(null)
         var processedCount = -1
+        var processedVersion = -1L
         val admission = if (initialPlan.preserveChildOrder) AgentSubagentOrderedAdmission(executionPermits) else null
 
         fun addSlots() {
@@ -491,7 +500,8 @@ class AgentSubagentRuntime(
                 }
                 checkExpansionActive(control)
 
-                if (processedCount != completed.size) {
+                if (processedCount != completed.size || processedVersion != control.expansionVersion.get()) {
+                    val version = control.expansionVersion.get()
                     val snapshot = completed.toMap()
                     val expanded = withContext(control.childrenJob) {
                         checkNotNull(graphExpansion).expand(plan.toPublicPlan(), snapshot)
@@ -504,10 +514,12 @@ class AgentSubagentRuntime(
                     addSlots()
                     admission?.update(admissionCandidates(plan, slots))
                     processedCount = snapshot.size
+                    processedVersion = version
                 }
 
                 // Process completions that arrived during persistence before queuing appended work.
                 if (jobs.any { (id, job) -> id !in completed && job.isCompleted }) continue
+                if (processedVersion != control.expansionVersion.get()) continue
                 plan.children.forEach { child ->
                     if (child.childId !in completed && queued.add(child.childId)) {
                         checkExpansionActive(control)
@@ -1195,6 +1207,8 @@ class AgentSubagentRuntime(
         val failFastChildId: AtomicReference<String?> = AtomicReference(null),
         val hookFailure: AtomicReference<Throwable?> = AtomicReference(null),
         val interruptionFailure: AtomicReference<Throwable?> = AtomicReference(null),
+        val expansionVersion: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0L),
+        val expansionWake: Channel<Unit> = Channel(Channel.CONFLATED),
         @Volatile var orchestrationJob: Job? = null,
         @Volatile var eventSequence: Long = 0L
     ) {

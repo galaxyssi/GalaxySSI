@@ -253,6 +253,7 @@ interface AgentTeamExecutionStore : AgentSubagentEventHook {
 class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<String> = { emptyList() }) : AgentTeamExecutionStore {
     private val records = linkedMapOf<String, AgentTeamExecutionRecord>()
     internal var candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null
+    internal var milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null
     internal var candidateControl: (String) -> AgentTeamUserControl = { AgentTeamUserControl.RUN }
 
     @Synchronized
@@ -317,7 +318,7 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
                                      nowMillis: Long, candidateAdmission: Int): AgentTeamExecutionCheckpoint? {
         val current = records[supervisorRunId]?.takeIf { it.definition.primaryMemberId == expectedPrimary } ?: return null
         val next = CollaborationLiveGraph.update(current, completedIds, nowMillis, candidateWorkspace,
-            candidateControl(supervisorRunId), candidateAdmission)
+            candidateControl(supervisorRunId), candidateAdmission, milestoneWorkspace)
         records[supervisorRunId] = next
         return next.liveGraphCheckpoint()
     }
@@ -393,13 +394,15 @@ class EncryptedAgentTeamExecutionStore internal constructor(
     private val database: AgentEncryptedDatabase,
     private val recruitmentNames: () -> List<String> = { emptyList() },
     private val candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null,
-    private val candidateControl: (String) -> AgentTeamUserControl = { AgentTeamUserControl.RUN }
+    private val candidateControl: (String) -> AgentTeamUserControl = { AgentTeamUserControl.RUN },
+    private val milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null
 ) : AgentTeamExecutionStore {
     constructor(context: Context) : this(
         AgentEncryptedDatabase(context.applicationContext, DATABASE),
         { CollaborationGroupStore.names(context.applicationContext) },
         { CollaborationResearchWorkspace(context.applicationContext) },
-        { AgentTeamDurableControl(context.applicationContext).get(it) }
+        { AgentTeamDurableControl(context.applicationContext).get(it) },
+        { CollaborationResearchWorkspace(context.applicationContext) }
     )
 
     override fun create(definition: AgentTeamDefinition, request: AgentRunRequest) = synchronized(LOCK) {
@@ -494,7 +497,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
                                      nowMillis: Long, candidateAdmission: Int): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
         val current = record(supervisorRunId)?.takeIf { it.definition.primaryMemberId == expectedPrimary } ?: return@synchronized null
         val next = CollaborationLiveGraph.update(current, completedIds, nowMillis, candidateWorkspace,
-            candidateControl(supervisorRunId), candidateAdmission)
+            candidateControl(supervisorRunId), candidateAdmission, milestoneWorkspace)
         if (next != current) write(next)
         next.liveGraphCheckpoint()
     }
@@ -685,6 +688,9 @@ class AgentTeamExecutionRuntime(
         }, graphExpansion = AgentSubagentExpansionHook { plan, completed ->
             liveGraphs[plan.supervisorId]?.invoke(completed.keys) ?: plan
         })
+    private val milestoneSubscription = CollaborationMilestoneSignals.subscribe { runId ->
+        if (liveGraphs.containsKey(runId)) researchRuntime.requestExpansion(runId)
+    }
 
     private fun publishSnapshot(runId: String) {
         val callback = onSnapshot ?: return
@@ -821,6 +827,7 @@ class AgentTeamExecutionRuntime(
     fun snapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? = store.snapshot(supervisorRunId)
 
     override fun close() {
+        milestoneSubscription.close()
         runtime.close()
         researchRuntime.close()
         projectedRuns.clear()

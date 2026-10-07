@@ -31,7 +31,8 @@ internal object CollaborationWorkGraph {
                 "Read the saved output and repair only the missing delivery; do not replay completed side effects. No work was dispatched."
     }
 
-    fun compile(work: List<JSONObject>, finished: Set<String>, finishedAuthors: Map<String, String> = emptyMap()): Plan = runCatching {
+    fun compile(work: List<JSONObject>, finished: Set<String>, finishedAuthors: Map<String, String> = emptyMap(),
+                milestoneAuthors: Map<String, String> = emptyMap()): Plan = runCatching {
         val byId = work.associateBy(::id)
         require(byId.size == work.size) { "Duplicate work IDs; use one stable ID per assignment" }
         // Checkpoint graphs include ended nodes; only admission of new requests diagnoses reused IDs.
@@ -52,8 +53,13 @@ internal object CollaborationWorkGraph {
             require(id !in dependencies) { "Work cannot depend on itself: $id" }
             require(dependencies.all { it in byId || it in finished }) { "Unknown or unfinished dependency for $id" }
             val targets = CollaborationReviewTargets.read(item)
+            val milestones = CollaborationMilestoneDispatch.uses(item)
+            require(milestones.all { !milestoneAuthors[it].isNullOrBlank() }) { "Unknown or ungranted milestone for $id" }
             if (item.optBoolean("independent_review")) {
-                require(targets.isNotEmpty()) { "Independent review $id must name the work being reviewed" }
+                require(targets.isNotEmpty() || milestones.isNotEmpty()) { "Independent review $id must name the work being reviewed" }
+                require(milestones.all { milestoneAuthors[it] != item.optString("member") }) {
+                    "Independent review $id requires a different author for each milestone"
+                }
                 targets.forEach { dependency ->
                     val author = if (dependency in finished) finishedAuthors[dependency] else byId[dependency]?.optString("member")
                     require(!author.isNullOrBlank() && author != item.optString("member")) {
