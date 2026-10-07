@@ -133,7 +133,20 @@ internal class CollaborationGoalAcceptance(
         require(delivery.getString("kind") in setOf("artifact", "proposal", "decision") &&
             delivery.getJSONObject("body").opt("content") is String &&
             delivery.getJSONObject("body").optString("content").isNotBlank()) { "$id: no substantive saved delivery" }
-        CollaborationQualifiedValidation.validate(criterion, delivery.getJSONObject("body"))
+        CollaborationQualifiedValidation.validate(criterion, delivery.getJSONObject("body"), CollaborationValidationEvidence(
+            delivery, review, exact = { ref, kind ->
+                CollaborationReviewContract.validateReference(ref)
+                val saved = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) {
+                    "Executable verification record is missing or isolated"
+                }
+                require(saved.getString("kind") == kind && CollaborationResearchCandidates.same(saved, ref) &&
+                    workspace.isCurrent(access, ref.getString("object_id"), ref.getInt("revision"))) {
+                    "Executable verification record kind, version or digest changed"
+                }
+                saved
+            }, original = { ref -> ledger.read(access, ref.getString("evidence_id"), ref.getString("sha256")) },
+            requireReadCoverage = { ledger.requireReadCoverage(access, it) },
+            contributors = { workspace.contributorIds(access, it) }))
         CollaborationReviewContract.validate(CollaborationReviewContract.KIND, review.getJSONObject("body"))
         val check = review.getJSONObject("body").getJSONObject("acceptance_review")
         validateIndependentReview(access, deliveryRef, delivery, review, check, id)

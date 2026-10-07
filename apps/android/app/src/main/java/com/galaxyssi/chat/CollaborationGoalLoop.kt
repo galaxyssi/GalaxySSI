@@ -103,7 +103,12 @@ internal object CollaborationGoalLoop {
         before final acceptance to obtain host-computed errors and compare revised models; failed trials stay saved.
         The host checks ALL supplied cases, not a model-written score; these local replay limits are not research step/round limits.
         Supplied reference values are not certified true, held-out or independent. Keep provenance, oracle validity and generalization as separate requirements.
-        Other computational/physical criteria require qualified validators that are not available; keep them open and pursue useful work.
+        executable_tool_cases.v1 also qualifies actual generated Python tool execution on preserved JSON input/output cases,
+        using the existing native runtime, immutable source/test versions and independently reviewed original receipts.
+        Recall mode=evolution_rules, topic=tools before planning this route; establish its exact environment/cases contract early.
+        Code can be revised without weakening the suite. No code is executed by final acceptance; generic shell claims do not qualify.
+        This is finite-case execution evidence, not proof of oracle truth, unseen-task transfer or general/physical validity.
+        Other computational/physical criteria still require unavailable qualified validators; keep them open and pursue useful work.
         Do not relabel them documentary or replace them with simulation.
         'blocked' requires NO executable work plus a concrete resource/permission blocker and resumption condition.
         Ambiguity with a safe reversible default is not a blocker: choose, label, and test the assumption.

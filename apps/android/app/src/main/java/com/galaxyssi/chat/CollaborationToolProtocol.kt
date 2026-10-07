@@ -47,5 +47,5 @@ internal object CollaborationToolProtocol {
         Recall mode=evolution + cursor to discover releases; page full source/contracts with mode=workspace. Same-group future tasks
         can reuse them; other groups and isolated current branches cannot. Receipt records retain version, member, run, turn, output
         and failure details. No second executor, scheduler, background polling or automatic global Skill activation is introduced.
-    """.trimIndent() + "\n" + CollaborationNumericModelTrial.rules()
+    """.trimIndent() + "\n" + CollaborationNumericModelTrial.rules() + "\n" + CollaborationExecutableAcceptance.rules()
 }
