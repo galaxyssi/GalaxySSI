@@ -1,5 +1,6 @@
 package com.galaxyssi.chat
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** The compact policy is universal; full schemas are recalled only by members doing evolution work. */
@@ -15,8 +16,10 @@ internal object CollaborationEvolutionProtocol {
         Describe a mechanism, difference from prior art, falsifier and concrete predictions, not merely another phrasing of a proposal.
         Begin with independent alternatives; let peers challenge weaknesses and combine useful parts with exact parent references.
         Compare predictions before acting, preregister discriminating experiments, execute only authorized tools, and revise from outcomes.
-        Use mode=evolution_rules with offset=0 on collaboration_recall (or galaxyssi.phone.collaboration.recall) for typed schemas;
-        follow next_offset. Before inventing a method from scratch, use mode=capabilities with a focused query and cursor="" to
+        Use mode=evolution_rules, topic=catalog on collaboration_recall (or galaxyssi.phone.collaboration.recall) to select the
+        relevant capability contract, then topic=<returned id> with offset=0; follow next_offset with the SAME topic.
+        The catalog is a capability directory, not a required sequence. Read relevant prerequisites; select methods from the goal and evidence.
+        Omit topic or use topic=all for the complete reference. Before inventing a method from scratch, use mode=capabilities with a focused query and cursor="" to
         find saved procedures, workflows, tools and failure lessons related to this assignment. Task-related capability candidates
         in the goal contract are only an initial lexical search. Follow next_cursor even on empty pages; broaden with synonyms,
         other languages or other approaches as useful. No match does not prove no relevant capability exists. Compare alternatives
@@ -34,7 +37,36 @@ internal object CollaborationEvolutionProtocol {
         No lesson installs a Skill, changes app code, expands permissions or spends resources by itself. Existing approval and pause rules apply.
     """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions() + "\n" + CollaborationTeamInventionProtocol.instructions() + "\n" + CollaborationPredictionProtocol.instructions() + "\n" + CollaborationToolProtocol.instructions() + "\n" + CollaborationWorkflowProtocol.instructions() + "\n" + CollaborationRetentionProtocol.instructions() + "\n" + CollaborationSelfResearchProtocol.instructions()
 
-    fun rules(): JSONObject = JSONObject().put("format", "galaxyssi.collaborative-evolution.v1").put("contract", """
+    private data class Topic(val id: String, val purpose: String, val prerequisites: List<String>, val contract: () -> String)
+    private val topics by lazy { listOf(
+        Topic("foundation", "Diagnose gaps, define falsifiable ideas, execute paired experiments and retain evidence-linked lessons", emptyList(), ::foundation),
+        Topic("learning", "Choose what to learn from goal relevance, expected gain and available resources", listOf("foundation"), CollaborationLearningAgenda::rules),
+        Topic("procedures", "Turn independently retained lessons into reusable procedures and preserve failure experience", listOf("foundation"), CollaborationProceduralMemory::rules),
+        Topic("transfer", "Test whether acquired capabilities generalize to new tasks without losing source competence", listOf("foundation", "procedures"), CollaborationTransferStudy::rules),
+        Topic("innovation", "Discover opportunities and independently assess novelty, feasibility and value", listOf("foundation"), CollaborationInnovationProtocol::rules),
+        Topic("team_invention", "Challenge and combine member contributions into testable new candidates", listOf("foundation", "innovation"), CollaborationTeamInventionProtocol::rules),
+        Topic("prediction", "Predict outcomes before acting and revise hypotheses using actual observations", listOf("foundation"), CollaborationPredictionProtocol::rules),
+        Topic("tools", "Develop, test, review and reuse versioned tools", listOf("foundation"), CollaborationToolProtocol::rules),
+        Topic("workflows", "Reuse and compare executable methods while preserving dependencies and independent checks", listOf("foundation"), CollaborationWorkflowProtocol::rules),
+        Topic("retention", "Check regressions and maintain capability versions and rollback channels", listOf("foundation", "procedures"), CollaborationRetentionProtocol::rules),
+        Topic("self_research", "Investigate and improve the system's own methods through evidence-linked studies", listOf("foundation", "workflows", "retention"), CollaborationSelfResearchProtocol::rules)
+    ) }
+
+    fun topicIds(): List<String> = listOf("catalog", "all") + topics.map { it.id }
+
+    fun rules(topic: String = "all"): JSONObject {
+        require(topic in topicIds()) { "Unknown evolution topic. Use topic=catalog to discover supported contracts." }
+        val result = JSONObject().put("format", "galaxyssi.collaborative-evolution.v1")
+        if (topic == "all") return result.put("contract", topics.joinToString("\n") { it.contract() })
+        if (topic == "catalog") return result.put("topic", topic).put("topics", JSONArray(topics.map {
+            JSONObject().put("id", it.id).put("purpose", it.purpose).put("prerequisites", JSONArray(it.prerequisites))
+        })).put("usage", "Select a relevant topic and follow next_offset with the same topic; prerequisites are reading dependencies, not mandatory task steps.")
+            .put("grants_permissions", false).put("required_execution_sequence", false)
+        val selected = topics.single { it.id == topic }
+        return result.put("topic", topic).put("prerequisites", JSONArray(selected.prerequisites)).put("contract", selected.contract())
+    }
+
+    private fun foundation() = """
         Publish each typed record as an ordinary workspace item: {id,kind,title,body:{content,<kind>:{...}},parents:[],observations:[]}.
         Exact refs always contain object_id, integer revision and sha256 from host receipts. Never invent them.
         Each publication is atomic and idempotent. Read originals first. Use distinct work IDs and dependent tasks for later records.
@@ -112,5 +144,5 @@ internal object CollaborationEvolutionProtocol {
         Keep applicability narrow, especially when transfer cases are not met. Existing skill/package/tool execution gates still apply.
         Recall prior lessons to improve planning/search/tooling/collaboration/checking. Reevaluate after context or model changes.
         No record here satisfies physical/scientific goal acceptance; the original goal's qualified validator remains authoritative.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.rules() + "\n" + CollaborationProceduralMemory.rules() + "\n" + CollaborationTransferStudy.rules() + "\n" + CollaborationInnovationProtocol.rules() + "\n" + CollaborationTeamInventionProtocol.rules() + "\n" + CollaborationPredictionProtocol.rules() + "\n" + CollaborationToolProtocol.rules() + "\n" + CollaborationWorkflowProtocol.rules() + "\n" + CollaborationRetentionProtocol.rules() + "\n" + CollaborationSelfResearchProtocol.rules())
+    """.trimIndent()
 }

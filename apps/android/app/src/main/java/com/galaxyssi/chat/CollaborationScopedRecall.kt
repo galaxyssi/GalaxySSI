@@ -10,6 +10,8 @@ internal object CollaborationScopedRecall {
         val group = CollaborationGroupStore(context).load(access.groupId)
         if (group == null || access.personId.isNotBlank() && group.members.none { it.id == access.personId })
             return AgentNativeToolExecutionResult.failure("group_unavailable", "Group access was removed.")
+        if (input.containsKey("topic") && input["mode"] != "evolution_rules")
+            return AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
         return when (input["mode"]) {
             "capabilities" -> {
                 if (input.keys.any { it !in setOf("mode", "query", "cursor") } || input["query"] !is String ||
@@ -34,9 +36,14 @@ internal object CollaborationScopedRecall {
                     "trust" to "observed_symptoms_not_diagnosed_causes"))
             }
             "evolution_rules" -> {
-                if (input.keys.any { it !in setOf("mode", "offset") })
-                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Evolution rules accept only offset.")
-                page(CollaborationEvolutionProtocol.rules(), input, "host_schema_not_execution_authority")
+                if (input.keys.any { it !in setOf("mode", "offset", "topic") } ||
+                    input.containsKey("topic") && input["topic"] !is String)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Evolution rules accept offset and topic only.")
+                val topic = input["topic"] as? String ?: "all"
+                val rules = try { CollaborationEvolutionProtocol.rules(topic) } catch (invalid: IllegalArgumentException) {
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", invalid.message.orEmpty())
+                }
+                page(rules, input, "host_schema_not_execution_authority", mapOf("topic" to topic))
             }
             "evolution" -> {
                 if (input.keys.any { it !in setOf("mode", "cursor") })
