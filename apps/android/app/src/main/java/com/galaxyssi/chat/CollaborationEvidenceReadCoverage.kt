@@ -40,8 +40,10 @@ internal object CollaborationEvidenceReadCoverage {
     fun snapshot(rows: CollaborationWorkspaceRows, prefix: String, reader: CollaborationWorkspaceAccess, source: JSONObject): JSONObject {
         if (!attributable(reader)) return summary(empty(reader, source, source.toString())).put("mode", "unattributed")
         val state = load(rows, prefix, reader, source, source.toString())
-        return if (sameIdentity(identity(reader), source)) summary(state).put("mode", "same_dispatch_execution")
-            else summary(state)
+        val result = summary(state)
+        // Ownership must not hide a separately confirmed full read from the next reviewer.
+        return if (sameIdentity(identity(reader), source) && !result.getBoolean("complete"))
+            result.put("mode", "same_dispatch_execution") else result
     }
 
     fun requireComplete(reference: JSONObject, review: JSONObject, source: JSONObject) {

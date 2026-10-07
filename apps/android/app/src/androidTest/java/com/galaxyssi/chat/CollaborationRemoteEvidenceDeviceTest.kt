@@ -144,12 +144,35 @@ class CollaborationRemoteEvidenceDeviceTest {
             val original = CollaborationEvidenceLedger(context).read(peer, ref.getString("evidence_id"), ref.getString("sha256"))!!
             assertEquals(String(fixture.body, Charsets.UTF_8), JSONObject(original.getString("output_json")).getString("original_json"))
             assertNull(ledger.read(peer.copy(dependencyNodes = emptySet()), ref.getString("evidence_id")))
+            val unread = ledger.references(access(group), JSONArray().put(ref)).getJSONObject(0)
+                .getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+            assertEquals("same_dispatch_execution", unread.getString("mode"))
+            assertFalse(unread.getBoolean("complete"))
+            val authorPage = ledger.readPage(access(group), ref.getString("evidence_id"), ref.getString("sha256"),
+                recordCoverage = false)!!
+            assertNull(authorPage.next)
+            ledger.confirmPage(access(group), ref.getString("evidence_id"), ref.getString("sha256"), 0,
+                MqttImmutableContent.sha256(authorPage.content))
             val artifact = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Live fixture")
                 .put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray())
                 .put("workspace", JSONArray().put(JSONObject().put("id", "live-receipt").put("kind", "evidence")
                     .put("title", "Measured output, not a verified claim").put("body", JSONObject().put("content", "Fixture"))
                     .put("observations", JSONArray().put(ref)))).toString()
-            assertEquals("recorded", CollaborationResearchWorkspace(context).publish(access(group), artifact).getString("status"))
+            val publication = CollaborationResearchWorkspace(context).publish(access(group), artifact)
+            assertEquals("recorded", publication.getString("status"))
+            val revision = publication.getJSONArray("revisions").getJSONObject(0)
+            val delivered = CollaborationResearchWorkspace(context).read(peer, revision.getString("object_id"),
+                revision.getInt("revision"))!!
+            assertEquals(revision.getString("sha256"), delivered.getString("sha256"))
+            val authorReceipt = delivered.getJSONArray("host_observations").getJSONObject(0)
+                .getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+            assertEquals("scoped_pages", authorReceipt.getString("mode"))
+            assertTrue(authorReceipt.getBoolean("complete"))
+            assertEquals("author", authorReceipt.getJSONObject("reader").getString("person_id"))
+            assertFalse(CollaborationEvidenceLedger(context).references(peer, JSONArray().put(ref)).getJSONObject(0)
+                .getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getBoolean("complete"))
+            assertEquals("same_dispatch_execution", unread.getString("mode"))
+            assertFalse(unread.getBoolean("complete"))
             assertTrue(store.createIntent("fixture-desktop", identity, access(group)).second)
             assertEquals(1, store.pending().count { it.second == key })
             assertTrue(CollaborationRemoteEvidenceImporter(CollaborationRemoteEvidenceStore(context), CollaborationEvidenceLedger(context))
