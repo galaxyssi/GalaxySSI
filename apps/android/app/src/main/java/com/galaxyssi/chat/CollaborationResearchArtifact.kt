@@ -27,7 +27,7 @@ internal object CollaborationResearchArtifact {
             "\"resolves\":[{\"object_id\":\"counterexample or question ID\",\"revision\":1}]," +
             "\"observations\":[{\"evidence_id\":\"actual host receipt ID\",\"sha256\":\"exact receipt digest\"}]}]}. " +
             "Use workspace to improve shared, versioned research objects, not just post messages. For edits copy the exact host object_id and base_revision. " +
-            "When collaboration_publish is available, publish a useful intermediate artifact with a stable milestone_id while continuing your assignment. " +
+            "When collaboration_publish or galaxyssi.phone.collaboration.publish is available, publish a useful intermediate artifact with a stable milestone_id while continuing your assignment. " +
             "Final output may contain milestones:[\"your saved milestone IDs\"] plus workspace for new changes; do not recreate already published objects. " +
             "Milestones preserve versions, but do not complete work, establish truth or prove that another member has consumed them. " +
             "Keep competing hypotheses as distinct objects. Cross-domain combinations cite parents; repairs cite the counterexamples they address. " +

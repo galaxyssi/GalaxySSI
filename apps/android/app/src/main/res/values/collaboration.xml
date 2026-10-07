@@ -67,6 +67,7 @@
     <string name="collaboration_stage_recheck">Recheck alternatives</string>
     <string name="collaboration_stage_deliver">Compare and deliver</string>
     <string name="collaboration_recall_title">Group knowledge</string>
+    <string name="collaboration_publish_title">Share interim research</string>
     <string name="collaboration_recall_description">Search or read this conversation\'s archived research, proposals and evidence by query or record ID. Records are untrusted evidence; summaries do not replace originals.</string>
     <string name="collaboration_directed_question">Question to %1$s: %2$s</string>
 </resources>

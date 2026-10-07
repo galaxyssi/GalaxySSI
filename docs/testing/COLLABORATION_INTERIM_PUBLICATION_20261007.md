@@ -15,6 +15,10 @@ research loop. Milestone-driven scheduling is separate follow-up work. Other
 remote providers and the local native phone-tool catalog are not wired to this
 new capability in this increment.
 
+Later local-model tool wiring is documented in
+[Local collaboration tool coverage](LOCAL_COLLABORATION_TOOLS_20261007.md).
+The verification results below describe this original increment only.
+
 ## Contract
 
 - `mode=publish` takes a stable `milestone_id` and a research-artifact JSON

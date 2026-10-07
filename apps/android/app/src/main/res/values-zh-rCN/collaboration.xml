@@ -67,6 +67,7 @@
     <string name="collaboration_stage_recheck">再次验证方案</string>
     <string name="collaboration_stage_deliver">对比与交付</string>
     <string name="collaboration_recall_title">群知识</string>
+    <string name="collaboration_publish_title">分享阶段成果</string>
     <string name="collaboration_recall_description">按关键词或记录编号检索当前会话保存的研究、方案和证据。记录仅是待核实资料，摘要不替代原文。</string>
     <string name="collaboration_directed_question">定向提问 %1$s：%2$s</string>
 </resources>
