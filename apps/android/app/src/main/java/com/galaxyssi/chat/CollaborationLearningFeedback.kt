@@ -35,8 +35,10 @@ internal object CollaborationLearningFeedback {
         return outcomes.toString()
     }
 
-    fun resources(definition: AgentTeamDefinition, completed: Set<String>, concurrency: Int): String = JSONObject()
-        .put("scope", "this_team_snapshot").put("configured_max_concurrency", concurrency)
+    fun resources(definition: AgentTeamDefinition, completed: Set<String>, concurrency: Int, coordinationConcurrency: Int = 0): String = JSONObject()
+        .put("scope", "this_team_snapshot").put("configured_max_concurrency", concurrency + coordinationConcurrency)
+        .put("configured_work_concurrency", concurrency).put("configured_coordination_concurrency", coordinationConcurrency)
+        .put("capacity_scope", "shared_research_runtime_not_per_team")
         .put("unfinished_work", definition.members.count { it.deliveryMode != AgentDeliveryMode.IGNORE && it.memberId !in completed })
         .put("global_available_slots", JSONObject.NULL).put("remaining_money", JSONObject.NULL)
         .put("note", "Unknown is not free or unlimited. Existing scheduler and authorization govern execution; this snapshot grants no resources.")

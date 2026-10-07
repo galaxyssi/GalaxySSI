@@ -27,7 +27,9 @@ class CollaborationMilestoneDeviceTest {
 
     @Test fun reopenedGraphDiscoversPublicationWhoseWakeWasMissed() = dispatchScenario(true)
 
-    private fun dispatchScenario(publishBeforeStart: Boolean) = fixture { author -> runBlocking {
+    @Test fun saturatedWorkersDoNotBlockDurableMilestoneCoordination() = dispatchScenario(false, saturated = true)
+
+    private fun dispatchScenario(publishBeforeStart: Boolean, saturated: Boolean = false) = fixture { author -> runBlocking {
         withTimeout(45_000) {
             val db = AgentEncryptedDatabase(context, "milestone-dispatch-${UUID.randomUUID()}")
             try {
@@ -41,10 +43,14 @@ class CollaborationMilestoneDeviceTest {
                         CollaborationResearchWorkflow.STAGE to "EXECUTE", CollaborationGoalLoop.WORK_ID to "original"))
                 val final = people[1].copy(instanceId = "final", deliveryMode = AgentDeliveryMode.RESPOND,
                     dependsOnAgentIds = setOf(author.nodeId), context = people[1].context + (CollaborationGoalLoop.ROSTER to "false"))
-                val definition = AgentTeamDefinition(author.groupId, "fixture", people + producer + final, primaryInstanceId = "final")
+                val extras = if (saturated) listOf("second-worker", "queued-worker").map { id -> producer.copy(instanceId = id,
+                    context = producer.context + (CollaborationGoalLoop.WORK_ID to id)) } else emptyList()
+                val definition = AgentTeamDefinition(author.groupId, "fixture", people + producer + extras + final, primaryInstanceId = "final")
                 val request = AgentRunRequest(author.groupId, author.turnId, "fixture", runId = author.runId,
                     goal = "Synthetic interim version review", context = mapOf(CollaborationGoalLoop.ROUND to "1"))
                 val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+                val secondStarted = CompletableDeferred<Unit>(); val releaseSecond = CompletableDeferred<Unit>()
+                val coordinated = CompletableDeferred<Unit>(); val queuedStarted = CompletableDeferred<Unit>()
                 val reviewed = CompletableDeferred<CollaborationWorkspaceAccess>(); val releaseReview = CompletableDeferred<Unit>()
                 val finalStarted = CompletableDeferred<Unit>(); val calls = CopyOnWriteArrayList<String>()
                 var phase = "producer startup"
@@ -59,9 +65,12 @@ class CollaborationMilestoneDeviceTest {
                         calls += execution.member.memberId
                         when {
                             execution.member.memberId == author.nodeId -> { started.complete(Unit); release.await(); AgentSubagentOutput("producer ended") }
+                            execution.member.memberId == "second-worker" -> { secondStarted.complete(Unit); releaseSecond.await(); AgentSubagentOutput("second ended") }
+                            execution.member.memberId == "queued-worker" -> { queuedStarted.complete(Unit); AgentSubagentOutput("queued work ended") }
                             execution.member.memberId == "final" -> { finalStarted.complete(Unit); AgentSubagentOutput("Final fixture assessment") }
                             CollaborationLiveGraph.planner(execution.member) -> {
                                 val inputs = CollaborationMilestoneDispatch.inputs(execution.member)
+                                if (inputs.isNotEmpty()) coordinated.complete(Unit)
                                 AgentSubagentOutput(JSONObject().put("format", CollaborationLiveGraph.FORMAT).put("summary", "Review early")
                                     .put("work", JSONArray().apply { if (inputs.isNotEmpty()) put(JSONObject().put("id", "early-review")
                                         .put("member", "peer").put("stage", "VERIFY").put("assignment", "Check the published version")
@@ -82,7 +91,14 @@ class CollaborationMilestoneDeviceTest {
                     }
                     try {
                         started.await()
+                        if (saturated) secondStarted.await()
                         if (!publishBeforeStart) publish()
+                        if (saturated) {
+                            phase = "coordinator admission under saturation"
+                            coordinated.await()
+                            assertFalse(release.isCompleted); assertFalse(queuedStarted.isCompleted)
+                            releaseSecond.complete(Unit)
+                        }
                         phase = "peer admission"
                         val peer = reviewed.await()
                         assertFalse(finalStarted.isCompleted)
@@ -108,7 +124,7 @@ class CollaborationMilestoneDeviceTest {
                         assertEquals(calls.size, calls.distinct().size)
                     } catch (failure: Throwable) {
                         throw AssertionError("Failed during $phase; calls=$calls; snapshot=${store().snapshot(author.runId)}", failure)
-                    } finally { release.complete(Unit); releaseReview.complete(Unit); handle.cancel() }
+                    } finally { release.complete(Unit); releaseSecond.complete(Unit); releaseReview.complete(Unit); handle.cancel() }
                 }
             } finally { db.clear() }
         }

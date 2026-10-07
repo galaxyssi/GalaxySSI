@@ -669,6 +669,8 @@ class AgentTeamExecutionRuntime(
     private val store: AgentTeamExecutionStore,
     limits: AgentSubagentLimits = AgentSubagentLimits(),
     private val mailbox: AgentTeamMailbox? = null,
+    /** One shared incremental-planning slot in addition to the configured research worker slots. */
+    private val coordinationConcurrency: Int = 1,
     private val onSnapshot: ((AgentTeamExecutionSnapshot) -> Unit)? = null
 ) : Closeable {
     private val candidateAdmission = limits.maxConcurrency
@@ -680,6 +682,7 @@ class AgentTeamExecutionRuntime(
     })
     private val researchRuntime = AgentSubagentRuntime(
         limits = limits.copy(maxChildren = Int.MAX_VALUE,
+            maxCoordinationConcurrency = coordinationConcurrency,
             maxContextChars = maxOf(limits.maxContextChars, 24_000)),
         eventHook = AgentSubagentEventHook { event ->
             store.append(event)
@@ -784,7 +787,7 @@ class AgentTeamExecutionRuntime(
                     },
                     "team_visibility" to definition.visibilityMode.name.lowercase(),
                     CollaborationLearningFeedback.RESOURCES to if (research) CollaborationLearningFeedback.resources(
-                        activeDefinition, graph.completed.keys, candidateAdmission) else "",
+                        activeDefinition, graph.completed.keys, candidateAdmission, coordinationConcurrency) else "",
                     "collaboration_research_live_inventory" to if (CollaborationLiveGraph.planner(member)) CollaborationLiveGraph.inventory(activeDefinition, graph.completed) else "",
                     "collaboration_research_roster" to if (research) activeDefinition.members
                         .distinctBy { it.context[CollaborationResearchWorkflow.PERSON] }.joinToString("\n") {
