@@ -34,7 +34,7 @@ internal object CollaborationMilestoneNativeTool {
             }
             val result = JSONObject(CollaborationMilestoneTool.execute(context, access, JSONObject(call.input)))
             AgentNativeToolExecutionResult(output = result.toNativeObject(), error =
-                if (result.optBoolean("success")) null else AgentNativeToolError("publication_rejected",
+                if (result.optBoolean("success")) null else AgentNativeToolError(result.optString("error_code").ifBlank { "publication_rejected" },
                     result.optString("reason").ifBlank { result.optString("error") }.ifBlank { "Interim publication was rejected." }))
         }
     ))
