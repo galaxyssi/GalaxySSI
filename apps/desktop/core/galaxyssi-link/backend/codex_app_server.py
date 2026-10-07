@@ -180,6 +180,7 @@ class CodexRun:
     last_output_delta_text: str = ""
     last_output_delta_monotonic: float = 0.0
     working_directory: str = ""
+    sandbox: str = "read-only"
     model: str = "gpt-5.6-sol"
     reasoning_effort: str = "medium"
     web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
@@ -223,6 +224,9 @@ class CodexAppServer:
             self._dynamic_tools.append(tool_spec())
         if collaboration_publish is not None:
             from collaboration_milestone_bridge import tool_spec
+            self._dynamic_tools.append(tool_spec())
+        if collaboration_recall is not None and collaboration_publish is not None:
+            from collaboration_text_artifact import tool_spec
             self._dynamic_tools.append(tool_spec())
         if experiment_boundary is not None:
             self._dynamic_tools = []
@@ -326,6 +330,7 @@ class CodexAppServer:
             execution_policy=resolved_policy,
             execution_harness=execution_harness,
             working_directory=str(Path(cwd).expanduser().resolve()),
+            sandbox=sandbox,
             model=model,
             reasoning_effort=resolved_policy.reasoning_effort.value,
         )
@@ -530,6 +535,7 @@ class CodexAppServer:
             prefers_chinese=self._contains_chinese(original_prompt),
             execution_policy=execution_policy or execution_policy_for(original_prompt),
             working_directory=str(Path(cwd).expanduser().resolve()) if cwd else "",
+            sandbox=sandbox,
             model=model,
         )
         run.execution_harness = AgentExecutionHarness(
@@ -2133,7 +2139,7 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name in {"collaboration_recall", "collaboration_publish"}:
+            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact"}:
                 callback = self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish
                 with self._lock:
                     run = self._runs.get(task_id)
@@ -2146,7 +2152,17 @@ class CodexAppServer:
                         return (self._runs.get(task_id) is run and not run.finished
                                 and common.get("thread_id", run.thread_id) == run.thread_id
                                 and common.get("turn_id", run.turn_id) == run.turn_id)
-                recalled = callback(task_id, arguments, active)
+                if tool_name == "collaboration_text_artifact":
+                    if (self._collaboration_recall is None or run.sandbox not in {"workspace-write", "danger-full-access"}
+                            or run.execution_policy.execution_mode.value == "plan_only"
+                            or "screen_analysis" in run.execution_policy.task_intent_signals):
+                        raise ValueError("This task cannot create collaboration file artifacts")
+                    from collaboration_text_artifact import execute
+                    recalled = execute(task_id, run.working_directory, arguments, active=active,
+                        publish=lambda values: self._collaboration_publish(task_id, values, active),
+                        recall=lambda values: self._collaboration_recall(task_id, values, active))
+                else:
+                    recalled = callback(task_id, arguments, active)
                 result = {"success": recalled.get("success") is True,
                     "contentItems": [{"type": "inputText", "text": json.dumps(recalled, ensure_ascii=False)}]}
             elif tool_name == RESEARCH_AUDIT_TOOL:
@@ -2186,7 +2202,7 @@ class CodexAppServer:
         except Exception as exc:
             log.exception("GalaxySSI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
             from collaboration_transport_feedback import model_failure_result
-            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish"} else None
+            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact"} else None
             result = structured or {
                 "success": False,
                 "contentItems": [{
@@ -2214,6 +2230,11 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
+        if tool_name == "collaboration_text_artifact":
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Collaboration file handoff returned" if result.get("success") else "Collaboration file handoff needs attention",
+                "trace_stage": "collaboration_text_artifact_returned", "telemetry_only": True})
+            return
         if tool_name == "collaboration_publish":
             publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability"}
             self.on_event(task_id, {**dict(common), "status": "running",
