@@ -44,10 +44,24 @@ class CollaborationPromptBudgetTest {
     }
 
     @Test fun requiredOversizeFailsExplicitlyInsteadOfClipping() {
-        val error = assertThrows(IllegalArgumentException::class.java) {
+        val error = assertThrows(CollaborationPromptBudget.Overflow::class.java) {
             CollaborationPromptBudget.assemble(listOf(CollaborationPromptBudget.Section("Assignment", "x".repeat(100_000))), emptyList(), 4_000)
         }
         assertTrue(error.message.orEmpty().contains("durable reference"))
+        assertTrue(error.message.orEmpty().contains("\"model_dispatched\":false"))
+        assertTrue(error.message.orEmpty().contains("\"max_characters\":4000"))
+        assertTrue(error.message.orEmpty().contains("\"Assignment\":100015"))
+        assertFalse(error.message.orEmpty().contains("xxxxx"))
+    }
+
+    @Test fun onlyEmptyFailedHostResultIsClassifiedAsPreDispatchOverflow() {
+        val message = CollaborationPromptBudget.Overflow(required(), 0, 1).message.orEmpty()
+        val result = AgentSubagentChildResult("run", "node", "run", 1, AgentSubagentStatus.FAILED, errorMessage = message)
+        assertEquals(message, CollaborationPromptBudget.failure(result))
+        assertEquals("", CollaborationPromptBudget.failure(null))
+        assertEquals("", CollaborationPromptBudget.failure(result.copy(status = AgentSubagentStatus.SUCCEEDED)))
+        assertEquals("", CollaborationPromptBudget.failure(result.copy(output = "actual model answer")))
+        assertEquals("", CollaborationPromptBudget.failure(result.copy(errorMessage = "network timeout")))
     }
 
     @Test fun duplicateOrEmptySectionIdentityIsRejected() {

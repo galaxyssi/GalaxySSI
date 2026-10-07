@@ -6,6 +6,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationSemanticGoalLoopTest {
+    @Test fun preDispatchOverflowPreservesCheckpointWithoutInventingJsonRepairRounds() {
+        val error = CollaborationPromptBudget.Overflow(listOf(
+            CollaborationPromptBudget.Section("Assignment", "large assignment")), 100, 10).message.orEmpty()
+        val base = record(criterion(), assessment(criterion()))
+        val failed = base.copy(events = base.events.map { event ->
+            if (event.result != null) event.copy(kind = AgentSubagentEventKinds.CHILD_FAILED,
+                childStatus = AgentSubagentStatus.FAILED, result = event.result.copy(status = AgentSubagentStatus.FAILED,
+                    output = "", errorMessage = error))
+            else event.copy(kind = AgentSubagentEventKinds.SUPERVISOR_FAILED, runStatus = AgentSubagentRunStatus.FAILED)
+        })
+        repeat(20) { assertNull(CollaborationGoalLoop.advance(failed, "lead", 1000000L + it, false)) }
+        val store = InMemoryAgentTeamExecutionStore()
+        store.create(failed.definition, failed.request)
+        kotlinx.coroutines.runBlocking { failed.events.forEach { store.append(it) } }
+        val snapshot = requireNotNull(store.snapshot("run"))
+        assertEquals("blocked", snapshot.goalDisposition)
+        assertEquals(error, snapshot.finalOutput)
+        val resumed = requireNotNull(CollaborationGoalLoop.advance(failed, "lead", 1000000, true))
+        assertEquals(failed.request.context[CollaborationGoalLoop.CRITERIA], resumed.request.context[CollaborationGoalLoop.CRITERIA])
+        val retry = resumed.definition.members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }
+        assertEquals(failed.definition.members.single { it.memberId == "lead" }.objective, retry.objective)
+        assertFalse(resumed.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK].toString().contains("Invalid assessment"))
+        assertNotEquals("lead", retry.memberId)
+        assertTrue(resumed.definition.members.none { it.deliveryMode == AgentDeliveryMode.OBSERVE })
+    }
+
     private val goal = "Compute the exact integer sum: 2 + 3."
     private fun criterion() = JSONObject().put("id", "sum").put("requirement", goal).put("verification", "computational")
         .put("status", "open").put("evidence_kind", "observed").put("evidence", JSONArray())

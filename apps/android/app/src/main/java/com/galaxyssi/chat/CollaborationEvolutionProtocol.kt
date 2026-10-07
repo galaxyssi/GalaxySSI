@@ -35,21 +35,24 @@ internal object CollaborationEvolutionProtocol {
         Keep full failures, null results and untested ideas. Do not rerun completed side effects just to collect evidence.
         When progress stalls, change the hypothesis/test or seek relevant peers; no fixed research-round count determines success.
         No lesson installs a Skill, changes app code, expands permissions or spends resources by itself. Existing approval and pause rules apply.
-    """.trimIndent() + "\n" + CollaborationLearningAgenda.instructions() + "\n" + CollaborationProceduralMemory.instructions() + "\n" + CollaborationTransferStudy.instructions() + "\n" + CollaborationInnovationProtocol.instructions() + "\n" + CollaborationTeamInventionProtocol.instructions() + "\n" + CollaborationPredictionProtocol.instructions() + "\n" + CollaborationToolProtocol.instructions() + "\n" + CollaborationWorkflowProtocol.instructions() + "\n" + CollaborationRetentionProtocol.instructions() + "\n" + CollaborationSelfResearchProtocol.instructions()
+    """.trimIndent()
 
-    private data class Topic(val id: String, val purpose: String, val prerequisites: List<String>, val contract: () -> String)
+    private data class Topic(val id: String, val purpose: String, val prerequisites: List<String>, val contract: () -> String,
+                             val guidance: () -> String = { "" }) {
+        fun text() = listOf(guidance(), contract()).filter(String::isNotBlank).joinToString("\n")
+    }
     private val topics by lazy { listOf(
         Topic("foundation", "Diagnose gaps, define falsifiable ideas, execute paired experiments and retain evidence-linked lessons", emptyList(), ::foundation),
-        Topic("learning", "Choose what to learn from goal relevance, expected gain and available resources", listOf("foundation"), CollaborationLearningAgenda::rules),
-        Topic("procedures", "Turn independently retained lessons into reusable procedures and preserve failure experience", listOf("foundation"), CollaborationProceduralMemory::rules),
-        Topic("transfer", "Test whether acquired capabilities generalize to new tasks without losing source competence", listOf("foundation", "procedures"), CollaborationTransferStudy::rules),
-        Topic("innovation", "Discover opportunities and independently assess novelty, feasibility and value", listOf("foundation"), CollaborationInnovationProtocol::rules),
-        Topic("team_invention", "Challenge and combine member contributions into testable new candidates", listOf("foundation", "innovation"), CollaborationTeamInventionProtocol::rules),
-        Topic("prediction", "Compare informative experiments, predict action outcomes and revise hypotheses from actual observations", listOf("foundation"), CollaborationPredictionProtocol::rules),
-        Topic("tools", "Develop, test, review and reuse versioned tools", listOf("foundation"), CollaborationToolProtocol::rules),
-        Topic("workflows", "Reuse and compare executable methods while preserving dependencies and independent checks", listOf("foundation"), CollaborationWorkflowProtocol::rules),
-        Topic("retention", "Check regressions and maintain capability versions and rollback channels", listOf("foundation", "procedures"), CollaborationRetentionProtocol::rules),
-        Topic("self_research", "Investigate and improve the system's own methods through evidence-linked studies", listOf("foundation", "workflows", "retention"), CollaborationSelfResearchProtocol::rules)
+        Topic("learning", "Choose what to learn from goal relevance, expected gain and available resources", listOf("foundation"), CollaborationLearningAgenda::rules, CollaborationLearningAgenda::instructions),
+        Topic("procedures", "Turn independently retained lessons into reusable procedures and preserve failure experience", listOf("foundation"), CollaborationProceduralMemory::rules, CollaborationProceduralMemory::instructions),
+        Topic("transfer", "Test whether acquired capabilities generalize to new tasks without losing source competence", listOf("foundation", "procedures"), CollaborationTransferStudy::rules, CollaborationTransferStudy::instructions),
+        Topic("innovation", "Discover opportunities and independently assess novelty, feasibility and value", listOf("foundation"), CollaborationInnovationProtocol::rules, CollaborationInnovationProtocol::instructions),
+        Topic("team_invention", "Challenge and combine member contributions into testable new candidates", listOf("foundation", "innovation"), CollaborationTeamInventionProtocol::rules, CollaborationTeamInventionProtocol::instructions),
+        Topic("prediction", "Compare informative experiments, predict action outcomes and revise hypotheses from actual observations", listOf("foundation"), CollaborationPredictionProtocol::rules, CollaborationPredictionProtocol::instructions),
+        Topic("tools", "Develop, test, review and reuse versioned tools", listOf("foundation"), CollaborationToolProtocol::rules, CollaborationToolProtocol::instructions),
+        Topic("workflows", "Reuse and compare executable methods while preserving dependencies and independent checks", listOf("foundation"), CollaborationWorkflowProtocol::rules, CollaborationWorkflowProtocol::instructions),
+        Topic("retention", "Check regressions and maintain capability versions and rollback channels", listOf("foundation", "procedures"), CollaborationRetentionProtocol::rules, CollaborationRetentionProtocol::instructions),
+        Topic("self_research", "Investigate and improve the system's own methods through evidence-linked studies", listOf("foundation", "workflows", "retention"), CollaborationSelfResearchProtocol::rules, CollaborationSelfResearchProtocol::instructions)
     ) }
 
     fun topicIds(): List<String> = listOf("catalog", "all") + topics.map { it.id }
@@ -57,13 +60,13 @@ internal object CollaborationEvolutionProtocol {
     fun rules(topic: String = "all"): JSONObject {
         require(topic in topicIds()) { "Unknown evolution topic. Use topic=catalog to discover supported contracts." }
         val result = JSONObject().put("format", "galaxyssi.collaborative-evolution.v1")
-        if (topic == "all") return result.put("contract", topics.joinToString("\n") { it.contract() })
+        if (topic == "all") return result.put("contract", topics.joinToString("\n") { it.text() })
         if (topic == "catalog") return result.put("topic", topic).put("topics", JSONArray(topics.map {
             JSONObject().put("id", it.id).put("purpose", it.purpose).put("prerequisites", JSONArray(it.prerequisites))
         })).put("usage", "Select a relevant topic and follow next_offset with the same topic; prerequisites are reading dependencies, not mandatory task steps.")
             .put("grants_permissions", false).put("required_execution_sequence", false)
         val selected = topics.single { it.id == topic }
-        return result.put("topic", topic).put("prerequisites", JSONArray(selected.prerequisites)).put("contract", selected.contract())
+        return result.put("topic", topic).put("prerequisites", JSONArray(selected.prerequisites)).put("contract", selected.text())
     }
 
     private fun foundation() = """

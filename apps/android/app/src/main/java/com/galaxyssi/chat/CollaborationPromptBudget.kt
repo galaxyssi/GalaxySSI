@@ -5,8 +5,24 @@ import org.json.JSONObject
 
 /** Required instructions are atomic; optional evidence is omitted as a whole, never silently clipped. */
 internal object CollaborationPromptBudget {
+    private const val FAILURE_CODE = "host_dispatch_context_overflow: "
+    private const val LEGACY_FAILURE = "Required assignment/contract exceeds the dispatch context; publish a durable reference before dispatch, never truncate instructions"
     data class Section(val name: String, val content: String, val recall: String = "")
     data class Result(val text: String, val included: Set<String>, val omitted: Set<String>)
+
+    class Overflow(required: List<Section>, reserve: Int, maxChars: Int) : IllegalArgumentException(
+        FAILURE_CODE + JSONObject().put("component", "CollaborationPromptBudget").put("model_dispatched", false)
+            .put("required_characters", required.sumOf { render(it).length }).put("reference_characters", reserve)
+            .put("max_characters", maxChars).put("sections", JSONObject().apply {
+                required.forEach { put(it.name, render(it).length) }
+            }) + ". Restore a fitting durable reference before dispatch; never truncate instructions. " +
+            "No model answer exists to repair. Preserve this checkpoint until host context preparation is repaired, then resume."
+    )
+
+    fun failure(result: AgentSubagentChildResult?): String = result?.takeIf {
+        it.status == AgentSubagentStatus.FAILED && it.output.isBlank() &&
+            (it.errorMessage.startsWith(FAILURE_CODE) || it.errorMessage == LEGACY_FAILURE)
+    }?.errorMessage.orEmpty()
 
     fun assemble(required: List<Section>, optional: List<Section>, maxChars: Int): Result {
         require(maxChars > 0)
@@ -21,9 +37,7 @@ internal object CollaborationPromptBudget {
             included += section.name
         }
         val reserve = omissionNote(optional.sortedByDescending { reference(it).toString().length }).length
-        require(text.length + reserve <= maxChars) {
-            "Required assignment/contract exceeds the dispatch context; publish a durable reference before dispatch, never truncate instructions"
-        }
+        if (text.length + reserve > maxChars) throw Overflow(required, reserve, maxChars)
         optional.forEach { section ->
             val rendered = render(section)
             if (text.length + rendered.length + reserve <= maxChars) {

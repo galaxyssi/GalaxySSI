@@ -1985,7 +1985,12 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
         .maxByOrNull { it.sequence }
     val rawOutput = members.firstOrNull { it.memberId == definition.primaryMemberId }
         ?.takeIf { it.status == AgentSubagentStatus.SUCCEEDED }?.output.orEmpty()
-    val goalDisposition = if (CollaborationGoalLoop.enrolled(this) && terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED &&
+    val hostDispatchFailure = if (terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED && !organizationUncertain &&
+        (!organizationEnabled || organization?.settled == true)) CollaborationPromptBudget.failure(
+            if (organizationEnabled) organization?.verifiedResults?.get(definition.primaryMemberId)
+            else latestByChild[definition.primaryMemberId]?.result) else ""
+    val goalDisposition = if (CollaborationGoalLoop.enrolled(this) && hostDispatchFailure.isNotBlank()) "blocked"
+        else if (CollaborationGoalLoop.enrolled(this) && terminal != null && terminal.runStatus != AgentSubagentRunStatus.CANCELLED &&
         !organizationUncertain && (!organizationEnabled || organization?.settled == true))
         CollaborationGoalLoop.disposition(rawOutput, request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]",
             organization?.finishedWork ?: CollaborationGoalLoop.finishedWork(this),
@@ -2017,6 +2022,7 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
         members = members,
         finalOutput = if (CollaborationGoalLoop.enrolled(this))
             CollaborationGoalLoop.preservedCriteriaError(request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]")
+                .ifBlank { hostDispatchFailure }
                 .ifBlank { CollaborationGoalLoop.publicText(rawOutput).orEmpty() } else rawOutput,
         createdAtMillis = request.createdAtMillis,
         updatedAtMillis = maxOf(updatedAtMillis, events.maxOfOrNull(AgentSubagentEvent::timestampMillis) ?: 0L),

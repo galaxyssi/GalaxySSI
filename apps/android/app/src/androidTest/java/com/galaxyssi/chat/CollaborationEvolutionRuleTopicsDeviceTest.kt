@@ -18,7 +18,6 @@ class CollaborationEvolutionRuleTopicsDeviceTest {
         CollaborationEvidenceLedger(context).bind(source, access)
         val registry = AgentPhoneNativeToolCatalog.defaultRegistry(context, { ScreenContext(foregroundApp = "", pageTitle = "") })
             .subset { it.id == CollaborationRecallNativeTool.ID }
-        val invocation = AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = source)
         CollaborationEvolutionProtocol.topicIds().forEach { topic ->
             val cloud = StringBuilder(); val native = StringBuilder()
             var offset: Int? = 0
@@ -26,6 +25,7 @@ class CollaborationEvolutionRuleTopicsDeviceTest {
                 val input = JSONObject().put("mode", "evolution_rules").put("topic", topic).put("offset", offset)
                 val page = JSONObject(CollaborationCloudRecall.execute(context, access, input))
                 assertEquals(page.toString(), "returned", page.getString("status"))
+                val invocation = AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = source)
                 val result = registry.invoke(CollaborationRecallNativeTool.ID,
                     mapOf("mode" to "evolution_rules", "topic" to topic, "offset" to offset), invocation)
                 assertTrue(result.toJson(), result.isSuccess)
