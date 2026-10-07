@@ -70,6 +70,7 @@ internal class CollaborationGoalContractStore(
             .put("source_segment_count", segments.length()).put("page_count", pages.size)
             .put("context_section_count", contexts.size).put("context_keys", directory)
             .put("context_keys_complete", directory.length() == contexts.size)
+            .put("section_pages", CollaborationGoalContractSections.index(pages))
             .put("max_page_bytes", maxPageBytes).put("page_hashes", JSONArray(pages.map(::digest)))
         val raw = encode(manifest)
         val id = digest(raw)
@@ -113,11 +114,20 @@ internal class CollaborationGoalContractStore(
         descriptor(manifest(access, id), id)
     }
 
-    /** Model-facing retrieval accepts only a cursor; access comes from the host execution context. */
+    /** Access comes from the host execution context, never from model selectors. */
     fun read(access: CollaborationWorkspaceAccess, cursor: String = ""): JSONObject = guarded {
         authorize(access)
         val id = binding(access) ?: reject("access_not_bound")
         page(access, id, manifest(access, id), cursorIndex(access, id, cursor))
+    }
+
+    fun readSection(access: CollaborationWorkspaceAccess, section: String, cursor: String = ""): JSONObject = guarded {
+        authorize(access)
+        val id = binding(access) ?: reject("access_not_bound")
+        val manifest = manifest(access, id)
+        val range = sectionRange(access, id, manifest, section)
+        val index = if (cursor.isEmpty()) range.first else cursorIndex(access, id, cursor, section)
+        page(access, id, manifest, index, section, range)
     }
 
     /** Explicit-ID host compatibility path; knowing another snapshot hash cannot bypass the binding. */
@@ -128,10 +138,11 @@ internal class CollaborationGoalContractStore(
 
     /** Call only after the exact returned JSON was successfully delivered by a tool transport. */
     fun recordDelivery(access: CollaborationWorkspaceAccess, snapshotId: String, cursor: String,
-                       deliveredPage: JSONObject): JSONObject = guarded {
+                       deliveredPage: JSONObject, section: String = ""): JSONObject = guarded {
         val manifest = boundManifest(access, snapshotId)
-        val index = cursorIndex(access, snapshotId, cursor)
-        register(access, snapshotId, manifest, listOf(index to deliveredPage), "tool")
+        val index = if (section.isNotEmpty() && cursor.isEmpty()) sectionRange(access, snapshotId, manifest, section).first
+            else cursorIndex(access, snapshotId, cursor, section)
+        register(access, snapshotId, manifest, listOf(index to deliveredPage), "tool", section)
     }
 
     /** Separate host hook for exact pages actually included inline; a descriptor is not a page. */
@@ -197,17 +208,37 @@ internal class CollaborationGoalContractStore(
         return value
     }
 
-    private fun page(access: CollaborationWorkspaceAccess, id: String, manifest: JSONObject, index: Int): JSONObject {
-        val count = manifest.getInt("page_count")
-        if (index !in 0 until count) reject("invalid_cursor")
+    private fun sectionRange(access: CollaborationWorkspaceAccess, id: String, manifest: JSONObject, section: String): IntRange {
+        if (!CollaborationGoalContractSections.valid(section) || !validUnicode(section)) reject("invalid_section")
+        // Older pinned snapshots remain immutable; derive their index from verified originals on demand.
+        val directory = manifest.optJSONObject("section_pages") ?: CollaborationGoalContractSections.index(
+            (0 until manifest.getInt("page_count")).map { pageRaw(access, id, manifest, it) })
+        val range = directory.optJSONArray(CollaborationGoalContractSections.key(section)) ?: reject("section_unavailable")
+        val first = range.getInt(0)
+        val last = range.getInt(1)
+        if (range.length() != 2 || first < 0 || last < first || last >= manifest.getInt("page_count")) reject("snapshot_corrupt")
+        return first..last
+    }
+
+    private fun pageRaw(access: CollaborationWorkspaceAccess, id: String, manifest: JSONObject, index: Int): String {
         val raw = rows.read(snapshotPrefix(access.groupId, id) + "page:$index") ?: reject("snapshot_corrupt")
+        if (digest(raw) != manifest.getJSONArray("page_hashes").getString(index)) reject("snapshot_corrupt")
+        return raw
+    }
+
+    private fun page(access: CollaborationWorkspaceAccess, id: String, manifest: JSONObject, index: Int,
+                     section: String = "", range: IntRange? = null): JSONObject {
+        val count = manifest.getInt("page_count")
+        if (index !in 0 until count || range != null && index !in range) reject("invalid_cursor")
+        val raw = pageRaw(access, id, manifest, index)
         val hash = manifest.getJSONArray("page_hashes").getString(index)
-        if (digest(raw) != hash) reject("snapshot_corrupt")
         val result = JSONObject().put("status", "ok").put("format", PAGE_FORMAT)
             .put("snapshot_id", id).put("snapshot_sha256", id).put("reader_sha256", reader(access))
             .put("page_index", index).put("page_count", count).put("page_sha256", hash)
             .put("fragments", JSONObject(raw).getJSONArray("fragments"))
-            .put("next_cursor", if (index + 1 < count) cursor(access, id, index + 1) else JSONObject.NULL)
+            .put("next_cursor", if (index < (range?.last ?: count - 1)) cursor(access, id, index + 1, section) else JSONObject.NULL)
+        if (range != null) result.put("section_sha256", CollaborationGoalContractSections.key(section))
+            .put("section_first_page", range.first).put("section_last_page", range.last)
         if (bytes(result.toString()) > manifest.getInt("max_page_bytes")) reject("page_budget_exceeded")
         return result
     }
@@ -225,29 +256,30 @@ internal class CollaborationGoalContractStore(
             !authorized(access)) reject("access_denied")
     }
 
-    private fun cursor(access: CollaborationWorkspaceAccess, id: String, index: Int): String {
+    private fun cursor(access: CollaborationWorkspaceAccess, id: String, index: Int, section: String = ""): String {
         if (index == 0) return ""
         val position = ByteBuffer.allocate(8).putLong(index.toLong()).array()
-        val tag = mac(access.groupId, cursorBinding(access, id, index))
+        val tag = mac(access.groupId, cursorBinding(access, id, index, section))
         return Base64.getUrlEncoder().withoutPadding().encodeToString(position + tag)
     }
 
-    private fun cursorIndex(access: CollaborationWorkspaceAccess, id: String, token: String): Int {
+    private fun cursorIndex(access: CollaborationWorkspaceAccess, id: String, token: String, section: String = ""): Int {
         if (token.isEmpty()) return 0
         if (!CURSOR.matches(token)) reject("invalid_cursor")
         val decoded = Base64.getUrlDecoder().decode(token)
         if (decoded.size != 40 || Base64.getUrlEncoder().withoutPadding().encodeToString(decoded) != token) reject("invalid_cursor")
         val index = ByteBuffer.wrap(decoded, 0, 8).long
         if (index !in 1..Int.MAX_VALUE.toLong() ||
-            !MessageDigest.isEqual(decoded.copyOfRange(8, 40), mac(access.groupId, cursorBinding(access, id, index.toInt())))) {
+            !MessageDigest.isEqual(decoded.copyOfRange(8, 40), mac(access.groupId, cursorBinding(access, id, index.toInt(), section)))) {
             reject("invalid_cursor")
         }
         return index.toInt()
     }
 
-    private fun cursorBinding(access: CollaborationWorkspaceAccess, id: String, index: Int) =
-        AgentNativeJsonCodec.stringify(listOf("goal-contract-cursor-v1", access.groupId, access.runId,
-            access.turnId, access.nodeId, access.personId, id, index))
+    private fun cursorBinding(access: CollaborationWorkspaceAccess, id: String, index: Int, section: String) =
+        AgentNativeJsonCodec.stringify(listOf(if (section.isEmpty()) "goal-contract-cursor-v1" else "goal-contract-section-cursor-v1",
+            access.groupId, access.runId, access.turnId, access.nodeId, access.personId, id, index) +
+            if (section.isEmpty()) emptyList() else listOf(section))
 
     private fun secret(group: String): ByteArray {
         val value = rows.read(groupPrefix(group) + "cursor-key") ?: reject("snapshot_corrupt")
@@ -263,11 +295,12 @@ internal class CollaborationGoalContractStore(
     }
 
     private fun register(access: CollaborationWorkspaceAccess, id: String, manifest: JSONObject,
-                         pages: List<Pair<Int, JSONObject>>, channel: String): JSONObject {
+                         pages: List<Pair<Int, JSONObject>>, channel: String, section: String = ""): JSONObject {
         if (pages.isEmpty() || pages.map { it.first }.toSet().size != pages.size) reject("invalid_delivery")
         val writes = linkedMapOf<String, String>()
         pages.forEach { (index, supplied) ->
-            val expected = page(access, id, manifest, index)
+            val range = if (section.isEmpty()) null else sectionRange(access, id, manifest, section)
+            val expected = page(access, id, manifest, index, section, range)
             if (encode(supplied) != encode(expected)) reject("invalid_delivery")
             if (receipt(access, id, manifest, index) == null) {
                 val body = receiptBody(access, id, index, expected.getString("page_sha256"), channel)

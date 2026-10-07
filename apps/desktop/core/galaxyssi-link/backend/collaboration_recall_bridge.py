@@ -30,7 +30,9 @@ def tool_spec():
     return {"type": "function", "name": TOOL, "description": (
         "Read already saved collaboration goal/context, workspace versions or original evidence. "
         "The host binds this to your current member assignment; never supply group/member/task IDs. "
-        "Use mode=goal_contract and cursor='' to recover omitted dependency receipts; follow next_cursor. "
+        "Use mode=goal_contract with optional section=goal, criteria, source or context:<exact section name> "
+        "and cursor='' to recover omitted material directly. Keep section unchanged while following next_cursor until null; "
+        "null ends that section, not the full snapshot. Omit section to browse all pinned material. "
         "Use mode=workspace to browse exact revisions, then object_id/revision/offset to read them. "
         "Use mode=evidence to browse originals, then evidence_id/sha256/offset; follow next_offset. "
         "Use mode=archive with record_id/offset to read complete dependency handoffs; follow next_offset. "
@@ -53,6 +55,7 @@ def tool_spec():
             "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
             "record_id": {"type": "string", "maxLength": 64},
             "cursor": {"type": "string", "maxLength": 512},
+            "section": {"type": "string", "maxLength": 512},
             "object_id": {"type": "string", "maxLength": 64},
             "revision": {"type": "integer", "minimum": 1},
             "evidence_id": {"type": "string", "maxLength": 64},
@@ -74,8 +77,16 @@ def validate_arguments(arguments):
                 raise ValueError("Invalid recall selector")
         elif type(value) is not int or not spec["minimum"] <= value <= 2**31 - 1:
             raise ValueError("Invalid recall offset/revision")
-    if arguments["mode"] == "goal_contract" and set(arguments) - {"mode", "cursor"}:
-        raise ValueError("Goal recall accepts only mode and cursor")
+    if arguments["mode"] == "goal_contract":
+        if set(arguments) - {"mode", "cursor", "section"}:
+            raise ValueError("Goal recall accepts only mode, cursor and optional section")
+        if "section" in arguments:
+            section = arguments["section"]
+            if section not in {"goal", "criteria", "source"} and not (
+                    section.startswith("context:") and section[len("context:"):].strip()):
+                raise ValueError("Use section=goal, criteria, source or context:<exact section name>")
+    elif "section" in arguments:
+        raise ValueError("Section is only supported for goal/context recall")
     if arguments["mode"] in {"evolution", "problems"} and set(arguments) - {"mode", "cursor"}:
         raise ValueError("Evolution/problem recall accepts only mode and cursor")
     if arguments["mode"] == "capabilities":

@@ -8,7 +8,7 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = CloudGoalPageProtocol.RECALL_TOOL
-    private val fields = setOf("mode", "cursor", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter")
+    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
@@ -24,7 +24,8 @@ internal object CollaborationCloudRecall {
             .put("description", "Read this assigned member's saved group workspace or original host tool evidence. Browse first; " +
                 "read an exact object_id/revision or evidence_id/sha256, following next_offset/cursor. " +
                 "Evidence pages expose source_reference for citing the original observation; galaxyssi_evidence_receipt only records this recall. " +
-                "mode=goal_contract takes only cursor and returns the host-pinned original goal, criteria and context fragments; follow next_cursor. " +
+                "mode=goal_contract takes cursor and optional section: goal, criteria, source or context:<exact section name>. " +
+                "Use a section to retrieve only its pages; keep it unchanged while following next_cursor until null. Omit section to read the full pinned snapshot. " +
                 "mode=archive with record_id and offset reads full originals of assigned dependency handoffs; follow next_offset. " +
                 "mode=evolution browses scoped learning records; mode=evolution_rules with topic=catalog discovers typed contracts, " +
                 "then topic=<id>/offset reads the chosen schema. Omitted topic reads all; retain the same topic when paging. " +
@@ -62,6 +63,7 @@ internal object CollaborationCloudRecall {
             require(!input.has("query") || input.optString("mode") == "capabilities") { "Query is only supported for capability search" }
             require(!input.has("topic") || input.optString("mode") == "evolution_rules") { "Topic is only supported for evolution rules" }
             require(!input.has("case_filter") || input.optString("mode") == CollaborationNumericFeedback.MODE) { "Case filter is only supported for numeric feedback" }
+            require(!input.has("section") || input.optString("mode") == "goal_contract") { "Section is only supported for goal/context recall" }
             CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access, recordCoverage)
         } catch (_: IllegalArgumentException) {
             AgentNativeToolExecutionResult.failure("recall_unavailable", "Invalid arguments or revoked member access.")

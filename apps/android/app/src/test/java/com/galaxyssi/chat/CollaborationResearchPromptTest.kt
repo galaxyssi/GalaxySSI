@@ -24,7 +24,7 @@ class CollaborationResearchPromptTest {
         assertTrue("Current peer contribution must be available before optional bookkeeping", "New team messages" in result.included)
         assertTrue(result.text.contains(peer))
         assertTrue("Live work inventory" in result.omitted)
-        assertTrue(result.text.contains("context section=Live work inventory"))
+        assertTrue(result.text.contains("section=context:Live work inventory"))
         assertTrue(result.text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
     }
 
@@ -238,7 +238,7 @@ class CollaborationResearchPromptTest {
         val result = CollaborationResearchPrompt.build(execution, descriptor(), materials)
         assertTrue("Member roster" in result.omitted)
         assertTrue("Prior assessment" in result.omitted)
-        assertTrue(result.text.contains("context section=Member roster"))
+        assertTrue(result.text.contains("section=context:Member roster"))
     }
 
     @Test fun partialDependencyOutputIsExplicitAndKeepsItsExactNode() {
@@ -264,14 +264,14 @@ class CollaborationResearchPromptTest {
         val first = CollaborationResearchPrompt.prepare(execution, store) { "" }
         val recoveredStore = CollaborationGoalContractStore(rows, { true })
         val restored = CollaborationResearchPrompt.prepare(execution, recoveredStore) { error("Must use pinned context") }
-        assertTrue(first.contains("context section=Resource resolution feedback"))
+        assertTrue(first.contains("section=context:Resource resolution feedback"))
         assertTrue(restored.contains("Resource resolution feedback"))
         assertTrue(restored.contains("mode=goal_contract"))
         val readBack = StringBuilder()
         val access = CollaborationWorkspaceAccess.from(execution)
         var cursor = ""
         do {
-            val page = recoveredStore.read(access, cursor)
+            val page = recoveredStore.readSection(access, "context:Resource resolution feedback", cursor)
             val fragments = page.getJSONArray("fragments")
             repeat(fragments.length()) { index ->
                 val fragment = fragments.getJSONObject(index)

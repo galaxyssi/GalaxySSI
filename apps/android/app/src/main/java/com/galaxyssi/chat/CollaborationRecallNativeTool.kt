@@ -7,7 +7,7 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.3.0", title = context.getString(R.string.collaboration_recall_title),
+            id = ID, version = "1.4.0", title = context.getString(R.string.collaboration_recall_title),
             description = context.getString(R.string.collaboration_recall_description),
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
@@ -16,6 +16,7 @@ internal object CollaborationRecallNativeTool {
                 "topic" to AgentNativeJsonSchema.string(maxLength = 32),
                 "case_filter" to AgentNativeJsonSchema.string(maxLength = 32),
                 "cursor" to AgentNativeJsonSchema.string(maxLength = 512),
+                "section" to AgentNativeJsonSchema.string(maxLength = 512),
                 "record_id" to AgentNativeJsonSchema.string(maxLength = 64),
                 "object_id" to AgentNativeJsonSchema.string(maxLength = 64),
                 "evidence_id" to AgentNativeJsonSchema.string(maxLength = 64),
@@ -27,6 +28,8 @@ internal object CollaborationRecallNativeTool {
             risk = AgentNativeToolRisk.LOW, capabilities = setOf("collaboration.recall"),
             timeoutMillis = 20_000, idempotency = AgentNativeToolIdempotency.IDEMPOTENT),
         executor = AgentNativeToolExecutor { call ->
+            if (call.input.containsKey("section") && call.input["mode"] != "goal_contract")
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Section is only supported for goal/context recall.")
             if (call.input.containsKey("topic") && call.input["mode"] != "evolution_rules")
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
             if (call.input.containsKey("case_filter") && call.input["mode"] != CollaborationNumericFeedback.MODE)

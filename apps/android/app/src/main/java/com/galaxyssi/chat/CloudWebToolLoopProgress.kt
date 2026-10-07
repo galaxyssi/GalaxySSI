@@ -86,9 +86,9 @@ internal class CloudWebToolLoopProgress {
         outputsByCall[key] = output
         // Only executor/checkpoint observations establish provenance, never a tool name in model content.
         if (toolName == CloudGoalPageProtocol.RECALL_TOOL && arguments.opt("mode") == "goal_contract" &&
-            arguments.keys().asSequence().all { it in setOf("mode", "cursor") } &&
+            arguments.keys().asSequence().all { it in setOf("mode", "cursor", "section") } &&
             (!arguments.has("cursor") || arguments.opt("cursor") is String)) {
-            goalPage(output)?.let { goalPagesByOutput[output] = it }
+            goalPage(arguments, output)?.let { goalPagesByOutput[output] = it }
         }
         if (toolName == CollaborationCloudRecall.NAME && arguments.opt("mode") == "evolution_rules") {
             rulePage(arguments, output)?.let { rulePagesByOutput[output] = it }
@@ -113,7 +113,7 @@ internal class CloudWebToolLoopProgress {
         return true
     }
 
-    private fun goalPage(encoded: String): GoalPage? = runCatching {
+    private fun goalPage(arguments: JSONObject, encoded: String): GoalPage? = runCatching {
         val page = JSONObject(encoded)
         require(page.opt("status") == "returned" && page.opt("format") == CloudGoalPageProtocol.FORMAT &&
             page.opt("trust") == "host_goal_contract_not_comprehension_or_claim_verification" && page.isNull("error"))
@@ -127,7 +127,21 @@ internal class CloudWebToolLoopProgress {
         val count = requireNotNull(CloudGoalPageProtocol.integer(page, "page_count"))
         require(count in 1..Int.MAX_VALUE.toLong() && index in 0 until count)
         require(page.getJSONArray("fragments").length() > 0 && page.has("next_cursor"))
-        require(if (index + 1 == count) page.isNull("next_cursor")
+        val end = if (arguments.has("section")) {
+            val section = requireNotNull(arguments.opt("section") as? String)
+            require(section.isNotBlank() && section.length <= 512)
+            val sectionHash = MessageDigest.getInstance("SHA-256").digest(section.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            require(hash("section_sha256") == sectionHash)
+            val first = requireNotNull(CloudGoalPageProtocol.integer(page, "section_first_page"))
+            val last = requireNotNull(CloudGoalPageProtocol.integer(page, "section_last_page"))
+            require(first in 0..index && last in index until count)
+            last
+        } else {
+            require(!page.has("section_sha256") && !page.has("section_first_page") && !page.has("section_last_page"))
+            count - 1
+        }
+        require(if (index == end) page.isNull("next_cursor")
             else (page.opt("next_cursor") as? String)?.matches(Regex("[A-Za-z0-9_-]{54}")) == true)
         GoalPage(snapshot, reader, index, hash("page_sha256"))
     }.getOrNull()
