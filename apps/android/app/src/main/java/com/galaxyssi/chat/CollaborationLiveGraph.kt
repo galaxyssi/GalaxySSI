@@ -25,6 +25,7 @@ internal object CollaborationLiveGraph {
         "stage":"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE","assignment":"concrete verification or improvement with evidence",
         "depends_on":["stable work IDs"],"dependency_policy":"success|terminal","independent_review":false}]}.
         Add work only when new evidence reveals a useful next step. An empty work array is valid.
+        ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
         Do not repeat, replace or rename existing work to bypass deduplication. Never repeat a completed side effect.
         Keep competing candidates distinct and assign independent checks to a different author.
         ${CollaborationReviewTargets.instructions()}

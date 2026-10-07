@@ -102,19 +102,28 @@ class CollaborationLiveGraphDeviceTest {
     @Test fun separateProcessRecovery(): Unit = runBlocking {
         val args = InstrumentationRegistry.getArguments()
         val phase = args.getString("liveGraphPhase").orEmpty()
-        org.junit.Assume.assumeTrue(phase in setOf("seed", "recover"))
+        org.junit.Assume.assumeTrue(phase in setOf("seed", "recover", "cleanup"))
         val db = database("live-graph-process-fixture")
         val store = EncryptedAgentTeamExecutionStore(db)
+        if (phase == "cleanup") {
+            require(store.deliveryCheckpoint("root")?.definition?.teamId.let { it == null || it == "live-graph-fixture" })
+            db.clear()
+            context.getSharedPreferences("live-graph-fixture", Context.MODE_PRIVATE).edit().clear().commit()
+            return@runBlocking
+        }
         withTimeout(45_000) {
             if (phase == "seed") {
                 require(store.snapshot("root") == null) { "Recover or explicitly clean the previous fixture first" }
                 val checkpoint = seed(store)
                 val producer = checkpoint.definition.members.single { it.context[CollaborationGoalLoop.WORK_ID] == "producer" }
                 suspend fun complete(child: String, output: String, sequence: Long) {
+                    val current = requireNotNull(store.deliveryCheckpoint("root"))
+                    val provenance = AgentTeamGraphPlan.build(current.definition, current.request).children
+                        .single { it.childId == child }.provenance
                     val result = AgentSubagentChildResult("root", child, "root", 1, AgentSubagentStatus.SUCCEEDED, output = output,
-                        startedAtMillis = 1, completedAtMillis = 2)
+                        startedAtMillis = 1, completedAtMillis = 2, provenance = provenance)
                     store.append(AgentSubagentEvent(sequence, "root", child, AgentSubagentEventKinds.CHILD_SUCCEEDED,
-                        childStatus = AgentSubagentStatus.SUCCEEDED, result = result, timestampMillis = 2))
+                        childStatus = AgentSubagentStatus.SUCCEEDED, result = result, timestampMillis = 2, provenance = provenance))
                 }
                 complete(producer.memberId, "producer evidence", checkpoint.lastSequence + 1)
                 val first = store.expandResearchGraph("root", checkpoint.definition.primaryMemberId, setOf(producer.memberId), 3)!!

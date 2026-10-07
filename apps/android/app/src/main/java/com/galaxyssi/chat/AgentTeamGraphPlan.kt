@@ -2,12 +2,14 @@ package com.galaxyssi.chat
 
 /** One projection for both restored plans and durably appended collaboration work. */
 internal object AgentTeamGraphPlan {
+    const val ADMISSION_INSTRUCTIONS = "List work in intended admission order among dependency-ready items. Running work is not preempted; explicit learning priorities may reorder learning items within their positions."
+
     fun build(definition: AgentTeamDefinition, request: AgentRunRequest): AgentSubagentPlan {
         val research = CollaborationResearchWorkflow.isResearch(definition.members)
         val observers = definition.members.filter { it.deliveryMode == AgentDeliveryMode.OBSERVE }
             .mapTo(linkedSetOf(), AgentTeamMember::memberId)
         val learning = research && definition.members.any { CollaborationLearningWork.TASK in it.context }
-        val ordered = if (learning) CollaborationLearningWork.ordered(definition.members.sortedBy { it.memberId }) else definition.members
+        val ordered = if (learning) CollaborationLearningWork.ordered(definition.members) else definition.members
         val children = ordered.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }.map { member ->
             val primary = member.memberId == definition.primaryMemberId
             AgentSubagentChild(childId = member.memberId,
@@ -25,6 +27,6 @@ internal object AgentTeamGraphPlan {
                 metadata = mapOf("primary_agent_id" to definition.primaryAgentId, "primary_instance_id" to definition.primaryMemberId,
                     "visibility" to definition.visibilityMode.name)),
             completionBarrierChildId = if (research && CollaborationLiveGraph.enabled(definition)) definition.primaryMemberId else "",
-            preserveChildOrder = learning)
+            preserveChildOrder = research)
     }
 }

@@ -67,6 +67,7 @@ internal object CollaborationGoalLoop {
         Continue while any feasible work remains, including computation, source verification and artifact creation even if a lab is unavailable.
         Choose the number and type of steps from evidence gaps, not a fixed recipe. Parallel alternatives are welcome.
         Express producer/reviewer/repair dependencies with depends_on. Each ready work item starts without waiting for unrelated members.
+        ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
         Use success for work requiring an actual artifact; terminal for diagnosing failed work. The default is success.
         An independent review must name its target work and use a different member from every target author.
         ${CollaborationReviewTargets.instructions()}
