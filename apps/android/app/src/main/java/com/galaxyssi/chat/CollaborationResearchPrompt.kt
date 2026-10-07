@@ -130,7 +130,7 @@ internal object CollaborationResearchPrompt {
         val assignment = execution.member.objective.ifBlank {
             "Perform your assigned role for the original user goal in the host goal contract; read the complete goal before deciding its scope."
         }
-        val required = listOf(
+        val required = mutableListOf(
             section("Assignment", buildString {
                 append("Supervised Agent team assignment\n")
                 append("identity=").append(execution.member.context["collaboration_name"].orEmpty().ifBlank { execution.member.memberId }).append('\n')
@@ -147,6 +147,9 @@ internal object CollaborationResearchPrompt {
                 "\n" + EVIDENCE_INSTRUCTIONS),
             section("Collaborative evolution", CollaborationEvolutionProtocol.instructions())
         )
+        execution.resourceObservation?.let {
+            required += section("Current execution resources", it.prompt(execution))
+        }
         val optional = mutableListOf(
             section("Original user goal", execution.request.goal),
             section("Preserved acceptance criteria", execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]"),
