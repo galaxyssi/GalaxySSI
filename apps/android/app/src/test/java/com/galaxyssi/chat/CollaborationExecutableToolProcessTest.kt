@@ -75,4 +75,14 @@ class CollaborationExecutableToolProcessTest {
         assertFalse(report.getBoolean("environment_matches"))
         assertEquals(0, report.getJSONArray("results").length())
     }
+
+    @Test fun realPythonResultCanSatisfyOnlyItsPreservedFiniteCaseGoal() {
+        val tools = CollaborationExecutableToolTest.Fixture()
+        val result = execute(tools.test())
+        assertTrue(result.toString(), result.isSuccess)
+        val goal = CollaborationExecutableAcceptanceTest.Fixture(tools, result)
+        val receipt = goal.evaluate()
+        assertTrue(receipt.feedback, receipt.accepted)
+        assertTrue(goal.evaluate(workspace = tools.reopen()).accepted)
+    }
 }

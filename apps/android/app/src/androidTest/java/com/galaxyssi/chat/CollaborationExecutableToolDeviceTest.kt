@@ -24,10 +24,12 @@ class CollaborationExecutableToolDeviceTest {
             val ledger = CollaborationEvidenceLedger(context)
             val workspace = CollaborationResearchWorkspace(context)
             fun access(person: String, round: Long, node: String = person) = CollaborationWorkspaceAccess(group, "run", "turn", round, node, person)
-            fun publish(id: String, kind: String, value: JSONObject, person: String, round: Long, observations: JSONArray = JSONArray()): JSONObject {
+            fun publish(id: String, kind: String, value: JSONObject, person: String, round: Long, observations: JSONArray = JSONArray(),
+                        body: JSONObject? = null, parents: JSONArray = JSONArray()): JSONObject {
                 val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Local fixture")
                     .put("findings", JSONArray()).put("candidates", JSONArray()).put("workspace", JSONArray().put(JSONObject().put("id", id)
-                        .put("kind", kind).put("title", id).put("body", JSONObject().put("content", "Synthetic tool fixture").put(kind, value)).put("observations", observations)))
+                        .put("kind", kind).put("title", id).put("body", body ?: JSONObject().put("content", "Synthetic tool fixture").put(kind, value))
+                        .put("observations", observations).put("parents", parents)))
                 val saved = workspace.publish(access(person, round, id), raw.toString(), round * 10)
                 assertEquals(saved.toString(), "recorded", saved.getString("status"))
                 return saved.getJSONArray("revisions").getJSONObject(0)
@@ -91,8 +93,39 @@ class CollaborationExecutableToolDeviceTest {
             assertEquals(tool.getString("sha256"), restored.identity.getJSONObject(TOOL).getString("sha256"))
             assertNotNull(runCatching { CollaborationToolRuntime.prepare(context, invocation(run, null)) }.exceptionOrNull())
             assertNotNull(runCatching { CollaborationToolRuntime.prepare(context, invocation(run, nextBinding, "wrong-turn")) }.exceptionOrNull())
+            val goalAccess = access("reviewer", 9, "goal-check")
+            val planSpec = reopened.read(goalAccess, plan.getString("object_id"), 1)!!.getJSONObject("body").getJSONObject(TEST)
+            val validator = JSONObject().put("id", CollaborationExecutableAcceptance.id).apply {
+                listOf("environment", "purpose", "oracle_basis", "coverage_gaps", "cases").forEach { put(it, planSpec.get(it)) }
+            }
+            val criterion = JSONObject().put("id", "executed-tool").put("requirement", CollaborationExecutableAcceptance.REQUIREMENT)
+                .put("verification", "computational").put("evidence_kind", "observed").put("validator", validator)
+            val deliveryBody = JSONObject().put("content", "Synthetic observation on a real device, not real Linux execution")
+                .put("computation", JSONObject().put("validator_id", CollaborationExecutableAcceptance.id).put(RELEASE, release))
+            val delivery = publish("goal-delivery", "artifact", JSONObject(), "author", 6, JSONArray().put(observation), deliveryBody)
+            offset = 0
+            while (offset != null) offset = reopenedEvidence.readPage(access("reviewer", 7, "goal-review"), observation.getString("evidence_id"),
+                observation.getString("sha256"), offset)!!.next
+            val reviewBody = JSONObject().put("content", "Synthetic receipt checked").put(CollaborationReviewContract.KIND,
+                JSONObject().put("criterion_id", "executed-tool").put("requirement", CollaborationExecutableAcceptance.REQUIREMENT)
+                    .put("target", delivery).put("verdict", "supported").put("rationale", "Synthetic finite-case fixture only").put("unresolved", JSONArray()))
+            val review = publish("goal-review", CollaborationReviewContract.KIND, JSONObject(), "reviewer", 7,
+                JSONArray().put(observation), reviewBody, JSONArray().put(delivery))
+            val afterReopen = CollaborationResearchWorkspace(context)
+            fun exact(ref: JSONObject, kind: String): JSONObject {
+                val record = requireNotNull(afterReopen.read(goalAccess, ref.getString("object_id"), ref.getInt("revision")))
+                require(record.getString("kind") == kind && CollaborationResearchCandidates.same(record, ref))
+                return record
+            }
+            val verification = CollaborationValidationEvidence(exact(delivery, "artifact"), exact(review, CollaborationReviewContract.KIND), ::exact,
+                { ref -> reopenedEvidence.read(goalAccess, ref.getString("evidence_id"), ref.getString("sha256")) },
+                { reopenedEvidence.requireReadCoverage(goalAccess, it) }, { afterReopen.contributorIds(goalAccess, it) })
+            CollaborationQualifiedValidation.validate(criterion, deliveryBody, verification)
+            val changed = JSONObject(criterion.toString()).apply { getJSONObject("validator").getJSONArray("cases").getJSONObject(0).put("expected", 999) }
+            assertNotNull(runCatching { CollaborationQualifiedValidation.validate(changed, deliveryBody, verification) }.exceptionOrNull())
             groups.remove(group)
             assertNotNull(runCatching { CollaborationToolRuntime.prepare(context, invocation(run, nextBinding, "future")) }.exceptionOrNull())
+            assertNotNull(runCatching { CollaborationQualifiedValidation.validate(criterion, deliveryBody, verification) }.exceptionOrNull())
         } finally { groups.remove(group) }
     }
 }

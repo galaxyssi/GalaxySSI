@@ -9,7 +9,18 @@ internal sealed interface CollaborationQualifiedValidator {
     val verification: String
     fun binding(spec: JSONObject): List<String>
     fun validate(criterion: JSONObject, body: JSONObject)
+    fun validateRecorded(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence?) = validate(criterion, body)
 }
+
+/** Resolvers are supplied by the host acceptance path, never decoded from model JSON. */
+internal data class CollaborationValidationEvidence(
+    val delivery: JSONObject,
+    val review: JSONObject,
+    val exact: (JSONObject, String) -> JSONObject,
+    val original: (JSONObject) -> JSONObject?,
+    val requireReadCoverage: (JSONObject) -> Unit,
+    val contributors: (JSONObject) -> Set<String>
+)
 
 /** A deliberately narrow, side-effect-free computational fixture, never physical evidence. */
 internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedValidator {
@@ -50,7 +61,8 @@ internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedVa
 
 internal object CollaborationQualifiedValidation {
     const val FIELD = "validator"
-    private val qualified = listOf(CollaborationExactIntegerSumValidator, CollaborationNumericModelValidator).associateBy { it.id }
+    private val qualified = listOf(CollaborationExactIntegerSumValidator, CollaborationNumericModelValidator,
+        CollaborationExecutableAcceptance).associateBy { it.id }
 
     private fun validator(spec: JSONObject): CollaborationQualifiedValidator = requireNotNull(qualified[spec.optString("id")]) {
         "Unknown qualified validator; registered validators: ${qualified.keys.sorted().joinToString()}. " +
@@ -67,7 +79,7 @@ internal object CollaborationQualifiedValidation {
         binding(before) == binding(after)
     }.getOrDefault(false)
 
-    fun validate(criterion: JSONObject, body: JSONObject) {
+    fun validate(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence? = null) {
         require(criterion.optString("evidence_kind") == "observed") {
             "Proposals and simulations cannot satisfy observed acceptance"
         }
@@ -77,7 +89,7 @@ internal object CollaborationQualifiedValidation {
                 require(binding(criterion) != null) { "Computational acceptance requires a qualified host validator" }
                 val selected = validator(criterion.getJSONObject(FIELD))
                 require(selected.verification == "computational")
-                selected.validate(criterion, body)
+                selected.validateRecorded(criterion, body, evidence)
             }
             else -> throw IllegalArgumentException("No qualified validator for this domain; simulations never certify physical results")
         }
