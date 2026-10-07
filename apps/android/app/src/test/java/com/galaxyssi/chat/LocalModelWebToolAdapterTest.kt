@@ -89,6 +89,48 @@ class LocalModelWebToolAdapterTest {
         assertFalse(AgentWebMediaNativeTools.WEB_DOWNLOAD in LocalModelWebToolProtocol.toolIds)
     }
 
+    @Test
+    fun collaborationToolsAreScopedWithoutChangingOrdinaryChat() {
+        assertEquals(LocalModelWebToolProtocol.toolIds, LocalModelWebToolProtocol.toolIds(false))
+        assertFalse(CollaborationRecallNativeTool.ID in LocalModelWebToolProtocol.toolIds(false))
+        assertFalse(CollaborationMilestoneNativeTool.ID in LocalModelWebToolProtocol.toolIds(false))
+        assertEquals(setOf(CollaborationRecallNativeTool.ID, CollaborationMilestoneNativeTool.ID),
+            LocalModelWebToolProtocol.toolIds(true) - LocalModelWebToolProtocol.toolIds(false))
+        assertEquals(setOf(CollaborationRecallNativeTool.ID), LocalModelWebToolProtocol.toolIds(true, repairing = true))
+    }
+
+    @Test
+    fun nativePublicationUsesTheSameSchema() {
+        val schema = AgentNativeJsonSchema(CollaborationMilestoneTool.schema().toNativeObject())
+        assertTrue(AgentNativeJsonSchemaValidator.validate(schema, mapOf("mode" to "list")).isValid)
+        assertTrue(AgentNativeJsonSchemaValidator.validate(schema, mapOf("mode" to "publish", "milestone_id" to "m1", "artifact" to "{}")).isValid)
+        assertFalse(AgentNativeJsonSchemaValidator.validate(schema, mapOf("mode" to "list", "person_id" to "other")).isValid)
+        assertFalse(AgentNativeJsonSchemaValidator.validate(schema, mapOf("mode" to "overwrite")).isValid)
+    }
+
+    @Test
+    fun localProtocolPreservesNestedPublicationAndFinalArtifact() {
+        val artifact = org.json.JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+            .put("summary", "A candidate, not a verified result").put("milestones", org.json.JSONArray(listOf("m1"))).toString()
+        val raw = org.json.JSONObject().put("answer", "Sharing a candidate").put("tool_calls", org.json.JSONArray()
+            .put(org.json.JSONObject().put("id", "publish-1").put("name", CollaborationMilestoneNativeTool.ID)
+                .put("arguments", org.json.JSONObject().put("mode", "publish").put("milestone_id", "m1").put("artifact", artifact))))
+        val call = LocalModelWebToolProtocol.decode(raw.toString(), inference()).toolCalls.single()
+        assertEquals(artifact, call.arguments["artifact"])
+        assertEquals(CollaborationMilestoneNativeTool.ID, call.toolId)
+        val final = org.json.JSONObject().put("answer", artifact).put("tool_calls", org.json.JSONArray()).toString()
+        assertEquals(artifact, LocalModelWebToolProtocol.decode(final, inference()).assistantText)
+    }
+
+    @Test
+    fun collaborationReceiptsDoNotBecomeVerifiedWebEvidence() {
+        val message = AgentModelMessage(role = AgentModelMessageRole.TOOL, toolResult = AgentModelToolResultContent(
+            callId = "publish-1", toolId = CollaborationMilestoneNativeTool.ID, status = "succeeded",
+            output = mapOf("success" to true, "assignment_completed" to false, "url" to "https://example.com/unverified")))
+        assertTrue(LocalModelWebToolProtocol.encodedEvidence(listOf(message)).isEmpty())
+        assertFalse(LocalModelWebToolProtocol.systemPrompt(emptyList()).contains(CollaborationMilestoneNativeTool.ID))
+    }
+
     private fun inference() = LocalModelInferenceResult(
         text = "",
         profileId = "test-local",
