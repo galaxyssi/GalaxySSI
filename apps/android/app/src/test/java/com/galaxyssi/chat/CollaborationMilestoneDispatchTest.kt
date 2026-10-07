@@ -224,4 +224,50 @@ class CollaborationMilestoneDispatchTest {
         @Suppress("UNCHECKED_CAST")
         return (decode.invoke(instance, requireNotNull(encode.invoke(instance, listOf(record))).toString()) as List<AgentTeamExecutionRecord>).single()
     }
+
+    @Test fun saturatedWorkersAndQueuedWorkDoNotBlockMilestoneCoordinator() = runBlocking {
+        withTimeout(10_000) {
+            val workspace = workspace(); val original = fixture()
+            val producer = original.definition.members.single { it.memberId == "producer" }
+            val extras = listOf("second", "queued").map { id -> producer.copy(instanceId = id,
+                context = producer.context + (CollaborationGoalLoop.WORK_ID to id)) }
+            val definition = original.definition.copy(members = original.definition.members + extras)
+            val store = InMemoryAgentTeamExecutionStore().also { it.milestoneWorkspace = { workspace } }
+            val starts = (listOf("producer", "second", "queued")).associateWith { CompletableDeferred<Unit>() }
+            val release = CompletableDeferred<Unit>(); val planned = CompletableDeferred<AgentTeamMemberExecutionContext>()
+            AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 2)).use { runtime ->
+                val handle = runtime.start(definition, original.request) { execution ->
+                    when {
+                        execution.member.memberId in starts -> {
+                            starts.getValue(execution.member.memberId).complete(Unit)
+                            release.await(); AgentSubagentOutput("Work completed")
+                        }
+                        CollaborationLiveGraph.planner(execution.member) -> {
+                            if (CollaborationMilestoneDispatch.inputs(execution.member).isNotEmpty()) planned.complete(execution)
+                            AgentSubagentOutput(expansion())
+                        }
+                        else -> AgentSubagentOutput("Checked")
+                    }
+                }
+                try {
+                    starts.getValue("producer").await(); starts.getValue("second").await()
+                    workspace.publishMilestone(author, "m1", raw())
+                    val execution = planned.await()
+                    assertFalse(release.isCompleted)
+                    assertFalse(starts.getValue("queued").isCompleted)
+                    val resources = JSONObject(execution.request.context.getValue(CollaborationLearningFeedback.RESOURCES).toString())
+                    assertEquals(2, resources.getInt("configured_work_concurrency"))
+                    assertEquals(1, resources.getInt("configured_coordination_concurrency"))
+                    assertEquals(3, resources.getInt("configured_max_concurrency"))
+                    val saved = reopen(store.records().single())
+                    val projected = AgentTeamGraphPlan.build(saved.definition, saved.request)
+                    assertEquals(AgentSubagentExecutionLane.COORDINATION,
+                        projected.children.single { it.childId == execution.member.memberId }.executionLane)
+                    assertTrue(projected.children.filter { it.childId in starts }.all { it.executionLane == AgentSubagentExecutionLane.WORK })
+                    release.complete(Unit)
+                    assertEquals(AgentSubagentRunStatus.SUCCEEDED, handle.await().subagentResult.status)
+                } finally { release.complete(Unit); handle.cancel() }
+            }
+        }
+    }
 }
