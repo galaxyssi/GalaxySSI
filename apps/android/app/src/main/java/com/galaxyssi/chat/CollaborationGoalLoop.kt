@@ -26,8 +26,9 @@ internal object CollaborationGoalLoop {
         person.copy(dependsOnAgentIds = emptySet(),
             deliveryMode = if (person.deliveryMode == AgentDeliveryMode.RESPOND) AgentDeliveryMode.RESPOND else AgentDeliveryMode.IGNORE,
             objective = if (person.deliveryMode == AgentDeliveryMode.RESPOND)
-                "Read the complete original goal contract supplied by the host, define complete acceptance criteria, " +
-                    "and assign the next executable work. Use the host contract references to retrieve any missing pages before planning."
+                "Read the complete original goal and constraints supplied by the host, define complete acceptance criteria, " +
+                    "and assign the next executable work. Use complete inline sections directly; retrieve only missing relevant originals " +
+                    "through the pinned contract references before relying on them."
                 else person.objective,
             context = person.context + mapOf(ENABLED to "1", ROSTER to "true",
                 CollaborationTeamOrganization.ENABLED to if (members.all { !it.context["collaboration_group_id"].isNullOrBlank() }) "1" else "0",

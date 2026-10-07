@@ -7,6 +7,7 @@ import org.json.JSONObject
 /** Research prompts keep their assignment and protocol intact; omitted material has a durable original. */
 internal object CollaborationResearchPrompt {
     const val MAX_CHARACTERS = 32_000
+    private const val AVAILABILITY_RESERVE = 512
 
     fun prepare(context: Context, execution: AgentTeamMemberExecutionContext): String {
         return prepare(execution, CollaborationGoalContractStore(context), evolution = {
@@ -153,8 +154,18 @@ internal object CollaborationResearchPrompt {
                 runCatching { JSONArray(execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]") }.getOrNull()))
         )
         optional += materials.map { (name, value) -> section(name, value) }
-        return CollaborationPromptBudget.assemble(required, optional, MAX_CHARACTERS)
+        val assembled = CollaborationPromptBudget.assemble(required, optional, MAX_CHARACTERS - AVAILABILITY_RESERVE)
+        val availability = JSONObject().put("original_goal", availability(assembled, "Original user goal"))
+            .put("acceptance_criteria", availability(assembled, "Preserved acceptance criteria"))
+            .put("source_mapping", availability(assembled, "Goal coverage source"))
+            .put("trust", "supplied_text_not_comprehension_or_validation")
+        val suffix = "\n[Context availability]\n$availability\n"
+        check(suffix.length <= AVAILABILITY_RESERVE)
+        return assembled.copy(text = assembled.text + suffix)
     }
+
+    private fun availability(result: CollaborationPromptBudget.Result, section: String) =
+        if (section in result.included) "complete_inline" else "not_inlined"
 
     private fun section(name: String, value: String) = CollaborationPromptBudget.Section(name, value,
         "collaboration_recall or galaxyssi.phone.collaboration.recall: mode=goal_contract; follow next_cursor; context section=$name")
@@ -169,13 +180,18 @@ internal object CollaborationResearchPrompt {
 
     private const val RECALL_INSTRUCTIONS =
         "This descriptor pins the exact original goal, criteria and assignment context for this dispatch. " +
-        "Use collaboration_recall (cloud/Desktop) or galaxyssi.phone.collaboration.recall (phone) with mode=goal_contract and cursor=\"\". " +
-        "Follow next_cursor until null. No group, member or snapshot argument is accepted. " +
+        "Check the host Context availability record and the supplied sections first. complete_inline means the exact full section is already supplied, " +
+        "not a summary; read it here instead of fetching it again. Do not refetch complete inline material or unrelated sections merely to collect receipts. " +
+        "For missing required material, use collaboration_recall (cloud/Desktop) or galaxyssi.phone.collaboration.recall (phone) " +
+        "with mode=goal_contract and cursor=\"\". Follow next_cursor until the required originals are complete; " +
+        "continue until null only when all remaining sections are needed. No group, member or snapshot argument is accepted. " +
         "Each page contains fragments with stream, source_id, part, last, start_utf16, end_utf16 and text; reconstruct exact contiguous originals. " +
         "Context fragments also carry kind=context and id=sectionName. " +
         "The source fragments contain host source IDs for the semantic mapping. Copy descriptor hashes; never invent them. " +
         "When the complete goal or criteria is omitted below, read its pages before planning or certifying coverage. " +
         "Context fragments preserve omitted inventories, roster IDs, feedback and evidence; retrieve the relevant originals before using them. " +
+        "A complete inline dependency section may still explicitly contain output_truncated=true; retrieve that dependency's original before verifying its claims. " +
+        "Choose recall to resolve a concrete missing input or check a claim, not as a ritual before every action. " +
         "A delivered page is not proof that its meaning or claims have been understood or verified."
 
     private const val EVIDENCE_INSTRUCTIONS =

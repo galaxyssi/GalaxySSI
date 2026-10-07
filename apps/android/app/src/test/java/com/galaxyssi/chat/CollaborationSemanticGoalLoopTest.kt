@@ -144,7 +144,9 @@ class CollaborationSemanticGoalLoopTest {
         assertSame(request, record.request)
         assertEquals(CollaborationGoalLoop.initial(people, "Short goal"), record.definition.members)
         val coordinator = members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }
-        assertTrue(coordinator.objective.contains("original goal contract"))
+        assertTrue(coordinator.objective.contains("complete original goal and constraints"))
+        assertTrue(coordinator.objective.contains("Use complete inline sections directly"))
+        assertTrue(coordinator.objective.contains("retrieve only missing relevant originals"))
         assertFalse(coordinator.objective.contains("ORIGINAL_GOAL_BEGIN"))
         assertFalse(coordinator.objective.contains("ORIGINAL_GOAL_END"))
         assertEquals("Independent source review", members.single { it.memberId == "peer" }.objective)
