@@ -115,7 +115,7 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
     def test_publish_rejection_does_not_claim_phone_is_offline(self):
         broker = RecallBroker()
         with self.assertRaises(ConnectionError) as error:
-            broker.query(task, {"mode": "workspace"}, lambda _: False)
+            broker.query(task, {"mode": "workspace"}, lambda _: False, timeout=.005)
         self.assertIn("connectivity is unconfirmed", str(error.exception))
         self.assertNotIn("phone is offline", str(error.exception))
         self.assertEqual({}, broker._pending)
