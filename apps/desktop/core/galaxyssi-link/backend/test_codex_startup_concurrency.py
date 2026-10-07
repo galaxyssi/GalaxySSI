@@ -182,3 +182,26 @@ class CodexStartupConcurrencyTests(unittest.TestCase):
             with self.assertRaises(BrokenPipeError):
                 server._request("turn/start", {}, 1)
         self.assertEqual({}, server._pending)
+
+    def test_dispatch_timing_logs_identity_not_message_content(self):
+        server = codex.CodexAppServer("codex", {}, lambda *_: None)
+        logged = threading.Event()
+        calls = []
+        server.process = SimpleNamespace(stdout=iter([json.dumps({
+            "method": "turn/completed", "params": {"threadId": "thread", "turn": {
+                "id": "turn", "status": "completed", "items": [{"text": "PRIVATE_CONTENT"}]}}})]))
+        server._handle_event = lambda _: None
+
+        def record(*args):
+            calls.append(args)
+            logged.set()
+
+        with patch.object(codex.log, "info", side_effect=record):
+            server._read_stdout()
+            self.assertTrue(logged.wait(2))
+        server.process = None
+        self.assertEqual(1, len(calls))
+        self.assertNotIn("PRIVATE_CONTENT", str(calls))
+        self.assertEqual(("turn/completed", "thread", "turn"), calls[0][1:4])
+        self.assertGreaterEqual(calls[0][4], 0)
+        self.assertGreaterEqual(calls[0][5], 0)

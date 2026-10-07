@@ -6,9 +6,16 @@ import queue
 
 
 @dataclass(frozen=True)
+class QueuedNotification:
+    message: dict
+    received_monotonic: float
+
+
+@dataclass(frozen=True)
 class NotificationBatch:
     message: dict
     entries: int
+    received_monotonic: float | None = None
 
 
 class CodexNotificationBatcher:
@@ -19,36 +26,40 @@ class CodexNotificationBatcher:
             raise ValueError("max_delta_characters must be positive")
         self.events = events
         self.max_delta_characters = max_delta_characters
-        self._pending: dict | None = None
+        self._pending: dict | QueuedNotification | None = None
 
     def get(self, timeout: float = 0.1) -> NotificationBatch:
         if self._pending is None:
-            first = self.events.get(timeout=timeout)
+            queued = self.events.get(timeout=timeout)
         else:
-            first, self._pending = self._pending, None
+            queued, self._pending = self._pending, None
+        first = queued.message if isinstance(queued, QueuedNotification) else queued
+        received = queued.received_monotonic if isinstance(queued, QueuedNotification) else None
         signature = self._signature(first)
         if signature is None:
-            return NotificationBatch(first, 1)
+            return NotificationBatch(first, 1, received)
         chunks = [first["params"]["delta"]]
         size = len(chunks[0])
         while size < self.max_delta_characters:
             try:
-                following = self.events.get_nowait()
+                following_queued = self.events.get_nowait()
             except queue.Empty:
                 break
+            following = (following_queued.message if isinstance(following_queued, QueuedNotification)
+                         else following_queued)
             if self._signature(following) != signature:
-                self._pending = following
+                self._pending = following_queued
                 break
             delta = following["params"]["delta"]
             if size + len(delta) > self.max_delta_characters:
-                self._pending = following
+                self._pending = following_queued
                 break
             chunks.append(delta)
             size += len(delta)
         if len(chunks) == 1:
-            return NotificationBatch(first, 1)
+            return NotificationBatch(first, 1, received)
         merged = {**first, "params": {**first["params"], "delta": "".join(chunks)}}
-        return NotificationBatch(merged, len(chunks))
+        return NotificationBatch(merged, len(chunks), received)
 
     def task_done(self, batch: NotificationBatch) -> None:
         for _ in range(batch.entries):

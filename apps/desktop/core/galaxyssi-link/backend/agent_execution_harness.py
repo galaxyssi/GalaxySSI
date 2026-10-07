@@ -1219,6 +1219,7 @@ class AgentExecutionHarness:
         policy: AgentExecutionPolicy | None = None,
     ) -> None:
         self._state_lock = threading.RLock()
+        self._last_progress_save_monotonic: float | None = None
         self.policy = policy or execution_policy_for(prompt, attachments=attachments)
         initial = AgentExecutionCheckpoint(
             task_id=str(task_id or "").strip(),
@@ -1236,10 +1237,18 @@ class AgentExecutionHarness:
         self._save()
 
     def progress(self, phase: str, **verification: object) -> None:
+        self._progress(phase, verification, stream=False)
+
+    def stream_progress(self, phase: str, **verification: object) -> None:
+        """Account every heartbeat, but coalesce redundant same-phase disk writes."""
+        self._progress(phase, verification, stream=True)
+
+    def _progress(self, phase: str, verification: dict, *, stream: bool) -> None:
         with self._state_lock:
             now = time.time()
             self._account_active_time(now)
             next_phase = str(phase or "act")
+            phase_changed = next_phase != self.checkpoint.phase
             self.checkpoint.phase = next_phase
             self.checkpoint.active_started_at = (
                 now if next_phase in _ACTIVE_BUDGET_PHASES else 0.0
@@ -1249,7 +1258,13 @@ class AgentExecutionHarness:
                 self.checkpoint.verification.update(verification)
             self._refresh_budget_usage()
             self._raise_if_budget_exhausted()
-            self._save()
+            monotonic = time.monotonic()
+            previous = self._last_progress_save_monotonic
+            if not stream or phase_changed or previous is None or monotonic < previous or monotonic - previous >= 1.0:
+                # Only disposable progress heartbeats coalesce. Lifecycle, tool,
+                # failure and budget transitions continue to persist immediately.
+                self._save()
+                self._last_progress_save_monotonic = time.monotonic()
 
     def begin_attempt(self) -> int:
         with self._state_lock:
