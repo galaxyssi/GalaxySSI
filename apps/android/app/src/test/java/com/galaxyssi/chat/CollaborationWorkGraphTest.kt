@@ -41,6 +41,68 @@ class CollaborationWorkGraphTest {
         assertEquals("[\"done\"]", CollaborationWorkGraph.completedDependencies(review, setOf("done")))
     }
 
+    @Test fun reviewTargetsSeparateTheSubjectFromReviewersOwnTestData() {
+        val jobs = listOf(work("model", "person-1"), work("probes", "person-2"),
+            work("check", "person-2", "model", "probes").put("independent_review", true)
+                .put("review_targets", JSONArray().put("model")))
+        val plan = CollaborationWorkGraph.compile(jobs, emptySet())
+        assertEquals("", plan.error)
+        assertEquals(setOf("model", "probes"), CollaborationWorkGraph.dependencies(plan.work.last()))
+        assertEquals(setOf("model"), CollaborationReviewTargets.read(plan.work.last()))
+        assertEquals(setOf("model"), CollaborationReviewTargets.read(CollaborationReviewTargets.restore(
+            JSONObject(jobs.last().toString()).apply { remove("review_targets") }, CollaborationReviewTargets.context(jobs.last()))))
+        val baseline = JSONObject(jobs.last().toString()).apply { remove("review_targets") }
+        val failure = CollaborationWorkGraph.compile(jobs.dropLast(1) + baseline, emptySet()).error
+        assertTrue(failure.contains("check")); assertTrue(failure.contains("probes"))
+        assertTrue(failure.contains("review_targets")); assertTrue(failure.contains("author=person-2"))
+        assertNotEquals(CollaborationTeamOrganization.signature(baseline), CollaborationTeamOrganization.signature(jobs.last()))
+    }
+
+    @Test fun explicitTargetsCannotBypassKnownAuthorsOrDependencyAccess() {
+        val review = work("check", "person-2", "model", "probes").put("independent_review", true)
+            .put("review_targets", JSONArray().put("model"))
+        val finished = setOf("model", "probes")
+        assertEquals("", CollaborationWorkGraph.compile(listOf(review), finished,
+            mapOf("model" to "person-1", "probes" to "person-2")).error)
+        for (authors in listOf(emptyMap(), mapOf("model" to "person-2", "probes" to "person-1"))) {
+            assertTrue(CollaborationWorkGraph.compile(listOf(work("model", "forged-author"), review), finished, authors).error.isNotBlank())
+        }
+        val bad: List<Any> = listOf(JSONArray(), JSONArray().put("unknown"), JSONArray().put("model").put("model"),
+            JSONArray().put(12), JSONArray().put(""), "model", JSONObject.NULL)
+        for (targets in bad) {
+            val changed = JSONObject(review.toString()).put("review_targets", targets)
+            assertTrue(targets.toString(), CollaborationWorkGraph.compile(listOf(work("model"), work("probes", "person-2"), changed), emptySet()).error.isNotBlank())
+        }
+        assertTrue(CollaborationWorkGraph.compile(listOf(JSONObject(review.toString()).put("independent_review", false)), finished).error.isNotBlank())
+        assertTrue(CollaborationWorkGraph.compile(listOf(JSONObject(review.toString()).put("independent_review", "true")), finished).error.isNotBlank())
+    }
+
+    @Test fun goalContinuationRetainsBothInputsAndTargetAcrossCheckpoint() = runBlocking {
+        val jobs = listOf(work("model", "person-1"), work("probes", "person-2"),
+            work("check", "person-2", "model", "probes").put("independent_review", true)
+                .put("review_targets", JSONArray().put("model")))
+        val store = InMemoryAgentTeamExecutionStore()
+        AgentTeamExecutionRuntime(store).use { runtime ->
+            runtime.start(team(), request()) { AgentSubagentOutput(assessment(jobs).toString()) }.await()
+            assertTrue(store.advanceGoal("run", "person-0", System.currentTimeMillis()))
+            val checkpoint = requireNotNull(store.resumeCheckpoint("run"))
+            val check = checkpoint.definition.members.single { it.context[CollaborationGoalLoop.WORK_ID] == "check" }
+            assertEquals("[\"model\"]", check.context[CollaborationReviewTargets.CONTEXT])
+            assertTrue(isPersistedAgentTeamContextKey(CollaborationReviewTargets.CONTEXT))
+            assertEquals(2, check.dependsOnAgentIds.size)
+            var checked = false
+            runtime.resume(checkpoint) { execution ->
+                if (execution.member.context[CollaborationGoalLoop.WORK_ID] == "check") {
+                    assertEquals(setOf("Result of model", "Result of probes"), execution.handoff.dependencies.map { it.output }.toSet())
+                    checked = true
+                }
+                AgentSubagentOutput(if (execution.member.deliveryMode == AgentDeliveryMode.RESPOND) assessment(emptyList()).toString()
+                    else "Result of ${execution.member.context[CollaborationGoalLoop.WORK_ID]}")
+            }.await()
+            assertTrue(checked)
+        }
+    }
+
     @Test fun completedRepairIdsAreDiagnosedInsteadOfSilentlyDiscarded() {
         val error = CollaborationWorkGraph.reusedRequestError(listOf(work("restore-report"),
             work("verify-report", "person-2", "restore-report")), setOf("restore-report", "verify-report"))

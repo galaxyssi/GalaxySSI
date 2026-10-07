@@ -57,7 +57,12 @@ internal object CollaborationTeamOrganization {
         UUID.nameUUIDFromBytes(JSONArray().put(item.optString("stage")).put(item.optString("assignment").trim())
             .put(JSONArray(CollaborationWorkGraph.dependencies(item).sorted()))
             .put(item.optString("dependency_policy", "success")).put(item.optBoolean("independent_review"))
-            .put(if (review(item)) member else "").toString().toByteArray(Charsets.UTF_8)).toString()
+            .put(if (review(item)) member else "").apply {
+                // Preserve existing signatures when all dependencies remain review targets.
+                if (item.has(CollaborationReviewTargets.FIELD) &&
+                    CollaborationReviewTargets.read(item) != CollaborationWorkGraph.dependencies(item))
+                    put(JSONArray(CollaborationReviewTargets.read(item).sorted()))
+            }.toString().toByteArray(Charsets.UTF_8)).toString()
 
     fun validateWork(work: List<JSONObject>, checkpoint: Checkpoint) {
         val seen = linkedMapOf<String, String>()

@@ -115,6 +115,28 @@ class CollaborationLiveGraphTest {
         }
     }
 
+    @Test fun liveReviewCanConsumeItsOwnProbeButCannotRetargetAfterAdmission() {
+        val first = planned()
+        val planner = planners(first).single()
+        val probe = item("reviewer-probes", REVIEWER)
+        val check = review().put("depends_on", JSONArray().put(PRODUCER_WORK).put("reviewer-probes"))
+            .put("review_targets", JSONArray().put(PRODUCER_WORK))
+        val returned = terminal(first, planner.memberId, expansion(probe, check).toString())
+        val updated = CollaborationLiveGraph.update(returned, terminalIds(returned), 120)
+        assertEquals("", updated.request.context[CollaborationLiveGraph.FEEDBACK])
+        val node = work(updated, REVIEW_WORK)
+        assertEquals(JSONArray().put(PRODUCER_WORK).toString(), node.context[CollaborationReviewTargets.CONTEXT])
+        assertEquals(setOf(PRODUCER, work(updated, "reviewer-probes").memberId), node.dependsOnAgentIds)
+        val newer = completed(reopen(updated), SOURCE_B)
+        val withPlanner = CollaborationLiveGraph.update(newer, terminalIds(newer), 130)
+        val nextPlanner = planners(withPlanner).single { it.memberId != planner.memberId }
+        val mutation = JSONObject(check.toString()).put("review_targets", JSONArray().put("reviewer-probes"))
+        val attempted = terminal(withPlanner, nextPlanner.memberId, expansion(mutation).toString())
+        val rejected = CollaborationLiveGraph.update(attempted, terminalIds(attempted), 140)
+        assertEquals(attempted.definition, rejected.definition)
+        assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("rewrite existing work"))
+    }
+
     @Test fun cyclesRejectTheWholeExpansionInsteadOfAppendingTheValidSibling() {
         assertRejected(expansion(safeAddition(),
             item("cycle-a", AUTHOR, "cycle-b"), item("cycle-b", REVIEWER, "cycle-a")), "cycle")

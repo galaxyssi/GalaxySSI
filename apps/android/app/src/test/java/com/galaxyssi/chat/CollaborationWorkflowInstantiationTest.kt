@@ -62,6 +62,33 @@ class CollaborationWorkflowInstantiationTest {
         assertTrue(CollaborationWorkflowInstantiation.workId("a".repeat(160), "b".repeat(160)).length <= 160)
     }
 
+    @Test fun savedReviewTargetsAreMappedAndCannotBeRedirectedOrLostOnRecovery() {
+        val x = Fixture()
+        val spec = JSONObject(x.t.spec.toString()).put("steps", JSONArray()
+            .put(x.t.step("model", "worker"))
+            .put(x.t.step("probes", "reviewer"))
+            .put(x.t.step("check", "reviewer", listOf("model", "probes"), true)
+                .put("review_targets", JSONArray().put("model"))))
+        val method = x.f.ref(x.f.publish("review-with-own-probes", CollaborationWorkflowMethod.KIND, spec, round = 5))
+        val request = x.instance(method = method)
+        val work = x.work(x.expand(request))
+        val model = CollaborationWorkflowInstantiation.workId("reuse", "model")
+        assertEquals(setOf(model), CollaborationReviewTargets.read(work.last()))
+        assertEquals(2, CollaborationWorkGraph.dependencies(work.last()).size)
+        val admitted = x.t.admitted(work = work)
+        val binding = JSONObject(CollaborationWorkflowWork.context(admitted.work.last()).getValue(CollaborationWorkflowWork.TASK))
+        assertEquals(model, binding.getJSONArray("review_targets").getString(0))
+        val next = x.next(request)
+        val check = next.definition.members.single { it.context[CollaborationGoalLoop.WORK_ID] == work.last().getString("id") }
+        assertEquals(JSONArray().put(model).toString(), check.context[CollaborationReviewTargets.CONTEXT])
+        assertEquals(2, check.dependsOnAgentIds.size)
+        val replayed = x.t.admitted(record = x.t.withClaims(admitted), work = x.work(x.expand(request)))
+        assertEquals(admitted.claims, replayed.claims)
+        val changed = x.work(x.expand(request))
+        changed.last().remove("review_targets")
+        assertTrue(runCatching { x.t.admitted(work = changed) }.exceptionOrNull()?.message.orEmpty().contains("review targets"))
+    }
+
     @Test fun exactFieldsInputsRolesVersionsAndScopeAreRequired() {
         val x = Fixture()
         for (change in listOf("wrapper", "authority", "input", "null", "missing-role", "extra-role", "empty-role", "digest", "revision")) {
