@@ -7,6 +7,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationMilestoneProtocolTest {
+    @Test fun unavailableFeedbackDescribesTheActualOperationWithoutInventingPublication() {
+        for (mode in listOf("status", "list", "publish")) {
+            val result = CollaborationMilestoneTool.unavailable(mode)
+            assertFalse(result.getBoolean("success"))
+            assertFalse(result.getBoolean("assignment_completed"))
+            assertEquals("unavailable", result.getString("status"))
+            val error = result.getString("error")
+            if (mode == "publish") {
+                assertTrue(error.contains("outcome is uncertain"))
+                assertTrue(error.contains("same milestone_id"))
+            } else {
+                assertTrue(error.contains(if (mode == "status") "no artifact was submitted" else "submitted no artifact"))
+                assertFalse(error.contains("outcome is uncertain"))
+                assertFalse(error.contains("same milestone_id"))
+            }
+        }
+    }
+
     @Test fun publicationRetryAndListCanRefreshWithoutInvalidatingSearchCache() {
         val progress = CloudWebToolLoopProgress()
         val input = JSONObject().put("mode", "list")
