@@ -43,7 +43,7 @@ class CollaborationAdaptivePilotDeviceTest {
         val transcripts = AgentTranscriptStore(context)
         require(selectionId.isNotBlank() && transcripts.conversation(selectionId) != null)
         plan.requireAppSelection(AgentModelSelectionSettings.selection(context, selectionId))
-        val previous = transcripts.activeConversation().id
+        val previous = CollaborationPilotWindowSnapshot.read(context)
         val run = "adaptive-pilot-${plan.id}"
         val turn = "turn-$run"
         val file = File(context.getExternalFilesDir(null), "$run-report.json")
@@ -190,7 +190,8 @@ class CollaborationAdaptivePilotDeviceTest {
                     persist()
                 } finally { runtime?.close() }
             }
-            report.put("active_conversation_preserved", previous == transcripts.activeConversation().id)
+            report.put("active_conversation_preserved", previous == CollaborationPilotWindowSnapshot.read(context))
+                .put("active_conversation_check", "persisted_window_selections")
         }
         val verdict = CollaborationAdaptivePilotVerdict.evaluate(report)
         report.put("test_verdict", if (verdict.passed) "passed" else "failed")

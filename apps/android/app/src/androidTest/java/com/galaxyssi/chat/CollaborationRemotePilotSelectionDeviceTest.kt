@@ -30,7 +30,7 @@ class CollaborationRemotePilotSelectionDeviceTest {
         val file = File(context.getExternalFilesDir(null), name)
         check(!File(file.path + ".bak").exists() && !File(file.path + ".new").exists() && file.createNewFile())
         val store = AgentTranscriptStore(context)
-        val priorConversation = store.activeConversation().id
+        val priorWindows = CollaborationPilotWindowSnapshot.read(context)
         val preferences = context.getSharedPreferences("galaxyssi_agent_model_selection_v2", Context.MODE_PRIVATE)
         val defaults = preferences.all.filterKeys { it.startsWith("default.") }
         val conversation = store.createAgentConversation("Remote pilot model selection")
@@ -46,9 +46,10 @@ class CollaborationRemotePilotSelectionDeviceTest {
         assertEquals(selection.modelId, actual.modelId)
         assertEquals(selection.reasoningEffort, actual.reasoningEffort)
         assertEquals(defaults, preferences.all.filterKeys { it.startsWith("default.") })
-        assertEquals(priorConversation, store.activeConversation().id)
+        assertEquals(priorWindows, CollaborationPilotWindowSnapshot.read(context))
         val value = JSONObject().put("selection_source", "app_conversation_snapshot")
             .put("device_model", Build.MODEL)
+            .put("window_selections_preserved", true)
             .put("conversation_id", conversation.id).put("target_id", actual.targetId)
             .put("model_id", actual.modelId).put("reasoning_effort", actual.reasoningEffort.wireValue)
         val atomic = AtomicFile(file)
