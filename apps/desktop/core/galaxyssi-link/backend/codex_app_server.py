@@ -2185,7 +2185,9 @@ class CodexAppServer:
                 }
         except Exception as exc:
             log.exception("GalaxySSI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
-            result = {
+            from collaboration_transport_feedback import model_failure_result
+            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish"} else None
+            result = structured or {
                 "success": False,
                 "contentItems": [{
                     "type": "inputText",

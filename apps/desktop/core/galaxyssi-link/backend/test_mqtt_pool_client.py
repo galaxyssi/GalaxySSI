@@ -1,7 +1,7 @@
 from itertools import permutations
 import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from mqtt_broker_catalog import BROKER_IDS
 from mqtt_broker_pool import Ingress
@@ -49,8 +49,33 @@ class MqttPoolClientTest(unittest.TestCase):
 
     def test_connected_without_authenticated_route_cannot_publish_business(self):
         self.pool.connect("hivemq")
-        self.assertNotEqual(0, self.client.publish("outbox", b"ciphertext").rc)
+        result = self.client.publish("outbox", b"ciphertext")
+        self.assertNotEqual(0, result.rc)
+        self.assertEqual("no_admitted_path", result.reason_code)
         self.assertEqual([], self.pool.sent)
+
+    def test_failed_publication_has_specific_bounded_reason(self):
+        self.ready()
+        self.publication = None
+        self.assertEqual("publication_unclassified", self.client.publish("outbox", b"ciphertext").reason_code)
+        self.assertEqual("encoded_packet_too_large", self.client.publish("outbox", b"x" * 1048576).reason_code)
+        self.assertEqual([], self.pool.sent)
+        self.publication = Publication("pair", "message", "a" * 64, Traffic.MESSAGE, frozenset({"inbox"}))
+        with patch.object(self.client.policy, "reserve", return_value=False):
+            self.assertEqual("attempt_reservation_rejected", self.client.publish("outbox", b"ciphertext").reason_code)
+        with patch.object(self.pool, "publish", return_value=None):
+            self.assertEqual("physical_publish_rejected", self.client.publish("outbox", b"ciphertext").reason_code)
+        self.assertEqual(0, self.client.policy.diagnostics()["inflight_packets"])
+        self.assertEqual("accepted", self.client.publish("outbox", b"ciphertext").reason_code)
+
+    def test_failed_broker_ack_is_not_reported_as_route_failure(self):
+        self.ready()
+        self.pool.auto_ack = False
+        result = self.client.publish("outbox", b"ciphertext")
+        self.assertEqual("accepted", result.reason_code)
+        broker = self.pool.sent[-1][0]
+        self.pool.lose(broker)
+        self.assertEqual("broker_ack_failed", result.reason_code)
 
     def test_missing_suback_cannot_be_used_for_business(self):
         self.pool.auto_suback = False

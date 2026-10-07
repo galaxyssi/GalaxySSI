@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from agent_task_recovery_query import IDENTITY_FIELDS, TASK_FIELDS
+from collaboration_transport_feedback import ExchangeObservations, PublicationRejected, ResponseUnconfirmed
 
 TOOL = "collaboration_recall"
 REQUEST = "collaboration_recall_request"
@@ -194,6 +195,7 @@ class RecallBroker:
                 raise ValueError("Recall capacity busy; retry after current reads finish")
             self._pending[nonce] = pending
         attempts = accepted = 0
+        observations = ExchangeObservations()
         next_publish, retry_delay = started, RETRY_INITIAL_SECONDS
         outcome = "aborted"
         try:
@@ -207,21 +209,14 @@ class RecallBroker:
                 if now >= deadline:
                     if not accepted:
                         outcome = "publish_rejected"
-                        raise ConnectionError(
-                            "Recall transport rejected all publish attempts; phone connectivity is unconfirmed. "
-                            "Retry this read after transport recovery; do not restart completed work "
-                            "or infer that the phone is powered off."
-                        )
+                        raise PublicationRejected(observations.details(phase, attempts, accepted))
                     outcome = "response_timeout"
-                    raise TimeoutError(
-                        "Phone recall timed out without an authenticated response; publishing is not proof of delivery. "
-                        "Saved evidence remains available for a read retry."
-                    )
+                    raise ResponseUnconfirmed(observations.details(phase, attempts, accepted))
                 if now >= next_publish:
                     # Reuse the nonce and expiry: phone deduplication owns in-flight reads.
                     # Never create a durable outbox or restart the model to retry an observation.
                     attempts += 1
-                    accepted += bool(publish(json.loads(json.dumps(request))))
+                    accepted += observations.record(publish(json.loads(json.dumps(request))))
                     next_publish = time.monotonic() + retry_delay
                     retry_delay = min(RETRY_MAX_SECONDS, retry_delay * 2)
                     continue
@@ -229,9 +224,10 @@ class RecallBroker:
         finally:
             with self._lock:
                 self._pending.pop(nonce, None)
-            log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s",
+            log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s publish_reasons=%s",
                      scope["task_id"], nonce, arguments["mode"], phase, attempts, accepted,
-                     int((time.monotonic() - started) * 1000), outcome)
+                     int((time.monotonic() - started) * 1000), outcome,
+                     json.dumps(dict(sorted(observations.reasons.items())), separators=(",", ":")))
 
     def receive(self, payload, authenticated_route):
         if not isinstance(payload, dict) or not isinstance(payload.get("request_id"), str):

@@ -2008,6 +2008,7 @@ def _codex_collaboration_publish(task_id, arguments, active):
 
 
 def _codex_collaboration_exchange(broker, task_id, arguments, active):
+    from collaboration_transport_feedback import PublishObservation
 
     def snapshot():
         task = agent_task_manager.get(task_id)
@@ -2015,8 +2016,10 @@ def _codex_collaboration_exchange(broker, task_id, arguments, active):
 
     def publish(request):
         route = request["client_route_id"]
-        return get_client(route) is not None and _publish_phone_payload(client,
-            {"scheme": "signal", "_client_route_id": route}, request, durable=False)
+        observed = []
+        accepted = _publish_phone_payload(client, {"scheme": "signal", "_client_route_id": route},
+                                          request, durable=False, observe=observed.append)
+        return observed[-1] if observed else PublishObservation(accepted)
 
     return broker.query(snapshot, arguments, publish, active=active)
 
@@ -3100,21 +3103,31 @@ def _publish_phone_payload(
     reply_payload: dict,
     *,
     durable: bool | None = None,
+    observe=None,
 ) -> bool:
+    def observed(accepted, reason="unknown"):
+        if observe is not None:
+            from collaboration_transport_feedback import PublishObservation
+            route = str(wire_payload.get("_client_route_id") or "")
+            state = mqttc.peer_routes.admission_state(route) if isinstance(mqttc, MqttPoolClient) else "not_observed"
+            connected = mqttc.is_connected() if isinstance(mqttc, MqttPoolClient) else None
+            observe(PublishObservation(accepted, reason, state, connected))
+        return accepted
+
     if _local_only_transport_payload(reply_payload):
         log.warning(
             "Blocked local-only payload from phone transport type=%s",
             reply_payload.get("type"),
         )
-        return False
+        return observed(False, "local_only_payload")
     paired_client = _wire_client(wire_payload)
     if not paired_client:
         log.warning("Phone publish skipped: no active client route")
-        return False
+        return observed(False, "missing_recipient")
     from agent_worker_routing import recipient_allowed
     if not recipient_allowed(sys.modules[__name__], str(reply_payload.get("task_id") or ""), paired_client):
         log.warning("Phone publish rejected: original task recipient is not authorized")
-        return False
+        return observed(False, "recipient_not_authorized")
     channel = "control" if reply_payload.get("type") in {
         "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
         "agent_task_approval_result",
@@ -3153,7 +3166,7 @@ def _publish_phone_payload(
             log.debug("MQTT encrypted reply queued behind durable window topic=%s", target_topic)
         else:
             log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
-        return info.rc == mqtt.MQTT_ERR_SUCCESS
+        return observed(info.rc == mqtt.MQTT_ERR_SUCCESS, getattr(info, "reason_code", "unknown"))
 
 
 def _peer_attachment_descriptors(

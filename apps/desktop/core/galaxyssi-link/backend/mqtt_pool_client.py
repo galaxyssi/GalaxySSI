@@ -30,6 +30,7 @@ class PublishInfo:
     mid: int
     rc: int = mqtt.MQTT_ERR_SUCCESS
     _done: threading.Event = field(default_factory=threading.Event)
+    reason_code: str = "accepted"
 
     def is_published(self):
         return self._done.is_set() and self.rc == mqtt.MQTT_ERR_SUCCESS
@@ -234,6 +235,8 @@ class MqttPoolClient:
         publication = publication or self._classify(topic, encoded)
         if publication is None or size > CATALOG["limits"]["encoded_packet_bytes"]:
             info.rc = mqtt.MQTT_ERR_NO_CONN
+            info.reason_code = ("encoded_packet_too_large" if size > CATALOG["limits"]["encoded_packet_bytes"]
+                                else "publication_unclassified")
             return info
         now = time.monotonic()
         if publication.bootstrap:
@@ -254,11 +257,13 @@ class MqttPoolClient:
                 plans = [item for item in plans if item in publication.authorized_paths]
         # This token represents one physical packet. Full durable message hedges
         # and chunk scheduling must be integrated above this adapter.
+        info.reason_code = "no_admitted_path"
         for broker, generation in plans:
             attempt_id = secrets.token_hex(16)
             attempt = Attempt(publication.peer, publication.message_id, publication.content_hash,
                               broker, generation, size, publication.traffic, now)
             if not self.policy.reserve(attempt_id, attempt):
+                info.reason_code = "attempt_reservation_rejected"
                 continue
             try:
                 if publication.on_path is not None:
@@ -272,7 +277,11 @@ class MqttPoolClient:
                 self.policy.track_chunk(publication.peer, publication.chunk, broker, generation, size, now)
             receipt = self._pool.publish(broker, generation, topic, encoded, attempt_id=attempt_id)
             if receipt is not None:
+                # A synchronous acknowledgement may already have failed this token.
+                if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                    info.reason_code = "accepted"
                 return info
+            info.reason_code = "physical_publish_rejected"
             if publication.chunk is not None:
                 self.policy.discard_chunk(publication.peer, publication.chunk)
             with self._lock:
@@ -301,6 +310,7 @@ class MqttPoolClient:
         if receipt.broker_acked:
             self.policy.broker_ack(receipt.attempt_id, broker, generation)
         info.rc = mqtt.MQTT_ERR_SUCCESS if receipt.broker_acked else mqtt.MQTT_ERR_NO_CONN
+        info.reason_code = "accepted" if receipt.broker_acked else "broker_ack_failed"
         # Business receipt tracking is owned by the durable message dispatcher,
         # not by this Paho compatibility token.
         self.policy.discard_attempt(receipt.attempt_id)
