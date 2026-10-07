@@ -173,7 +173,9 @@ internal class CollaborationGoalContractStore(
     private fun bindingKey(access: CollaborationWorkspaceAccess) = groupPrefix(access.groupId) + "binding:${reader(access)}"
     private fun bindingBody(access: CollaborationWorkspaceAccess, id: String) =
         JSONObject().put("binding_format", "goal-contract-access-v1").put("reader_sha256", reader(access)).put("snapshot_id", id)
-            .put("round", access.round).put("dependencies", JSONArray(access.dependencyNodes.sorted()))
+            .put("round", access.round).put("dependencies", JSONArray(access.dependencyNodes.sorted())).apply {
+                if (access.pinnedReads.isNotEmpty()) put("pinned_reads", JSONArray(access.pinnedReads.sorted()))
+            }
 
     private fun boundManifest(access: CollaborationWorkspaceAccess, id: String): JSONObject {
         authorize(access)

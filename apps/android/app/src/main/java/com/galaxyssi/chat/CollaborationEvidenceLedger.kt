@@ -29,7 +29,7 @@ internal class CollaborationEvidenceLedger(
             access.runId.isNotBlank() && access.turnId.isNotBlank())
         if (!authorized(access.groupId)) throw CollaborationEvidenceAccessRevoked()
         val key = prefix(access.groupId) + "binding:$source"
-        val value = identity(access).put("dependencies", JSONArray(access.dependencyNodes.sorted())).toString()
+        val value = bindingIdentity(access)
         val existing = rows.read(key)
         check(existing == null || existing == value) { "Research dispatch identity changed" }
         val accessKey = prefix(access.groupId) + "access:" + digest(value)
@@ -47,7 +47,7 @@ internal class CollaborationEvidenceLedger(
 
     fun authorizes(access: CollaborationWorkspaceAccess): Boolean = synchronized(LOCK) {
         if (!authorized(access.groupId)) return@synchronized false
-        val value = identity(access).put("dependencies", JSONArray(access.dependencyNodes.sorted())).toString()
+        val value = bindingIdentity(access)
         val source = rows.read(prefix(access.groupId) + "access:" + digest(value))?.toLongOrNull()
             ?.takeIf { it > 0 } ?: return@synchronized false
         rows.read(prefix(access.groupId) + "binding:$source") == value
@@ -60,7 +60,8 @@ internal class CollaborationEvidenceLedger(
         val dependencies = json.getJSONArray("dependencies")
         CollaborationWorkspaceAccess(group, json.getString("run_id"), turn, json.getLong("round"),
             json.getString("node_id"), json.getString("person_id"),
-            (0 until dependencies.length()).mapTo(linkedSetOf()) { dependencies.getString(it) })
+            (0 until dependencies.length()).mapTo(linkedSetOf()) { dependencies.getString(it) },
+            CollaborationMilestoneDispatch.strings(json.optJSONArray("pinned_reads")?.toString()))
     }
 
     fun record(access: CollaborationWorkspaceAccess, invocationId: String, tool: String, input: String,
@@ -102,8 +103,13 @@ internal class CollaborationEvidenceLedger(
         val payload = JSONObject(raw)
         check(payload.getString("evidence_id") == id && digest(payload.getString("input_json")) == payload.getString("input_sha256") &&
             digest(payload.getString("output_json")) == payload.getString("output_sha256")) { "Research evidence identity or content changed" }
-        payload.takeIf(access::canRead)?.put("sha256", hash)
+        payload.put("sha256", hash).takeIf(access::canRead)
     }
+
+    private fun bindingIdentity(access: CollaborationWorkspaceAccess): String =
+        identity(access).put("dependencies", JSONArray(access.dependencyNodes.sorted())).apply {
+            if (access.pinnedReads.isNotEmpty()) put("pinned_reads", JSONArray(access.pinnedReads.sorted()))
+        }.toString()
 
     data class EvidencePage(val source: JSONObject, val content: String, val total: Int, val next: Int?, val coverage: JSONObject)
 

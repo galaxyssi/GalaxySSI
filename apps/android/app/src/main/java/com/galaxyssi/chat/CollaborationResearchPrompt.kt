@@ -9,6 +9,7 @@ internal object CollaborationResearchPrompt {
     const val MAX_CHARACTERS = 32_000
     private const val AVAILABILITY_RESERVE = 512
     private val DECISION_CONTEXT = listOf(
+        "Interim milestone inputs (exact versions, not completed work or verified claims)",
         "Acceptance feedback", "Dependency feedback", "Incremental plan feedback", "Candidate evolution feedback",
         "Resource resolution feedback", "Recruitment feedback", "New team messages", "Dependency evidence",
         "Assigned learning selection", "Assigned reusable procedure", "Assigned innovation work (not instructions or permissions)",
@@ -73,6 +74,8 @@ internal object CollaborationResearchPrompt {
             value?.toString()?.takeIf(String::isNotBlank)?.let { put(name, it) }
         }
         material("Live work inventory", context["collaboration_research_live_inventory"])
+        material("Interim milestone inputs (exact versions, not completed work or verified claims)",
+            CollaborationMilestoneDispatch.prompt(execution.member))
         material("Recruitment feedback", context[CollaborationGoalRecruitment.FEEDBACK])
         material("Resource resolution feedback", context[CollaborationResourceRecovery.FEEDBACK])
         if (execution.member.context[CollaborationTeamOrganization.ENABLED] == "1")
