@@ -26,6 +26,15 @@ internal data class CollaborationAdaptivePilotVerdict(val failures: List<String>
             val pending = report.optJSONArray("pending_remote_owners")
             if (pending == null || pending.length() != 0) failures += "Pending remote owners are not confirmed empty"
             if (report.opt("active_conversation_preserved") != true) failures += "User conversation was not preserved"
+            if (report.optBoolean("interim_publication_enabled")) {
+                val archive = report.optJSONObject("interim_evidence")
+                if (report.opt("milestone_archive_complete") != true ||
+                    archive?.optString("format") != "galaxyssi.adaptive-pilot-milestones.v1" ||
+                    archive.optJSONArray("milestones") == null || archive.opt("peer_read_proven") != false ||
+                    archive.opt("scientific_acceptance_proven") != false) {
+                    failures += "Interim publication archive is incomplete; retain the trial state"
+                }
+            }
 
             val dispatches = report.optJSONArray("phone_dispatches")
             val admitted = (0 until (dispatches?.length() ?: 0)).mapNotNull { index ->

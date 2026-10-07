@@ -31,8 +31,7 @@ class CollaborationMilestoneDeviceTest {
         withTimeout(45_000) {
             val db = AgentEncryptedDatabase(context, "milestone-dispatch-${UUID.randomUUID()}")
             try {
-                fun store() = EncryptedAgentTeamExecutionStore(db, candidateWorkspace = { CollaborationResearchWorkspace(context) },
-                    milestoneWorkspace = { CollaborationResearchWorkspace(context) })
+                fun store() = CollaborationAdaptivePilotMilestones.executionStore(context, db)
                 val people = listOf("author", "peer").map { person -> AgentTeamMember("fixture", AgentDeliveryMode.IGNORE,
                     instanceId = person, context = mapOf("collaboration_group_id" to author.groupId,
                         CollaborationResearchWorkflow.PERSON to person, CollaborationGoalLoop.ROSTER to "true",
@@ -90,7 +89,16 @@ class CollaborationMilestoneDeviceTest {
                         assertEquals(AgentSubagentStatus.RUNNING, store().snapshot(author.runId)!!.members.single { it.memberId == author.nodeId }.status)
                         val saved = store().deliveryCheckpoint(author.runId)!!
                         assertEquals(peer.pinnedReads, CollaborationMilestoneDispatch.strings(saved.definition.members.single { it.memberId == peer.nodeId }.context[CollaborationMilestoneDispatch.GRANTS]))
+                        val archive = CollaborationAdaptivePilotMilestones(author.groupId, author.runId, author.turnId,
+                            CollaborationResearchWorkspace(context)) { access, ref -> CollaborationEvidenceLedger(context)
+                                .read(access, ref.getString("evidence_id"), ref.getString("sha256")) }
+                        val captured = archive.capture(saved)
+                        assertEquals(1, captured.getJSONArray("milestones").length())
+                        assertEquals("Original candidate for review", captured.getJSONArray("milestones").getJSONObject(0)
+                            .getJSONArray("originals").getJSONObject(0).getJSONObject("body").getString("content"))
+                        assertFalse(captured.getBoolean("peer_read_proven"))
                         repeat(5) { publish() }
+                        assertEquals(captured.toString(), archive.capture(store().deliveryCheckpoint(author.runId)!!).toString())
                         release.complete(Unit)
                         assertFalse(finalStarted.isCompleted)
                         releaseReview.complete(Unit)
