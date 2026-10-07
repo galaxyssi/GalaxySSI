@@ -3,6 +3,9 @@ package com.galaxyssi.chat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -12,6 +15,37 @@ import org.junit.runner.RunWith
 /** Synthetic saved replies only. No provider calls, original research, or external side effects. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationResultFinalizerDeviceTest {
+    @Test fun separateMailboxInstancesPreserveConcurrentBatches() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val run = "mailbox-fixture-${UUID.randomUUID()}"
+        val pool = Executors.newFixedThreadPool(4)
+        val ready = CountDownLatch(4)
+        val begin = CountDownLatch(1)
+        try {
+            val writers = (0..3).map { writer -> pool.submit {
+                val mailbox = EncryptedAgentTeamMailbox(context)
+                ready.countDown()
+                check(begin.await(10, TimeUnit.SECONDS))
+                mailbox.appendAll((0..7).map { index -> AgentTeamMessageEnvelope(
+                    messageId = "$run-$writer-$index", teamId = run, conversationId = run,
+                    supervisorRunId = run, fromInstanceId = "author-$writer", toInstanceId = "peer",
+                    kind = AgentTeamMessageKind.REVIEW, text = "Independent challenge $writer/$index") })
+            } }
+            assertTrue(ready.await(10, TimeUnit.SECONDS))
+            begin.countDown()
+            writers.forEach { it.get(30, TimeUnit.SECONDS) }
+            val saved = EncryptedAgentTeamMailbox(context).messages(run, "peer")
+            assertEquals(32, saved.size)
+            assertEquals(32, saved.map { it.messageId }.distinct().size)
+            assertEquals((1L..32L).toList(), saved.map { it.sequence })
+        } finally {
+            begin.countDown()
+            pool.shutdownNow()
+            check(pool.awaitTermination(30, TimeUnit.SECONDS))
+            EncryptedAgentTeamMailbox(context).clear(run)
+        }
+    }
+
     @Test fun lateArtifactAndReceiptSurviveReopeningWithoutRedispatch() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val group = "delivery-fixture-${UUID.randomUUID()}"
@@ -20,15 +54,19 @@ class CollaborationResultFinalizerDeviceTest {
         val workspace = CollaborationResearchWorkspace(context)
         try {
             CollaborationGroupStore(context).update(group) { it.copy(members = listOf(
-                CollaborationMember("person", "Fixture", "fixture", "Local")), coordinatorId = "person") }
+                CollaborationMember("person", "Fixture", "fixture", "Local"),
+                CollaborationMember("peer", "Peer", "fixture", "Local")), coordinatorId = "person") }
             val member = AgentTeamMember("fixture", AgentDeliveryMode.OBSERVE, instanceId = "node", context = mapOf(
                 "collaboration_group_id" to group, "collaboration_name" to "Fixture",
                 CollaborationResearchWorkflow.PERSON to "person", CollaborationResearchWorkflow.STAGE to "EXECUTE"))
             val request = AgentRunRequest(group, "turn", "task-$group", runId = run, goal = "Local delivery fixture")
             store.create(AgentTeamDefinition("team-$group", "fixture", listOf(member), primaryInstanceId = "node"), request)
             store.markInterrupted(run)
+            val question = "Check the independent counterexample. ".repeat(360).trim()
             val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
                 .put("summary", "Partial fixture, not accepted science").put("candidates", JSONArray()).put("findings", JSONArray())
+                .put("requests", JSONArray().put(JSONObject().put("to", JSONArray().put("peer"))
+                    .put("question", question).put("candidate_id", "alternative-2")))
                 .put("workspace", JSONArray().put(JSONObject().put("id", "report").put("kind", "artifact")
                     .put("title", "Local saved report").put("body", JSONObject().put("content", "Full fixture evidence ".repeat(2000))))).toString()
             val managed = AgentManagedResponseRecord(stableAgentTeamMemberRunId(run, "node"), run, "fixture",
@@ -39,6 +77,8 @@ class CollaborationResultFinalizerDeviceTest {
             workspace.enrollPublication(access, CollaborationResearchStage.EXECUTE)
             val output = CollaborationResultFinalizer(context).finish(execution, AgentSubagentOutput(raw))
             assertEquals("recorded", output.collaborationDelivery!!.status)
+            assertTrue(output.collaborationDiscussionRouted)
+            assertFalse(JSONObject(output.content).has("requests"))
             assertTrue(store.applyLateResponse(managed, output))
             val reopened = EncryptedAgentTeamExecutionStore(context).deliveryCheckpoint(run)!!.completed.getValue("node")
             assertEquals(output.collaborationDelivery, reopened.collaborationDelivery)
@@ -48,7 +88,12 @@ class CollaborationResultFinalizerDeviceTest {
             assertEquals(raw, JSONObject(archived.content).getString("raw_output"))
             assertTrue(store.applyLateResponse(managed, CollaborationResultFinalizer(context).finish(execution, AgentSubagentOutput(raw))))
             assertEquals(1, CollaborationResearchWorkspace(context).browse(access).revisions.size)
+            val deliveredQuestion = EncryptedAgentTeamMailbox(context).messages(run, "peer").single()
+            assertEquals(question, deliveredQuestion.text)
+            assertEquals("alternative-2", deliveredQuestion.metadata["candidate_id"])
+            assertEquals(AgentTeamMessageState.PENDING, deliveredQuestion.state)
         } finally {
+            EncryptedAgentTeamMailbox(context).clear(run)
             store.remove(run)
             CollaborationGroupStore(context).remove(group)
         }

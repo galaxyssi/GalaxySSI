@@ -29,13 +29,15 @@ internal class CollaborationResultFinalizer(
     private val workspace: CollaborationResearchWorkspace,
     private val archive: (AgentTeamMemberExecutionContext, String) -> String,
     private val evidence: (AgentTeamMemberExecutionContext) -> JSONArray = { JSONArray() },
-    private val acceptance: (CollaborationWorkspaceAccess, String, String, String) -> CollaborationAcceptanceReceipt? = { _, _, _, _ -> null }
+    private val acceptance: (CollaborationWorkspaceAccess, String, String, String) -> CollaborationAcceptanceReceipt? = { _, _, _, _ -> null },
+    private val discussion: ((AgentTeamMemberExecutionContext, String) -> Unit)? = null
 ) {
     constructor(context: Context) : this(CollaborationResearchWorkspace(context),
         { execution, raw -> CollaborationResearchArchive(context,
             execution.member.context["collaboration_group_id"].orEmpty()).record(execution, raw) },
         { execution -> AndroidCollaborationRemoteEvidence.summary(context, execution) },
-        { access, raw, criteria, goal -> CollaborationGoalAcceptance(context).evaluate(access, raw, criteria, goal) })
+        { access, raw, criteria, goal -> CollaborationGoalAcceptance(context).evaluate(access, raw, criteria, goal) },
+        { execution, raw -> CollaborationDirectedDiscussion.persist(context, execution, raw) })
 
     fun finish(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput): AgentSubagentOutput {
         val group = execution.member.context["collaboration_group_id"].orEmpty()
@@ -74,6 +76,8 @@ internal class CollaborationResultFinalizer(
                 execution.request.goal) else null
         if (stage == CollaborationResearchStage.DELIVER)
             return output.copy(collaborationAcceptance = accepted, collaborationDelivery = delivery)
+        // Route from the archived full original, before compact handoffs can omit request fields.
+        if (artifact != null) discussion?.invoke(execution, output.content)
         val handoff = artifact ?: JSONObject(CollaborationResearchArtifact.handoff(output.content, stage))
         handoff.put("workspace_receipt", publication).put("delivery_receipt", delivery.encode())
         if (archiveId.isNotBlank()) handoff.put("archive_record_id", archiveId)
@@ -82,6 +86,7 @@ internal class CollaborationResultFinalizer(
                 (if (archiveId.isNotBlank()) "Original output is archived. " else "Original archive is unavailable. ") +
                 "Plan a targeted repair using a new work id and repair_of; do not repeat completed side effects.")
         return output.copy(content = CollaborationResearchArtifact.compactHandoff(handoff.toString(), archiveId),
-            collaborationAcceptance = accepted, collaborationDelivery = delivery)
+            collaborationAcceptance = accepted, collaborationDelivery = delivery,
+            collaborationDiscussionRouted = artifact != null && discussion != null)
     }
 }

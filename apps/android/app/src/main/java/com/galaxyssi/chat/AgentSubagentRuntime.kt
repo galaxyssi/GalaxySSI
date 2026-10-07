@@ -149,7 +149,8 @@ data class AgentSubagentExecutionContext(
 data class AgentSubagentOutput(
     val content: String = "",
     val collaborationAcceptance: CollaborationAcceptanceReceipt? = null,
-    val collaborationDelivery: CollaborationDeliveryReceipt? = null
+    val collaborationDelivery: CollaborationDeliveryReceipt? = null,
+    val collaborationDiscussionRouted: Boolean = false
 )
 
 fun interface AgentSubagentWorker {

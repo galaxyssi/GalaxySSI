@@ -74,6 +74,7 @@ data class AgentTeamMessageEnvelope(
 
 interface AgentTeamMailbox {
     fun append(message: AgentTeamMessageEnvelope): AgentTeamMessageEnvelope
+    fun appendAll(messages: List<AgentTeamMessageEnvelope>): List<AgentTeamMessageEnvelope> = messages.map { it.validated() }.map(::append)
     fun messages(supervisorRunId: String, instanceId: String = "", afterSequence: Long = 0L): List<AgentTeamMessageEnvelope>
     fun markDelivered(messageId: String, atMillis: Long = System.currentTimeMillis()): AgentTeamMessageEnvelope?
     fun acknowledge(messageId: String, atMillis: Long = System.currentTimeMillis()): AgentTeamMessageEnvelope?
@@ -172,39 +173,38 @@ class InMemoryAgentTeamMailbox(
 class EncryptedAgentTeamMailbox(context: Context) : AgentTeamMailbox {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
-    @Synchronized
-    override fun append(message: AgentTeamMessageEnvelope): AgentTeamMessageEnvelope {
+    override fun append(message: AgentTeamMessageEnvelope): AgentTeamMessageEnvelope = appendAll(listOf(message)).single()
+
+    override fun appendAll(messages: List<AgentTeamMessageEnvelope>): List<AgentTeamMessageEnvelope> = synchronized(LOCK) {
+        if (messages.isEmpty()) return@synchronized emptyList()
+        val validated = messages.map { it.validated() }
         val delegate = delegate()
-        val appended = delegate.append(message)
+        val appended = validated.map(delegate::append)
         save(delegate.snapshot())
-        return appended
+        appended
     }
 
-    @Synchronized
     override fun messages(
         supervisorRunId: String,
         instanceId: String,
         afterSequence: Long
-    ): List<AgentTeamMessageEnvelope> = delegate().messages(supervisorRunId, instanceId, afterSequence)
+    ): List<AgentTeamMessageEnvelope> = synchronized(LOCK) { delegate().messages(supervisorRunId, instanceId, afterSequence) }
 
-    @Synchronized
-    override fun markDelivered(messageId: String, atMillis: Long): AgentTeamMessageEnvelope? {
+    override fun markDelivered(messageId: String, atMillis: Long): AgentTeamMessageEnvelope? = synchronized(LOCK) {
         val delegate = delegate()
         val updated = delegate.markDelivered(messageId, atMillis)
         if (updated != null) save(delegate.snapshot())
-        return updated
+        updated
     }
 
-    @Synchronized
-    override fun acknowledge(messageId: String, atMillis: Long): AgentTeamMessageEnvelope? {
+    override fun acknowledge(messageId: String, atMillis: Long): AgentTeamMessageEnvelope? = synchronized(LOCK) {
         val delegate = delegate()
         val updated = delegate.acknowledge(messageId, atMillis)
         if (updated != null) save(delegate.snapshot())
-        return updated
+        updated
     }
 
-    @Synchronized
-    override fun clear(supervisorRunId: String) {
+    override fun clear(supervisorRunId: String) = synchronized(LOCK) {
         val delegate = delegate()
         delegate.clear(supervisorRunId)
         save(delegate.snapshot())
@@ -219,6 +219,8 @@ class EncryptedAgentTeamMailbox(context: Context) : AgentTeamMailbox {
     }
 
     private companion object {
+        // Finalizers and live runtimes use separate instances of this read-modify-write store.
+        val LOCK = Any()
         const val DATABASE = "galaxyssi_agent_team_mailbox_v1"
         const val KEY_MESSAGES = "messages"
         const val MAX_MESSAGES = 5_000

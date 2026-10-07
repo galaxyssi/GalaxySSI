@@ -772,7 +772,8 @@ class AgentTeamExecutionRuntime(
                             "message_id" to message.messageId,
                             "from_instance_id" to message.fromInstanceId,
                             "kind" to message.kind.name.lowercase(),
-                            "text" to message.text
+                            "text" to message.text,
+                            "metadata" to message.metadata
                         )
                     },
                     "team_visibility" to definition.visibilityMode.name.lowercase(),
@@ -798,8 +799,8 @@ class AgentTeamExecutionRuntime(
                 )
             ).also {
                 pendingMessages.forEach { message -> mailbox?.markDelivered(message.messageId) }
-                if (research) CollaborationDirectedDiscussion.messages(activeDefinition, activeRequest, member, it.content)
-                    .forEach { message -> mailbox?.append(message) }
+                if (research && !it.collaborationDiscussionRouted) CollaborationDirectedDiscussion.messages(activeDefinition, activeRequest, member, it.content)
+                    .let { messages -> mailbox?.appendAll(messages) }
             }
         } } catch (failure: Throwable) {
             liveGraphs.remove(request.runId)
