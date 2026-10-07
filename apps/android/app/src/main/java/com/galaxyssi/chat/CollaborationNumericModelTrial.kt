@@ -66,6 +66,12 @@ internal object CollaborationNumericModelTrial {
         These bound local CPU/memory use, not goal/round duration. Unsupported models require a suitable alternative adapter.
         A valid failed trial is SAVED, not rejected. Read host_evolution.evaluation: every actual/error, failed/domain case counts,
         worst counterexample and exact specification/model hashes. Invalid expression syntax is a different publication error.
+        Publication/directory receipts contain compact counts and the worst case, not all checks or changed case IDs. Recall
+        mode=numeric_cases with exact trial object_id/revision/sha256, case_filter and cursor="". Filters: failed (default), all,
+        domain_error, improved, regressed, error_reduced, error_increased, domain_recovered, domain_failed. Concatenate returned
+        content pages using next_cursor until null, keeping the same exact reference and filter. Cases include preserved inputs,
+        expectations/tolerances, observed results/errors and change labels. No model is rerun and originals are not truncated.
+        Use mode=workspace for the full trial/model. A missing comparison is reported explicitly, not evidence of no regression.
         To revise, publish a NEW trial with previous_trial and the exact prior in parents. Keep all inputs, references and tolerances;
         the host recomputes both versions and lists improved and regressed cases. Changed cases require a separately identified study.
         improved/regressed_case_ids track pass-status transitions; error_reduced/increased_case_ids compare finite absolute errors

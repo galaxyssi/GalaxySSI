@@ -613,7 +613,8 @@ internal class CollaborationResearchWorkspace(
                 .forEach { key -> put(key, revision.get(key)) }
             listOf("host_candidate", "host_candidate_event").forEach { key -> revision.optJSONObject(key)?.let { put(key, it) } }
             revision.optJSONObject(CollaborationEvolutionContract.HOST)?.let { host ->
-                put(CollaborationEvolutionContract.HOST, JSONObject(host.toString()).apply {
+                put(CollaborationEvolutionContract.HOST, (if (revision.getString("kind") == CollaborationNumericModelTrial.KIND)
+                    CollaborationNumericFeedback.summary(host) else JSONObject(host.toString())).apply {
                     optJSONArray("cases")?.let { put("case_count", it.length()); remove("cases") }
                     optJSONArray("checks")?.let { put("check_count", it.length()); remove("checks") }
                     optJSONArray("anchors")?.let { put("protected_case_count", it.length()); remove("anchors") }
