@@ -119,8 +119,12 @@ internal object CollaborationLiveGraph {
         return changed(record, append(next, listOf(plan)), now)
     }
 
-    private fun appendWork(record: AgentTeamExecutionRecord, requested: JSONArray,
+    private fun appendWork(record: AgentTeamExecutionRecord, rawRequested: JSONArray,
                            workspace: (() -> CollaborationResearchWorkspace)?, planner: AgentTeamMember): AgentTeamExecutionRecord {
+        val requested = CollaborationWorkflowInstantiation.expand(rawRequested, workspace, CollaborationWorkspaceAccess(
+            planner.context["collaboration_group_id"].orEmpty(), record.request.runId, record.request.messageId,
+            record.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
+            planner.memberId, planner.context.getValue(CollaborationResearchWorkflow.PERSON), dependencyNodes = planner.dependsOnAgentIds))
         val members = record.definition.members
         val people = members.filter { it.context[CollaborationGoalLoop.ROSTER] == "true" }
             .associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
