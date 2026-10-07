@@ -155,6 +155,54 @@ class CollaborationEvidenceReadCoverageTest {
         assertFalse(f.accepts())
     }
 
+    @Test fun fullyConfirmedAuthorReadRemainsVisibleInFrozenCitationAfterRecreation() {
+        val f = Fixture(100)
+        val before = f.reference(f.author)
+        val page = f.ledger.readPage(f.author, f.id, f.hash, recordCoverage = false)!!
+        assertFalse(page.coverage.getBoolean("complete"))
+        assertEquals("same_dispatch_execution", f.coverage(f.author).getString("mode"))
+        assertFalse(f.coverage(f.author).getBoolean("complete"))
+        f.ledger.confirmPage(f.author, f.id, f.hash, 0, MqttImmutableContent.sha256(page.content))
+
+        val after = f.reference(f.author, CollaborationEvidenceLedger(f.rows))
+        val coverage = after.getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+        assertEquals("scoped_pages", coverage.getString("mode"))
+        assertTrue(coverage.getBoolean("complete"))
+        assertEquals(f.author.nodeId, coverage.getJSONObject("reader").getString("node_id"))
+        assertTrue(f.accepts(after, f.author))
+        assertFalse(f.accepts(after, f.reader))
+        assertEquals("same_dispatch_execution", before.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getString("mode"))
+        assertFalse(before.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getBoolean("complete"))
+        assertFalse(f.coverage(f.reader).getBoolean("complete"))
+    }
+
+    @Test fun partialAuthorReadPreservesOwnershipWithoutClaimingFullOriginalDelivery() {
+        val f = Fixture()
+        val page = f.ledger.readPage(f.author, f.id, f.hash, recordCoverage = false)!!
+        f.ledger.confirmPage(f.author, f.id, f.hash, 0, MqttImmutableContent.sha256(page.content))
+        val partial = f.coverage(f.author)
+        assertEquals("same_dispatch_execution", partial.getString("mode"))
+        assertFalse(partial.getBoolean("complete"))
+        assertEquals(8_000, partial.getInt("covered_characters"))
+        assertEquals(8_000, partial.getInt("first_missing_offset"))
+        assertTrue(f.accepts(f.reference(f.author), f.author))
+        assertFalse(f.accepts())
+        f.all(f.author)
+        assertEquals("scoped_pages", f.coverage(f.author).getString("mode"))
+        assertTrue(f.accepts(f.reference(f.author), f.author))
+    }
+
+    @Test fun authorCannotCopyAnotherDispatchsFullReadIntoItsOwnCitation() {
+        val f = Fixture(100)
+        f.all(f.reader)
+        val forged = JSONObject(f.ref.toString()).put(CollaborationEvidenceReadCoverage.FIELD, f.coverage(f.reader))
+        val sanitized = f.ledger.references(f.author, JSONArray().put(forged)).getJSONObject(0)
+            .getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+        assertEquals("same_dispatch_execution", sanitized.getString("mode"))
+        assertFalse(sanitized.getBoolean("complete"))
+        assertEquals(0, sanitized.getInt("covered_characters"))
+    }
+
     @Test fun mixedOwnAndPeerReferencesStillRequireOriginalPeerPages() {
         val f = Fixture()
         val own = f.ledger.record(f.reader, "review-read", "collaboration_recall", "{}", "{}", 3, 4)
