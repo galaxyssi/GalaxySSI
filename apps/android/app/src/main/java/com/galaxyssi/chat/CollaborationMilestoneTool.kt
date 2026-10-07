@@ -1,0 +1,75 @@
+package com.galaxyssi.chat
+
+import android.content.Context
+import com.galaxyssi.chat.voice.modelstream.ModelStreamProvider
+import org.json.JSONArray
+import org.json.JSONObject
+
+internal object CollaborationMilestoneTool {
+    const val NAME = "collaboration_publish"
+    const val MAX_BYTES = 128 * 1024
+    const val DESCRIPTION = "Publish a useful interim research artifact without ending your assignment. " +
+        "mode=publish requires stable milestone_id and artifact (a JSON string using galaxyssi.research-artifact.v1 with nonempty workspace). " +
+        "Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. " +
+        "Use a new ID and exact object_id/base_revision for a substantive revision. " +
+        "mode=list with optional cursor recovers this assignment's committed milestone IDs; follow next_cursor. " +
+        "In your final research-artifact use milestones:[saved IDs] to include those original versions without creating them again. " +
+        "Recording authorship is not verification, task completion or a guarantee a peer has read the artifact. " +
+        "Specialized host candidate-transition assignments must use their final publication contract. " +
+        "One request is limited to 131072 UTF-8 bytes; split larger independent deliveries into separate milestones, never truncate evidence."
+
+    fun schema() = JSONObject().put("type", "object").put("additionalProperties", false)
+        .put("required", JSONArray(listOf("mode")))
+        .put("properties", JSONObject()
+            .put("mode", JSONObject().put("type", "string").put("enum", JSONArray(listOf("publish", "list"))))
+            .put("milestone_id", JSONObject().put("type", "string").put("maxLength", 160))
+            .put("artifact", JSONObject().put("type", "string"))
+            .put("cursor", JSONObject().put("type", "string").put("maxLength", 512)))
+
+    fun install(prepared: PreparedCloudConversationStream) {
+        val function = JSONObject().put("name", NAME).put("description", DESCRIPTION)
+        val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
+        when (prepared.provider) {
+            ModelStreamProvider.OPENAI_COMPATIBLE -> tools.put(JSONObject().put("type", "function").put("function", function.put("parameters", schema())))
+            ModelStreamProvider.ANTHROPIC -> tools.put(function.put("input_schema", schema()))
+            ModelStreamProvider.GEMINI -> tools.put(JSONObject().put("functionDeclarations", JSONArray()
+                .put(function.put("parameters", schema().apply { remove("additionalProperties") }))))
+        }
+    }
+
+    fun validate(input: JSONObject) {
+        require(input.toString().toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Publication exceeds 131072 UTF-8 bytes; split independent artifacts, do not truncate" }
+        when (input.opt("mode")) {
+            "publish" -> {
+                require(input.keys().asSequence().toSet() == setOf("mode", "milestone_id", "artifact")) { "Publish requires only mode, milestone_id and artifact" }
+                require(input.opt("milestone_id") is String && input.opt("artifact") is String && input.getString("artifact").isNotBlank()) { "milestone_id and artifact must be nonblank strings" }
+                CollaborationMilestoneJournal.validateId(input.getString("milestone_id"))
+            }
+            "list" -> require(input.keys().asSequence().all { it in setOf("mode", "cursor") } &&
+                (!input.has("cursor") || input.opt("cursor") is String && input.getString("cursor").length <= 512)) { "List accepts only mode and an optional cursor" }
+            else -> throw IllegalArgumentException("mode must be publish or list")
+        }
+    }
+
+    fun execute(context: Context, access: CollaborationWorkspaceAccess, input: JSONObject): String =
+        execute(CollaborationResearchWorkspace(context), access, input) {
+            require(AgentTeamDurableControl(context).get(access.runId) == AgentTeamUserControl.RUN &&
+                CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
+                "Assignment is paused, stopped or no longer authorized"
+            }
+        }.toString()
+
+    internal fun execute(workspace: CollaborationResearchWorkspace, access: CollaborationWorkspaceAccess,
+                         input: JSONObject, active: () -> Unit): JSONObject = try {
+        validate(input)
+        active()
+        workspace.requirePublicationActive(access)
+        val result = if (input.getString("mode") == "list") workspace.milestones(access, input.optString("cursor"))
+            else workspace.publishMilestone(access, input.getString("milestone_id"), input.getString("artifact"))
+        JSONObject(result.toString()).put("success", result.optString("status") in setOf("recorded", "returned"))
+            .put("assignment_completed", false)
+    } catch (error: IllegalArgumentException) {
+        JSONObject().put("success", false).put("status", "rejected").put("error", error.message)
+            .put("assignment_completed", false)
+    }
+}

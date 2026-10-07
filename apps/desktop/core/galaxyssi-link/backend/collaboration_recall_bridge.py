@@ -140,9 +140,10 @@ class Pending:
 
 
 class RecallBroker:
-    def __init__(self):
+    def __init__(self, *, request_type=REQUEST, response_type=RESPONSE, contract=CONTRACT):
         self._lock = threading.Lock()
         self._pending: dict[str, Pending] = {}
+        self._request_type, self._response_type, self._contract = request_type, response_type, contract
 
     def query(self, snapshot, arguments, publish, *, active=lambda: True, timeout=20.0):
         arguments = validate_arguments(arguments)
@@ -172,7 +173,7 @@ class RecallBroker:
         started = time.monotonic()
         deadline = started + timeout
         nonce = str(uuid.uuid4())
-        request = {**scope, "type": REQUEST, "contract": CONTRACT, "request_id": nonce,
+        request = {**scope, "type": self._request_type, "contract": self._contract, "request_id": nonce,
                    "expires_at": int(time.time() * 1000 + timeout * 1000), "arguments": arguments, "phase": phase}
         if delivery is not None:
             request["delivery"] = delivery
@@ -229,8 +230,8 @@ class RecallBroker:
             if pending is None or pending.response is not None or time.monotonic() >= pending.deadline:
                 return False
             request = pending.request
-            if (authenticated_route != request["client_route_id"] or payload.get("type") != RESPONSE
-                    or payload.get("contract") != CONTRACT
+            if (authenticated_route != request["client_route_id"] or payload.get("type") != self._response_type
+                    or payload.get("contract") != self._contract
                     or payload.get("phase") != request["phase"]
                     or any(payload.get(key) != request[key] for key in (*IDENTITY_FIELDS, "execution_generation"))
                     or not isinstance(payload.get("result"), dict)

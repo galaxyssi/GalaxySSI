@@ -115,11 +115,30 @@ internal class CollaborationResearchWorkspace(
             revalidate = revalidate)
     }
 
+    fun publishMilestone(access: CollaborationWorkspaceAccess, id: String, raw: String,
+                         now: Long = System.currentTimeMillis()): JSONObject = synchronized(LOCK) {
+        requirePublicationActive(access)
+        CollaborationMilestoneJournal.validateId(id)
+        val contract = requireNotNull(publicationContract(access)) { "A host-enrolled assignment is required" }
+        require(!contract.has("candidate_task")) { "Host candidate transitions use final publication, not interim milestones" }
+        val finalKey = prefix(access.groupId) + "publication:" + digest("${access.runId}:${access.nodeId}")
+        require(rows.read(finalKey)?.let(::JSONObject)?.getJSONObject("result")?.optString("status") != "recorded") {
+            "This assignment has already published its final result"
+        }
+        publishInternal(access, raw, now, null, false, milestoneId = id)
+    }
+
+    fun milestones(access: CollaborationWorkspaceAccess, cursor: String = ""): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationMilestoneJournal(rows, access).page(cursor)
+    }
+
     fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis(),
                 candidateTask: JSONObject? = null): JSONObject = publishInternal(access, raw, now, candidateTask, false)
 
     private fun publishInternal(access: CollaborationWorkspaceAccess, raw: String, now: Long,
-                                candidateTask: JSONObject?, recoverable: Boolean, revalidate: Boolean = false): JSONObject = synchronized(LOCK) {
+                                candidateTask: JSONObject?, recoverable: Boolean, revalidate: Boolean = false,
+                                milestoneId: String? = null): JSONObject = synchronized(LOCK) {
         require(access.groupId.isNotBlank() && access.runId.isNotBlank() && access.turnId.isNotBlank() &&
             access.personId.isNotBlank() && access.nodeId.isNotBlank()) { "A host-owned research identity is required" }
         if (!authorized(access.groupId)) return@synchronized failure("Group access was removed")
@@ -134,15 +153,17 @@ internal class CollaborationResearchWorkspace(
             return@synchronized result
         }
         val artifact = CollaborationResearchArtifact.decode(raw)
-        if (artifact == null && candidateTask == null && !recoverable) return@synchronized JSONObject()
+        if (artifact == null && candidateTask == null && !recoverable && milestoneId == null) return@synchronized JSONObject()
         val changes = artifact?.optJSONArray("workspace")
-        if (artifact != null && changes == null && candidateTask == null && !recoverable) return@synchronized JSONObject()
+        if (artifact != null && changes == null && candidateTask == null && !recoverable && milestoneId == null && !artifact.has("milestones")) return@synchronized JSONObject()
         val prefix = prefix(access.groupId)
-        val publicationKey = prefix + "publication:" + digest("${access.runId}:${access.nodeId}")
+        val milestoneJournal = CollaborationMilestoneJournal(rows, access)
+        val publicationKey = if (milestoneId == null) prefix + "publication:" + digest("${access.runId}:${access.nodeId}")
+            else milestoneJournal.publicationKey(milestoneId)
         val inputHash = digest(if (candidateTask == null) raw else JSONArray().put(raw).put(candidateTask).toString())
         rows.read(publicationKey)?.let { saved ->
             val prior = JSONObject(saved)
-            if (!recoverable || prior.getJSONObject("result").optString("status") == "recorded") {
+            if ((!recoverable && milestoneId == null) || prior.getJSONObject("result").optString("status") == "recorded") {
                 if (prior.getString("input_sha256") != inputHash)
                     return@synchronized failure("A different result already owns this dispatch; create new work for a revision")
                 val result = prior.getJSONObject("result")
@@ -168,8 +189,14 @@ internal class CollaborationResearchWorkspace(
             val changes = changes ?: if (candidateTask == null) JSONArray() else
                 throw IllegalArgumentException("Candidate task requires a workspace revision/event")
             candidateTask?.let { CollaborationCandidateEvolution.checkTask(this, access, it) }
-            val refs = JSONArray()
-            val revisions = mutableListOf<JSONObject>()
+            require(milestoneId == null || !artifact.has("milestones")) { "A milestone cannot incorporate other milestones; cite parents or use a final result" }
+            val retained = if (milestoneId == null) milestoneJournal.resolve(artifact) { ref ->
+                requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Milestone original missing" }.also {
+                    require(CollaborationResearchCandidates.same(it, ref) && it.getString("node_id") == access.nodeId) { "Milestone identity changed" }
+                }
+            } else emptyList()
+            val refs = JSONArray(retained.map(::reference))
+            val revisions = retained.toMutableList()
             val changingIds = (0 until changes.length()).map { changes.getJSONObject(it) }
                 .map { it.optString("object_id").ifBlank { digest("${access.groupId}:${access.personId}:${it.optString("id")}") } }.toSet()
             val candidates = CollaborationResearchCandidates(access, { id, version -> read(access, id, version) },
@@ -257,6 +284,7 @@ internal class CollaborationResearchWorkspace(
                 revisions += revision
             }
             candidateTask?.let { CollaborationCandidateEvolution.checkPublication(it, revisions) }
+            require(milestoneId == null || revisions.isNotEmpty()) { "An interim milestone needs a versioned workspace object, not only a status message" }
             JSONObject().put("status", "recorded").put("revisions", refs)
                 .put("trust", "authorship_and_version_recorded_not_scientifically_verified")
         }.getOrElse {
@@ -272,6 +300,7 @@ internal class CollaborationResearchWorkspace(
         if (writes.isNotEmpty()) writes[mutationKey(access.groupId)] = newMutationToken()
         writes[publicationKey] = JSONObject().put("input_sha256", inputHash).put("result", result)
             .apply { candidateTask?.let { put("candidate_task_sha256", digest(it.toString())) } }.toString()
+        if (milestoneId != null) writes.putAll(milestoneJournal.outcomeWrites(milestoneId, raw, result, now))
         if (recoverable) writes.putAll(CollaborationPublicationJournal(rows, access).outcomeWrites(raw, result, now))
         rows.commit(writes)
         result

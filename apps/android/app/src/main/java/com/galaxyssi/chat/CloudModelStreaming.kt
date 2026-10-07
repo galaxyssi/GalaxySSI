@@ -620,6 +620,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     }
                     val key = toolProgress.semanticKey(call.name, arguments)
                     parsedCalls += Triple(call, arguments, key)
+                    // Publication owns durable idempotency; list results and uncertain failures must stay fresh.
+                    if (call.name == CollaborationMilestoneTool.NAME) toolProgress.invalidate(call.name, arguments)
                     if (toolProgress.cached(call.name, arguments) == null && key !in preparedCallsByKey) {
                         onToolEvent?.invoke(
                             CloudToolEvent(call.name, "running", arguments.toString().take(240))
@@ -636,7 +638,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     }
                     continue
                 }
-                if (publication?.repairing != true && !research.reserveTools(preparedCallsByKey.size)) {
+                val researchCalls = preparedCallsByKey.values.count { it.call.name != CollaborationMilestoneTool.NAME }
+                if (publication?.repairing != true && researchCalls > 0 && !research.reserveTools(researchCalls)) {
                     appendPlainConversationTurn(prepared, "user", research.guidance(research.stopReason() ?: "tool_limit"))
                     toolProgress.requestFinalization()
                     prepareFinalRound(prepared)
@@ -648,12 +651,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     onCompleted = { completed ->
                         val arguments = JSONObject(completed.call.argumentsJson)
                         checkpoint?.record(completed.call.name, arguments, completed.output)
-                        if (toolProgress.record(completed.call.name, arguments, completed.output)) {
+                        if (toolProgress.record(completed.call.name, arguments, completed.output) &&
+                            completed.call.name != CollaborationMilestoneTool.NAME) {
                             evidenceResults += completed.call.name to completed.output
                             research.observe(completed.output)
                         }
-                        onToolEvent?.invoke(CloudToolEvent("research", "progress",
-                            "\u5df2\u6536\u96c6 ${research.sourceCount} \u4e2a\u6765\u6e90\uff0c\u6b63\u5728\u68c0\u67e5\u8bc1\u636e\u4e0e\u4fe1\u606f\u7f3a\u53e3"))
+                        if (completed.call.name != CollaborationMilestoneTool.NAME)
+                            onToolEvent?.invoke(CloudToolEvent("research", "progress",
+                                "\u5df2\u6536\u96c6 ${research.sourceCount} \u4e2a\u6765\u6e90\uff0c\u6b63\u5728\u68c0\u67e5\u8bc1\u636e\u4e0e\u4fe1\u606f\u7f3a\u53e3"))
                         onToolEvent?.invoke(CloudToolEvent(completed.call.name, "completed", completed.output.take(240),
                             AgentResearchTrace.observe(completed.call.name, arguments, completed.output).toJson().toString()))
                     }
@@ -694,7 +699,9 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         prepared.conversation.put(firstTurn + index, temporary.conversation.get(index))
                     }
                 }
-                val noEvidenceProgress = toolProgress.observeEvidenceBatch(newlyCompleted.map { it.output })
+                if (calls.all { it.name == CollaborationMilestoneTool.NAME }) continue
+                val noEvidenceProgress = toolProgress.observeEvidenceBatch(newlyCompleted
+                    .filterNot { it.call.name == CollaborationMilestoneTool.NAME }.map { it.output })
                 val stopReason = if (noEvidenceProgress) "no_new_evidence" else research.stopReason()
                 appendPlainConversationTurn(prepared, "user", research.guidance(stopReason))
                 onToolEvent?.invoke(CloudToolEvent("research", if (stopReason == null) "progress" else "synthesizing",

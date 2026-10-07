@@ -76,7 +76,7 @@ internal object AndroidCollaborationRemoteRecall {
         return access
     }
 
-    private fun paired(context: Context, request: JSONObject, desktop: String): Boolean {
+    internal fun paired(context: Context, request: JSONObject, desktop: String): Boolean {
         val link = GalaxySSILinkProtocol.serverLink(context, desktop) ?: return false
         return link.paired && link.routes.clientRouteId == request.optString("client_route_id") &&
             AppStore.contactById(context, request.optString("contact_id"))?.optString("desktop_id") == desktop
