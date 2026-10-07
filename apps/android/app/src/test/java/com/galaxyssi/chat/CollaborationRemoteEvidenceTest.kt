@@ -2,8 +2,10 @@ package com.galaxyssi.chat
 
 import java.util.Base64
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -28,7 +30,7 @@ class CollaborationRemoteEvidenceTest {
         .put("turn_id", "turn").put("execution_generation", 2)
     private fun access() = CollaborationWorkspaceAccess("group", "run", "turn", 1, "node", "author")
     private class Provider(val fields: JSONObject, count: Int = 1, size: Int = 20000, failed: Boolean = false,
-        val inline: Boolean = false, val sealed: Boolean = false) {
+        val inline: Boolean = false, var sealed: Boolean = true) {
         var queries = 0
         val pagesRead = mutableListOf<Pair<Int, Int>>()
         val bodies = (1..count).map { id ->
@@ -78,14 +80,14 @@ class CollaborationRemoteEvidenceTest {
                 .put("data_b64", Base64.getEncoder().encodeToString(raw))
         }
     }
-    private class Fixture(fields: JSONObject, access: CollaborationWorkspaceAccess) {
+    private class Fixture(fields: JSONObject, access: CollaborationWorkspaceAccess, terminal: Boolean = true) {
         val rows = Rows()
         val evidence = Rows()
         var authorized = true
         val store = CollaborationRemoteEvidenceStore(rows)
         val ledger = CollaborationEvidenceLedger(evidence) { authorized }
         val key: String
-        init { ledger.bind(123, access); key = store.create("desktop", fields, access) }
+        init { ledger.bind(123, access); key = store.createIntent("desktop", fields, access, terminal).first }
         fun importer() = CollaborationRemoteEvidenceImporter(CollaborationRemoteEvidenceStore(rows), ledger)
     }
     private fun response(request: JSONObject) = JSONObject(request.toString()).put("type", "agent_task_evidence")
@@ -163,10 +165,15 @@ class CollaborationRemoteEvidenceTest {
         assertEquals("imported", f.store.read(f.key)!!.getString("status"))
         assertFalse(f.store.read(f.key)!!.getBoolean("provider_history_complete"))
     }
-    @Test fun unsealedIndexStillChecksForNewObservations(): Unit = runBlocking {
-        val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 100, inline = true)
+    @Test fun runningSnapshotIsNotFinalAndDoesNotPollContinuously(): Unit = runBlocking {
+        val f = Fixture(fields(), access(), terminal = false)
+        val provider = Provider(fields(), size = 100, inline = true, sealed = false)
         assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
-        assertEquals(2, provider.queries)
+        assertEquals(1, provider.queries)
+        assertEquals("snapshot_imported", f.store.read(f.key)!!.getString("status"))
+        assertFalse(f.store.read(f.key)!!.getBoolean("archive_final"))
+        assertTrue(f.store.pending().isEmpty())
+        assertTrue(f.importer().run(f.key, { true }) { _, _, _ -> error("No unsolicited polling") })
     }
     @Test fun inlineCheckpointSurvivesCommitFailureWithoutNetworkReplay(): Unit = runBlocking {
         val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 100, inline = true, sealed = true)
@@ -276,7 +283,7 @@ class CollaborationRemoteEvidenceTest {
         val f = Fixture(fields(), access()); val provider = Provider(fields(), count = 121, size = 1)
         assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
         assertEquals(121L, f.store.read(f.key)!!.getLong("imported"))
-        assertEquals(129, provider.queries) // 121 bodies, seven populated index pages, one terminal index.
+        assertEquals(128, provider.queries) // 121 bodies and seven populated index pages with a sealed boundary.
     }
     @Test fun oversizedOriginalsStayExplicitlyIncompleteAndDoNotBlockOthers(): Unit = runBlocking {
         val f = Fixture(fields(), access()); val provider = Provider(fields(), count = 2)
@@ -299,6 +306,87 @@ class CollaborationRemoteEvidenceTest {
         assertFalse(f.store.createIntent("desktop", fields(), access()).second)
         assertTrue(f.store.pending().isEmpty())
         assertTrue(f.importer().run(f.key, { true }) { _, _, _ -> error("No repeat query") })
+    }
+    @Test fun nextLiveReadImportsOnlyTheTailAndFinalCaptureRearmsDurably(): Unit = runBlocking {
+        val f = Fixture(fields(), access(), terminal = false)
+        val first = Provider(fields(), size = 100, inline = true, sealed = false)
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q -> first.reply(q) })
+        val reopened = CollaborationRemoteEvidenceStore(f.rows)
+        assertTrue(reopened.createIntent("desktop", fields(), access(), terminal = false).second)
+        assertEquals(1, reopened.pending().size)
+        val second = Provider(fields(), count = 2, size = 100, inline = true, sealed = false)
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q ->
+            assertEquals(1L, q.getLong("after_sequence")); second.reply(q)
+        })
+        assertEquals(2L, reopened.read(f.key)!!.getLong("imported"))
+        assertTrue(reopened.createIntent("desktop", fields(), access()).second)
+        val final = Provider(fields(), count = 3, size = 100, inline = true)
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q ->
+            assertEquals(2L, q.getLong("after_sequence")); final.reply(q)
+        })
+        assertEquals(3, f.ledger.browse(access()).first.size)
+        assertEquals("imported", reopened.read(f.key)!!.getString("status"))
+        assertTrue(reopened.read(f.key)!!.getBoolean("archive_final"))
+        assertFalse(reopened.createIntent("desktop", fields(), access(), terminal = false).second)
+        assertTrue(reopened.pending().isEmpty())
+    }
+    @Test fun terminalNotificationDuringLiveTransferCannotBeLost(): Unit = runBlocking {
+        val f = Fixture(fields(), access(), terminal = false)
+        val provider = Provider(fields(), size = 30000, sealed = false)
+        var notified = false
+        assertFalse(f.importer().run(f.key, { true }) { _, _, q ->
+            if (!notified && q.getString("mode") == "page") {
+                f.store.createIntent("desktop", fields(), access()); notified = true
+            }
+            provider.reply(q)
+        })
+        val pending = f.store.read(f.key)!!
+        assertTrue(pending.getBoolean("terminal_requested"))
+        assertEquals("pending", pending.getString("status"))
+        assertEquals(1, f.store.pending().size)
+        provider.sealed = true
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q ->
+            assertEquals("index", q.getString("mode")); assertEquals(1L, q.getLong("after_sequence")); provider.reply(q)
+        })
+        assertEquals(1, f.ledger.browse(access()).first.size)
+        assertEquals("imported", f.store.read(f.key)!!.getString("status"))
+    }
+    @Test fun finalDemandWaitsForArchiveSealWithoutSpinningInsideOnePass(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), count = 0, sealed = false)
+        assertFalse(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
+        assertEquals(1, provider.queries)
+        assertEquals("pending", f.store.read(f.key)!!.getString("status"))
+        assertTrue(f.ledger.browse(access()).first.isEmpty())
+        provider.sealed = true
+        assertTrue(f.importer().run(f.key, { true }) { _, _, q -> provider.reply(q) })
+        assertEquals(2, provider.queries)
+    }
+    @Test fun parallelImportersShareOneCursorAndCannotReplayPages(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 100, inline = true)
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val first = async(start = CoroutineStart.UNDISPATCHED) {
+            f.importer().run(f.key, { true }) { _, _, q -> entered.complete(Unit); release.await(); provider.reply(q) }
+        }
+        entered.await()
+        val other = async(start = CoroutineStart.UNDISPATCHED) {
+            f.importer().run(f.key, { true }) { _, _, _ -> error("Duplicate transfer") }
+        }
+        release.complete(Unit)
+        withTimeout(1_000) { assertTrue(first.await()); assertTrue(other.await()) }
+        assertEquals(1, provider.queries); assertEquals(1, f.ledger.browse(access()).first.size)
+    }
+    @Test fun quarantineAndRevocationCannotBeReopenedByLiveOrFinalReads(): Unit = runBlocking {
+        for (status in listOf("revoked", "stopped", "superseded", "integrity_rejected")) {
+            val f = Fixture(fields(), access(), terminal = false)
+            val stale = f.store.read(f.key)!!
+            f.store.save(f.key, JSONObject(stale.toString()).put("status", status))
+            f.store.createIntent("desktop", fields(), access(), terminal = false)
+            f.store.createIntent("desktop", fields(), access())
+            f.store.save(f.key, stale)
+            f.store.completeSnapshot(f.key, stale)
+            assertEquals(status, f.store.read(f.key)!!.getString("status"))
+            assertTrue(f.store.pending().isEmpty())
+        }
     }
     @Test fun generationsAndMembersHaveIndependentJobsAndAccess(): Unit = runBlocking {
         val f = Fixture(fields(), access()); val provider = Provider(fields())

@@ -12,6 +12,11 @@ internal class CollaborationRemoteEvidenceImporter(
 ) {
     /** Returns with a durable partial checkpoint on transport failure; never retries an executed operation. */
     suspend fun run(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit = {},
+        query: suspend (String, JSONObject, JSONObject) -> JSONObject?): Boolean = gate.withJob(key) {
+        importSnapshot(key, allowed, progress, query)
+    }
+
+    private suspend fun importSnapshot(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit,
         query: suspend (String, JSONObject, JSONObject) -> JSONObject?): Boolean {
         val job = store.read(key) ?: return true
         if (job.getString("status") != "pending") return true
@@ -33,14 +38,15 @@ internal class CollaborationRemoteEvidenceImporter(
                     var entries = job.optJSONArray("index_entries")
                     if (entries == null || entries.length() == 0) {
                         if (job.opt("index_complete") == true)
-                            return finish(if (job.getLong("skipped_large") == 0L) "imported" else "partial_large_objects")
+                            return store.completeSnapshot(key, job)
                         val response = query(job.getString("desktop"), fields,
                             JSONObject().put("mode", "index").put("after_sequence", cursor)
                                 .put("inline_page_bytes", CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)) ?: return false
                         if (!authorized()) return false
                         if (response.optString("status") == "unavailable") return finish("unavailable")
                         require(response.opt("status") == "ready" && response.opt("coverage") == "observed_completed_items_only" &&
-                            response.opt("provider_history_complete") == false && response.opt("has_more") is Boolean)
+                            response.opt("provider_history_complete") == false && response.opt("has_more") is Boolean &&
+                            response.opt("archive_final") is Boolean)
                         entries = response.getJSONArray("entries")
                         require(entries.length() <= 20)
                         var last = cursor
@@ -52,10 +58,10 @@ internal class CollaborationRemoteEvidenceImporter(
                         require(CollaborationRemoteEvidenceProtocol.integer(response, "next_sequence") == last &&
                             (!response.getBoolean("has_more") || entries.length() > 0))
                         cacheInlinePages(key, response, entries)
-                        if (entries.length() == 0) return finish(if (job.getLong("skipped_large") == 0L) "imported" else "partial_large_objects")
-                        // Only a sealed execution archive permits skipping the final empty query.
+                        // This boundary is a live snapshot, not proof that the provider has finished.
                         job.put("index_entries", entries).put("index_complete",
-                            response.opt("archive_final") == true && !response.getBoolean("has_more"))
+                            !response.getBoolean("has_more")).put("archive_final", response.getBoolean("archive_final"))
+                        if (entries.length() == 0) return store.completeSnapshot(key, job)
                     }
                     // Keep the remainder of this index page; one query supplies up to twenty observations.
                     descriptor = requireNotNull(entries).getJSONObject(0)
@@ -140,5 +146,9 @@ internal class CollaborationRemoteEvidenceImporter(
         if (decoded.manifest.digest != descriptor.getString("sha256") || decoded.manifest.bytes != descriptor.getLong("total_bytes") ||
             decoded.manifest.pages != descriptor.getInt("page_count")) { decoded.close(); return null }
         return decoded
+    }
+
+    companion object {
+        private val gate = CollaborationEvidenceImportGate()
     }
 }
