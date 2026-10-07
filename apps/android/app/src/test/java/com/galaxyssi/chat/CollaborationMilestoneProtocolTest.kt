@@ -31,6 +31,9 @@ class CollaborationMilestoneProtocolTest {
 
     @Test fun publicationCannotUseReadOnlyRpcOrUnboundExpiredEnvelope() {
         assertTrue(AndroidCollaborationRemoteMilestone.valid(request(), 10000))
+        val status = request().put("phase", "status").put("arguments", JSONObject().put("mode", "status"))
+        assertTrue(AndroidCollaborationRemoteMilestone.valid(status, 10000))
+        assertFalse(AndroidCollaborationRemoteMilestone.valid(JSONObject(status.toString()).put("phase", "publish"), 10000))
         assertFalse(CollaborationRemoteRecallProtocol.valid(request(), 10000))
         for (field in AgentResultRecoveryClient.FIELDS + listOf("execution_generation", "request_id", "contract", "phase", "arguments"))
             assertFalse(field, AndroidCollaborationRemoteMilestone.valid(request().apply { remove(field) }, 10000))
@@ -48,6 +51,7 @@ class CollaborationMilestoneProtocolTest {
             val encoded = prepared.body.toString()
             assertTrue(provider.name, encoded.contains(CollaborationMilestoneTool.NAME))
             assertTrue(encoded.contains("milestone_id")); assertTrue(encoded.contains("artifact"))
+            assertTrue(encoded.contains("mode=status"))
             CloudConversationStreamEngine.restrictPublicationRepairTools(prepared)
             assertFalse(prepared.body.toString().contains(CollaborationMilestoneTool.NAME))
             assertTrue(prepared.body.toString().contains(CollaborationCloudRecall.NAME))

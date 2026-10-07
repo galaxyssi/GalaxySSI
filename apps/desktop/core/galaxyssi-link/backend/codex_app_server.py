@@ -2213,8 +2213,9 @@ class CodexAppServer:
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
         if tool_name == "collaboration_publish":
+            publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability"}
             self.on_event(task_id, {**dict(common), "status": "running",
-                "current_step": (("Read saved milestone IDs" if arguments.get("mode") == "list" else "Interim collaboration artifact recorded")
+                "current_step": (publication_step.get(arguments.get("mode"), "Interim collaboration artifact recorded")
                                  if result.get("success") else "Interim publication needs attention"),
                 "trace_stage": "collaboration_publication_returned", "telemetry_only": True})
             return

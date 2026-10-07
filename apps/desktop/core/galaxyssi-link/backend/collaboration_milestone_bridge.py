@@ -13,6 +13,9 @@ MAX_BYTES = 128 * 1024
 def tool_spec():
     return {"type": "function", "name": TOOL, "description": (
         "Publish useful interim research artifacts to your originating phone without ending your assignment. "
+        "Only host-enrolled research assignments can publish; coordination/assessment dispatches return their required response instead. "
+        "Use mode=status when availability is unknown; it reports the current assignment without mutation. "
+        "An unavailable capability is not invalid artifact JSON and cannot be repaired by retrying publication. "
         "mode=publish requires stable milestone_id and artifact (a JSON string using galaxyssi.research-artifact.v1 "
         "with nonempty workspace). Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. "
         "For a substantive revision use a new milestone ID and exact object_id/base_revision. "
@@ -23,7 +26,7 @@ def tool_spec():
         "One request is limited to 131072 UTF-8 bytes. Split larger independent deliveries, never truncate evidence. "
         "Do not supply group/member/task authority fields."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["publish", "list"]},
+            "mode": {"type": "string", "enum": ["publish", "list", "status"]},
             "milestone_id": {"type": "string", "maxLength": 160},
             "artifact": {"type": "string"},
             "cursor": {"type": "string", "maxLength": 512}},
@@ -33,7 +36,10 @@ def tool_spec():
 def validate_arguments(arguments):
     if not isinstance(arguments, dict):
         raise ValueError("Publication arguments must be an object")
-    if arguments.get("mode") == "publish":
+    if arguments.get("mode") == "status":
+        if set(arguments) != {"mode"}:
+            raise ValueError("Status accepts only mode; authority comes from the host assignment")
+    elif arguments.get("mode") == "publish":
         identifier, artifact = arguments.get("milestone_id"), arguments.get("artifact")
         if (set(arguments) != {"mode", "milestone_id", "artifact"}
                 or not isinstance(identifier, str) or not 1 <= len(identifier.encode("utf-16-le")) // 2 <= 160
@@ -45,7 +51,7 @@ def validate_arguments(arguments):
                 or len(arguments.get("cursor", "")) > 512):
             raise ValueError("List accepts only mode and an optional cursor")
     else:
-        raise ValueError("Publication mode must be publish or list")
+        raise ValueError("Publication mode must be publish, list or status")
     if len(json.dumps(arguments, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > MAX_BYTES:
         raise ValueError("Publication exceeds 131072 UTF-8 bytes; split independent artifacts, do not truncate")
     return dict(arguments)
@@ -61,6 +67,9 @@ class MilestoneBroker(RecallBroker):
         try:
             return self._exchange(task_scope(snapshot()), snapshot, arguments, publish, active, timeout, arguments["mode"])
         except (TimeoutError, ConnectionError) as error:
+            if arguments["mode"] == "status":
+                raise type(error)("Publication capability status unavailable; no artifact was submitted. "
+                                  "Continue the required assignment response; a transport failure does not grant publication.") from error
             raise type(error)("Publication response unavailable; outcome is uncertain. Retry the SAME milestone_id and artifact "
                               "or list saved milestones after reconnecting. Do not repeat completed effects.") from error
 

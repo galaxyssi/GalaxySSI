@@ -90,6 +90,13 @@ internal class CollaborationResearchWorkspace(
         CollaborationPublicationJournal(rows, access).checkpoint()
     }
 
+    fun publicationCapability(access: CollaborationWorkspaceAccess): JSONObject = synchronized(LOCK) {
+        requirePublicationActive(access)
+        val finalKey = prefix(access.groupId) + "publication:" + digest("${access.runId}:${access.nodeId}")
+        CollaborationPublicationCapability.describe(publicationContract(access),
+            rows.read(finalKey)?.let(::JSONObject)?.getJSONObject("result")?.optString("status") == "recorded")
+    }
+
     fun requirePublicationActive(access: CollaborationWorkspaceAccess) = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         require(!CollaborationPublicationRetirement(rows, access).isRetired()) { "Publication dispatch was retired; do not resume it" }

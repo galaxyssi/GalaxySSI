@@ -6,6 +6,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun publicationAvailabilityMatchesExecutionPhaseEvenWithOversizedContext() {
+        for (stage in CollaborationResearchStage.entries) {
+            for (planner in listOf(false, true)) {
+                val base = execution("goal ".repeat(10000), stage)
+                val execution = base.copy(member = base.member.copy(context = base.member.context +
+                    (CollaborationLiveGraph.PLANNER to if (planner) "1" else "0")))
+                val text = CollaborationResearchPrompt.build(execution, descriptor(), emptyMap()).text
+                if (planner || stage == CollaborationResearchStage.DELIVER) {
+                    assertTrue(text.contains("interim_publication=unavailable_for_this_dispatch"))
+                    assertTrue(text.contains("Return the required response protocol"))
+                    assertFalse(text.contains("interim_publication=enrolled_research_assignment"))
+                } else assertTrue(text.contains("interim_publication=enrolled_research_assignment"))
+                assertTrue(text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+            }
+        }
+        val base = execution("Candidate transition")
+        val candidate = base.copy(member = base.member.copy(context = base.member.context +
+            (CollaborationCandidateEvolution.TASK to "{}")))
+        assertTrue(CollaborationPublicationCapability.instructions(candidate).contains("interim_publication=final_contract_only"))
+    }
+
     @Test fun currentPeerEvidenceIsNotDisplacedByOlderBookkeeping() {
         val execution = execution("Find a method that corrects the observed failure without losing prior behavior")
         var lower = 0

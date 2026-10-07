@@ -29,7 +29,9 @@ internal class CloudImageAnnotationSession(
 
     fun installCollaborationTools(prepared: PreparedCloudConversationStream) {
         if (collaborationEvidence != null) CollaborationCloudRecall.install(prepared)
-        if (collaborationEvidence != null) CollaborationMilestoneTool.install(prepared)
+        if (collaborationEvidence != null && CollaborationResearchWorkspace(context)
+                .publicationCapability(collaborationEvidence.access).getBoolean("publish_allowed"))
+            CollaborationMilestoneTool.install(prepared)
     }
 
     fun execute(

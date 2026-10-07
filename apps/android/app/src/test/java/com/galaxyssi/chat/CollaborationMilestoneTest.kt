@@ -24,6 +24,53 @@ class CollaborationMilestoneTest {
         it.enrollPublication(access, CollaborationResearchStage.EXPLORE)
     }
 
+    @Test fun unEnrolledDispatchReportsCapabilityNotBrokenArtifactWithoutMutation() {
+        val rows = Rows(); val workspace = CollaborationResearchWorkspace(rows)
+        val status = CollaborationMilestoneTool.execute(workspace, access, JSONObject().put("mode", "status")) {}
+        assertTrue(status.getBoolean("success"))
+        assertFalse(status.getJSONObject("capability").getBoolean("publish_allowed"))
+        assertEquals("assignment_not_enrolled", status.getJSONObject("capability").getString("reason_code"))
+        val input = JSONObject().put("mode", "publish").put("milestone_id", "m1").put("artifact", raw(item()))
+        repeat(2) {
+            val result = CollaborationMilestoneTool.execute(workspace, access, input) {}
+            assertEquals("unavailable", result.getString("status"))
+            assertEquals("assignment_not_enrolled", result.getString("error_code"))
+            assertFalse(result.getBoolean("artifact_validated"))
+            assertFalse(result.getBoolean("retryable"))
+            assertTrue(result.getString("error").contains("required planning or final-response format"))
+        }
+        assertTrue(rows.data.isEmpty())
+        workspace.enrollPublication(access, CollaborationResearchStage.EXPLORE)
+        assertTrue(workspace.publicationCapability(access).getBoolean("publish_allowed"))
+        assertTrue(CollaborationMilestoneTool.execute(workspace, access, input) {}.getBoolean("success"))
+    }
+
+    @Test fun capabilityIsReadOnlyBoundToAssignmentAndReflectsFinalCommit() {
+        val rows = Rows(); val workspace = setup(rows); val before = rows.data.toMap()
+        val statusInput = JSONObject().put("mode", "status")
+        assertTrue(CollaborationMilestoneTool.execute(workspace, access, statusInput) {}
+            .getJSONObject("capability").getBoolean("publish_allowed"))
+        assertFalse(CollaborationMilestoneTool.execute(workspace, access.copy(nodeId = "planner"), statusInput) {}
+            .getJSONObject("capability").getBoolean("publish_allowed"))
+        assertEquals(before, rows.data)
+        assertThrows(IllegalArgumentException::class.java) {
+            CollaborationMilestoneTool.validate(JSONObject().put("mode", "status").put("member_id", "author"))
+        }
+        assertEquals("recorded", workspace.submitPublication(access, raw(item())).getString("status"))
+        val final = rows.data.toMap()
+        assertEquals("assignment_finalized", CollaborationResearchWorkspace(rows).publicationCapability(access).getString("reason_code"))
+        assertEquals(final, rows.data)
+        assertTrue(CollaborationMilestoneTool.execute(workspace, access, JSONObject().put("mode", "list")) {}.getBoolean("success"))
+    }
+
+    @Test fun candidateTransitionsRemainFinalOnlyAndRevokedAccessCannotReadCapability() {
+        val capability = CollaborationPublicationCapability.describe(JSONObject().put("candidate_task", JSONObject()), false)
+        assertFalse(capability.getBoolean("publish_allowed"))
+        assertEquals("candidate_transition_final_only", capability.getString("reason_code"))
+        val workspace = CollaborationResearchWorkspace(Rows(), authorized = { false })
+        assertThrows(IllegalArgumentException::class.java) { workspace.publicationCapability(access) }
+    }
+
     @Test fun interimAndFinalAreSeparateDurablePublications() {
         val rows = Rows(); val workspace = setup(rows)
         val first = workspace.publishMilestone(access, "candidate-v1", raw(item()), 100)

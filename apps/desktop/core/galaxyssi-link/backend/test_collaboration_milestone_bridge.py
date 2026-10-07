@@ -33,9 +33,12 @@ class CollaborationMilestoneBridgeTest(unittest.TestCase):
         unicode_id = {**args(), "milestone_id": "\U0001f4d6" * 80}
         self.assertEqual(unicode_id, validate_arguments(unicode_id))
         self.assertEqual({"mode": "list", "cursor": "opaque"}, validate_arguments({"mode": "list", "cursor": "opaque"}))
+        self.assertEqual({"mode": "status"}, validate_arguments({"mode": "status"}))
+        self.assertIn("not invalid artifact JSON", spec["description"])
 
     def test_invalid_and_authority_fields_never_reach_transport(self):
         bad = [None, [], {}, {"mode": "read"}, {"mode": "list", "artifact": "x"},
+               {"mode": "status", "member_id": "other"}, {"mode": "status", "artifact": "x"},
                {"mode": "list", "cursor": "x" * 513}, {"mode": "list", "cursor": None}]
         bad += [{**args(), key: value} for key, value in (
             ("milestone_id", ""), ("milestone_id", " x"), ("milestone_id", "x\n"),
@@ -74,6 +77,31 @@ class CollaborationMilestoneBridgeTest(unittest.TestCase):
             broker.query(task, args(), lambda request: sent.append(request) or True, timeout=.005)
         self.assertEqual(args(), sent[0]["arguments"])
         self.assertEqual({}, broker._pending)
+
+    def test_status_reports_unavailability_without_inviting_artifact_repair(self):
+        broker = MilestoneBroker()
+        result = {"success": True, "status": "returned", "capability": {
+            "publish_allowed": False, "reason_code": "assignment_not_enrolled", "grants_authority": False}}
+        def publish(request):
+            self.assertEqual("status", request["phase"])
+            self.assertEqual({"mode": "status"}, request["arguments"])
+            return broker.receive({**request, "type": RESPONSE, "result": result}, "phone")
+        self.assertEqual(result, broker.query(task, {"mode": "status"}, publish))
+        with self.assertRaisesRegex(TimeoutError, "no artifact was submitted"):
+            broker.query(task, {"mode": "status"}, lambda request: True, timeout=.005)
+        self.assertEqual({}, broker._pending)
+
+    def test_status_read_is_not_reported_as_an_artifact_publication(self):
+        events = []
+        server = CodexAppServer("codex", {}, lambda *event: events.append(event),
+            collaboration_publish=lambda *values: {"success": True, "status": "returned", "capability": {"publish_allowed": False}})
+        run = CodexRun("task", thread_id="thread", turn_id="turn")
+        server._runs["task"] = run
+        with patch.object(server, "_write_server_response") as reply:
+            server._execute_dynamic_tool_call("task", {"id": 1}, {"tool": "collaboration_publish", "arguments": {"mode": "status"}}, {})
+        self.assertTrue(reply.call_args.args[1]["success"])
+        self.assertEqual("Read assignment publication capability", events[-1][1]["current_step"])
+        self.assertFalse(run.finished)
 
     def test_retries_keep_publication_identity_and_nonce(self):
         broker = MilestoneBroker(); sent = []

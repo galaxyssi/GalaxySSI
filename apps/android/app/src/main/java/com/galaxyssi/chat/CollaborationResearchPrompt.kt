@@ -154,7 +154,7 @@ internal object CollaborationResearchPrompt {
             section("Host goal contract", descriptor.toString() + "\n" + RECALL_INSTRUCTIONS + "\n" +
                 acceptanceState(execution)),
             section("Execution boundaries", CollaborationGoalPolicy.instructions(execution.member.deliveryMode == AgentDeliveryMode.RESPOND) +
-                "\n" + EVIDENCE_INSTRUCTIONS),
+                "\n" + EVIDENCE_INSTRUCTIONS + "\n" + CollaborationPublicationCapability.instructions(execution)),
             section("Collaborative evolution", CollaborationEvolutionProtocol.instructions())
         )
         execution.resourceObservation?.let {

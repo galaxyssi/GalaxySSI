@@ -12,6 +12,7 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.galaxyssi.chat.voice.modelstream.ModelStreamProvider
 
 /** Real encrypted phone persistence; no provider invocation or existing conversation mutation. */
 @RunWith(AndroidJUnit4::class)
@@ -24,6 +25,32 @@ class CollaborationMilestoneDeviceTest {
     private fun input(id: String) = JSONObject().put("mode", "publish").put("milestone_id", id).put("artifact", raw(id))
 
     @Test fun durablePublicationWakesCoordinatorAndPeerWhileOriginalWorkerStillRuns() = dispatchScenario(false)
+
+    @Test fun assignmentCapabilitySurvivesReopenAndCloudPlannerCannotAdvertisePublication() = fixture { author ->
+        val workspace = CollaborationResearchWorkspace(context)
+        val planner = author.copy(nodeId = "planner")
+        val status = JSONObject(CollaborationMilestoneTool.execute(context, planner, JSONObject().put("mode", "status")))
+        assertTrue(status.getBoolean("success"))
+        assertEquals("assignment_not_enrolled", status.getJSONObject("capability").getString("reason_code"))
+        val denial = JSONObject(CollaborationMilestoneTool.execute(context, planner, input("not-enrolled")))
+        assertEquals("unavailable", denial.getString("status"))
+        assertFalse(denial.getBoolean("artifact_validated"))
+        assertFalse(denial.getBoolean("retryable"))
+        assertNull(workspace.publicationCheckpoint(planner))
+        assertTrue(workspace.browse(planner).revisions.isEmpty())
+        assertEquals("assignment_not_enrolled", CollaborationResearchWorkspace(context)
+            .publicationCapability(planner).getString("reason_code"))
+        for (provider in ModelStreamProvider.entries) {
+            for ((access, expected) in listOf(planner to false, author to true)) {
+                val prepared = PreparedCloudConversationStream("id", provider, "https://test.invalid", emptyMap(), JSONObject(), JSONArray(), "messages")
+                val evidence = CollaborationCloudEvidence(CollaborationEvidenceLedger(context), access)
+                CloudImageAnnotationSession(context, emptyList(), collaborationEvidence = evidence).installCollaborationTools(prepared)
+                assertTrue(prepared.body.toString().contains(CollaborationCloudRecall.NAME))
+                assertEquals(expected, prepared.body.toString().contains(CollaborationMilestoneTool.NAME))
+            }
+        }
+        assertTrue(JSONObject(CollaborationMilestoneTool.execute(context, author, input("real-work"))).getBoolean("success"))
+    }
 
     @Test fun reopenedGraphDiscoversPublicationWhoseWakeWasMissed() = dispatchScenario(true)
 
