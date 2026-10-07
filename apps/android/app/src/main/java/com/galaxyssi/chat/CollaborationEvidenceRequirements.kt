@@ -6,16 +6,21 @@ import org.json.JSONObject
 internal object CollaborationEvidenceRequirements {
     const val FIELD = "required_observations"
 
-    fun required(criterion: JSONObject): Set<Pair<String, String>> {
+    fun required(criterion: JSONObject, path: String = "$"): Set<Pair<String, String>> {
         if (!criterion.has(FIELD)) return emptySet()
-        val items = requireNotNull(criterion.optJSONArray(FIELD)) { "$FIELD must be an array" }
+        fun failure(field: String, code: String, expected: String, actual: Any?): Nothing =
+            throw CollaborationAssessmentValidation.Failure("$path.$FIELD$field", code, expected,
+                CollaborationAssessmentValidation.describe(actual))
+        val items = criterion.optJSONArray(FIELD) ?: failure("", "invalid_type", "array", criterion.opt(FIELD))
         return (0 until items.length()).mapTo(linkedSetOf()) { index ->
-            val item = items.getJSONObject(index)
-            require(item.keys().asSequence().toSet() == setOf("origin", "tool")) { "Evidence requirements need origin and tool" }
-            require(item.opt("origin") is String && item.getString("origin") in CollaborationEvidenceOrigin.entries.map { it.wireValue }) {
-                "Unknown required observation origin"
-            }
-            require(item.opt("tool") is String && item.getString("tool").isNotBlank()) { "An exact required tool name is needed" }
+            val item = items.optJSONObject(index) ?: failure("[$index]", "invalid_type", "object", items.opt(index))
+            if (item.keys().asSequence().toSet() != setOf("origin", "tool"))
+                failure("[$index]", "invalid_fields", "exactly origin and tool", item.keys().asSequence().sorted().joinToString(", "))
+            val origins = CollaborationEvidenceOrigin.entries.map { it.wireValue }
+            if (item.opt("origin") !is String || item.getString("origin") !in origins)
+                failure("[$index].origin", "unknown_origin", origins.joinToString(", "), item.opt("origin"))
+            if (item.opt("tool") !is String || item.getString("tool").isBlank())
+                failure("[$index].tool", "invalid_tool", "exact nonblank tool name from host observation receipts", item.opt("tool"))
             item.getString("origin") to item.getString("tool")
         }
     }

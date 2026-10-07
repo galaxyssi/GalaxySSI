@@ -140,7 +140,8 @@ internal object CollaborationResearchPrompt {
                 append("Respond only as this member. Other members execute separately. Never simulate their replies or invent their verification.")
             }),
             section("Response protocol", protocol),
-            section("Host goal contract", descriptor.toString() + "\n" + RECALL_INSTRUCTIONS),
+            section("Host goal contract", descriptor.toString() + "\n" + RECALL_INSTRUCTIONS + "\n" +
+                acceptanceState(execution)),
             section("Execution boundaries", CollaborationGoalPolicy.instructions(execution.member.deliveryMode == AgentDeliveryMode.RESPOND) +
                 "\n" + EVIDENCE_INSTRUCTIONS),
             section("Collaborative evolution", CollaborationEvolutionProtocol.instructions())
@@ -157,6 +158,14 @@ internal object CollaborationResearchPrompt {
 
     private fun section(name: String, value: String) = CollaborationPromptBudget.Section(name, value,
         "collaboration_recall or galaxyssi.phone.collaboration.recall: mode=goal_contract; follow next_cursor; context section=$name")
+
+    private fun acceptanceState(execution: AgentTeamMemberExecutionContext): String {
+        val criteria = JSONArray(execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]")
+        return "acceptance_contract_state=${CollaborationAssessmentValidation.state(criteria)}. " +
+            if (criteria.length() == 0) "The original goal is preserved; acceptance criteria have not yet been established. " +
+                "An empty criteria array is valid initial state, not a damaged contract. The coordinator must establish criteria from the goal."
+            else "Keep every established criterion and binding unchanged while updating status and evidence."
+    }
 
     private const val RECALL_INSTRUCTIONS =
         "This descriptor pins the exact original goal, criteria and assignment context for this dispatch. " +

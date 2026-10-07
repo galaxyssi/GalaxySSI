@@ -6,6 +6,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun initialAcceptanceStateCannotBeOmittedWithLargeHistoryOrDuringRecovery() {
+        val execution = execution("goal ".repeat(10000), CollaborationResearchStage.DELIVER)
+        val store = CollaborationGoalContractStore(MemoryRows(), { true })
+        val first = CollaborationResearchPrompt.prepare(execution, store) { "history ".repeat(10000) }
+        val restored = CollaborationResearchPrompt.prepare(execution, store) { error("Use preserved snapshot") }
+        for (text in listOf(first, restored)) {
+            assertTrue(text.contains("acceptance_contract_state=initial_criteria_pending"))
+            assertTrue(text.contains("not a damaged contract"))
+        }
+    }
+
     @Test fun productionDescriptorAndFullMaterialDirectoryFitEveryRole() {
         for (stage in CollaborationResearchStage.entries) {
             val base = execution("original goal ".repeat(8000), stage)
