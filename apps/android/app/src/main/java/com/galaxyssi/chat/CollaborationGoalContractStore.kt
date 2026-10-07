@@ -368,7 +368,7 @@ internal class CollaborationGoalContractStore(
         const val MIN_PAGE_BYTES = 1024
         const val MAX_PAGE_BYTES = 65536
         const val FORMAT = "galaxyssi.goal-contract.v1"
-        const val PAGE_FORMAT = "galaxyssi.goal-contract-page.v1"
+        const val PAGE_FORMAT = CloudGoalPageProtocol.FORMAT
         private const val ENVELOPE_RESERVE = 704
         private const val INLINE_CONTEXT_NAME_BYTES = 64
         private const val CONTEXT_DIRECTORY_KEYS = 8

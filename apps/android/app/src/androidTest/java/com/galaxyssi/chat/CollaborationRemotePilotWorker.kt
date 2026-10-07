@@ -13,7 +13,7 @@ internal object CollaborationRemotePilotWorker {
             progressContext = context.applicationContext)
     }
 
-    fun requireTarget(context: Context, policy: CollaborationRemoteExecutionPolicy) {
+    fun requireTarget(context: Context, policy: CollaborationTrialSelectionPolicy) {
         val target = requireNotNull(AppStoreAgentConnectorRegistry(context).availableTargets().singleOrNull { it.id == policy.targetId })
         CollaborationLiveModelSelection.requireAvailable(target, policy.selection.modelId, policy.selection.reasoningEffort)
     }

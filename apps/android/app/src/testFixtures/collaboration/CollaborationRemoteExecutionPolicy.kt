@@ -1,10 +1,9 @@
 package com.galaxyssi.chat
 
 /** Shared test-only dispatch controls, not production routing defaults. */
-internal interface CollaborationRemoteExecutionPolicy {
+internal interface CollaborationTrialSelectionPolicy {
     val targetId: String
     val selection: CollaborationLiveModelSelection
-    fun prompt(context: AgentTeamMemberExecutionContext): String
 
     fun requireAppSelection(current: AgentModelSelection) {
         require(current.mode == AgentModelSelectionMode.MANUAL && current.targetId == targetId &&
@@ -12,4 +11,8 @@ internal interface CollaborationRemoteExecutionPolicy {
             "Select the protocol target, model and effort in the App conversation before running; no default or substitution allowed"
         }
     }
+}
+
+internal interface CollaborationRemoteExecutionPolicy : CollaborationTrialSelectionPolicy {
+    fun prompt(context: AgentTeamMemberExecutionContext): String
 }

@@ -40,11 +40,16 @@ class ArtifactCapabilityIngressTests(unittest.TestCase):
                 stack.enter_context(patch.object(mqtt_bridge, name, return_value=value))
             for name, event in (("bind_ciphertext", "bound"), ("complete_message", "accepted"),
                                 ("_publish_phone_payload", "ack")):
+                def observe(*args, event=event, name=name, original=getattr(mqtt_bridge, name), **kwargs):
+                    if name == "bind_ciphertext":
+                        original(*args, **kwargs)
+                    events.append(event)
                 stack.enter_context(patch.object(mqtt_bridge, name,
-                    side_effect=lambda *_, event=event: events.append(event)))
+                    autospec=True if name != "_publish_phone_payload" else None, side_effect=observe))
             agent = stack.enter_context(patch.object(mqtt_bridge, "_start_remote_agent_task"))
             mqtt_bridge.on_message(object(), None,
-                fixture.FakeMessage(self.topics.receive, self.wire, self.link_secret))
+                fixture.FakeMessage(self.topics.receive,
+                    {**self.wire, "body": "ciphertext:" + envelope["message_id"]}, self.link_secret))
             agent.assert_not_called()
 
     def test_capability_is_persisted_before_replay_binding_and_transport_ack(self):
