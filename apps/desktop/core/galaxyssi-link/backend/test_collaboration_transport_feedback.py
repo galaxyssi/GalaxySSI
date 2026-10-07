@@ -129,7 +129,7 @@ class CollaborationTransportFeedbackTest(unittest.TestCase):
 
     def test_codex_receives_complete_structured_failure_instead_of_truncated_json(self):
         from codex_app_server import CodexAppServer, CodexRun
-        for tool in ("collaboration_recall", "collaboration_publish"):
+        for tool in ("collaboration_recall",):
             with self.subTest(tool=tool), simulated_time():
                 def fail(*_args):
                     return RecallBroker().query(task, {"mode": "workspace"},
@@ -148,6 +148,55 @@ class CollaborationTransportFeedbackTest(unittest.TestCase):
                 observation = payload["transport_observation"]
                 self.assertEqual("unconfirmed_local_epoch", observation["latest_transport_observation"]["route_state_after_attempt"])
                 self.assertEqual("unknown", observation["remote_execution_state"])
+
+    def test_actual_milestone_wrapper_preserves_structured_observation_and_mode_guidance_to_codex(self):
+        from codex_app_server import CodexAppServer, CodexRun
+        from collaboration_milestone_bridge import MilestoneBroker
+        for mode in ("publish", "list", "status"):
+            for accepted in (False, True):
+                with self.subTest(mode=mode, accepted=accepted), simulated_time():
+                    broker = MilestoneBroker()
+                    args = {"mode": mode}
+                    if mode == "publish":
+                        args.update(milestone_id="private-candidate", artifact="private-artifact")
+                    reason, route = ("accepted", "ready") if accepted else ("no_admitted_path", "no_verified_common_route")
+                    def invoke(_task_id, arguments, active):
+                        return broker.query(task, arguments,
+                            lambda _: PublishObservation(accepted, reason, route, True), active=active)
+                    server = CodexAppServer("codex", {}, lambda *_: None, collaboration_publish=invoke)
+                    server._runs["task"] = CodexRun("task", thread_id="thread", turn_id="turn")
+                    with patch.object(server, "_write_server_response") as write, self.assertLogs(level="ERROR"):
+                        server._execute_dynamic_tool_call("task", {"id": 4},
+                            {"tool": "collaboration_publish", "arguments": args}, {})
+                    result = write.call_args.args[1]
+                    self.assertFalse(result["success"])
+                    payload = json.loads(result["contentItems"][0]["text"])
+                    observation = payload["transport_observation"]
+                    self.assertIsInstance(observation, dict)
+                    self.assertEqual(mode, observation["phase"])
+                    self.assertEqual(4, observation["publish_attempts"])
+                    self.assertEqual(4 if accepted else 0, observation["accepted_publish_attempts"])
+                    self.assertEqual({reason: 4}, observation["reason_counts"])
+                    self.assertEqual(route, observation["latest_transport_observation"]["route_state_after_attempt"])
+                    self.assertTrue(observation["latest_transport_observation"]["mqtt_connected_after_attempt"])
+                    self.assertEqual("unknown", observation["remote_execution_state"])
+                    self.assertFalse(observation["authenticated_response_received"])
+                    self.assertEqual("transport_unconfirmed", payload["status"])
+                    expected = {"publish": "SAME milestone_id", "list": "this read submitted no artifact",
+                                "status": "no artifact was submitted"}[mode]
+                    self.assertIn(expected, payload["error"])
+                    if mode != "publish":
+                        self.assertNotIn("outcome is uncertain", payload["error"])
+                        self.assertNotIn("SAME milestone_id", payload["error"])
+                    self.assertNotIn("private-", result["contentItems"][0]["text"])
+                    self.assertFalse(server._runs["task"].finished)
+                    self.assertEqual({}, broker._pending)
+
+    def test_typed_transport_failures_cannot_silently_replace_observations_with_text(self):
+        from collaboration_transport_feedback import PublicationRejected, ResponseUnconfirmed
+        for error_type in (PublicationRejected, ResponseUnconfirmed):
+            with self.assertRaises(TypeError):
+                error_type("incorrect positional guidance")
 
     def test_untyped_errors_keep_existing_bounded_error_handling(self):
         from collaboration_transport_feedback import model_failure_result
