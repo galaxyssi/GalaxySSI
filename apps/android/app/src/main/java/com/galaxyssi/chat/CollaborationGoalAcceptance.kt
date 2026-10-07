@@ -50,7 +50,7 @@ internal class CollaborationGoalAcceptance(
             scope.runId, scope.turnId, scope.nodeId, failure == null,
             if (failure != null) failure.message?.take(1200) ?: "Acceptance validation failed" else
                 "Host source-ID coverage and independent review integrity checked; " +
-                    "any computational qualification is limited to the exact-integer fixture. " +
+                    "computational qualification covers only the selected validator's preserved inputs and operations. " +
                     "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation", now)
         return runCatching {
             val assessment = requireNotNull(CollaborationGoalLoop.decode(raw)) { "Invalid goal assessment" }

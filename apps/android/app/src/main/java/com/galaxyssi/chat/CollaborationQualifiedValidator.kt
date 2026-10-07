@@ -7,6 +7,7 @@ import org.json.JSONObject
 internal sealed interface CollaborationQualifiedValidator {
     val id: String
     val verification: String
+    fun binding(spec: JSONObject): List<String>
     fun validate(criterion: JSONObject, body: JSONObject)
 }
 
@@ -32,6 +33,8 @@ internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedVa
 
     fun requirement(operands: List<String>) = "Compute the exact integer sum: ${operands.joinToString(" + ")}."
 
+    override fun binding(spec: JSONObject) = listOf(id) + operands(spec)
+
     override fun validate(criterion: JSONObject, body: JSONObject) {
         val values = operands(criterion.getJSONObject(CollaborationQualifiedValidation.FIELD))
         require(criterion.opt("requirement") == requirement(values)) {
@@ -47,12 +50,17 @@ internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedVa
 
 internal object CollaborationQualifiedValidation {
     const val FIELD = "validator"
-    private val qualified: CollaborationQualifiedValidator = CollaborationExactIntegerSumValidator
+    private val qualified = listOf(CollaborationExactIntegerSumValidator, CollaborationNumericModelValidator).associateBy { it.id }
+
+    private fun validator(spec: JSONObject): CollaborationQualifiedValidator = requireNotNull(qualified[spec.optString("id")]) {
+        "Unknown qualified validator; registered validators: ${qualified.keys.sorted().joinToString()}. " +
+            "Preserve the requirement and use an available verification route"
+    }
 
     fun binding(criterion: JSONObject): List<String>? {
         if (!criterion.has(FIELD)) return null
         val spec = requireNotNull(criterion.optJSONObject(FIELD)) { "validator must be a qualified specification object" }
-        return listOf(CollaborationExactIntegerSumValidator.id) + CollaborationExactIntegerSumValidator.operands(spec)
+        return validator(spec).binding(spec)
     }
 
     fun preserved(before: JSONObject, after: JSONObject?): Boolean = after != null && runCatching {
@@ -65,9 +73,11 @@ internal object CollaborationQualifiedValidation {
         }
         when (criterion.optString("verification")) {
             "documentary" -> require(!criterion.has(FIELD)) { "A computational validator cannot be relabeled documentary" }
-            qualified.verification -> {
+            "computational" -> {
                 require(binding(criterion) != null) { "Computational acceptance requires a qualified host validator" }
-                qualified.validate(criterion, body)
+                val selected = validator(criterion.getJSONObject(FIELD))
+                require(selected.verification == "computational")
+                selected.validate(criterion, body)
             }
             else -> throw IllegalArgumentException("No qualified validator for this domain; simulations never certify physical results")
         }

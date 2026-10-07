@@ -84,8 +84,11 @@ no third person or relaxation of independence is needed.
 
 ## Qualified computational fixture
 
-The closed host validator interface has one concrete implementation:
+The initial closed host validator interface had one concrete implementation:
 `exact_integer_sum.v1`, qualified only for `computational` exact integer addition.
+The later [numeric model replay adapter](../protocol/COLLABORATION_NUMERIC_MODEL_VALIDATION.md)
+adds host recomputation on preserved numeric cases, without extending that
+qualification to reference truth, generalization or physical experiments.
 An earlier preserved criterion supplies:
 
 ```json

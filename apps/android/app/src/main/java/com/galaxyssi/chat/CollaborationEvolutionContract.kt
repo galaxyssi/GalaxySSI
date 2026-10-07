@@ -25,6 +25,7 @@ internal class CollaborationEvolutionContract(
             "Only the author may revise a gap, innovation or capability channel; other members publish a linked alternative"
         }
         val host = when (kind) {
+            CollaborationNumericModelTrial.KIND -> CollaborationNumericModelTrial.evaluate(value, revision) { ref, kinds -> exact(ref, kinds) }
             CollaborationSelfResearch.CYCLE -> CollaborationSelfResearch.cycle(value,
                 { ref, kinds -> exact(ref, kinds) }, { ref, kinds -> exact(ref, kinds, false) })
             CollaborationSelfResearch.REVIEW -> CollaborationSelfResearch.review(value, revision, access.personId,
@@ -245,7 +246,7 @@ internal class CollaborationEvolutionContract(
             CollaborationLearningAgenda.KIND, CollaborationProceduralMemory.SKILL, CollaborationProceduralMemory.FAILURE, CollaborationTransferStudy.KIND,
             CollaborationInnovationValidation.OPPORTUNITY, CollaborationInnovationValidation.ASSESSMENT, CollaborationWorkflowMethod.KIND,
             CollaborationCapabilityRetention.SUITE, CollaborationCapabilityChannel.KIND, CollaborationSelfResearch.CYCLE,
-            CollaborationSelfResearch.REVIEW, CollaborationWorkflowSelection.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
+            CollaborationSelfResearch.REVIEW, CollaborationWorkflowSelection.KIND, CollaborationNumericModelTrial.KIND) + CollaborationTeamInvention.KINDS + CollaborationActionPrediction.KINDS + CollaborationExecutableTool.KINDS
         fun text(json: JSONObject, key: String): String = (json.opt(key) as? String)?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("$key must be a nonempty string")
         fun objects(json: JSONObject, key: String): List<JSONObject> = json.getJSONArray(key).let { array ->
