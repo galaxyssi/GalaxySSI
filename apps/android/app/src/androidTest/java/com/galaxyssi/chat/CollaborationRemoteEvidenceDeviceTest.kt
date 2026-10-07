@@ -86,7 +86,7 @@ class CollaborationRemoteEvidenceDeviceTest {
             if (selection.getString("mode") == "index") return reply
                 .put("entries", JSONArray().apply { if (selection.getLong("after_sequence") == 0L) put(descriptor) })
                 .put("next_sequence", 1).put("has_more", false).put("provider_history_complete", false)
-                .put("coverage", "observed_completed_items_only")
+                .put("coverage", "observed_completed_items_only").put("archive_final", true)
             val page = selection.getInt("page_index")
             requested.add(page)
             descriptor.keys().forEach { reply.put(it, descriptor.get(it)) }
@@ -122,6 +122,42 @@ class CollaborationRemoteEvidenceDeviceTest {
             val saved = CollaborationRemoteEvidenceStore(context).read(key)!!
             assertEquals("imported", saved.getString("status"))
             assertFalse(saved.getBoolean("provider_history_complete"))
+        } finally { CollaborationGroupStore(context).remove(group) }
+    }
+
+    @Test fun liveOriginalCanBePublishedAndReadByAssignedPeerBeforeTerminal(): Unit = runBlocking {
+        val group = "remote-evidence-live-${UUID.randomUUID()}"
+        create(group)
+        CollaborationGroupStore(context).update(group) { it.copy(members = it.members +
+            CollaborationMember("reviewer", "Curie", "fixture", "Fixture")) }
+        try {
+            val identity = fields(group); val fixture = Fixture(identity, repeats = 4)
+            val store = CollaborationRemoteEvidenceStore(context); val ledger = CollaborationEvidenceLedger(context)
+            val key = store.createIntent("fixture-desktop", identity, access(group), terminal = false).first
+            assertTrue(CollaborationRemoteEvidenceImporter(store, ledger).run(key, { true }) { _, _, selection ->
+                fixture.reply(selection).put("archive_final", false)
+            })
+            assertEquals("snapshot_imported", CollaborationRemoteEvidenceStore(context).read(key)!!.getString("status"))
+            assertFalse(store.read(key)!!.getBoolean("terminal_requested"))
+            val ref = ledger.browse(access(group)).first.single()
+            val peer = access(group).copy(nodeId = "peer", personId = "reviewer", dependencyNodes = setOf("node"))
+            val original = CollaborationEvidenceLedger(context).read(peer, ref.getString("evidence_id"), ref.getString("sha256"))!!
+            assertEquals(String(fixture.body, Charsets.UTF_8), JSONObject(original.getString("output_json")).getString("original_json"))
+            assertNull(ledger.read(peer.copy(dependencyNodes = emptySet()), ref.getString("evidence_id")))
+            val artifact = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Live fixture")
+                .put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray())
+                .put("workspace", JSONArray().put(JSONObject().put("id", "live-receipt").put("kind", "evidence")
+                    .put("title", "Measured output, not a verified claim").put("body", JSONObject().put("content", "Fixture"))
+                    .put("observations", JSONArray().put(ref)))).toString()
+            assertEquals("recorded", CollaborationResearchWorkspace(context).publish(access(group), artifact).getString("status"))
+            assertTrue(store.createIntent("fixture-desktop", identity, access(group)).second)
+            assertEquals(1, store.pending().count { it.second == key })
+            assertTrue(CollaborationRemoteEvidenceImporter(CollaborationRemoteEvidenceStore(context), CollaborationEvidenceLedger(context))
+                .run(key, { true }) { _, _, selection ->
+                    assertEquals(1L, selection.getLong("after_sequence")); fixture.reply(selection)
+                })
+            assertEquals("imported", store.read(key)!!.getString("status"))
+            assertEquals(1L, store.read(key)!!.getLong("imported"))
         } finally { CollaborationGroupStore(context).remove(group) }
     }
 

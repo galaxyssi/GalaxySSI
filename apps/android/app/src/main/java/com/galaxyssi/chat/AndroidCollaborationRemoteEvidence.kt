@@ -21,7 +21,7 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Only authenticated managed Codex completions schedule imports; ordinary chat has no extra queries. */
+/** Authenticated managed Codex assignments can import live evidence; ordinary chat has no extra queries. */
 internal object AndroidCollaborationRemoteEvidence {
     private val client = CollaborationRemoteEvidenceClient()
     private val recoveryLock = Mutex()
@@ -70,6 +70,30 @@ internal object AndroidCollaborationRemoteEvidence {
         }
     }
 
+    internal suspend fun refresh(context: Context, request: JSONObject, desktop: String,
+        binding: CollaborationWorkspaceAccess): JSONObject? {
+        if (!CollaborationLiveEvidenceSync.needed(request)) return null
+        if (AndroidCollaborationRemoteRecall.access(context, request, desktop) != binding)
+            return CollaborationLiveEvidenceSync.report(null)
+        if (!supported(context, desktop, request.getString("client_route_id")))
+            return CollaborationLiveEvidenceSync.report(null, "unsupported")
+        val budget = CollaborationLiveEvidenceSync.budget(request, System.currentTimeMillis())
+        if (budget == 0L) return CollaborationLiveEvidenceSync.report(null, "deferred")
+        val store = CollaborationRemoteEvidenceStore(context)
+        val key = store.createIntent(desktop, request, binding, terminal = false).first
+        try {
+            withTimeoutOrNull(budget) {
+                CollaborationRemoteEvidenceImporter(store, CollaborationEvidenceLedger(context)).run(key, allowed = {
+                    CollaborationRemoteRecallProtocol.valid(request, System.currentTimeMillis()) &&
+                        AndroidCollaborationRemoteRecall.access(context, request, desktop) == binding
+                }) { target, fields, selection -> query(context, target, fields, selection) }
+            }
+        } finally {
+            if (store.read(key)?.optString("status") == "pending") enqueue(context)
+        }
+        return CollaborationLiveEvidenceSync.report(store.read(key))
+    }
+
     internal fun queryReadiness(context: Context, desktop: String, fields: JSONObject): String {
         val link = GalaxySSILinkProtocol.serverLink(context, desktop) ?: return "desktop_unavailable"
         if (!link.paired) return "desktop_unpaired"
@@ -106,6 +130,8 @@ internal object AndroidCollaborationRemoteEvidence {
         return JSONArray(CollaborationRemoteEvidenceStore(context).states(execution.request.conversationId, source).map { job ->
             JSONObject().put("status", job.getString("status")).put("imported_observations", job.getLong("imported"))
                 .put("large_originals_not_imported", job.getLong("skipped_large"))
+                .put("archive_final", job.optBoolean("archive_final"))
+                .put("synced_through_sequence", job.getLong("cursor"))
                 .put("provider_history_complete", false).put("trust", CollaborationRemoteEvidenceProtocol.TRUST)
                 .put("retrieval", "collaboration.recall mode=evidence; missing observations are not verified")
         })
@@ -183,12 +209,16 @@ internal object AndroidCollaborationRemoteEvidence {
                 store.save(key, job.put("status", status)); AgentTeamBackgroundRecovery.enqueue(context); continue
             }
             if (control.get(job.getString("run_id")) == AgentTeamUserControl.PAUSE) continue
-            CollaborationProgressStore.evidenceTransfer(context, fields, job.getLong("imported"))
+            if (job.optBoolean("terminal_requested", true))
+                CollaborationProgressStore.evidenceTransfer(context, fields, job.getLong("imported"))
             val finished = importer.run(key, allowed = { latest ->
                 control.get(latest.getString("run_id")) == AgentTeamUserControl.RUN &&
                     paired(context, desktop, fields) && current(context, fields) &&
                     CollaborationGroupStore(context).load(group)?.members?.any { it.id == binding?.personId } == true
-            }, progress = { latest -> CollaborationProgressStore.evidenceTransfer(context, fields, latest.getLong("imported")) }) {
+            }, progress = { latest ->
+                if (latest.optBoolean("terminal_requested", true))
+                    CollaborationProgressStore.evidenceTransfer(context, fields, latest.getLong("imported"))
+            }) {
                 target, scope, selection -> query(context, target, scope, selection)
             }
             if (finished) AgentTeamBackgroundRecovery.enqueue(context)

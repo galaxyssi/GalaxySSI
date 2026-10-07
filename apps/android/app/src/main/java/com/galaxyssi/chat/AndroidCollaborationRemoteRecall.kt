@@ -35,8 +35,10 @@ internal object AndroidCollaborationRemoteRecall {
                     else CollaborationEvidenceLedger(app).confirmPage(binding, arguments.getString("evidence_id"),
                         arguments.getString("sha256"), arguments.optInt("offset", 0), hash)
                 } else {
+                    val sync = AndroidCollaborationRemoteEvidence.refresh(app, request, desktop, binding)
                     val value = JSONObject(CollaborationCloudRecall.execute(app, binding, request.getJSONObject("arguments"),
                         recordCoverage = false))
+                    sync?.let { value.put("host_evidence_sync", it) }
                     value.put("success", value.optString("status") == "returned")
                     deliveries.prepare(request, binding, value)
                 }
