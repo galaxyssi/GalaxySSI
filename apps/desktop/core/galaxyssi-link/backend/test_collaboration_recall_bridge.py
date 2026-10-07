@@ -14,6 +14,32 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_goal_section_is_forwarded_exactly_with_existing_task_authority(self):
+        broker = RecallBroker()
+        for section in ("goal", "criteria", "source", "context:Dependency evidence", "context:\u539f\u59cb\u6750\u6599"):
+            arguments = {"mode": "goal_contract", "section": section, "cursor": ""}
+            self.assertEqual(arguments, validate_arguments(arguments))
+            def publish(request):
+                self.assertEqual(arguments, request["arguments"])
+                self.assertEqual("group", request["conversation_id"])
+                result = {"success": True, "section_sha256": hashlib.sha256(section.encode()).hexdigest(), "next_cursor": None}
+                self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": result}, "wrong-phone"))
+                self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+                return True
+            self.assertIsNone(broker.query(task, arguments, publish)["next_cursor"])
+        self.assertEqual({}, broker._pending)
+
+    def test_goal_section_cannot_change_scope_or_other_recall_modes(self):
+        for invalid in ("", "GOAL", "context:", "context:  ", 1, True, None, "context:" + "x" * 513):
+            with self.assertRaises(ValueError):
+                validate_arguments({"mode": "goal_contract", "section": invalid})
+        for mode in tool_spec()["inputSchema"]["properties"]["mode"]["enum"]:
+            if mode != "goal_contract":
+                with self.assertRaises(ValueError):
+                    validate_arguments({"mode": mode, "section": "goal"})
+        with self.assertRaises(ValueError):
+            validate_arguments({"mode": "goal_contract", "section": "goal", "group_id": "other"})
+
     def test_method_history_requires_exact_selectors_and_preserves_bound_scope(self):
         listing = {"mode": "method_history", "object_id": "a" * 64, "revision": 1, "sha256": "b" * 64}
         reading = {"mode": "method_history", "record_id": "c" * 64, "offset": 8000}

@@ -9,6 +9,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudWebToolLoopProgressTest {
+    @Test fun selectedGoalPagesEndAtTheirSectionWithoutInventingAnotherFullPage() {
+        val whole = goalPages("Retain the original goal. ".repeat(500)).first()
+        val original = JSONObject(whole.output)
+        val section = "goal"
+        val arguments = JSONObject().put("mode", "goal_contract").put("section", section)
+        val selected = JSONObject(whole.output).put("section_sha256", CollaborationGoalContractSections.key(section))
+            .put("section_first_page", 0).put("section_last_page", 0).put("next_cursor", JSONObject.NULL)
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(recordPage(progress, GoalPage(arguments, selected.toString())))
+        // The same immutable page through another selector is not new evidence.
+        assertFalse(recordPage(progress, whole))
+        assertFalse(progress.observeEvidenceBatch(listOf(original.toString())))
+        assertTrue(progress.observeEvidenceBatch(listOf(original.toString())))
+    }
+
+    @Test fun selectedGoalPageMustMatchRequestedSectionAndRange() {
+        val whole = goalPages("Retain the original goal. ".repeat(500)).first()
+        val args = JSONObject().put("mode", "goal_contract").put("section", "goal")
+        for (mutation in listOf<(JSONObject) -> Unit>(
+            { it.put("section_sha256", "b".repeat(64)) },
+            { it.put("section_first_page", 1) },
+            { it.put("section_last_page", it.getInt("page_count")) },
+            { it.put("section_last_page", 0) }
+        )) {
+            val page = JSONObject(whole.output).put("section_sha256", CollaborationGoalContractSections.key("goal"))
+                .put("section_first_page", 0).put("section_last_page", 1)
+            mutation(page)
+            val progress = CloudWebToolLoopProgress()
+            assertFalse(progress.observeEvidenceBatch(emptyList()))
+            assertFalse(progress.observeEvidenceBatch(emptyList()))
+            assertTrue(recordPage(progress, GoalPage(args, page.toString())))
+        }
+    }
     private fun methodPage(offset: Int, hash: String = "b".repeat(64)): GoalPage {
         val end = minOf(40_000, offset + 8000)
         return GoalPage(JSONObject().put("mode", "method_history").put("record_id", "a".repeat(64)).put("offset", offset),

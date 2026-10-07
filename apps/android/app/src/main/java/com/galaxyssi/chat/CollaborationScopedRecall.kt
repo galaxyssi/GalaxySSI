@@ -14,6 +14,8 @@ internal object CollaborationScopedRecall {
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
         if (input.containsKey("case_filter") && input["mode"] != CollaborationNumericFeedback.MODE)
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Case filter is only supported for numeric feedback.")
+        if (input.containsKey("section") && input["mode"] != "goal_contract")
+            return AgentNativeToolExecutionResult.failure("invalid_arguments", "Section is only supported for goal/context recall.")
         return when (input["mode"]) {
             CollaborationNumericFeedback.MODE -> {
                 val revision = input["revision"]
@@ -97,10 +99,14 @@ internal object CollaborationScopedRecall {
                 page(saved, input, "member_reported_not_verified", mapOf("record_id" to record.id))
             }
             "goal_contract" -> {
-                if (input.keys.any { it !in setOf("mode", "cursor") } ||
-                    input.containsKey("cursor") && input["cursor"] !is String)
-                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Goal contract recall accepts only mode and cursor.")
-                val result = CollaborationGoalContractStore(context).read(access, input["cursor"] as? String ?: "")
+                if (input.keys.any { it !in setOf("mode", "cursor", "section") } ||
+                    input.containsKey("cursor") && input["cursor"] !is String ||
+                    input.containsKey("section") && (input["section"] !is String ||
+                        !CollaborationGoalContractSections.valid(input["section"] as String)))
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Goal contract recall accepts mode, cursor and optional section (goal, criteria, source or context:<exact name>).")
+                val store = CollaborationGoalContractStore(context)
+                val cursor = input["cursor"] as? String ?: ""
+                val result = (input["section"] as? String)?.let { store.readSection(access, it, cursor) } ?: store.read(access, cursor)
                 if (result.optString("status") != "ok")
                     AgentNativeToolExecutionResult.failure("goal_contract_unavailable", result.optString("reason", "Contract is unavailable."))
                 else AgentNativeToolExecutionResult.success(result.toNativeObject() +
