@@ -276,22 +276,34 @@ class PeerRoutes:
         return True
 
     def ready(self, scope):
+        return self.admission_state(scope) == "ready"
+
+    def admission_state(self, scope):
+        """Current local observations, not a diagnosis of the remote device."""
         with self._lock:
             peer = self._peers.get(scope)
         if not peer:
-            return False
+            return "missing_binding"
         with peer.lock:
             local = peer.local
-            if (not peer.active or not local or local.expires_at_ms <= self._wall() * 1000
-                    or peer.local_confirmed_epoch != local.epoch):
-                return False
+            if not peer.active:
+                return "inactive_binding"
+            if not local:
+                return "missing_local_advertisement"
+            if local.expires_at_ms <= self._wall() * 1000:
+                return "expired_local_advertisement"
+            if peer.local_confirmed_epoch != local.epoch:
+                return "unconfirmed_local_epoch"
             binding = peer.binding
             current = self.client.ready_path_generations(binding.receive_topics)
-            if not current or any(peer.local_generations.get(broker) != generation
-                                  for broker, generation in current.items()):
-                return False
-        return bool(self.client.policy.plan(scope, "route-readiness", Traffic.MESSAGE, 1,
-                                             set(binding.receive_topics), now=self._clock()))
+            if not current:
+                return "no_local_receive_path"
+            if any(peer.local_generations.get(broker) != generation for broker, generation in current.items()):
+                return "changed_broker_generation"
+        if not self.client.policy.plan(scope, "route-readiness", Traffic.MESSAGE, 1,
+                                       set(binding.receive_topics), now=self._clock()):
+            return "no_verified_common_route"
+        return "ready"
 
     def classify(self, topic, encoded):
         with self._lock:
@@ -405,7 +417,11 @@ class PeerRoutes:
     def status(self):
         with self._lock:
             scopes = tuple(self._peers)
-        return {"configured": len(scopes), "ready": sum(self.ready(scope) for scope in scopes)}
+        states = {}
+        for scope in scopes:
+            state = self.admission_state(scope)
+            states[state] = states.get(state, 0) + 1
+        return {"configured": len(scopes), "ready": states.get("ready", 0), "admission_states": states}
 
     def chunk_publication(self, topic, payload, *, authenticated_identity, attempted=frozenset(), on_path=None):
         from mqtt_chunk_receipts import PROBE, Query

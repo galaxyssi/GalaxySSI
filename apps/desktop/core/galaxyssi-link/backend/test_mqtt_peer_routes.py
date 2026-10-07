@@ -102,14 +102,15 @@ class PeerRouteExchangeTest(unittest.TestCase):
         self.assertEqual({}, self.left.pool.pending)
         self.assertFalse(self.left.routes.ready("left"))
         self.assertIsNone(self.left.routes.classify("to-right", b"encrypted"))
-        self.assertEqual({"configured": 1, "ready": 0}, self.left.routes.status())
+        self.assertEqual({"configured": 1, "ready": 0,
+                          "admission_states": {"unconfirmed_local_epoch": 1}}, self.left.routes.status())
 
     def test_three_brokers_exchange_settles_without_ack_of_ack(self):
         self.connect()
         self.exchange()
         self.assertEqual(6, len(self.left.pool.sent))
         self.assertEqual(6, len(self.right.pool.sent))
-        self.assertEqual({"configured": 1, "ready": 1}, self.left.routes.status())
+        self.assertEqual({"configured": 1, "ready": 1, "admission_states": {"ready": 1}}, self.left.routes.status())
         self.left.ready.assert_called_once_with("left")
         self.right.ready.assert_called_once_with("right")
         self.exchange()
@@ -126,6 +127,36 @@ class PeerRouteExchangeTest(unittest.TestCase):
         self.exchange()
         self.assertTrue(self.left.routes.ready("left"))
         self.assertTrue(self.right.routes.ready("right"))
+
+    def test_admission_diagnostics_do_not_send_or_reauthorize_a_route(self):
+        self.assertEqual("missing_binding", self.left.routes.admission_state("unknown"))
+        self.assertEqual("missing_local_advertisement", self.left.routes.admission_state("left"))
+        self.connect(["hivemq"])
+        self.exchange()
+        peer = self.left.routes._peers["left"]
+        before = len(self.left.pool.sent)
+        self.assertEqual("ready", self.left.routes.admission_state("left"))
+        self.assertNotIn("left", json.dumps(self.left.routes.status()))
+        self.offset = 301
+        self.assertEqual("expired_local_advertisement", self.left.routes.admission_state("left"))
+        self.assertEqual(before, len(self.left.pool.sent))
+        self.assertEqual({}, self.left.routes._urgent)
+        self.offset = 0
+        peer.active = False
+        self.assertEqual("inactive_binding", self.left.routes.admission_state("left"))
+
+    def test_admission_distinguishes_subscription_generation_and_remote_route(self):
+        self.connect(["hivemq"])
+        self.exchange()
+        self.left.pool.lose("hivemq")
+        self.assertEqual("no_local_receive_path", self.left.routes.admission_state("left"))
+        self.left.pool.connect("hivemq", 2)
+        self.assertEqual("changed_broker_generation", self.left.routes.admission_state("left"))
+        self.exchange()
+        self.left.client.policy.forget_peer("left")
+        self.assertTrue(self.left.client.is_connected())
+        self.assertEqual("no_verified_common_route", self.left.routes.admission_state("left"))
+        self.assertFalse(self.left.routes.ready("left"))
 
     def test_one_failed_broker_does_not_revoke_other_business_paths(self):
         self.connect()
