@@ -8,28 +8,33 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Semaphore
 
 /** No UI, perception, model invocation or side-effect tool is reachable through this handler. */
 internal object AndroidCollaborationRemoteRecall {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val slots = Semaphore(4)
-    private val active = ConcurrentHashMap.newKeySet<String>()
+    private val replies = CollaborationExchangeReplay()
     private val deliveries = CollaborationRecallDelivery()
 
     fun receive(context: Context, payload: JSONObject, desktop: String) {
         if (!CollaborationRemoteRecallProtocol.valid(payload, System.currentTimeMillis())) return
         val app = context.applicationContext
         if (!paired(app, payload, desktop) || !AgentTaskIdentityStore.matchesRegistered(app, payload)) return
-        val key = "$desktop:${payload.getString("request_id")}"
-        if (!active.add(key)) return
-        if (!slots.tryAcquire()) { active.remove(key); return }
         val request = JSONObject(payload.toString())
+        val admitted = replies.acquire(desktop, request, System.currentTimeMillis())
+        Log.i("GalaxySSIExchange", CollaborationExchangeTrace.line(desktop, request,
+            CollaborationExchangeTrace.Stage.ADMISSION, admission = admitted.outcome))
+        val lease = admitted.lease ?: return
+        val started = android.os.SystemClock.elapsedRealtime()
+        fun trace(stage: CollaborationExchangeTrace.Stage) = Log.i("GalaxySSIExchange",
+            CollaborationExchangeTrace.line(desktop, request, stage, android.os.SystemClock.elapsedRealtime() - started))
         scope.launch {
             try {
                 val binding = access(app, request, desktop)
+                trace(CollaborationExchangeTrace.Stage.RESOLVED)
                 val result = if (binding == null) CollaborationRemoteRecallProtocol.unavailable()
+                else if (lease.replay) replies.read(lease, binding) ?: CollaborationRemoteRecallProtocol.unavailable().also {
+                    trace(CollaborationExchangeTrace.Stage.REPLAY_SCOPE_CHANGED)
+                }
                 else if (request.getString("phase") == "confirm") deliveries.confirm(request, binding) { arguments, hash ->
                     if (access(app, request, desktop) != binding) null
                     else CollaborationEvidenceLedger(app).confirmPage(binding, arguments.getString("evidence_id"),
@@ -44,26 +49,29 @@ internal object AndroidCollaborationRemoteRecall {
                 }
                 // Recheck authorization after disk reads; do not send data from a revoked assignment.
                 val safe = if (binding != null && access(app, request, desktop) != binding)
-                    CollaborationRemoteRecallProtocol.unavailable() else result
+                    CollaborationRemoteRecallProtocol.unavailable().also { trace(CollaborationExchangeTrace.Stage.AUTHORIZATION_CHANGED) } else result
+                if (binding != null) replies.remember(lease, binding, safe)
+                trace(CollaborationExchangeTrace.Stage.RESPONSE_READY)
                 if (paired(app, request, desktop) && CollaborationRemoteRecallProtocol.valid(request, System.currentTimeMillis())) {
-                    reply(request, safe)
-                }
+                    trace(if (reply(request, safe)) CollaborationExchangeTrace.Stage.PUBLISH_ACCEPTED else CollaborationExchangeTrace.Stage.PUBLISH_REJECTED)
+                } else trace(CollaborationExchangeTrace.Stage.RESPONSE_EXPIRED_OR_UNPAIRED)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 // A failed read must not crash the process or restart the model/effect.
                 Log.w("GalaxySSIRecall", "Scoped recall deferred: ${error.javaClass.simpleName}")
+                trace(CollaborationExchangeTrace.Stage.FAILED)
                 runCatching {
                     if (paired(app, request, desktop) && CollaborationRemoteRecallProtocol.valid(request, System.currentTimeMillis()))
-                        reply(request, CollaborationRemoteRecallProtocol.unavailable())
+                        trace(if (reply(request, CollaborationRemoteRecallProtocol.unavailable()))
+                            CollaborationExchangeTrace.Stage.PUBLISH_ACCEPTED else CollaborationExchangeTrace.Stage.PUBLISH_REJECTED)
                 }
-            } finally { slots.release(); active.remove(key) }
+            } finally { replies.release(lease) }
         }
     }
 
-    private fun reply(request: JSONObject, result: JSONObject) {
+    private fun reply(request: JSONObject, result: JSONObject): Boolean =
         GalaxySSIMqttClient.publishJsonForTransport(CollaborationRemoteRecallProtocol.response(request, result),
             GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
-    }
 
     internal fun access(context: Context, request: JSONObject, desktop: String): CollaborationWorkspaceAccess? {
         if (!paired(context, request, desktop) || !AgentTaskIdentityStore.matchesRegistered(context, request)) return null

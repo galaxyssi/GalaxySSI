@@ -55,6 +55,17 @@ internal object CollaborationMilestoneTool {
         }
     }
 
+    internal fun unavailable(mode: String) = JSONObject().put("success", false).put("status", "unavailable")
+        .put("assignment_completed", false).put("error", when (mode) {
+            "status" -> "Publication capability status unavailable; no artifact was submitted. " +
+                "Continue the required assignment response; a transport failure does not grant publication."
+            "list" -> "Saved milestone list unavailable; this read submitted no artifact. Retry listing after reconnecting. " +
+                "Do not infer that an earlier publication failed or repeat completed effects."
+            "publish" -> "Publication outcome is uncertain; retry the same milestone_id and artifact, or list saved milestones. " +
+                "Do not repeat completed effects."
+            else -> "Milestone operation unavailable; inspect the requested operation before retrying."
+        })
+
     fun execute(context: Context, access: CollaborationWorkspaceAccess, input: JSONObject): String =
         execute(CollaborationResearchWorkspace(context), access, input) {
             require(AgentTeamDurableControl(context).get(access.runId) == AgentTeamUserControl.RUN &&
