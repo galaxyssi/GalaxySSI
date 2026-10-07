@@ -27,19 +27,29 @@ For an experiment that must leave those preferences unchanged, the opt-in
 `CollaborationRemotePilotSelectionDeviceTest#prepareConversationSelectionWithoutChangingDefaults`
 uses the same App selection store with `rememberAsDefault=false`. It creates a
 dedicated conversation, reads back the saved model and effort, and asserts that
-all `default.*` settings and the active conversation are unchanged. It makes no
+all `default.*` settings and persisted per-window conversation selections are unchanged. It makes no
 model request and does not connect, stop, or resume other tasks.
 
 Required arguments are `remotePilotPrepareSelection=true`,
-`pilotDeviceModel=SM-S9480`, `remotePilotTarget`, `remotePilotModel`,
+`pilotDeviceModel=<explicit authorized Build.MODEL>`, `remotePilotTarget`, `remotePilotModel`,
 `remotePilotEffort`, and a fresh safe JSON basename in
 `remotePilotSelectionOutput`. Target, model, and effort must be explicitly
 supplied and advertised by the available target; there is no model default.
-The output contains only the saved conversation ID and selection metadata.
+Preparation and cleanup require the actual device to match that exact model;
+blank targets, lists and wildcards are rejected. Use `adb -s <verified serial>`
+to distinguish two phones of the same model. This does not widen the separate
+legacy paired fixtures' device restrictions.
+The output contains only the saved conversation ID, device and selection metadata.
 Selection writes are flushed before instrumentation returns; the local marker
 is a static assistant note, not a running-process event.
 Use that conversation ID for the paired fixture and freeze the matching values
 in its private protocol. This is a test setup helper, not a new product UI.
+
+Window preservation is observed from `agent_window_state_v1` selection entries.
+The legacy unscoped transcript store may choose the newest conversation when it
+has no explicit selection; inserting a test conversation can change that fallback
+without changing any displayed window. Do not use that fallback as a UI-state
+assertion or force-switch the user's window just to satisfy a test.
 
 Instrumentation may restart the target App process. Check for existing work
 before running either fixture; do not interrupt active user research without

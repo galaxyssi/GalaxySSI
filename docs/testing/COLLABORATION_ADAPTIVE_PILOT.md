@@ -65,6 +65,9 @@ Changing phones requires a fresh authorized protocol and fresh pilot ID, not
 editing an old report or silently migrating a v1 protocol. The fixture has no
 product-wide device allowlist and its parameters do not grant user permission.
 Other legacy live fixtures retain their existing device restrictions.
+The conversation-scoped preparation helper also requires the exact operator
+device. Preservation checks observe persisted window selections without reading
+or changing the legacy first-active-conversation fallback.
 
 The envelope is a test-resource bound, not a production autonomy stop rule.
 One phone dispatch may cause multiple provider requests, tool calls and charges.
