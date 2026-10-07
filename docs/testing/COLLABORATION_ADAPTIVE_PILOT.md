@@ -93,6 +93,33 @@ removing its test conversation and execution database. Otherwise retain state
 for inspection. The user's active conversation and unrelated research are not
 changed. Reports remain available after successful cleanup.
 
+### Reconcile A Retained Stopped Trial
+
+`CollaborationAdaptivePilotCleanupDeviceTest#reconcileStoppedTrial` is a separate,
+explicitly opted-in post-trial check. Use it only for an already stopped trial
+on its original authorized device. It never resumes the run, admits model work,
+deletes evidence, clears managed-response records manually, or changes the
+original trial verdict. It uses production stop recovery and waits for terminal
+receipts. A later empty pending-owner ledger does not make a failed trial pass.
+
+In addition to the original `pilotDeviceModel`, `adaptivePilotInput`,
+`adaptivePilotSha256`, `adaptivePilotMaxDispatches` and `adaptivePilotMaxMillis`,
+provide:
+
+- `adaptivePilotCleanup=true`
+- `cleanupReportInput=<original-report-basename>.json`
+- `cleanupReportSha256=<original report SHA-256>`
+- `cleanupMaxMillis=<1..120000>` for this receipt-only observation
+- `cleanupOutput=<fresh-basename>.json` for the separate follow-up record
+
+The helper validates both input hashes, the exact device, run and conversation,
+the retained checkpoint, and STOP in both the original report and durable
+control store before network activity. It refuses to overwrite an existing
+follow-up record. Keep that record beside, not instead of, the original report.
+`cleanup_confirmed` describes only the pending-owner ledger at the follow-up;
+the checkpoint and test conversation remain available for inspection. The
+window-selection preservation assertion remains mandatory.
+
 ## Instrumentation Verdict
 
 Saving a report is not a passing test. After evidence capture and cleanup, the
