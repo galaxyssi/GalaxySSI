@@ -2,6 +2,20 @@ package com.galaxyssi.chat
 
 import org.json.JSONObject
 
+internal object CollaborationTrialDeviceBinding {
+    fun validate(model: String): String = model.also {
+        require(it.isNotBlank() && it.length <= 128 && it == it.trim() &&
+            it.none { ch -> ch.isISOControl() || ch in "*,;|" }) {
+            "Use one exact device model, not a list or wildcard"
+        }
+    }
+
+    fun requireOperatorTarget(actualModel: String, operatorModel: String?) {
+        val expected = validate(requireNotNull(operatorModel) { "Explicit trial device required" })
+        require(actualModel == expected) { "Connected model differs from the explicit trial device" }
+    }
+}
+
 /** An experiment envelope, not a plan: production coordination chooses all executable work. */
 internal class CollaborationAdaptivePilotPlan private constructor(
     val id: String, val deviceModel: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
@@ -33,11 +47,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
             fun text(key: String) = (value.get(key) as? String)?.takeIf(String::isNotBlank) ?: error("Nonblank string required: $key")
             require(text("format") == FORMAT && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
             val id = text("pilot_id").also { require(it.matches(Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}"))) }
-            val device = text("device_model").also {
-                require(it.length <= 128 && it == it.trim() && it.none { ch -> ch.isISOControl() || ch in "*,;|" }) {
-                    "Use one exact device model in the frozen protocol, not a list or wildcard"
-                }
-            }
+            val device = CollaborationTrialDeviceBinding.validate(text("device_model"))
             val target = text("target_id").also { require(it.length <= 256 && ':' in it && it.endsWith(":codex")) }
             val selection = CollaborationLiveModelSelection.from(text("model_id"), text("reasoning_effort"))
             val timeout = CollaborationTrialPolicy.strictLong(value.get("trial_timeout_ms"))

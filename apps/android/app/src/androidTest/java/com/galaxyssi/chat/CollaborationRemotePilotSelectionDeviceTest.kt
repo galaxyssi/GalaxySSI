@@ -19,7 +19,7 @@ class CollaborationRemotePilotSelectionDeviceTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("remotePilotPrepareSelection") == "true")
-        require(Build.MODEL == "SM-S9480" && args.getString("pilotDeviceModel") == "SM-S9480")
+        CollaborationTrialDeviceBinding.requireOperatorTarget(Build.MODEL, args.getString("pilotDeviceModel"))
         val context = instrumentation.targetContext
         val selection = CollaborationLiveModelSelection.from(args.getString("remotePilotModel"), args.getString("remotePilotEffort"))
         val targetId = args.getString("remotePilotTarget").orEmpty()
@@ -48,6 +48,7 @@ class CollaborationRemotePilotSelectionDeviceTest {
         assertEquals(defaults, preferences.all.filterKeys { it.startsWith("default.") })
         assertEquals(priorConversation, store.activeConversation().id)
         val value = JSONObject().put("selection_source", "app_conversation_snapshot")
+            .put("device_model", Build.MODEL)
             .put("conversation_id", conversation.id).put("target_id", actual.targetId)
             .put("model_id", actual.modelId).put("reasoning_effort", actual.reasoningEffort.wireValue)
         val atomic = AtomicFile(file)
@@ -59,7 +60,7 @@ class CollaborationRemotePilotSelectionDeviceTest {
     @Test fun removeSelectionAfterConfirmedPilotCleanup() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("remotePilotCleanupSelection") == "true")
-        require(Build.MODEL == "SM-S9480" && args.getString("pilotDeviceModel") == "SM-S9480")
+        CollaborationTrialDeviceBinding.requireOperatorTarget(Build.MODEL, args.getString("pilotDeviceModel"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         fun read(key: String): JSONObject {
             val name = args.getString(key).orEmpty()

@@ -62,6 +62,17 @@ class CollaborationAdaptivePilotTest {
         }
     }
 
+    @Test fun selectionPreparationAlsoRequiresAnExplicitExactDevice() {
+        for (model in listOf("SM-S9480", "SM-G9880", "Future Phone")) {
+            CollaborationTrialDeviceBinding.requireOperatorTarget(model, model)
+            reject { CollaborationTrialDeviceBinding.requireOperatorTarget(model, null) }
+            reject { CollaborationTrialDeviceBinding.requireOperatorTarget(model, "different-phone") }
+        }
+        for (invalid in listOf("", " ", "*", "SM-G9880,SM-S9480", "SM-G9880\n", " SM-G9880")) {
+            reject { CollaborationTrialDeviceBinding.requireOperatorTarget(invalid, invalid) }
+        }
+    }
+
     @Test fun deviceBindingIsMandatoryAndCannotBeAnImplicitMigrationOfAnOldTrial() {
         reject { plan(input().apply { remove("device_model") }) }
         reject { plan(input().put("format", "galaxyssi.adaptive-collaboration-pilot.v1")) }
