@@ -76,6 +76,10 @@ internal class CloudWebToolLoopProgress {
             unavailableResources[url] ?: if (canReuseBody(toolName, arguments)) retrievedResources[url] else null
         }
 
+    fun invalidate(toolName: String, arguments: JSONObject) {
+        outputsByCall.remove(semanticKey(toolName, arguments))
+    }
+
     fun record(toolName: String, arguments: JSONObject, output: String): Boolean {
         val key = semanticKey(toolName, arguments)
         if (outputsByCall.containsKey(key)) return false

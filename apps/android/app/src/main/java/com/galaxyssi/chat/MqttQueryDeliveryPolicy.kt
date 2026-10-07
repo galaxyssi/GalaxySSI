@@ -1,11 +1,11 @@
 package com.galaxyssi.chat
 
-/** These read-only polls already have a caller-owned timeout/refresh loop. */
+/** These polls and RPC replies already have a caller-owned timeout/retry loop. */
 internal object MqttQueryDeliveryPolicy {
     private val transientQueries = setOf(
         "connector_status_request", "agent_task_recovery_request", "agent_task_result_page_request",
         "evolution_task_list_request", "desktop_control_authorizations_request", "agent_task_evidence_request",
-        "collaboration_recall_result"
+        "collaboration_recall_result", "collaboration_publish_result"
     )
 
     fun isTransient(type: String): Boolean = type in transientQueries

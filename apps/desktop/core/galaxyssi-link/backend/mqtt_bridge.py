@@ -1999,6 +1999,15 @@ def _dispatch_codex_event(task_id: str, event: dict) -> None:
 
 def _codex_collaboration_recall(task_id, arguments, active):
     from collaboration_recall_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+
+
+def _codex_collaboration_publish(task_id, arguments, active):
+    from collaboration_milestone_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+
+
+def _codex_collaboration_exchange(broker, task_id, arguments, active):
 
     def snapshot():
         task = agent_task_manager.get(task_id)
@@ -2021,7 +2030,7 @@ def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer
         if codex_app_server is None or codex_app_server.executable != executable:
             previous = codex_app_server
             codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event,
-                collaboration_recall=_codex_collaboration_recall)
+                collaboration_recall=_codex_collaboration_recall, collaboration_publish=_codex_collaboration_publish)
         server = codex_app_server
     if previous is not None:
         previous.close()
@@ -7541,6 +7550,11 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
 
     if msg_type == "collaboration_recall_result":
         from collaboration_recall_bridge import broker
+        broker.receive(payload, client_route_id)
+        return
+
+    if msg_type == "collaboration_publish_result":
+        from collaboration_milestone_bridge import broker
         broker.receive(payload, client_route_id)
         return
 

@@ -197,12 +197,13 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, experiment_boundary=None) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, experiment_boundary=None) -> None:
         self.executable = executable
         self.env = dict(env) if experiment_boundary is not None else env
         self.on_event = on_event
         self._experiment_boundary = experiment_boundary
         self._collaboration_recall = collaboration_recall
+        self._collaboration_publish = collaboration_publish
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
         self._process_start_lock = threading.RLock()
@@ -220,9 +221,13 @@ class CodexAppServer:
         if collaboration_recall is not None:
             from collaboration_recall_bridge import tool_spec
             self._dynamic_tools.append(tool_spec())
+        if collaboration_publish is not None:
+            from collaboration_milestone_bridge import tool_spec
+            self._dynamic_tools.append(tool_spec())
         if experiment_boundary is not None:
             self._dynamic_tools = []
             self._collaboration_recall = None
+            self._collaboration_publish = None
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -2128,19 +2133,20 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name == "collaboration_recall":
+            if tool_name in {"collaboration_recall", "collaboration_publish"}:
+                callback = self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish
                 with self._lock:
                     run = self._runs.get(task_id)
-                    if (run is None or run.finished or self._collaboration_recall is None
+                    if (run is None or run.finished or callback is None
                             or common.get("thread_id", run.thread_id) != run.thread_id
                             or common.get("turn_id", run.turn_id) != run.turn_id):
-                        raise ValueError("Collaboration recall is not available for this task")
+                        raise ValueError("Collaboration tool is not available for this task")
                 def active():
                     with self._lock:
                         return (self._runs.get(task_id) is run and not run.finished
                                 and common.get("thread_id", run.thread_id) == run.thread_id
                                 and common.get("turn_id", run.turn_id) == run.turn_id)
-                recalled = self._collaboration_recall(task_id, arguments, active)
+                recalled = callback(task_id, arguments, active)
                 result = {"success": recalled.get("success") is True,
                     "contentItems": [{"type": "inputText", "text": json.dumps(recalled, ensure_ascii=False)}]}
             elif tool_name == RESEARCH_AUDIT_TOOL:
@@ -2206,6 +2212,12 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
+        if tool_name == "collaboration_publish":
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": (("Read saved milestone IDs" if arguments.get("mode") == "list" else "Interim collaboration artifact recorded")
+                                 if result.get("success") else "Interim publication needs attention"),
+                "trace_stage": "collaboration_publication_returned", "telemetry_only": True})
+            return
         if tool_name == "collaboration_recall":
             # Internal evidence reads must not be misreported as web searches.
             self.on_event(task_id, {**dict(common), "status": "running",
