@@ -746,9 +746,9 @@ class AgentTeamExecutionRuntime(
             val activeRequest = graph.request
             val member = requireNotNull(memberById[childContext.childId])
             val pendingMessages = (mailbox
-                ?.messages(request.runId, member.memberId)
+                ?.pendingMessages(request.runId, member.memberId)
                 .orEmpty() + if (research && CollaborationResearchWorkflow.stage(member) != CollaborationResearchStage.EXPLORE) {
-                    mailbox?.messages(request.runId, member.context[CollaborationResearchWorkflow.PERSON].orEmpty()).orEmpty()
+                    mailbox?.pendingMessages(request.runId, member.context[CollaborationResearchWorkflow.PERSON].orEmpty()).orEmpty()
                 } else emptyList())
                 .filter { it.state == AgentTeamMessageState.PENDING }
                 .distinctBy { it.messageId }

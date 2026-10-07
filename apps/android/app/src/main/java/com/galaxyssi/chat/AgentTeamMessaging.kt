@@ -76,6 +76,8 @@ interface AgentTeamMailbox {
     fun append(message: AgentTeamMessageEnvelope): AgentTeamMessageEnvelope
     fun appendAll(messages: List<AgentTeamMessageEnvelope>): List<AgentTeamMessageEnvelope> = messages.map { it.validated() }.map(::append)
     fun messages(supervisorRunId: String, instanceId: String = "", afterSequence: Long = 0L): List<AgentTeamMessageEnvelope>
+    fun pendingMessages(supervisorRunId: String, instanceId: String = ""): List<AgentTeamMessageEnvelope> =
+        messages(supervisorRunId, instanceId).filter { it.state == AgentTeamMessageState.PENDING }
     fun markDelivered(messageId: String, atMillis: Long = System.currentTimeMillis()): AgentTeamMessageEnvelope?
     fun acknowledge(messageId: String, atMillis: Long = System.currentTimeMillis()): AgentTeamMessageEnvelope?
     fun clear(supervisorRunId: String = "")
@@ -170,64 +172,49 @@ class InMemoryAgentTeamMailbox(
     }
 }
 
-class EncryptedAgentTeamMailbox(context: Context) : AgentTeamMailbox {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
-
-    override fun append(message: AgentTeamMessageEnvelope): AgentTeamMessageEnvelope = appendAll(listOf(message)).single()
-
-    override fun appendAll(messages: List<AgentTeamMessageEnvelope>): List<AgentTeamMessageEnvelope> = synchronized(LOCK) {
-        if (messages.isEmpty()) return@synchronized emptyList()
-        val validated = messages.map { it.validated() }
-        val delegate = delegate()
-        val appended = validated.map(delegate::append)
-        save(delegate.snapshot())
-        appended
-    }
-
-    override fun messages(
-        supervisorRunId: String,
-        instanceId: String,
-        afterSequence: Long
-    ): List<AgentTeamMessageEnvelope> = synchronized(LOCK) { delegate().messages(supervisorRunId, instanceId, afterSequence) }
-
-    override fun markDelivered(messageId: String, atMillis: Long): AgentTeamMessageEnvelope? = synchronized(LOCK) {
-        val delegate = delegate()
-        val updated = delegate.markDelivered(messageId, atMillis)
-        if (updated != null) save(delegate.snapshot())
-        updated
-    }
-
-    override fun acknowledge(messageId: String, atMillis: Long): AgentTeamMessageEnvelope? = synchronized(LOCK) {
-        val delegate = delegate()
-        val updated = delegate.acknowledge(messageId, atMillis)
-        if (updated != null) save(delegate.snapshot())
-        updated
-    }
-
-    override fun clear(supervisorRunId: String) = synchronized(LOCK) {
-        val delegate = delegate()
-        delegate.clear(supervisorRunId)
-        save(delegate.snapshot())
-    }
-
-    private fun delegate(): InMemoryAgentTeamMailbox = InMemoryAgentTeamMailbox(
-        AgentTeamMessageCodec.decode(database.readString(KEY_MESSAGES, "[]"))
-    )
-
-    private fun save(messages: List<AgentTeamMessageEnvelope>) {
-        database.writeString(KEY_MESSAGES, AgentTeamMessageCodec.encode(messages.takeLast(MAX_MESSAGES)).toString())
-    }
-
-    private companion object {
-        // Finalizers and live runtimes use separate instances of this read-modify-write store.
-        val LOCK = Any()
-        const val DATABASE = "galaxyssi_agent_team_mailbox_v1"
-        const val KEY_MESSAGES = "messages"
-        const val MAX_MESSAGES = 5_000
-    }
+class EncryptedAgentTeamMailbox internal constructor(database: AgentEncryptedDatabase) : AgentTeamMailbox by
+    IndexedAgentTeamMailbox(object : AgentTeamMailboxRows {
+        override fun read(key: String): String? {
+            val value = database.readString(key, "").takeIf(String::isNotEmpty)
+            check(value != null || !database.contains(key)) { "Team mailbox row is unreadable: $key" }
+            return value
+        }
+        override fun page(prefix: String, after: String, limit: Int) = database.keysAfter(prefix, after, limit)
+        override fun mutate(values: Map<String, String>, removeKeys: Collection<String>) = database.mutateStrings(values, removeKeys)
+    }) {
+    constructor(context: Context) : this(AgentEncryptedDatabase(context.applicationContext, "galaxyssi_agent_team_mailbox_v1"))
 }
 
 internal object AgentTeamMessageCodec {
+    /** Stored rows and migrations must not silently skip, normalize, or reclassify corrupt evidence. */
+    fun decodeStrict(raw: String): List<AgentTeamMessageEnvelope> {
+        val array = JSONArray(raw)
+        val decoded = decode(raw)
+        check(decoded.size == array.length()) { "Team mailbox contains an invalid record" }
+        return decoded.onEachIndexed { index, message ->
+            val item = array.getJSONObject(index)
+            val encoded = encode(listOf(message)).getJSONObject(0)
+            check(item.length() == encoded.length()) { "Team mailbox contains unsupported fields" }
+            encoded.keys().forEach { key ->
+                if (key == "metadata") {
+                    val original = item.getJSONObject(key)
+                    val expected = encoded.getJSONObject(key)
+                    check(original.length() == expected.length() && expected.keys().asSequence().all {
+                        original.opt(it) is String && original.getString(it) == expected.getString(it)
+                    }) { "Team mailbox metadata would be changed during decoding" }
+                } else {
+                    val original = item.opt(key)
+                    val expected = encoded.get(key)
+                    val unchanged = if (expected is Number) original is Number &&
+                        original.toString().toLongOrNull() == expected.toLong() else original == expected
+                    check(item.has(key) && unchanged) {
+                        "Team mailbox field would be changed during decoding: $key"
+                    }
+                }
+            }
+        }
+    }
+
     fun encode(messages: List<AgentTeamMessageEnvelope>): JSONArray = JSONArray().apply {
         messages.forEach { message ->
             put(JSONObject()

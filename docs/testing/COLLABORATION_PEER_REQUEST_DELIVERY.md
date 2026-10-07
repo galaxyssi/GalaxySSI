@@ -31,8 +31,9 @@ collaborate. They can suppress a requested challenge or make its target ambiguou
 This does not wake every member, bypass independent-exploration isolation, create
 a second execution loop or deliver messages in the middle of a running model
 call. Members consume pending messages at the existing eligible checkpoints.
-The general mailbox retention policy is unchanged; unlimited historical capacity
-and sustained large-fanout performance are not claimed by this change.
+The subsequent [mailbox retention change](COLLABORATION_MAILBOX_RETENTION.md)
+replaces the legacy 5,000-record snapshot with indexed encrypted rows. Unlimited
+storage capacity and sustained large-fanout model performance are not claimed.
 
 ## Validation
 

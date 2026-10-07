@@ -127,7 +127,11 @@ class AgentCollaborationRuntimeTest {
         ))
         val runtime = AgentTeamExecutionRuntime(
             InMemoryAgentTeamExecutionStore(),
-            mailbox = mailbox
+            mailbox = object : AgentTeamMailbox by mailbox {
+                override fun messages(supervisorRunId: String, instanceId: String, afterSequence: Long): List<AgentTeamMessageEnvelope> =
+                    error("A member dispatch must not reload all historical messages")
+                override fun pendingMessages(supervisorRunId: String, instanceId: String) = mailbox.pendingMessages(supervisorRunId, instanceId)
+            }
         )
         var received = ""
 
