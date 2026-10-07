@@ -22,6 +22,8 @@ RETRY_MAX_SECONDS = 8.0
 log = logging.getLogger(__name__)
 RULE_TOPICS = ("catalog", "all", "foundation", "learning", "procedures", "transfer", "innovation",
                "team_invention", "prediction", "tools", "workflows", "retention", "self_research")
+NUMERIC_CASE_FILTERS = ("failed", "all", "domain_error", "improved", "regressed", "error_reduced",
+                        "error_increased", "domain_recovered", "domain_failed")
 
 
 def tool_spec():
@@ -38,11 +40,16 @@ def tool_spec():
         "follow next_cursor even after an empty page, then read exact workspace originals before reuse. "
         "Use mode=method_history with exact method object_id/revision/sha256 and cursor to inspect prior usage; "
         "read returned record_id/offset for original conditions, errors and delivery. These are not quality measurements. "
+        "Use mode=numeric_cases with exact trial object_id/revision/sha256, optional case_filter (default failed) and cursor "
+        "to inspect host-computed counterexamples or regressions. Follow next_cursor using the same trial and case_filter; "
+        "concatenate content pages before decoding cases. Use mode=workspace for the full model and original trial. "
+        "These saved numeric checks are not independent reference truth or proof of generalization. "
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases"]},
             "query": {"type": "string", "maxLength": 1000},
+            "case_filter": {"type": "string", "maxLength": 32, "enum": list(NUMERIC_CASE_FILTERS)},
             "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
             "record_id": {"type": "string", "maxLength": 64},
             "cursor": {"type": "string", "maxLength": 512},
@@ -58,7 +65,7 @@ def validate_arguments(arguments):
     properties = tool_spec()["inputSchema"]["properties"]
     if not isinstance(arguments, dict) or set(arguments) - properties.keys():
         raise ValueError("Recall accepts only scoped record selectors")
-    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems"}:
+    if arguments.get("mode") not in properties["mode"]["enum"]:
         raise ValueError("Invalid recall mode")
     for key, value in arguments.items():
         spec = properties[key]
@@ -95,6 +102,16 @@ def validate_arguments(arguments):
         if (set(arguments) - allowed or (not reading and "revision" not in arguments)
                 or any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key]) for key in ids)):
             raise ValueError("Method history requires exact method identity or record_id/offset")
+    if arguments["mode"] == "numeric_cases":
+        if (set(arguments) - {"mode", "object_id", "revision", "sha256", "case_filter", "cursor"}
+                or "revision" not in arguments
+                or any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
+                       for key in ("object_id", "sha256"))):
+            raise ValueError("Numeric feedback requires exact trial object_id/revision/sha256 and optional case_filter/cursor")
+        if arguments.get("case_filter", "failed") not in NUMERIC_CASE_FILTERS:
+            raise ValueError("Unknown numeric case_filter")
+    elif "case_filter" in arguments:
+        raise ValueError("Case filter is only supported for numeric feedback")
     if arguments["mode"] == "evidence" and arguments.get("evidence_id"):
         if any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
                for key in ("evidence_id", "sha256")):
