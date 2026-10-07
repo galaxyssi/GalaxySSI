@@ -281,7 +281,7 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
                 events = retainTeamEvents(record.events + event),
                 interruptedAtMillis = if (event.kind == AgentSubagentEventKinds.SUPERVISOR_STARTED) 0L else record.interruptedAtMillis,
                 updatedAtMillis = maxOf(record.updatedAtMillis, event.timestampMillis)
-            )
+            ).also { CollaborationMethodExperience.capture(it, candidateWorkspace) }
         }
     }
 
@@ -345,6 +345,7 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
         val current = records[record.supervisorRunId] ?: return false
         val mutation = current.applyLateResponse(record, prepared)
         if (!mutation.accepted) return false
+        CollaborationMethodExperience.capture(mutation.record, candidateWorkspace)
         records[record.supervisorRunId] = if (mutation.record != current) mutation.record.activateAcceptance() else current
         return true
     }
@@ -581,6 +582,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         AgentTeamExecutionCodec.decode(database.readString(KEY_LEGACY_RECORDS, "[]"))
 
     private fun write(record: AgentTeamExecutionRecord) {
+        CollaborationMethodExperience.capture(record, candidateWorkspace)
         database.writeString(recordKey(record.request.runId), encode(record))
     }
 

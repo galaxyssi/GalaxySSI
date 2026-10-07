@@ -31,10 +31,12 @@ def tool_spec():
         "then topic=<id>/offset to read a chosen schema; keep the same topic while paging. Omitted topic reads all. "
         "Use mode=capabilities with query/cursor to find related saved methods, tools and failure lessons; "
         "follow next_cursor even after an empty page, then read exact workspace originals before reuse. "
+        "Use mode=method_history with exact method object_id/revision/sha256 and cursor to inspect prior usage; "
+        "read returned record_id/offset for original conditions, errors and delivery. These are not quality measurements. "
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "evolution_rules", "problems"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems"]},
             "query": {"type": "string", "maxLength": 1000},
             "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
             "record_id": {"type": "string", "maxLength": 64},
@@ -51,7 +53,7 @@ def validate_arguments(arguments):
     properties = tool_spec()["inputSchema"]["properties"]
     if not isinstance(arguments, dict) or set(arguments) - properties.keys():
         raise ValueError("Recall accepts only scoped record selectors")
-    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "evolution_rules", "problems"}:
+    if arguments.get("mode") not in {"goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems"}:
         raise ValueError("Invalid recall mode")
     for key, value in arguments.items():
         spec = properties[key]
@@ -81,6 +83,13 @@ def validate_arguments(arguments):
         if (set(arguments) - {"mode", "record_id", "offset"}
                 or len(record_id) != 64 or any(c not in "0123456789abcdef" for c in record_id)):
             raise ValueError("Archive recall requires an exact record_id and optional offset")
+    if arguments["mode"] == "method_history":
+        reading = "record_id" in arguments
+        allowed = {"mode", "record_id", "offset"} if reading else {"mode", "object_id", "revision", "sha256", "cursor"}
+        ids = ("record_id",) if reading else ("object_id", "sha256")
+        if (set(arguments) - allowed or (not reading and "revision" not in arguments)
+                or any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key]) for key in ids)):
+            raise ValueError("Method history requires exact method identity or record_id/offset")
     if arguments["mode"] == "evidence" and arguments.get("evidence_id"):
         if any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
                for key in ("evidence_id", "sha256")):

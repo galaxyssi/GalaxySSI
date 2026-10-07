@@ -13,6 +13,26 @@ internal object CollaborationScopedRecall {
         if (input.containsKey("topic") && input["mode"] != "evolution_rules")
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Topic is only supported for evolution rules.")
         return when (input["mode"]) {
+            "method_history" -> {
+                val workspace = CollaborationResearchWorkspace(context)
+                if (input.containsKey("record_id")) {
+                    if (input.keys.any { it !in setOf("mode", "record_id", "offset") } || input["record_id"] !is String)
+                        return AgentNativeToolExecutionResult.failure("invalid_arguments", "Method history record accepts record_id and offset only.")
+                    val saved = workspace.methodHistoryRecord(access, input.getValue("record_id") as String)
+                        ?: return AgentNativeToolExecutionResult.failure("record_unavailable", "Method history is missing or isolated.")
+                    page(saved, input, "host_execution_observation_not_method_effectiveness",
+                        mapOf("record_id" to saved.getString("record_id"), "record_sha256" to saved.getString("sha256")))
+                } else {
+                    if (input.keys.any { it !in setOf("mode", "object_id", "revision", "sha256", "cursor") } ||
+                        input["object_id"] !is String || input["sha256"] !is String || input["revision"] !is Number ||
+                        (input["revision"] as Number).toDouble() != (input["revision"] as Number).toInt().toDouble() ||
+                        (input["revision"] as Number).toInt() < 1 || input.containsKey("cursor") && input["cursor"] !is String)
+                        return AgentNativeToolExecutionResult.failure("invalid_arguments", "Method history requires exact object_id, revision, sha256 and optional cursor.")
+                    val ref = JSONObject().put("object_id", input["object_id"]).put("revision", (input["revision"] as Number).toInt())
+                        .put("sha256", input["sha256"])
+                    AgentNativeToolExecutionResult.success(workspace.methodHistory(access, ref, input["cursor"] as? String ?: "").toNativeObject())
+                }
+            }
             "capabilities" -> {
                 if (input.keys.any { it !in setOf("mode", "query", "cursor") } || input["query"] !is String ||
                     input.containsKey("cursor") && input["cursor"] !is String)
@@ -113,7 +133,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, evolution_rules or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules or problems for scoped recall.")
         }
     }
 
