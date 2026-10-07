@@ -23,6 +23,7 @@ def tool_spec():
         "mode=list with optional cursor recovers this assignment's committed IDs; follow next_cursor. "
         "Final research-artifact output may use milestones:[saved IDs] instead of recreating already published objects. "
         "This records authorship, not verification, peer consumption or task completion. "
+        "For an actual local UTF-8 file, use collaboration_text_artifact when available instead of publishing only its path or a description. "
         "Specialized host candidate-transition assignments use their final publication contract. "
         "One request is limited to 131072 UTF-8 bytes. Split larger independent deliveries, never truncate evidence. "
         "Do not supply group/member/task authority fields."),
