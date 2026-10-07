@@ -98,4 +98,17 @@ class CollaborationAdaptivePilotVerdictTest {
         reject(value)
         assertEquals(original, value.toString())
     }
+
+    @Test fun milestoneTrialCannotPassWithoutCompleteObserverArchive() {
+        val value = report().put("interim_publication_enabled", true)
+        reject(value)
+        reject(value.put("milestone_archive_complete", true))
+        val archive = JSONObject().put("format", "galaxyssi.adaptive-pilot-milestones.v1")
+            .put("milestones", JSONArray()).put("peer_read_proven", false).put("scientific_acceptance_proven", false)
+        value.put("interim_evidence", archive)
+        CollaborationAdaptivePilotVerdict.evaluate(value).requirePassed()
+        reject(value.put("milestone_archive_complete", false))
+        value.put("milestone_archive_complete", true)
+        reject(value.put("interim_evidence", JSONObject(archive.toString()).put("peer_read_proven", true)))
+    }
 }

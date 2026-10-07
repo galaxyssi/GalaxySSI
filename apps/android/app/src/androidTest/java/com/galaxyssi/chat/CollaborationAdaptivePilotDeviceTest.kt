@@ -61,6 +61,7 @@ class CollaborationAdaptivePilotDeviceTest {
             .put("model_selection", plan.selection.json()).put("phone_dispatch_limit", plan.maximumDispatches)
             .put("trial_timeout_ms", plan.timeoutMillis).put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE)
             .put("production_prompt_preserved", true).put("fixed_work_plan", false)
+            .put("interim_publication_enabled", true).put("milestone_archive_complete", false)
             .put("full_ui_lifecycle_tested", false).put("process_restart_tested", false)
             .put("tool_isolation_verified", false).put("equal_budget_comparison", false)
             .put("billed_cost", JSONObject.NULL).put("provider_request_count", JSONObject.NULL)
@@ -73,9 +74,9 @@ class CollaborationAdaptivePilotDeviceTest {
         check(database.keys().isEmpty()) { "Adaptive execution database already contains evidence; do not restart it" }
         val groups = CollaborationGroupStore(context)
         val control = AgentTeamDurableControl(context)
-        val store = EncryptedAgentTeamExecutionStore(database, { CollaborationGroupStore.names(context) },
-            { CollaborationResearchWorkspace(context) }, { control.get(it) })
+        val store = CollaborationAdaptivePilotMilestones.executionStore(context, database)
         var group = ""
+        var milestoneArchive: CollaborationAdaptivePilotMilestones? = null
         var admission: CollaborationAdaptivePilotAdmission? = null
         var runner: CollaborationAdaptivePilotRunner? = null
         var runtime: AgentTeamExecutionRuntime? = null
@@ -90,6 +91,9 @@ class CollaborationAdaptivePilotDeviceTest {
                 CollaborationRemotePilotWorker.requireTarget(context, plan)
                 group = transcripts.createAgentConversation("Adaptive pilot ${plan.id}").id
                 groups.update(group) { it.copy(members = plan.members, coordinatorId = plan.members.first().id, workflow = CollaborationWorkflow.RESEARCH) }
+                milestoneArchive = CollaborationAdaptivePilotMilestones(group, run, turn, CollaborationResearchWorkspace(context)) { access, ref ->
+                    CollaborationEvidenceLedger(context).read(access, ref.getString("evidence_id"), ref.getString("sha256"))
+                }
                 report.put("conversation_id", group).put("execution_database", run).put("status", "running")
                 persist()
                 val guard = CollaborationAdaptivePilotAdmission(plan, group, run, turn, started + plan.timeoutMillis,
@@ -130,6 +134,7 @@ class CollaborationAdaptivePilotDeviceTest {
                 runner = CollaborationAdaptivePilotRunner(store, requireNotNull(runtime), guard,
                     projectRecruits = { groups.projectRecruits(group, it) }, checkpoint = { snapshot, checkpoint ->
                         synchronized(lock) {
+                            report.put("interim_evidence", requireNotNull(milestoneArchive).capture(checkpoint))
                             rounds.put(JSONObject().put("round", checkpoint.request.context[CollaborationGoalLoop.ROUND]?.toString() ?: "0")
                                 .put("state", snapshot.state.name).put("goal_disposition", snapshot.goalDisposition)
                                 .put("primary_node", snapshot.primaryMemberId).put("final_output", snapshot.finalOutput)
@@ -165,13 +170,17 @@ class CollaborationAdaptivePilotDeviceTest {
                     } == true
                     report.put("cleanup_confirmed", clean).put("durable_control", control.get(run).name)
                         .put("pending_remote_owners", JSONArray(responses.pendingForSupervisor(run).map { it.ownerRunId }))
-                    store.deliveryCheckpoint(run)?.let { report.put("last_members", members(it)) }
+                    store.deliveryCheckpoint(run)?.let {
+                        report.put("last_members", members(it))
+                        report.put("interim_evidence", requireNotNull(milestoneArchive).capture(it))
+                        report.put("milestone_archive_complete", true)
+                    }
                     report.put("saved_execution_records", JSONArray(database.keys().map { key ->
                         JSONObject().put("key", key).put("value", database.readString(key, ""))
                     }))
                     report.put("finished", true).put("ended_at", System.currentTimeMillis())
                     persist()
-                    if (clean) {
+                    if (clean && report.optBoolean("milestone_archive_complete")) {
                         runtime?.close()
                         if (group.isNotBlank()) { groups.remove(group); transcripts.deleteConversation(group) }
                         database.clear()
