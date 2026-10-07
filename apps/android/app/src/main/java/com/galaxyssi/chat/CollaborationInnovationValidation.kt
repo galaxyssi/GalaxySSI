@@ -213,6 +213,9 @@ internal object CollaborationInnovationValidation {
                 listOf("baseline_method", "candidate_method").forEach { enqueue(binding.getJSONObject(it), setOf(CollaborationWorkflowMethod.KIND)) }
                 enqueue(binding.getJSONObject("dataset"), setOf("artifact"))
             }
+            host.optJSONObject(CollaborationHypothesisTest.FIELD)?.optJSONObject(CollaborationHypothesisTest.PREVIOUS)?.let {
+                enqueue(it, setOf(CollaborationActionPrediction.OUTCOME))
+            }
             for ((field, kinds) in listOf("basis" to SOURCE_KINDS, "results" to setOf(RESULT), "calibration_data" to setOf("artifact"),
                 "prediction_feedback" to setOf(CollaborationActionPrediction.OUTCOME))) {
                 host.optJSONArray(field)?.let { refs -> repeat(refs.length()) { enqueue(refs.getJSONObject(it), kinds) } }

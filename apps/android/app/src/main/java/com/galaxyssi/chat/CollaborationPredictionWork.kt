@@ -61,6 +61,9 @@ internal object CollaborationPredictionWork {
                 .put("valid_when", environment.getString("valid_when")).put("refresh_when", environment.getString("refresh_when"))
                 .put("work_id", id).put("member", item.getString("member")).put("stage", text(item, "stage")).put("assignment", text(item, "assignment"))
                 .put("criterion", requirement).put("grants_permissions", false).put("outcome_verified", false)
+            forecast.getJSONObject("host_evolution").optJSONObject(CollaborationHypothesisTest.FIELD)?.let {
+                binding.put(CollaborationHypothesisTest.FIELD, JSONObject(it.toString()))
+            }
             val digest = AgentNativeJsonCodec.sha256(canonical(binding))
             require(old == null || old.getString("sha256") == digest) { "Cannot rewrite admitted prediction work; preserve it and plan a new forecast/work ID" }
             claims.put(id, JSONObject().put("sha256", digest).put("forecast", CollaborationResearchCandidates.reference(forecast)))
