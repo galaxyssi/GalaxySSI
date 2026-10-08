@@ -51,6 +51,15 @@ class CollaborationMilestoneProtocolTest {
         assertTrue(AndroidCollaborationRemoteMilestone.valid(request(), 10000))
         val status = request().put("phase", "status").put("arguments", JSONObject().put("mode", "status"))
         assertTrue(AndroidCollaborationRemoteMilestone.valid(status, 10000))
+        val receipt = request().put("phase", "receipt").put("arguments", JSONObject().put("mode", "receipt")
+            .put("milestone_id", "original").put("artifact_sha256", "a".repeat(64)))
+        assertTrue(AndroidCollaborationRemoteMilestone.valid(receipt, 10000))
+        assertFalse(AndroidCollaborationRemoteMilestone.valid(JSONObject(receipt.toString()).put("phase", "publish"), 10000))
+        for ((key, value) in listOf("member_id" to "other", "artifact" to "{}", "artifact_sha256" to "A".repeat(64))) {
+            val invalid = JSONObject(receipt.toString())
+            invalid.getJSONObject("arguments").put(key, value)
+            assertFalse(AndroidCollaborationRemoteMilestone.valid(invalid, 10000))
+        }
         assertFalse(AndroidCollaborationRemoteMilestone.valid(JSONObject(status.toString()).put("phase", "publish"), 10000))
         assertFalse(CollaborationRemoteRecallProtocol.valid(request(), 10000))
         for (field in AgentResultRecoveryClient.FIELDS + listOf("execution_generation", "request_id", "contract", "phase", "arguments"))

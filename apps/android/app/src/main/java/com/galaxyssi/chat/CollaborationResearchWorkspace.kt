@@ -163,6 +163,24 @@ internal class CollaborationResearchWorkspace(
         }
     }
 
+    fun milestoneReceipt(access: CollaborationWorkspaceAccess, id: String, artifactSha256: String): JSONObject = synchronized(LOCK) {
+        requirePublicationActive(access)
+        val result = CollaborationMilestoneJournal(rows, access).receipt(id, artifactSha256)
+        if (result.optString("status") == "recorded") {
+            val refs = result.getJSONArray("revisions")
+            repeat(refs.length()) { index ->
+                val ref = refs.getJSONObject(index)
+                val original = requireNotNull(readRevision(access.groupId, ref.getString("object_id"), ref.getInt("revision")))
+                require(original.getString("run_id") == access.runId && original.getString("turn_id") == access.turnId &&
+                    original.getLong("round") == access.round && original.getString("node_id") == access.nodeId &&
+                    original.getString("person_id") == access.personId && CollaborationResearchCandidates.same(original, ref)) {
+                    "Milestone original identity changed"
+                }
+            }
+        }
+        result
+    }
+
     fun milestones(access: CollaborationWorkspaceAccess, cursor: String = ""): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         CollaborationMilestoneJournal(rows, access).page(cursor)

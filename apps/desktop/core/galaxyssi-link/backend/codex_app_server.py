@@ -2268,7 +2268,8 @@ class CodexAppServer:
                 "trace_stage": tool_name + "_returned", "telemetry_only": True})
             return
         if tool_name == "collaboration_publish":
-            publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability"}
+            publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability",
+                                "receipt": "Recover exact publication receipt"}
             self.on_event(task_id, {**dict(common), "status": "running",
                 "current_step": (publication_step.get(arguments.get("mode"), "Interim collaboration artifact recorded")
                                  if result.get("success") else "Interim publication needs attention"),

@@ -33,6 +33,9 @@ class FileArtifactTest(unittest.TestCase):
 
     def publish(self, request):
         self.sent.append(copy.deepcopy(request))
+        if request["mode"] == "receipt":
+            return {**request, "success": True, "status": "recorded", "revisions": [
+                {key: self.saved[key] for key in ("object_id", "revision", "sha256")}]}
         item = json.loads(request["artifact"])["workspace"][0]
         self.saved = {"object_id": item.get("object_id", "a" * 64), "revision": item.get("base_revision", 0) + 1,
                       "sha256": hashlib.sha256(request["artifact"].encode()).hexdigest(), "kind": "artifact", "body": item["body"]}
@@ -81,8 +84,9 @@ class FileArtifactTest(unittest.TestCase):
         self.call()
         self.source.unlink()
         self.call()
-        self.assertEqual(self.sent[0], self.sent[1])
-        self.assertEqual(self.sent[0], self.sent[2])
+        self.assertEqual(["publish", "receipt", "receipt"], [r["mode"] for r in self.sent])
+        self.assertEqual(hashlib.sha256(self.sent[0]["artifact"].encode()).hexdigest(), self.sent[1]["artifact_sha256"])
+        self.assertEqual(self.sent[1], self.sent[2])
         self.assertEqual(self.raw, Path(self.materialize()["path"]).read_bytes())
         with self.assertRaisesRegex(ValueError, "different snapshot"):
             self.call({**self.args, "title": "Different"})

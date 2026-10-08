@@ -59,12 +59,20 @@ class CollaborationFileArtifactInteropTest {
             assertFalse(original.getJSONObject("body").has("content"))
             assertEquals("member_reported_not_verified", original.getString("evidence_state"))
             assertEquals(0, original.getJSONArray("host_observations").length())
-            val receiptFile = File(directory, "receipt.json").apply { writeText(receipt.toString(), Charsets.UTF_8) }
+            val receiptQuery = JSONObject().put("mode", "receipt").put("milestone_id", request.getString("milestone_id"))
+                .put("artifact_sha256", AgentResultRecoveryClient.sha256(request.getString("artifact").toByteArray(Charsets.UTF_8)))
+            val committed = rows.values.toMap()
+            val recoveredReceipt = CollaborationMilestoneTool.execute(CollaborationResearchWorkspace(rows), author, receiptQuery) {}
+            assertTrue(recoveredReceipt.toString(), recoveredReceipt.getBoolean("success"))
+            assertEquals(receipt.getJSONArray("revisions").toString(), recoveredReceipt.getJSONArray("revisions").toString())
+            assertEquals(committed, rows.values)
+            val receiptFile = File(directory, "receipt.json").apply { writeText(recoveredReceipt.toString(), Charsets.UTF_8) }
             source.writeText("producer moved on to another version")
             assertTrue(python("confirm", directory.path, receiptFile.path).getBoolean("success"))
             source.delete()
             val reopened = CollaborationResearchWorkspace(rows)
-            assertEquals(receipt.toString(), CollaborationMilestoneTool.execute(reopened, author, request) {}.toString())
+            assertEquals(recoveredReceipt.toString(), CollaborationMilestoneTool.execute(reopened, author, receiptQuery) {}.toString())
+            assertEquals(committed, rows.values)
             val peer = author.copy(nodeId = "peer-node", personId = "peer")
             assertNull(reopened.read(peer, id, 1))
             val granted = peer.copy(pinnedReads = setOf(CollaborationMilestoneDispatch.grant(original)!!))

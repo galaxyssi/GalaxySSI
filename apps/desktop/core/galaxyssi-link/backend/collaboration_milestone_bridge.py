@@ -1,5 +1,7 @@
 """Explicit interim-publication capability, separate from read-only collaboration recall."""
+import hashlib
 import json
+import re
 
 from collaboration_recall_bridge import RecallBroker, task_scope
 from collaboration_transport_feedback import PublicationRejected, ResponseUnconfirmed
@@ -23,6 +25,8 @@ def tool_spec():
         "Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. "
         "For a substantive revision use a new milestone ID and exact object_id/base_revision. "
         "mode=list with optional cursor recovers this assignment's committed IDs; follow next_cursor. "
+        "mode=receipt with milestone_id and artifact_sha256 (SHA-256 of the exact artifact UTF-8 string, not the journal raw_sha256) reads its original receipt without republishing. "
+        "Only explicit not_recorded permits resending the saved artifact; a failed lookup leaves the outcome uncertain. "
         "Final research-artifact output may use milestones:[saved IDs] instead of recreating already published objects. "
         "This records authorship, not verification, peer consumption or task completion. "
         "For an actual local UTF-8 file, use collaboration_text_artifact when available instead of publishing only its path or a description. "
@@ -30,9 +34,10 @@ def tool_spec():
         "One request is limited to 131072 UTF-8 bytes. Split larger independent deliveries, never truncate evidence. "
         "Do not supply group/member/task authority fields."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["publish", "list", "status"]},
+            "mode": {"type": "string", "enum": ["publish", "list", "status", "receipt"]},
             "milestone_id": {"type": "string", "maxLength": 160},
             "artifact": {"type": "string"},
+            "artifact_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
             "cursor": {"type": "string", "maxLength": 512}},
             "required": ["mode"], "additionalProperties": False}}
 
@@ -50,15 +55,49 @@ def validate_arguments(arguments):
                 or identifier != identifier.strip() or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in identifier)
                 or not isinstance(artifact, str) or not artifact.strip()):
             raise ValueError("Publish requires only mode, stable milestone_id and nonblank artifact string")
+    elif arguments.get("mode") == "receipt":
+        if (set(arguments) != {"mode", "milestone_id", "artifact_sha256"}
+                or not isinstance(arguments.get("artifact_sha256"), str)
+                or re.fullmatch(r"[a-f0-9]{64}", arguments["artifact_sha256"]) is None):
+            raise ValueError("Receipt requires only mode, milestone_id and lowercase artifact_sha256")
+        validate_arguments({"mode": "publish", "milestone_id": arguments.get("milestone_id"), "artifact": "{}"})
     elif arguments.get("mode") == "list":
         if (set(arguments) - {"mode", "cursor"} or not isinstance(arguments.get("cursor", ""), str)
                 or len(arguments.get("cursor", "")) > 512):
             raise ValueError("List accepts only mode and an optional cursor")
     else:
-        raise ValueError("Publication mode must be publish, list or status")
+        raise ValueError("Publication mode must be publish, list, status or receipt")
     if len(json.dumps(arguments, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > MAX_BYTES:
         raise ValueError("Publication exceeds 131072 UTF-8 bytes; split independent artifacts, do not truncate")
     return dict(arguments)
+
+
+def publish_snapshot(request, publish, active, *, recover):
+    """Recover only the exact saved publication; unavailable is never treated as absent."""
+    if not active():
+        raise ValueError("Artifact assignment changed before publication")
+    if recover:
+        query = validate_arguments({"mode": "receipt", "milestone_id": request["milestone_id"],
+                                    "artifact_sha256": hashlib.sha256(request["artifact"].encode("utf-8")).hexdigest()})
+        result = publish(query)
+        if not active():
+            raise ValueError("Artifact assignment changed during receipt recovery")
+        if not isinstance(result, dict):
+            raise ValueError("Invalid publication receipt response; original outcome remains uncertain")
+        if result.get("success") is not True:
+            return result
+        if any(result.get(key) != query[key] for key in ("milestone_id", "artifact_sha256")):
+            raise ValueError("Publication receipt identity changed; original outcome remains uncertain")
+        if result.get("status") == "recorded":
+            return result
+        if result.get("status") != "not_recorded":
+            raise ValueError("Publication receipt outcome is uncertain; retry the exact lookup")
+    if not active():
+        raise ValueError("Artifact assignment changed before publication")
+    result = publish(request)
+    if not active():
+        raise ValueError("Artifact assignment changed during publication")
+    return result
 
 
 class MilestoneBroker(RecallBroker):
@@ -77,6 +116,9 @@ class MilestoneBroker(RecallBroker):
 
 
 def failure_guidance(mode):
+    if mode == "receipt":
+        return ("Saved publication receipt unavailable; this read submitted no artifact. Retry the exact receipt lookup after reconnecting. "
+                "The original publication outcome remains uncertain; do not repeat completed effects.")
     if mode == "status":
         return ("Publication capability status unavailable; no artifact was submitted. "
                 "Continue the required assignment response; a transport failure does not grant publication.")

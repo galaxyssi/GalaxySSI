@@ -96,6 +96,48 @@ class CollaborationMilestoneTest {
         assertEquals(original, rows.data)
     }
 
+    @Test fun receiptRecoveryIsReadOnlyExactAndSurvivesReopenAndFinalCommit() {
+        val rows = Rows(); val workspace = setup(rows); val body = raw(item())
+        val receipt = workspace.publishMilestone(access, "m1", body)
+        val input = JSONObject().put("mode", "receipt").put("milestone_id", "m1").put("artifact_sha256", AgentResultRecoveryClient.sha256(body.toByteArray(Charsets.UTF_8)))
+        fun recover() = CollaborationMilestoneTool.execute(CollaborationResearchWorkspace(rows), access, input) {}
+        val before = rows.data.toMap()
+        val result = recover()
+        assertTrue(result.getBoolean("success")); assertFalse(result.getBoolean("assignment_completed"))
+        assertTrue(result.getBoolean("receipt_recovered"))
+        assertEquals(receipt.getJSONArray("revisions").toString(), result.getJSONArray("revisions").toString())
+        val legacyDigest = JSONObject(input.toString()).put("artifact_sha256", AgentNativeJsonCodec.sha256(body))
+        assertFalse(CollaborationMilestoneTool.execute(workspace, access, legacyDigest) {}.getBoolean("success"))
+        assertEquals(before, rows.data)
+        workspace.submitPublication(access, JSONObject(raw()).put("milestones", JSONArray(listOf("m1"))).toString())
+        val finalized = rows.data.toMap()
+        assertEquals(result.toString(), recover().toString())
+        assertEquals(finalized, rows.data)
+    }
+
+    @Test fun receiptRecoveryDistinguishesAbsenceConflictCorruptionAndRevocation() {
+        val rows = Rows(); val workspace = setup(rows); val body = raw(item())
+        val input = JSONObject().put("mode", "receipt").put("milestone_id", "m1").put("artifact_sha256", AgentResultRecoveryClient.sha256(body.toByteArray(Charsets.UTF_8)))
+        fun query(target: CollaborationWorkspaceAccess = access, request: JSONObject = input) =
+            CollaborationMilestoneTool.execute(workspace, target, request) {}
+        assertEquals("not_recorded", query().getString("status"))
+        workspace.publishMilestone(access, "m1", body)
+        val before = rows.data.toMap()
+        for (target in listOf(access.copy(groupId = "other"), access.copy(runId = "other"), access.copy(turnId = "other"),
+            access.copy(round = 2), access.copy(nodeId = "other"), access.copy(personId = "other"))) {
+            val result = query(target)
+            assertTrue(result.toString(), result.getString("status") in setOf("not_recorded", "rejected"))
+            assertFalse(result.has("revisions"))
+        }
+        assertFalse(query(request = JSONObject(input.toString()).put("artifact_sha256", "f".repeat(64))).getBoolean("success"))
+        assertFalse(CollaborationMilestoneTool.execute(workspace, access, input) { throw IllegalArgumentException("paused") }.getBoolean("success"))
+        assertFalse(CollaborationMilestoneTool.execute(CollaborationResearchWorkspace(rows, authorized = { false }), access, input) {}.getBoolean("success"))
+        assertEquals(before, rows.data)
+        val key = rows.data.keys.single { ":milestone:" in it }
+        rows.data[key] = JSONObject(rows.data.getValue(key)).put("raw_sha256", "f".repeat(64)).toString()
+        assertFalse(query().getBoolean("success"))
+    }
+
     @Test fun invalidDraftRetainedAndCorrectableWithoutFalsePublication() {
         val rows = Rows(); val workspace = setup(rows)
         val failed = workspace.publishMilestone(access, "m1", "not json")

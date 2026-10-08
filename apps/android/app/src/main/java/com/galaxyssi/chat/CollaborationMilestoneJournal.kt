@@ -60,6 +60,22 @@ internal class CollaborationMilestoneJournal(
         return revisions.values.toList()
     }
 
+    fun receipt(id: String, artifactSha256: String): JSONObject {
+        validateId(id)
+        require(artifactSha256.matches(HASH)) { "artifact_sha256 must be a lowercase SHA-256" }
+        val result = JSONObject().put("milestone_id", id).put("artifact_sha256", artifactSha256)
+        val record = rows.read(prefix + AgentNativeJsonCodec.sha256(id))?.let(::JSONObject)
+            ?: return result.put("status", "not_recorded")
+        checkRecord(record)
+        require(record.getString("milestone_id") == id) { "Milestone identity changed" }
+        // Keep the existing JSON-codec journal digest; the wire identity hashes exact UTF-8 bytes.
+        require(AgentResultRecoveryClient.sha256(record.getString("raw").toByteArray(Charsets.UTF_8)) == artifactSha256) {
+            "Milestone content differs from the saved publication; use the original snapshot"
+        }
+        return JSONObject(record.getJSONObject("receipt").toString())
+            .put("milestone_id", id).put("artifact_sha256", artifactSha256).put("receipt_recovered", true)
+    }
+
     fun page(cursor: String): JSONObject {
         require(cursor.isEmpty() || cursor.startsWith(prefix) && cursor.removePrefix(prefix).matches(HASH)) { "Cursor belongs to another assignment" }
         val keys = rows.page(prefix, cursor, 33)

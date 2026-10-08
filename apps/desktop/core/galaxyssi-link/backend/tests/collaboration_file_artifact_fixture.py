@@ -18,6 +18,8 @@ def main():
         args = {"mode": "publish", "path": "outputs/evidence.bin", "milestone_id": "fixture-file-v1", "title": "Complete file fixture"}
         def publish(request):
             if mode == "confirm":
+                if request["mode"] != "receipt":
+                    raise AssertionError("Recovering a committed file must not republish it")
                 return json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
             return {"success": False, "status": "captured_only", "captured_request": request}
         result = execute(root / "store", str(root / "author"), scope, args,
