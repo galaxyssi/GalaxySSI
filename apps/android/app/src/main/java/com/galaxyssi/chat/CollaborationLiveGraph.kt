@@ -29,6 +29,13 @@ internal object CollaborationLiveGraph {
         wait for, finish, or reveal the author's other work. Use depends_on when the entire assignment must finish.
         For an independent milestone review, use a different author; all listed milestones are review subjects.
         Interim checks use new work items; candidate_cycles still require their completed-producer contract.
+        The live inventory separates RUNNING, QUEUED, RESULT_PENDING and unobserved work; dependency_state and
+        waiting_for show whether an assignment can start. A planned review waiting on its author is NOT an
+        active or completed review. Compare its exact inputs with the newly published versions before deciding
+        that verification is already covered. If useful, a distinct interim check can use uses_milestones without
+        waiting for the author's entire assignment. Do not clone an existing review, weaken its dependencies,
+        interrupt independent exploration, or treat a published version as verified. Explain the next useful
+        check or concrete reason to wait in summary; the host does not choose the research strategy for you.
         Add work only when new evidence reveals a useful next step. An empty work array is valid.
         ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
         Do not repeat, replace or rename existing work to bypass deduplication. Never repeat a completed side effect.
@@ -240,22 +247,53 @@ internal object CollaborationLiveGraph {
             .put("independent_review", member.context[CollaborationWorkGraph.INDEPENDENT] == "true"), member.context)
     }
 
-    fun inventory(definition: AgentTeamDefinition, completed: Map<String, AgentSubagentChildResult>): String {
+    fun inventory(definition: AgentTeamDefinition, completed: Map<String, AgentSubagentChildResult>,
+                  observed: Map<String, AgentSubagentStatus> = emptyMap()): String {
         val work = definition.members.filter { !it.context[CollaborationGoalLoop.WORK_ID].isNullOrBlank() }
+        val byId = definition.members.associateBy { it.memberId }
+        fun workId(id: String) = byId[id]?.context?.get(CollaborationGoalLoop.WORK_ID).orEmpty().ifBlank { id }
+        // A transport/UI terminal observation is not a committed scheduler result.
+        fun status(id: String) = completed[id]?.status?.name ?: observed[id]?.let {
+            if (it.isTerminal) "RESULT_PENDING" else it.name
+        } ?: "unobserved"
         val items = JSONArray()
         var remaining = 6000
         for (member in work.asReversed()) {
+            val dependencies = member.dependsOnAgentIds.sorted()
+            val waiting = dependencies.filter { completed[it]?.status?.isTerminal != true }
+            val unsuccessful = dependencies.filter { completed[it]?.status?.let { value ->
+                value.isTerminal && value != AgentSubagentStatus.SUCCEEDED } == true }
+            val requireSuccess = member.context[CollaborationWorkGraph.POLICY] == "success"
+            val independent = member.context[CollaborationWorkGraph.INDEPENDENT] == "true"
+            val reviewTargets = member.context[CollaborationReviewTargets.CONTEXT]?.takeIf(String::isNotBlank)?.let(::strings)
+                ?: if (independent) dependencies.map(::workId) + strings(member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES]) else emptyList()
             val item = JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
                 .put("member", member.context[CollaborationResearchWorkflow.PERSON])
+                .put("stage", member.context[CollaborationResearchWorkflow.STAGE].orEmpty())
                 .put("assignment", member.objective.take(180))
-                .put("status", completed[member.memberId]?.status?.name ?: "active_or_queued")
+                .put("assignment_truncated", member.objective.length > 180)
+                .put("status", status(member.memberId))
+                .put("dependency_policy", if (requireSuccess) "success" else "terminal")
+                .put("dependency_state", when {
+                    requireSuccess && unsuccessful.isNotEmpty() -> "failed"
+                    waiting.isNotEmpty() -> "waiting"
+                    else -> "satisfied"
+                })
+                .put("depends_on", JSONArray(dependencies.map(::workId)))
+                .put("waiting_for", JSONArray(waiting.map { JSONObject().put("id", workId(it)).put("status", status(it)) }))
+                .put("unsuccessful_dependencies", JSONArray(unsuccessful.map(::workId)))
+                .put("independent_review", independent)
+                .put("review_targets", JSONArray(reviewTargets.sorted()))
+                .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.inputs(member).map { it.getString("token") }))
             val size = item.toString().length
             if (size > remaining) break
             items.put(item)
             remaining -= size
         }
         return JSONObject().put("items", items).put("total", work.size).put("omitted", work.size - items.length())
-            .put("note", "Recent compact inventory only; the host retains all assignments and rejects duplicate or conflicting work IDs").toString()
+            .put("note", "Dispatch-time snapshot, not a live subscription or quality verdict. Dependency satisfaction does not mean running; " +
+                "QUEUED may still wait for capacity. RESULT_PENDING is not committed completion. " +
+                "Recent compact inventory only; omitted work is unknown, not absent. The host retains all assignments and rejects conflicting work IDs.").toString()
     }
 
     internal fun append(record: AgentTeamExecutionRecord, nodes: List<AgentTeamMember>): AgentTeamExecutionRecord {

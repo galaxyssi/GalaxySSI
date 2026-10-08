@@ -65,7 +65,17 @@ class CollaborationLiveGraphDeviceTest {
                 AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 3)).use { runtime ->
                     val handle = runtime.resume(checkpoint) { execution ->
                         val work = execution.member.context[CollaborationGoalLoop.WORK_ID].orEmpty()
-                        if (CollaborationLiveGraph.planner(execution.member)) AgentSubagentOutput(expansion(!calls.containsKey("review")))
+                        if (CollaborationLiveGraph.planner(execution.member)) {
+                            if (!calls.containsKey("review")) {
+                                val inventory = JSONObject(execution.request.context.getValue("collaboration_research_live_inventory").toString())
+                                    .getJSONArray("items")
+                                val items = (0 until inventory.length()).map(inventory::getJSONObject).associateBy { it.getString("id") }
+                                assertEquals("RUNNING", items.getValue("slow").getString("status"))
+                                assertEquals("SUCCEEDED", items.getValue("producer").getString("status"))
+                                assertEquals("satisfied", items.getValue("slow").getString("dependency_state"))
+                            }
+                            AgentSubagentOutput(expansion(!calls.containsKey("review")))
+                        }
                         else if (execution.member.deliveryMode == AgentDeliveryMode.RESPOND) {
                             assertTrue(releaseSlow.isCompleted && releaseReview.isCompleted)
                             finalStarted.complete(Unit)

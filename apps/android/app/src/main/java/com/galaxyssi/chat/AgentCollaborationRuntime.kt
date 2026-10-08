@@ -788,7 +788,9 @@ class AgentTeamExecutionRuntime(
                     "team_visibility" to definition.visibilityMode.name.lowercase(),
                     CollaborationLearningFeedback.RESOURCES to if (research) CollaborationLearningFeedback.resources(
                         activeDefinition, graph.completed.keys, candidateAdmission, coordinationConcurrency) else "",
-                    "collaboration_research_live_inventory" to if (CollaborationLiveGraph.planner(member)) CollaborationLiveGraph.inventory(activeDefinition, graph.completed) else "",
+                    "collaboration_research_live_inventory" to if (CollaborationLiveGraph.planner(member))
+                        CollaborationLiveGraph.inventory(activeDefinition, graph.completed,
+                            store.snapshot(request.runId)?.members.orEmpty().associate { it.memberId to it.status }) else "",
                     "collaboration_research_roster" to if (research) activeDefinition.members
                         .distinctBy { it.context[CollaborationResearchWorkflow.PERSON] }.joinToString("\n") {
                             "${it.context[CollaborationResearchWorkflow.PERSON]}: ${it.context["collaboration_name"]}; " +
