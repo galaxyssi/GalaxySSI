@@ -172,6 +172,31 @@ class CollaborationMilestoneDeviceTest {
         assertEquals(1, reopened.publicationRevisions(access, access.nodeId).size)
     }
 
+    @Test fun omittedNotesPublishAndRecoverWithoutChangingRawIdentityOrEvidenceState() = fixture { access ->
+        val minimal = JSONObject(raw("minimal")).apply { remove("candidates"); remove("findings") }.toString()
+        val request = input("minimal").put("artifact", minimal)
+        val first = JSONObject(CollaborationMilestoneTool.execute(context, access, request))
+        assertTrue(first.toString(), first.getBoolean("success"))
+        assertFalse(first.getBoolean("assignment_completed"))
+        val reopened = CollaborationResearchWorkspace(context)
+        assertEquals(AgentNativeJsonCodec.sha256(minimal), reopened.milestones(access)
+            .getJSONArray("milestones").getJSONObject(0).getString("raw_sha256"))
+        assertEquals(first.toString(), CollaborationMilestoneTool.execute(context, access, request))
+        assertEquals("member_reported_not_verified", reopened.browse(access).revisions.single().getString("evidence_state"))
+        val changed = JSONObject(request.toString()).put("artifact", raw("minimal"))
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, changed)).getBoolean("success"))
+        val malformed = input("bad").put("artifact", JSONObject(minimal).put("findings", JSONObject.NULL).toString())
+        val rejection = JSONObject(CollaborationMilestoneTool.execute(context, access, malformed))
+        assertFalse(rejection.getBoolean("success"))
+        assertTrue(rejection.getString("reason").contains("findings must be an array"))
+        val final = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Synthetic data awaiting review")
+            .put("milestones", JSONArray().put("minimal")).toString()
+        assertEquals("recorded", reopened.submitPublication(access, final).getString("status"))
+        val recovered = CollaborationResearchWorkspace(context)
+        assertEquals(final, recovered.publicationCheckpoint(access)!!.getString("raw"))
+        assertEquals(1, recovered.publicationRevisions(access, access.nodeId).size)
+    }
+
     @Test fun userPauseAndRevocationBlockNewPublicationsAndIndependentReaderStaysIsolated() = fixture { access ->
         val control = AgentTeamDurableControl(context)
         control.set(access.runId, AgentTeamUserControl.PAUSE)

@@ -40,7 +40,9 @@ internal object CollaborationResearchArtifact {
             "Workspace versions are reports, not independent validation. A version conflict requires re-reading and reconciling, never blind overwriting. " +
             CollaborationCandidateEvolution.artifactInstructions() + CollaborationReviewContract.instructions() +
             "Cite the reviewed delivery in parents. Review another person's exact current version; do not review your own work or certify unperformed tests. " +
-            "Keep top-level candidate/findings notes and targeted requests concise; preserve complete alternatives in versioned workspace originals. Empty arrays are allowed outside proposal/verification stages. " +
+            "Keep top-level candidates/findings notes and targeted requests concise; preserve complete alternatives in versioned workspace originals. " +
+            "Omit candidates and findings when empty; the host decodes missing arrays as []. Supplied values must be arrays. " +
+            "This does not replace substantive workspace content, typed review requirements or actual evidence. " +
             "All valid targeted requests and recipients are routed, not just a fixed first few. Each question must fit the 16000-character team message envelope; " +
             "put larger evidence in workspace originals and reference it. Use exact roster member IDs, not names. " +
             "Preserve important memory items, including negative evidence and unresolved disagreements. " +
@@ -56,6 +58,11 @@ internal object CollaborationResearchArtifact {
         val json = JSONObject(text)
         require(json.optString("format") == FORMAT) { "format must be $FORMAT" }
         require(json.getString("summary").isNotBlank()) { "summary must not be blank" }
+        // Defaults belong to the decoded envelope; journals and retry identities retain the raw submission.
+        listOf("candidates", "findings").forEach { field ->
+            if (!json.has(field)) json.put(field, JSONArray())
+            require(json.optJSONArray(field) != null) { "$field must be an array when supplied" }
+        }
         val ids = mutableSetOf<String>()
         val candidates = json.getJSONArray("candidates")
         repeat(candidates.length()) {

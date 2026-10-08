@@ -35,6 +35,22 @@ class CollaborationMilestoneBridgeTest(unittest.TestCase):
         self.assertEqual({"mode": "list", "cursor": "opaque"}, validate_arguments({"mode": "list", "cursor": "opaque"}))
         self.assertEqual({"mode": "status"}, validate_arguments({"mode": "status"}))
         self.assertIn("not invalid artifact JSON", spec["description"])
+        self.assertIn("may be omitted and decode as []", spec["description"])
+
+    def test_minimal_envelope_reaches_phone_without_rewriting_retry_identity(self):
+        artifact = json.dumps({"format": "galaxyssi.research-artifact.v1", "summary": "Measurements",
+                              "workspace": [{"id": "data", "kind": "artifact", "title": "Observations",
+                                             "body": {"content": "Original synthetic observations"}}]}, indent=2)
+        arguments = {"mode": "publish", "milestone_id": "observations-v1", "artifact": artifact}
+        broker = MilestoneBroker()
+        def publish(request):
+            self.assertEqual(arguments, request["arguments"])
+            self.assertEqual(artifact, request["arguments"]["artifact"])
+            return broker.receive({**request, "type": RESPONSE,
+                                   "result": {"success": True, "status": "recorded", "assignment_completed": False}}, "phone")
+        result = broker.query(task, arguments, publish)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["assignment_completed"])
 
     def test_invalid_and_authority_fields_never_reach_transport(self):
         bad = [None, [], {}, {"mode": "read"}, {"mode": "list", "artifact": "x"},

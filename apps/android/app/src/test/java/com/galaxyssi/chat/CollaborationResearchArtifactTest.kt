@@ -34,6 +34,44 @@ class CollaborationResearchArtifactTest {
         assertTrue(CollaborationResearchArtifact.validationError(duplicate.toString()).contains("candidates[9].id"))
     }
 
+    @Test fun missingNotesDefaultOnlyInDecodedEnvelopeWithoutInventingFindings() {
+        val input = artifact().apply { remove("candidates"); remove("findings") }
+        val original = input.toString()
+        val decoded = requireNotNull(CollaborationResearchArtifact.decode(original))
+        assertEquals(0, decoded.getJSONArray("candidates").length())
+        assertEquals(0, decoded.getJSONArray("findings").length())
+        assertEquals(input.getJSONArray("memory").toString(), decoded.getJSONArray("memory").toString())
+        assertFalse(input.has("candidates")); assertFalse(input.has("findings"))
+        assertEquals(original, input.toString())
+        val handoff = JSONObject(CollaborationResearchArtifact.handoff(original, CollaborationResearchStage.EXPLORE))
+        assertEquals(decoded.toString(), handoff.toString())
+        assertFalse(handoff.optBoolean("unstructured"))
+        assertEquals(original, CollaborationResearchArtifact.compactHandoff(original, "a".repeat(64)))
+    }
+
+    @Test fun missingOneArrayDoesNotDiscardTheOtherAndMalformedSuppliedValuesStayInvalid() {
+        listOf("candidates", "findings").forEach { field ->
+            val other = if (field == "candidates") "findings" else "candidates"
+            val input = artifact().apply { remove(field) }
+            val decoded = requireNotNull(CollaborationResearchArtifact.decode(input.toString()))
+            assertEquals(0, decoded.getJSONArray(field).length())
+            assertEquals(input.getJSONArray(other).toString(), decoded.getJSONArray(other).toString())
+            listOf(JSONObject.NULL, "[]", JSONObject(), 0, false).forEach { bad ->
+                input.put(field, bad)
+                assertNull(CollaborationResearchArtifact.decode(input.toString()))
+                assertEquals("$field must be an array when supplied", CollaborationResearchArtifact.validationError(input.toString()))
+            }
+        }
+    }
+
+    @Test fun formatAndNonblankSummaryAreStillRequired() {
+        val minimal = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Observed result")
+        assertNotNull(CollaborationResearchArtifact.decode(minimal.toString()))
+        assertNull(CollaborationResearchArtifact.decode(JSONObject(minimal.toString()).apply { remove("format") }.toString()))
+        assertNull(CollaborationResearchArtifact.decode(JSONObject(minimal.toString()).apply { remove("summary") }.toString()))
+        assertNull(CollaborationResearchArtifact.decode(minimal.put("summary", " ").toString()))
+    }
+
     @Test fun historicalTruncatedWorkspaceDoesNotExposeRawJsonInConversation() {
         val header = "{\"format\":\"${CollaborationResearchArtifact.FORMAT}\",\"summary\":\"Useful public summary\",\"workspace\":[{"
         assertEquals("Useful public summary", CollaborationResearchArtifact.publicText(header))
