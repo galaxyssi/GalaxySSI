@@ -3,15 +3,18 @@ package com.galaxyssi.chat
 internal object CollaborationPredictionProtocol {
     fun instructions() = """
         For consequential uncertain choices, build a scoped task_environment_model from observed/assumed/unknown state,
-        competing transitions, confounders and an explicit defer option. Preregister action_forecast probabilities for common
-        observable events before acting; compare benefit, resources, uncertainty, reversibility and risk, not confidence alone.
+        competing transitions, confounders and an explicit defer option. Preregister observable expectations before acting;
+        use action_forecast prediction_mode=qualitative when probabilities are unknown. Do not invent numeric confidence or utility.
+        Compare benefit, resources, uncertainty, reversibility and risk, not confidence alone.
         Select the action yourself and bind prediction_work:{forecast:<exact ref>} to its named existing DAG work/member.
         Recheck preconditions on execution/resume; an old forecast never grants permission or proves the environment unchanged.
         Record prediction_outcome from original tools, including missing/failed evidence. Only the chosen action is observed;
-        alternative outcomes are untested counterfactuals. Use prediction_calibration to inspect scoped errors, then publish a
+        alternative outcomes are untested counterfactuals. Inspect qualitative contradictions or probabilistic prediction_calibration, then publish a
         corrected model with previous_model, feedback and a discriminating next test. Do not equate one good score with calibration.
-        When explanations compete, optional hypothesis_test compares expected information gain across experiments and updates
-        declared beliefs from one actual categorical observation. Use the result to choose useful probes, not repeated vague research.
+        When explanations compete, optional hypothesis_test identifies explicit prediction disagreements in qualitative mode,
+        or compares information gain under declared probabilities in probabilistic mode. Original observations can contradict
+        every proposed explanation; then revise the problem model or measurement, not force a winning explanation.
+        Use evidence to choose the next real probe or method, not repeated vague research. No observation is not a negative result.
         Reuse preserved outcomes rather than repeat completed side effects. Ordinary direct work does not require forecasting.
     """.trimIndent()
 
@@ -35,6 +38,12 @@ internal object CollaborationPredictionProtocol {
         Compare ALL registered actions using the SAME events and utility scale; include risks/costs as events when relevant.
         Probabilities are individual event marginals, not mutually exclusive labels; do not sum them to infer joint risk.
         The host computes linear expected utility but does not maximize it for you or certify declared utility/probabilities.
+        The default mode is probabilistic. With prediction_mode:"qualitative", omit utility_unit, utility_if_true,
+        utility_if_false and choices[].probabilities. Each choice instead has expectations:{<event id>:"expected|not_expected|unknown"}.
+        Include exactly all registered events for every action, including defer; use unknown where an action makes no prediction.
+        expected means the registered equality is predicted true; not_expected predicts it false. These are testable claims,
+        NOT calibrated certainty. All other source, event, choice rationale and work binding fields remain required.
+        Numeric utility/information gain and Brier scores stay null in qualitative mode, never zero or a fabricated probability.
         The validity deadline reflects environmental freshness, not a task timeout or permission. Register before observation.
         work[] uses prediction_work:{forecast:<exact ref>}; work ID, executor, original goal and criterion must match.
         Both live and next-round planners deliver immutable forecast/action context to actual workers. Recovery preserves the
@@ -49,6 +58,21 @@ internal object CollaborationPredictionProtocol {
         Tool failure or missing field is unobserved, never a false event. Empty/partial checks preserve incomplete evidence.
         Later evidence uses a new immutable outcome snapshot; never count snapshots of the same forecast twice in an aggregate.
         The host verifies original report provenance, not the semantic correctness of a self-written harness or causal attribution.
+
+        In qualitative mode, hypothesis_test instead uses {question,assumptions,prediction_basis,misspecification_check,
+          hypotheses:[{id,claim}],event_ids:[one or more registered events],
+          predictions:{<action id>:{<hypothesis id>:{<event id>:"expected|not_expected|unknown"}}}}.
+        Do not supply priors, likelihoods or prior_outcome. The host records event IDs with opposing explicit predictions for
+        each action; their count is NOT an information-gain or utility estimate. An uninformative experiment remains allowed
+        but visible as such. Choose based on actual decision gaps, feasibility and resources; do not maximize a label count.
+        Checks use ONE original measurement, not spliced trials. Failed/missing/stale fields and unknown expectations cannot
+        confirm or contradict a hypothesis. Outcomes preserve matched, contradicted and unresolved event IDs for each claim.
+        Consistency is not proof; contradictory evidence remains even when other predictions are unresolved. If all explanations
+        are contradicted, retain the raw result and propose new variables, assumptions or a different discriminating test.
+        Correct the task_environment_model using exact prediction_outcome feedback and publish a NEW forecast before a new
+        experiment. Do not silently edit claims or convert these labels into Bayesian posterior weights.
+        Use original observation fields with existing workflow observed_inputs to drive subsequent admitted work where applicable;
+        the forecast report alone neither chooses nor executes the next action and does not prove a method is better.
 
         Optional action_forecast.hypothesis_test:{question,assumptions,likelihood_basis,misspecification_check,
           hypotheses:[{id,claim,prior:<probability>}],event_ids:[registered categorical event IDs],
@@ -75,6 +99,7 @@ internal object CollaborationPredictionProtocol {
 
         prediction_calibration:{task_environment_model:<exact ref>,outcomes:[exact prediction_outcome refs],sampling_scope,
           selection_bias,limitations,next_test}. The host reports event counts, missingness and mean Brier score for that exact model.
+        Calibration accepts probabilistic outcomes only; qualitative contradictions must not be pooled as perfect probability scores.
         This is a selected-sample accuracy score, NOT a proof of calibration, independence, model improvement or optimal decisions.
         Retain errors, examine domain/selection bias and correlated outcomes; test corrected models on NEW held-out future actions.
         No prediction or simulation fulfills physical experiment acceptance, installs tools, expands authority or stops a goal.
