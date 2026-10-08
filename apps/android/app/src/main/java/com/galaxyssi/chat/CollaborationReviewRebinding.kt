@@ -17,10 +17,13 @@ internal object CollaborationReviewRebinding {
         If an existing independent VERIFY/CHALLENGE has not been admitted and its published inputs are sufficient,
         you may bind that same review to exact interim versions instead of duplicating it. Add optional
         rebind_reviews:[{"work_id":"existing review ID","expected_revision":0,"reason":"why these versions suffice",
-        "inputs":[{"dependency":"reviewed producer work ID","uses_milestones":["exact host token"]}]}].
+        "inputs":[{"dependency":"existing prerequisite work ID","uses_milestones":["exact host token"]}]}].
         Copy input_revision from the inventory. This keeps the reviewer, assignment, independence and goal unchanged.
-        Each replaced dependency must be an actual review subject and every token must come from that exact producer.
-        Retain other prerequisites, including the reviewer's independent exploration; never interrupt or contaminate it.
+        Every token must come from that exact dependency's producer. The host preserves each input's existing role:
+        review subject or supporting prerequisite. A reviewer's own frozen test data may replace waiting for its whole
+        exploration report, but the reviewed candidate still requires a different author. Bind only if those exact
+        versions suffice for the original assignment; retain every unpublished prerequisite. Never interrupt or
+        contaminate ongoing exploration, and never treat a frozen dataset as proof of scientific independence.
         QUEUED alone does not authorize rebinding: the host rejects admitted, running, ended, stale or uncertain work.
         The resulting review covers ONLY those pinned versions, not later work or the author's entire assignment.
         Do not use rebinding when the assignment still needs unpublished inputs; explain why waiting or a distinct check is useful.
@@ -82,6 +85,11 @@ internal object CollaborationReviewRebinding {
                     CollaborationMilestoneDispatch.strings(member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES])).toSet()
             val removed = linkedSetOf<String>()
             val tokens = linkedSetOf<String>()
+            val previous = CollaborationMilestoneDispatch.inputs(member)
+            val reviewedTokens = member.context[CollaborationReviewTargets.MILESTONE_CONTEXT]?.takeIf(String::isNotBlank)
+                ?.let(CollaborationMilestoneDispatch::strings)?.toMutableSet()
+                ?: previous.mapTo(linkedSetOf()) { it.getString("token") }
+            val roles = JSONObject()
             repeat(inputs.length()) { at ->
                 val input = inputs.getJSONObject(at)
                 require(input.keys().asSequence().toSet() == setOf("dependency", CollaborationMilestoneDispatch.USES)) {
@@ -89,9 +97,11 @@ internal object CollaborationReviewRebinding {
                 }
                 val dependency = input.getString("dependency")
                 val producer = requireNotNull(work[dependency]) { "Unknown producer $dependency" }
-                require(producer.memberId in member.dependsOnAgentIds && dependency in targets && removed.add(dependency)) {
-                    "Only a unique current review-subject dependency can be replaced; retain other required inputs"
+                require(producer.memberId in member.dependsOnAgentIds && removed.add(dependency)) {
+                    "Only a unique current input dependency can be replaced; retain other required inputs"
                 }
+                val subject = dependency in targets
+                roles.put(dependency, if (subject) "review_subject" else "prerequisite")
                 val uses = CollaborationMilestoneDispatch.uses(input)
                 require(uses.isNotEmpty() && uses.size == input.getJSONArray(CollaborationMilestoneDispatch.USES).length()) {
                     "A replaced dependency needs unique exact milestone tokens"
@@ -100,24 +110,28 @@ internal object CollaborationReviewRebinding {
                     val milestone = requireNotNull(milestones[token]) { "Unknown or ungranted milestone for $dependency" }
                     require(milestone.getString("producer_node") == producer.memberId &&
                         milestone.getString("person_id") == producer.context[CollaborationResearchWorkflow.PERSON] &&
-                        milestone.getString("person_id") != member.context[CollaborationResearchWorkflow.PERSON] &&
+                        milestone.getString("person_id").isNotBlank() &&
+                        (!subject || milestone.getString("person_id") != member.context[CollaborationResearchWorkflow.PERSON]) &&
                         milestone.getJSONArray("grants").length() > 0) {
-                        "Milestone must belong to the exact reviewed producer and an independent author"
+                        "Milestone must belong to the exact input producer; reviewed subjects require an independent author"
                     }
                     tokens += token
+                    if (subject) reviewedTokens += token
                 }
             }
-            val previous = CollaborationMilestoneDispatch.inputs(member)
             val pinned = (previous + tokens.sorted().map(milestones::getValue)).distinctBy { it.getString("token") }
+            require((targets - removed).isNotEmpty() || reviewedTokens.isNotEmpty()) { "An independent review must retain its reviewed subject" }
             val history = JSONArray(member.context[HISTORY] ?: "[]").put(JSONObject()
                 .put("revision", before + 1).put("previous_revision", before).put("work_id", id)
                 .put("planner_node", planner.memberId).put("recorded_at", now).put("reason", reason)
                 .put("replaced_dependencies", JSONArray(removed.toList()))
+                .put("input_roles", roles)
                 .put("uses_milestones", JSONArray(tokens.toList())))
             changed[member.memberId] = member.copy(
                 dependsOnAgentIds = member.dependsOnAgentIds - removed.map { work.getValue(it).memberId }.toSet(),
                 context = member.context + CollaborationMilestoneDispatch.context(pinned) + mapOf(
                     REVISION to (before + 1).toString(), HISTORY to history.toString(),
+                    CollaborationReviewTargets.MILESTONE_CONTEXT to JSONArray(reviewedTokens.sorted()).toString(),
                     CollaborationReviewTargets.CONTEXT to JSONArray((targets - removed).sorted()).toString()))
         }
         return record.copy(definition = record.definition.copy(members = record.definition.members.map { changed[it.memberId] ?: it }))

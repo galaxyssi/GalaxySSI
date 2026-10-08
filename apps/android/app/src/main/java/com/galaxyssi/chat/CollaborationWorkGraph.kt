@@ -54,11 +54,12 @@ internal object CollaborationWorkGraph {
             require(dependencies.all { it in byId || it in finished }) { "Unknown or unfinished dependency for $id" }
             val targets = CollaborationReviewTargets.read(item)
             val milestones = CollaborationMilestoneDispatch.uses(item)
+            val reviewMilestones = CollaborationReviewTargets.milestones(item)
             require(milestones.all { !milestoneAuthors[it].isNullOrBlank() }) { "Unknown or ungranted milestone for $id" }
             if (item.optBoolean("independent_review")) {
-                require(targets.isNotEmpty() || milestones.isNotEmpty()) { "Independent review $id must name the work being reviewed" }
-                require(milestones.all { milestoneAuthors[it] != item.optString("member") }) {
-                    "Independent review $id requires a different author for each milestone"
+                require(targets.isNotEmpty() || reviewMilestones.isNotEmpty()) { "Independent review $id must name the work being reviewed" }
+                require(reviewMilestones.all { milestoneAuthors[it] != item.optString("member") }) {
+                    "Independent review $id requires a different author for each reviewed milestone"
                 }
                 targets.forEach { dependency ->
                     val author = if (dependency in finished) finishedAuthors[dependency] else byId[dependency]?.optString("member")

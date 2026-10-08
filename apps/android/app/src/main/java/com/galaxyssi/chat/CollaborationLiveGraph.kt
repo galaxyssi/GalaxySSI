@@ -27,7 +27,8 @@ internal object CollaborationLiveGraph {
         To consume a published interim version before its author finishes, add uses_milestones:["exact host token"]
         to the new work item. This grants ONLY the listed versions and their recorded observations; it does not
         wait for, finish, or reveal the author's other work. Use depends_on when the entire assignment must finish.
-        For an independent milestone review, use a different author; all listed milestones are review subjects.
+        For an independent milestone review, use a different author for each review subject. Keep frozen supporting
+        inputs in uses_milestones and use review_milestones to distinguish them from the reviewed candidates.
         New interim checks may use new work items; existing queued reviews may use the version-binding contract below.
         candidate_cycles still require their completed-producer contract.
         The live inventory separates RUNNING, QUEUED, RESULT_PENDING and unobserved work; dependency_state and
@@ -187,6 +188,7 @@ internal object CollaborationLiveGraph {
                     original.optString("dependency_policy", "success") == item.optString("dependency_policy", "success") &&
                     original.optBoolean("independent_review") == item.optBoolean("independent_review") &&
                     CollaborationReviewTargets.read(original) == CollaborationReviewTargets.read(item) &&
+                    CollaborationReviewTargets.milestones(original) == CollaborationReviewTargets.milestones(item) &&
                     CollaborationMilestoneDispatch.uses(original) == CollaborationMilestoneDispatch.uses(item)) {
                     "Cannot rewrite existing work $id; a materially different task needs a new ID"
                 }
@@ -260,6 +262,8 @@ internal object CollaborationLiveGraph {
                   observed: Map<String, AgentSubagentStatus> = emptyMap()): String {
         val work = definition.members.filter { !it.context[CollaborationGoalLoop.WORK_ID].isNullOrBlank() }
         val byId = definition.members.associateBy { it.memberId }
+        val published = definition.members.flatMap(CollaborationMilestoneDispatch::inputs)
+            .distinctBy { it.getString("token") }.groupBy { it.getString("producer_node") }
         fun workId(id: String) = byId[id]?.context?.get(CollaborationGoalLoop.WORK_ID).orEmpty().ifBlank { id }
         // A transport/UI terminal observation is not a committed scheduler result.
         fun status(id: String) = completed[id]?.status?.name ?: observed[id]?.let {
@@ -291,10 +295,15 @@ internal object CollaborationLiveGraph {
                     else -> "satisfied"
                 })
                 .put("depends_on", JSONArray(dependencies.map(::workId)))
-                .put("waiting_for", JSONArray(waiting.map { JSONObject().put("id", workId(it)).put("status", status(it)) }))
+                .put("waiting_for", JSONArray(waiting.map { dependency ->
+                    JSONObject().put("id", workId(dependency)).put("status", status(dependency))
+                        .put("input_role", if (workId(dependency) in reviewTargets) "review_subject" else "prerequisite")
+                        .put("published_milestones", JSONArray(published[dependency].orEmpty().map { it.getString("token") }))
+                }))
                 .put("unsuccessful_dependencies", JSONArray(unsuccessful.map(::workId)))
                 .put("independent_review", independent)
                 .put("review_targets", JSONArray(reviewTargets.sorted()))
+                .put(CollaborationReviewTargets.MILESTONES, JSONArray(CollaborationReviewTargets.milestones(member).sorted()))
                 .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.inputs(member).map { it.getString("token") }))
             val size = item.toString().length
             if (size > remaining) break
@@ -304,6 +313,7 @@ internal object CollaborationLiveGraph {
         return JSONObject().put("items", items).put("total", work.size).put("omitted", work.size - items.length())
             .put("note", "Dispatch-time snapshot, not a live subscription or quality verdict. Dependency satisfaction does not mean running; " +
                 "QUEUED may still wait for capacity. RESULT_PENDING is not committed completion. " +
+                "Published milestones are exact available versions, not a sufficiency or independence verdict. " +
                 "Recent compact inventory only; omitted work is unknown, not absent. The host retains all assignments and rejects conflicting work IDs.").toString()
     }
 

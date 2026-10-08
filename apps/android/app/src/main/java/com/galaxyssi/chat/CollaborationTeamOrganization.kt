@@ -62,6 +62,11 @@ internal object CollaborationTeamOrganization {
                 if (item.has(CollaborationReviewTargets.FIELD) &&
                     CollaborationReviewTargets.read(item) != CollaborationWorkGraph.dependencies(item))
                     put(JSONArray(CollaborationReviewTargets.read(item).sorted()))
+                val uses = CollaborationMilestoneDispatch.uses(item)
+                if (item.has(CollaborationReviewTargets.MILESTONES) && CollaborationReviewTargets.milestones(item) != uses) {
+                    put(JSONObject().put(CollaborationMilestoneDispatch.USES, JSONArray(uses.sorted()))
+                        .put(CollaborationReviewTargets.MILESTONES, JSONArray(CollaborationReviewTargets.milestones(item).sorted())))
+                }
             }.toString().toByteArray(Charsets.UTF_8)).toString()
 
     fun validateWork(work: List<JSONObject>, checkpoint: Checkpoint) {
