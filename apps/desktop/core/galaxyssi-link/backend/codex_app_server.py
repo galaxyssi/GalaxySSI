@@ -198,13 +198,14 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, experiment_boundary=None) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, experiment_boundary=None) -> None:
         self.executable = executable
         self.env = dict(env) if experiment_boundary is not None else env
         self.on_event = on_event
         self._experiment_boundary = experiment_boundary
         self._collaboration_recall = collaboration_recall
         self._collaboration_publish = collaboration_publish
+        self._collaboration_file = collaboration_file
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
         self._process_start_lock = threading.RLock()
@@ -228,10 +229,14 @@ class CodexAppServer:
         if collaboration_recall is not None and collaboration_publish is not None:
             from collaboration_text_artifact import tool_spec
             self._dynamic_tools.append(tool_spec())
+            if collaboration_file is not None:
+                from collaboration_file_artifact import tool_spec
+                self._dynamic_tools.append(tool_spec())
         if experiment_boundary is not None:
             self._dynamic_tools = []
             self._collaboration_recall = None
             self._collaboration_publish = None
+            self._collaboration_file = None
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -2161,8 +2166,9 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact"}:
-                callback = self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish
+            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact"}:
+                callback = (self._collaboration_file if tool_name == "collaboration_file_artifact" else
+                            self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish)
                 with self._lock:
                     run = self._runs.get(task_id)
                     if (run is None or run.finished or callback is None
@@ -2174,15 +2180,19 @@ class CodexAppServer:
                         return (self._runs.get(task_id) is run and not run.finished
                                 and common.get("thread_id", run.thread_id) == run.thread_id
                                 and common.get("turn_id", run.turn_id) == run.turn_id)
-                if tool_name == "collaboration_text_artifact":
-                    if (self._collaboration_recall is None or run.sandbox not in {"workspace-write", "danger-full-access"}
+                if tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
+                    if (self._collaboration_recall is None or self._collaboration_publish is None
+                            or run.sandbox not in {"workspace-write", "danger-full-access"}
                             or run.execution_policy.execution_mode.value == "plan_only"
                             or "screen_analysis" in run.execution_policy.task_intent_signals):
                         raise ValueError("This task cannot create collaboration file artifacts")
-                    from collaboration_text_artifact import execute
-                    recalled = execute(task_id, run.working_directory, arguments, active=active,
-                        publish=lambda values: self._collaboration_publish(task_id, values, active),
-                        recall=lambda values: self._collaboration_recall(task_id, values, active))
+                    if tool_name == "collaboration_file_artifact":
+                        recalled = callback(task_id, run.working_directory, arguments, active)
+                    else:
+                        from collaboration_text_artifact import execute
+                        recalled = execute(task_id, run.working_directory, arguments, active=active,
+                            publish=lambda values: self._collaboration_publish(task_id, values, active),
+                            recall=lambda values: self._collaboration_recall(task_id, values, active))
                 else:
                     recalled = callback(task_id, arguments, active)
                 result = {"success": recalled.get("success") is True,
@@ -2224,7 +2234,7 @@ class CodexAppServer:
         except Exception as exc:
             log.exception("GalaxySSI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
             from collaboration_transport_feedback import model_failure_result
-            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact"} else None
+            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact"} else None
             result = structured or {
                 "success": False,
                 "contentItems": [{
@@ -2252,10 +2262,10 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
-        if tool_name == "collaboration_text_artifact":
+        if tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
             self.on_event(task_id, {**dict(common), "status": "running",
                 "current_step": "Collaboration file handoff returned" if result.get("success") else "Collaboration file handoff needs attention",
-                "trace_stage": "collaboration_text_artifact_returned", "telemetry_only": True})
+                "trace_stage": tool_name + "_returned", "telemetry_only": True})
             return
         if tool_name == "collaboration_publish":
             publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability"}

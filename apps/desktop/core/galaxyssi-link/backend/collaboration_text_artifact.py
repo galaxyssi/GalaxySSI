@@ -189,7 +189,7 @@ def _freeze(root, task_id, arguments):
         return request
 
 
-def _materialize(root, arguments, recall, active):
+def read_workspace_artifact(arguments, recall, active):
     offset, total, chunks = 0, None, []
     while True:
         if not active():
@@ -197,7 +197,7 @@ def _materialize(root, arguments, recall, active):
         result = recall({"mode": "workspace", "object_id": arguments["object_id"],
                          "revision": arguments["revision"], "offset": offset})
         if result.get("success") is not True:
-            return result
+            return {**result, "success": False}
         content = result.get("content")
         size = result.get("total_characters")
         if not isinstance(content, str) or type(size) is not int or not 0 < size <= MAX_BYTES * 2:
@@ -220,6 +220,13 @@ def _materialize(root, arguments, recall, active):
             or type(saved.get("revision")) is not int or saved["revision"] != arguments["revision"]
             or saved.get("sha256") != arguments["sha256"] or saved.get("kind") != "artifact"):
         raise ValueError("Artifact workspace identity does not match the requested version")
+    return saved
+
+
+def _materialize(root, arguments, recall, active):
+    saved = read_workspace_artifact(arguments, recall, active)
+    if saved.get("success") is False:
+        return saved
     body = saved.get("body")
     if (not isinstance(body, dict) or body.get("format") != FORMAT or body.get("encoding") != "utf-8"
             or not isinstance(body.get("content"), str) or type(body.get("size_bytes")) is not int
