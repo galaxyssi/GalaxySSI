@@ -17,6 +17,15 @@ internal object CollaborationScopedRecall {
         if (input.containsKey("section") && input["mode"] != "goal_contract")
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Section is only supported for goal/context recall.")
         return when (input["mode"]) {
+            CollaborationCoordinatorUpdates.MODE -> {
+                if (input.keys.any { it !in setOf("mode", "cursor") } || input.containsKey("cursor") && input["cursor"] !is String)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Team updates accept only mode and cursor.")
+                try { AgentNativeToolExecutionResult.success(CollaborationCoordinatorUpdates.read(context, access,
+                    input["cursor"] as? String ?: "").toNativeObject()) }
+                catch (invalid: IllegalArgumentException) {
+                    AgentNativeToolExecutionResult.failure("updates_unavailable", invalid.message.orEmpty())
+                }
+            }
             CollaborationNumericFeedback.MODE -> {
                 val revision = input["revision"]
                 if (input["object_id"] !is String || input["sha256"] !is String || revision !is Number ||
@@ -113,6 +122,7 @@ internal object CollaborationScopedRecall {
                     ("trust" to "host_goal_contract_not_comprehension_or_claim_verification"))
             }
             "evidence" -> {
+                val access = CollaborationCoordinatorUpdates.readAccess(context, access)
                 val ledger = CollaborationEvidenceLedger(context)
                 val id = input["evidence_id"] as? String ?: ""
                 if (id.isNotBlank()) {
@@ -141,6 +151,7 @@ internal object CollaborationScopedRecall {
                 }
             }
             "workspace" -> {
+                val access = CollaborationCoordinatorUpdates.readAccess(context, access)
                 val workspace = CollaborationResearchWorkspace(context)
                 val id = input["object_id"] as? String ?: ""
                 if (id.isNotBlank()) {
@@ -153,7 +164,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules, numeric_cases or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules, numeric_cases, team_updates or problems for scoped recall.")
         }
     }
 

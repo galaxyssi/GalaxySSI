@@ -7,7 +7,7 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.4.0", title = context.getString(R.string.collaboration_recall_title),
+            id = ID, version = "1.5.0", title = context.getString(R.string.collaboration_recall_title),
             description = context.getString(R.string.collaboration_recall_description),
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
@@ -38,9 +38,9 @@ internal object CollaborationRecallNativeTool {
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
-            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE)) {
+            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE)) {
                 val source = call.context.collaborationSourceMessageId
-                if (source == null && call.input["mode"] in setOf("goal_contract", "archive", "capabilities", "method_history", CollaborationNumericFeedback.MODE))
+                if (source == null && call.input["mode"] in setOf("goal_contract", "archive", "capabilities", "method_history", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE))
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "Goal contract recall requires an exact member binding.")
                 val access = if (source != null) CollaborationEvidenceLedger(context).binding(source, group, call.context.turnId)
                     ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "No exact member binding.")

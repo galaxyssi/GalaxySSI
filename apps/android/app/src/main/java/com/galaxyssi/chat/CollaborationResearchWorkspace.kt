@@ -168,6 +168,19 @@ internal class CollaborationResearchWorkspace(
         CollaborationMilestoneJournal(rows, access).page(cursor)
     }
 
+    fun coordinatorUpdates(access: CollaborationWorkspaceAccess, cursor: String, covered: Set<String>,
+                           producers: Set<String>): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationCoordinatorJournal(rows, access).page(cursor) { offered ->
+            pendingMilestones(access, covered + offered, producers)
+        }
+    }
+
+    fun coordinatorOffered(access: CollaborationWorkspaceAccess): List<JSONObject> = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationCoordinatorJournal(rows, access).offered()
+    }
+
     fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis(),
                 candidateTask: JSONObject? = null): JSONObject = publishInternal(access, raw, now, candidateTask, false)
 

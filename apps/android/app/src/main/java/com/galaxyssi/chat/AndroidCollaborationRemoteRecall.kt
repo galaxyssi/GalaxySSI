@@ -37,7 +37,7 @@ internal object AndroidCollaborationRemoteRecall {
                 }
                 else if (request.getString("phase") == "confirm") deliveries.confirm(request, binding) { arguments, hash ->
                     if (access(app, request, desktop) != binding) null
-                    else CollaborationEvidenceLedger(app).confirmPage(binding, arguments.getString("evidence_id"),
+                    else CollaborationEvidenceLedger(app).confirmPage(CollaborationCoordinatorUpdates.readAccess(app, binding), arguments.getString("evidence_id"),
                         arguments.getString("sha256"), arguments.optInt("offset", 0), hash)
                 } else {
                     val sync = AndroidCollaborationRemoteEvidence.refresh(app, request, desktop, binding)

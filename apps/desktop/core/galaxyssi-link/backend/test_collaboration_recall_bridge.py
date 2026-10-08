@@ -14,6 +14,27 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_coordinator_updates_keep_phone_authority_and_cursor_without_auto_confirm(self):
+        broker = RecallBroker()
+        arguments = {"mode": "team_updates", "cursor": "a" * 64 + ":3"}
+        expected = {"success": True, "milestones": [], "next_cursor": arguments["cursor"], "caught_up_at_read": True}
+        calls = []
+        def publish(request):
+            calls.append(request)
+            self.assertEqual(arguments, request["arguments"])
+            self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": expected}, "other-phone"))
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": expected}, "phone"))
+            return True
+        self.assertEqual(expected, broker.query(task, arguments, publish))
+        self.assertEqual(["read"], [call["phase"] for call in calls])
+        self.assertEqual({}, broker._pending)
+        for selector in ("query", "object_id", "section", "record_id", "topic", "group_id", "member_id"):
+            with self.assertRaises(ValueError):
+                validate_arguments({**arguments, selector: "x"})
+        for cursor in (None, 1, True, "x" * 513):
+            with self.assertRaises(ValueError):
+                validate_arguments({**arguments, "cursor": cursor})
+
     def test_goal_section_is_forwarded_exactly_with_existing_task_authority(self):
         broker = RecallBroker()
         for section in ("goal", "criteria", "source", "context:Dependency evidence", "context:\u539f\u59cb\u6750\u6599"):
