@@ -13,6 +13,8 @@ internal object CollaborationMilestoneTool {
         "Use mode=status when availability is unknown; it reports the current assignment without mutation. " +
         "An unavailable capability is not invalid artifact JSON and cannot be repaired by retrying publication. " +
         "mode=publish requires stable milestone_id and artifact (a JSON string using galaxyssi.research-artifact.v1 with nonempty workspace). " +
+        "Include format, nonblank summary and workspace; empty top-level candidates/findings may be omitted and decode as []. " +
+        "Supplied arrays and typed workspace bodies remain validated; defaults do not supply evidence. " +
         "Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. " +
         "Use a new ID and exact object_id/base_revision for a substantive revision. " +
         "mode=list with optional cursor recovers this assignment's committed milestone IDs; follow next_cursor. " +

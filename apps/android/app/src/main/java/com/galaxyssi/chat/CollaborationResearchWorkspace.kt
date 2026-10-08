@@ -232,7 +232,7 @@ internal class CollaborationResearchWorkspace(
         val writes = linkedMapOf<String, String>()
         val result = runCatching {
             retirement.requireOwnership(candidateTask)
-            requireNotNull(artifact) { "Return a valid ${CollaborationResearchArtifact.FORMAT} object with summary, candidates and findings: " +
+            requireNotNull(artifact) { "Return a valid ${CollaborationResearchArtifact.FORMAT} object with a nonblank summary (empty candidates/findings may be omitted): " +
                 CollaborationResearchArtifact.validationError(raw) }
             val changes = changes ?: if (candidateTask == null) JSONArray() else
                 throw IllegalArgumentException("Candidate task requires a workspace revision/event")
