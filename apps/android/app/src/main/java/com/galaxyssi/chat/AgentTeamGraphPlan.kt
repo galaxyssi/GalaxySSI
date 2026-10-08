@@ -24,7 +24,8 @@ internal object AgentTeamGraphPlan {
                 provenance = AgentSubagentProvenance(source = "agent-team", sourceId = definition.teamId, traceId = request.runId,
                     metadata = mapOf("delivery_mode" to member.deliveryMode.name, "role" to member.role.take(80),
                         "agent_id" to member.agentId, "instance_id" to member.memberId, "task_id" to request.taskId.take(160),
-                        "execution_lane" to lane.name.lowercase())), executionLane = lane)
+                        "execution_lane" to lane.name.lowercase())), executionLane = lane,
+                dependencyRevision = CollaborationReviewRebinding.revision(member))
         }
         return AgentSubagentPlan(supervisorId = request.runId, children = children,
             provenance = AgentSubagentProvenance(source = "agent-team-supervisor", sourceId = definition.teamId, traceId = request.runId,

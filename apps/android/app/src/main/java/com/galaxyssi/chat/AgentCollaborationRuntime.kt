@@ -208,7 +208,8 @@ private fun AgentTeamExecutionRecord.liveGraphCheckpoint() = AgentTeamExecutionC
 private fun retainTeamEvents(events: List<AgentSubagentEvent>): List<AgentSubagentEvent> {
     val anchors = (events.filter { it.childId.isNotBlank() }.groupBy { it.childId }
         .values.map { it.maxBy(AgentSubagentEvent::sequence) } + listOfNotNull(events.lastOrNull { it.childId.isBlank() }) +
-        events.filter { it.result != null }).distinctBy { it.sequence }
+        events.filter { it.result != null } + events.filter { it.kind == AgentSubagentEventKinds.CHILD_ADMITTED }
+            .groupBy { it.childId }.values.map { it.maxBy(AgentSubagentEvent::sequence) }).distinctBy { it.sequence }
     // Per-node and supervisor checkpoints are required even when a growing graph exceeds the trace-tail target.
     val retained = anchors + events.takeLast((InMemoryAgentTeamExecutionStore.MAX_EVENTS_PER_RUN - anchors.size).coerceAtLeast(0))
     return retained.distinctBy { it.sequence }.sortedBy { it.sequence }
@@ -236,7 +237,8 @@ interface AgentTeamExecutionStore : AgentSubagentEventHook {
     fun historicalDeliveryPage(supervisorRunId: String, after: String, limit: Int): List<Pair<String, AgentTeamExecutionCheckpoint>> = emptyList()
     fun advanceGoal(supervisorRunId: String, expectedPrimary: String, nowMillis: Long, wakeBlocked: Boolean = false): Boolean = false
     fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
-                            nowMillis: Long, candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY): AgentTeamExecutionCheckpoint? = null
+                            nowMillis: Long, candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY,
+                            admittedIds: Set<String>? = null): AgentTeamExecutionCheckpoint? = null
     fun reconcileGoalRecruits(supervisorRunId: String, expectedPrimary: String,
                              project: (List<AgentTeamMember>) -> Map<String, String>): Boolean = true
     fun requeueUndispatched(supervisorRunId: String, wasNotDispatched: (String) -> Boolean) = Unit
@@ -315,10 +317,10 @@ class InMemoryAgentTeamExecutionStore(private val recruitmentNames: () -> List<S
 
     @Synchronized
     override fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
-                                     nowMillis: Long, candidateAdmission: Int): AgentTeamExecutionCheckpoint? {
+                                     nowMillis: Long, candidateAdmission: Int, admittedIds: Set<String>?): AgentTeamExecutionCheckpoint? {
         val current = records[supervisorRunId]?.takeIf { it.definition.primaryMemberId == expectedPrimary } ?: return null
         val next = CollaborationLiveGraph.update(current, completedIds, nowMillis, candidateWorkspace,
-            candidateControl(supervisorRunId), candidateAdmission, milestoneWorkspace)
+            candidateControl(supervisorRunId), candidateAdmission, milestoneWorkspace, admittedIds)
         records[supervisorRunId] = next
         return next.liveGraphCheckpoint()
     }
@@ -494,10 +496,10 @@ class EncryptedAgentTeamExecutionStore internal constructor(
     }
 
     override fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
-                                     nowMillis: Long, candidateAdmission: Int): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
+                                     nowMillis: Long, candidateAdmission: Int, admittedIds: Set<String>?): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
         val current = record(supervisorRunId)?.takeIf { it.definition.primaryMemberId == expectedPrimary } ?: return@synchronized null
         val next = CollaborationLiveGraph.update(current, completedIds, nowMillis, candidateWorkspace,
-            candidateControl(supervisorRunId), candidateAdmission, milestoneWorkspace)
+            candidateControl(supervisorRunId), candidateAdmission, milestoneWorkspace, admittedIds)
         if (next != current) write(next)
         next.liveGraphCheckpoint()
     }
@@ -675,7 +677,7 @@ class AgentTeamExecutionRuntime(
 ) : Closeable {
     private val candidateAdmission = limits.maxConcurrency
     private val projectedRuns = ConcurrentHashMap.newKeySet<String>()
-    private val liveGraphs = ConcurrentHashMap<String, (Set<String>) -> AgentSubagentPlan>()
+    private val liveGraphs = ConcurrentHashMap<String, (Set<String>, Set<String>) -> AgentSubagentPlan>()
     private val runtime = AgentSubagentRuntime(limits = limits, eventHook = AgentSubagentEventHook { event ->
         store.append(event)
         publishSnapshot(event.supervisorId)
@@ -688,8 +690,13 @@ class AgentTeamExecutionRuntime(
             store.append(event)
             publishSnapshot(event.supervisorId)
             if (event.runStatus != null) liveGraphs.remove(event.supervisorId)
-        }, graphExpansion = AgentSubagentExpansionHook { plan, completed ->
-            liveGraphs[plan.supervisorId]?.invoke(completed.keys) ?: plan
+        }, graphExpansion = object : AgentSubagentExpansionHook {
+            override suspend fun expand(plan: AgentSubagentPlan, completed: Map<String, AgentSubagentChildResult>) =
+                expandWithAdmissions(plan, completed, plan.children.mapTo(hashSetOf()) { it.childId })
+
+            override suspend fun expandWithAdmissions(plan: AgentSubagentPlan,
+                completed: Map<String, AgentSubagentChildResult>, admitted: Set<String>) =
+                liveGraphs[plan.supervisorId]?.invoke(completed.keys, admitted) ?: plan
         })
     private val milestoneSubscription = CollaborationMilestoneSignals.subscribe { runId ->
         if (liveGraphs.containsKey(runId)) researchRuntime.requestExpansion(runId)
@@ -735,9 +742,9 @@ class AgentTeamExecutionRuntime(
             checkpoint?.completed.orEmpty(), checkpoint?.lastSequence ?: 0L))
         val research = CollaborationResearchWorkflow.isResearch(normalizedMembers)
         if (research && CollaborationLiveGraph.enabled(normalizedDefinition)) {
-            liveGraphs[request.runId] = { completed ->
+            liveGraphs[request.runId] = { completed, admitted ->
                 val next = requireNotNull(store.expandResearchGraph(request.runId, normalizedDefinition.primaryMemberId,
-                    completed, System.currentTimeMillis(), candidateAdmission)) { "The durable research graph was removed or superseded" }
+                    completed, System.currentTimeMillis(), candidateAdmission, admitted)) { "The durable research graph was removed or superseded" }
                 validate(next.definition)
                 currentGraph.set(next)
                 memberById.putAll(next.definition.members.associateBy(AgentTeamMember::memberId))

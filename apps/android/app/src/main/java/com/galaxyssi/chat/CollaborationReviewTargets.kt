@@ -24,7 +24,9 @@ internal object CollaborationReviewTargets {
                 "$prefix[$index] must be a nonblank, unique work ID"
             }
         }
-        require(targets.isNotEmpty()) { "$prefix cannot be empty for an independent review" }
+        require(targets.isNotEmpty() || CollaborationMilestoneDispatch.uses(item).isNotEmpty()) {
+            "$prefix cannot be empty without exact milestone review subjects"
+        }
         require(CollaborationWorkGraph.dependencies(item).containsAll(targets)) {
             "$prefix must be a subset of depends_on; retain every input dependency"
         }
@@ -32,7 +34,7 @@ internal object CollaborationReviewTargets {
     }
 
     fun context(item: JSONObject): Map<String, String> = mapOf(CONTEXT to
-        if (item.optBoolean("independent_review") && read(item).isNotEmpty()) JSONArray(read(item).sorted()).toString() else "")
+        if (item.optBoolean("independent_review") && (item.has(FIELD) || read(item).isNotEmpty())) JSONArray(read(item).sorted()).toString() else "")
 
     fun restore(item: JSONObject, context: Map<String, String>): JSONObject = item.apply {
         context[CONTEXT]?.takeIf(String::isNotBlank)?.let { put(FIELD, JSONArray(it)) }

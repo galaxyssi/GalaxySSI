@@ -100,7 +100,9 @@ data class AgentSubagentChild(
     val dependencyPolicy: AgentSubagentDependencyPolicy = AgentSubagentDependencyPolicy.REQUIRE_SUCCESS,
     val context: String = "",
     val provenance: AgentSubagentProvenance = AgentSubagentProvenance(),
-    val executionLane: AgentSubagentExecutionLane = AgentSubagentExecutionLane.WORK
+    val executionLane: AgentSubagentExecutionLane = AgentSubagentExecutionLane.WORK,
+    /** Host-owned version of a dependency binding; only unadmitted work may advance it. */
+    val dependencyRevision: Long = 0
 )
 
 data class AgentSubagentPlan(
@@ -114,12 +116,15 @@ data class AgentSubagentPlan(
     val preserveChildOrder: Boolean = false
 )
 
-/** Persists an append-only update before returning; called serially only for explicitly barrier-enabled plans. */
+/** Persists a graph checkpoint before returning; called serially for explicitly barrier-enabled plans. */
 fun interface AgentSubagentExpansionHook {
     suspend fun expand(
         plan: AgentSubagentPlan,
         completed: Map<String, AgentSubagentChildResult>
     ): AgentSubagentPlan
+
+    suspend fun expandWithAdmissions(plan: AgentSubagentPlan, completed: Map<String, AgentSubagentChildResult>,
+                                     admitted: Set<String>): AgentSubagentPlan = expand(plan, completed)
 }
 
 data class AgentSubagentDependencyHandoff(
@@ -202,6 +207,7 @@ object AgentSubagentEventKinds {
     const val SUPERVISOR_FAILED = "subagent.supervisor.failed"
     const val SUPERVISOR_CANCELLED = "subagent.supervisor.cancelled"
     const val CHILD_QUEUED = "subagent.child.queued"
+    const val CHILD_ADMITTED = "subagent.child.admitted"
     const val CHILD_RUNNING = "subagent.child.running"
     const val CHILD_SUCCEEDED = "subagent.child.succeeded"
     const val CHILD_FAILED = "subagent.child.failed"
@@ -514,12 +520,12 @@ class AgentSubagentRuntime(
                     val version = control.expansionVersion.get()
                     val snapshot = completed.toMap()
                     val expanded = withContext(control.childrenJob) {
-                        checkNotNull(graphExpansion).expand(plan.toPublicPlan(), snapshot)
+                        checkNotNull(graphExpansion).expandWithAdmissions(plan.toPublicPlan(), snapshot,
+                            (jobs.keys + completed.keys).toSet())
                     }
                     checkExpansionActive(control)
                     val candidate = normalizeAndValidate(expanded)
-                    validateExpansion(plan, candidate, plan.completionBarrierChildId in jobs ||
-                        plan.completionBarrierChildId in completed)
+                    validateExpansion(plan, candidate, (jobs.keys + completed.keys).toSet())
                     plan = candidate
                     addSlots()
                     updateAdmission(admission, plan, slots)
@@ -539,8 +545,12 @@ class AgentSubagentRuntime(
                 }
                 plan.children.forEach { child ->
                     if (child.childId != plan.completionBarrierChildId &&
-                        child.childId !in completed && child.childId !in jobs) {
+                        child.childId !in completed && child.childId !in jobs &&
+                        child.dependencies.all { it in completed }) {
                         checkExpansionActive(control)
+                        // Persist before launch, including time spent waiting for an execution permit.
+                        emit(control, plan, child, AgentSubagentEventKinds.CHILD_ADMITTED,
+                            childStatus = AgentSubagentStatus.QUEUED, provenance = child.provenance)
                         launchChild(child)
                     }
                 }
@@ -621,7 +631,8 @@ class AgentSubagentRuntime(
         control.childrenJob.ensureActive()
     }
 
-    private fun validateExpansion(previous: NormalizedPlan, next: NormalizedPlan, barrierStarted: Boolean) {
+    private fun validateExpansion(previous: NormalizedPlan, next: NormalizedPlan, admitted: Set<String>) {
+        val barrierStarted = previous.completionBarrierChildId in admitted
         require(previous.supervisorId == next.supervisorId && previous.provenance == next.provenance &&
             previous.failurePolicy == next.failurePolicy &&
             previous.preserveChildOrder == next.preserveChildOrder &&
@@ -635,6 +646,12 @@ class AgentSubagentRuntime(
                 require(updated.copy(dependencies = child.dependencies) == child &&
                     updated.dependencies.containsAll(child.dependencies)) {
                     "Expansion may only add dependencies to the unstarted completion barrier"
+                }
+            } else if (updated != child && child.childId !in admitted &&
+                child.dependencyRevision < Long.MAX_VALUE && updated.dependencyRevision == child.dependencyRevision + 1) {
+                require(updated.copy(dependencies = child.dependencies, dependencyRevision = child.dependencyRevision) == child &&
+                    child.dependencies.containsAll(updated.dependencies) && updated.dependencies != child.dependencies) {
+                    "A versioned unadmitted binding may only replace dependencies, not change the task or authority"
                 }
             } else {
                 require(updated == child) { "Expansion cannot rewrite child ${child.childId}" }
@@ -1019,6 +1036,7 @@ class AgentSubagentRuntime(
                 }
             }
             if (isExpandable(plan) && (kind == AgentSubagentEventKinds.CHILD_QUEUED ||
+                    kind == AgentSubagentEventKinds.CHILD_ADMITTED ||
                     kind == AgentSubagentEventKinds.CHILD_RUNNING ||
                     kind == AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED ||
                     kind == AgentSubagentEventKinds.SUPERVISOR_COMPLETED_WITH_FAILURES)) {
@@ -1089,6 +1107,7 @@ class AgentSubagentRuntime(
                 .map { normalizeId(it, "dependencyId") }
                 .toSortedSet()
             require(childId !in dependencies) { "Child $childId cannot depend on itself" }
+            require(child.dependencyRevision >= 0) { "Dependency revision must not be negative" }
             NormalizedChild(
                 childId = childId,
                 parentId = parentId,
@@ -1096,7 +1115,8 @@ class AgentSubagentRuntime(
                 dependencyPolicy = child.dependencyPolicy,
                 context = child.context,
                 provenance = normalizeProvenance(child.provenance),
-                executionLane = child.executionLane
+                executionLane = child.executionLane,
+                dependencyRevision = child.dependencyRevision
             )
         }.let { if (plan.preserveChildOrder) it else it.sortedBy { child -> child.childId } }
 
@@ -1207,7 +1227,8 @@ class AgentSubagentRuntime(
             children = children.map { child ->
                 AgentSubagentChild(child.childId, child.parentId, child.dependencies.toSet(),
                     child.dependencyPolicy, child.context,
-                    child.provenance.copy(metadata = child.provenance.metadata.toMap()), child.executionLane)
+                    child.provenance.copy(metadata = child.provenance.metadata.toMap()), child.executionLane,
+                    child.dependencyRevision)
             },
             failurePolicy = failurePolicy,
             provenance = provenance.copy(metadata = provenance.metadata.toMap()),
@@ -1224,6 +1245,7 @@ class AgentSubagentRuntime(
         val context: String,
         val provenance: AgentSubagentProvenance,
         val executionLane: AgentSubagentExecutionLane,
+        val dependencyRevision: Long,
         val depth: Int = 0
     )
 
