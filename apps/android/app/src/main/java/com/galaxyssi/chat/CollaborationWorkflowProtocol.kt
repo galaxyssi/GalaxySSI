@@ -4,6 +4,8 @@ internal object CollaborationWorkflowProtocol {
     fun instructions() = """
         Improve methods from actual execution feedback, not repeated advice. workflow_method records preserve executable role/dependency graphs.
         Goal and live work entries can use workflow_instance to expand a chosen saved method, inputs and roles into exact executable steps.
+        A preregistered action forecast can also declare result-dependent methods and recipients; probe_continuation expands measured matching
+        branches into the same workflow tasks. Read prediction rules for that prospective handoff; it does not certify the methods as better.
         After a retained method comparison, publish a workflow_selection_rule to use explicit input conditions in future method selection.
         Rules preserve a baseline for unknown/out-of-scope conditions. Their use changes actual work, not just the summary; read the contract first.
         Bind measured conditions with observed_inputs so original tool outcomes, not rewritten expectations, select the next method.

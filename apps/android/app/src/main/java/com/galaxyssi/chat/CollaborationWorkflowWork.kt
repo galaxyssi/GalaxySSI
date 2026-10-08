@@ -29,6 +29,7 @@ internal object CollaborationWorkflowWork {
         val milestones = record.definition.members.flatMap {
             CollaborationMilestoneDispatch.inputs(it) + CollaborationCoordinatorUpdates.offered(it)
         }.associateBy { it.getString("token") }
+        val probeBindings by lazy { CollaborationProbeContinuation.Bindings(workspace, access, record, milestones) }
         val bindings = hashMapOf<String, JSONObject>()
         selected.groupBy { it.getJSONObject(FIELD).getString("execution_id") }.forEach { (execution, work) ->
             require(execution.isNotBlank() && execution.length <= 160) { "Use a stable workflow execution ID" }
@@ -36,6 +37,7 @@ internal object CollaborationWorkflowWork {
             require(request.keys().asSequence().toSet() == setOf("execution_id", "method", "step_id", "inputs") +
                 (if (request.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet()) +
                 (if (request.has(CollaborationWorkflowSelection.FIELD)) setOf(CollaborationWorkflowSelection.FIELD) else emptySet()) +
+                (if (request.has(CollaborationProbeContinuation.ORIGIN)) setOf(CollaborationProbeContinuation.ORIGIN) else emptySet()) +
                 (if (request.has(CollaborationWorkflowObservations.FIELD)) setOf(CollaborationWorkflowObservations.FIELD) else emptySet())) { "Unexpected workflow dispatch field" }
             val ref = request.getJSONObject("method")
             require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Use exact integer method revision" }
@@ -53,6 +55,7 @@ internal object CollaborationWorkflowWork {
                 request.getJSONObject(CollaborationWorkflowObservations.FIELD), workspace, access, milestones).also {
                 CollaborationWorkflowObservations.verifySnapshot(inputs, it)
             } else null
+            val continuation = probeBindings.bind(request, method, observed, claims.has(execution))
             val selection = CollaborationWorkflowSelection.binding(request, method, workspace, access,
                 claims.has(execution))?.apply { if (observed != null && observed.bindings.length() > 0) {
                     put("input_evidence", if (observed.values.length() == inputs.length()) "host_bound_original_tool_observations"
@@ -70,6 +73,9 @@ internal object CollaborationWorkflowWork {
                 require(digest(use.opt(CollaborationWorkflowObservations.FIELD)) == digest(request.opt(CollaborationWorkflowObservations.FIELD))) {
                     "One workflow execution must preserve its exact observation selectors"
                 }
+                require(digest(use.opt(CollaborationProbeContinuation.ORIGIN)) == digest(request.opt(CollaborationProbeContinuation.ORIGIN))) {
+                    "One workflow execution must preserve its prospective probe origin"
+                }
                 require(observed == null || CollaborationMilestoneDispatch.uses(item).containsAll(observed.milestones)) {
                     "Workflow must retain the milestone grants needed by its observed inputs"
                 }
@@ -77,6 +83,12 @@ internal object CollaborationWorkflowWork {
                 val person = item.getString("member")
                 require(person in people) { "Use an existing authorized member; workflow is not recruitment or permission" }
                 val role = step.getString("role")
+                continuation?.let { source ->
+                    require(source.getJSONObject("roles").getString(role) == person) { "Continuation changed its prospective recipient" }
+                    source.optString("milestone").takeIf(String::isNotBlank)?.let { token ->
+                        require(token in CollaborationMilestoneDispatch.uses(item)) { "Continuation must preserve its original-observation milestone" }
+                    }
+                }
                 require(members.putIfAbsent(role, person).let { it == null || it == person }) { "A workflow role cannot switch member mid-execution" }
                 require(item.getString("stage") == step.getString("stage") && item.getString("assignment") == step.getString("assignment") &&
                     item.optString("dependency_policy", "success") == step.optString("dependency_policy", "success") &&
@@ -97,6 +109,13 @@ internal object CollaborationWorkflowWork {
                 if (observed != null) binding.put(CollaborationWorkflowObservations.BINDING, observed.bindings)
                     .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.uses(item).sorted()))
                 bindings[id] = binding
+                continuation?.let { source ->
+                    // The forecast owns the full role map; each task retains only its own recipient.
+                    binding.put(CollaborationProbeContinuation.ORIGIN, JSONObject().apply {
+                        source.keys().forEach { key -> if (key != "roles") put(key, source.get(key)) }
+                        put("role", role); put("recipient", person)
+                    })
+                }
                 selection?.let { binding.put(CollaborationWorkflowSelection.DECISION, it) }
                 CollaborationCapabilityChannel.binding(use, method, workspace, access, previouslyBound[id] == execution)?.let {
                     binding.put(CollaborationCapabilityChannel.FIELD, it)

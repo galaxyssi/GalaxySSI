@@ -15,6 +15,8 @@ internal object CollaborationPredictionProtocol {
         or compares information gain under declared probabilities in probabilistic mode. Original observations can contradict
         every proposed explanation; then revise the problem model or measurement, not force a winning explanation.
         Use evidence to choose the next real probe or method, not repeated vague research. No observation is not a negative result.
+        For a prospective probe-to-team handoff, register choices[].continuations before observing. Each branch binds measured event
+        conditions, an existing workflow and its recipients. Later probe_continuation work expands all matching branches, not a forced winner.
         Reuse preserved outcomes rather than repeat completed side effects. Ordinary direct work does not require forecasting.
     """.trimIndent()
 
@@ -44,6 +46,18 @@ internal object CollaborationPredictionProtocol {
         expected means the registered equality is predicted true; not_expected predicts it false. These are testable claims,
         NOT calibrated certainty. All other source, event, choice rationale and work binding fields remain required.
         Numeric utility/information gain and Brier scores stay null in qualitative mode, never zero or a fabricated probability.
+        Optional choices[].continuations:[{id,rationale,when_events:{<registered event id>:Boolean},method:exact workflow_methodRef,
+          roles:{savedRole:existingPersonId},inputs:{declaredName:value},observed_inputs:{inputName:JSON pointer in the registered report}}].
+        Boolean conditions refer to actual observed event equality, not the model's probability/expectation. Declare recipient mapping and
+        input projections BEFORE the probe. Cover the method's exact roles/inputs; declared and observed names are disjoint. No recruitment aliases.
+        Branches may overlap to test multiple methods in parallel. Register meaningful alternatives; branch count is not evidence of quality.
+        After publishing prediction_outcome, put {probe_continuation:{outcome:exactRef,milestone?:host token granting the original observation}}
+        in goal/live work. The host expands matched branches into ordinary workflow tasks and passes projected original data, not instructions.
+        Missing, failed, stale or unmatched conditions do not dispatch a default method. Read branch-specific feedback and replan ordinary work,
+        new measurements or a new model/forecast; do not keep submitting the same unsupported handoff. Never reinterpret absence as falsification.
+        One handoff uses ONE original receipt. Existing scope/milestone access applies; provide the original-observation token for same-round work.
+        Stable IDs derive from forecast and branch, not the invocation; recovery must not replace its outcome or rerun completed branch steps.
+        This is opt-in planner admission, not a background observer, automatic success claim, method promotion or a new model request.
         The validity deadline reflects environmental freshness, not a task timeout or permission. Register before observation.
         work[] uses prediction_work:{forecast:<exact ref>}; work ID, executor, original goal and criterion must match.
         Both live and next-round planners deliver immutable forecast/action context to actual workers. Recovery preserves the

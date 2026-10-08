@@ -56,6 +56,28 @@ class CollaborationActionPredictionDeviceTest {
                     .put("unit", "boolean").put("pointer", "/descending").put("expected", true).put("utility_if_true", 1).put("utility_if_false", -1)))
                 .put("choices", JSONArray().put(choice("sort", 0.8)).put(choice("defer", 0.1)))
             if (qualitative) {
+                fun method(id: String, assignment: String): JSONObject {
+                    val value = JSONObject().put("purpose", "Continue after local measurement").put("domain", "sort")
+                        .put("bottleneck", "Unknown sort direction").put("change_rationale", "Measured branch")
+                        .put("applies_when", "This local fixture").put("avoid_when", "Other inputs").put("risks", "Synthetic only")
+                        .put("expected_gain", "Correct next action").put("falsifier", "Wrong branch")
+                        .put("dimensions", JSONArray().put("verification")).put("roles", JSONArray().put("worker").put("reviewer"))
+                        .put("inputs", JSONArray().put("direction")).put("steps", JSONArray()
+                            .put(JSONObject().put("id", "execute").put("role", "worker").put("stage", "EXECUTE")
+                                .put("assignment", assignment).put("depends_on", JSONArray()))
+                            .put(JSONObject().put("id", "check").put("role", "reviewer").put("stage", "VERIFY")
+                                .put("assignment", "Independently check the local result").put("depends_on", JSONArray().put("execute"))
+                                .put("independent_review", true)))
+                    return publish(id, "workflow_method", value, "lead", 2)
+                }
+                val retain = method("retain-method", "Retain the measured descending order")
+                val repair = method("repair-method", "Repair the comparator before checking again")
+                fun branch(id: String, descending: Boolean, method: JSONObject) = JSONObject().put("id", id)
+                    .put("rationale", "Result changes the next method").put("when_events", JSONObject().put("descending", descending))
+                    .put("method", method).put("roles", JSONObject().put("worker", "worker").put("reviewer", "lead"))
+                    .put("inputs", JSONObject()).put("observed_inputs", JSONObject().put("direction", "/descending"))
+                forecastSpec.getJSONArray("choices").getJSONObject(0).put("continuations", JSONArray()
+                    .put(branch("retain", true, retain)).put(branch("repair", false, repair)))
                 forecastSpec.put("prediction_mode", "qualitative").remove("utility_unit")
                 forecastSpec.getJSONArray("events").getJSONObject(0).apply { remove("utility_if_true"); remove("utility_if_false") }
                 repeat(2) { index -> forecastSpec.getJSONArray("choices").getJSONObject(index).apply {
@@ -115,6 +137,17 @@ class CollaborationActionPredictionDeviceTest {
                 val binding = JSONObject(CollaborationPredictionWork.context(admitted.work.single()).getValue(CollaborationPredictionWork.TASK))
                 assertEquals("qualitative", binding.getString("prediction_mode"))
                 assertEquals("declared_qualitative_comparison", binding.getJSONObject("hypothesis_test").getString("state"))
+                val request = JSONObject().put(CollaborationProbeContinuation.FIELD, JSONObject().put("outcome", outcome))
+                val expanded = CollaborationWorkflowInstantiation.expand(JSONArray().put(request), { reopened }, access("lead", 7))
+                    .let { array -> (0 until array.length()).map(array::getJSONObject) }
+                val next = CollaborationWorkflowWork.plan(record, expanded, { reopened }, access("lead", 7))
+                assertEquals(2, next.work.size)
+                assertTrue(next.work.first().getString("assignment").contains("Repair"))
+                val continuation = JSONObject(CollaborationWorkflowWork.context(next.work.first()).getValue(CollaborationWorkflowWork.TASK))
+                assertEquals("repair", continuation.getJSONObject(CollaborationProbeContinuation.ORIGIN).getString("branch_id"))
+                assertFalse(continuation.getJSONObject("inputs").getBoolean("direction"))
+                val resumed = record.copy(request = record.request.copy(context = record.request.context + (CollaborationWorkflowWork.CLAIMS to next.claims)))
+                assertEquals(next.claims, CollaborationWorkflowWork.plan(resumed, expanded, { CollaborationResearchWorkspace(context) }, access("lead", 7)).claims)
             }
         } finally { groups.remove(group) }
     }

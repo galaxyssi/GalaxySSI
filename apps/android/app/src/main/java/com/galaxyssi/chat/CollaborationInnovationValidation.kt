@@ -221,7 +221,8 @@ internal object CollaborationInnovationValidation {
                 enqueue(it, setOf(CollaborationActionPrediction.OUTCOME))
             }
             for ((field, kinds) in listOf("basis" to SOURCE_KINDS, "results" to setOf(RESULT), "calibration_data" to setOf("artifact"),
-                "prediction_feedback" to setOf(CollaborationActionPrediction.OUTCOME))) {
+                  "prediction_feedback" to setOf(CollaborationActionPrediction.OUTCOME),
+                  CollaborationProbeContinuation.METHODS to setOf(CollaborationWorkflowMethod.KIND))) {
                 host.optJSONArray(field)?.let { refs -> repeat(refs.length()) { enqueue(refs.getJSONObject(it), kinds) } }
             }
             if (saved.getString("kind") == CollaborationTransferStudy.KIND) enqueue(saved.getJSONObject("body")
