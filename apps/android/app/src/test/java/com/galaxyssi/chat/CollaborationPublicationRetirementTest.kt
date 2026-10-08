@@ -46,6 +46,7 @@ class CollaborationPublicationRetirementTest {
         assertEquals(committed, f.rows.data)
         assertNotNull(f.reopen().publicationContract(f.access(f.next)))
         assertThrows(IllegalArgumentException::class.java) { f.reopen().requirePublicationActive(f.access(f.old)) }
+        assertThrows(IllegalArgumentException::class.java) { f.reopen().milestoneReceipt(f.access(f.old), "old", "a".repeat(64)) }
     }
 
     @Test fun validLateResultCannotPublishWithOrWithoutCandidateMetadataButIsAuditedOnce() {

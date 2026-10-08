@@ -12,7 +12,7 @@ import threading
 import weakref
 
 from blob_protocol import MAX_FILE_BYTES
-from collaboration_milestone_bridge import validate_arguments as validate_publication
+from collaboration_milestone_bridge import publish_snapshot, validate_arguments as validate_publication
 from collaboration_recall_bridge import task_scope
 from collaboration_text_artifact import (_atomic_write, _filename, _hash, _identifier, _integer, _json,
     _relative_source, _safe_path, _validate, read_workspace_artifact, tool_spec as text_tool_spec)
@@ -152,7 +152,7 @@ def _freeze(store, root, scope, arguments, active):
             if value.get("scope") != scope or value.get("arguments") != arguments:
                 raise ValueError("This milestone owns a different snapshot; retry original arguments or use a NEW milestone_id")
             _verify_file(data, value["body"], active)
-            return key, value
+            return key, value, True
         source = _safe_path(root, _relative_source(arguments["path"]))
         _, identity = _copy_file(source, store, PurePosixPath(data.relative_to(store).as_posix()), active)
         _safe_path(root, _relative_source(arguments["path"]))
@@ -167,7 +167,7 @@ def _freeze(store, root, scope, arguments, active):
         request = validate_publication({"mode": "publish", "milestone_id": arguments["milestone_id"], "artifact": _json(artifact)})
         value = {"scope": scope, "arguments": arguments, "body": body, "request": request, "receipt": None}
         _save_record(store, path, value)
-        return key, value
+        return key, value, False
 
 
 def _receipt(result):
@@ -239,10 +239,10 @@ def execute(store_directory, working_directory, scope, arguments, *, publish, re
     store = store.resolve()
     if arguments["mode"] == "materialize":
         return _materialize(store, root, scope, arguments, recall, active)
-    key, value = _freeze(store, root, scope, arguments, active)
+    key, value, recover = _freeze(store, root, scope, arguments, active)
     if not active():
         raise ValueError("File handoff assignment changed before publication")
-    result = publish(value["request"])
+    result = publish_snapshot(value["request"], publish, active, recover=recover)
     receipt = _receipt(result)
     if receipt is not None:
         path, _ = _paths(store, key)

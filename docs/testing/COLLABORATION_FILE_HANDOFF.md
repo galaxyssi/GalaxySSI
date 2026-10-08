@@ -30,6 +30,28 @@ Pause, cancellation, re-pairing and changed assignment invalidate an in-flight
 operation. Read-only, planning and screen-analysis executions cannot use this
 write-capable tool. Isolated experiment servers do not expose production tools.
 
+## Lost Receipt Recovery
+
+On a retry of a frozen file or text publication, Desktop first calls
+`collaboration_publish` with `mode=receipt`, the original `milestone_id`, and
+`artifact_sha256`. The latter is standard SHA-256 over the exact UTF-8 artifact
+string, including whitespace. It is not the existing journal's JSON-codec
+`raw_sha256`; persisted journal hashes and seals are unchanged.
+
+The phone derives assignment identity from the authenticated task, checks its
+current authorization, validates the sealed journal and original object versions,
+and returns the original receipt without creating versions or waking the scheduler.
+An explicit `not_recorded` response permits resending the frozen original.
+Timeout, rejection, changed identity, and an unknown response never count as
+absence and never trigger blind resubmission. The first submission needs no extra
+lookup roundtrip. Matching receipts update the existing Desktop checkpoint, so
+authorized peers can materialize the original bytes without repeating the work.
+
+This is an active publisher recovery operation, not permission for a different
+task to claim its publication. A retired or unavailable publisher remains blocked;
+there is no bypass of peer visibility, assignment controls, or exact version checks.
+Receipt recovery does not claim that public MQTT latency or availability is fixed.
+
 ## Automated Verification
 
 - Python tests cover a complete 2 MiB binary file with a control publication below
@@ -44,6 +66,13 @@ write-capable tool. Isolated experiment servers do not expose production tools.
   contract test, not an MQTT trial or Android process-restart test.
 - Existing text artifacts, publication, recall, and transport-feedback regressions
   remain in the verification set.
+- Receipt tests cover read-only reopen, explicit absence, changed bytes, scope and
+  generation mismatch, pause, revocation, retirement, and a lost reply without a
+  second publication. Kotlin/Python interop uses actual phone-workspace receipts,
+  including Unicode text, instead of synthesizing receipt identities in Python.
+- `CollaborationMilestoneDeviceTest` exercises receipt recovery against encrypted
+  Android persistence. It uses only synthetic data and cleans its dedicated group;
+  this is not a real-model or public-network test.
 
 Run from `apps/desktop/core/galaxyssi-link/backend`:
 
@@ -58,6 +87,14 @@ Run from `apps/android`, with `GALAXYSSI_TEST_PYTHON` pointing to the Python run
 ```
 
 ## Scope and Remaining Acceptance
+
+Receipt-recovery verification on 2026-10-08: Android 1.4.102 (1187) was installed
+on the authorized S20U; all 9 `CollaborationMilestoneDeviceTest` tests passed.
+The targeted JVM suite passed 40 tests, including actual Kotlin/Python receipt
+interoperability. The Desktop regression set passed 140 tests with one skipped
+Windows symlink test. APK/test APK assembly and repository checks passed.
+Desktop source is 1.4.34; this increment did not replace the running Desktop or
+run a real-model/public-MQTT acceptance trial.
 
 - File bytes stay on the originating Desktop. This is not a phone download or
   cross-Desktop/cloud-model delivery mechanism. Those routes still need integration

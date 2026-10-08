@@ -18,6 +18,8 @@ internal object CollaborationMilestoneTool {
         "Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. " +
         "Use a new ID and exact object_id/base_revision for a substantive revision. " +
         "mode=list with optional cursor recovers this assignment's committed milestone IDs; follow next_cursor. " +
+        "mode=receipt with milestone_id and artifact_sha256 (SHA-256 of the exact artifact UTF-8 string, not the journal raw_sha256) reads the original receipt without republishing. " +
+        "Only an explicit not_recorded result permits retrying the saved artifact; a failed lookup leaves the outcome uncertain. " +
         "In your final research-artifact use milestones:[saved IDs] to include those original versions without creating them again. " +
         "Recording authorship is not verification, task completion or a guarantee a peer has read the artifact. " +
         "Specialized host candidate-transition assignments must use their final publication contract. " +
@@ -26,9 +28,10 @@ internal object CollaborationMilestoneTool {
     fun schema() = JSONObject().put("type", "object").put("additionalProperties", false)
         .put("required", JSONArray(listOf("mode")))
         .put("properties", JSONObject()
-            .put("mode", JSONObject().put("type", "string").put("enum", JSONArray(listOf("publish", "list", "status"))))
+            .put("mode", JSONObject().put("type", "string").put("enum", JSONArray(listOf("publish", "list", "status", "receipt"))))
             .put("milestone_id", JSONObject().put("type", "string").put("maxLength", 160))
             .put("artifact", JSONObject().put("type", "string"))
+            .put("artifact_sha256", JSONObject().put("type", "string").put("pattern", "^[a-f0-9]{64}$"))
             .put("cursor", JSONObject().put("type", "string").put("maxLength", 512)))
 
     fun install(prepared: PreparedCloudConversationStream) {
@@ -51,9 +54,15 @@ internal object CollaborationMilestoneTool {
                 require(input.opt("milestone_id") is String && input.opt("artifact") is String && input.getString("artifact").isNotBlank()) { "milestone_id and artifact must be nonblank strings" }
                 CollaborationMilestoneJournal.validateId(input.getString("milestone_id"))
             }
+            "receipt" -> {
+                require(input.keys().asSequence().toSet() == setOf("mode", "milestone_id", "artifact_sha256") &&
+                    input.opt("milestone_id") is String && input.opt("artifact_sha256") is String &&
+                    input.getString("artifact_sha256").matches(Regex("[a-f0-9]{64}"))) { "Receipt requires only mode, milestone_id and lowercase artifact_sha256" }
+                CollaborationMilestoneJournal.validateId(input.getString("milestone_id"))
+            }
             "list" -> require(input.keys().asSequence().all { it in setOf("mode", "cursor") } &&
                 (!input.has("cursor") || input.opt("cursor") is String && input.getString("cursor").length <= 512)) { "List accepts only mode and an optional cursor" }
-            else -> throw IllegalArgumentException("mode must be publish, list or status")
+            else -> throw IllegalArgumentException("mode must be publish, list, status or receipt")
         }
     }
 
@@ -63,6 +72,8 @@ internal object CollaborationMilestoneTool {
                 "Continue the required assignment response; a transport failure does not grant publication."
             "list" -> "Saved milestone list unavailable; this read submitted no artifact. Retry listing after reconnecting. " +
                 "Do not infer that an earlier publication failed or repeat completed effects."
+            "receipt" -> "Saved publication receipt unavailable; this read submitted no artifact. Retry the exact receipt lookup after reconnecting. " +
+                "The original publication outcome remains uncertain; do not repeat completed effects."
             "publish" -> "Publication outcome is uncertain; retry the same milestone_id and artifact, or list saved milestones. " +
                 "Do not repeat completed effects."
             else -> "Milestone operation unavailable; inspect the requested operation before retrying."
@@ -91,9 +102,12 @@ internal object CollaborationMilestoneTool {
                     .put("capability", capability).put("retryable", false).put("artifact_validated", false)
                     .put("assignment_completed", false)
             else -> {
-                val result = if (input.getString("mode") == "list") workspace.milestones(access, input.optString("cursor"))
-                    else workspace.publishMilestone(access, input.getString("milestone_id"), input.getString("artifact"))
-                JSONObject(result.toString()).put("success", result.optString("status") in setOf("recorded", "returned"))
+                val result = when (input.getString("mode")) {
+                    "list" -> workspace.milestones(access, input.optString("cursor"))
+                    "receipt" -> workspace.milestoneReceipt(access, input.getString("milestone_id"), input.getString("artifact_sha256"))
+                    else -> workspace.publishMilestone(access, input.getString("milestone_id"), input.getString("artifact"))
+                }
+                JSONObject(result.toString()).put("success", result.optString("status") in setOf("recorded", "returned", "not_recorded"))
                     .put("assignment_completed", false)
             }
         }
