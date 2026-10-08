@@ -1158,6 +1158,7 @@ class AgentRuntimeWorkspaceManager private constructor(
     private fun cleanupRuntimeFiles(directory: File) {
         listOf(
             RUNTIME_CONTROL_DIRECTORY,
+            REBRANDED_CONTROL_DIRECTORY,
             RUNTIME_INPUT_DIRECTORY,
             RUNTIME_TOOL_DIRECTORY.substringBefore('/')
         ).forEach { relative ->
@@ -1172,6 +1173,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         if (!parent.isDirectory || !exclude.canWrite() && exclude.exists()) return
         val entries = listOf(
             "/$RUNTIME_CONTROL_DIRECTORY/",
+            "/$REBRANDED_CONTROL_DIRECTORY/",
             "/$RUNTIME_INPUT_DIRECTORY/",
             "/${RUNTIME_TOOL_DIRECTORY.substringBefore('/')}/"
         )
@@ -1241,6 +1243,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         path in RUNTIME_CONTROL_FILES || path == ".tmp" || path.startsWith(".tmp/") ||
             path == RUNTIME_TOOL_DIRECTORY || path.startsWith("$RUNTIME_TOOL_DIRECTORY/") ||
             path == RUNTIME_CONTROL_DIRECTORY || path.startsWith("$RUNTIME_CONTROL_DIRECTORY/") ||
+            path == REBRANDED_CONTROL_DIRECTORY || path.startsWith("$REBRANDED_CONTROL_DIRECTORY/") ||
             path == RUNTIME_INPUT_DIRECTORY || path.startsWith("$RUNTIME_INPUT_DIRECTORY/")
 
     private fun writeExecutable(file: File, source: String) {
@@ -1286,7 +1289,8 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_CHECKPOINT_BYTES_PER_WORKSPACE = 1024L * 1024L * 1024L
         private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
         private const val RUNTIME_TOOL_DIRECTORY = ".galaxyssi-tools/bin"
-        private const val RUNTIME_CONTROL_DIRECTORY = ".galaxyssi-runtime"
+        private const val RUNTIME_CONTROL_DIRECTORY = AgentRuntimeGuestAbi.CONTROL_DIRECTORY
+        private const val REBRANDED_CONTROL_DIRECTORY = ".galaxyssi-runtime"
         private const val RUNTIME_INPUT_DIRECTORY = ".galaxyssi-inputs"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
         internal const val CLEANUP_INTERVAL_MILLIS = 6L * 60L * 60L * 1_000L

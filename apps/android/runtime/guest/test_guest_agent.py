@@ -11,6 +11,26 @@ import galaxyssi_guest_agent as guest
 
 
 class GuestProtocolTest(unittest.TestCase):
+    def test_published_v1_boot_abi_matches_android_host(self):
+        host = (Path(__file__).resolve().parents[2] / "app/src/main/java/com/galaxyssi/chat/AgentRuntimeGuestAbi.kt").read_text()
+        expected = {
+            "CHANNEL": "org.signalasi.runtime",
+            "SESSION": "opt/com.signalasi/runtime-session",
+            "CONFIG": "opt/com.signalasi/runtime-config",
+            "WORKSPACE_MOUNT": "signalasi_workspaces",
+            "SYSTEM_ROOT": "/var/lib/signalasi",
+            "CONTROL_DIRECTORY": ".signalasi-runtime",
+        }
+        for name, value in expected.items():
+            self.assertIn(f'const val {name} = "{value}"', host)
+        self.assertEqual(expected["CHANNEL"], guest.CHANNEL_NAME)
+        self.assertEqual(expected["WORKSPACE_MOUNT"], guest.WORKSPACE_MOUNT_TAG)
+        self.assertEqual(expected["SYSTEM_ROOT"], guest.PERSISTENT_SYSTEM_ROOT.as_posix())
+        self.assertEqual(expected["CONTROL_DIRECTORY"], guest.RUNTIME_CONTROL_DIRECTORY)
+        self.assertEqual(f'/sys/firmware/qemu_fw_cfg/by_name/{expected["SESSION"]}/raw', guest.SESSION_PATH.as_posix())
+        self.assertEqual(f'/sys/firmware/qemu_fw_cfg/by_name/{expected["CONFIG"]}/raw', guest.CONFIG_PATH.as_posix())
+        self.assertEqual("signalasi-pack.json", guest.PACK_DESCRIPTOR_NAME)
+
     def envelope(self):
         return {
             "protocol_version": 1,

@@ -39,12 +39,14 @@ class AgentRuntimeProjectWorkspaceTest {
         assertEquals("first", File(first.directory, "README.md").readText())
         File(first.directory, "result.txt").writeText("generated")
         File(first.directory, ".galaxyssi-stdout").writeText("private runtime output")
+        File(first.directory, ".galaxyssi-runtime/obsolete.py").apply { parentFile!!.mkdirs(); writeText("old driver") }
         val sync = manager.syncProject(first, 8L * 1024L * 1024L)
 
         assertTrue(sync.fileCount >= 2)
         assertEquals("generated", File(project, "result.txt").readText())
         assertFalse(File(project, "main.py").exists())
         assertFalse(File(project, ".galaxyssi-runtime").exists())
+        assertFalse(File(project, ".signalasi-runtime").exists())
         assertFalse(File(project, "request.json").exists())
         assertFalse(File(project, ".galaxyssi-stdout").exists())
 
@@ -78,6 +80,7 @@ class AgentRuntimeProjectWorkspaceTest {
         assertEquals(0L, prepared.importedProjectBytes)
         assertTrue(prepared.direct)
         assertTrue(File(project, ".git/info/exclude").readText().contains("/.galaxyssi-runtime/"))
+        assertTrue(File(project, ".git/info/exclude").readText().contains("/.signalasi-runtime/"))
         assertTrue(
             File(prepared.metadataDirectory, "git-checkpoint.json").readText()
                 .contains("0123456789abcdef0123456789abcdef01234567")
@@ -89,6 +92,7 @@ class AgentRuntimeProjectWorkspaceTest {
         assertEquals(null, commit.checkpoint)
 
         direct.markFinished(prepared, AgentRuntimeReceiptStatus.COMPLETED)
+        assertFalse(File(project, ".signalasi-runtime").exists())
         assertFalse(File(project, ".galaxyssi-runtime").exists())
         assertFalse(File(project, ".galaxyssi-inputs").exists())
         assertFalse(File(project, ".galaxyssi-tools").exists())
@@ -120,7 +124,7 @@ class AgentRuntimeProjectWorkspaceTest {
 
         assertEquals("print('project entrypoint')", File(prepared.directory, "main.py").readText())
         assertEquals("print('runtime driver')", prepared.sourceFile.readText())
-        assertTrue(prepared.sourceFile.relativeTo(prepared.directory).invariantSeparatorsPath.startsWith(".galaxyssi-runtime/"))
+        assertTrue(prepared.sourceFile.relativeTo(prepared.directory).invariantSeparatorsPath.startsWith(".signalasi-runtime/"))
         File(prepared.directory, "generated.txt").writeText("candidate")
         manager.commitProject(
             prepared = prepared,
@@ -130,6 +134,7 @@ class AgentRuntimeProjectWorkspaceTest {
 
         assertEquals("print('project entrypoint')", File(project, "main.py").readText())
         assertEquals("candidate", File(project, "generated.txt").readText())
+        assertFalse(File(project, ".signalasi-runtime").exists())
         assertFalse(File(project, ".galaxyssi-runtime").exists())
     }
 
