@@ -1,0 +1,19 @@
+{
+  "execution_id": "synthetic-replay",
+  "inputs": {"data": {"count": 4, "mutable": false}},
+  "roles": {"worker": "Hopper", "reviewer": "Turing"},
+  "rule": {
+    "when_all": [{"id": "reuse", "input": "data", "pointer": "/count", "operator": "gte", "value": 2}],
+    "unless_any": [{"id": "mutable", "input": "data", "pointer": "/mutable", "operator": "eq", "value": true}]
+  },
+  "methods": {
+    "baseline": {"steps": [
+      {"id": "parse-each", "role": "worker", "stage": "EXECUTE", "assignment": "Parse each input separately"},
+      {"id": "check", "role": "reviewer", "stage": "VERIFY", "assignment": "Compare every value with the original input", "depends_on": ["parse-each"], "independent_review": true, "review_targets": ["parse-each"]}
+    ]},
+    "candidate": {"steps": [
+      {"id": "index", "role": "worker", "stage": "EXECUTE", "assignment": "Index the immutable input once"},
+      {"id": "check", "role": "reviewer", "stage": "VERIFY", "assignment": "Compare every value with the original input", "depends_on": ["index"], "independent_review": true, "review_targets": ["index"]}
+    ]}
+  }
+}
