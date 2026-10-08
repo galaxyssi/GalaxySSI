@@ -2007,6 +2007,11 @@ def _codex_collaboration_publish(task_id, arguments, active):
     return _codex_collaboration_exchange(broker, task_id, arguments, active)
 
 
+def _codex_collaboration_test(task_id, arguments, active):
+    from collaboration_tool_test_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+
+
 def _codex_collaboration_file(task_id, working_directory, arguments, active):
     from collaboration_file_artifact import authenticated_scope, execute
 
@@ -2057,7 +2062,7 @@ def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer
             previous = codex_app_server
             codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event,
                 collaboration_recall=_codex_collaboration_recall, collaboration_publish=_codex_collaboration_publish,
-                collaboration_file=_codex_collaboration_file)
+                collaboration_file=_codex_collaboration_file, collaboration_test=_codex_collaboration_test)
         server = codex_app_server
     if previous is not None:
         previous.close()
@@ -7592,6 +7597,11 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
 
     if msg_type == "collaboration_publish_result":
         from collaboration_milestone_bridge import broker
+        broker.receive(payload, client_route_id)
+        return
+
+    if msg_type == "collaboration_tool_test_result":
+        from collaboration_tool_test_bridge import broker
         broker.receive(payload, client_route_id)
         return
 

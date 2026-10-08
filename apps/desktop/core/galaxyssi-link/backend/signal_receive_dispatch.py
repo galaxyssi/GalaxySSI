@@ -19,7 +19,7 @@ PENDING_SQL = """SELECT b.client_route_id,b.message_id,b.byte_count FROM inbound
                  ORDER BY m.dispatch_retry_at,m.received_at LIMIT ?"""
 REPLAYABLE_TYPES = frozenset({
     "delivery_ack", "peer_message", "connector_status_request", "agent_task_recovery_request",
-    "agent_task_result_page_request", "agent_task_result_received", "agent_task_approval", "agent_task_evidence_request", "collaboration_recall_result", "collaboration_publish_result",
+    "agent_task_result_page_request", "agent_task_result_received", "agent_task_approval", "agent_task_evidence_request", "collaboration_recall_result", "collaboration_publish_result", "collaboration_tool_test_result",
     "input_attachment_manifest", "input_attachment_chunk", "input_attachment_request_result",
     "input_attachment_blob_offer", "artifact_blob_capability", "artifact_blob_receipt",
     "artifact_receipt", "artifact_redelivery_request",

@@ -105,13 +105,16 @@ internal object CollaborationExecutableAcceptance : CollaborationQualifiedValida
         validator:{id:"$id",environment,purpose,oracle_basis,coverage_gaps,cases:[{id,purpose:"target|edge|regression",reason,input:{...},expected:<JSON>}]}.
         Establish this contract before completion. Cases and oracle metadata are immutable; code candidates may be revised.
         Publish executable_tool and tool_test_plan copying those preserved fields exactly, then execute the plan with
-        galaxyssi.runtime.execute collaboration_tool mode=test. A separate member reads the complete original receipt and
+        galaxyssi.runtime.execute collaboration_tool mode=test, or remote Codex collaboration_test_tool mode=start with
+        a stable execution_id, exact tool_test_plan and timeout_ms. Remote start returns admission, not test success;
+        query mode=status using the same execution_id, then read the complete original native evidence receipt.
+        A separate member reads the complete original receipt and
         reviews source, oracle and limitations to publish tool_release. Save an artifact body with content and
         computation:{validator_id:"$id",tool_release:<exact ref>}. Delivery AND its independent acceptance_review must cite
         the original native test observation; the reviewer must read all pages before publication. The host rechecks the
         saved source, harness, environment, dispatch, case coverage and actual values without executing code during acceptance.
         Only this goal's actual native execution qualifies. A Desktop shell claim, model-written receipt, old successful run,
-        or reading peer prose is not equivalent. A remote member may delegate to an authorized phone-runtime member;
+        or reading peer prose is not equivalent. Remote testing uses the originating App runtime, not a Desktop shell;
         inspect capability availability first. This route adds no permissions, background execution or general scientific validator.
         Oracle truth, unseen-task transfer, broad correctness and physical experiments remain separate unmet requirements
         until supported by their appropriate evidence; never substitute this finite-suite requirement for the original goal.
