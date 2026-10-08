@@ -1,0 +1,12 @@
+{
+  "execution_id": "fixture",
+  "inputs": {},
+  "observed_inputs": {"data": {"observation": {"evidence_id": "fixture", "sha256": "fixture-only"}, "pointer": ""}},
+  "observations": {"fixture": {"sha256": "fixture-only", "output_json": "{\"mutable\":false}"}},
+  "roles": {"worker": "Hopper"},
+  "rule": {"when_all": [{"id": "immutable", "input": "data", "pointer": "/mutable", "operator": "eq", "value": false}], "unless_any": []},
+  "methods": {
+    "baseline": {"steps": [{"id": "parse", "role": "worker", "assignment": "parse"}]},
+    "candidate": {"steps": [{"id": "index", "role": "worker", "assignment": "index"}]}
+  }
+}
