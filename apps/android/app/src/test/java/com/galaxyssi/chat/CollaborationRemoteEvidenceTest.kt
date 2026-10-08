@@ -228,6 +228,52 @@ class CollaborationRemoteEvidenceTest {
         assertEquals(1, provider.pagesRead.count { it.second == 0 })
         assertEquals(1, f.ledger.browse(access()).first.size)
     }
+    @Test fun boundedSlicesReopenAtMissingPageAndKeepOriginalBytes(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), size = 50000)
+        assertEquals(CollaborationEvidenceSlice.YIELDED,
+            f.importer().runSlice(f.key, { true }, maxQueries = 2) { _, _, q -> provider.reply(q) })
+        assertEquals(2, provider.queries)
+        assertTrue(f.ledger.browse(access()).first.isEmpty())
+        assertEquals("pending", f.store.read(f.key)!!.getString("status"))
+        var outcome = CollaborationEvidenceSlice.YIELDED
+        while (outcome == CollaborationEvidenceSlice.YIELDED) {
+            val before = provider.queries
+            outcome = f.importer().runSlice(f.key, { true }, maxQueries = 1) { _, _, q -> provider.reply(q) }
+            assertTrue(provider.queries - before <= 1)
+        }
+        assertEquals(CollaborationEvidenceSlice.COMPLETE, outcome)
+        assertEquals(provider.pagesRead.distinct(), provider.pagesRead)
+        assertEquals(1 + provider.entries.single().getInt("page_count"), provider.queries)
+        val reference = f.ledger.browse(access()).first.single()
+        val saved = f.ledger.read(access(), reference.getString("evidence_id"))!!
+        assertEquals(String(provider.bodies.single(), Charsets.UTF_8),
+            JSONObject(saved.getString("output_json")).getString("original_json"))
+    }
+    @Test fun sliceDistinguishesBudgetYieldFromNetworkPauseAndIntegrityFailure(): Unit = runBlocking {
+        val f = Fixture(fields(), access())
+        assertEquals(CollaborationEvidenceSlice.DEFERRED,
+            f.importer().runSlice(f.key, { true }, maxQueries = 1) { _, _, _ -> null })
+        assertEquals(CollaborationEvidenceSlice.DEFERRED,
+            f.importer().runSlice(f.key, { false }) { _, _, _ -> error("Paused") })
+        val provider = Provider(fields(), size = 100, inline = true)
+        assertEquals(CollaborationEvidenceSlice.COMPLETE,
+            f.importer().runSlice(f.key, { true }) { _, _, q -> provider.reply(q).put("coverage", "wrong") })
+        assertEquals("integrity_rejected", f.store.read(f.key)!!.getString("status"))
+        assertTrue(f.ledger.browse(access()).first.isEmpty())
+    }
+    @Test fun slicedIndexHasNoTotalObservationLimit(): Unit = runBlocking {
+        val f = Fixture(fields(), access()); val provider = Provider(fields(), count = 121, size = 1, inline = true)
+        var outcome = CollaborationEvidenceSlice.YIELDED
+        var passes = 0
+        while (outcome == CollaborationEvidenceSlice.YIELDED) {
+            outcome = f.importer().runSlice(f.key, { true }, maxQueries = 1) { _, _, q -> provider.reply(q) }
+            passes++
+        }
+        assertEquals(CollaborationEvidenceSlice.COMPLETE, outcome)
+        assertEquals(7, passes)
+        assertEquals(7, provider.queries)
+        assertEquals(121L, f.store.read(f.key)!!.getLong("imported"))
+    }
     @Test fun ledgerCommitBeforeCursorCrashReplaysIdempotently(): Unit = runBlocking {
         val f = Fixture(fields(), access()); val provider = Provider(fields())
         f.rows.failAdvance = true
