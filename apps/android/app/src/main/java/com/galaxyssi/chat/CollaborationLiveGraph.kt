@@ -20,6 +20,10 @@ internal object CollaborationLiveGraph {
 
     fun instructions() = """
         You are the team's incremental coordinator. Other members are still working. Do not wait for unrelated work.
+        Your starting inventory is a snapshot. Use collaboration_recall(mode="team_updates", cursor="") to discover
+        versions published while you are working. Follow next_cursor until an empty page; reuse that cursor later
+        when prerequisites may have arrived. Read the exact workspace/evidence versions before judging sufficiency.
+        New tokens can be used in uses_milestones or rebind_reviews. They do not finish the producer or prove a claim.
         Return one JSON object: {"format":"$FORMAT","summary":"concise public progress in the user's language",
         "work":[{"id":"stable new work ID","member":"existing authorized person UUID",
         "stage":"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE","assignment":"concrete verification or improvement with evidence",
@@ -97,10 +101,14 @@ internal object CollaborationLiveGraph {
                 require(result.status == AgentSubagentStatus.SUCCEEDED && !result.outputTruncated) {
                     "Incremental coordinator failed or returned truncated work; preserve existing work and repair at the next checkpoint"
                 }
+                val effectiveMember = CollaborationCoordinatorUpdates.capture(next, member, milestoneWorkspace?.invoke())
+                val observed = if (effectiveMember == member) next else next.copy(definition = next.definition.copy(members = next.definition.members.map {
+                    if (it.memberId == member.memberId) effectiveMember else it
+                }))
                 val decoded = decode(result.output)
-                val rebound = CollaborationReviewRebinding.apply(next, member,
+                val rebound = CollaborationReviewRebinding.apply(observed, effectiveMember,
                     decoded.optJSONArray(CollaborationReviewRebinding.FIELD) ?: JSONArray(), admittedIds, now)
-                CollaborationCandidateRuntime.update(appendWork(rebound, decoded.getJSONArray("work"), candidateWorkspace, member), candidateWorkspace,
+                CollaborationCandidateRuntime.update(appendWork(rebound, decoded.getJSONArray("work"), candidateWorkspace, effectiveMember), candidateWorkspace,
                     completedIds, control, admissionLeft,
                     decoded.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray(), member.dependsOnAgentIds)
             }
@@ -262,7 +270,7 @@ internal object CollaborationLiveGraph {
                   observed: Map<String, AgentSubagentStatus> = emptyMap()): String {
         val work = definition.members.filter { !it.context[CollaborationGoalLoop.WORK_ID].isNullOrBlank() }
         val byId = definition.members.associateBy { it.memberId }
-        val published = definition.members.flatMap(CollaborationMilestoneDispatch::inputs)
+        val published = definition.members.flatMap { CollaborationMilestoneDispatch.inputs(it) + CollaborationCoordinatorUpdates.offered(it) }
             .distinctBy { it.getString("token") }.groupBy { it.getString("producer_node") }
         fun workId(id: String) = byId[id]?.context?.get(CollaborationGoalLoop.WORK_ID).orEmpty().ifBlank { id }
         // A transport/UI terminal observation is not a committed scheduler result.

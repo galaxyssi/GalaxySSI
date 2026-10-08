@@ -61,5 +61,6 @@ internal object CollaborationMilestoneDispatch {
         strings(member.context[GRANTS]))
 
     fun inherited(record: AgentTeamExecutionRecord, planner: AgentTeamMember): Map<String, JSONObject> =
-        (record.definition.members.flatMap(::inputs) + inputs(planner)).associateBy { it.getString("token") }
+        (record.definition.members.flatMap { inputs(it) + CollaborationCoordinatorUpdates.offered(it) } +
+            inputs(planner) + CollaborationCoordinatorUpdates.offered(planner)).associateBy { it.getString("token") }
 }

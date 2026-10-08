@@ -7,6 +7,69 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationReviewRebindingTest {
+    @Test fun coordinatorDiscoversLatePrerequisiteAndBindsWithoutRewritingStartingInputs() {
+        val workspace = workspace(); publish(workspace)
+        val first = prepared(workspace)
+        val planner = planner(first)
+        val access = CollaborationMilestoneDispatch.access(first, planner)
+        val covered = CollaborationMilestoneDispatch.inputs(planner).mapTo(hashSetOf()) { it.getString("token") }
+        val empty = workspace.coordinatorUpdates(access, "", covered, setOf("producer", "probe"))
+        assertTrue(empty.getBoolean("caught_up_at_read"))
+        val probe = author.copy(nodeId = "probe", personId = "peer")
+        val data = publish(workspace, "data-v1", access = probe)
+        assertNull(workspace.read(access, data.getString("object_id"), 1))
+        val page = workspace.coordinatorUpdates(access, empty.getString("next_cursor"), covered, setOf("producer", "probe"))
+        val token = page.getJSONArray("milestones").getJSONObject(0).getString("token")
+        assertEquals(1, page.getJSONArray("milestones").length())
+        val resolved = CollaborationCoordinatorUpdates.withGrants(access, workspace.coordinatorOffered(access))
+        assertNotNull(workspace.read(resolved, data.getString("object_id"), 1))
+        publish(workspace, "data-v2", data, probe)
+        assertNull(workspace.read(resolved, data.getString("object_id"), 2))
+        assertEquals(page.toString(), workspace.coordinatorUpdates(access, "", covered, setOf("producer", "probe")).toString())
+        val binding = request(first).apply { getJSONArray("inputs").put(JSONObject().put("dependency", "probe")
+            .put("uses_milestones", JSONArray().put(token))) }
+        val changed = update(returned(first, binding), workspace, setOf("producer", "probe"))
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        assertTrue(review(changed).dependsOnAgentIds.isEmpty())
+        val savedPlanner = changed.definition.members.single { it.memberId == planner.memberId }
+        assertEquals(planner.context[CollaborationMilestoneDispatch.INPUTS], savedPlanner.context[CollaborationMilestoneDispatch.INPUTS])
+        assertEquals(planner.context[CollaborationMilestoneDispatch.GRANTS], savedPlanner.context[CollaborationMilestoneDispatch.GRANTS])
+        assertEquals(access, CollaborationMilestoneDispatch.access(changed, savedPlanner))
+        assertEquals(token, CollaborationCoordinatorUpdates.offered(savedPlanner).single().getString("token"))
+        assertFalse(CollaborationCoordinatorUpdates.offered(review(changed)).isNotEmpty())
+        assertNull(workspace.read(CollaborationMilestoneDispatch.access(changed, review(changed)), data.getString("object_id"), 2))
+        assertEquals(first.request.goal, changed.request.goal)
+        assertEquals(first.definition.members.single { it.memberId == "final" }.dependsOnAgentIds,
+            changed.definition.members.single { it.memberId == "final" }.dependsOnAgentIds.filterNot { id ->
+                changed.definition.members.any { it.memberId == id && CollaborationLiveGraph.planner(it) && it.memberId != planner.memberId }
+            }.toSet())
+    }
+
+    @Test fun onlyExactActivePlannerCanRequestUpdates() {
+        val workspace = workspace(); publish(workspace)
+        val first = prepared(workspace)
+        val access = CollaborationMilestoneDispatch.access(first, planner(first))
+        val checkpoint = AgentTeamExecutionCheckpoint(first.definition, first.request, emptyMap(), 0)
+        assertEquals(planner(first), CollaborationCoordinatorUpdates.member(checkpoint, access, AgentTeamUserControl.RUN, false))
+        for (bad in listOf(access.copy(runId = "other"), access.copy(turnId = "other"), access.copy(round = 2),
+            access.copy(personId = "peer"), access.copy(pinnedReads = emptySet()), access.copy(dependencyNodes = setOf("probe")),
+            CollaborationMilestoneDispatch.access(first, review(first)), author)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                CollaborationCoordinatorUpdates.member(checkpoint, bad, AgentTeamUserControl.RUN, false)
+            }
+        }
+        for (control in listOf(AgentTeamUserControl.PAUSE, AgentTeamUserControl.STOP)) assertThrows(IllegalArgumentException::class.java) {
+            CollaborationCoordinatorUpdates.member(checkpoint, access, control, false)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CollaborationCoordinatorUpdates.member(checkpoint, access, AgentTeamUserControl.RUN, true)
+        }
+        val result = returned(first).events.last().result!!
+        assertThrows(IllegalArgumentException::class.java) {
+            CollaborationCoordinatorUpdates.member(checkpoint.copy(completed = mapOf(result.childId to result)), access, AgentTeamUserControl.RUN, false)
+        }
+    }
+
     private class Rows : CollaborationWorkspaceRows {
         val data = sortedMapOf<String, String>()
         override fun read(key: String) = data[key]

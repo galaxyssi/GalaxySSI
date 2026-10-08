@@ -48,9 +48,12 @@ def tool_spec():
         "concatenate content pages before decoding cases. Use mode=workspace for the full model and original trial. "
         "These saved numeric checks are not independent reference truth or proof of generalization. "
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
+        "Active incremental coordinators can use mode=team_updates/cursor to discover newly published exact versions. "
+        "Follow next_cursor to an empty page and reuse that cursor later; read the versions before judging sufficiency. "
+        "Other members cannot use team_updates. Original goal snapshots and independent research isolation are unchanged. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates"]},
             "query": {"type": "string", "maxLength": 1000},
             "case_filter": {"type": "string", "maxLength": 32, "enum": list(NUMERIC_CASE_FILTERS)},
             "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
@@ -88,8 +91,8 @@ def validate_arguments(arguments):
                 raise ValueError("Use section=goal, criteria, source or context:<exact section name>")
     elif "section" in arguments:
         raise ValueError("Section is only supported for goal/context recall")
-    if arguments["mode"] in {"evolution", "problems"} and set(arguments) - {"mode", "cursor"}:
-        raise ValueError("Evolution/problem recall accepts only mode and cursor")
+    if arguments["mode"] in {"evolution", "problems", "team_updates"} and set(arguments) - {"mode", "cursor"}:
+        raise ValueError("Evolution/problem/team update recall accepts only mode and cursor")
     if arguments["mode"] == "capabilities":
         if set(arguments) - {"mode", "query", "cursor"} or not arguments.get("query", "").strip():
             raise ValueError("Capability search requires query and accepts optional cursor only")
