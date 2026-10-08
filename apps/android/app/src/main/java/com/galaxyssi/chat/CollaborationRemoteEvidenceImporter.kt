@@ -16,6 +16,26 @@ internal class CollaborationRemoteEvidenceImporter(
         importSnapshot(key, allowed, progress, query)
     }
 
+    /** Yield between network slices while keeping verified pages and the exact archive cursor. */
+    suspend fun runSlice(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit = {},
+        maxQueries: Int = 4,
+        query: suspend (String, JSONObject, JSONObject) -> JSONObject?): CollaborationEvidenceSlice {
+        require(maxQueries > 0)
+        return gate.withJob(key) {
+            var remaining = maxQueries
+            var yielded = false
+            val complete = importSnapshot(key, allowed, progress) { desktop, fields, selection ->
+                if (remaining == 0) { yielded = true; null }
+                else { remaining--; query(desktop, fields, selection) }
+            }
+            when {
+                complete -> CollaborationEvidenceSlice.COMPLETE
+                yielded -> CollaborationEvidenceSlice.YIELDED
+                else -> CollaborationEvidenceSlice.DEFERRED
+            }
+        }
+    }
+
     private suspend fun importSnapshot(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit,
         query: suspend (String, JSONObject, JSONObject) -> JSONObject?): Boolean {
         val job = store.read(key) ?: return true

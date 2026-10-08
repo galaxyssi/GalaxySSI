@@ -106,6 +106,7 @@ internal object AndroidCollaborationRemoteEvidence {
 
     internal suspend fun query(context: Context, desktop: String, fields: JSONObject, selection: JSONObject,
         onDiagnostic: (String) -> Unit = {}): JSONObject? {
+        val started = android.os.SystemClock.elapsedRealtime()
         var published = false
         val response = client.query(desktop, fields, selection) { request ->
             (paired(context, desktop, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
@@ -118,6 +119,9 @@ internal object AndroidCollaborationRemoteEvidence {
             else -> "publish_rejected:${queryReadiness(context, desktop, fields)}"
         }
         onDiagnostic(diagnostic)
+        Log.i("GalaxySSIEvidence", "Evidence query: source=${fields.optString("source_message_id")} " +
+            "mode=${selection.optString("mode")} outcome=$diagnostic " +
+            "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started}")
         if (response == null) Log.w("GalaxySSIEvidence", "Read-only evidence query deferred: $diagnostic")
         return response
     }
@@ -144,12 +148,21 @@ internal object AndroidCollaborationRemoteEvidence {
         if (!pending(context, group, source)) return
         CollaborationProgressStore.evidenceWaiting(context, execution)
         enqueue(context, wake = true)
-        execution.suspendExecutionPermit {
-            val control = AgentTeamDurableControl(context)
-            while (pending(context, group, source)) {
-                control.awaitDispatch(execution.request.parentRunId)
-                delay(1_000)
+        val started = android.os.SystemClock.elapsedRealtime()
+        var settled = false
+        Log.i("GalaxySSIEvidence", "Evidence wait started: source=$source")
+        try {
+            execution.suspendExecutionPermit {
+                val control = AgentTeamDurableControl(context)
+                while (pending(context, group, source)) {
+                    control.awaitDispatch(execution.request.parentRunId)
+                    delay(1_000)
+                }
+                settled = true
             }
+        } finally {
+            Log.i("GalaxySSIEvidence", "Evidence wait ended: source=$source settled=$settled " +
+                "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started}")
         }
     }
 
@@ -177,9 +190,9 @@ internal object AndroidCollaborationRemoteEvidence {
         }
     }
 
-    internal suspend fun recover(context: Context): Boolean = recoveryLock.withLock { recoverSerially(context) }
+    internal suspend fun recover(context: Context): Boolean = recoveryLock.withLock { recoverFairly(context) }
 
-    private suspend fun recoverSerially(context: Context): Boolean {
+    private suspend fun recoverFairly(context: Context): Boolean {
         val store = CollaborationRemoteEvidenceStore(context)
         val ledger = CollaborationEvidenceLedger(context)
         val control = AgentTeamDurableControl(context)
@@ -187,11 +200,14 @@ internal object AndroidCollaborationRemoteEvidence {
         var after = store.schedulerCursor()
         var batch = store.pending(after)
         if (batch.isEmpty()) { after = ""; store.schedulerCursor(after); batch = store.pending() }
-        for ((index, key) in batch) {
+        CollaborationEvidenceRecoveryScheduler().run(batch, onClaim = { index ->
             after = index
-            // Persist round-robin position before I/O, so one offline executor cannot starve later jobs after a worker timeout.
+            // Claim order, not completion order, determines durable fairness after cancellation.
             store.schedulerCursor(after)
-            val job = store.read(key) ?: continue
+        }, onFailure = { _, error ->
+            Log.w("GalaxySSIEvidence", "Evidence job deferred: ${error.javaClass.simpleName}")
+        }) { key ->
+            val job = store.read(key) ?: return@run CollaborationEvidenceSlice.COMPLETE
             val fields = job.getJSONObject("fields")
             val desktop = job.getString("desktop")
             val group = fields.getString("conversation_id")
@@ -206,12 +222,14 @@ internal object AndroidCollaborationRemoteEvidence {
                 else -> null
             }
             if (status != null) {
-                store.save(key, job.put("status", status)); AgentTeamBackgroundRecovery.enqueue(context); continue
+                store.save(key, job.put("status", status)); AgentTeamBackgroundRecovery.enqueue(context)
+                return@run CollaborationEvidenceSlice.COMPLETE
             }
-            if (control.get(job.getString("run_id")) == AgentTeamUserControl.PAUSE) continue
+            if (control.get(job.getString("run_id")) == AgentTeamUserControl.PAUSE)
+                return@run CollaborationEvidenceSlice.DEFERRED
             if (job.optBoolean("terminal_requested", true))
                 CollaborationProgressStore.evidenceTransfer(context, fields, job.getLong("imported"))
-            val finished = importer.run(key, allowed = { latest ->
+            val outcome = importer.runSlice(key, allowed = { latest ->
                 control.get(latest.getString("run_id")) == AgentTeamUserControl.RUN &&
                     paired(context, desktop, fields) && current(context, fields) &&
                     CollaborationGroupStore(context).load(group)?.members?.any { it.id == binding?.personId } == true
@@ -221,7 +239,8 @@ internal object AndroidCollaborationRemoteEvidence {
             }) {
                 target, scope, selection -> query(context, target, scope, selection)
             }
-            if (finished) AgentTeamBackgroundRecovery.enqueue(context)
+            if (outcome == CollaborationEvidenceSlice.COMPLETE) AgentTeamBackgroundRecovery.enqueue(context)
+            outcome
         }
         if (store.pending(after).isEmpty()) store.schedulerCursor("")
         AgentTeamBackgroundRecovery.enqueue(context)
