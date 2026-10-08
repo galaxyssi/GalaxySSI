@@ -115,10 +115,11 @@ class CollaborationReviewRebindingTest {
         .put("reason", "Pinned candidate is ready; retain independently collected probe input")
         .put("inputs", JSONArray().put(JSONObject().put("dependency", "producer").put("uses_milestones",
             JSONArray().put(CollaborationMilestoneDispatch.inputs(planner(record)).single { it.getString("producer_node") == "producer" }.getString("token")))))
-    private fun returned(record: AgentTeamExecutionRecord, vararg requests: JSONObject): AgentTeamExecutionRecord {
+    private fun returned(record: AgentTeamExecutionRecord, vararg requests: JSONObject,
+                         field: String = CollaborationReviewRebinding.FIELD, fresh: JSONArray = JSONArray()): AgentTeamExecutionRecord {
         val result = AgentSubagentChildResult("run", planner(record).memberId, "run", 1, AgentSubagentStatus.SUCCEEDED,
             output = JSONObject().put("format", CollaborationLiveGraph.FORMAT).put("summary", "Review exact published version")
-                .put("work", JSONArray()).put(CollaborationReviewRebinding.FIELD, JSONArray(requests.toList())).toString(),
+                .put("work", fresh).put(field, JSONArray(requests.toList())).toString(),
             startedAtMillis = 1, completedAtMillis = 2)
         return record.copy(events = record.events + AgentSubagentEvent(1, "run", result.childId, AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = result.status, result = result, timestampMillis = 2))
@@ -327,5 +328,101 @@ class CollaborationReviewRebindingTest {
         assertEquals(CollaborationReviewTargets.milestones(review(first)), CollaborationReviewTargets.milestones(review(changed)))
         assertEquals(2, CollaborationMilestoneDispatch.inputs(review(changed)).size)
         assertEquals(changed, update(changed, workspace))
+    }
+
+    private fun typed(record: AgentTeamExecutionRecord, independent: Boolean = false, ids: Set<String> = setOf("producer")) =
+        record.copy(definition = record.definition.copy(members = record.definition.members.map { member ->
+            if (member.memberId != "review") member else member.copy(context =
+                (if (independent) member.context else member.context - CollaborationReviewTargets.CONTEXT) + mapOf(
+                    CollaborationResearchWorkflow.STAGE to "CHALLENGE", CollaborationWorkGraph.INDEPENDENT to independent.toString(),
+                    CollaborationDataDependencies.CONTEXT to CollaborationDataDependencies.array(ids.associateWith { "Frozen $it data" }).toString()))
+        }))
+
+    @Test fun ordinaryChallengeConsumesPinnedDataWithoutChangingTheGoalOrClaimingIndependentVerification() {
+        val workspace = workspace(); val ref = publish(workspace)
+        val before = typed(prepared(workspace))
+        val changed = update(returned(before, request(before), field = CollaborationReviewRebinding.INPUT_FIELD), workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        val member = review(changed)
+        assertEquals(setOf("probe"), member.dependsOnAgentIds)
+        assertEquals("CHALLENGE", member.context[CollaborationResearchWorkflow.STAGE])
+        assertEquals("false", member.context[CollaborationWorkGraph.INDEPENDENT])
+        assertFalse(member.context.containsKey(CollaborationReviewTargets.CONTEXT))
+        assertFalse(member.context.containsKey(CollaborationReviewTargets.MILESTONE_CONTEXT))
+        assertEquals("[]", member.context[CollaborationDataDependencies.CONTEXT])
+        assertEquals(review(before).objective, member.objective)
+        assertEquals(before.request.goal, changed.request.goal)
+        assertEquals(before.request.context[CollaborationGoalLoop.CRITERIA], changed.request.context[CollaborationGoalLoop.CRITERIA])
+        val history = JSONArray(member.context.getValue(CollaborationReviewRebinding.HISTORY)).getJSONObject(0)
+        assertEquals("declared_data", history.getString("binding_kind"))
+        assertEquals("Frozen producer data", history.getJSONObject("data_requirements").getString("producer"))
+        val access = CollaborationMilestoneDispatch.access(changed, member)
+        assertNotNull(workspace.read(access, ref.getString("object_id"), 1))
+        publish(workspace, "v2", ref)
+        assertNull(workspace.read(access, ref.getString("object_id"), 2))
+        assertEquals(1L, AgentTeamGraphPlan.build(changed.definition, changed.request).children.single { it.childId == "review" }.dependencyRevision)
+    }
+
+    @Test fun bothProtocolsPreserveTypedCompletionDependencies() {
+        val workspace = workspace(); publish(workspace)
+        for (independent in listOf(false, true)) for (field in listOf(CollaborationReviewRebinding.INPUT_FIELD, CollaborationReviewRebinding.FIELD)) {
+            val first = typed(prepared(workspace), independent, emptySet())
+            val rejected = update(returned(first, request(first), field = field), workspace)
+            assertEquals(first.definition, rejected.definition)
+            assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().isNotBlank())
+        }
+        val untyped = prepared(workspace)
+        assertEquals(untyped.definition, update(returned(untyped, request(untyped), field = CollaborationReviewRebinding.INPUT_FIELD), workspace).definition)
+    }
+
+    @Test fun dataBindingRetainsIndependentAuthorshipAndRejectsAdmissionOrInvalidNewWorkAtomically() {
+        val workspace = workspace(); publish(workspace)
+        val first = typed(prepared(workspace), independent = true)
+        val good = returned(first, request(first), field = CollaborationReviewRebinding.INPUT_FIELD)
+        assertEquals("true", review(update(good, workspace)).context[CollaborationWorkGraph.INDEPENDENT])
+        assertEquals(1, CollaborationReviewTargets.milestones(review(update(good, workspace))).size)
+        for (admitted in listOf(null, setOf("review"))) assertEquals(first.definition, update(good, workspace, admitted).definition)
+        val invalid = JSONArray().put(JSONObject().put("id", "new").put("member", "missing").put("stage", "EXPLORE").put("assignment", "new"))
+        assertEquals(first.definition, update(returned(first, request(first), field = CollaborationReviewRebinding.INPUT_FIELD, fresh = invalid), workspace).definition)
+        val self = first.copy(definition = first.definition.copy(members = first.definition.members.map {
+            if (it.memberId == "review") it.copy(context = it.context + (CollaborationResearchWorkflow.PERSON to "author")) else it
+        }))
+        assertEquals(self.definition, update(returned(self, request(self), field = CollaborationReviewRebinding.INPUT_FIELD), workspace).definition)
+    }
+
+    @Test fun typedBindingPauseStopReplayAndCrossProtocolDuplicateAreSafe() {
+        val workspace = workspace(); publish(workspace)
+        val first = typed(prepared(workspace))
+        val result = returned(first, request(first), field = CollaborationReviewRebinding.INPUT_FIELD)
+        for (control in listOf(AgentTeamUserControl.PAUSE, AgentTeamUserControl.STOP)) assertEquals(result, update(result, workspace, control = control))
+        val changed = update(result, workspace)
+        assertEquals(changed, update(changed, workspace))
+        val raw = JSONObject(result.events.last().result!!.output).put(CollaborationReviewRebinding.FIELD, JSONArray().put(request(first)))
+        assertThrows(IllegalArgumentException::class.java) { CollaborationLiveGraph.decode(raw.toString()) }
+        assertThrows(IllegalArgumentException::class.java) { CollaborationLiveGraph.decode(raw.put(CollaborationReviewRebinding.INPUT_FIELD, "wrong").toString()) }
+    }
+
+    @Test fun liveWorkPersistsDataContractAndCannotRewriteItToUnlockExecution() {
+        val workspace = workspace(); publish(workspace)
+        val first = prepared(workspace)
+        val item = JSONObject().put("id", "ordinary").put("member", "peer").put("stage", "CHALLENGE").put("assignment", "Challenge frozen data")
+            .put("depends_on", JSONArray().put("producer").put("probe"))
+            .put(CollaborationDataDependencies.FIELD, CollaborationDataDependencies.array(mapOf("producer" to "Frozen data")))
+        val changed = update(returned(first, fresh = JSONArray().put(item)), workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        val member = changed.definition.members.single { it.context[CollaborationGoalLoop.WORK_ID] == "ordinary" }
+        assertEquals(mapOf("producer" to "Frozen data"), CollaborationDataDependencies.from(member))
+        val inventory = JSONObject(CollaborationLiveGraph.inventory(changed.definition, emptyMap())).getJSONArray("items")
+        val row = (0 until inventory.length()).map(inventory::getJSONObject).single { it.getString("id") == "ordinary" }
+        val waits = row.getJSONArray("waiting_for")
+        val kinds = (0 until waits.length()).map(waits::getJSONObject).associate { it.getString("id") to it.getString("dependency_kind") }
+        assertEquals(mapOf("producer" to "data", "probe" to "completion"), kinds)
+        val rewrite = JSONObject(item.toString()).put(CollaborationDataDependencies.FIELD,
+            CollaborationDataDependencies.array(mapOf("producer" to "Frozen data", "probe" to "Also release this")))
+        val request = returned(changed, fresh = JSONArray().put(rewrite))
+        val unapplied = request.copy(request = request.request.copy(context = request.request.context - CollaborationLiveGraph.APPLIED))
+        val rejected = update(unapplied, workspace)
+        assertEquals(changed.definition, rejected.definition)
+        assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("Cannot rewrite"))
     }
 }

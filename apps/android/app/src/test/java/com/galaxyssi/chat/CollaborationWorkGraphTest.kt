@@ -80,7 +80,8 @@ class CollaborationWorkGraphTest {
     @Test fun goalContinuationRetainsBothInputsAndTargetAcrossCheckpoint() = runBlocking {
         val jobs = listOf(work("model", "person-1"), work("probes", "person-2"),
             work("check", "person-2", "model", "probes").put("independent_review", true)
-                .put("review_targets", JSONArray().put("model")))
+                .put("review_targets", JSONArray().put("model"))
+                .put(CollaborationDataDependencies.FIELD, CollaborationDataDependencies.array(mapOf("model" to "Frozen candidate"))))
         val store = InMemoryAgentTeamExecutionStore()
         AgentTeamExecutionRuntime(store).use { runtime ->
             runtime.start(team(), request()) { AgentSubagentOutput(assessment(jobs).toString()) }.await()
@@ -89,6 +90,8 @@ class CollaborationWorkGraphTest {
             val check = checkpoint.definition.members.single { it.context[CollaborationGoalLoop.WORK_ID] == "check" }
             assertEquals("[\"model\"]", check.context[CollaborationReviewTargets.CONTEXT])
             assertTrue(isPersistedAgentTeamContextKey(CollaborationReviewTargets.CONTEXT))
+            assertTrue(isPersistedAgentTeamContextKey(CollaborationDataDependencies.CONTEXT))
+            assertEquals(mapOf("model" to "Frozen candidate"), CollaborationDataDependencies.from(check))
             assertEquals(2, check.dependsOnAgentIds.size)
             var checked = false
             runtime.resume(checkpoint) { execution ->
