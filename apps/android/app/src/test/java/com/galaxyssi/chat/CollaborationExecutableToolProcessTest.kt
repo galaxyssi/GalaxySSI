@@ -85,4 +85,37 @@ class CollaborationExecutableToolProcessTest {
         assertTrue(receipt.feedback, receipt.accepted)
         assertTrue(goal.evaluate(workspace = tools.reopen()).accepted)
     }
+
+    @Test fun realPairedProgramsExposeRepairAndRegressionWithoutAdoption() {
+        val f = CollaborationExecutableToolTest.Fixture()
+        fun tested(id: String, source: String): Pair<JSONObject, JSONObject> {
+            val tool = f.ref(f.publish(id, CollaborationExecutableTool.TOOL,
+                JSONObject(f.spec.toString()).put("source", source), "author", 1))
+            val plan = f.ref(f.publish("$id-plan", CollaborationExecutableTool.TEST,
+                JSONObject(f.planSpec.toString()).put(CollaborationExecutableTool.TOOL, tool), "reviewer", 2))
+            val result = execute(f.prepare(JSONObject().put("mode", "test").put(CollaborationExecutableTool.TEST, plan)))
+            assertFalse(result.isSuccess)
+            return plan to f.observed(result, "executed-$id")
+        }
+        // Developer-authored defects test feedback fidelity; these are not learned model methods.
+        val baseline = tested("partial-sort", "def run(parameters):\n    xs = parameters['values']\n    return sorted(xs) if any(x < 0 for x in xs) else xs\n")
+        val candidate = tested("unique-sort", "def run(parameters):\n    return sorted(set(parameters['values']))\n")
+        for (observation in listOf(baseline.second, candidate.second)) {
+            var offset: Int? = 0
+            while (offset != null) offset = f.ledger.readPage(f.access("reviewer", 5, "paired"), observation.getString("evidence_id"),
+                observation.getString("sha256"), offset)!!.next
+        }
+        val spec = JSONObject().put("purpose", "Compare actual Python programs")
+            .put("baseline", JSONObject().put(CollaborationExecutableTool.TEST, baseline.first).put("observation", baseline.second))
+            .put("candidate", JSONObject().put(CollaborationExecutableTool.TEST, candidate.first).put("observation", candidate.second))
+            .put("interpretation", "Fixed positive ordering but lost repeated values")
+            .put("limitations", "Local synthetic programs and in-memory ledger, not live Android or model evidence")
+        val saved = f.ref(f.publish("paired", CollaborationToolComparison.KIND, spec, "reviewer", 5,
+            JSONArray().put(baseline.second).put(candidate.second))).getJSONObject(CollaborationEvolutionContract.HOST)
+        assertEquals(1, saved.getJSONObject("counts").getInt("improved"))
+        assertEquals(1, saved.getJSONObject("counts").getInt("regressed"))
+        assertFalse(saved.getBoolean("candidate_all_passed"))
+        assertFalse(saved.getBoolean("automatically_adopted"))
+        assertFalse(saved.getBoolean("capability_gain_verified"))
+    }
 }
