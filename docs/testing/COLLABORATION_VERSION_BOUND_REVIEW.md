@@ -41,9 +41,12 @@ already applied coordinator result is idempotent. A stale revision is an
 explicit validation failure, not an invitation to silently overwrite a plan.
 
 Only existing independent `VERIFY` or `CHALLENGE` work is eligible. Every
-replaced dependency must be a declared review subject; the milestone must
-belong to that exact producer node and another author. Other prerequisites,
-including the reviewer's own blind exploration, remain. Host-managed candidate,
+replaced dependency must be a current required input; the milestone must
+belong to that exact producer node. Review subjects require another author.
+An explicitly declared supporting prerequisite, such as the reviewer's frozen
+test dataset, may also be bound without waiting for its entire report. The host
+derives the role from the existing assignment; rebinding cannot relabel a subject.
+Unpublished or insufficient prerequisites remain. Host-managed candidate,
 learning and other evaluation lifecycles retain their existing transitions.
 
 The reviewer, provider/model selection, assignment, task identity, dependency
@@ -51,6 +54,20 @@ success policy and original acceptance criteria do not change. An amendment
 does not remove, cancel or complete the producer. The review is explicitly
 scoped to pinned versions, not future revisions or the whole producer task.
 Missing inputs must still be reported, not treated as a successful check.
+
+For newly scheduled version-based work, `uses_milestones` contains all required
+versions. Optional `review_milestones` selects the review subjects from that
+set; all tokens remain subjects when the field is absent. This mirrors the
+existing distinction between `depends_on` and `review_targets`. A review must
+retain at least one known, differently authored subject. Supporting data do
+not bypass grants, hash/version binding, or later acceptance checks. Explicit
+input roles survive serialization and appear in the reviewer's scoped context.
+
+Coordinator inventory shows each unfinished dependency's role and available
+published tokens. Publication is not a semantic readiness verdict. The model
+must still decide whether those versions suffice; the host does not auto-release
+waits or assert scientific independence. Final delivery still waits for the
+original producer assignments and reviews. No concurrency limit is increased.
 
 ## Scheduler And Persistence
 
@@ -117,3 +134,29 @@ the coordinator actually selects useful bindings and whether independent
 review improves, confirms or rejects a candidate. Equal-budget team gain,
 transfer and retention require their own experiments. Private research data
 and manuscript material are not included in this repository.
+
+### Frozen prerequisite validation (Android 1.4.98 / 1183)
+
+- Final JVM run: 246 tests in 18 classes, zero failures, errors or skips.
+  Coverage includes review input roles, sequential milestone arrival, retained
+  whole-assignment prerequisites, self-review rejection, typed token validation,
+  deduplication signatures, admission, pause, and scheduler expansion.
+- Debug APK and instrumentation APK built and replacement-installed on a
+  Galaxy S20 Ultra (`SM-G9880`); installed version confirmed as 1.4.98 / 1183.
+- Two local scheduler cases passed: retain an unpublished probe prerequisite;
+  and start the same review from both frozen inputs while both producers continue.
+  Later candidate and dataset versions were actually published before the read
+  assertions and remained inaccessible to the pinned review. Final delivery
+  remained behind the original producers, and each fixture task ran once.
+- Separate-process seed and recovery passed with `reviewBindingFrozenProbe=true`
+  and an explicit App force-stop between phases. Process IDs differed; both
+  pinned versions and their subject/prerequisite roles survived. Fixture data
+  were cleaned up after recovery. This is process recovery, not a device reboot
+  or a Doze/network test.
+- Repository structure, source-size, i18n and whitespace checks passed.
+
+These device tests use synthetic local workers, not model-generated plans.
+They do not establish autonomous model uptake, independent scientific validity,
+team superiority, transfer, or long-term retention. No real research task was
+resumed, and this change does not alter UI, model selection, runtime concurrency,
+Desktop code, or goal acceptance requirements.

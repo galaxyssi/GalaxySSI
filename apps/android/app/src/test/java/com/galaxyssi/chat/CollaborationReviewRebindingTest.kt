@@ -15,11 +15,13 @@ class CollaborationReviewRebindingTest {
     }
     private val author = CollaborationWorkspaceAccess("group", "run", "turn", 1, "producer", "author")
     private fun workspace() = CollaborationResearchWorkspace(Rows()).also { it.enrollPublication(author, CollaborationResearchStage.EXECUTE) }
-    private fun publish(workspace: CollaborationResearchWorkspace, id: String = "v1", ref: JSONObject? = null): JSONObject {
+    private fun publish(workspace: CollaborationResearchWorkspace, id: String = "v1", ref: JSONObject? = null,
+                        access: CollaborationWorkspaceAccess = author): JSONObject {
+        workspace.enrollPublication(access, if (access.nodeId == "probe") CollaborationResearchStage.EXPLORE else CollaborationResearchStage.EXECUTE)
         val item = JSONObject().put("id", "candidate").put("kind", "artifact").put("title", id)
             .put("body", JSONObject().put("content", "candidate $id"))
         ref?.let { item.put("object_id", it.getString("object_id")).put("base_revision", it.getInt("revision")) }
-        return workspace.publishMilestone(author, id, JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+        return workspace.publishMilestone(access, id, JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
             .put("summary", id).put("candidates", JSONArray()).put("findings", JSONArray()).put("workspace", JSONArray().put(item)).toString())
             .getJSONArray("revisions").getJSONObject(0)
     }
@@ -44,12 +46,12 @@ class CollaborationReviewRebindingTest {
     }
     private fun prepared(workspace: CollaborationResearchWorkspace) = CollaborationLiveGraph.update(fixture(), emptySet(), 1,
         { workspace }, milestoneWorkspace = { workspace })
-    private fun planner(record: AgentTeamExecutionRecord) = record.definition.members.single(CollaborationLiveGraph::planner)
+    private fun planner(record: AgentTeamExecutionRecord) = record.definition.members.last(CollaborationLiveGraph::planner)
     private fun review(record: AgentTeamExecutionRecord) = record.definition.members.single { it.memberId == "review" }
     private fun request(record: AgentTeamExecutionRecord) = JSONObject().put("work_id", "review").put("expected_revision", 0)
         .put("reason", "Pinned candidate is ready; retain independently collected probe input")
         .put("inputs", JSONArray().put(JSONObject().put("dependency", "producer").put("uses_milestones",
-            JSONArray().put(CollaborationMilestoneDispatch.inputs(planner(record)).single().getString("token")))))
+            JSONArray().put(CollaborationMilestoneDispatch.inputs(planner(record)).single { it.getString("producer_node") == "producer" }.getString("token")))))
     private fun returned(record: AgentTeamExecutionRecord, vararg requests: JSONObject): AgentTeamExecutionRecord {
         val result = AgentSubagentChildResult("run", planner(record).memberId, "run", 1, AgentSubagentStatus.SUCCEEDED,
             output = JSONObject().put("format", CollaborationLiveGraph.FORMAT).put("summary", "Review exact published version")
@@ -145,7 +147,7 @@ class CollaborationReviewRebindingTest {
         assertEquals(setOf("producer", "probe"), checkpoint.definition.members.single { it.memberId == "review" }.dependsOnAgentIds)
     }
 
-    @Test fun staleUnknownSelfReviewAndNonSubjectInputsAreRejected() {
+    @Test fun staleUnknownSelfReviewAndMismatchedInputsAreRejected() {
         val workspace = workspace(); publish(workspace)
         val first = prepared(workspace)
         val cases = listOf(
@@ -181,7 +183,86 @@ class CollaborationReviewRebindingTest {
         val wrong = first.copy(definition = first.definition.copy(members = first.definition.members.map {
             if (it.memberId == corruptPlanner.memberId) corruptPlanner else it
         }))
-        val record = returned(wrong, request(wrong))
+        val record = returned(wrong, request(first))
         assertEquals(record.definition, update(record, workspace).definition)
+    }
+
+    @Test fun frozenIndependentDataReplacesOnlyItsWaitAndPreservesExactRoles() {
+        val workspace = workspace(); val candidate = publish(workspace)
+        val probe = author.copy(nodeId = "probe", personId = "peer")
+        val data = publish(workspace, "data-v1", access = probe)
+        val first = prepared(workspace)
+        val tokens = CollaborationMilestoneDispatch.inputs(planner(first)).associateBy { it.getString("producer_node") }
+        val request = request(first).apply { getJSONArray("inputs").put(JSONObject().put("dependency", "probe")
+            .put("uses_milestones", JSONArray().put(tokens.getValue("probe").getString("token")))) }
+        val changed = update(returned(first, request), workspace, admitted = setOf("producer", "probe"))
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        val review = review(changed)
+        assertTrue(review.dependsOnAgentIds.isEmpty())
+        assertEquals(review(first).objective, review.objective)
+        assertEquals(setOf(tokens.getValue("producer").getString("token")), CollaborationReviewTargets.milestones(review))
+        assertEquals(2, CollaborationMilestoneDispatch.inputs(review).size)
+        val access = CollaborationMilestoneDispatch.access(changed, review)
+        assertNotNull(workspace.read(access, candidate.getString("object_id"), 1))
+        assertNotNull(workspace.read(access, data.getString("object_id"), 1))
+        publish(workspace, "data-v2", data, probe)
+        assertNull(workspace.read(access, data.getString("object_id"), 2))
+        assertEquals(first.definition.members.filter { it.memberId in setOf("producer", "probe", "final") },
+            changed.definition.members.filter { it.memberId in setOf("producer", "probe", "final") })
+        val history = JSONArray(review.context.getValue(CollaborationReviewRebinding.HISTORY)).getJSONObject(0)
+        assertEquals("prerequisite", history.getJSONObject("input_roles").getString("probe"))
+        assertEquals("review_subject", history.getJSONObject("input_roles").getString("producer"))
+        val prompt = JSONObject(CollaborationReviewTargets.prompt(review)!!)
+        assertEquals(tokens.getValue("probe").getString("token"), prompt.getJSONArray("supporting_milestones").getString(0))
+        val inventory = JSONObject(CollaborationLiveGraph.inventory(first.definition, emptyMap())).getJSONArray("items")
+        val row = (0 until inventory.length()).map(inventory::getJSONObject).single { it.getString("id") == "review" }
+        val waiting = row.getJSONArray("waiting_for")
+        val probeWait = (0 until waiting.length()).map(waiting::getJSONObject).single { it.getString("id") == "probe" }
+        assertEquals("prerequisite", probeWait.getString("input_role"))
+        assertEquals(tokens.getValue("probe").getString("token"), probeWait.getJSONArray("published_milestones").getString(0))
+    }
+
+    @Test fun prerequisiteOnlyRebindKeepsCandidateDependencyAndCannotRelabelASubject() {
+        val workspace = workspace(); publish(workspace)
+        publish(workspace, "data", access = author.copy(nodeId = "probe", personId = "peer"))
+        val first = prepared(workspace)
+        val token = CollaborationMilestoneDispatch.inputs(planner(first)).single { it.getString("producer_node") == "probe" }.getString("token")
+        val request = request(first).apply { getJSONArray("inputs").getJSONObject(0).put("dependency", "probe")
+            .put("uses_milestones", JSONArray().put(token)) }
+        val changed = update(returned(first, request), workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        assertEquals(setOf("producer"), review(changed).dependsOnAgentIds)
+        assertEquals("[\"producer\"]", review(changed).context[CollaborationReviewTargets.CONTEXT])
+        assertTrue(CollaborationReviewTargets.milestones(review(changed)).isEmpty())
+        val selfReview = first.copy(definition = first.definition.copy(members = first.definition.members.map {
+            if (it.memberId == "review") it.copy(context = it.context + (CollaborationReviewTargets.CONTEXT to "[\"producer\",\"probe\"]")) else it
+        }))
+        val rejected = update(returned(selfReview, request), workspace)
+        assertEquals(selfReview.definition, rejected.definition)
+        assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("independent author"))
+    }
+
+    @Test fun laterDataPublicationBindsAtANewCheckpointWithoutLosingTheFirstVersion() {
+        val workspace = workspace(); publish(workspace)
+        val initial = prepared(workspace)
+        val first = update(returned(initial, request(initial)), workspace)
+        publish(workspace, "data-v1", access = author.copy(nodeId = "probe", personId = "peer"))
+        val second = update(first, workspace)
+        assertNotEquals(planner(first).memberId, planner(second).memberId)
+        val token = CollaborationMilestoneDispatch.inputs(planner(second)).single().getString("token")
+        val amendment = JSONObject().put("work_id", "review").put("expected_revision", 1)
+            .put("reason", "Frozen probe data now covers the remaining input; its report may continue")
+            .put("inputs", JSONArray().put(JSONObject().put("dependency", "probe").put("uses_milestones", JSONArray().put(token))))
+        val response = returned(second, amendment)
+        val paused = update(response, workspace, control = AgentTeamUserControl.PAUSE)
+        assertEquals(response, paused)
+        val changed = update(paused, workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        assertTrue(review(changed).dependsOnAgentIds.isEmpty())
+        assertEquals("2", review(changed).context[CollaborationReviewRebinding.REVISION])
+        assertEquals(2, JSONArray(review(changed).context.getValue(CollaborationReviewRebinding.HISTORY)).length())
+        assertEquals(CollaborationReviewTargets.milestones(review(first)), CollaborationReviewTargets.milestones(review(changed)))
+        assertEquals(2, CollaborationMilestoneDispatch.inputs(review(changed)).size)
+        assertEquals(changed, update(changed, workspace))
     }
 }
