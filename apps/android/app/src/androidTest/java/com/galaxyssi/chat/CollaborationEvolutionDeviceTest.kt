@@ -96,6 +96,15 @@ class CollaborationEvolutionDeviceTest {
         val receipt = workspace.publish(author, raw("skill", CollaborationProceduralMemory.SKILL, spec), 500)
         assertEquals(receipt.toString(), "recorded", receipt.getString("status"))
         val skill = receipt.getJSONArray("revisions").getJSONObject(0)
+        val discoveryAccess = access(group, "planner", 0).copy(runId = "reuse-discovery", turnId = "reuse-turn")
+        val discovered = JSONObject(CollaborationCloudRecall.execute(context, discoveryAccess,
+            JSONObject().put("mode", "capabilities").put("query", "applications"))).getJSONArray("records").let { records ->
+            (0 until records.length()).map(records::getJSONObject).single { it.getString("object_id") == skill.getString("object_id") }
+        }
+        assertEquals("Real applications", discovered.getJSONObject("excerpts").getString("avoid_when"))
+        assertEquals(lesson.getString("sha256"), discovered.getJSONArray("linked_sources").getJSONObject(0)
+            .getJSONObject("source").getString("sha256"))
+        assertFalse(discovered.getJSONArray("linked_sources").getJSONObject(0).getBoolean("complete_read"))
         val database = AgentEncryptedDatabase(context, "procedure-fixture-$group")
         val run = "procedure-run-$group"
         fun store() = EncryptedAgentTeamExecutionStore(database, candidateWorkspace = { CollaborationResearchWorkspace(context) })
@@ -105,7 +114,7 @@ class CollaborationEvolutionDeviceTest {
             .put("work", work).put("blockers", JSONArray()).toString()
         try {
             val item = JSONObject().put("id", "reuse-work").put("member", "executor").put("stage", "EXECUTE")
-                .put("assignment", "Run the synthetic procedure with new input").put("procedure_use", JSONObject().put("procedure", skill)
+                .put("assignment", "Run the synthetic procedure with new input").put("procedure_use", JSONObject().put("procedure", discovered)
                     .put("domain", "fixture")
                     .put("inputs", JSONObject().put("values", JSONArray().put(2).put(3)))
                     .put("applicability", JSONObject().put("why", "Same fixture").put("conditions_checked", JSONArray().put("Local synthetic values"))

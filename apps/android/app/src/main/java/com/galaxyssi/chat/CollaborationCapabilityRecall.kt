@@ -19,7 +19,7 @@ internal object CollaborationCapabilityRecall {
         return Query(value, terms)
     }
 
-    fun match(saved: JSONObject, query: Query): JSONObject? {
+    fun match(saved: JSONObject, query: Query, read: (JSONObject) -> JSONObject? = { null }): JSONObject? {
         val kind = saved.getString("kind")
         if (kind !in KINDS) return null
         val body = saved.getJSONObject("body").optJSONObject(kind) ?: return null
@@ -32,6 +32,27 @@ internal object CollaborationCapabilityRecall {
                 is JSONArray -> fields[field] = (0 until value.length()).mapNotNull { value.opt(it) as? String }.joinToString(" ")
             }
         }
+        val sources = JSONArray()
+        if (kind == CollaborationProceduralMemory.SKILL) {
+            body.optJSONArray("inputs")?.let { inputs ->
+                fields["inputs"] = (0 until inputs.length()).map { inputs.getJSONObject(it) }
+                    .joinToString(" ") { "${it.getString("name")} ${it.getString("description")}" }
+            }
+            val host = saved.optJSONObject(CollaborationEvolutionContract.HOST)
+            host?.optString("domain")?.takeIf(String::isNotBlank)?.let { fields["domain"] = it }
+            // The skill cannot carry replacement steps. Search the exact reviewed lesson, within reader scope.
+            host?.optJSONObject("lesson")?.let { ref ->
+                val lesson = read(ref)?.takeIf { it.optString("kind") == CollaborationEvolutionContract.LESSON &&
+                    CollaborationResearchCandidates.same(it, ref) &&
+                    it.optJSONObject(CollaborationEvolutionContract.HOST)?.optString("state") == "eligible_for_scoped_reuse" }
+                lesson?.getJSONObject("body")?.getJSONObject(CollaborationEvolutionContract.LESSON)?.let { value ->
+                    val names = listOf("procedure", "applies_when", "avoid_when", "transfer_test")
+                    names.forEach { field -> fields[field] = value.getString(field) }
+                    sources.put(JSONObject().put("source", CollaborationResearchCandidates.reference(lesson))
+                        .put("fields", JSONArray(names)).put("complete_read", false))
+                }
+            }
+        }
         val normalized = fields.mapValues { AgentKnowledgeTextAnalyzer.normalize(it.value) }
         val matches = query.terms.filter { term -> normalized.values.any { term in it } }
         if (matches.isEmpty()) return null
@@ -39,7 +60,7 @@ internal object CollaborationCapabilityRecall {
             value + if (term !in text) 0 else if (field in setOf("title", "name", "domain", "keywords")) 3 else 1
         } }
         val snippets = JSONObject()
-        fields.forEach { (field, text) ->
+        fields.entries.sortedByDescending { (field, _) -> matches.any { it in normalized.getValue(field) } }.forEach { (field, text) ->
             if (field in setOf("name", "domain", "applies_when", "avoid_when", "limitations", "observed_issue") ||
                 matches.any { it in normalized.getValue(field) }) {
                 if (snippets.length() < 5) snippets.put(field, text.take(180))
@@ -49,6 +70,7 @@ internal object CollaborationCapabilityRecall {
             .put("kind", kind).put("recorded_at", saved.getLong("recorded_at"))
             .put("reported_state", saved.optJSONObject(CollaborationEvolutionContract.HOST)?.optString("state").orEmpty())
             .put("matched_terms", JSONArray(matches)).put("lexical_score", score).put("excerpts", snippets)
+            .put("linked_sources", sources)
             .put("requires_scope_and_lineage_check", true).put("grants_permissions", false)
     }
 
@@ -64,6 +86,7 @@ internal object CollaborationCapabilityRecall {
             "Concurrent publications do not restart pagination; rerun without cursor to discover additions or revisions behind it. " +
             "Search synonyms, other languages and alternative methods separately; no match is not proof no useful method exists. " +
             "Read exact workspace originals and their evidence, conditions and counterexamples before reuse. " +
+            "Procedure matches can include their exact retained lesson; linked_sources identifies excerpt origins, not a full-read receipt. " +
             "For methods, follow usage_recall to inspect prior conditions, failures and delivery; execution success is not a quality gain. " +
             "Check current lineage using the existing procedure/workflow/tool/channel admission; retrieval does not approve adoption.")
 

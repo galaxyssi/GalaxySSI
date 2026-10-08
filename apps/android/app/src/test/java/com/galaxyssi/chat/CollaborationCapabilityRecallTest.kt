@@ -10,6 +10,93 @@ class CollaborationCapabilityRecallTest {
         (0 until a.length()).map(a::getJSONObject)
     }
 
+    @Test fun retainedProcedureIsDiscoverableByItsReviewedConditionsNotOnlyPublisherKeywords() {
+        val f = CollaborationProcedureTest.Fixture()
+        val skill = f.skill { it.put("name", "Method A").put("keywords", JSONArray().put("alpha")) }
+        val future = f.access().copy(runId = "future", turnId = "future", round = 0)
+        val reopened = f.experiment.workspace()
+        for (query in listOf("environment", "indexed", "unknown", "retrieval")) {
+            val found = results(reopened.searchCapabilities(future, query))
+                .singleOrNull { it.getString("object_id") == skill.getString("object_id") }
+            assertNotNull("Retained method missing for query: $query", found)
+        }
+        val found = results(reopened.searchCapabilities(future, "environment"))
+            .single { it.getString("object_id") == skill.getString("object_id") }
+        val source = found.getJSONArray("linked_sources").getJSONObject(0)
+        assertEquals(f.lesson.getString("sha256"), source.getJSONObject("source").getString("sha256"))
+        assertFalse(source.getBoolean("complete_read"))
+        assertEquals("Same dataset and environment", found.getJSONObject("excerpts").getString("applies_when"))
+        val plan = CollaborationProcedureWork.plan(f.record(), listOf(f.work(found)), { reopened }, future)
+        val binding = JSONObject(CollaborationProcedureWork.context(plan.work.single()).getValue(CollaborationProcedureWork.TASK))
+        assertEquals("Use the saved indexed method", binding.getString("method"))
+        assertEquals("Same dataset and environment", binding.getString("applies_when"))
+        assertEquals("Unknown domain", binding.getString("avoid_when"))
+    }
+
+    @Test fun exactLessonVisibilityIsCheckedSeparatelyFromTheSkill() {
+        val f = CollaborationProcedureTest.Fixture()
+        val skill = f.skill { it.put("name", "Method A").put("keywords", JSONArray().put("alpha")) }
+        val blind = f.access("peer", 5).copy(dependencyNodes = setOf("publisher"))
+        assertNotNull(f.workspace.read(blind, skill.getString("object_id"), 1))
+        assertNull(f.workspace.read(blind, f.lesson.getString("object_id"), 1))
+        assertTrue(results(f.workspace.searchCapabilities(blind, "environment"))
+            .none { it.getString("object_id") == skill.getString("object_id") })
+        val visible = results(f.workspace.searchCapabilities(blind, "alpha"))
+            .single { it.getString("object_id") == skill.getString("object_id") }
+        assertEquals(0, visible.getJSONArray("linked_sources").length())
+        val permitted = blind.copy(dependencyNodes = blind.dependencyNodes + "reviewer-lesson")
+        assertTrue(results(f.workspace.searchCapabilities(permitted, "environment"))
+            .any { it.getString("object_id") == skill.getString("object_id") })
+    }
+
+    @Test fun lessonHashKindAndRetainedStateMustMatchBeforeExpandingSearch() {
+        val f = CollaborationProcedureTest.Fixture()
+        val skill = f.skill { it.put("name", "Method A").put("keywords", JSONArray().put("alpha")) }
+        val saved = f.workspace.read(f.access(), skill.getString("object_id"), 1)!!
+        val lesson = f.workspace.read(f.access(), f.lesson.getString("object_id"), 1)!!
+        for (change in listOf<(JSONObject) -> Unit>(
+            { it.put("sha256", "changed") }, { it.put("kind", "artifact") },
+            { it.getJSONObject("host_evolution").put("state", "rejected") })) {
+            val wrong = JSONObject(lesson.toString()).apply(change)
+            assertNull(CollaborationCapabilityRecall.match(saved, CollaborationCapabilityRecall.query("environment")) { wrong })
+        }
+        assertNull(CollaborationCapabilityRecall.match(saved, CollaborationCapabilityRecall.query("environment")) { null })
+    }
+
+    @Test fun sharedLessonIsReadOncePerPageWithoutCachingAcrossAccessScopes() {
+        val f = CollaborationProcedureTest.Fixture()
+        repeat(20) { index ->
+            val receipt = f.workspace.publish(f.access("publisher-$index", 6),
+                f.raw("skill-$index", "procedure_skill", f.spec()).toString())
+            assertEquals("recorded", receipt.getString("status"))
+        }
+        var reads = 0
+        val suffix = "revision:${f.lesson.getString("object_id")}:1"
+        val rows = object : CollaborationWorkspaceRows by f.experiment.rows {
+            override fun read(key: String): String? {
+                if (key.endsWith(suffix)) reads++
+                return f.experiment.rows.read(key)
+            }
+        }
+        val workspace = CollaborationResearchWorkspace(rows)
+        val found = results(workspace.searchCapabilities(f.access(), "environment"))
+        assertTrue(found.count { it.getString("kind") == "procedure_skill" } >= 10)
+        // One linked read, plus at most one read of the lesson's own directory entry.
+        assertTrue("Repeated linked source reads: $reads", reads in 1..2)
+        val blind = f.access("peer", 5).copy(dependencyNodes = setOf("publisher-0"))
+        assertTrue(results(workspace.searchCapabilities(blind, "environment")).isEmpty())
+    }
+
+    @Test fun inputDescriptionsAreSearchableWithoutGrantingExecutionOrInventingLessons() {
+        val f = CollaborationProcedureTest.Fixture()
+        val skill = f.skill { it.getJSONArray("inputs").getJSONObject(0).put("description", "Authorized spectral samples") }
+        val found = results(f.workspace.searchCapabilities(f.access(), "spectral"))
+            .single { it.getString("object_id") == skill.getString("object_id") }
+        assertTrue(found.getJSONObject("excerpts").getString("inputs").contains("spectral"))
+        assertFalse(found.getBoolean("grants_permissions"))
+        assertTrue(found.getBoolean("requires_scope_and_lineage_check"))
+    }
+
     @Test fun matchingUsesEnglishAndChineseKeywordsWithoutClaimingSemanticUnderstanding() {
         val f = CollaborationProcedureTest.Fixture()
         val skill = f.skill { it.put("keywords", JSONArray().put("evidence retrieval").put("\u68c0\u7d22\u8bc1\u636e")) }
@@ -40,16 +127,16 @@ class CollaborationCapabilityRecallTest {
     @Test fun newTaskAutomaticallyReceivesTaskRelatedReferencesWithoutExecutingThem() {
         val f = CollaborationProcedureTest.Fixture(); val skill = f.skill()
         val record = f.record()
-        val member = record.definition.members.first().let { it.copy(objective = "Compare indexed retrieval methods",
+        val member = record.definition.members.first().let { it.copy(objective = "Check environment",
             context = it.context + (CollaborationResearchWorkflow.PERSON to "lead")) }
         val execution = AgentTeamMemberExecutionContext(member = member,
-            request = record.request.copy(messageId = "future-turn", parentRunId = "future-run", goal = "Improve retrieval quality"),
+            request = record.request.copy(messageId = "future-turn", parentRunId = "future-run", goal = "Check environment"),
             handoff = AgentSubagentContextHandoff("", emptyList(), 0, 0, false), depth = 0,
             provenance = AgentSubagentProvenance())
         val page = JSONObject(CollaborationCapabilityRecall.context(f.experiment.workspace(), execution))
         assertEquals("assignment_and_goal_excerpt", page.getString("query_source"))
         assertFalse(page.getBoolean("query_truncated"))
-        assertTrue(page.getString("query").contains("retrieval"))
+        assertTrue(page.getString("query").contains("environment"))
         assertTrue(results(page).any { it.getString("object_id") == skill.getString("object_id") })
         assertEquals("retrieval_aids_not_validated_for_this_task", page.getString("trust"))
     }
