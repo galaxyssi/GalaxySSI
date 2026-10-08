@@ -247,7 +247,8 @@ class CollaborationLiveGraphTest {
         val inventory = JSONObject(CollaborationLiveGraph.inventory(next.definition, completed)).getJSONArray("items")
         val savedReview = (0 until inventory.length()).map { inventory.getJSONObject(it) }.single { it.getString("id") == REVIEW_WORK }
         assertEquals(REVIEWER, savedReview.getString("member"))
-        assertEquals("active_or_queued", savedReview.getString("status"))
+        assertEquals("unobserved", savedReview.getString("status"))
+        assertEquals("satisfied", savedReview.getString("dependency_state"))
         assertEquals("true", work(next, REVIEW_WORK).context[CollaborationWorkGraph.INDEPENDENT])
 
         val returned = terminal(next, planner.memberId,

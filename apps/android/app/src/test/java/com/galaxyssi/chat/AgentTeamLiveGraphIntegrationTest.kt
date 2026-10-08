@@ -47,6 +47,10 @@ class AgentTeamLiveGraphIntegrationTest {
                                 val producer = (0 until items.length()).map { items.getJSONObject(it) }
                                     .single { it.getString("id") == PRODUCER_WORK }
                                 assertEquals(AgentSubagentStatus.SUCCEEDED.name, producer.getString("status"))
+                                val slow = (0 until items.length()).map { items.getJSONObject(it) }
+                                    .single { it.getString("id") == "slow-work" }
+                                assertEquals("RUNNING", slow.getString("status"))
+                                assertEquals("satisfied", slow.getString("dependency_state"))
                                 AgentSubagentOutput(expansion(includeReview = true))
                             } else AgentSubagentOutput(expansion())
                         }
