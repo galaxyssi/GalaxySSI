@@ -39,6 +39,8 @@ internal class CollaborationEvolutionContract(
             CollaborationExecutableTool.TEST -> CollaborationExecutableTool.testPlan(value) { ref, kinds -> exact(ref, kinds) }
             CollaborationExecutableTool.RELEASE -> CollaborationExecutableTool.release(value, revision, access.personId,
                 { ref, kinds -> exact(ref, kinds) }, original, coverage)
+            CollaborationToolComparison.KIND -> CollaborationToolComparison.evaluate(value, revision,
+                { ref, kinds -> exact(ref, kinds, requireCurrent = false) }, original, coverage)
             CollaborationActionPrediction.MODEL -> CollaborationActionPrediction.model(value, revision, { ref, kinds -> exact(ref, kinds) }, coverage)
             CollaborationActionPrediction.FORECAST -> CollaborationActionPrediction.forecast(value) { ref, kinds -> exact(ref, kinds) }.also {
                 require(value.getLong("valid_until") >= revision.getLong("recorded_at")) { "Forecast is already expired at publication" }
