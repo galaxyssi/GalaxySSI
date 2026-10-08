@@ -2007,6 +2007,29 @@ def _codex_collaboration_publish(task_id, arguments, active):
     return _codex_collaboration_exchange(broker, task_id, arguments, active)
 
 
+def _codex_collaboration_file(task_id, working_directory, arguments, active):
+    from collaboration_file_artifact import authenticated_scope, execute
+
+    def snapshot():
+        task = agent_task_manager.get(task_id)
+        value = task.public() if task is not None else None
+        peer = get_client(value.get("client_route_id")) if value is not None else None
+        return authenticated_scope(value, peer, desktop_id())
+
+    scope = snapshot()
+
+    def still_active():
+        try:
+            return active() and snapshot() == scope
+        except ValueError:
+            return False
+
+    return execute(Path(DATA_DIR) / "collaboration-file-artifacts", working_directory, scope, arguments,
+        active=still_active,
+        publish=lambda values: _codex_collaboration_publish(task_id, values, still_active),
+        recall=lambda values: _codex_collaboration_recall(task_id, values, still_active))
+
+
 def _codex_collaboration_exchange(broker, task_id, arguments, active):
     from collaboration_transport_feedback import PublishObservation
 
@@ -2033,7 +2056,8 @@ def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer
         if codex_app_server is None or codex_app_server.executable != executable:
             previous = codex_app_server
             codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event,
-                collaboration_recall=_codex_collaboration_recall, collaboration_publish=_codex_collaboration_publish)
+                collaboration_recall=_codex_collaboration_recall, collaboration_publish=_codex_collaboration_publish,
+                collaboration_file=_codex_collaboration_file)
         server = codex_app_server
     if previous is not None:
         previous.close()
