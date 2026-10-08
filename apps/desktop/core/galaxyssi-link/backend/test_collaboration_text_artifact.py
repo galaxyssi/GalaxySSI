@@ -30,6 +30,9 @@ class TextArtifactTest(unittest.TestCase):
 
     def publish(self, request):
         self.sent.append(copy.deepcopy(request))
+        if request["mode"] == "receipt":
+            return {**request, "success": True, "status": "recorded", "revisions": [
+                {key: self.saved[key] for key in ("object_id", "revision", "sha256")}]}
         value = json.loads(request["artifact"])["workspace"][0]
         self.saved = {"object_id": "a" * 64, "revision": 1, "sha256": "b" * 64,
                       "kind": value["kind"], "body": value["body"], "host_observations": [],
@@ -85,8 +88,9 @@ class TextArtifactTest(unittest.TestCase):
         self.call()
         self.source.unlink()
         self.call()
-        self.assertEqual(self.sent[0], self.sent[1])
-        self.assertEqual(self.sent[0], self.sent[2])
+        self.assertEqual(["publish", "receipt", "receipt"], [r["mode"] for r in self.sent])
+        self.assertEqual(hashlib.sha256(self.sent[0]["artifact"].encode()).hexdigest(), self.sent[1]["artifact_sha256"])
+        self.assertEqual(self.sent[1], self.sent[2])
         with self.assertRaisesRegex(ValueError, "different snapshot"):
             self.call({**self.arguments, "title": "changed"})
 

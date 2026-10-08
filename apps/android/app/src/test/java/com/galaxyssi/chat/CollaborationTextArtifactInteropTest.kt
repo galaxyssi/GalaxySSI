@@ -62,10 +62,16 @@ class CollaborationTextArtifactInteropTest {
             assertEquals("galaxyssi.text-artifact/1", original.getJSONObject("body").getString("format"))
 
             source.writeText("author changed its working copy")
-            val retry = python("publish", authorRoot.path).getJSONObject("captured_request")
-            assertEquals(request.getString("artifact"), retry.getString("artifact"))
             val reopened = CollaborationResearchWorkspace(rows)
-            assertEquals(receipt.toString(), CollaborationMilestoneTool.execute(reopened, author, retry) {}.toString())
+            val query = JSONObject().put("mode", "receipt").put("milestone_id", request.getString("milestone_id"))
+                .put("artifact_sha256", AgentResultRecoveryClient.sha256(request.getString("artifact").toByteArray(Charsets.UTF_8)))
+            val committed = rows.values.toMap()
+            val recovered = CollaborationMilestoneTool.execute(reopened, author, query) {}
+            assertTrue(recovered.toString(), recovered.getBoolean("success"))
+            assertEquals(receipt.getJSONArray("revisions").toString(), recovered.getJSONArray("revisions").toString())
+            val receiptFile = File(directory, "receipt.json").apply { writeText(recovered.toString(), Charsets.UTF_8) }
+            assertTrue(python("confirm", authorRoot.path, receiptFile.path).getBoolean("success"))
+            assertEquals(committed, rows.values)
             val peer = author.copy(nodeId = "peer-node", personId = "peer")
             assertNull(reopened.read(peer, id, 1))
             val granted = peer.copy(pinnedReads = setOf(CollaborationMilestoneDispatch.grant(original)!!))

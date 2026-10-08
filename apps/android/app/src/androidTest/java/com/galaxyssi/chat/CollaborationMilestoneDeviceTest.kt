@@ -157,6 +157,29 @@ class CollaborationMilestoneDeviceTest {
         }
     } }
 
+    @Test fun exactReceiptRecoveryAfterReopenDoesNotRepublishAndRespectsPause() = fixture { access ->
+        val request = input("lost-response")
+        val original = JSONObject(CollaborationMilestoneTool.execute(context, access, request))
+        assertTrue(original.toString(), original.getBoolean("success"))
+        val query = JSONObject().put("mode", "receipt").put("milestone_id", "lost-response")
+            .put("artifact_sha256", AgentResultRecoveryClient.sha256(request.getString("artifact").toByteArray(Charsets.UTF_8)))
+        val before = CollaborationResearchWorkspace(context).milestones(access).toString()
+        val recovered = JSONObject(CollaborationMilestoneTool.execute(context, access, query))
+        assertTrue(recovered.toString(), recovered.getBoolean("success"))
+        assertFalse(recovered.getBoolean("assignment_completed"))
+        assertEquals(original.getJSONArray("revisions").toString(), recovered.getJSONArray("revisions").toString())
+        assertEquals(before, CollaborationResearchWorkspace(context).milestones(access).toString())
+        val changed = JSONObject(query.toString()).put("artifact_sha256", "f".repeat(64))
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, changed)).getBoolean("success"))
+        val missing = JSONObject(query.toString()).put("milestone_id", "never-sent")
+        assertEquals("not_recorded", JSONObject(CollaborationMilestoneTool.execute(context, access, missing)).getString("status"))
+        AgentTeamDurableControl(context).set(access.runId, AgentTeamUserControl.PAUSE)
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, query)).getBoolean("success"))
+        AgentTeamDurableControl(context).set(access.runId, AgentTeamUserControl.RUN)
+        assertEquals(recovered.toString(), CollaborationMilestoneTool.execute(context, access, query))
+        assertEquals(1, CollaborationResearchWorkspace(context).browse(access).revisions.size)
+    }
+
     @Test fun reopenRetryAndFinalReferenceKeepOriginalWithoutEndingAssignment() = fixture { access ->
         val first = JSONObject(CollaborationMilestoneTool.execute(context, access, input("m1")))
         assertTrue(first.toString(), first.getBoolean("success")); assertFalse(first.getBoolean("assignment_completed"))

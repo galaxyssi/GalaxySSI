@@ -10,7 +10,7 @@ import stat
 import tempfile
 import threading
 
-from collaboration_milestone_bridge import MAX_BYTES, validate_arguments as validate_publication
+from collaboration_milestone_bridge import MAX_BYTES, publish_snapshot, validate_arguments as validate_publication
 
 TOOL = "collaboration_text_artifact"
 FORMAT = "galaxyssi.text-artifact/1"
@@ -154,7 +154,7 @@ def _freeze(root, task_id, arguments):
             request = snapshot["request"]
             if _hash(_json(request).encode("utf-8")) != snapshot["request_sha256"]:
                 raise ValueError("Saved artifact snapshot integrity failed; do not silently replace it")
-            return validate_publication(request)
+            return validate_publication(request), True
         source = _safe_path(root, _relative_source(arguments["path"]))
         with source.open("rb") as stream:
             before = os.fstat(stream.fileno())
@@ -186,7 +186,7 @@ def _freeze(root, task_id, arguments):
         validate_publication(request)
         snapshot = {"arguments": arguments, "request": request, "request_sha256": _hash(_json(request).encode("utf-8"))}
         _atomic_write(root, relative, _json(snapshot).encode("utf-8"))
-        return request
+        return request, False
 
 
 def read_workspace_artifact(arguments, recall, active):
@@ -266,10 +266,10 @@ def execute(task_id, working_directory, arguments, *, publish, recall, active):
     root = root.resolve()
     if arguments["mode"] == "materialize":
         return _materialize(root, arguments, recall, active)
-    request = _freeze(root, task_id, arguments)
+    request, recover = _freeze(root, task_id, arguments)
     if not active():
         raise ValueError("Artifact assignment changed before publication")
-    result = publish(request)
+    result = publish_snapshot(request, publish, active, recover=recover)
     body = json.loads(request["artifact"])["workspace"][0]["body"]
     return {**result, "milestone_id": arguments["milestone_id"], "file_sha256": body["sha256"],
             "size_bytes": body["size_bytes"], "executed": False, "verified_claim": False}
