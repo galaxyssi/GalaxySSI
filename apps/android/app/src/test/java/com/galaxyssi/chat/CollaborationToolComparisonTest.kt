@@ -169,6 +169,55 @@ class CollaborationToolComparisonTest {
         assertEquals(x.compare().toString(), x.compare().toString())
     }
 
+    @Test fun comparisonIsBrowsableInBothDirectoriesWithoutTreatingSidesAsFlatReferences() {
+        val x = Fixture()
+        val ref = x.f.ref(x.compare())
+        val access = x.f.access("reviewer", 5, "comparison")
+        for (page in listOf(x.f.reopen().browse(access), x.f.reopen().browseEvolution(access))) {
+            val entry = page.revisions.single { it.getString("object_id") == ref.getString("object_id") }
+            assertEquals("inspect_scope_before_reuse", entry.getString("evolution_applicability"))
+            assertFalse(entry.getJSONObject(HOST).has("cases"))
+        }
+    }
+
+    @Test fun missingCurrentHeadOnEitherSideKeepsHistoricalComparisonAndOriginalEvidence() {
+        repeat(4) { index ->
+            val x = Fixture()
+            val comparison = x.f.ref(x.compare())
+            val selected = listOf(x.f.tool, x.f.plan, x.candidateTool, x.candidatePlan)[index]
+            val head = x.f.rows.data.keys.single { it.endsWith("head:${selected.getString("object_id")}") }
+            x.f.rows.data.remove(head)
+            val access = x.f.access("reviewer", 7, "browse")
+            for (page in listOf(x.f.reopen().browse(access), x.f.reopen().browseEvolution(access))) {
+                val entry = page.revisions.single { it.getString("object_id") == comparison.getString("object_id") }
+                assertEquals("historical_requires_revalidation", entry.getString("evolution_applicability"))
+                assertEquals(1, entry.getJSONObject(HOST).getJSONObject("counts").getInt("regressed"))
+            }
+            assertNotNull(x.f.reopen().read(access, comparison.getString("object_id"), comparison.getInt("revision")))
+        }
+    }
+
+    @Test fun ancestryChecksExactKindsAndEveryToolAndPlanOnBothSides() {
+        val x = Fixture()
+        val ref = x.f.ref(x.compare())
+        val record = x.f.resolve(ref, CollaborationToolComparison.KIND, x.f.access("reviewer", 5, "comparison"))
+        val wanted = listOf(x.f.tool, x.f.plan, x.candidateTool, x.candidatePlan)
+        val seen = mutableSetOf<String>()
+        CollaborationInnovationValidation.checkRecord(record) { linked, kinds ->
+            seen += linked.getString("object_id")
+            x.f.resolve(linked, kinds.single())
+        }
+        assertEquals(wanted.map { it.getString("object_id") }.toSet(), seen)
+        for (missing in wanted) {
+            assertTrue(runCatching {
+                CollaborationInnovationValidation.checkRecord(record) { linked, kinds ->
+                    require(linked.getString("object_id") != missing.getString("object_id")) { "Unavailable fixture dependency" }
+                    x.f.resolve(linked, kinds.single())
+                }
+            }.isFailure)
+        }
+    }
+
     @Test fun historicalExecutionCannotBeRelabeledAsThisGoalsTest() {
         val x = Fixture()
         val revision = JSONObject().put("group_id", "group").put("run_id", "other-run").put("turn_id", "other-turn")
