@@ -6,14 +6,24 @@ internal object CollaborationToolProtocol {
         through the authorized galaxyssi.runtime.execute collaboration_tool input. Preserve failing checks and revise exact versions.
         A different member reviews the source, oracle and original test receipt before publishing tool_release. Reuse only that exact
         release in later authorized group tasks, checking applicability/environment first. No global tool/Skill is auto-installed.
-        Inspect available tools first; a Desktop-only member can author/review code but must delegate execution to an authorized
-        member with the phone runtime and exact native dispatch binding. Do not fabricate a native receipt from a shell command.
+        Inspect available tools first. A remote member with collaboration_test_tool can request execution in its originating
+        phone runtime; otherwise delegate to an authorized member with that runtime. Do not fabricate a native receipt from a shell command.
         Plan build/test/review/reuse as ordinary dependent work; unrelated members continue. Recall evolution_rules for the schema.
         Pure numeric candidates can use numeric_model_trial for host-side case replay and exact failed-case feedback before final acceptance.
         Compare revised tools with tool_test_comparison on the same preserved cases; inspect improvements AND regressions before choosing the next action.
     """.trimIndent()
 
     fun rules() = """
+        Publication envelope: {format:"galaxyssi.research-artifact.v1",summary,workspace:[{id,kind,title,
+          body:{content,<kind>:{...}},parents:[],observations:[]}]}.
+        Use kind="executable_tool" with body.executable_tool for source; kind="tool_test_plan" with body.tool_test_plan for tests;
+        kind="tool_release" with body.tool_release for release review. These are distinct from experiment_plan and generic artifact.
+        Publish the tool first, then register tests referencing its exact receipt. Copy object_id, integer revision and sha256.
+        A generic artifact containing these fields is only documentation: registration_notice reports unregistered typed payloads.
+        On rejection inspect record_validation (code, path, expected, actual, exact reference) and the original draft. The host
+        distinguishes missing typed bodies, unavailable records, wrong kinds, changed hashes and stale versions; it does not choose
+        a repair strategy or relabel saved records. Read the intended contract and choose a new correctly typed publication if needed.
+
         executable_tool: {name,purpose,language:"python",source:"Python defining run(parameters) returning JSON",
           input_schema:<existing Skill parameter schema>,applies_when,avoid_when,environment,dependencies,side_effects}.
         Sources are immutable, group-scoped candidates. Correct code by publishing a new linked tool, never overwrite a tested version.
@@ -29,6 +39,8 @@ internal object CollaborationToolProtocol {
         only inputs, not expected outputs. Each case gets a fresh Python namespace, not an OS security boundary. Test failures retain
         actual versus expected output and errors. The host compares exact JSON values; it does not accept a model's 'tests passed'.
         Call galaxyssi.runtime.execute with {collaboration_tool:{mode:"test",tool_test_plan:<exact ref>},timeout_ms:...}.
+        Remote members may instead call collaboration_test_tool mode=start with execution_id, exact tool_test_plan and timeout_ms,
+        then mode=status with the SAME execution_id. Both paths use the same saved-record checks and originating phone runtime.
         Do not also supply source/language/arguments/verification_kind/project_scope/discover_build_artifacts. Saved code and harness
         are compiled by the host. Existing network settings and artifact output remain explicit; a release grants no authority.
         Setup failure/timeout/partial output is NOT a pass. Read the original evidence receipt, diagnose, repair or delegate with the

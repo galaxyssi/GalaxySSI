@@ -18,7 +18,10 @@ def tool_spec():
         "required": ["object_id", "revision", "sha256"], "additionalProperties": False}
     return {"type": "function", "name": TOOL, "description": (
         "Run an exact saved tool_test_plan through the originating App's existing native Python runtime. "
-        "First publish executable_tool and tool_test_plan; copy the exact plan reference. "
+        "First publish workspace.kind=executable_tool with body.executable_tool, then kind=tool_test_plan with body.tool_test_plan; "
+        "generic artifact or experiment_plan records are not executable registrations. Copy the exact plan reference. "
+        "Inspect record_validation for the precise rejected field, expected/actual values and exact reference; "
+        "recall evolution_rules topic=tools for the full contract. Saved records are never automatically relabeled. "
         "mode=start requires a stable execution_id, tool_test_plan and timeout_ms (100..1800000, the native per-process range). "
         "Returns queued, not passed. Use mode=status with the SAME execution_id to recover progress and the original evidence receipt; "
         "read its full evidence with collaboration_recall before diagnosing, repairing or comparing. "

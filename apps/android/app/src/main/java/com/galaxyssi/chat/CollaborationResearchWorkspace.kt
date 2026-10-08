@@ -370,7 +370,9 @@ internal class CollaborationResearchWorkspace(
         }.getOrElse {
             if (recoverable && it !is IllegalArgumentException && it !is org.json.JSONException) throw it
             writes.clear()
-            failure(it.message ?: "Invalid workspace update")
+            failure(it.message ?: "Invalid workspace update").apply {
+                (it as? CollaborationToolFeedback.Invalid)?.let { error -> put(CollaborationRecordValidation.DETAIL, error.problem) }
+            }
         }
         // Restarting is not another model attempt when the saved draft still has the same rejection.
         if (revalidate && result.optString("status") == "rejected" &&
@@ -728,6 +730,7 @@ internal class CollaborationResearchWorkspace(
         private fun reference(revision: JSONObject) = JSONObject().apply {
             listOf("object_id", "revision", "kind", "title", "person_id", "node_id", "sha256", "evidence_state", "recorded_at")
                 .forEach { key -> put(key, revision.get(key)) }
+            CollaborationRecordValidation.notice(revision)?.let { put("registration_notice", it) }
             listOf("host_candidate", "host_candidate_event").forEach { key -> revision.optJSONObject(key)?.let { put(key, it) } }
             revision.optJSONObject(CollaborationEvolutionContract.HOST)?.let { host ->
                 put(CollaborationEvolutionContract.HOST, (if (revision.getString("kind") == CollaborationNumericModelTrial.KIND)

@@ -17,7 +17,7 @@ internal class CollaborationEvolutionContract(
         if (kind !in KINDS) return
         val body = revision.getJSONObject("body")
         text(body, "content")
-        val value = body.getJSONObject(kind)
+        val value = CollaborationRecordValidation.body(kind, body)
         require(head == null || kind in setOf(GAP, IDEA, CollaborationCapabilityChannel.KIND)) {
             "$kind is immutable; register new work instead of changing an experiment or learning decision"
         }
@@ -226,15 +226,8 @@ internal class CollaborationEvolutionContract(
     }
 
     private fun exact(ref: JSONObject, kinds: Set<String>, requireCurrent: Boolean = true): JSONObject {
-        require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Copy an exact integer revision" }
-        val saved = requireNotNull(read(text(ref, "object_id"), ref.getInt("revision"))) { "Evolution reference missing or isolated" }
-        require(CollaborationResearchCandidates.same(saved, ref) && saved.getString("kind") in kinds) {
-            "Evolution reference digest or object kind mismatch"
-        }
-        require(!requireCurrent || saved.getString("object_id") !in changingIds && current(saved.getString("object_id"), saved.getInt("revision"))) {
-            "Evolution target changed; create a new experiment for the current version"
-        }
-        return saved
+        return CollaborationRecordValidation.exact(ref, kinds, read,
+            if (requireCurrent) { id, version -> id !in changingIds && current(id, version) } else null)
     }
 
     companion object {

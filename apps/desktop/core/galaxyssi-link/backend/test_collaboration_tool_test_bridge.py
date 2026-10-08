@@ -20,6 +20,9 @@ class SavedToolTestBridgeTest(unittest.TestCase):
         self.assertEqual("collaboration_test_tool", tool_spec()["name"])
         self.assertIn("not passed", tool_spec()["description"])
         self.assertIn("not a security sandbox", tool_spec()["description"])
+        self.assertIn("workspace.kind=executable_tool", tool_spec()["description"])
+        self.assertIn("body.tool_test_plan", tool_spec()["description"])
+        self.assertIn("record_validation", tool_spec()["description"])
         self.assertEqual(args(), validate_arguments(args()))
         for mode in ("status", "cancel"):
             value = {"mode": mode, "execution_id": "candidate-v1"}
@@ -61,6 +64,21 @@ class SavedToolTestBridgeTest(unittest.TestCase):
         with patch("collaboration_recall_bridge.RETRY_INITIAL_SECONDS", .002):
             self.assertEqual("running", broker.query(task, args(), publish, timeout=.03)["status"])
         self.assertEqual(sent[0], sent[1])
+
+    def test_failed_native_diagnostic_is_preserved_without_retry_or_relabeling(self):
+        broker = ToolTestBroker()
+        result = {"success": True, "status": "finished", "execution_id": "candidate-v1",
+                  "result": {"native_status": "failed", "passed": None, "error": {
+                      "code": "collaboration_tool_invalid", "record_validation": {
+                          "code": "record_kind_mismatch", "path": "/reference/kind",
+                          "expected": ["tool_test_plan"], "actual": "artifact"}}}}
+        sent = []
+        def publish(request):
+            sent.append(request)
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
+            return True
+        self.assertEqual(result, broker.query(task, {"mode": "status", "execution_id": "candidate-v1"}, publish))
+        self.assertEqual(1, len(sent))
 
     def test_timeout_retains_uncertain_outcome(self):
         with self.assertRaisesRegex(TimeoutError, "SAME execution_id"):
