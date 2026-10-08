@@ -595,6 +595,7 @@ internal class CollaborationResearchWorkspace(
         }
         val keys = rows.page(prefix, after, CollaborationCapabilityRecall.SCAN_PAGE + 1)
         val found = mutableListOf<JSONObject>()
+        val linked = mutableMapOf<String, JSONObject?>()
         var processed = 0
         for (key in keys.take(CollaborationCapabilityRecall.SCAN_PAGE)) {
             processed++
@@ -606,7 +607,11 @@ internal class CollaborationResearchWorkspace(
             if (saved != null && saved.getString("kind") in CollaborationCapabilityRecall.KINDS) {
                 val original = requireNotNull(read(access, saved.getString("object_id"), saved.getInt("revision")))
                 require(original.toString() == saved.toString()) { "Capability head integrity check failed" }
-                CollaborationCapabilityRecall.match(original, search)?.let { match ->
+                CollaborationCapabilityRecall.match(original, search) { ref ->
+                    val id = "${ref.getString("object_id")}:${ref.getInt("revision")}:${ref.getString("sha256")}"
+                    if (!linked.containsKey(id)) linked[id] = read(access, ref.getString("object_id"), ref.getInt("revision"))
+                    linked[id]
+                }?.let { match ->
                     if (original.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL))
                         match.put("usage_recall", JSONObject().put("mode", "method_history").put("object_id", original.getString("object_id"))
                             .put("revision", original.getInt("revision")).put("sha256", original.getString("sha256")))
