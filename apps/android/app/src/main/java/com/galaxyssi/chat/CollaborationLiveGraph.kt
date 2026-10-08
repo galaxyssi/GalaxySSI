@@ -4,7 +4,7 @@ import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Append-only planning checkpoints; an expansion is never authority to finish or rewrite the goal. */
+/** Durable planning checkpoints; an expansion is never authority to finish or rewrite the goal. */
 internal object CollaborationLiveGraph {
     const val ENABLED = "collaboration_research_live_graph"
     const val PLANNER = "collaboration_research_live_planner"
@@ -28,16 +28,18 @@ internal object CollaborationLiveGraph {
         to the new work item. This grants ONLY the listed versions and their recorded observations; it does not
         wait for, finish, or reveal the author's other work. Use depends_on when the entire assignment must finish.
         For an independent milestone review, use a different author; all listed milestones are review subjects.
-        Interim checks use new work items; candidate_cycles still require their completed-producer contract.
+        New interim checks may use new work items; existing queued reviews may use the version-binding contract below.
+        candidate_cycles still require their completed-producer contract.
         The live inventory separates RUNNING, QUEUED, RESULT_PENDING and unobserved work; dependency_state and
         waiting_for show whether an assignment can start. A planned review waiting on its author is NOT an
         active or completed review. Compare its exact inputs with the newly published versions before deciding
         that verification is already covered. If useful, a distinct interim check can use uses_milestones without
-        waiting for the author's entire assignment. Do not clone an existing review, weaken its dependencies,
+        waiting for the author's entire assignment. Do not clone an existing review, silently drop its required inputs,
         interrupt independent exploration, or treat a published version as verified. Explain the next useful
         check or concrete reason to wait in summary; the host does not choose the research strategy for you.
         Add work only when new evidence reveals a useful next step. An empty work array is valid.
         ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
+        ${CollaborationReviewRebinding.instructions()}
         Do not repeat, replace or rename existing work to bypass deduplication. Never repeat a completed side effect.
         Keep competing candidates distinct and assign independent checks to a different author.
         ${CollaborationReviewTargets.instructions()}
@@ -57,20 +59,22 @@ internal object CollaborationLiveGraph {
 
     fun decode(raw: String): JSONObject = JSONObject(raw.trim()).also { json ->
         require(json.keys().asSequence().toSet().let { keys -> keys.containsAll(setOf("format", "summary", "work")) &&
-            keys.all { it in setOf("format", "summary", "work", CollaborationCandidateEvolution.REQUESTS) } }) {
-            "An incremental plan may only contain format, summary, work and candidate_cycles; it cannot change goal criteria or authority"
+            keys.all { it in setOf("format", "summary", "work", CollaborationCandidateEvolution.REQUESTS, CollaborationReviewRebinding.FIELD) } }) {
+            "An incremental plan may only contain format, summary, work, candidate_cycles and rebind_reviews; it cannot change goal criteria or authority"
         }
         require(json.getString("format") == FORMAT && json.opt("summary") is String && json.getString("summary").isNotBlank()) {
             "Return the work-expansion JSON contract"
         }
         json.getJSONArray("work")
         require(!json.has(CollaborationCandidateEvolution.REQUESTS) || json.optJSONArray(CollaborationCandidateEvolution.REQUESTS) != null)
+        require(!json.has(CollaborationReviewRebinding.FIELD) || json.optJSONArray(CollaborationReviewRebinding.FIELD) != null)
     }
 
     fun update(record: AgentTeamExecutionRecord, completedIds: Set<String>, now: Long,
                candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null, control: AgentTeamUserControl = AgentTeamUserControl.RUN,
                candidateAdmission: Int = AgentSubagentLimits.DEFAULT_MAX_CONCURRENCY,
-               milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null): AgentTeamExecutionRecord {
+               milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null,
+               admittedIds: Set<String>? = null): AgentTeamExecutionRecord {
         if (!enabled(record.definition) || record.events.any { it.runStatus != null }) return record
         val primary = record.definition.primaryMemberId
         if (record.events.any { it.childId == primary && it.childStatus != AgentSubagentStatus.QUEUED }) return record
@@ -85,12 +89,17 @@ internal object CollaborationLiveGraph {
         record.definition.members.filter { planner(it) && it.memberId in results && it.memberId !in applied &&
             (control == AgentTeamUserControl.RUN || CollaborationMilestoneDispatch.inputs(it).isEmpty()) }.forEach { member ->
             val result = results.getValue(member.memberId)
+            if (control != AgentTeamUserControl.RUN && runCatching {
+                decode(result.output).optJSONArray(CollaborationReviewRebinding.FIELD)?.length()?.let { it > 0 } == true
+            }.getOrDefault(false)) return@forEach
             val expansion = runCatching {
                 require(result.status == AgentSubagentStatus.SUCCEEDED && !result.outputTruncated) {
                     "Incremental coordinator failed or returned truncated work; preserve existing work and repair at the next checkpoint"
                 }
                 val decoded = decode(result.output)
-                CollaborationCandidateRuntime.update(appendWork(next, decoded.getJSONArray("work"), candidateWorkspace, member), candidateWorkspace,
+                val rebound = CollaborationReviewRebinding.apply(next, member,
+                    decoded.optJSONArray(CollaborationReviewRebinding.FIELD) ?: JSONArray(), admittedIds, now)
+                CollaborationCandidateRuntime.update(appendWork(rebound, decoded.getJSONArray("work"), candidateWorkspace, member), candidateWorkspace,
                     completedIds, control, admissionLeft,
                     decoded.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray(), member.dependsOnAgentIds)
             }
@@ -135,7 +144,7 @@ internal object CollaborationLiveGraph {
         val id = nodeId(next, "plan:${sources.joinToString(",")}" +
             if (milestoneIdentity.isEmpty()) "" else ":milestones:${milestoneIdentity.joinToString(",")}")
         val plan = coordinator.copy(instanceId = id, deliveryMode = AgentDeliveryMode.OBSERVE,
-            objective = "Inspect newly completed work and published interim versions; append useful independent checks or repairs while other work continues.",
+            objective = "Inspect completed work and published versions; add useful checks or bind unadmitted reviews to sufficient exact inputs while other work continues.",
             dependsOnAgentIds = work.filter { it.memberId in results }.mapTo(linkedSetOf()) { it.memberId },
             context = coordinator.context + mapOf(CollaborationGoalLoop.ROSTER to "false", PLANNER to "1",
                 SOURCES to JSONArray(sources).toString(), CollaborationResearchWorkflow.STAGE to "BRIEF") +
@@ -273,6 +282,8 @@ internal object CollaborationLiveGraph {
                 .put("assignment", member.objective.take(180))
                 .put("assignment_truncated", member.objective.length > 180)
                 .put("status", status(member.memberId))
+                .put("input_revision", CollaborationReviewRebinding.revision(member))
+                .put("review_scope", if (CollaborationReviewRebinding.revision(member) > 0) "pinned_versions_only" else "declared_inputs")
                 .put("dependency_policy", if (requireSuccess) "success" else "terminal")
                 .put("dependency_state", when {
                     requireSuccess && unsuccessful.isNotEmpty() -> "failed"

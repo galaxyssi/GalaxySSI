@@ -412,8 +412,8 @@ class AgentTeamLiveGraphIntegrationTest {
             private set
 
         override fun expandResearchGraph(supervisorRunId: String, expectedPrimary: String, completedIds: Set<String>,
-                                         nowMillis: Long, candidateAdmission: Int): AgentTeamExecutionCheckpoint? {
-            val checkpoint = backing.expandResearchGraph(supervisorRunId, expectedPrimary, completedIds, nowMillis, candidateAdmission)
+                                         nowMillis: Long, candidateAdmission: Int, admittedIds: Set<String>?): AgentTeamExecutionCheckpoint? {
+            val checkpoint = backing.expandResearchGraph(supervisorRunId, expectedPrimary, completedIds, nowMillis, candidateAdmission, admittedIds)
             if (crashImage == null && checkpoint?.definition?.members?.any { it.context[CollaborationGoalLoop.WORK_ID] == REVIEW_WORK } == true) {
                 // Capture the durable commit, excluding cleanup events a real process loss could not write.
                 crashImage = Codec.encode(backing.records().single())

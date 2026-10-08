@@ -76,6 +76,7 @@ internal object CollaborationResearchPrompt {
         material("Live work inventory", context["collaboration_research_live_inventory"])
         material("Interim milestone inputs (exact versions, not completed work or verified claims)",
             CollaborationMilestoneDispatch.prompt(execution.member))
+        material("Version-bound review scope", CollaborationReviewRebinding.prompt(execution.member))
         material("Recruitment feedback", context[CollaborationGoalRecruitment.FEEDBACK])
         material("Resource resolution feedback", context[CollaborationResourceRecovery.FEEDBACK])
         if (execution.member.context[CollaborationTeamOrganization.ENABLED] == "1")
