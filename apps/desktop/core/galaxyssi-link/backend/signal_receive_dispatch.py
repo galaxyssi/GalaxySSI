@@ -22,7 +22,7 @@ REPLAYABLE_TYPES = frozenset({
     "agent_task_result_page_request", "agent_task_result_received", "agent_task_approval", "agent_task_evidence_request", "collaboration_recall_result", "collaboration_publish_result", "collaboration_tool_test_result",
     "input_attachment_manifest", "input_attachment_chunk", "input_attachment_request_result",
     "input_attachment_blob_offer", "artifact_blob_capability", "artifact_blob_receipt",
-    "artifact_receipt", "artifact_redelivery_request",
+    "artifact_receipt", "artifact_redelivery_request", "artifact_missing_chunks_request",
 })
 
 

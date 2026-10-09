@@ -418,7 +418,7 @@ object GalaxySSIMqttClient {
             onChanged = { schedulePoolStateRefresh() })
         client = mqtt
         peerRoutes = routes
-        mqtt.onTick = { routes.maintenance() }
+        AgentDesktopArtifactRecovery.attach(context.applicationContext, mqtt, routes)
         outboxDispatchExecutor.execute {
             refreshPoolBindings(context.applicationContext)
             if (context.getSystemService(android.net.ConnectivityManager::class.java).activeNetwork == null)
@@ -2481,6 +2481,7 @@ object GalaxySSIMqttClient {
                         sourceDesktopId, payload.optString("client_route_id"), stored
                     )
                 }
+                if (!result.completed) AgentDesktopArtifactRecovery.remember(context, payload, sourceDesktopId)
                 if (result.completed) {
                     val requestedDownload =
                         GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)

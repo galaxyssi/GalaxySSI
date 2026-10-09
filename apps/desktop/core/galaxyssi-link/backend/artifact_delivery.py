@@ -77,14 +77,16 @@ class PreparedArtifact:
     compress_images: bool = False
     transport_bytes: bytes | None = None
 
-    def chunks(self):
+    def chunks(self, indices=None):
+        selected = range(self.chunk_count) if indices is None else validate_missing_chunks(indices, self.chunk_count)
         if self.transport_bytes is not None:
-            for index in range(self.chunk_count):
+            for index in selected:
                 start = index * ARTIFACT_CHUNK_BYTES
                 yield index, self.transport_bytes[start : start + ARTIFACT_CHUNK_BYTES]
             return
         with self.source_path.open("rb") as stream:
-            for index in range(self.chunk_count):
+            for index in selected:
+                stream.seek(index * ARTIFACT_CHUNK_BYTES)
                 chunk = stream.read(ARTIFACT_CHUNK_BYTES)
                 if not chunk:
                     raise OSError("Artifact ended before declared chunk count")
@@ -150,15 +152,24 @@ def prepare_artifacts(
     return prepared
 
 
+def validate_missing_chunks(value, chunk_count):
+    if (not isinstance(value, list) or not 1 <= len(value) <= 8
+            or any(type(index) is not int or not 0 <= index < chunk_count for index in value)
+            or len(set(value)) != len(value)):
+        raise ValueError("Invalid missing artifact chunk window")
+    return sorted(value)
+
+
 def artifact_chunk_payloads(
     artifact: PreparedArtifact,
     *,
     common: dict | None = None,
+    chunk_indices: list[int] | None = None,
 ):
     if artifact.size_bytes > MAX_ARTIFACT_BYTES:
         raise BlobError("artifact_blob_transport_required", 409)
     base = dict(common or {})
-    for chunk_index, chunk in artifact.chunks():
+    for chunk_index, chunk in artifact.chunks(chunk_indices):
         payload = dict(base)
         payload.update({
             "type": "artifact_chunk",
