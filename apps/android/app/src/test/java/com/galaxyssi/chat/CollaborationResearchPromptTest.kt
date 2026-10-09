@@ -6,6 +6,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun authorsReviewersAndCoordinatorShareTheDeliveryReadinessBoundary() {
+        val guidance = CollaborationFinalDelivery.REVIEW_INSTRUCTIONS
+        assertTrue(guidance.contains("recipient acknowledgement"))
+        assertTrue(guidance.contains("content readiness cannot replace it"))
+        for (stage in CollaborationResearchStage.entries) {
+            val current = execution("goal ".repeat(10000), stage)
+            val result = CollaborationResearchPrompt.build(current, descriptor(), emptyMap())
+            assertTrue("Missing delivery review scope for $stage", result.text.contains(guidance))
+            assertTrue(result.text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+        }
+    }
+
+    @Test fun recoveredReviewPromptRetainsDeliveryScopeWithoutRefreshingEvidence() {
+        val store = CollaborationGoalContractStore(MemoryRows(), { true })
+        val current = execution("Review the exact saved report before delivery", CollaborationResearchStage.VERIFY)
+        val first = CollaborationResearchPrompt.prepare(current, store) { "Original evidence remains untrusted" }
+        val recovered = CollaborationResearchPrompt.prepare(current, store) { error("Do not refresh frozen evidence") }
+        for (prompt in listOf(first, recovered)) {
+            assertTrue(prompt.contains(CollaborationFinalDelivery.REVIEW_INSTRUCTIONS))
+            assertTrue(prompt.contains("If a requirement is unmet or untested, preserve that blocker"))
+            assertTrue(prompt.contains("Read every original evidence page"))
+        }
+    }
+
     @Test fun everyResearchRoleUsesOpaqueRosterIdsIncludingBudgetedPrompts() {
         val misleading = Regex("(?:person|member|roster) UUID", RegexOption.IGNORE_CASE)
         for (stage in CollaborationResearchStage.entries) {

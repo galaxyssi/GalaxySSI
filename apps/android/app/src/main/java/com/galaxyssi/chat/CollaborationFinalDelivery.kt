@@ -5,6 +5,9 @@ import org.json.JSONObject
 /** Selects an existing reviewed deliverable; selection itself never certifies acceptance or receipt. */
 internal object CollaborationFinalDelivery {
     const val FIELD = "final_delivery"
+    const val REVIEW_INSTRUCTIONS = "Review exact saved content before delivery, not future receipt. Approval is not evidence of transport receipt or truth. " +
+        "Explicit recipient acknowledgement, post-delivery audit or external effects require actual evidence; " +
+        "content readiness cannot replace it. Preserve blockers and failed reviews. "
 
     fun reference(assessment: JSONObject): JSONObject? {
         if (!assessment.has(FIELD)) return null
@@ -46,8 +49,8 @@ internal object CollaborationFinalDelivery {
         return assessment.put("summary", text).toString()
     }
 
-    fun instructions() = "Save final text before independent review. On achieved, select final_delivery:{object_id,revision,sha256} " +
-        "from a met criterion: the host copies its complete body.content unchanged, subject to all acceptance checks. " +
-        "Do not paraphrase it again or preclaim review success; review references belong in assessment metadata. " +
-        "Selection is not evidence of transport receipt or user reading. Do not wait for review of this future assessment before submitting it. "
+    fun instructions() = "On achieved, select final_delivery:{object_id,revision,sha256} from a met criterion's saved, independently reviewed text. " +
+        "The host copies complete body.content unchanged after all acceptance checks. Keep review refs in metadata; " +
+        "do not preclaim or await review of this assessment. " +
+        REVIEW_INSTRUCTIONS
 }

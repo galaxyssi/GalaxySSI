@@ -75,6 +75,21 @@ repeat an external side effect. See [publication retirement](../testing/COLLABOR
 
 ## User Experience
 
+### Shared Documentary Review Scope
+
+Authors, independent reviewers and the goal coordinator receive the same host
+delivery lifecycle guidance. Documentary review concerns the saved artifact's
+readiness before final delivery, not an assertion that future transport or user
+reading already happened. An explicitly requested recipient acknowledgement,
+post-delivery audit or external effect still needs its own actual evidence.
+Content readiness never substitutes for these requirements.
+
+This guidance lives in the mandatory response protocol, including budgeted and
+recovered reviewer prompts. It does not rewrite criteria, change review verdicts,
+waive unresolved issues or add an automatic completion path. Runtime acceptance
+and exact-version independent review checks remain unchanged. Real-model
+compliance must be validated separately from prompt inclusion tests.
+
 ### Reviewable Final Delivery
 
 Goal coverage distinguishes requested `outcome` segments, operating `constraint`

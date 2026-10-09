@@ -62,5 +62,6 @@ internal object CollaborationReviewContract {
         "a receipt for reading the peer's workspace document cannot substitute for its original tool output. " +
         "Read every original evidence page until next_offset is null before publishing a review. " +
         "The host binds page coverage to your dispatch at publication; another member's read or a later read cannot certify this review. " +
+        CollaborationFinalDelivery.REVIEW_INSTRUCTIONS +
         CollaborationSemanticGoalCoverage.instructions()
 }
