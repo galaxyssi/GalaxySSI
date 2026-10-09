@@ -1,6 +1,6 @@
 package com.galaxyssi.chat
 
-import java.util.UUID
+import com.galaxyssi.collaboration.WorkflowMaterializer
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,8 +48,10 @@ internal object CollaborationWorkflowInstantiation {
                 roles.opt(it) is String && roles.getString(it).isNotBlank()
             }) { "Workflow roles must map every saved role to one member" }
             val steps = CollaborationEvolutionContract.objects(spec, "steps")
-            for (step in steps) {
-                val stepId = step.getString("id")
+            // Host review validation remains authoritative before the shared core remaps work IDs.
+            steps.forEach { if (it.has(CollaborationReviewTargets.FIELD)) CollaborationReviewTargets.read(it) }
+            for (step in WorkflowMaterializer.expand(execution, steps, roles)) {
+                val stepId = step.sourceId
                 val binding = JSONObject().put("execution_id", execution).put("method", CollaborationResearchCandidates.reference(method))
                     .put("step_id", stepId).put("inputs", JSONObject(inputs.toString()))
                 if (use.has(CollaborationCapabilityChannel.FIELD)) binding.put(CollaborationCapabilityChannel.FIELD,
@@ -57,19 +59,13 @@ internal object CollaborationWorkflowInstantiation {
                 if (use.has(CollaborationWorkflowSelection.FIELD)) binding.put(CollaborationWorkflowSelection.FIELD,
                     JSONObject(use.getJSONObject(CollaborationWorkflowSelection.FIELD).toString()))
                 // Inputs stay in their data field; never interpolate them into saved instructions.
-                expanded.put(JSONObject(step.toString()).apply { remove("role") }
-                    .put("id", workId(execution, stepId)).put("member", roles.getString(step.getString("role")))
-                    .put("depends_on", JSONArray(CollaborationWorkGraph.dependencies(step).map { workId(execution, it) }))
-                    .apply { if (step.has(CollaborationReviewTargets.FIELD)) put(CollaborationReviewTargets.FIELD,
-                        JSONArray(CollaborationReviewTargets.read(step).map { workId(execution, it) })) }
-                    .put(CollaborationWorkflowWork.FIELD, binding))
+                expanded.put(step.work.put(CollaborationWorkflowWork.FIELD, binding))
             }
         }
         return expanded
     }
 
-    fun workId(execution: String, step: String): String = "workflow:" + UUID.nameUUIDFromBytes(
-        JSONArray().put(execution).put(step).toString().toByteArray(Charsets.UTF_8))
+    fun workId(execution: String, step: String): String = WorkflowMaterializer.workId(execution, step)
 
     private fun strings(value: JSONArray): Set<String> = (0 until value.length()).mapTo(linkedSetOf()) { value.getString(it) }
 }

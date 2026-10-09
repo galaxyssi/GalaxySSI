@@ -1,6 +1,6 @@
 package com.galaxyssi.chat
 
-import java.math.BigDecimal
+import com.galaxyssi.collaboration.ConditionalWorkflow
 import org.json.JSONArray
 import org.json.JSONObject
 import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.HOST
@@ -62,43 +62,15 @@ internal object CollaborationWorkflowSelection {
 
     fun choose(rule: JSONObject, inputs: JSONObject): JSONObject {
         val spec = rule.getJSONObject("body").getJSONObject(KIND)
-        fun evaluate(field: String) = conditions(spec, field).map { condition ->
-            val input = condition.getString("input")
-            val pointer = condition.getString("pointer")
-            val selected = if (!inputs.has(input)) Result.failure(IllegalArgumentException("Missing input")) else runCatching {
-                CollaborationEvolutionExperiment.pointer(JSONObject().put("value", inputs.get(input)), "/value$pointer")
-            }
-            val actual = selected.getOrNull()
-            val expected = condition.get("value")
-            val operator = condition.getString("operator")
-            val numeric = actual is Number && expected is Number
-            val typed = numeric || actual != null && actual.javaClass == expected.javaClass
-            val comparison = if (numeric) runCatching {
-                CollaborationEvolutionExperiment.decimal(JSONObject().put("actual", actual), "actual").compareTo(BigDecimal(expected.toString()))
-            }.getOrNull() else null
-            val known = selected.isSuccess && actual !is JSONObject && actual !is JSONArray && typed &&
-                (!numeric || comparison != null) && (operator in setOf("eq", "neq") || comparison != null)
-            val matched = known && when (operator) {
-                "eq" -> if (numeric) comparison == 0 else actual == expected
-                "neq" -> if (numeric) comparison != 0 else actual != expected
-                "lt" -> comparison!! < 0
-                "lte" -> comparison!! <= 0
-                "gt" -> comparison!! > 0
-                "gte" -> comparison!! >= 0
-                else -> false
-            }
-            JSONObject().put("condition_id", condition.getString("id")).put("state", if (!known) "unknown" else if (matched) "matched" else "not_matched")
-        }
-        val positive = evaluate("when_all")
-        val negative = evaluate("unless_any")
-        val unknown = (positive + negative).any { it.getString("state") == "unknown" }
-        val excluded = negative.any { it.getString("state") == "matched" }
-        val candidate = !unknown && !excluded && positive.all { it.getString("state") == "matched" }
-        val variant = if (candidate) "candidate" else "baseline"
+        val decision = ConditionalWorkflow.choose(spec.getJSONArray("when_all"), spec.getJSONArray("unless_any"), inputs)
+        fun rows(values: List<ConditionalWorkflow.ConditionResult>) = JSONArray(values.map {
+            JSONObject().put("condition_id", it.id).put("state", it.state)
+        })
+        val variant = decision.variant
         return JSONObject().put("rule", CollaborationResearchCandidates.reference(rule)).put("variant", variant)
             .put("method", rule.getJSONObject(HOST).getJSONObject("${variant}_method"))
-            .put("reason", when { excluded -> "countercondition_matched"; unknown -> "insufficient_condition_data"; candidate -> "applicability_matched"; else -> "outside_applicability" })
-            .put("when_all", JSONArray(positive)).put("unless_any", JSONArray(negative))
+            .put("reason", decision.reason)
+            .put("when_all", rows(decision.whenAll)).put("unless_any", rows(decision.unlessAny))
             .put("input_evidence", "declared_workflow_inputs_not_independently_verified")
             .put("quality_effect", JSONObject.NULL).put("causality_proven", false)
     }

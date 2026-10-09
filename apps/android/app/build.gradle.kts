@@ -153,8 +153,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1192
-        versionName = "1.4.107"
+        versionCode = 1193
+        versionName = "1.4.108"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -290,6 +290,7 @@ android.sourceSets.getByName("androidTest").assets.srcDir("src/testFixtures/door
 
 dependencies {
     implementation(project(":llama-runtime"))
+    implementation(project(":collaboration-core"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.recyclerview:recyclerview:1.1.0")
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")

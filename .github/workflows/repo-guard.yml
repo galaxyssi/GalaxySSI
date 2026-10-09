@@ -125,6 +125,8 @@ jobs:
       - uses: ./.github/actions/setup-native-memory
       - run: npm run test:core-regressions:contract
       - run: python tools/dev/test-ci-android-memory.py
+      - name: Test shared collaboration workflow core without Android
+        run: apps/android/gradlew -p apps/shared/collaboration-core test --no-daemon
       - run: npm run test:core-regressions
       - uses: actions/upload-artifact@v4
         if: always()

@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "GalaxySSI"
 include(":app")
 include(":llama-runtime")
+include(":collaboration-core")
+project(":collaboration-core").projectDir = file("../shared/collaboration-core")
