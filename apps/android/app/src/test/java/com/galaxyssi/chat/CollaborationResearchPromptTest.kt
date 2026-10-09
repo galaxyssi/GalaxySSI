@@ -6,6 +6,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun exactPeerContractIsVisibleAndRetainedAsRecoverablePromptMaterial() {
+        val base = execution("Compare candidates")
+        val selected = base.copy(member = base.member.copy(context = base.member.context +
+            (CollaborationPeerExchangePolicy.CONTEXT to "[\"peer-a\",\"peer-b\"]")))
+        val materials = CollaborationResearchPrompt.materials(selected, "")
+        assertEquals("[\"peer-a\",\"peer-b\"]", materials["Allowed live peer evidence (person IDs; not completion dependencies)"])
+        assertTrue(CollaborationResearchArtifact.instructions(CollaborationResearchStage.EXECUTE).contains("mode=peer_updates"))
+        assertFalse(CollaborationResearchPrompt.materials(base, "").containsKey("Allowed live peer evidence (person IDs; not completion dependencies)"))
+    }
+
     @Test fun publicationAvailabilityMatchesExecutionPhaseEvenWithOversizedContext() {
         for (stage in CollaborationResearchStage.entries) {
             for (planner in listOf(false, true)) {

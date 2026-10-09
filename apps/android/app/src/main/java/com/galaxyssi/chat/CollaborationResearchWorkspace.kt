@@ -75,9 +75,10 @@ internal class CollaborationResearchWorkspace(
         checkAcceptanceAccess(access)
         require(ref.optString("evidence_id").matches(Regex("[a-f0-9]{64}")) &&
             ref.optString("sha256").matches(Regex("[a-f0-9]{64}"))) { "Workflow observation requires an exact evidence ID and digest" }
-        val original = requireNotNull(evidenceOriginal?.invoke(access, ref)) { "Workflow observation is missing, changed or isolated" }
+        val reads = peerReadAccess(access)
+        val original = requireNotNull(evidenceOriginal?.invoke(reads, ref)) { "Workflow observation is missing, changed or isolated" }
         require(original.getString("evidence_id") == ref.getString("evidence_id") && original.getString("sha256") == ref.getString("sha256") &&
-            access.canRead(original)) { "Workflow observation identity or access mismatch" }
+            reads.canRead(original)) { "Workflow observation identity or access mismatch" }
         JSONObject(original.toString())
     }
 
@@ -169,9 +170,9 @@ internal class CollaborationResearchWorkspace(
     }
 
     fun pendingMilestones(access: CollaborationWorkspaceAccess, covered: Set<String>, producers: Set<String>,
-                          coordinationOnly: Boolean = false): List<JSONObject> = synchronized(LOCK) {
+                          coordinationOnly: Boolean = false, recipient: String? = null): List<JSONObject> = synchronized(LOCK) {
         checkAcceptanceAccess(access)
-        CollaborationMilestoneJournal.pending(rows, access, covered, producers, coordinationOnly).map { descriptor ->
+        CollaborationMilestoneJournal.pending(rows, access, covered, producers, coordinationOnly, recipient).map { descriptor ->
             val refs = descriptor.getJSONArray("revisions")
             val grants = linkedSetOf<String>()
             repeat(refs.length()) { index ->
@@ -225,6 +226,21 @@ internal class CollaborationResearchWorkspace(
         CollaborationCoordinatorJournal(rows, access).offered()
     }
 
+    fun peerUpdates(access: CollaborationWorkspaceAccess, cursor: String, producers: Set<String>): JSONObject = synchronized(LOCK) {
+        requirePublicationActive(access)
+        CollaborationCoordinatorJournal(rows, access, peer = true).page(cursor) { offered ->
+            pendingMilestones(access, offered, producers, recipient = access.personId)
+        }
+    }
+
+    /** Grants survive task completion for final publication; new offers require an active host binding. */
+    fun peerReadAccess(access: CollaborationWorkspaceAccess): CollaborationWorkspaceAccess = synchronized(LOCK) {
+        val offered = CollaborationCoordinatorJournal(rows, access, peer = true).offered()
+        if (offered.isEmpty()) return@synchronized access
+        checkAcceptanceAccess(access)
+        CollaborationCoordinatorUpdates.withGrants(access, offered)
+    }
+
     fun publish(access: CollaborationWorkspaceAccess, raw: String, now: Long = System.currentTimeMillis(),
                 candidateTask: JSONObject? = null): JSONObject = publishInternal(access, raw, now, candidateTask, false)
 
@@ -235,6 +251,7 @@ internal class CollaborationResearchWorkspace(
             access.personId.isNotBlank() && access.nodeId.isNotBlank()) { "A host-owned research identity is required" }
         if (!authorized(access.groupId)) return@synchronized failure("Group access was removed")
         if (candidateTask != null && !accessAuthorized(access)) return@synchronized failure("Candidate member access was removed")
+        val reads = peerReadAccess(access)
         val retirement = CollaborationPublicationRetirement(rows, access)
         if (retirement.isRetired()) {
             checkAcceptanceAccess(access)
@@ -293,13 +310,13 @@ internal class CollaborationResearchWorkspace(
             val revisions = retained.toMutableList()
             val changingIds = (0 until changes.length()).map { changes.getJSONObject(it) }
                 .map { it.optString("object_id").ifBlank { digest("${access.groupId}:${access.personId}:${it.optString("id")}") } }.toSet()
-            val candidates = CollaborationResearchCandidates(access, { id, version -> read(access, id, version) },
-                { id, version -> isCurrent(access, id, version) }, changingIds,
-                { review -> requireCandidateReviewCoverage(access, review) })
-            val evolution = CollaborationEvolutionContract(access, { id, version -> read(access, id, version) },
-                { id, version -> isCurrent(access, id, version) }, changingIds,
-                { ref -> evidenceOriginal?.invoke(access, ref) },
-                { review -> requireNotNull(evidenceReadCoverage) { "Original evidence page coverage is unavailable" }.invoke(access, review) })
+            val candidates = CollaborationResearchCandidates(reads, { id, version -> read(reads, id, version) },
+                { id, version -> isCurrent(reads, id, version) }, changingIds,
+                { review -> requireCandidateReviewCoverage(reads, review) })
+            val evolution = CollaborationEvolutionContract(reads, { id, version -> read(reads, id, version) },
+                { id, version -> isCurrent(reads, id, version) }, changingIds,
+                { ref -> evidenceOriginal?.invoke(reads, ref) },
+                { review -> requireNotNull(evidenceReadCoverage) { "Original evidence page coverage is unavailable" }.invoke(reads, review) })
             val changedIds = hashSetOf<String>()
             repeat(changes.length()) { index ->
                 val item = changes.getJSONObject(index)
@@ -322,11 +339,11 @@ internal class CollaborationResearchWorkspace(
                 val base = item.optInt("base_revision", 0)
                 require(base in 0 until Int.MAX_VALUE) { "Invalid workspace base revision" }
                 require(base == (head?.getInt("revision") ?: 0)) { "Version conflict for $id; inspect the current revision before editing" }
-                require(head == null || access.canRead(head)) { "Current independent work cannot be read or overwritten" }
-                require(head == null || read(access, id, base)?.toString() == head.toString()) { "Workspace head integrity check failed" }
+                require(head == null || reads.canRead(head)) { "Current independent work cannot be read or overwritten" }
+                require(head == null || read(reads, id, base)?.toString() == head.toString()) { "Workspace head integrity check failed" }
                 require(head == null || head.getString("kind") == kind) { "An object's kind cannot be changed" }
                 if (head != null && kind == CollaborationReviewContract.KIND) {
-                    val previous = requireNotNull(read(access, id, base)) { "Previous review is missing or isolated" }
+                    val previous = requireNotNull(read(reads, id, base)) { "Previous review is missing or isolated" }
                     require(previous.toString() == head.toString()) { "Review head integrity check failed" }
                     require(previous.getString("person_id") == access.personId) { "Only the review author may revise their typed review" }
                     require(reviewBinding(previous.getJSONObject("body")) == reviewBinding(body)) {
@@ -341,10 +358,10 @@ internal class CollaborationResearchWorkspace(
                 require(!item.has("observations") || item.optJSONArray("observations") != null) { "observations must be an array" }
                 val observationRefs = item.optJSONArray("observations") ?: JSONArray()
                 val observations = if (observationRefs.length() == 0) JSONArray() else
-                    requireNotNull(evidence) { "Host evidence lookup is unavailable" }.invoke(access, observationRefs)
+                    requireNotNull(evidence) { "Host evidence lookup is unavailable" }.invoke(reads, observationRefs)
                 (listOf(parents, resolves)).forEach { links -> repeat(links.length()) { linkIndex ->
                     val link = links.getJSONObject(linkIndex)
-                    val linked = requireNotNull(read(access, link.getString("object_id"), link.getInt("revision"))) {
+                    val linked = requireNotNull(read(reads, link.getString("object_id"), link.getInt("revision"))) {
                         "A parent or counterevidence reference is missing or isolated"
                     }
                     require(!link.has("sha256") || link.getString("sha256") == linked.getString("sha256")) { "Workspace reference digest mismatch" }
@@ -367,7 +384,7 @@ internal class CollaborationResearchWorkspace(
                     val links = revision.getJSONArray(key)
                     revision.put(key, JSONArray((0 until links.length()).map { linkIndex ->
                         val link = links.getJSONObject(linkIndex)
-                        CollaborationResearchCandidates.reference(requireNotNull(read(access, link.getString("object_id"), link.getInt("revision"))))
+                        CollaborationResearchCandidates.reference(requireNotNull(read(reads, link.getString("object_id"), link.getInt("revision"))))
                     }))
                 }
                 revision.put("sha256", digest(revision.toString()))
@@ -442,7 +459,7 @@ internal class CollaborationResearchWorkspace(
         val saved = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Observation owner is missing or isolated" }
         require(CollaborationResearchCandidates.same(saved, ref)) { "Observation owner digest changed" }
         val refs = saved.getJSONArray("host_observations")
-        if (refs.length() == 0) JSONArray() else requireNotNull(evidence) { "Host evidence lookup is unavailable" }.invoke(access, refs)
+        if (refs.length() == 0) JSONArray() else requireNotNull(evidence) { "Host evidence lookup is unavailable" }.invoke(peerReadAccess(access), refs)
     }
 
     fun replayCandidateTask(access: CollaborationWorkspaceAccess, task: JSONObject): JSONObject? = synchronized(LOCK) {
@@ -478,7 +495,7 @@ internal class CollaborationResearchWorkspace(
     private fun requireCandidateReviewCoverage(access: CollaborationWorkspaceAccess, revision: JSONObject) {
         if (revision.getString("kind") == CollaborationResearchCandidates.EVENT &&
             revision.getJSONObject("body").getJSONObject(CollaborationResearchCandidates.EVENT).optString("operation") == "review")
-            requireNotNull(evidenceReadCoverage) { "Original evidence read validation is unavailable" }.invoke(access, revision)
+            requireNotNull(evidenceReadCoverage) { "Original evidence read validation is unavailable" }.invoke(peerReadAccess(access), revision)
     }
 
     fun isCurrent(access: CollaborationWorkspaceAccess, objectId: String, revision: Int): Boolean = synchronized(LOCK) {
@@ -570,7 +587,8 @@ internal class CollaborationResearchWorkspace(
     internal fun removeGroup(group: String) = synchronized(LOCK) {
         val removed = linkedSetOf<String>()
         // Coordinator journals use the wire digest; preserve that live namespace and remove it explicitly.
-        for (prefix in listOf(prefix(group), CollaborationCoordinatorJournal.groupPrefix(group))) {
+        for (prefix in listOf(prefix(group), CollaborationCoordinatorJournal.groupPrefix(group),
+            CollaborationCoordinatorJournal.groupPrefix(group, peer = true))) {
             var cursor = ""
             while (true) {
                 val keys = rows.page(prefix, cursor, CollaborationAcceptanceReviewSnapshot.PAGE_SIZE)

@@ -12,7 +12,7 @@ internal object CollaborationCloudRecall {
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE))))
         fields.filterNot { it == "mode" }.forEach { field ->
             properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
         }
@@ -36,7 +36,7 @@ internal object CollaborationCloudRecall {
                 "Returned output is not proof of a claim.")
             .apply { put("description", getString("description") + " Active incremental coordinators may use mode=team_updates/cursor to discover newly published exact versions. " +
                 "Follow next_cursor to an empty page and reuse it later. Alternatively, mode=team_updates with work_id (without cursor) reads one complete current work contract before a dependency revision. " +
-                "Other members cannot use this mode; original goal snapshots remain unchanged.") }
+                "Other members cannot use this mode; original goal snapshots remain unchanged. " + CollaborationPeerUpdates.INSTRUCTIONS) }
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
         when (prepared.provider) {
             ModelStreamProvider.OPENAI_COMPATIBLE -> tools.put(JSONObject().put("type", "function")
@@ -51,7 +51,7 @@ internal object CollaborationCloudRecall {
                 recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE)) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE)) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }

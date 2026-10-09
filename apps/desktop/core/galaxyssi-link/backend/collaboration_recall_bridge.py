@@ -52,9 +52,13 @@ def tool_spec():
         "Follow next_cursor to an empty page and reuse that cursor later; read the versions before judging sufficiency. "
         "Alternatively, mode=team_updates with work_id from the inventory (without cursor) reads the complete current work contract before a dependency revision. "
         "Other members cannot use team_updates. Original goal snapshots and independent research isolation are unchanged. "
+        "Workers may use mode=peer_updates/cursor during their existing assignment to read interim requests explicitly addressed to them "
+        "from peers allowed by the host work contract peer_updates_from. Read the exact versions and observations before accepting, rejecting or deferring a request. "
+        "Use next_cursor to caught_up_at_read, then reuse it at useful checkpoints, not a busy polling loop. Empty does not mean peers finished. "
+        "all revisions and their observations in that milestone are shared with eligible recipients. No extra model is started. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates"]},
             "query": {"type": "string", "maxLength": 1000},
             "work_id": {"type": "string", "maxLength": 160},
             "case_filter": {"type": "string", "maxLength": 32, "enum": list(NUMERIC_CASE_FILTERS)},
@@ -101,6 +105,8 @@ def validate_arguments(arguments):
             raise ValueError("Team updates take cursor for publications OR work_id for the complete work contract")
     elif "work_id" in arguments:
         raise ValueError("Work ID is only supported for coordinator updates")
+    if arguments["mode"] == "peer_updates" and set(arguments) - {"mode", "cursor"}:
+        raise ValueError("Peer updates accept mode and cursor only")
     if arguments["mode"] == "capabilities":
         if set(arguments) - {"mode", "query", "cursor"} or not arguments.get("query", "").strip():
             raise ValueError("Capability search requires query and accepts optional cursor only")

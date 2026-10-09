@@ -19,6 +19,15 @@ internal object CollaborationScopedRecall {
         if (input.containsKey("work_id") && input["mode"] != CollaborationCoordinatorUpdates.MODE)
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Work ID is only supported for coordinator updates.")
         return when (input["mode"]) {
+            CollaborationPeerUpdates.MODE -> {
+                if (input.keys.any { it !in setOf("mode", "cursor") } || input.containsKey("cursor") && input["cursor"] !is String)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Peer updates accept mode and cursor only.")
+                try { AgentNativeToolExecutionResult.success(CollaborationPeerUpdates.read(context, access,
+                    input["cursor"] as? String ?: "").toNativeObject()) }
+                catch (invalid: IllegalArgumentException) {
+                    AgentNativeToolExecutionResult.failure("updates_unavailable", invalid.message.orEmpty())
+                }
+            }
             CollaborationCoordinatorUpdates.MODE -> {
                 val work = input.containsKey("work_id")
                 val fields = if (work) setOf("mode", "work_id") else setOf("mode", "cursor")
@@ -127,7 +136,7 @@ internal object CollaborationScopedRecall {
                     ("trust" to "host_goal_contract_not_comprehension_or_claim_verification"))
             }
             "evidence" -> {
-                val access = CollaborationCoordinatorUpdates.readAccess(context, access)
+                val access = CollaborationPeerUpdates.combinedReadAccess(context, access)
                 val ledger = CollaborationEvidenceLedger(context)
                 val id = input["evidence_id"] as? String ?: ""
                 if (id.isNotBlank()) {
@@ -156,7 +165,7 @@ internal object CollaborationScopedRecall {
                 }
             }
             "workspace" -> {
-                val access = CollaborationCoordinatorUpdates.readAccess(context, access)
+                val access = CollaborationPeerUpdates.combinedReadAccess(context, access)
                 val workspace = CollaborationResearchWorkspace(context)
                 val id = input["object_id"] as? String ?: ""
                 if (id.isNotBlank()) {
@@ -169,7 +178,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules, numeric_cases, team_updates or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules, numeric_cases, team_updates, peer_updates or problems for scoped recall.")
         }
     }
 

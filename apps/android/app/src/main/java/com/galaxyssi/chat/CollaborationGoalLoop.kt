@@ -68,6 +68,7 @@ internal object CollaborationGoalLoop {
         Choose the number and type of steps from evidence gaps, not a fixed recipe. Parallel alternatives are welcome.
         Express producer/reviewer/repair dependencies with depends_on. Each ready work item starts without waiting for unrelated members.
         ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
+        ${CollaborationPeerExchangePolicy.INSTRUCTIONS}
         Use success for work requiring an actual artifact; terminal for diagnosing failed work. The default is success.
         An independent review must name its target work and use a different member from every target author.
         ${CollaborationCoordinationProtocol.instructions()}
@@ -246,7 +247,15 @@ internal object CollaborationGoalLoop {
         var coordinator = byPerson.getValue(coordinatorPerson)
         fun nodeId(suffix: String) = UUID.nameUUIDFromBytes("${record.request.runId}:goal:$round:$suffix".toByteArray()).toString()
         val validWork = (0 until requested.length()).mapNotNull { requested.optJSONObject(it) }.map { item ->
-            JSONObject(item.toString()).also { recruitment.aliases[item.optString("member")]?.let { id -> it.put("member", id) } }
+            JSONObject(item.toString()).also { normalized ->
+                recruitment.aliases[item.optString("member")]?.let { id -> normalized.put("member", id) }
+                item.optJSONArray(CollaborationPeerExchangePolicy.FIELD)?.let { peers ->
+                    normalized.put(CollaborationPeerExchangePolicy.FIELD, JSONArray((0 until peers.length()).map { at ->
+                        val peer = peers.opt(at)
+                        if (peer is String) recruitment.aliases[peer] ?: peer else peer
+                    }))
+                }
+            }
         }.filter {
             it.optString("member") in byPerson && it.optString("assignment").isNotBlank() &&
                 !CollaborationResourceRecovery.isReservedWorkId(it.optString("id")) &&
@@ -308,7 +317,11 @@ internal object CollaborationGoalLoop {
         val prediction = innovation.mapCatching { CollaborationPredictionWork.plan(record, it.work, candidateWorkspace,
             CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
                 record.request.messageId, round, personId = coordinatorPerson), criteria, now) }
-        val selfResearch = prediction.mapCatching { CollaborationSelfResearchWork.plan(record, it.work, candidateWorkspace,
+        val selfResearch = prediction.mapCatching {
+            it.work.forEach { item -> require(CollaborationPeerExchangePolicy.read(item).all(byPerson::containsKey)) {
+                "peer_updates_from must name existing authorized roster members"
+            } }
+            CollaborationSelfResearchWork.plan(record, it.work, candidateWorkspace,
             CollaborationWorkspaceAccess(coordinator.context["collaboration_group_id"].orEmpty(), record.request.runId,
                 record.request.messageId, round, personId = coordinatorPerson)) }
         val graph = if (compiled.error.isNotBlank()) compiled else selfResearch.fold(
@@ -331,7 +344,7 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
                     CollaborationWorkGraph.REPAIR_OF to item.optString("repair_of"),
                     CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationReviewTargets.context(item) +
-                    CollaborationDataDependencies.context(item) + CollaborationCandidateEvolution.taskContext(item) +
+                    CollaborationDataDependencies.context(item) + CollaborationPeerExchangePolicy.context(item) + CollaborationCandidateEvolution.taskContext(item) +
                     CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item) + CollaborationInnovationWork.context(item) + CollaborationPredictionWork.context(item) + CollaborationWorkflowWork.context(item) + CollaborationSelfResearchWork.context(item) +
                     CollaborationMilestoneDispatch.context(CollaborationMilestoneDispatch.uses(item).sorted().map { availableMilestones.getValue(it) }))
         }

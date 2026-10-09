@@ -78,6 +78,8 @@ internal object CollaborationResearchPrompt {
         material("Interim milestone inputs (exact versions, not completed work or verified claims)",
             CollaborationMilestoneDispatch.prompt(execution.member))
         material("Version-bound input scope", CollaborationReviewRebinding.prompt(execution.member))
+        material("Allowed live peer evidence (person IDs; not completion dependencies)",
+            execution.member.context[CollaborationPeerExchangePolicy.CONTEXT])
         material("Declared data requirements (other dependencies require completion)",
             execution.member.context[CollaborationDataDependencies.CONTEXT])
         material("Protected completion barriers", execution.member.context[CollaborationCompletionBarriers.CONTEXT])
