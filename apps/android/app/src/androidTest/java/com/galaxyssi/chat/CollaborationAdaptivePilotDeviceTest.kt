@@ -58,10 +58,13 @@ class CollaborationAdaptivePilotDeviceTest {
             .put("protocol_device_model", plan.deviceModel).put("operator_device_model", args.getString("pilotDeviceModel"))
             .put("app_version_code", BuildConfig.VERSION_CODE).put("run_id", run).put("turn_id", turn)
             .put("selection_source", "app_conversation_snapshot").put("selection_conversation_id", selectionId)
+            .put("execution_mode", plan.executionMode)
+            .put("test_scope", if (plan.singleAgent) "execution_delivery_only" else "host_goal_acceptance")
+            .put("single_agent_tool_delegation_audited", false)
             .put("model_selection", plan.selection.json()).put("phone_dispatch_limit", plan.maximumDispatches)
             .put("trial_timeout_ms", plan.timeoutMillis).put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE)
             .put("production_prompt_preserved", true).put("fixed_work_plan", false)
-            .put("interim_publication_enabled", true).put("milestone_archive_complete", false)
+            .put("interim_publication_enabled", !plan.singleAgent).put("milestone_archive_complete", false)
             .put("full_ui_lifecycle_tested", false).put("process_restart_tested", false)
             .put("tool_isolation_verified", false).put("equal_budget_comparison", false)
             .put("billed_cost", JSONObject.NULL).put("provider_request_count", JSONObject.NULL)
@@ -90,7 +93,8 @@ class CollaborationAdaptivePilotDeviceTest {
                 GalaxySSIMqttClient.requestCapabilityManifestRefresh(force = true)
                 CollaborationRemotePilotWorker.requireTarget(context, plan)
                 group = transcripts.createAgentConversation("Adaptive pilot ${plan.id}").id
-                groups.update(group) { it.copy(members = plan.members, coordinatorId = plan.members.first().id, workflow = CollaborationWorkflow.RESEARCH) }
+                groups.update(group) { it.copy(members = plan.members, coordinatorId = plan.members.first().id,
+                    workflow = if (plan.singleAgent) CollaborationWorkflow.PARALLEL else CollaborationWorkflow.RESEARCH) }
                 milestoneArchive = CollaborationAdaptivePilotMilestones(group, run, turn, CollaborationResearchWorkspace(context)) { access, ref ->
                     CollaborationEvidenceLedger(context).read(access, ref.getString("evidence_id"), ref.getString("sha256"))
                 }
@@ -129,7 +133,8 @@ class CollaborationAdaptivePilotDeviceTest {
                     override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) =
                         delegate.sendMessage(member, runId, message)
                 }
-                runtime = AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 2, maxContextChars = 60_000, maxOutputChars = 24_000),
+                runtime = AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = if (plan.singleAgent) 1 else 2,
+                    maxContextChars = 60_000, maxOutputChars = 24_000),
                     mailbox = EncryptedAgentTeamMailbox(context))
                 runner = CollaborationAdaptivePilotRunner(store, requireNotNull(runtime), guard,
                     projectRecruits = { groups.projectRecruits(group, it) }, checkpoint = { snapshot, checkpoint ->
@@ -142,7 +147,7 @@ class CollaborationAdaptivePilotDeviceTest {
                                 .put("members", members(checkpoint)))
                             persist()
                         }
-                    })
+                    }, singleAgent = plan.singleAgent)
                 val reason = requireNotNull(runner).run(plan.definition(group, run),
                     AgentRunRequest(group, turn, "task-$run", runId = run, goal = plan.goal, idempotencyKey = run), worker)
                 report.put("status", reason)

@@ -1,7 +1,12 @@
 package com.galaxyssi.chat
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.lang.reflect.Modifier
+import java.util.UUID
+import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,6 +15,55 @@ import org.junit.runner.RunWith
 /** Checks discovery without invoking the guarded real-model trial. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationAdaptivePilotContractDeviceTest {
+    @Test fun singleCalibrationUsesOneUnstagedMemberWithAndroidJson() = runBlocking {
+        val raw = JSONObject().put("format", CollaborationAdaptivePilotPlan.SINGLE_FORMAT)
+            .put("pilot_id", "single-device-contract").put("device_model", android.os.Build.MODEL)
+            .put("target_id", "fixture:codex").put("model_id", "selected-model").put("reasoning_effort", "high")
+            .put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE).put("goal", "\n Synthetic contract check only\nPreserve this second line.\r\n")
+            .put("trial_timeout_ms", 1_000).put("maximum_dispatches", 1)
+            .put("members", JSONArray().put(JSONObject().put("id", "solo").put("name", "Solo").put("role", "Researcher")))
+        val plan = CollaborationAdaptivePilotPlan.from(raw, 1, 1_000)
+        val definition = plan.definition("contract-fixture", "contract-run")
+        assertEquals(1, definition.members.size)
+        assertEquals(plan.goal.trim(), definition.members.single().objective)
+        assertTrue(plan.matchesExecution(definition.members.single(), definition))
+        assertTrue(!CollaborationLiveGraph.enabled(definition))
+        assertTrue(CollaborationResearchWorkflow.stage(definition.members.single()) == null)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "single_calibration_contract_${UUID.randomUUID()}"
+        val database = AgentEncryptedDatabase(context, name)
+        val store = EncryptedAgentTeamExecutionStore(database)
+        val request = AgentRunRequest("contract-fixture", "turn", "task", runId = "contract-run",
+            goal = plan.goal, idempotencyKey = "contract-run")
+        val guard = CollaborationAdaptivePilotAdmission(plan, "contract-fixture", "contract-run", "turn",
+            100, { 1 }, { store.deliveryCheckpoint("contract-run") }, {})
+        var calls = 0
+        try {
+            val worker = object : AgentTeamMemberWorker {
+                override suspend fun execute(execution: AgentTeamMemberExecutionContext): AgentSubagentOutput {
+                    guard.prepare(execution)
+                    calls++
+                    assertEquals(plan.goal, execution.request.goal)
+                    assertEquals(plan.executionObjective, execution.member.objective)
+                    return AgentSubagentOutput("Synthetic local result; no model call")
+                }
+                override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) = Unit
+            }
+            AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 1)).use { runtime ->
+                val runner = CollaborationAdaptivePilotRunner(store, runtime, guard, singleAgent = true)
+                assertEquals("single_agent_returned_goal_unverified", runner.run(definition, request, worker))
+            }
+            assertEquals(1, calls)
+            val restored = EncryptedAgentTeamExecutionStore(AgentEncryptedDatabase(context, name))
+                .deliveryCheckpoint("contract-run")!!
+            assertEquals(plan.goal, restored.request.goal)
+            assertTrue(plan.matchesExecution(restored.definition.members.single(), restored.definition))
+        } finally {
+            database.clear()
+            context.deleteDatabase("$name.db")
+        }
+    }
+
     @Test fun productionCoordinatorPromptFitsWithAndroidJsonAndFullDirectory() {
         val rows = object : CollaborationGoalContractRows {
             val values = mutableMapOf<String, String>()

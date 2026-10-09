@@ -20,6 +20,11 @@ lifecycle test. The fixture advances saved rounds directly rather than invoking
 the production screen controller. It does not establish process-restart or Doze
 recovery, resource isolation, equal cost, scientific novelty, or capability gain.
 
+For a free-running, one-member control using this same transport and cleanup
+entry, see [Single-Agent Calibration](SINGLE_AGENT_CALIBRATION.md). Its delivery
+verdict is not the adaptive team's host-goal-acceptance verdict or an external
+quality score; those outcomes must be evaluated separately.
+
 ## Private Protocol
 
 Keep goals, trial protocols, raw reports, rubrics and paper data outside Git.

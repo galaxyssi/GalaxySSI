@@ -37,9 +37,11 @@ internal class CollaborationAdaptivePilotAdmission(
             context.request.messageId == turn && context.request.goal == plan.goal &&
             context.request.runId == stableAgentTeamMemberRunId(run, member.memberId)) { "Adaptive assignment is not owned by the production graph" }
         check(member.deliveryMode != AgentDeliveryMode.IGNORE && member.agentId == plan.targetId && member.context["collaboration_model_id"] == plan.selection.modelId &&
-            member.context[CollaborationReasoningSelection.KEY] == plan.selection.reasoningEffort.wireValue &&
-            member.context[CollaborationGoalLoop.ENABLED] == "1" && CollaborationResearchWorkflow.stage(member) != null) {
-            "Adaptive trial must retain the production research protocol and selected model"
+            member.context[CollaborationReasoningSelection.KEY] == plan.selection.reasoningEffort.wireValue) {
+            "Trial must retain its selected model, reasoning effort and delivery target"
+        }
+        check(plan.matchesExecution(member, current.definition)) {
+            "Trial execution mode or complete assignment changed"
         }
         check(!context.handoff.truncated && context.handoff.dependencies.none { it.outputTruncated }) { "Adaptive trial input was truncated" }
         val key = context.request.idempotencyKey
@@ -57,6 +59,7 @@ internal class CollaborationAdaptivePilotAdmission(
         check(current.definition.members.singleOrNull { it.memberId == context.member.memberId } == context.member &&
             current.request.runId == run && current.request.messageId == turn && current.request.conversationId == group &&
             current.request.goal == plan.goal && current.request.taskId == context.request.taskId &&
+            plan.matchesExecution(context.member, current.definition) &&
             context.request.idempotencyKey == "${current.request.idempotencyKey}:${context.member.memberId}") {
             "Production graph changed before trial dispatch"
         }
@@ -68,12 +71,16 @@ internal class CollaborationAdaptivePilotAdmission(
             "Adaptive trial dispatch identity or model changed"
         }
         val prompt = requireNotNull(action.managedTeamAssignmentPrompt())
+        if (plan.singleAgent) check(prompt.contains(plan.executionObjective)) {
+            "Single-agent production prompt omitted part of the original task; no silent truncation"
+        }
         context.resourceObservation?.let {
             check(prompt.contains(it.prompt(context).trim())) { "Production prompt omitted the host resource observation" }
         }
         check(context.member.memberId !in admitted)
         admitted.add(context.member.memberId)
-        persist(JSONObject().put("node_id", context.member.memberId).put("person_id", context.member.context[CollaborationResearchWorkflow.PERSON])
+        persist(JSONObject().put("execution_mode", plan.executionMode)
+            .put("node_id", context.member.memberId).put("person_id", context.member.context[CollaborationResearchWorkflow.PERSON])
             .put("stage", context.member.context[CollaborationResearchWorkflow.STAGE])
             .put("assignment", context.member.objective).put("owner_run_id", context.request.runId).put("parent_run_id", run)
             .put("conversation_id", group).put("turn_id", turn).put("task_id", context.request.taskId)

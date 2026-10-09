@@ -19,8 +19,12 @@ internal object CollaborationTrialDeviceBinding {
 /** An experiment envelope, not a plan: production coordination chooses all executable work. */
 internal class CollaborationAdaptivePilotPlan private constructor(
     val id: String, val deviceModel: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
-    val goal: String, val timeoutMillis: Long, val maximumDispatches: Int, val members: List<CollaborationMember>
+    val goal: String, val timeoutMillis: Long, val maximumDispatches: Int, val members: List<CollaborationMember>,
+    val singleAgent: Boolean = false
 ) : CollaborationTrialSelectionPolicy {
+    val executionMode get() = if (singleAgent) "single_agent" else "adaptive_team"
+    // Production normalizes assignment boundaries; keep the frozen request unchanged.
+    val executionObjective get() = goal.trim()
     fun requireDevice(actualModel: String, operatorModel: String?) {
         require(operatorModel == deviceModel && actualModel == deviceModel) {
             "Trial device mismatch: the frozen protocol, explicit operator target and connected model must agree"
@@ -35,17 +39,29 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     "collaboration_provider" to person.providerLabel, "collaboration_model_id" to selection.modelId,
                     CollaborationReasoningSelection.KEY to selection.reasoningEffort.wireValue))
         }
-        return AgentTeamDefinition(run, targetId, CollaborationResearchWorkflow.expand(people, goal),
+        val nodes = if (singleAgent) listOf(people.single().copy(objective = executionObjective,
+            context = people.single().context + (CollaborationResearchWorkflow.PERSON to members.single().id)))
+            else CollaborationResearchWorkflow.expand(people, goal)
+        return AgentTeamDefinition(run, targetId, nodes,
             primaryInstanceId = people.first().memberId, visibilityMode = AgentTeamVisibilityMode.VISIBLE)
     }
 
+    fun matchesExecution(member: AgentTeamMember, definition: AgentTeamDefinition): Boolean = if (singleAgent) {
+        definition.members.size == 1 && member == definition.members.single() && member.objective == executionObjective &&
+            member.context[CollaborationResearchWorkflow.PERSON] == members.single().id &&
+            member.context[CollaborationGoalLoop.ENABLED] == null && CollaborationResearchWorkflow.stage(member) == null &&
+            member.context[CollaborationLiveGraph.ENABLED] == null && member.dependsOnAgentIds.isEmpty()
+    } else member.context[CollaborationGoalLoop.ENABLED] == "1" && CollaborationResearchWorkflow.stage(member) != null
+
     companion object {
         const val FORMAT = "galaxyssi.adaptive-collaboration-pilot.v2"
+        const val SINGLE_FORMAT = "galaxyssi.single-agent-calibration.v1"
         fun from(value: JSONObject, authorizedDispatches: Int, authorizedMillis: Long): CollaborationAdaptivePilotPlan {
             require(value.keys().asSequence().toSet() == setOf("format", "pilot_id", "target_id", "model_id", "reasoning_effort",
                 "tool_scope", "goal", "trial_timeout_ms", "maximum_dispatches", "members", "device_model")) { "Unexpected adaptive trial fields" }
             fun text(key: String) = (value.get(key) as? String)?.takeIf(String::isNotBlank) ?: error("Nonblank string required: $key")
-            require(text("format") == FORMAT && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
+            require(text("format") in setOf(FORMAT, SINGLE_FORMAT) && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
+            val singleAgent = text("format") == SINGLE_FORMAT
             val id = text("pilot_id").also { require(it.matches(Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}"))) }
             val device = CollaborationTrialDeviceBinding.validate(text("device_model"))
             val target = text("target_id").also { require(it.length <= 256 && ':' in it && it.endsWith(":codex")) }
@@ -56,7 +72,9 @@ internal class CollaborationAdaptivePilotPlan private constructor(
             require(authorizedDispatches > 0 && limit in 1..authorizedDispatches.toLong()) { "Trial exceeds authorized phone dispatches" }
             val goal = text("goal").also { require(it.toByteArray(Charsets.UTF_8).size <= 60_000) { "Trial goal is too large; no silent truncation" } }
             val raw = value.getJSONArray("members")
-            require(raw.length() >= 2) { "Adaptive collaboration trial requires a coordinator and a peer" }
+            require(if (singleAgent) raw.length() == 1 && limit == 1L else raw.length() >= 2) {
+                "Single-agent calibration requires one member and one free-running dispatch; adaptive teams require a coordinator and a peer"
+            }
             val members = (0 until raw.length()).map { index ->
                 val person = raw.getJSONObject(index)
                 require(person.keys().asSequence().toSet() == setOf("id", "name", "role")) { "Trial members do not provide task steps or permissions" }
@@ -65,7 +83,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     target, "Codex", role = field("role"), modelId = selection.modelId)
             }
             require(members.map { it.id }.distinct().size == members.size) { "Trial person IDs must be distinct" }
-            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members)
+            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members, singleAgent)
         }
     }
 }

@@ -15,7 +15,16 @@ internal data class CollaborationAdaptivePilotVerdict(val failures: List<String>
     companion object {
         fun evaluate(report: JSONObject): CollaborationAdaptivePilotVerdict {
             val failures = mutableListOf<String>()
-            if (report.optString("status") != "host_goal_accepted") {
+            if (report.has("execution_mode") && report.optString("execution_mode") !in setOf("single_agent", "adaptive_team"))
+                failures += "Unknown execution mode"
+            val singleAgent = report.optString("execution_mode") == "single_agent"
+            if (singleAgent && (report.optString("test_scope") != "execution_delivery_only" ||
+                    report.opt("goal_verified_by_external_evaluator") != false ||
+                    report.opt("scientific_capability_gain_proven") != false)) {
+                failures += "Single-agent delivery cannot claim external goal or capability verification"
+            }
+            val expectedStatus = if (singleAgent) "single_agent_returned_goal_unverified" else "host_goal_accepted"
+            if (report.optString("status") != expectedStatus) {
                 failures += "Host did not accept the goal: ${report.optString("status", "missing_status")}"
             }
             if (report.has("failure_type") || report.has("failure") || report.has("cleanup_failure")) {
@@ -44,6 +53,9 @@ internal data class CollaborationAdaptivePilotVerdict(val failures: List<String>
 
             // A reservation alone does not prove remote execution. Require a bound, intact worker result.
             val results = report.optJSONArray("worker_results")
+            if (singleAgent && (dispatches?.length() != 1 || results?.length() != 1)) {
+                failures += "Single-agent calibration must contain exactly one dispatch and one result"
+            }
             var verifiedResults = 0
             for (index in 0 until (results?.length() ?: 0)) {
                 val result = results?.optJSONObject(index)
@@ -55,7 +67,12 @@ internal data class CollaborationAdaptivePilotVerdict(val failures: List<String>
             if (verifiedResults == 0) failures += "No verified worker result was received"
             val rounds = report.optJSONArray("rounds")
             val finalRound = rounds?.optJSONObject(rounds.length() - 1)
-            if (finalRound?.optString("goal_disposition") != "achieved") failures += "Final checkpoint did not accept the goal"
+            if (singleAgent) {
+                if (finalRound?.optString("state") != AgentTeamExecutionState.SUCCEEDED.name)
+                    failures += "Single-agent execution did not complete"
+                if (finalRound?.optString("goal_disposition") == "achieved")
+                    failures += "Single-agent execution cannot be labeled host goal acceptance"
+            } else if (finalRound?.optString("goal_disposition") != "achieved") failures += "Final checkpoint did not accept the goal"
             return CollaborationAdaptivePilotVerdict(failures)
         }
     }
