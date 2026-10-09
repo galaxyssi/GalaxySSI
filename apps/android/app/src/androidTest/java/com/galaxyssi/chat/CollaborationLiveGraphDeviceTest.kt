@@ -34,8 +34,9 @@ class CollaborationLiveGraphDeviceTest {
             job("review", "person-2").put("stage", "VERIFY").put("depends_on", JSONArray().put("producer"))
                 .put("independent_review", true)) }).toString()
 
-    private suspend fun seed(store: AgentTeamExecutionStore): AgentTeamExecutionCheckpoint {
+    private suspend fun seed(store: AgentTeamExecutionStore, role: String = ""): AgentTeamExecutionCheckpoint {
         val people = (0..2).map { AgentTeamMember("fixture", instanceId = "person-$it",
+            role = role,
             deliveryMode = if (it == 0) AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
             context = mapOf("collaboration_group_id" to "live-graph-fixture")) }
         val definition = AgentTeamDefinition("live-graph-fixture", "fixture",
@@ -48,6 +49,34 @@ class CollaborationLiveGraphDeviceTest {
         }
         assertTrue(store.advanceGoal("root", "person-0", System.currentTimeMillis()))
         return store.resumeCheckpoint("root")!!
+    }
+
+    @Test fun roleTruncationRemainsStableAfterEncryptedCheckpointReopen(): Unit = runBlocking {
+        withTimeout(45_000) {
+            val db = database("live-graph-normalization-${UUID.randomUUID()}")
+            try {
+                seed(EncryptedAgentTeamExecutionStore(db), "r".repeat(79) + " remaining role")
+                val reopened = EncryptedAgentTeamExecutionStore(db)
+                val checkpoint = requireNotNull(reopened.resumeCheckpoint("root"))
+                val calls = ConcurrentHashMap<String, Int>()
+                AgentTeamExecutionRuntime(reopened).use { runtime ->
+                    val result = runtime.resume(checkpoint) { execution ->
+                        assertEquals("r".repeat(79), execution.member.role)
+                        calls.merge(execution.member.memberId, 1, Int::plus)
+                        when {
+                            CollaborationLiveGraph.planner(execution.member) -> AgentSubagentOutput(expansion(false))
+                            execution.member.deliveryMode == AgentDeliveryMode.RESPOND ->
+                                AgentSubagentOutput(plan().put("work", JSONArray()).toString())
+                            else -> AgentSubagentOutput("local fixture evidence")
+                        }
+                    }.await()
+                    assertEquals(AgentSubagentRunStatus.SUCCEEDED, result.subagentResult.status)
+                    assertTrue(calls.values.all { it == 1 })
+                    assertTrue(checkpoint.definition.members.filter { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+                        .all { calls[it.memberId] == 1 })
+                }
+            } finally { db.clear() }
+        }
     }
 
     @Test fun liveReviewStartsBeforeUnrelatedMemberAndFinalWaits(): Unit = runBlocking {

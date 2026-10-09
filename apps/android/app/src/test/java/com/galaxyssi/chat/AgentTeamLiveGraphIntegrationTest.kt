@@ -12,6 +12,71 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentTeamLiveGraphIntegrationTest {
+    @Test fun truncationAtWhitespaceDoesNotRewriteLiveChildren() = runBlocking {
+        val original = fixture()
+        val record = original.copy(definition = original.definition.copy(members = original.definition.members.map {
+            it.copy(role = "r".repeat(79) + " remainder", objective = "a".repeat(7999) + " remainder")
+        }))
+        verifyCanonicalProjection(record, resume = false)
+    }
+
+    @Test fun persistedWhitespaceIsProjectedConsistentlyWithoutRewritingHistory() = runBlocking {
+        val original = fixture()
+        val record = original.copy(interruptedAtMillis = 100, definition = original.definition.copy(members = original.definition.members.map {
+            it.copy(role = "  researcher \n", objective = "  preserve the original assignment \n")
+        }))
+        verifyCanonicalProjection(record, resume = true)
+    }
+
+    @Test fun normalizedReopenDoesNotReplayCompletedSideEffects() = runBlocking {
+        val saved = seedPersistedExpansion().records().single()
+        val record = Codec.decode(Codec.encode(saved.copy(definition = saved.definition.copy(members = saved.definition.members.map {
+            it.copy(role = "reviewer ", objective = it.objective + " \n")
+        }))))
+        verifyCanonicalProjection(record, resume = true)
+    }
+
+    private suspend fun verifyCanonicalProjection(record: AgentTeamExecutionRecord, resume: Boolean) = withTimeout(10_000) {
+        val store = if (resume) reopen(record) else InMemoryAgentTeamExecutionStore()
+        val checkpoint = if (resume) requireNotNull(store.resumeCheckpoint(RUN)) else null
+        val completed = checkpoint?.completed?.keys.orEmpty()
+        val called = CopyOnWriteArrayList<String>()
+        val worker = AgentTeamMemberWorker { execution ->
+            called += execution.member.memberId
+            assertFalse("Completed effects must not run again", execution.member.memberId in completed)
+            record.definition.members.find { it.memberId == execution.member.memberId }?.let { original ->
+                assertEquals(original.role.trim().take(80).trimEnd(), execution.member.role)
+                assertEquals(original.objective.trim().take(8000).trimEnd(), execution.member.objective)
+            }
+            when {
+                CollaborationLiveGraph.planner(execution.member) -> AgentSubagentOutput(expansion())
+                execution.member.memberId == FINAL -> AgentSubagentOutput(assessment())
+                else -> AgentSubagentOutput("preserved-result")
+            }
+        }
+        AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 2)).use { runtime ->
+            val handle = if (checkpoint != null) runtime.resume(checkpoint, worker)
+                else runtime.start(record.definition, record.request, worker)
+            val result = handle.await()
+            assertEquals(AgentSubagentRunStatus.SUCCEEDED, result.subagentResult.status)
+            assertEquals(called.distinct().size, called.size)
+            assertEquals(1, called.count { it == FINAL })
+            if (checkpoint != null) {
+                val persisted = store.records().single()
+                record.definition.members.forEach { original ->
+                    val actual = persisted.definition.members.single { it.memberId == original.memberId }
+                    // The completion barrier may gain dependencies as normal live planning appends work.
+                    if (original.memberId == FINAL) {
+                        assertTrue(actual.dependsOnAgentIds.containsAll(original.dependsOnAgentIds))
+                        assertEquals("Projection must preserve original fields", original,
+                            actual.copy(dependsOnAgentIds = original.dependsOnAgentIds))
+                    } else assertEquals("Projection must not rewrite original task evidence", original, actual)
+                }
+                assertNoReplayEvents(store, checkpoint)
+            }
+        }
+    }
+
     @Test fun producerTriggersPersistedReviewWhileSlowWorkRunsAndFinalWaitsForTheReview() = runBlocking {
         withTimeout(10_000) {
             val store = InMemoryAgentTeamExecutionStore()
