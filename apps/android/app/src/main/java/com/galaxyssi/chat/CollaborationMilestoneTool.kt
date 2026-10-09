@@ -12,7 +12,8 @@ internal object CollaborationMilestoneTool {
         "Only host-enrolled research assignments can publish; coordination/assessment dispatches return their required response instead. " +
         "Use mode=status when availability is unknown; it reports the current assignment without mutation. " +
         "An unavailable capability is not invalid artifact JSON and cannot be repaired by retrying publication. " +
-        "mode=publish requires stable milestone_id and artifact (a JSON string using galaxyssi.research-artifact.v1 with nonempty workspace). " +
+        "mode=publish requires stable milestone_id and artifact (a JSON string using galaxyssi.research-artifact.v1 with versioned workspace evidence). " +
+        CollaborationMilestoneCoordination.INSTRUCTIONS +
         "Include format, nonblank summary and workspace; empty top-level candidates/findings may be omitted and decode as []. " +
         "Supplied arrays and typed workspace bodies remain validated; defaults do not supply evidence. " +
         "Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. " +

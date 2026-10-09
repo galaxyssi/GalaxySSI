@@ -11,7 +11,7 @@ internal class CollaborationCoordinatorJournal(
     private val scope = MqttImmutableContent.sha256(JSONArray().put(access.groupId).put(access.runId)
         .put(access.turnId).put(access.round).put(access.nodeId).put(access.personId)
         .put(JSONArray(access.dependencyNodes.sorted())).put(JSONArray(access.pinnedReads.sorted())).toString())
-    private val prefix = "group:${MqttImmutableContent.sha256(access.groupId)}:coordinator-updates:$scope:"
+    private val prefix = groupPrefix(access.groupId) + "$scope:"
 
     fun offered(): List<JSONObject> = state().getJSONArray("offered").let { array ->
         (0 until array.length()).map(array::getJSONObject)
@@ -39,7 +39,7 @@ internal class CollaborationCoordinatorJournal(
             .put("caught_up_at_read", additions.isEmpty())
             .put("trust", "published_member_reports_not_verified_or_complete")
             .put("guidance", "Read exact workspace revisions and evidence pages before judging sufficiency. " +
-                "Follow next_cursor; an empty page means no new published versions at this read. Reuse that cursor later. " +
+                "Follow next_cursor; an empty page means no new coordination requests at this read. Record-only versions do not request intervention. Reuse that cursor later. " +
                 "The original goal/context snapshot is unchanged. This does not expose unpublished work or finish any task.")
         // Commit the immutable replay page and exact offered-version grants together.
         if (additions.isNotEmpty()) rows.commit(mapOf("${prefix}page:$index" to result.toString(),
@@ -49,4 +49,8 @@ internal class CollaborationCoordinatorJournal(
 
     private fun state() = rows.read("${prefix}state")?.let(::JSONObject)
         ?: JSONObject().put("pages", 0).put("offered", JSONArray())
+
+    companion object {
+        fun groupPrefix(group: String) = "group:${MqttImmutableContent.sha256(group)}:coordinator-updates:"
+    }
 }

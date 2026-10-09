@@ -10,7 +10,7 @@ import stat
 import tempfile
 import threading
 
-from collaboration_milestone_bridge import MAX_BYTES, publish_snapshot, validate_arguments as validate_publication
+from collaboration_milestone_bridge import COORDINATION_INSTRUCTIONS, MAX_BYTES, publish_snapshot, validate_arguments as validate_publication
 
 TOOL = "collaboration_text_artifact"
 FORMAT = "galaxyssi.text-artifact/1"
@@ -24,6 +24,8 @@ def tool_spec():
         "publish freezes an outputs-relative file and publishes its complete bytes as a versioned workspace artifact; "
         "requires path, milestone_id and title. Optional object_id/base_revision revises an exact prior object. "
         "Optional observations links real evidence_id/sha256 receipts, not invented execution claims. "
+        + COORDINATION_INSTRUCTIONS +
+        "Supply coordination as a tool argument; it is included in the immutable artifact. "
         "Retry the SAME arguments after uncertainty: the saved snapshot is reused even if the source changes. "
         "Use a NEW milestone_id for changed content. The existing 131072-byte publication envelope applies, including JSON escaping; "
         "binary/oversized files require the existing attachment/Blob workflow, never truncation. "
@@ -41,6 +43,10 @@ def tool_spec():
             "base_revision": {"type": "integer", "minimum": 1},
             "revision": {"type": "integer", "minimum": 1},
             "sha256": {"type": "string", "maxLength": 64},
+            "coordination": {"type": "object", "properties": {
+                "mode": {"type": "string", "enum": ["record_only", "request"]},
+                "decision": {"type": "string"}, "why_now": {"type": "string"}},
+                "required": ["mode"], "additionalProperties": False},
             "observations": {"type": "array", "items": {"type": "object", "properties": {
                 "evidence_id": {"type": "string", "maxLength": 64},
                 "sha256": {"type": "string", "maxLength": 64}},
@@ -69,10 +75,12 @@ def _validate(arguments):
         raise ValueError("Artifact arguments must be an object")
     mode = arguments.get("mode")
     if mode == "publish":
-        if (set(arguments) - {"mode", "path", "milestone_id", "title", "object_id", "base_revision", "observations"}
+        if (set(arguments) - {"mode", "path", "milestone_id", "title", "object_id", "base_revision", "observations", "coordination"}
                 or not isinstance(arguments.get("title"), str) or not 1 <= len(arguments["title"].strip()) <= 500):
             raise ValueError("Publish requires path, milestone_id, title and optional exact revision/evidence references")
         validate_publication({"mode": "publish", "milestone_id": arguments.get("milestone_id"), "artifact": "{}"})
+        if "coordination" in arguments:
+            _validate_coordination(arguments["coordination"])
         _relative_source(arguments.get("path"))
         if "object_id" in arguments or "base_revision" in arguments:
             if not _identifier(arguments.get("object_id")) or not _integer(arguments.get("base_revision")):
@@ -88,6 +96,16 @@ def _validate(arguments):
             raise ValueError("Materialize requires only exact object_id/revision/sha256")
     else:
         raise ValueError("Use publish or materialize")
+
+
+def _validate_coordination(value):
+    if not isinstance(value, dict) or value.get("mode") not in ("record_only", "request"):
+        raise ValueError("coordination.mode must be record_only or request")
+    expected = {"mode"} if value["mode"] == "record_only" else {"mode", "decision", "why_now"}
+    if set(value) != expected:
+        raise ValueError("coordination record_only accepts only mode; request requires exactly mode, decision and why_now")
+    if any(not isinstance(value[field], str) or not value[field].strip() for field in expected - {"mode"}):
+        raise ValueError("coordination.decision and coordination.why_now must be nonblank strings")
 
 
 def _relative_source(value):
@@ -180,6 +198,8 @@ def _freeze(root, task_id, arguments):
             item.update(object_id=arguments["object_id"], base_revision=arguments["base_revision"])
         artifact = {"format": "galaxyssi.research-artifact.v1", "summary": arguments["title"],
                     "candidates": [], "findings": [], "questions": [], "requests": [], "memory": [], "workspace": [item]}
+        if "coordination" in arguments:
+            artifact["coordination"] = arguments["coordination"]
         request = {"mode": "publish", "milestone_id": arguments["milestone_id"], "artifact": _json(artifact)}
         if len(_json(request).encode("utf-8")) > MAX_BYTES:
             raise ValueError("Text plus JSON escaping exceeds the 131072-byte publication envelope; use attachment/Blob delivery, never truncate")

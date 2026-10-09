@@ -12,7 +12,7 @@ import threading
 import weakref
 
 from blob_protocol import MAX_FILE_BYTES
-from collaboration_milestone_bridge import publish_snapshot, validate_arguments as validate_publication
+from collaboration_milestone_bridge import COORDINATION_INSTRUCTIONS, publish_snapshot, validate_arguments as validate_publication
 from collaboration_recall_bridge import task_scope
 from collaboration_text_artifact import (_atomic_write, _filename, _hash, _identifier, _integer, _json,
     _relative_source, _safe_path, _validate, read_workspace_artifact, tool_spec as text_tool_spec)
@@ -41,6 +41,8 @@ def tool_spec():
         "splitting source code, JSON, CSV, datasets or binary artifacts into text publications. "
         "publish freezes an outputs-relative file (up to the existing 1 GiB file limit); requires path, "
         "milestone_id and title, with optional observations and exact object_id/base_revision. "
+        + COORDINATION_INSTRUCTIONS +
+        "Supply coordination as a tool argument; it is frozen with the file descriptor. "
         "Only a small version descriptor is sent to the phone; bytes persist on the originating Desktop. "
         "Retry identical arguments after uncertainty, even if the source has changed; changed content needs a NEW milestone_id. "
         "materialize requires exact object_id/revision/sha256 from the phone workspace receipt; phone permissions "
@@ -164,6 +166,8 @@ def _freeze(store, root, scope, arguments, active):
             item.update(object_id=arguments["object_id"], base_revision=arguments["base_revision"])
         artifact = {"format": "galaxyssi.research-artifact.v1", "summary": arguments["title"],
                     "candidates": [], "findings": [], "questions": [], "requests": [], "memory": [], "workspace": [item]}
+        if "coordination" in arguments:
+            artifact["coordination"] = arguments["coordination"]
         request = validate_publication({"mode": "publish", "milestone_id": arguments["milestone_id"], "artifact": _json(artifact)})
         value = {"scope": scope, "arguments": arguments, "body": body, "request": request, "receipt": None}
         _save_record(store, path, value)

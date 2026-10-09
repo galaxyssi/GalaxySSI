@@ -28,6 +28,7 @@ internal object CollaborationResearchArtifact {
             "\"observations\":[{\"evidence_id\":\"actual host receipt ID\",\"sha256\":\"exact receipt digest\"}]}]}. " +
             "Use workspace to improve shared, versioned research objects, not just post messages. For edits copy the exact host object_id and base_revision. " +
             "When collaboration_publish or galaxyssi.phone.collaboration.publish is available, publish a useful intermediate artifact with a stable milestone_id while continuing your assignment. " +
+            CollaborationMilestoneCoordination.INSTRUCTIONS +
             "Final output may contain milestones:[\"your saved milestone IDs\"] plus workspace for new changes; do not recreate already published objects. " +
             "Milestones preserve versions, but do not complete work, establish truth or prove that another member has consumed them. " +
             "Keep competing hypotheses as distinct objects. Cross-domain combinations cite parents; repairs cite the counterexamples they address. " +
@@ -58,6 +59,7 @@ internal object CollaborationResearchArtifact {
         val json = JSONObject(text)
         require(json.optString("format") == FORMAT) { "format must be $FORMAT" }
         require(json.getString("summary").isNotBlank()) { "summary must not be blank" }
+        CollaborationMilestoneCoordination.read(json)
         // Defaults belong to the decoded envelope; journals and retry identities retain the raw submission.
         listOf("candidates", "findings").forEach { field ->
             if (!json.has(field)) json.put(field, JSONArray())

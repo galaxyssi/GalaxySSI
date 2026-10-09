@@ -56,7 +56,9 @@ class CollaborationMilestoneDeviceTest {
 
     @Test fun saturatedWorkersDoNotBlockDurableMilestoneCoordination() = dispatchScenario(false, saturated = true)
 
-    private fun dispatchScenario(publishBeforeStart: Boolean, saturated: Boolean = false) = fixture { author -> runBlocking {
+    @Test fun savedRecordsWaitForDecisionRequestWhileWorkerContinues() = dispatchScenario(false, decisionLinked = true)
+
+    private fun dispatchScenario(publishBeforeStart: Boolean, saturated: Boolean = false, decisionLinked: Boolean = false) = fixture { author -> runBlocking {
         withTimeout(45_000) {
             val db = AgentEncryptedDatabase(context, "milestone-dispatch-${UUID.randomUUID()}")
             try {
@@ -81,7 +83,12 @@ class CollaborationMilestoneDeviceTest {
                 val reviewed = CompletableDeferred<CollaborationWorkspaceAccess>(); val releaseReview = CompletableDeferred<Unit>()
                 val finalStarted = CompletableDeferred<Unit>(); val calls = CopyOnWriteArrayList<String>()
                 var phase = "producer startup"
-                fun publish() = JSONObject(CollaborationMilestoneTool.execute(context, author, input("early"))).also {
+                fun publish() = JSONObject(CollaborationMilestoneTool.execute(context, author, if (!decisionLinked) input("early") else
+                    input("early").put("artifact", JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+                        .put("summary", "Choose a discriminating measurement")
+                        .put("coordination", JSONObject().put("mode", "request").put("decision", "Which probe distinguishes the candidates?")
+                            .put("why_now", "A peer can check the method while calibration continues"))
+                        .put("milestones", JSONArray().put("raw")).toString()))).also {
                     assertTrue(it.toString(), it.getBoolean("success"))
                 }
                 store().create(definition, request)
@@ -119,6 +126,22 @@ class CollaborationMilestoneDeviceTest {
                     try {
                         started.await()
                         if (saturated) secondStarted.await()
+                        if (decisionLinked) {
+                            val recordOnly = input("raw").put("artifact", JSONObject(raw("raw"))
+                                .put("coordination", JSONObject().put("mode", "record_only")).toString())
+                            val wakeups = mutableListOf<String>()
+                            CollaborationMilestoneSignals.subscribe { if (it == author.runId) wakeups.add(it) }.use {
+                                val receipt = JSONObject(CollaborationMilestoneTool.execute(context, author, recordOnly))
+                                assertTrue(receipt.toString(), receipt.getBoolean("success"))
+                                assertEquals(receipt.toString(), CollaborationMilestoneTool.execute(context, author, recordOnly))
+                            }
+                            assertTrue(wakeups.isEmpty())
+                            val recovered = CollaborationResearchWorkspace(context)
+                            assertEquals(1, recovered.pendingMilestones(author, emptySet(), setOf(author.nodeId)).size)
+                            assertTrue(recovered.pendingMilestones(author, emptySet(), setOf(author.nodeId), coordinationOnly = true).isEmpty())
+                            assertFalse(reviewed.isCompleted)
+                            assertTrue(store().deliveryCheckpoint(author.runId)!!.definition.members.none(CollaborationLiveGraph::planner))
+                        }
                         if (!publishBeforeStart) publish()
                         if (saturated) {
                             phase = "coordinator admission under saturation"
@@ -136,7 +159,7 @@ class CollaborationMilestoneDeviceTest {
                             CollaborationResearchWorkspace(context)) { access, ref -> CollaborationEvidenceLedger(context)
                                 .read(access, ref.getString("evidence_id"), ref.getString("sha256")) }
                         val captured = archive.capture(saved)
-                        assertEquals(1, captured.getJSONArray("milestones").length())
+                        assertEquals(if (decisionLinked) 2 else 1, captured.getJSONArray("milestones").length())
                         assertEquals("Original candidate for review", captured.getJSONArray("milestones").getJSONObject(0)
                             .getJSONArray("originals").getJSONObject(0).getJSONObject("body").getString("content"))
                         assertFalse(captured.getBoolean("peer_read_proven"))

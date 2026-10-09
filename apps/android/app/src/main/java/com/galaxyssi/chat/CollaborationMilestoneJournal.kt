@@ -34,7 +34,9 @@ internal class CollaborationMilestoneJournal(
                     .put("producer_node", access.nodeId).put("person_id", access.personId).put("recorded_at", now)
                     .put("record_key", key).put("record_sha256", record.getString("record_sha256"))
                     .put("revisions", receipt.getJSONArray("revisions"))
-                put(runPrefix(access) + token, descriptor.toString())
+                CollaborationMilestoneCoordination.read(receipt)?.let { descriptor.put("coordination", it) }
+                put(runPrefix(access, recordOnly = !CollaborationMilestoneCoordination.requestsCoordination(receipt)) + token,
+                    descriptor.toString())
             }
         }
     }
@@ -85,6 +87,9 @@ internal class CollaborationMilestoneJournal(
             JSONObject().put("milestone_id", value.getString("milestone_id"))
                 .put("raw_sha256", value.getString("raw_sha256")).put("recorded_at", value.getLong("recorded_at"))
                 .put("revision_count", value.getJSONObject("receipt").getJSONArray("revisions").length())
+                .also { item -> CollaborationMilestoneCoordination.read(value.getJSONObject("receipt"))?.let {
+                    item.put("coordination", it)
+                } }
         }
         return JSONObject().put("status", "returned").put("milestones", JSONArray(records))
             .put("next_cursor", if (keys.size > 32) keys[31] else JSONObject.NULL)
@@ -102,40 +107,48 @@ internal class CollaborationMilestoneJournal(
 
     companion object {
         private val HASH = Regex("[a-f0-9]{64}")
-        private fun runPrefix(access: CollaborationWorkspaceAccess) =
-            "group:${AgentNativeJsonCodec.sha256(access.groupId)}:milestone-run:" +
+        private fun runPrefix(access: CollaborationWorkspaceAccess, recordOnly: Boolean = false) =
+            "group:${AgentNativeJsonCodec.sha256(access.groupId)}:${if (recordOnly) "milestone-record-run" else "milestone-run"}:" +
                 AgentNativeJsonCodec.sha256(JSONArray(listOf(access.runId, access.turnId, access.round)).toString()) + ":"
 
         fun pending(rows: CollaborationWorkspaceRows, access: CollaborationWorkspaceAccess,
-                    covered: Set<String>, producers: Set<String>): List<JSONObject> {
-            val prefix = runPrefix(access)
+                    covered: Set<String>, producers: Set<String>, coordinationOnly: Boolean = false): List<JSONObject> {
             val found = mutableListOf<JSONObject>()
-            var cursor = ""
-            while (true) {
-                val keys = rows.page(prefix, cursor, 32)
-                for (key in keys) {
-                    cursor = key
-                    if (key.removePrefix(prefix) in covered) continue
-                    val descriptor = requireNotNull(rows.read(key)).let(::JSONObject)
-                    require(key == prefix + descriptor.getString("token")) { "Milestone index identity changed" }
-                    if (descriptor.getString("producer_node") !in producers) continue
-                    val producer = access.copy(nodeId = descriptor.getString("producer_node"), personId = descriptor.getString("person_id"))
-                    val journal = CollaborationMilestoneJournal(rows, producer)
-                    val recordKey = journal.prefix + AgentNativeJsonCodec.sha256(descriptor.getString("milestone_id"))
-                    require(descriptor.getString("record_key") == recordKey &&
-                        descriptor.getString("token") == AgentNativeJsonCodec.sha256(recordKey)) { "Milestone index scope changed" }
-                    val record = requireNotNull(rows.read(recordKey)).let(::JSONObject)
-                    journal.checkRecord(record)
-                    require(record.getString("record_sha256") == descriptor.getString("record_sha256") &&
-                        record.getJSONObject("receipt").getJSONArray("revisions").toString() == descriptor.getJSONArray("revisions").toString()) {
-                        "Milestone index content changed"
+            val prefixes = if (coordinationOnly) listOf(runPrefix(access)) else listOf(runPrefix(access), runPrefix(access, true))
+            for (prefix in prefixes) {
+                var cursor = ""
+                while (true) {
+                    val keys = rows.page(prefix, cursor, 32)
+                    for (key in keys) {
+                        cursor = key
+                        if (key.removePrefix(prefix) in covered) continue
+                        val descriptor = requireNotNull(rows.read(key)).let(::JSONObject)
+                        require(key == prefix + descriptor.getString("token")) { "Milestone index identity changed" }
+                        if (descriptor.getString("producer_node") !in producers) continue
+                        val producer = access.copy(nodeId = descriptor.getString("producer_node"), personId = descriptor.getString("person_id"))
+                        val journal = CollaborationMilestoneJournal(rows, producer)
+                        val recordKey = journal.prefix + AgentNativeJsonCodec.sha256(descriptor.getString("milestone_id"))
+                        require(descriptor.getString("record_key") == recordKey &&
+                            descriptor.getString("token") == AgentNativeJsonCodec.sha256(recordKey)) { "Milestone index scope changed" }
+                        val record = requireNotNull(rows.read(recordKey)).let(::JSONObject)
+                        journal.checkRecord(record)
+                        require(record.getString("record_sha256") == descriptor.getString("record_sha256") &&
+                            record.getJSONObject("receipt").getJSONArray("revisions").toString() == descriptor.getJSONArray("revisions").toString() &&
+                            CollaborationMilestoneCoordination.read(record.getJSONObject("receipt"))?.toString() ==
+                                CollaborationMilestoneCoordination.read(descriptor)?.toString()) {
+                            "Milestone index content changed"
+                        }
+                        require((prefix == runPrefix(access, true)) == !CollaborationMilestoneCoordination.requestsCoordination(descriptor)) {
+                            "Milestone coordination index changed"
+                        }
+                        found += JSONObject(descriptor.toString()).apply { remove("record_key"); remove("record_sha256") }
+                        // Admission page, not a research limit: the next checkpoint consumes the next page.
+                        if (found.size == 16) return found
                     }
-                    found += JSONObject(descriptor.toString()).apply { remove("record_key"); remove("record_sha256") }
-                    // Admission page, not a research limit: the next checkpoint consumes the next page.
-                    if (found.size == 16) return found
+                    if (keys.size < 32) break
                 }
-                if (keys.size < 32) return found
             }
+            return found
         }
 
         fun validateId(id: String) { require(id.isNotBlank() && id == id.trim() && id.length <= 160 && id.none(Char::isISOControl)) {

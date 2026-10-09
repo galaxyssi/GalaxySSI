@@ -20,6 +20,9 @@ internal object CollaborationLiveGraph {
 
     fun instructions() = """
         You are the team's incremental coordinator. Other members are still working. Do not wait for unrelated work.
+        An explicit coordination request identifies a pending decision and why peer input is useful now.
+        Address that decision using the exact linked versions. A saved file is not by itself a reason to replan.
+        Members may keep record_only milestones while continuing local experiments; those do not request your intervention.
         Your starting inventory is a snapshot. Use collaboration_recall(mode="team_updates", cursor="") to discover
         versions published while you are working. Follow next_cursor until an empty page; reuse that cursor later
         when prerequisites may have arrived. Read the exact workspace/evidence versions before judging sufficiency.
@@ -153,7 +156,8 @@ internal object CollaborationLiveGraph {
         val coveredMilestones = members.filter(::planner).flatMap { CollaborationMilestoneDispatch.inputs(it) }
             .mapTo(hashSetOf()) { it.getString("token") }
         val milestones = if (control == AgentTeamUserControl.RUN) milestoneWorkspace?.invoke()?.pendingMilestones(
-            CollaborationMilestoneDispatch.access(next, final), coveredMilestones, work.mapTo(hashSetOf()) { it.memberId }).orEmpty()
+            CollaborationMilestoneDispatch.access(next, final), coveredMilestones, work.mapTo(hashSetOf()) { it.memberId },
+            coordinationOnly = true).orEmpty()
             else emptyList()
         // When the graph is already quiescent, the normal final assessment owns continuation.
         if (newResults.isEmpty() && milestones.isEmpty() || work.none { it.memberId !in results }) return changed(record, next, now)
