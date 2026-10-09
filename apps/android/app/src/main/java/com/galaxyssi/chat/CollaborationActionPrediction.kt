@@ -72,8 +72,11 @@ internal object CollaborationActionPrediction {
         val model = exact(value.getJSONObject(MODEL), setOf(MODEL))
         CollaborationInnovationValidation.checkRecord(model, exact)
         val spec = model.getJSONObject("body").getJSONObject(MODEL)
-        listOf("work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff", "information_value", "revalidate_before_action", "utility_unit")
+        val qualitative = CollaborationQualitativePrediction.enabled(value)
+        listOf("work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff", "information_value", "revalidate_before_action")
             .forEach { text(value, it) }
+        if (qualitative) require(!value.has("utility_unit")) { "Qualitative forecasts compare explicit expectations, not numeric utility" }
+        else text(value, "utility_unit")
         require((value.opt("valid_until") is Long || value.opt("valid_until") is Int) && value.getLong("valid_until") > model.getLong("recorded_at")) {
             "valid_until must be an absolute observation-validity deadline chosen for this task"
         }
@@ -81,7 +84,9 @@ internal object CollaborationActionPrediction {
         require(events.map { text(it, "id") }.distinct().size == events.size) { "Prediction event IDs must be distinct" }
         events.forEach {
             text(it, "meaning"); text(it, "unit")
-            decimal(it, "utility_if_true"); decimal(it, "utility_if_false")
+            if (qualitative) require(!it.has("utility_if_true") && !it.has("utility_if_false")) {
+                "Qualitative events must not declare numeric utility"
+            } else { decimal(it, "utility_if_true"); decimal(it, "utility_if_false") }
             require(it.opt("expected") is String || it.opt("expected") is Boolean || it.opt("expected") is Number || it.opt("expected") == JSONObject.NULL) {
                 "Prediction expected must be an explicit scalar, including explicit null"
             }
@@ -100,6 +105,11 @@ internal object CollaborationActionPrediction {
         val compared = JSONArray()
         choices.forEach { choice ->
             listOf("reasoning", "uncertainty", "resources", "risk").forEach { text(choice, it) }
+            if (qualitative) {
+                compared.put(CollaborationQualitativePrediction.comparison(choice, events.mapTo(hashSetOf()) { it.getString("id") }))
+                return@forEach
+            }
+            require(!choice.has("expectations")) { "Probabilistic forecasts use probabilities; select qualitative mode for expectations" }
             val probabilities = choice.getJSONObject("probabilities")
             require(probabilities.keys().asSequence().toSet() == events.map { it.getString("id") }.toSet()) { "All choices need the same event set" }
             var utility = BigDecimal.ZERO
@@ -114,7 +124,8 @@ internal object CollaborationActionPrediction {
         require(selected in actions) { "Select an existing action" }
         return JSONObject().put("state", "preregistered_prediction_not_outcome").put(MODEL, CollaborationResearchCandidates.reference(model))
             .put("selected_action", selected).put("comparisons", compared).put("choice_is_agent_selected", true)
-            .put("utility_is_declared_not_measured", true).put("grants_permissions", false)
+            .put("utility_is_declared_not_measured", !qualitative).put("grants_permissions", false)
+            .apply { if (qualitative) put(CollaborationQualitativePrediction.MODE, CollaborationQualitativePrediction.QUALITATIVE) }
             .apply { CollaborationHypothesisTest.forecast(value, exact)?.let { put(CollaborationHypothesisTest.FIELD, it) } }
     }
 }

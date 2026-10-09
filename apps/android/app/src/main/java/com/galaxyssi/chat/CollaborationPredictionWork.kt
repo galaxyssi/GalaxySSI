@@ -61,6 +61,7 @@ internal object CollaborationPredictionWork {
                 .put("valid_when", environment.getString("valid_when")).put("refresh_when", environment.getString("refresh_when"))
                 .put("work_id", id).put("member", item.getString("member")).put("stage", text(item, "stage")).put("assignment", text(item, "assignment"))
                 .put("criterion", requirement).put("grants_permissions", false).put("outcome_verified", false)
+            if (CollaborationQualitativePrediction.enabled(spec)) binding.put(CollaborationQualitativePrediction.MODE, CollaborationQualitativePrediction.QUALITATIVE)
             forecast.getJSONObject("host_evolution").optJSONObject(CollaborationHypothesisTest.FIELD)?.let {
                 binding.put(CollaborationHypothesisTest.FIELD, JSONObject(it.toString()))
             }

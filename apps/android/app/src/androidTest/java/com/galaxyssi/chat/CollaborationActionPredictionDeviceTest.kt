@@ -12,7 +12,11 @@ import org.junit.runner.RunWith
 /** Local computation and encrypted persistence only; no provider calls or physical actions. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationActionPredictionDeviceTest {
-    @Test fun forecastLocalActionErrorCorrectionAndTaskBindingSurviveReopen() {
+    @Test fun forecastLocalActionErrorCorrectionAndTaskBindingSurviveReopen() = runFixture(false)
+
+    @Test fun qualitativeProbeCorrectsAssumptionsAndRestoresWithoutInventedProbabilities() = runFixture(true)
+
+    private fun runFixture(qualitative: Boolean) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val group = "prediction-fixture-${UUID.randomUUID()}"
         val groups = CollaborationGroupStore(context)
@@ -44,13 +48,32 @@ class CollaborationActionPredictionDeviceTest {
             val model = publish("model", "task_environment_model", modelSpec, "lead", 2)
             fun choice(id: String, p: Double) = JSONObject().put("action_id", id).put("reasoning", "Fixture estimate").put("uncertainty", "No real model")
                 .put("resources", "One sort").put("risk", "Incorrect order").put("probabilities", JSONObject().put("descending", p))
-            val forecast = publish("forecast", "action_forecast", JSONObject().put("task_environment_model", model).put("work_id", "sort-work").put("executor", "worker")
+            val forecastSpec = JSONObject().put("task_environment_model", model).put("work_id", "sort-work").put("executor", "worker")
                 .put("horizon", "One local computation").put("valid_until", Long.MAX_VALUE).put("decision_rationale", "Test sort behavior")
                 .put("risk_tradeoff", "No side effects").put("information_value", "Direction check").put("revalidate_before_action", "Check values")
                 .put("utility_unit", "fixture").put("selected_action", "sort").put("source", JSONObject().put("origin", "android_native_tool").put("tool", "fixture.sort"))
                 .put("report_pointer", "").put("events", JSONArray().put(JSONObject().put("id", "descending").put("meaning", "Largest first")
                     .put("unit", "boolean").put("pointer", "/descending").put("expected", true).put("utility_if_true", 1).put("utility_if_false", -1)))
-                .put("choices", JSONArray().put(choice("sort", 0.8)).put(choice("defer", 0.1))), "lead", 3)
+                .put("choices", JSONArray().put(choice("sort", 0.8)).put(choice("defer", 0.1)))
+            if (qualitative) {
+                forecastSpec.put("prediction_mode", "qualitative").remove("utility_unit")
+                forecastSpec.getJSONArray("events").getJSONObject(0).apply { remove("utility_if_true"); remove("utility_if_false") }
+                repeat(2) { index -> forecastSpec.getJSONArray("choices").getJSONObject(index).apply {
+                    remove("probabilities")
+                    put("expectations", JSONObject().put("descending", if (index == 0) "expected" else "unknown"))
+                } }
+                forecastSpec.put("hypothesis_test", JSONObject().put("question", "What is the actual sort direction?")
+                    .put("assumptions", "Two fixture hypotheses").put("prediction_basis", "Direction must be measured")
+                    .put("misspecification_check", "Keep unexpected outcomes")
+                    .put("hypotheses", JSONArray().put(JSONObject().put("id", "ascending").put("claim", "Default ascending"))
+                        .put(JSONObject().put("id", "descending").put("claim", "Default descending")))
+                    .put("event_ids", JSONArray().put("descending")).put("predictions", JSONObject()
+                        .put("sort", JSONObject().put("ascending", JSONObject().put("descending", "not_expected"))
+                            .put("descending", JSONObject().put("descending", "expected")))
+                        .put("defer", JSONObject().put("ascending", JSONObject().put("descending", "unknown"))
+                            .put("descending", JSONObject().put("descending", "unknown")))))
+            }
+            val forecast = publish("forecast", "action_forecast", forecastSpec, "lead", 3)
             val criteria = JSONArray().put(JSONObject().put("id", "quality").put("requirement", goal).put("status", "open").put("evidence", JSONArray()))
             val members = CollaborationGoalLoop.initial(listOf(AgentTeamMember("fixture", AgentDeliveryMode.RESPOND, instanceId = "lead"),
                 AgentTeamMember("fixture", AgentDeliveryMode.OBSERVE, instanceId = "worker")), goal)
@@ -69,7 +92,16 @@ class CollaborationActionPredictionDeviceTest {
             val outcome = publish("outcome", "prediction_outcome", JSONObject().put("action_forecast", forecast).put("interpretation", "Wrong direction predicted")
                 .put("confounders", "Synthetic only").put("model_correction", "Default sort is ascending").put("next_action", "New descending-sort test")
                 .put("checks", JSONArray().put(JSONObject().put("event_id", "descending").put("observation", observed))), "reviewer", 5, JSONArray().put(observed))
-            assertEquals("0.64", outcome.getJSONObject("host_evolution").getString("brier_sum"))
+            val feedback = workspace.read(access("reviewer", 6), outcome.getString("object_id"), outcome.getInt("revision"))!!
+                .getJSONObject("host_evolution")
+            if (qualitative) {
+                assertTrue(feedback.isNull("brier_sum"))
+                assertEquals("contradicted", feedback.getJSONArray("checks").getJSONObject(0).getString("prediction_check"))
+                val compared = feedback.getJSONObject("hypothesis_test").getJSONArray("hypotheses")
+                assertEquals("consistent_with_observation", compared.getJSONObject(0).getString("state"))
+                assertEquals("contradicted", compared.getJSONObject(1).getString("state"))
+                assertTrue(feedback.getJSONObject("hypothesis_test").isNull("posterior"))
+            } else assertEquals("0.64", feedback.getString("brier_sum"))
             val corrected = publish("corrected", "task_environment_model", JSONObject(modelSpec.toString()).put("previous_model", model)
                 .put("feedback", JSONArray().put(outcome)).put("changed_assumptions", "Default sort direction")
                 .put("why_change", "Observed ascending output").put("next_discriminating_test", "Explicit descending comparator"), "lead", 6)
@@ -79,6 +111,11 @@ class CollaborationActionPredictionDeviceTest {
             assertEquals(outcome.getString("sha256"), saved.getJSONObject("host_evolution").getJSONArray("feedback").getJSONObject(0).getString("sha256"))
             val restored = record.copy(request = record.request.copy(context = record.request.context + (CollaborationPredictionWork.CLAIMS to admitted.claims)))
             assertEquals(admitted.claims, CollaborationPredictionWork.plan(restored, listOf(work), { reopened }, access("lead", 7)).claims)
+            if (qualitative) {
+                val binding = JSONObject(CollaborationPredictionWork.context(admitted.work.single()).getValue(CollaborationPredictionWork.TASK))
+                assertEquals("qualitative", binding.getString("prediction_mode"))
+                assertEquals("declared_qualitative_comparison", binding.getJSONObject("hypothesis_test").getString("state"))
+            }
         } finally { groups.remove(group) }
     }
 }

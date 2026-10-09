@@ -18,6 +18,7 @@ internal object CollaborationHypothesisTest {
 
     fun forecast(value: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject? {
         if (!value.has(FIELD)) return null
+        if (CollaborationQualitativePrediction.enabled(value)) return CollaborationQualitativePrediction.hypothesisTest(value)
         val spec = value.getJSONObject(FIELD)
         listOf("question", "assumptions", "likelihood_basis", "misspecification_check").forEach { text(spec, it) }
         val hypotheses = objects(spec, "hypotheses")
@@ -96,6 +97,7 @@ internal object CollaborationHypothesisTest {
     fun outcome(forecast: JSONObject, checks: JSONArray): JSONObject? {
         val prepared = forecast.getJSONObject(HOST).optJSONObject(FIELD) ?: return null
         val value = forecast.getJSONObject("body").getJSONObject(CollaborationActionPrediction.FORECAST)
+        if (CollaborationQualitativePrediction.enabled(value)) return CollaborationQualitativePrediction.outcome(forecast, checks)
         val spec = value.getJSONObject(FIELD)
         val priors = prepared.getJSONObject("priors").let { p -> p.keys().asSequence().associateWith { BigDecimal(p.getString(it)) } }
         val eventIds = spec.getJSONArray("event_ids").let { a -> (0 until a.length()).map { a.getString(it) } }

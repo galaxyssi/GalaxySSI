@@ -17,6 +17,7 @@ internal object CollaborationPredictionFeedback {
                 original: (JSONObject) -> JSONObject?, coverage: (JSONObject) -> Unit): JSONObject {
         val forecast = exact(value.getJSONObject(CollaborationActionPrediction.FORECAST), setOf(CollaborationActionPrediction.FORECAST))
         val spec = forecast.getJSONObject("body").getJSONObject(CollaborationActionPrediction.FORECAST)
+        val qualitative = CollaborationQualitativePrediction.enabled(spec)
         val model = exact(spec.getJSONObject(CollaborationActionPrediction.MODEL), setOf(CollaborationActionPrediction.MODEL))
         listOf("interpretation", "confounders", "model_correction", "next_action").forEach { text(value, it) }
         val checks = value.getJSONArray("checks")
@@ -61,26 +62,40 @@ internal object CollaborationPredictionFeedback {
                 if (actual == null || actual is JSONObject || actual is JSONArray) row.put("state", "unobserved_field") else {
                     val expected = prediction.get("expected")
                     val met = if (actual is Number && expected is Number) BigDecimal(actual.toString()).compareTo(BigDecimal(expected.toString())) == 0 else actual == expected
-                    val p = decimal(choice.getJSONObject("probabilities"), id)
-                    val error = p - if (met) BigDecimal.ONE else BigDecimal.ZERO
-                    row.put("state", "observed").put("event_occurred", met).put("predicted_probability", p.toPlainString())
-                        .put("actual", actual).put("brier_score", (error * error).toPlainString())
-                        .put("utility", decimal(prediction, if (met) "utility_if_true" else "utility_if_false").toPlainString())
+                    row.put("state", "observed").put("event_occurred", met).put("actual", actual)
+                    if (qualitative) {
+                        val expectation = choice.getJSONObject("expectations").getString(id)
+                        row.put("expectation", expectation).put("predicted_probability", JSONObject.NULL)
+                            .put("brier_score", JSONObject.NULL).put("utility", JSONObject.NULL)
+                            .put("prediction_check", when {
+                                !row.getBoolean("within_declared_validity") -> "stale_observation"
+                                expectation == "unknown" -> "unspecified"
+                                met == (expectation == "expected") -> "consistent_with_observation"
+                                else -> "contradicted"
+                            })
+                    } else {
+                        val p = decimal(choice.getJSONObject("probabilities"), id)
+                        val error = p - if (met) BigDecimal.ONE else BigDecimal.ZERO
+                        row.put("predicted_probability", p.toPlainString()).put("brier_score", (error * error).toPlainString())
+                            .put("utility", decimal(prediction, if (met) "utility_if_true" else "utility_if_false").toPlainString())
+                    }
                 }
             }
             evaluated.put(row)
         }
         predictions.keys.filter { it !in seen }.forEach { evaluated.put(JSONObject().put("event_id", it).put("state", "unobserved_no_evidence")) }
         val scored = (0 until evaluated.length()).map(evaluated::getJSONObject).filter { it.getString("state") == "observed" }
-        return JSONObject().put("state", if (scored.size == predictions.size) "observed_prediction_errors" else "partial_prediction_evidence")
+        return JSONObject().put("state", if (scored.size != predictions.size) "partial_prediction_evidence"
+            else if (qualitative) "observed_qualitative_evidence" else "observed_prediction_errors")
             .put(CollaborationActionPrediction.FORECAST, CollaborationResearchCandidates.reference(forecast))
             .put(CollaborationActionPrediction.MODEL, CollaborationResearchCandidates.reference(model)).put("checks", evaluated)
-            .put("scored_events", scored.size).put("registered_events", predictions.size)
+            .put("scored_events", if (qualitative) 0 else scored.size).put("observed_events", scored.size).put("registered_events", predictions.size)
             // Squaring a validated input can double its scale; these are host-computed values, not new raw inputs.
-            .put("brier_sum", scored.fold(BigDecimal.ZERO) { sum, row -> sum + BigDecimal(row.getString("brier_score")) }.toPlainString())
+            .put("brier_sum", if (qualitative) JSONObject.NULL else scored.fold(BigDecimal.ZERO) { sum, row -> sum + BigDecimal(row.getString("brier_score")) }.toPlainString())
             .put("unchosen_actions", JSONArray(objects(spec, "choices").map { it.getString("action_id") }.filter { it != spec.getString("selected_action") }))
             .put("counterfactuals_measured", false).put("causality_proven", false).put("model_improved", false)
             .put("execution_association", "original_run_executor_and_report_binding_not_independent_harness_certification")
+            .apply { if (qualitative) put(CollaborationQualitativePrediction.MODE, CollaborationQualitativePrediction.QUALITATIVE) }
             .apply { CollaborationHypothesisTest.outcome(forecast, evaluated)?.let { put(CollaborationHypothesisTest.FIELD, it) } }
     }
 
@@ -92,6 +107,9 @@ internal object CollaborationPredictionFeedback {
         var score = BigDecimal.ZERO; var count = 0L; var expected = 0L
         results.forEach {
             val host = it.getJSONObject(HOST)
+            require(!CollaborationQualitativePrediction.enabled(host)) {
+                "Qualitative outcomes have no probability score; inspect their contradictions, not prediction_calibration"
+            }
             require(CollaborationResearchCandidates.same(model, host.getJSONObject(CollaborationActionPrediction.MODEL))) { "Do not pool different model revisions or environments as one calibration" }
             require(seen.add(host.getJSONObject(CollaborationActionPrediction.FORECAST).getString("object_id"))) { "Do not cherry-pick/count two outcome snapshots for one forecast" }
             score += BigDecimal(host.getString("brier_sum")); count += host.getInt("scored_events"); expected += host.getInt("registered_events")
