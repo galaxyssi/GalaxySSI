@@ -71,8 +71,6 @@ internal class CollaborationAdaptivePilotMilestones(
         .put("milestones", JSONArray(records.values.map { JSONObject(it.toString()) }))
 
     companion object {
-        fun executionStore(context: Context, database: AgentEncryptedDatabase) = EncryptedAgentTeamExecutionStore(
-            database, { CollaborationGroupStore.names(context) }, { CollaborationResearchWorkspace(context) },
-            { AgentTeamDurableControl(context).get(it) }, { CollaborationResearchWorkspace(context) })
+        fun executionStore(context: Context, database: AgentEncryptedDatabase) = EncryptedAgentTeamExecutionStore(context, database)
     }
 }

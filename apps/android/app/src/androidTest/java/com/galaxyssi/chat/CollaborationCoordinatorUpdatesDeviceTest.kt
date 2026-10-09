@@ -31,10 +31,15 @@ class CollaborationCoordinatorUpdatesDeviceTest {
         return result.getJSONArray("revisions").getJSONObject(0)
     }
 
-    @Test fun cloudNativeAndEvidenceConfirmationSeeLateVersionsButKeepOriginalBinding() {
+    @Test fun cloudNativeAndEvidenceConfirmationSeeLateVersionsButKeepOriginalBinding() = lateVersions(false)
+
+    @Test fun isolatedExecutionStoreUsesTheSameLiveUpdatesAndEvidenceConfirmation() = lateVersions(true)
+
+    private fun lateVersions(isolated: Boolean) {
         val id = "coordinator-updates-${UUID.randomUUID()}"
         group(id)
-        val store = EncryptedAgentTeamExecutionStore(context)
+        val store = if (isolated) CollaborationAdaptivePilotMilestones.executionStore(context, AgentEncryptedDatabase(context, id))
+            else EncryptedAgentTeamExecutionStore(context)
         val workspace = CollaborationResearchWorkspace(context)
         val run = "$id-run"
         try {
@@ -53,6 +58,8 @@ class CollaborationCoordinatorUpdatesDeviceTest {
                 AgentRunRequest(id, "turn", "task", runId = run, goal = "Synthetic fixture only", createdAtMillis = 1,
                     context = mapOf(CollaborationGoalLoop.ROUND to "1")))
             val access = CollaborationWorkspaceAccess(id, run, "turn", 1, "planner", "lead")
+            if (isolated) assertNull(EncryptedAgentTeamExecutionStore(context).deliveryCheckpoint(run))
+            assertEquals(run, AgentTeamExecutionLocations(context).state(access).first.request.runId)
             val author = access.copy(nodeId = "producer", personId = "author")
             val ledger = CollaborationEvidenceLedger(context)
             val source = AgentTeamDispatchIds.sourceMessageId("$id:planner")
@@ -111,11 +118,15 @@ class CollaborationCoordinatorUpdatesDeviceTest {
             assertEquals("failed", call(access, read).getString("status"))
             AgentTeamDurableControl(context).set(run, AgentTeamUserControl.RUN)
             assertEquals("returned", call(access, read).getString("status"))
+            assertEquals(run, AgentTeamExecutionLocations(context).state(access).first.request.runId)
             assertEquals(originalGoal, CollaborationGoalContractStore(context).read(access).toString())
             assertEquals(access, ledger.binding(source, id, "turn"))
         } finally {
             AgentTeamDurableControl(context).set(run, AgentTeamUserControl.STOP)
             store.remove(run)
+            assertThrows(IllegalArgumentException::class.java) {
+                AgentTeamExecutionLocations(context).state(CollaborationWorkspaceAccess(id, run, "turn", 1))
+            }
             CollaborationGroupStore(context).remove(id)
             AgentTeamDurableControl(context).remove(run)
         }

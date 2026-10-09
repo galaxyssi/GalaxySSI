@@ -397,24 +397,31 @@ class EncryptedAgentTeamExecutionStore internal constructor(
     private val recruitmentNames: () -> List<String> = { emptyList() },
     private val candidateWorkspace: (() -> CollaborationResearchWorkspace)? = null,
     private val candidateControl: (String) -> AgentTeamUserControl = { AgentTeamUserControl.RUN },
-    private val milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null
+    private val milestoneWorkspace: (() -> CollaborationResearchWorkspace)? = null,
+    private val registration: AgentTeamExecutionRegistration? = null
 ) : AgentTeamExecutionStore {
-    constructor(context: Context) : this(
-        AgentEncryptedDatabase(context.applicationContext, DATABASE),
+    constructor(context: Context) : this(context, AgentEncryptedDatabase(context.applicationContext, AgentTeamExecutionLocation.DEFAULT_NAMESPACE))
+
+    internal constructor(context: Context, database: AgentEncryptedDatabase) : this(
+        database,
         { CollaborationGroupStore.names(context.applicationContext) },
         { CollaborationResearchWorkspace(context.applicationContext) },
         { AgentTeamDurableControl(context.applicationContext).get(it) },
-        { CollaborationResearchWorkspace(context.applicationContext) }
+        { CollaborationResearchWorkspace(context.applicationContext) },
+        AgentTeamExecutionRegistration(context.applicationContext, database.storageNamespace)
     )
 
     override fun create(definition: AgentTeamDefinition, request: AgentRunRequest) = synchronized(LOCK) {
         val existing = record(request.runId)
         if (existing != null) {
-            require(existing.definition.teamId == definition.teamId && existing.request.taskId == request.taskId) {
+            require(existing.definition.teamId == definition.teamId && existing.request.taskId == request.taskId &&
+                existing.request.conversationId == request.conversationId && existing.request.messageId == request.messageId) {
                 "A different Agent team already owns supervisor Run ${request.runId}"
             }
+            registration?.claim(definition, request)
             return@synchronized
         }
+        registration?.claim(definition, request)
         write(AgentTeamExecutionRecord(definition, request).activateAcceptance())
         prune()
     }
@@ -471,6 +478,10 @@ class EncryptedAgentTeamExecutionStore internal constructor(
 
     override fun deliveryCheckpoint(supervisorRunId: String): AgentTeamExecutionCheckpoint? = synchronized(LOCK) {
         record(supervisorRunId)?.liveGraphCheckpoint()
+    }
+
+    internal fun executionState(supervisorRunId: String): Pair<AgentTeamExecutionCheckpoint, AgentTeamExecutionSnapshot>? = synchronized(LOCK) {
+        record(supervisorRunId)?.let { it.liveGraphCheckpoint() to it.toSnapshot() }
     }
 
     override fun historicalDeliveryPage(supervisorRunId: String, after: String, limit: Int): List<Pair<String, AgentTeamExecutionCheckpoint>> = synchronized(LOCK) {
@@ -556,6 +567,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
     }
 
     override fun remove(supervisorRunId: String) = synchronized(LOCK) {
+        registration?.requireOwner(supervisorRunId)
         database.remove(recordKey(supervisorRunId))
         database.removeAll(database.keys("goal-cycle:$supervisorRunId:"))
         val legacy = legacyRecords()
@@ -565,9 +577,16 @@ class EncryptedAgentTeamExecutionStore internal constructor(
                 database.writeString(KEY_LEGACY_RECORDS, AgentTeamExecutionCodec.encode(retained).toString())
             }
         }
+        registration?.release(supervisorRunId)
+        Unit
     }
 
-    override fun clear() = synchronized(LOCK) { database.clear() }
+    override fun clear() = synchronized(LOCK) {
+        val runs = records().map { it.request.runId }
+        runs.forEach { registration?.requireOwner(it) }
+        database.clear()
+        runs.forEach { registration?.release(it) }
+    }
 
     private fun record(supervisorRunId: String): AgentTeamExecutionRecord? {
         val cleanRunId = supervisorRunId.trim()
@@ -602,14 +621,16 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         val completed = records().filter { record -> record.toSnapshot().let {
             it.state.isTerminal && it.state != AgentTeamExecutionState.INTERRUPTED && it.goalDisposition !in setOf("continue", "blocked")
         } }
-        database.removeAll(completed.drop(MAX_RUNS).map { recordKey(it.request.runId) })
+        val removed = completed.drop(MAX_RUNS).map { it.request.runId }
+        removed.forEach { registration?.requireOwner(it) }
+        database.removeAll(removed.map(::recordKey))
+        removed.forEach { registration?.release(it) }
     }
 
     private fun recordKey(supervisorRunId: String) = "$RUN_PREFIX${supervisorRunId.trim()}"
 
     private companion object {
         val LOCK = Any()
-        const val DATABASE = "galaxyssi_agent_teams_v1"
         const val KEY_LEGACY_RECORDS = "records"
         const val RUN_PREFIX = "run:"
         const val MAX_RUNS = 200

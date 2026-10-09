@@ -177,6 +177,7 @@ class AgentEncryptedDatabase(
     context: Context,
     private val databaseName: String
 ) {
+    internal val storageNamespace: String get() = databaseName
     private val database = sharedDatabase(context.applicationContext, databaseName)
     internal val storageIdentity = context.applicationContext.getDatabasePath("$databaseName.db").absolutePath
 
