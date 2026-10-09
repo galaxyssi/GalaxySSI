@@ -58,6 +58,9 @@ internal object CollaborationTeamOrganization {
             .put(JSONArray(CollaborationWorkGraph.dependencies(item).sorted()))
             .put(item.optString("dependency_policy", "success")).put(item.optBoolean("independent_review"))
             .put(if (review(item)) member else "").apply {
+                if (item.has(CollaborationDataDependencies.FIELD))
+                    put(JSONObject().put(CollaborationDataDependencies.FIELD,
+                        CollaborationDataDependencies.array(CollaborationDataDependencies.read(item))))
                 // Preserve existing signatures when all dependencies remain review targets.
                 if (item.has(CollaborationReviewTargets.FIELD) &&
                     CollaborationReviewTargets.read(item) != CollaborationWorkGraph.dependencies(item))

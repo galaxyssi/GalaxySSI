@@ -71,6 +71,7 @@ internal object CollaborationGoalLoop {
         Use success for work requiring an actual artifact; terminal for diagnosing failed work. The default is success.
         An independent review must name its target work and use a different member from every target author.
         ${CollaborationReviewTargets.instructions()}
+        ${CollaborationDataDependencies.instructions()}
         Keep alternative candidates separate and plan their verification in parallel. A vote or ranking is not proof.
         Assign independently obtained evidence and cross-checks where useful; a text review is not an executed test.
         Recruit only when a distinct capability/workload gap justifies it, with concrete work assigned in this batch.
@@ -342,7 +343,8 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
                     CollaborationWorkGraph.REPAIR_OF to item.optString("repair_of"),
-                    CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationReviewTargets.context(item) + CollaborationCandidateEvolution.taskContext(item) +
+                    CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationReviewTargets.context(item) +
+                    CollaborationDataDependencies.context(item) + CollaborationCandidateEvolution.taskContext(item) +
                     CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item) + CollaborationInnovationWork.context(item) + CollaborationPredictionWork.context(item) + CollaborationWorkflowWork.context(item) + CollaborationSelfResearchWork.context(item) +
                     CollaborationMilestoneDispatch.context(CollaborationMilestoneDispatch.uses(item).sorted().map { availableMilestones.getValue(it) }))
         }
