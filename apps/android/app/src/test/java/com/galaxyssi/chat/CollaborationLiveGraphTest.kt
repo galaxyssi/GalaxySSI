@@ -106,7 +106,8 @@ class CollaborationLiveGraphTest {
             { it.put("stage", "VERIFY") },
             { it.put("depends_on", JSONArray().put(PRODUCER_WORK)) },
             { it.put("dependency_policy", "terminal") },
-            { it.put("independent_review", true) }
+            { it.put("independent_review", true) },
+            { it.put(CollaborationPeerExchangePolicy.FIELD, JSONArray().put(AUTHOR)) }
         )
         for (change in changes) {
             val original = item(SLOW_WORK, SLOW_PERSON)
@@ -135,6 +136,21 @@ class CollaborationLiveGraphTest {
         val rejected = CollaborationLiveGraph.update(attempted, terminalIds(attempted), 140)
         assertEquals(attempted.definition, rejected.definition)
         assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("rewrite existing work"))
+    }
+
+    @Test fun peerExchangeContractIsPersistedWithoutAddingCompletionDependencies() {
+        val first = planned(); val planner = planners(first).single()
+        val request = safeAddition().put(CollaborationPeerExchangePolicy.FIELD, JSONArray().put(AUTHOR))
+        val returned = terminal(first, planner.memberId, expansion(request).toString())
+        val updated = CollaborationLiveGraph.update(returned, terminalIds(returned), 120)
+        assertEquals("", updated.request.context[CollaborationLiveGraph.FEEDBACK])
+        val node = work(updated, request.getString("id"))
+        assertEquals(setOf(AUTHOR), CollaborationPeerExchangePolicy.allowed(node))
+        assertEquals(CollaborationWorkGraph.dependencies(request), CollaborationWorkGraph.dependencies(CollaborationLiveGraph.workItem(node, updated.definition.members)))
+        assertEquals(setOf(AUTHOR), CollaborationPeerExchangePolicy.read(CollaborationLiveGraph.workItem(node, updated.definition.members)))
+        assertEquals(updated, reopen(updated))
+        assertRejected(expansion(safeAddition().put(CollaborationPeerExchangePolicy.FIELD, JSONArray().put("outsider"))), "roster")
+        assertRejected(expansion(review().put(CollaborationPeerExchangePolicy.FIELD, JSONArray().put(AUTHOR))), "Independent")
     }
 
     @Test fun cyclesRejectTheWholeExpansionInsteadOfAppendingTheValidSibling() {

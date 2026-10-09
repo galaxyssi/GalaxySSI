@@ -14,6 +14,28 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_peer_updates_are_task_bound_and_do_not_claim_delivery_or_start_a_model(self):
+        broker = RecallBroker()
+        arguments = {"mode": "peer_updates", "cursor": "a" * 64 + ":2"}
+        expected = {"success": True, "milestones": [{"requests": [{"to": ["peer"], "question": "Check measurement"}]}],
+                    "next_cursor": "a" * 64 + ":3", "caught_up_at_read": False}
+        calls = []
+        def publish(request):
+            calls.append(request)
+            self.assertEqual(arguments, request["arguments"])
+            self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": expected}, "wrong-phone"))
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": expected}, "phone"))
+            return True
+        self.assertEqual(expected, broker.query(task, arguments, publish))
+        self.assertEqual(["read"], [call["phase"] for call in calls])
+        self.assertEqual({}, broker._pending)
+        for field in ("work_id", "object_id", "query", "member_id", "group_id", "offset", "topic", "record_id"):
+            with self.assertRaises(ValueError):
+                validate_arguments({**arguments, field: "x"})
+        for cursor in (None, True, 1, "x" * 513):
+            with self.assertRaises(ValueError):
+                validate_arguments({**arguments, "cursor": cursor})
+
     def test_complete_work_contract_uses_existing_phone_authority_not_a_task_override(self):
         broker = RecallBroker()
         arguments = {"mode": "team_updates", "work_id": "challenge-measurements"}

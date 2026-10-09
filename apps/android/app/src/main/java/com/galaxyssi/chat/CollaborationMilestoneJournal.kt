@@ -37,6 +37,14 @@ internal class CollaborationMilestoneJournal(
                 CollaborationMilestoneCoordination.read(receipt)?.let { descriptor.put("coordination", it) }
                 put(runPrefix(access, recordOnly = !CollaborationMilestoneCoordination.requestsCoordination(receipt)) + token,
                     descriptor.toString())
+                val requests = CollaborationPeerExchangePolicy.requests(requireNotNull(CollaborationResearchArtifact.decode(raw)))
+                val recipients = linkedSetOf<String>()
+                repeat(requests.length()) { at -> requests.getJSONObject(at).getJSONArray("to").let { to ->
+                    repeat(to.length()) { recipients += to.getString(it) }
+                } }
+                recipients.filter { it != access.personId }.forEach { recipient ->
+                    put(peerPrefix(access, recipient) + token, descriptor.toString())
+                }
             }
         }
     }
@@ -111,10 +119,16 @@ internal class CollaborationMilestoneJournal(
             "group:${AgentNativeJsonCodec.sha256(access.groupId)}:${if (recordOnly) "milestone-record-run" else "milestone-run"}:" +
                 AgentNativeJsonCodec.sha256(JSONArray(listOf(access.runId, access.turnId, access.round)).toString()) + ":"
 
+        private fun peerPrefix(access: CollaborationWorkspaceAccess, recipient: String) =
+            "group:${AgentNativeJsonCodec.sha256(access.groupId)}:milestone-peer:" +
+                AgentNativeJsonCodec.sha256(JSONArray(listOf(access.runId, access.turnId, access.round, recipient)).toString()) + ":"
+
         fun pending(rows: CollaborationWorkspaceRows, access: CollaborationWorkspaceAccess,
-                    covered: Set<String>, producers: Set<String>, coordinationOnly: Boolean = false): List<JSONObject> {
+                    covered: Set<String>, producers: Set<String>, coordinationOnly: Boolean = false,
+                    recipient: String? = null): List<JSONObject> {
             val found = mutableListOf<JSONObject>()
-            val prefixes = if (coordinationOnly) listOf(runPrefix(access)) else listOf(runPrefix(access), runPrefix(access, true))
+            val prefixes = if (recipient != null) listOf(peerPrefix(access, recipient)) else
+                if (coordinationOnly) listOf(runPrefix(access)) else listOf(runPrefix(access), runPrefix(access, true))
             for (prefix in prefixes) {
                 var cursor = ""
                 while (true) {
@@ -138,12 +152,19 @@ internal class CollaborationMilestoneJournal(
                                 CollaborationMilestoneCoordination.read(descriptor)?.toString()) {
                             "Milestone index content changed"
                         }
-                        require((prefix == runPrefix(access, true)) == !CollaborationMilestoneCoordination.requestsCoordination(descriptor)) {
+                        require(recipient != null || (prefix == runPrefix(access, true)) == !CollaborationMilestoneCoordination.requestsCoordination(descriptor)) {
                             "Milestone coordination index changed"
                         }
-                        found += JSONObject(descriptor.toString()).apply { remove("record_key"); remove("record_sha256") }
+                        val item = JSONObject(descriptor.toString()).apply { remove("record_key"); remove("record_sha256") }
+                        if (recipient != null) {
+                            val requests = CollaborationPeerExchangePolicy.requests(requireNotNull(
+                                CollaborationResearchArtifact.decode(record.getString("raw"))), recipient)
+                            require(requests.length() > 0) { "Peer index was not addressed to this recipient" }
+                            item.put("requests", requests)
+                        }
+                        found += item
                         // Admission page, not a research limit: the next checkpoint consumes the next page.
-                        if (found.size == 16) return found
+                        if (found.size == (if (recipient != null) 1 else 16)) return found
                     }
                     if (keys.size < 32) break
                 }
