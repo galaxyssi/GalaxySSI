@@ -57,6 +57,30 @@ class TextArtifactTest(unittest.TestCase):
         return self.call({"mode": "materialize", "object_id": "a" * 64, "revision": 1, "sha256": "b" * 64},
                          root=self.peer, **kwargs)
 
+    def test_coordination_is_frozen_with_exact_source_and_retry_identity(self):
+        args = {**self.arguments, "coordination": {"mode": "record_only"}}
+        self.call(args)
+        self.assertEqual(args["coordination"], json.loads(self.sent[0]["artifact"])["coordination"])
+        self.source.write_bytes(b"changed")
+        self.call(args)
+        self.assertEqual("receipt", self.sent[-1]["mode"])
+        with self.assertRaisesRegex(ValueError, "different snapshot"):
+            self.call({**args, "coordination": {"mode": "request", "decision": "Compare methods", "why_now": "Conflicting measurements"}})
+        requested = {**args, "milestone_id": "decision-v2", "coordination": {
+            "mode": "request", "decision": "Compare methods", "why_now": "Conflicting measurements"}}
+        self.call(requested)
+        self.assertEqual(requested["coordination"], json.loads(self.sent[-1]["artifact"])["coordination"])
+
+    def test_malformed_coordination_is_rejected_before_saving_or_sending(self):
+        for bad in (None, [], {"mode": []}, {"mode": "request"}, {"mode": "record_only", "decision": "x"},
+                    {"mode": "request", "decision": " ", "why_now": "x"},
+                    {"mode": "request", "decision": "x", "why_now": False}):
+            with self.subTest(value=bad), self.assertRaisesRegex(ValueError, "coordination"):
+                self.call({**self.arguments, "coordination": bad})
+        self.assertEqual([], self.sent)
+        self.assertFalse((self.author / ".collaboration-text-artifacts").exists())
+        self.assertIn("coordination", tool_spec()["inputSchema"]["properties"])
+
     def test_exact_source_survives_complete_paging_and_independent_task_import(self):
         sent = self.call()
         result = self.materialize()

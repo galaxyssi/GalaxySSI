@@ -163,13 +163,15 @@ internal class CollaborationResearchWorkspace(
             publishInternal(access, raw, now, null, false, milestoneId = id)
         }
         // Never call a scheduler/store while holding the workspace lock.
-        if (result.optString("status") == "recorded") CollaborationMilestoneSignals.committed(access.runId)
+        if (result.optString("status") == "recorded" && CollaborationMilestoneCoordination.requestsCoordination(result))
+            CollaborationMilestoneSignals.committed(access.runId)
         return result
     }
 
-    fun pendingMilestones(access: CollaborationWorkspaceAccess, covered: Set<String>, producers: Set<String>): List<JSONObject> = synchronized(LOCK) {
+    fun pendingMilestones(access: CollaborationWorkspaceAccess, covered: Set<String>, producers: Set<String>,
+                          coordinationOnly: Boolean = false): List<JSONObject> = synchronized(LOCK) {
         checkAcceptanceAccess(access)
-        CollaborationMilestoneJournal.pending(rows, access, covered, producers).map { descriptor ->
+        CollaborationMilestoneJournal.pending(rows, access, covered, producers, coordinationOnly).map { descriptor ->
             val refs = descriptor.getJSONArray("revisions")
             val grants = linkedSetOf<String>()
             repeat(refs.length()) { index ->
@@ -214,7 +216,7 @@ internal class CollaborationResearchWorkspace(
                            producers: Set<String>): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         CollaborationCoordinatorJournal(rows, access).page(cursor) { offered ->
-            pendingMilestones(access, covered + offered, producers)
+            pendingMilestones(access, covered + offered, producers, coordinationOnly = true)
         }
     }
 
@@ -279,12 +281,14 @@ internal class CollaborationResearchWorkspace(
             val changes = changes ?: if (candidateTask == null) JSONArray() else
                 throw IllegalArgumentException("Candidate task requires a workspace revision/event")
             candidateTask?.let { CollaborationCandidateEvolution.checkTask(this, access, it) }
-            require(milestoneId == null || !artifact.has("milestones")) { "A milestone cannot incorporate other milestones; cite parents or use a final result" }
-            val retained = if (milestoneId == null) milestoneJournal.resolve(artifact) { ref ->
+            require(milestoneId == null || !artifact.has("milestones") || CollaborationMilestoneCoordination.explicitRequest(artifact)) {
+                "Only an explicit coordination request or final result may incorporate saved milestones"
+            }
+            val retained = milestoneJournal.resolve(artifact) { ref ->
                 requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Milestone original missing" }.also {
                     require(CollaborationResearchCandidates.same(it, ref) && it.getString("node_id") == access.nodeId) { "Milestone identity changed" }
                 }
-            } else emptyList()
+            }
             val refs = JSONArray(retained.map(::reference))
             val revisions = retained.toMutableList()
             val changingIds = (0 until changes.length()).map { changes.getJSONObject(it) }
@@ -377,6 +381,9 @@ internal class CollaborationResearchWorkspace(
             require(milestoneId == null || revisions.isNotEmpty()) { "An interim milestone needs a versioned workspace object, not only a status message" }
             JSONObject().put("status", "recorded").put("revisions", refs)
                 .put("trust", "authorship_and_version_recorded_not_scientifically_verified")
+                .also { receipt -> if (milestoneId != null) CollaborationMilestoneCoordination.read(artifact)?.let {
+                    receipt.put("coordination", it)
+                } }
         }.getOrElse {
             if (recoverable && it !is IllegalArgumentException && it !is org.json.JSONException) throw it
             writes.clear()
@@ -561,16 +568,18 @@ internal class CollaborationResearchWorkspace(
     }
 
     internal fun removeGroup(group: String) = synchronized(LOCK) {
-        val prefix = prefix(group)
         val removed = linkedSetOf<String>()
-        var cursor = ""
-        while (true) {
-            val keys = rows.page(prefix, cursor, CollaborationAcceptanceReviewSnapshot.PAGE_SIZE)
-            require(keys.size <= CollaborationAcceptanceReviewSnapshot.PAGE_SIZE) { "Workspace removal returned an oversized page" }
-            if (keys.isEmpty()) break
-            keys.forEach { key ->
-                require(key > cursor && key.startsWith(prefix) && removed.add(key)) { "Invalid workspace removal pagination" }
-                cursor = key
+        // Coordinator journals use the wire digest; preserve that live namespace and remove it explicitly.
+        for (prefix in listOf(prefix(group), CollaborationCoordinatorJournal.groupPrefix(group))) {
+            var cursor = ""
+            while (true) {
+                val keys = rows.page(prefix, cursor, CollaborationAcceptanceReviewSnapshot.PAGE_SIZE)
+                require(keys.size <= CollaborationAcceptanceReviewSnapshot.PAGE_SIZE) { "Workspace removal returned an oversized page" }
+                if (keys.isEmpty()) break
+                keys.forEach { key ->
+                    require(key > cursor && key.startsWith(prefix) && removed.add(key)) { "Invalid workspace removal pagination" }
+                    cursor = key
+                }
             }
         }
         // The token is outside the deleted namespace, including for an empty/legacy group.

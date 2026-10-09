@@ -13,8 +13,15 @@ class CollaborationMilestoneDispatchTest {
     private class Rows : CollaborationWorkspaceRows {
         val data = sortedMapOf<String, String>()
         var fail = false
-        override fun read(key: String) = data[key]
-        override fun page(prefix: String, after: String, limit: Int) = data.keys.filter { it.startsWith(prefix) && it > after }.take(limit)
+        var archiveIndexReads = 0
+        override fun read(key: String): String? {
+            if (":milestone-record-run:" in key) archiveIndexReads++
+            return data[key]
+        }
+        override fun page(prefix: String, after: String, limit: Int): List<String> {
+            if (":milestone-record-run:" in prefix) archiveIndexReads++
+            return data.keys.filter { it.startsWith(prefix) && it > after }.take(limit)
+        }
         override fun commit(values: Map<String, String>) { check(!fail); data.putAll(values) }
     }
     private val author = CollaborationWorkspaceAccess("group", "run", "turn", 1, "producer", "author")
@@ -60,6 +67,92 @@ class CollaborationMilestoneDispatchTest {
             output = output, startedAtMillis = 1, completedAtMillis = 10)
         return record.copy(events = record.events + AgentSubagentEvent(1, "run", node.memberId,
             AgentSubagentEventKinds.CHILD_SUCCEEDED, childStatus = result.status, result = result, timestampMillis = 10))
+    }
+
+    private fun coordination(mode: String) = JSONObject().put("mode", mode).apply { if (mode == "request") {
+        put("decision", "Which measurement distinguishes competing candidates?")
+        put("why_now", "Independent design can expose the untested confound while I continue calibration")
+    } }
+
+    private fun request(vararg ids: String) = JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+        .put("summary", "Review measurement design").put("coordination", coordination("request"))
+        .put("milestones", JSONArray(ids.toList())).toString()
+
+    @Test fun recordOnlyPersistsWithoutSignalOrPlannerAndCanBeEscalatedWithoutCopying() {
+        val rows = Rows(); val workspace = workspace(rows); val signals = mutableListOf<String>()
+        val saved = JSONObject(raw()).put("coordination", coordination("record_only")).toString()
+        val first = CollaborationMilestoneSignals.subscribe(signals::add).use {
+            workspace.publishMilestone(author, "raw", saved).also {
+                assertEquals(it.toString(), workspace.publishMilestone(author, "raw", saved).toString())
+                assertTrue(signals.isEmpty())
+            }
+        }
+        val reopened = CollaborationResearchWorkspace(rows)
+        assertEquals(fixture(), planned(reopened))
+        assertEquals(1, reopened.pendingMilestones(author, emptySet(), setOf("producer")).size)
+        assertEquals("record_only", reopened.milestones(author).getJSONArray("milestones").getJSONObject(0)
+            .getJSONObject("coordination").getString("mode"))
+        val receipt = CollaborationMilestoneSignals.subscribe(signals::add).use {
+            reopened.publishMilestone(author, "help", request("raw"))
+        }
+        assertEquals(listOf("run"), signals)
+        assertEquals(first.getJSONArray("revisions").toString(), receipt.getJSONArray("revisions").toString())
+        assertEquals(1, reopened.browse(author).revisions.size)
+        val record = planned(reopened)
+        val node = planner(record)
+        assertEquals("help", CollaborationMilestoneDispatch.inputs(node).single().getString("milestone_id"))
+        assertEquals(coordination("request").toString(), CollaborationMilestoneDispatch.inputs(node).single().getJSONObject("coordination").toString())
+        val ref = first.getJSONArray("revisions").getJSONObject(0)
+        assertNotNull(reopened.read(CollaborationMilestoneDispatch.access(record, node), ref.getString("object_id"), 1))
+        assertEquals(record, planned(reopened, record))
+        assertEquals("recorded", reopened.submitPublication(author, JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+            .put("summary", "Final result").put("milestones", JSONArray(listOf("raw", "help"))).toString()).getString("status"))
+        assertEquals(1, reopened.publicationRevisions(author, author.nodeId).size)
+    }
+
+    @Test fun archiveOnlyRecordsDoNotConsumeRequestPageAndCoordinatorUpdatesIgnoreThem() {
+        val rows = Rows(); val workspace = workspace(rows)
+        repeat(35) { workspace.publishMilestone(author, "log-$it", JSONObject(raw("log-$it"))
+            .put("coordination", coordination("record_only")).toString()) }
+        assertEquals(35, rows.data.keys.count { ":milestone-record-run:" in it })
+        assertEquals(fixture(), planned(workspace))
+        assertEquals(0, rows.archiveIndexReads)
+        workspace.publishMilestone(author, "help", request("log-0", "log-34"))
+        val record = planned(workspace); val access = CollaborationMilestoneDispatch.access(record, planner(record))
+        val only = workspace.pendingMilestones(access, emptySet(), setOf("producer"), coordinationOnly = true).single()
+        assertEquals(2, only.getJSONArray("revisions").length())
+        val updates = workspace.coordinatorUpdates(access, "", setOf(only.getString("token")), setOf("producer"))
+        assertEquals(0, updates.getJSONArray("milestones").length())
+        assertTrue(updates.getBoolean("caught_up_at_read"))
+        assertEquals(0, rows.archiveIndexReads)
+        assertEquals(16, workspace.pendingMilestones(author, emptySet(), setOf("producer")).size)
+    }
+
+    @Test fun coordinationIndexTamperingCannotHideOrInventRequests() {
+        for ((mode, replacement) in listOf("request" to "record_only", "record_only" to "request")) {
+            val rows = Rows(); val workspace = workspace(rows)
+            workspace.publishMilestone(author, "m1", JSONObject(raw()).put("coordination", coordination(mode)).toString())
+            val key = rows.data.keys.single { ":milestone-run:" in it || ":milestone-record-run:" in it }
+            rows.data[key] = JSONObject(rows.data.getValue(key)).put("coordination", coordination(replacement)).toString()
+            assertThrows(IllegalArgumentException::class.java) {
+                workspace.pendingMilestones(author, emptySet(), setOf("producer"))
+            }
+        }
+    }
+
+    @Test fun invalidCoordinationAndForeignReferencesDoNotPublishOrWake() {
+        val workspace = workspace(); val signals = mutableListOf<String>()
+        CollaborationMilestoneSignals.subscribe(signals::add).use {
+            for (bad in listOf(JSONObject.NULL, "request", JSONObject().put("mode", "other"),
+                JSONObject().put("mode", "request"), coordination("request").put("decision", " "),
+                coordination("record_only").put("why_now", "unexpected"))) {
+                val result = workspace.publishMilestone(author, "invalid", JSONObject(raw()).put("coordination", bad).toString())
+                assertEquals("rejected", result.getString("status"))
+            }
+            assertEquals("rejected", workspace.publishMilestone(author, "foreign", request("another-assignment")).getString("status"))
+            assertTrue(signals.isEmpty())
+            assertTrue(workspace.browse(author).revisions.isEmpty())
+        }
     }
 
     @Test fun coordinatorReadsPinnedVersionAndObservationButNotLaterOrUnpublishedResults() {
@@ -200,11 +293,15 @@ class CollaborationMilestoneDispatchTest {
                 }
                 try {
                     started.await()
-                    val published = workspace.publishMilestone(author, "m1", raw())
+                    val recorded = JSONObject(raw()).put("coordination", coordination("record_only")).toString()
+                    workspace.publishMilestone(author, "raw", recorded)
+                    assertEquals(fixture, planned(workspace, fixture))
+                    assertFalse(peerStarted.isCompleted)
+                    val published = workspace.publishMilestone(author, "m1", request("raw"))
                     val peer = peerStarted.await()
                     assertFalse(dependent.isCompleted); assertFalse(final.isCompleted)
                     assertEquals(AgentSubagentStatus.RUNNING, store.snapshot("run")!!.members.single { it.memberId == "producer" }.status)
-                    repeat(20) { assertEquals(published.toString(), workspace.publishMilestone(author, "m1", raw()).toString()) }
+                    repeat(20) { assertEquals(published.toString(), workspace.publishMilestone(author, "m1", request("raw")).toString()) }
                     release.complete(Unit); dependent.await()
                     assertFalse(final.isCompleted)
                     releasePeer.complete(Unit)

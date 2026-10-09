@@ -58,6 +58,27 @@ class FileArtifactTest(unittest.TestCase):
         args = {"mode": "materialize", **{key: self.saved[key] for key in ("object_id", "revision", "sha256")}}
         return self.call(args, root=self.peer, scope=kwargs.pop("scope", {**self.scope, "task_id": "peer-task"}), **kwargs)
 
+    def test_record_only_and_decision_request_preserve_complete_file_and_frozen_mode(self):
+        args = {**self.args, "coordination": {"mode": "record_only"}}
+        self.call(args)
+        self.assertEqual(args["coordination"], json.loads(self.sent[0]["artifact"])["coordination"])
+        self.assertEqual(self.raw, Path(self.materialize()["path"]).read_bytes())
+        self.call(args)
+        self.assertEqual("receipt", self.sent[-1]["mode"])
+        changed = {**args, "coordination": {"mode": "request", "decision": "Choose next probe", "why_now": "Conflicting evidence"}}
+        with self.assertRaises(ValueError):
+            self.call(changed)
+        self.call({**changed, "milestone_id": "request-v2"})
+        self.assertEqual(changed["coordination"], json.loads(self.sent[-1]["artifact"])["coordination"])
+        self.assertEqual(self.raw, Path(self.materialize()["path"]).read_bytes())
+
+    def test_invalid_coordination_cannot_freeze_file_or_publish(self):
+        for bad in (None, {"mode": "request"}, {"mode": "request", "decision": "x", "why_now": ""}):
+            with self.subTest(value=bad), self.assertRaisesRegex(ValueError, "coordination"):
+                self.call({**self.args, "coordination": bad})
+        self.assertEqual([], self.sent)
+        self.assertFalse(self.store.exists())
+
     def test_large_binary_file_has_small_control_receipt_and_exact_peer_copy(self):
         published = self.call()
         self.assertLess(len(json.dumps(self.sent[0]).encode()), 2048)

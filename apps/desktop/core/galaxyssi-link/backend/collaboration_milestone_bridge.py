@@ -11,6 +11,12 @@ REQUEST = "collaboration_publish_request"
 RESPONSE = "collaboration_publish_result"
 CONTRACT = "galaxyssi.collaboration-publish/1"
 MAX_BYTES = 128 * 1024
+COORDINATION_INSTRUCTIONS = (
+    'Optional coordination:{"mode":"record_only"} saves evidence without waking the coordinator. '
+    'Use coordination:{"mode":"request","decision":"specific pending decision",'
+    '"why_now":"why peer input can change the next action"} for useful team intervention, not every saved file. '
+    'Continue independent work; neither mode pauses your assignment or requires approval for each action. '
+    'Omitting coordination retains the existing notification behavior. ')
 
 
 def tool_spec():
@@ -20,8 +26,11 @@ def tool_spec():
         "Use mode=status when availability is unknown; it reports the current assignment without mutation. "
         "An unavailable capability is not invalid artifact JSON and cannot be repaired by retrying publication. "
         "mode=publish requires stable milestone_id and artifact (a JSON string using galaxyssi.research-artifact.v1 "
-        "with nonempty workspace). Include format, nonblank summary and workspace; empty top-level candidates/findings "
+        "with versioned workspace evidence). Include format, nonblank summary and workspace; empty top-level candidates/findings "
         "may be omitted and decode as []. Supplied arrays and typed workspace bodies remain validated; defaults do not supply evidence. "
+        + COORDINATION_INSTRUCTIONS +
+        "Put coordination inside the artifact JSON. An explicit request may include milestones:[your saved IDs] "
+        "to share exact originals without copying them, even with an empty workspace array. "
         "Retry the identical ID and artifact after an uncertain response; accepted IDs are immutable. "
         "For a substantive revision use a new milestone ID and exact object_id/base_revision. "
         "mode=list with optional cursor recovers this assignment's committed IDs; follow next_cursor. "

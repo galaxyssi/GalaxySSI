@@ -12,9 +12,33 @@ class CollaborationCoordinatorJournalTest {
         override fun read(key: String) = data[key]
         override fun page(prefix: String, after: String, limit: Int) = data.keys.filter { it.startsWith(prefix) && it > after }.take(limit)
         override fun commit(values: Map<String, String>) { check(!fail) { "disk unavailable" }; data.putAll(values) }
+        override fun mutate(values: Map<String, String>, removeKeys: Collection<String>) {
+            check(!fail) { "disk unavailable" }
+            removeKeys.forEach(data::remove)
+            data.putAll(values)
+        }
     }
     private val access = CollaborationWorkspaceAccess("group", "run", "turn", 1, "planner", "lead")
     private fun item(index: Int) = JSONObject().put("token", index.toString()).put("grants", JSONArray().put("grant-$index"))
+
+    @Test fun deletingGroupRemovesCoordinatorPagesAndGrantsWithoutTouchingAnotherGroup() {
+        val rows = Rows()
+        val journal = CollaborationCoordinatorJournal(rows, access)
+        journal.page("") { listOf(item(1)) }
+        val other = CollaborationCoordinatorJournal(rows, access.copy(groupId = "other"))
+        val preserved = other.page("") { listOf(item(2)) }.toString()
+        val workspace = CollaborationResearchWorkspace(rows)
+        rows.fail = true
+        assertThrows(IllegalStateException::class.java) { workspace.removeGroup(access.groupId) }
+        assertEquals(1, journal.offered().size)
+        rows.fail = false
+        workspace.removeGroup(access.groupId)
+        assertTrue(CollaborationCoordinatorJournal(rows, access).offered().isEmpty())
+        assertTrue(rows.data.keys.none { it.startsWith(CollaborationCoordinatorJournal.groupPrefix(access.groupId)) })
+        assertEquals(preserved, other.page("") { error("Other group must remain intact") }.toString())
+        val recreated = CollaborationCoordinatorJournal(rows, access).page("") { listOf(item(3)) }
+        assertEquals("3", recreated.getJSONArray("milestones").getJSONObject(0).getString("token"))
+    }
 
     @Test fun replayPagesAreImmutableAndTailCanBePolledAfterReopening() {
         val rows = Rows()
