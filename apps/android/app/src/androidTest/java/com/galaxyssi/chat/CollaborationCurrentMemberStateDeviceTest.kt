@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -26,6 +27,7 @@ class CollaborationCurrentMemberStateDeviceTest {
                 previous = it.agentTranscriptStore.activeConversation().id
                 it.createAgentConversation()
                 id = it.agentTranscriptStore.activeConversation().id
+                it.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
             val member = CollaborationMember(name = "Recovery Fixture", agentId = "fixture", providerLabel = "Codex", role = "Researcher")
             CollaborationGroupStore(context).update(id) { it.copy(members = listOf(member), coordinatorId = member.id) }
@@ -41,11 +43,14 @@ class CollaborationCurrentMemberStateDeviceTest {
             row("current-$id", "Current assignment", current, now)
             row("connection-$id", "waiting", current.copy(activity = true, connectionState = "waiting"), now + 1)
             scenario.onActivity { it.refreshAgentTranscriptWindow(id) }
+            expandPanel(scenario)
             waitUntil { labels(scenario).contains(context.getString(R.string.collaboration_connection_lost)) }
             assertEquals(1, clocks(scenario))
+            assertEquals("Current status belongs in the team panel, not the reply timeline", 0,
+                clocks(scenario, R.id.collaborationOutputList))
             assertFalse(labels(scenario).contains(context.getString(R.string.collaboration_failed_status)))
             scenario.onActivity {
-                val clock = descendants(it.findViewById(R.id.collaborationOutputList)).filterIsInstance<TextView>()
+                val clock = descendants(it.findViewById(R.id.collaborationMemberStrip)).filterIsInstance<TextView>()
                     .single { view -> view.tag == "collaboration-process-time" }
                 assertTrue((clock.parent as View).performClick())
             }
@@ -57,13 +62,18 @@ class CollaborationCurrentMemberStateDeviceTest {
             row("result-$id", "Recovered original result", current.copy(status = AgentSubagentStatus.SUCCEEDED,
                 result = true, completedAtMillis = now + 3), now + 3)
             scenario.onActivity { it.refreshAgentTranscriptWindow(id) }
-            waitUntil { labels(scenario).contains(context.getString(R.string.collaboration_view_process)) }
+            waitUntil { labels(scenario, R.id.collaborationOutputList).contains(context.getString(R.string.collaboration_view_process)) }
             assertEquals(1, clocks(scenario))
+            assertEquals("One published reply keeps its own process disclosure", 1,
+                clocks(scenario, R.id.collaborationOutputList))
             scenario.recreate()
             ready(scenario)
             scenario.onActivity { it.refreshAgentTranscriptWindow(id) }
+            expandPanel(scenario)
             waitUntil { clocks(scenario) == 1 }
+            assertEquals(1, clocks(scenario, R.id.collaborationOutputList))
             assertFalse(labels(scenario).contains(context.getString(R.string.collaboration_connection_lost)))
+            assertTrue(labels(scenario, R.id.collaborationOutputList).contains("Recovered original result"))
             assertEquals(25, AgentTranscriptStore(context).list(id).count { it.collaborationJson.isNotBlank() })
         } finally {
             if (id.isNotBlank()) { transcript.deleteConversation(id); CollaborationGroupStore(context).remove(id) }
@@ -72,15 +82,29 @@ class CollaborationCurrentMemberStateDeviceTest {
         }
     }
 
-    private fun labels(scenario: ActivityScenario<MainActivity>): List<String> {
+    private fun expandPanel(scenario: ActivityScenario<MainActivity>) {
+        waitUntil {
+            var shown = false
+            scenario.onActivity { shown = it.findViewById<View>(R.id.collaborationMemberStrip).isShown }
+            shown
+        }
+        scenario.onActivity {
+            val panel = it.findViewById<ViewGroup>(R.id.collaborationMemberStrip)
+            val members = panel.findViewWithTag<RecyclerView>("collaboration-team-members")
+            if (members.visibility == View.GONE) panel.findViewWithTag<View>("collaboration-team-toggle").performClick()
+            assertEquals("A member has one current row, regardless of prior failed attempts", 1, members.adapter!!.itemCount)
+        }
+    }
+
+    private fun labels(scenario: ActivityScenario<MainActivity>, rootId: Int = R.id.collaborationMemberStrip): List<String> {
         var values = emptyList<String>()
-        scenario.onActivity { values = descendants(it.findViewById(R.id.collaborationOutputList)).filterIsInstance<TextView>()
-            .filter { view -> view.visibility == View.VISIBLE }.map { view -> view.text.toString() } }
+        scenario.onActivity { values = descendants(it.findViewById(rootId)).filterIsInstance<TextView>()
+            .filter { view -> view.isShown }.map { view -> view.text.toString() } }
         return values
     }
-    private fun clocks(scenario: ActivityScenario<MainActivity>): Int {
+    private fun clocks(scenario: ActivityScenario<MainActivity>, rootId: Int = R.id.collaborationMemberStrip): Int {
         var count = 0
-        scenario.onActivity { count = descendants(it.findViewById(R.id.collaborationOutputList)).count { view ->
+        scenario.onActivity { count = descendants(it.findViewById(rootId)).count { view ->
             view.tag == "collaboration-process-time" } }
         return count
     }
