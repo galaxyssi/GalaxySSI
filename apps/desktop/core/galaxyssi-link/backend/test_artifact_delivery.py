@@ -14,12 +14,33 @@ from artifact_delivery import (
     prepare_artifacts,
     register_artifact_batch,
     should_deliver_task_artifacts,
+    validate_missing_chunks,
 )
 from task_workspace import task_workspace
 from blob_protocol import BlobError
 
 
 class ArtifactDeliveryTests(unittest.TestCase):
+    def test_missing_chunks_seek_only_requested_parts_without_changing_identity(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}):
+            root = task_workspace("partial-task", "codex")
+            source = root / "outputs" / "result.zip"
+            expected = os.urandom(534189)
+            source.write_bytes(expected)
+            artifact = prepare_artifacts("partial-task", [{"relative_path": "outputs/result.zip"}])[0]
+            selected = list(artifact_chunk_payloads(artifact, chunk_indices=[2, 0]))
+            self.assertEqual([0, 2], [p["chunk_index"] for p in selected])
+            self.assertEqual(expected[:262144], base64.b64decode(selected[0]["data_b64"]))
+            self.assertEqual(expected[524288:], base64.b64decode(selected[1]["data_b64"]))
+            self.assertTrue(all(p["artifact_id"] == artifact.artifact_id and p["sha256"] == artifact.sha256 for p in selected))
+            self.assertTrue(all(p["chunk_count"] == 3 for p in selected))
+
+    def test_invalid_missing_window_never_degrades_to_whole_file_send(self):
+        for value in (None, [], [True], [0, 0], [-1], [3], ["0"], list(range(9)), {"0": 1}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_missing_chunks(value, 3)
+        self.assertEqual([0, 2], validate_missing_chunks([2, 0], 3))
+
     def test_empty_captured_stream_does_not_block_strict_report_delivery(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}

@@ -4276,6 +4276,8 @@ def _publish_task_artifacts(
     artifacts: list,
     *,
     common: dict,
+    chunk_indices: list[int] | None = None,
+    durable: bool | None = None,
 ) -> bool:
     from artifact_delivery import artifact_chunk_payloads
 
@@ -4286,9 +4288,10 @@ def _publish_task_artifacts(
     )
     all_published = True
     for artifact in artifacts:
-        for payload in artifact_chunk_payloads(artifact, common=identity_common):
+        for payload in artifact_chunk_payloads(artifact, common=identity_common, chunk_indices=chunk_indices):
             try:
-                all_published = _publish_phone_payload(mqttc, wire_payload, payload) and all_published
+                options = {} if durable is None else {"durable": durable}
+                all_published = _publish_phone_payload(mqttc, wire_payload, payload, **options) and all_published
             except Exception as exc:
                 all_published = False
                 log.warning(
@@ -7407,8 +7410,10 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
             )
         return
 
-    if payload.get("type") == ARTIFACT_REDELIVERY_REQUEST_TYPE:
-        from artifact_delivery import artifact_for_redelivery
+    if payload.get("type") in {ARTIFACT_REDELIVERY_REQUEST_TYPE, "artifact_missing_chunks_request"}:
+        from artifact_delivery import artifact_for_redelivery, validate_missing_chunks
+
+        missing_only = payload.get("type") == "artifact_missing_chunks_request"
 
         artifact = artifact_for_redelivery(
             payload,
@@ -7420,6 +7425,8 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
                 str(payload.get("artifact_id") or "")[:12],
                 client_route_id[-8:],
             )
+            if missing_only:
+                return
             _publish_phone_payload(
                 mqttc,
                 wire_payload,
@@ -7434,6 +7441,11 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
                 },
             )
             return
+        indices = None
+        if missing_only:
+            indices = validate_missing_chunks(payload.get("missing_chunks"), artifact.chunk_count)
+            if payload.get("task_id") != artifact.task_id:
+                raise ValueError("Artifact recovery task mismatch")
         original_task = agent_task_manager.get(artifact.task_id)
         if original_task is None:
             from peer_chat_store import peer_chat_store
@@ -7481,6 +7493,7 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
             wire_payload,
             [artifact],
             common=redelivery_common,
+            **({"chunk_indices": indices, "durable": False} if missing_only else {}),
         )
         return
 

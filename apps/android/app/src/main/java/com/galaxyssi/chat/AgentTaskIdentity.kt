@@ -101,6 +101,17 @@ internal object AgentTaskIdentityPolicy {
 internal object AgentTaskIdentityStore {
     private const val PREFS_NAME = "galaxyssi_agent_task_identities"
 
+    fun recoveryBinding(context: Context, taskId: String): JSONObject? {
+        val matches = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).all.mapNotNull { (key, raw) ->
+            val identity = (raw as? String)?.let { runCatching { JSONObject(it) }.getOrNull() }
+                ?.takeIf { it.optString("task_id") == taskId } ?: return@mapNotNull null
+            val parts = key.split('\u001f')
+            if (parts.size != 2 || parts[1].toLongOrNull()?.let { it > 0 } != true) return@mapNotNull null
+            identity.put("contact_id", parts[0]).put("source_message_id", parts[1])
+        }
+        return matches.singleOrNull()
+    }
+
     fun find(context: Context, contactId: String, sourceMessageId: Long): AgentTaskIdentity? {
         val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(key(contactId, sourceMessageId), null) ?: return null
