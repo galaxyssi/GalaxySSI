@@ -53,6 +53,7 @@ internal object CollaborationWorkGraph {
             require(id !in dependencies) { "Work cannot depend on itself: $id" }
             require(dependencies.all { it in byId || it in finished }) { "Unknown or unfinished dependency for $id" }
             CollaborationDataDependencies.read(item)
+            CollaborationCompletionBarriers.read(item)
             val targets = CollaborationReviewTargets.read(item)
             val milestones = CollaborationMilestoneDispatch.uses(item)
             val reviewMilestones = CollaborationReviewTargets.milestones(item)

@@ -24,7 +24,7 @@ class CollaborationReviewRebindingDeviceTest {
     private fun author(group: String) = CollaborationWorkspaceAccess(group, "root", "turn", 1, "producer", "author")
     private fun store(db: AgentEncryptedDatabase, workspace: CollaborationResearchWorkspace) =
         EncryptedAgentTeamExecutionStore(db, candidateWorkspace = { workspace }, milestoneWorkspace = { workspace })
-    private fun seed(store: AgentTeamExecutionStore, group: String, ordinaryData: Boolean = false) {
+    private fun seed(store: AgentTeamExecutionStore, group: String, ordinaryData: Boolean = false, correctCompletion: Boolean = false) {
         CollaborationGroupStore(context).update(group) { it.copy(
             members = listOf("lead", "author", "peer").map { person -> CollaborationMember(person, person, "fixture", "Fixture") },
             coordinatorId = "lead") }
@@ -39,10 +39,12 @@ class CollaborationReviewRebindingDeviceTest {
         val probe = work("probe", "peer", "EXPLORE")
         val stage = if (ordinaryData) "CHALLENGE" else "VERIFY"
         val review = work("review", "peer", stage).copy(dependsOnAgentIds = setOf("producer", "probe"),
-            context = work("review", "peer", stage).context + if (ordinaryData) mapOf(
+            context = work("review", "peer", stage).context + (if (ordinaryData) mapOf(
                 CollaborationWorkGraph.INDEPENDENT to "false", CollaborationDataDependencies.CONTEXT to
                     CollaborationDataDependencies.array(mapOf("producer" to "Frozen candidate data")).toString())
-            else mapOf(CollaborationWorkGraph.INDEPENDENT to "true", CollaborationReviewTargets.CONTEXT to "[\"producer\"]"))
+            else mapOf(CollaborationWorkGraph.INDEPENDENT to "true", CollaborationReviewTargets.CONTEXT to "[\"producer\"]")) +
+                if (correctCompletion) mapOf(CollaborationDataDependencies.CONTEXT to "[]", CollaborationCompletionBarriers.CONTEXT to
+                    CollaborationCompletionBarriers.array(mapOf("probe" to "Restore apparatus before review")).toString()) else emptyMap())
         val final = people[0].copy(instanceId = "final", deliveryMode = AgentDeliveryMode.RESPOND,
             dependsOnAgentIds = setOf("producer", "probe", "review"), context = people[0].context + (CollaborationGoalLoop.ROSTER to "false"))
         store.create(AgentTeamDefinition("rebind-fixture", "fixture", people + producer + probe + review + final, primaryInstanceId = "final"),
@@ -59,19 +61,24 @@ class CollaborationReviewRebindingDeviceTest {
             .put("summary", id).put("candidates", JSONArray()).put("findings", JSONArray()).put("workspace", JSONArray().put(item)).toString())
             .getJSONArray("revisions").getJSONObject(0)
     }
-    private fun expansion(token: String? = null, probeToken: String? = null, ordinaryData: Boolean = false): String {
+    private fun expansion(token: String? = null, probeToken: String? = null, ordinaryData: Boolean = false, correctCompletion: Boolean = false): String {
         val result = JSONObject().put("format", CollaborationLiveGraph.FORMAT)
             .put("summary", "Bind exact published inputs without completing their producers").put("work", JSONArray())
         if (token != null) {
             val inputs = JSONArray().put(JSONObject().put("dependency", "producer").put("uses_milestones", JSONArray().put(token)))
+            if (correctCompletion) inputs.getJSONObject(0).put("requirement", "Frozen candidate and measurement data")
+                .put("completion_not_required_because", "Evidence is published; review does not need the producer to finish its report or release resources")
             probeToken?.let { inputs.put(JSONObject().put("dependency", "probe").put("uses_milestones", JSONArray().put(it))) }
-            result.put(if (ordinaryData) CollaborationReviewRebinding.INPUT_FIELD else CollaborationReviewRebinding.FIELD, JSONArray().put(JSONObject()
+            val field = if (correctCompletion) CollaborationReviewRebinding.CORRECTION_FIELD
+                else if (ordinaryData) CollaborationReviewRebinding.INPUT_FIELD else CollaborationReviewRebinding.FIELD
+            result.put(field, JSONArray().put(JSONObject()
                 .put("work_id", "review").put("expected_revision", 0).put("reason", "The frozen versions suffice for the existing check")
                 .put("inputs", inputs)))
         }
         return result.toString()
     }
-    private fun checkBound(checkpoint: AgentTeamExecutionCheckpoint, boundProbe: Boolean = false, ordinaryData: Boolean = false): AgentTeamMember {
+    private fun checkBound(checkpoint: AgentTeamExecutionCheckpoint, boundProbe: Boolean = false, ordinaryData: Boolean = false,
+                           correctCompletion: Boolean = false): AgentTeamMember {
         val review = checkpoint.definition.members.single { it.memberId == "review" }
         assertEquals("1", review.context[CollaborationReviewRebinding.REVISION])
         assertEquals(if (boundProbe) emptySet<String>() else setOf("probe"), review.dependsOnAgentIds)
@@ -87,6 +94,13 @@ class CollaborationReviewRebindingDeviceTest {
         assertEquals("Original review assignment", review.objective)
         assertEquals("Original goal and acceptance requirements", checkpoint.request.goal)
         assertEquals(1, JSONArray(review.context.getValue(CollaborationReviewRebinding.HISTORY)).length())
+        if (correctCompletion) {
+            val change = JSONArray(review.context.getValue(CollaborationReviewRebinding.HISTORY)).getJSONObject(0)
+            assertEquals("corrected_completion_wait", change.getString("binding_kind"))
+            assertEquals("coordinator_assertion_not_verification", change.getJSONArray("completion_corrections").getJSONObject(0).getString("assessment"))
+            assertEquals(mapOf("probe" to "Restore apparatus before review"), CollaborationCompletionBarriers.from(review))
+            assertEquals("[]", review.context[CollaborationDataDependencies.CONTEXT])
+        }
         return review
     }
 
@@ -96,13 +110,15 @@ class CollaborationReviewRebindingDeviceTest {
 
     @Test fun ordinaryChallengeStartsFromDeclaredDataWhileProducerContinues() = runBinding(false, ordinaryData = true)
 
-    private fun runBinding(boundProbe: Boolean, ordinaryData: Boolean = false): Unit = runBlocking {
+    @Test fun correctedCompletionWaitStartsReviewButKeepsApparatusBarrier() = runBinding(false, correctCompletion = true)
+
+    private fun runBinding(boundProbe: Boolean, ordinaryData: Boolean = false, correctCompletion: Boolean = false): Unit = runBlocking {
         withTimeout(45_000) {
             val group = "review-binding-${UUID.randomUUID()}"
             val db = AgentEncryptedDatabase(context, group)
             val workspace = CollaborationResearchWorkspace(context)
             try {
-                val store = store(db, workspace); seed(store, group, ordinaryData)
+                val store = store(db, workspace); seed(store, group, ordinaryData, correctCompletion)
                 val probeStarted = CompletableDeferred<Unit>()
                 val releaseProbe = CompletableDeferred<Unit>()
                 val releaseProducer = CompletableDeferred<Unit>()
@@ -125,7 +141,7 @@ class CollaborationReviewRebindingDeviceTest {
                                 .values.associateBy { it.getString("milestone_id") }
                             val ready = !bound && "v1" in inputs && (!boundProbe || "data-v1" in inputs)
                             AgentSubagentOutput(expansion(if (ready) inputs.getValue("v1").getString("token") else null,
-                                if (ready && boundProbe) inputs.getValue("data-v1").getString("token") else null, ordinaryData))
+                                if (ready && boundProbe) inputs.getValue("data-v1").getString("token") else null, ordinaryData, correctCompletion))
                         } else {
                             calls.merge(execution.member.memberId, 1, Int::plus)
                             when (execution.member.memberId) {
@@ -138,7 +154,7 @@ class CollaborationReviewRebindingDeviceTest {
                                 "review" -> {
                                     assertFalse(releaseProducer.isCompleted)
                                     assertEquals(!boundProbe, releaseProbe.isCompleted)
-                                    checkBound(store(db, workspace).deliveryCheckpoint("root")!!, boundProbe, ordinaryData)
+                                    checkBound(store(db, workspace).deliveryCheckpoint("root")!!, boundProbe, ordinaryData, correctCompletion)
                                     versionsPublished.await()
                                     val access = CollaborationMilestoneDispatch.access(
                                         AgentTeamExecutionRecord(store.deliveryCheckpoint("root")!!.definition, execution.request.copy(runId = "root")), execution.member)
@@ -173,7 +189,7 @@ class CollaborationReviewRebindingDeviceTest {
                     releaseProducer.complete(Unit)
                     handle.await()
                     assertEquals(mapOf("producer" to 1, "probe" to 1, "review" to 1, "final" to 1), calls)
-                    checkBound(store(db, workspace).deliveryCheckpoint("root")!!, boundProbe, ordinaryData)
+                    checkBound(store(db, workspace).deliveryCheckpoint("root")!!, boundProbe, ordinaryData, correctCompletion)
                 }
             } finally { db.clear(); workspace.removeGroup(group); CollaborationGroupStore(context).remove(group) }
         }
@@ -184,7 +200,9 @@ class CollaborationReviewRebindingDeviceTest {
         val phase = args.getString("reviewBindingPhase").orEmpty()
         val boundProbe = args.getString("reviewBindingFrozenProbe") == "true"
         val ordinaryData = args.getString("reviewBindingOrdinaryData") == "true"
+        val correctCompletion = args.getString("reviewBindingCorrectCompletion") == "true"
         require(!ordinaryData || !boundProbe)
+        require(!correctCompletion || !ordinaryData && !boundProbe)
         org.junit.Assume.assumeTrue(phase in setOf("seed", "recover", "cleanup"))
         val group = "review-binding-process-fixture"
         val db = AgentEncryptedDatabase(context, group)
@@ -198,24 +216,24 @@ class CollaborationReviewRebindingDeviceTest {
         withTimeout(45_000) {
             if (phase == "seed") {
                 require(store.snapshot("root") == null) { "Recover or explicitly clean the previous fixture first" }
-                seed(store, group, ordinaryData); publish(workspace, group)
+                seed(store, group, ordinaryData, correctCompletion); publish(workspace, group)
                 if (boundProbe) publish(workspace, group, "data-v1", access = author(group).copy(nodeId = "probe", personId = "peer"))
                 val planned = store.expandResearchGraph("root", "final", emptySet(), 2, admittedIds = emptySet())!!
                 val planner = planned.definition.members.single(CollaborationLiveGraph::planner)
                 val provenance = AgentTeamGraphPlan.build(planned.definition, planned.request).children.single { it.childId == planner.memberId }.provenance
                 val result = AgentSubagentChildResult("root", planner.memberId, "root", 1, AgentSubagentStatus.SUCCEEDED,
                     output = expansion(CollaborationMilestoneDispatch.inputs(planner).single { it.getString("milestone_id") == "v1" }.getString("token"),
-                        if (boundProbe) CollaborationMilestoneDispatch.inputs(planner).single { it.getString("milestone_id") == "data-v1" }.getString("token") else null, ordinaryData),
+                        if (boundProbe) CollaborationMilestoneDispatch.inputs(planner).single { it.getString("milestone_id") == "data-v1" }.getString("token") else null, ordinaryData, correctCompletion),
                     startedAtMillis = 2, completedAtMillis = 3, provenance = provenance)
                 store.append(AgentSubagentEvent(planned.lastSequence + 1, "root", planner.memberId, AgentSubagentEventKinds.CHILD_SUCCEEDED,
                     childStatus = result.status, result = result, provenance = provenance, timestampMillis = 3))
-                checkBound(store.expandResearchGraph("root", "final", setOf(planner.memberId), 4, admittedIds = emptySet())!!, boundProbe, ordinaryData)
+                checkBound(store.expandResearchGraph("root", "final", setOf(planner.memberId), 4, admittedIds = emptySet())!!, boundProbe, ordinaryData, correctCompletion)
                 prefs.edit().putInt("seed_pid", android.os.Process.myPid()).commit()
             } else {
                 try {
                     assertNotEquals(prefs.getInt("seed_pid", -1), android.os.Process.myPid())
                     val checkpoint = store.deliveryCheckpoint("root")!!
-                    checkBound(checkpoint, boundProbe, ordinaryData)
+                    checkBound(checkpoint, boundProbe, ordinaryData, correctCompletion)
                     val calls = ConcurrentHashMap<String, Int>()
                     val releaseProducer = CompletableDeferred<Unit>()
                     val releaseProbe = CompletableDeferred<Unit>()
@@ -241,7 +259,7 @@ class CollaborationReviewRebindingDeviceTest {
                         reviewRan.await(); releaseProducer.complete(Unit); releaseProbe.complete(Unit); handle.await()
                     }
                     assertEquals(mapOf("producer" to 1, "probe" to 1, "review" to 1, "final" to 1), calls)
-                    checkBound(store.deliveryCheckpoint("root")!!, boundProbe, ordinaryData)
+                    checkBound(store.deliveryCheckpoint("root")!!, boundProbe, ordinaryData, correctCompletion)
                 } finally {
                     db.clear(); workspace.removeGroup(group); CollaborationGroupStore(context).remove(group)
                     prefs.edit().clear().commit()

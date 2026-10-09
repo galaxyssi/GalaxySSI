@@ -41,10 +41,11 @@ internal object CollaborationDataDependencies {
             JSONArray((0 until rows.length()).map { rows.getJSONObject(it).getString("work_id") })))
     }
 
-    fun context(item: JSONObject): Map<String, String> = if (!item.has(FIELD)) emptyMap()
-        else mapOf(CONTEXT to array(read(item)).toString())
+    fun context(item: JSONObject): Map<String, String> =
+        (if (!item.has(FIELD)) emptyMap() else mapOf(CONTEXT to array(read(item)).toString())) +
+            CollaborationCompletionBarriers.context(item)
 
-    fun restore(item: JSONObject, context: Map<String, String>): JSONObject = item.also {
+    fun restore(item: JSONObject, context: Map<String, String>): JSONObject = CollaborationCompletionBarriers.restore(item, context).also {
         context[CONTEXT]?.let { raw -> it.put(FIELD, JSONArray(raw)) }
     }
 
@@ -60,7 +61,12 @@ internal object CollaborationDataDependencies {
         needs only published data, add data_dependencies:[{"work_id":"producer ID","requirement":"exact data needed"}].
         All other edges still wait for completion (including side effects, resource release and unfinished operations).
         Declaring a data dependency does not make it ready: the coordinator must inspect exact published versions
-        and use rebind_inputs if they satisfy the original requirement. Never change an existing completion wait into
-        a data wait. Use data_dependencies:[] to explicitly keep every edge completion-only, including in reviews.
+        and use rebind_inputs if they satisfy the original requirement. Use data_dependencies:[] to keep every edge
+        completion-only until a separately validated plan revision; rebind_inputs/rebind_reviews cannot change that.
+        For necessary operation ordering, side effects, resource release or full-producer acceptance, also declare
+        completion_barriers:[{"work_id":"producer ID","reason":"why actual completion is required"}]. These edges
+        cannot be revised to data waits. Do not declare barriers merely because a report has not finished writing.
+        If you later find a non-barrier completion edge was a planning mistake, revise_input_dependencies explicitly
+        records the correction and pins sufficient original evidence; it does not authorize skipping real operations.
     """.trimIndent()
 }

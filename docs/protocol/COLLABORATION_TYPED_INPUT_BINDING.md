@@ -18,6 +18,9 @@ second executor or automatically decide a research strategy.
   "independent_review": false,
   "data_dependencies": [
     {"work_id": "measure", "requirement": "Frozen observations and their measurement method"}
+  ],
+  "completion_barriers": [
+    {"work_id": "release-instrument", "reason": "The shared instrument must actually be released"}
   ]
 }
 ```
@@ -29,8 +32,8 @@ finish, even if it publishes a report before releasing the instrument.
 
 An explicit empty array means all edges are completion-only. The absent field
 retains the existing independent-review protocol for already-created reviews;
-ordinary untyped work cannot use early input binding. No retrofit of old work or
-silent replacement of an existing dependency contract is allowed.
+ordinary untyped work cannot use `rebind_inputs`. A separately audited correction
+below can revise a planning mistake; no silent retrofit is allowed.
 
 ## Bind sufficient exact data at a coordinator checkpoint
 
@@ -68,6 +71,68 @@ exact tokens and revision. It grants only pinned versions, not future revisions 
 the producer's unpublished work. Scheduler compare-and-set, persisted history and
 admission guards prevent replay from dispatching the same work twice.
 
+## Correct an overly sequential plan
+
+A completion wait is not always a real operation-order requirement: a coordinator
+may initially schedule a challenge after the whole report when the challenge only
+needs frozen measurements. A new **explicit** revision can correct this mistake.
+The host does not silently interpret a completion wait as a data wait.
+
+Before revising, the active incremental coordinator can call
+`collaboration_recall(mode="team_updates", work_id="challenge-measurements")`.
+Unlike the compact inventory, this returns the full original assignment, declared
+dependencies, barriers, review roles and current input revision. It uses the
+existing exact coordinator binding on Android cloud/native and the Desktop
+forwarder, not caller-supplied group/member/run IDs. This selector cannot be mixed
+with the publication cursor. Ordinary members, paused/stopped coordinators and
+foreign work are rejected. Reading a contract neither grants unpublished producer
+evidence nor makes the work eligible to change after admission.
+
+```json
+{
+  "format": "galaxyssi.work-expansion.v1",
+  "summary": "The original challenge needs the published data, not the unfinished report",
+  "work": [],
+  "revise_input_dependencies": [{
+    "work_id": "challenge-measurements",
+    "expected_revision": 0,
+    "reason": "The original plan unnecessarily serialized evidence analysis and report writing",
+    "inputs": [{
+      "dependency": "measure",
+      "uses_milestones": ["exact-host-issued-token"],
+      "requirement": "Frozen measurements and the method needed by the unchanged challenge",
+      "completion_not_required_because": "These versions contain the required inputs; this check does not operate or need release of the producer's instrument"
+    }]
+  }]
+}
+```
+
+This applies only if `measure` is currently completion-only and **not** a
+`completion_barriers` edge. A declared data edge still uses `rebind_inputs`.
+Every existing admission, independent-authorship, exact-version, host-managed-work,
+atomic-commit, pause/stop and replay check also applies to this revision.
+
+The host retains the original objective, member, model, stage, tool authority,
+remaining waits and final goal barriers. It persists the old edge kind, exact
+inputs, coordinator diagnosis and monotonic revision. The producer continues and
+is not marked complete. No extra duplicate review or model call is created by
+the revision itself. It makes the existing work dependency-ready, not necessarily
+immediately admitted if capacity is unavailable.
+
+`completion_barriers` declares operation order that this protocol cannot weaken.
+Each entry names a unique existing dependency with a reason and cannot also be a
+data edge. Barriers survive initial planning, incremental planning, storage,
+inventory and task identity validation. An ordinary resubmission cannot remove
+them. Use these for actual side effects, resource release and full-producer
+acceptance, not as a synonym for any unfinished report.
+
+**Limits:** a coordinator's sufficiency diagnosis is stored as
+`coordinator_assertion_not_verification`. The host verifies structural conditions
+and recorded barriers, not the semantic truth of an arbitrary scientific claim.
+An omitted or wrongly specified resource constraint is not magically discovered
+by this protocol. Existing tool policies and resource controls remain responsible
+for execution authorization; downstream validation must test the chosen method.
+
 ## Validation scope
 
 Unit coverage includes contract validation and persistence, immutable work
@@ -93,3 +158,20 @@ and controlled comparisons, outside the repository's regression fixtures.
   each fixture assignment executed once. Recovery cleaned its dedicated data.
 - Repository checks and whitespace checks passed. Existing user configuration
   was preserved by an in-place installation. No real-model trial was run.
+
+### Explicit-revision validation, 2026-10-09
+
+- Android 1.4.114 / 1199 and Desktop 1.4.38 include explicit completion-wait
+  correction and exact coordinator work-contract recall.
+- 300 selected JVM tests in 25 suites passed without failures/errors/skips.
+- S20U (SM-G9880) passed six local device cases: the three previous binding
+  modes, correction with a retained operation barrier, and cloud/native
+  full-contract recall in default and isolated execution stores. Ordinary,
+  foreign and paused callers were rejected; original goal binding and evidence
+  visibility were preserved.
+- A separate seed/process-stop/recovery check passed, with distinct process
+  IDs. The corrected dependency, pinned inputs and barrier survived; fixture
+  work executed once and the dedicated fixture data was cleaned.
+- Desktop recall bridge: 23 tests passed; Desktop UI/structure: 68 tests passed.
+- These are software-contract results with local synthetic workers, not an
+  autonomous real-model dependency decision, science result or team advantage.

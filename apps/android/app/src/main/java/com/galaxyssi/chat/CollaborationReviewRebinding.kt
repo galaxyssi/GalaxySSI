@@ -3,12 +3,18 @@ package com.galaxyssi.chat
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Exact interim inputs may replace declared data waits, never a work item's objective or identity. */
+/** Versioned input revisions preserve admitted work, explicit completion barriers and task identity. */
 internal object CollaborationReviewRebinding {
     const val FIELD = "rebind_reviews"
     const val INPUT_FIELD = "rebind_inputs"
+    const val CORRECTION_FIELD = "revise_input_dependencies"
+    val FIELDS = listOf(FIELD, INPUT_FIELD, CORRECTION_FIELD)
     const val REVISION = "collaboration_research_review_input_revision"
     const val HISTORY = "collaboration_research_review_input_history"
+    enum class Mode(val field: String, val historyKind: String) {
+        REVIEW(FIELD, "independent_review"), DATA(INPUT_FIELD, "declared_data"),
+        CORRECTION(CORRECTION_FIELD, "corrected_completion_wait")
+    }
 
     fun revision(member: AgentTeamMember): Long = member.context[REVISION]?.let {
         requireNotNull(it.toLongOrNull()?.takeIf { value -> value >= 0 }) { "Invalid stored review input revision" }
@@ -34,6 +40,20 @@ internal object CollaborationReviewRebinding {
         For explicitly typed work, rebind_reviews also cannot replace a completion-only edge.
         The resulting work covers ONLY those pinned versions, not later work or the author's entire assignment.
         Do not use rebinding when the assignment still needs unpublished inputs; explain why waiting or a distinct check is useful.
+        You may correct your own overly sequential plan without cloning a task. For an unadmitted non-barrier
+        completion edge that actually needs only available data, use a separate explicit plan revision:
+        revise_input_dependencies:[{"work_id":"existing ID","expected_revision":0,"reason":"diagnosis of the planning mistake",
+        "inputs":[{"dependency":"current prerequisite ID","uses_milestones":["exact host token"],
+        "requirement":"data required by the unchanged original assignment",
+        "completion_not_required_because":"why these exact versions suffice and no operation/resource order is bypassed"}]}].
+        Read collaboration_recall(mode="team_updates", work_id="existing ID") for the complete current assignment,
+        dependency contract and input_revision, not just its short inventory label. This read does not admit work.
+        Check the original assignment and remaining prerequisites. The host
+        records your rationale as an assessment, NOT proof of evidence sufficiency. It rejects completion_barriers,
+        admitted/ended work, host-managed transitions, stale revisions, wrong authors and unavailable versions.
+        All other waits, roles, objectives, acceptance criteria and permissions stay unchanged. Correcting an input
+        wait never marks the producer complete; final goal assessment still waits for the outstanding work.
+        If completion truly is required, keep it and propose a distinct useful interim analysis instead.
     """.trimIndent()
 
     fun prompt(member: AgentTeamMember): String? = member.context[HISTORY]?.let {
@@ -44,7 +64,7 @@ internal object CollaborationReviewRebinding {
     }
 
     fun apply(record: AgentTeamExecutionRecord, planner: AgentTeamMember, requests: JSONArray,
-              admittedIds: Set<String>?, now: Long, dataOnly: Boolean = false): AgentTeamExecutionRecord {
+              admittedIds: Set<String>?, now: Long, mode: Mode = Mode.REVIEW): AgentTeamExecutionRecord {
         if (requests.length() == 0) return record
         require(admittedIds != null) { "Input rebind needs a live scheduler admission snapshot; keep existing work" }
         val protected = admittedIds + record.events.filter {
@@ -56,7 +76,7 @@ internal object CollaborationReviewRebinding {
         val byNode = work.values.associateBy { it.memberId }
         val milestones = CollaborationMilestoneDispatch.inherited(record, planner)
         val changed = linkedMapOf<String, AgentTeamMember>()
-        val field = if (dataOnly) INPUT_FIELD else FIELD
+        val field = mode.field
         repeat(requests.length()) { index ->
             val request = requests.getJSONObject(index)
             require(request.keys().asSequence().toSet() == setOf("work_id", "expected_revision", "reason", "inputs")) {
@@ -69,12 +89,16 @@ internal object CollaborationReviewRebinding {
                 !CollaborationLiveGraph.planner(member)) { "Work $id is admitted, running, ended or uncertain; cannot change its inputs" }
             val independent = member.context[CollaborationWorkGraph.INDEPENDENT] == "true"
             val dataDependencies = CollaborationDataDependencies.from(member)
+            val barriers = CollaborationCompletionBarriers.from(member)
             require(member.deliveryMode == AgentDeliveryMode.OBSERVE &&
                 member.context[CollaborationResearchWorkflow.STAGE] in
-                    (if (dataOnly) setOf("EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE") else setOf("VERIFY", "CHALLENGE")) &&
-                (if (dataOnly) CollaborationDataDependencies.CONTEXT in member.context else independent)) {
-                if (dataOnly) "rebind_inputs requires existing research work with declared data_dependencies"
-                else "Only an existing independent VERIFY or CHALLENGE can use rebind_reviews"
+                    (if (mode != Mode.REVIEW) setOf("EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE") else setOf("VERIFY", "CHALLENGE")) &&
+                when (mode) {
+                    Mode.DATA -> CollaborationDataDependencies.CONTEXT in member.context
+                    Mode.REVIEW -> independent
+                    Mode.CORRECTION -> true
+                }) {
+                "$field requires unadmitted research work; rebind_inputs needs declared data, rebind_reviews needs an independent check"
             }
             require(member.context.keys.none { it in setOf(CollaborationCandidateEvolution.TASK, CollaborationLearningWork.TASK,
                 CollaborationProcedureWork.TASK, CollaborationInnovationWork.TASK, CollaborationPredictionWork.TASK,
@@ -103,18 +127,36 @@ internal object CollaborationReviewRebinding {
                 ?.let(CollaborationMilestoneDispatch::strings)?.toMutableSet()
                 ?: previous.mapTo(linkedSetOf()) { it.getString("token") }
             val roles = JSONObject()
+            val corrections = JSONArray()
             repeat(inputs.length()) { at ->
                 val input = inputs.getJSONObject(at)
-                require(input.keys().asSequence().toSet() == setOf("dependency", CollaborationMilestoneDispatch.USES)) {
-                    "Each rebind input requires dependency and uses_milestones"
+                val fields = setOf("dependency", CollaborationMilestoneDispatch.USES) +
+                    if (mode == Mode.CORRECTION) setOf("requirement", "completion_not_required_because") else emptySet()
+                require(input.keys().asSequence().toSet() == fields) {
+                    "Each $field input requires only ${fields.joinToString()}"
                 }
                 val dependency = input.getString("dependency")
                 val producer = requireNotNull(work[dependency]) { "Unknown producer $dependency" }
                 require(producer.memberId in member.dependsOnAgentIds && removed.add(dependency)) {
                     "Only a unique current input dependency can be replaced; retain other required inputs"
                 }
-                require((!dataOnly && CollaborationDataDependencies.CONTEXT !in member.context) || dependency in dataDependencies) {
-                    "Dependency $dependency is completion-only, not declared data; preserve its execution wait"
+                require(dependency !in barriers) {
+                    "Dependency $dependency is a protected completion barrier: ${barriers[dependency]}; exact data cannot replace execution order"
+                }
+                if (mode == Mode.CORRECTION) {
+                    require(dependency !in dataDependencies) { "Dependency $dependency is already data-only; use rebind_inputs" }
+                    for (key in listOf("requirement", "completion_not_required_because")) {
+                        val value = input.opt(key)
+                        require(value is String && value.isNotBlank() && value.length <= 2000) {
+                            "$key must explain the input correction within 2000 characters"
+                        }
+                    }
+                    corrections.put(JSONObject().put("dependency", dependency).put("previous_kind", "completion")
+                        .put("requirement", input.getString("requirement"))
+                        .put("completion_not_required_because", input.getString("completion_not_required_because"))
+                        .put("assessment", "coordinator_assertion_not_verification"))
+                } else require((mode == Mode.REVIEW && CollaborationDataDependencies.CONTEXT !in member.context) || dependency in dataDependencies) {
+                    "Dependency $dependency is completion-only, not declared data; preserve it or explicitly revise_input_dependencies with evidence and rationale"
                 }
                 val subject = dependency in targets
                 roles.put(dependency, if (subject) "review_subject" else "prerequisite")
@@ -142,7 +184,8 @@ internal object CollaborationReviewRebinding {
                 .put("planner_node", planner.memberId).put("recorded_at", now).put("reason", reason)
                 .put("replaced_dependencies", JSONArray(removed.toList()))
                 .put("input_roles", roles)
-                .put("binding_kind", if (dataOnly) "declared_data" else "independent_review")
+                .put("binding_kind", mode.historyKind)
+                .put("completion_corrections", corrections)
                 .put("data_requirements", JSONObject(dataDependencies.filterKeys { it in removed }))
                 .put("uses_milestones", JSONArray(tokens.toList())))
             changed[member.memberId] = member.copy(
