@@ -1149,7 +1149,10 @@ object AgentOnDeviceRuntimeTools {
                 executor = AgentNativeToolExecutor { invocation ->
                     val generated = try { CollaborationToolRuntime.prepare(context, invocation) }
                     catch (error: Exception) {
-                        return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("collaboration_tool_invalid", error.message ?: "Invalid saved tool")
+                        return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("collaboration_tool_invalid", error.message ?: "Invalid saved tool",
+                            details = (error as? CollaborationToolFeedback.Invalid)?.let {
+                                mapOf(CollaborationRecordValidation.DETAIL to it.problem.toNativeObject())
+                            } ?: emptyMap())
                     }
                     val verificationKind = AgentRuntimeVerificationKind.fromWireValue(
                         invocation.input["verification_kind"]?.toString().orEmpty()

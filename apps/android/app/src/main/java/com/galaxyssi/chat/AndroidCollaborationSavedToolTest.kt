@@ -120,7 +120,11 @@ internal object AndroidCollaborationSavedToolTest {
         return JSONObject().put("native_status", result.status.wireValue).put("passed", receipt?.opt("passed") ?: JSONObject.NULL)
             .put("error", full.optJSONObject("error")?.let { error -> JSONObject()
                 .put("code", error.optString("code")).put("message", error.optString("message").take(500))
-                .put("details_in_original_evidence", true) } ?: JSONObject.NULL)
+                .put("details_in_original_evidence", true).apply {
+                    error.optJSONObject("details")?.optJSONObject(CollaborationRecordValidation.DETAIL)?.let {
+                        put(CollaborationRecordValidation.DETAIL, it)
+                    }
+                } } ?: JSONObject.NULL)
             .put("native_receipt", full.getJSONObject("receipt"))
             .put("galaxyssi_evidence_receipt", full.optJSONObject("galaxyssi_evidence_receipt") ?: JSONObject.NULL)
             .put("galaxyssi_evidence_recording", full.optJSONObject("galaxyssi_evidence_recording") ?: JSONObject.NULL)

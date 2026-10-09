@@ -81,7 +81,8 @@ class CollaborationLiveInventoryTest {
         val review = member("review", setOf("producer", "tests"), extra = mapOf(
             CollaborationWorkGraph.INDEPENDENT to "true",
             CollaborationReviewTargets.CONTEXT to "[\"producer\"]",
-            CollaborationMilestoneDispatch.INPUTS to JSONArray().put(JSONObject().put("token", "a".repeat(64))).toString()))
+            CollaborationMilestoneDispatch.INPUTS to JSONArray().put(JSONObject().put("token", "a".repeat(64))
+                .put("producer_node", "node:producer")).toString()))
         val value = item(inventory(listOf(member("producer"), member("tests"), review)), "review")
         assertEquals(2, value.getJSONArray("depends_on").length())
         assertEquals("[\"producer\"]", value.getJSONArray("review_targets").toString())
@@ -104,7 +105,7 @@ class CollaborationLiveInventoryTest {
         val instructions = CollaborationLiveGraph.instructions()
         assertTrue(instructions.contains("planned review waiting on its author is NOT"))
         assertTrue(instructions.contains("uses_milestones"))
-        assertTrue(instructions.contains("weaken its dependencies"))
+        assertTrue(instructions.contains("silently drop its required inputs"))
         assertTrue(instructions.contains("does not choose the research strategy"))
     }
 }

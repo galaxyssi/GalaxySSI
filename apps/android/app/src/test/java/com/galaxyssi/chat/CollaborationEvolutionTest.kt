@@ -251,7 +251,7 @@ class CollaborationEvolutionTest {
         val oldResult = ref(f.publishResult())
         assertFalse(oldResult.getJSONObject(HOST).getBoolean("eligible_for_retention"))
         assertFalse(oldResult.getJSONObject(HOST).getBoolean("targets_current_at_publication"))
-        assertTrue(f.lesson().getString("reason").contains("target changed"))
+        assertEquals("record_not_current", f.lesson().getJSONObject(CollaborationRecordValidation.DETAIL).getString("code"))
         assertEquals("reject", ref(f.lesson(person = "negative-reviewer", decision = "reject")).getJSONObject(HOST).getString("state"))
         val directory = f.workspace.browseEvolution(access("reader", 6)).revisions
         assertEquals("historical_requires_revalidation", directory.single { it.getString("object_id") == oldResult.getString("object_id") }

@@ -25,10 +25,8 @@ internal object CollaborationToolRuntime {
         val workspace = CollaborationResearchWorkspace(context)
         workspace.requirePublicationActive(access)
         return prepare(call.input, access) { reference, kind ->
-            require(reference.opt("revision") is Int) { "Copy an exact integer revision" }
-            val record = requireNotNull(workspace.read(access, reference.getString("object_id"), reference.getInt("revision"))) { "Tool record is unavailable or isolated" }
-            require(record.getString("kind") == kind && CollaborationResearchCandidates.same(record, reference) &&
-                workspace.isCurrent(access, reference.getString("object_id"), reference.getInt("revision"))) { "Tool version, digest or kind changed" }
+            val record = CollaborationRecordValidation.exact(reference, setOf(kind),
+                { id, version -> workspace.read(access, id, version) }, { id, version -> workspace.isCurrent(access, id, version) })
             if (kind == CollaborationCapabilityChannel.KIND) CollaborationCapabilityChannel.requireCurrentLineage(record, workspace, access)
             record
         }

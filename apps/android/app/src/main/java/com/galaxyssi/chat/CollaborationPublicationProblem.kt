@@ -10,7 +10,8 @@ internal object CollaborationPublicationProblem {
         val schemaValid = parsed != null && CollaborationResearchArtifact.decode(raw) != null
         val previousReceipt = previous?.optJSONObject("receipt")
         val changed = previousReceipt == null || previousReceipt.optString("status") != receipt.optString("status") ||
-            previousReceipt.optString("reason") != receipt.optString("reason")
+            previousReceipt.optString("reason") != receipt.optString("reason") ||
+            previousReceipt.optJSONObject(CollaborationRecordValidation.DETAIL)?.toString() != receipt.optJSONObject(CollaborationRecordValidation.DETAIL)?.toString()
         return JSONObject().put("component", "PublicationValidator")
             .put("json_parse_status", if (parsed != null) "accepted" else "rejected")
             .put("artifact_schema_valid", schemaValid)
@@ -20,6 +21,7 @@ internal object CollaborationPublicationProblem {
                 !schemaValid -> "artifact_schema"
                 else -> "workspace_contract"
             }).put("reported_constraint", receipt.optString("reason"))
+            .put(CollaborationRecordValidation.DETAIL, receipt.optJSONObject(CollaborationRecordValidation.DETAIL) ?: JSONObject.NULL)
             .put("draft_preserved", true)
             .put("progress", JSONObject().put("has_previous_attempt", previous != null)
                 .put("draft_changed", previous == null || previous.optString("raw_sha256") != AgentNativeJsonCodec.sha256(raw))

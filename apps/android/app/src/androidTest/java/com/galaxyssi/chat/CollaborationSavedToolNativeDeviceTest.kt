@@ -25,8 +25,8 @@ class CollaborationSavedToolNativeDeviceTest {
             val access = CollaborationWorkspaceAccess(group, "fixture-run", "fixture-turn", 3, "native-test", "worker")
             val source = System.nanoTime()
             ledger.bind(source, access)
-            fun publish(id: String, kind: String, spec: JSONObject, round: Long): JSONObject {
-                val body = JSONObject().put("content", "Developer-authored synthetic fixture, not model-generated innovation").put(kind, spec)
+            fun publish(id: String, kind: String, spec: JSONObject, round: Long, bodyKind: String = kind): JSONObject {
+                val body = JSONObject().put("content", "Developer-authored synthetic fixture, not model-generated innovation").put(bodyKind, spec)
                 val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Native fixture")
                     .put("workspace", JSONArray().put(JSONObject().put("id", id).put("kind", kind).put("title", id).put("body", body)))
                 val result = workspace.publish(access.copy(round = round, nodeId = id), raw.toString(), round)
@@ -49,6 +49,32 @@ class CollaborationSavedToolNativeDeviceTest {
                     .put("coverage_gaps", "Two disclosed developer-authored cases")
                     .put("cases", JSONArray().put(case("one", "target", 1)).put(case("zero", "regression", 0))), 2)
                 val input = JSONObject().put("mode", "start").put("execution_id", suffix).put("tool_test_plan", plan).put("timeout_ms", 120_000)
+                if (fixed) {
+                    val spec = workspace.read(access, plan.getString("object_id"), plan.getInt("revision"))!!
+                        .getJSONObject("body").getJSONObject(CollaborationExecutableTool.TEST)
+                    val generic = publish("generic-plan", "artifact", spec, 2, CollaborationExecutableTool.TEST)
+                    val invalid = JSONObject(input.toString()).put("execution_id", "generic-plan").put("tool_test_plan", generic)
+                    assertTrue(journal.start(invalid).launch)
+                    assertTrue(journal.running("generic-plan"))
+                    val rejected = AndroidCollaborationSavedToolTest.invokeNative(context, access, source, journal.key("generic-plan"), invalid,
+                        AgentNativeToolCancellationToken.NONE)
+                    assertEquals("failed", rejected.getString("native_status"))
+                    assertTrue(rejected.isNull("passed"))
+                    val detail = rejected.getJSONObject("error").getJSONObject(CollaborationRecordValidation.DETAIL)
+                    assertEquals("record_kind_mismatch", detail.getString("code"))
+                    assertEquals("artifact", detail.getString("actual"))
+                    assertEquals(CollaborationExecutableTool.TEST, detail.getJSONArray("expected").getString(0))
+                    val ref = rejected.getJSONObject("galaxyssi_evidence_receipt")
+                    val original = ledger.read(access, ref.getString("evidence_id"), ref.getString("sha256"))!!
+                    val originalDetail = JSONObject(original.getString("output_json")).getJSONObject("error")
+                        .getJSONObject("details").getJSONObject(CollaborationRecordValidation.DETAIL)
+                    assertEquals(detail.toString(), originalDetail.toString())
+                    journal.finish("generic-plan", rejected)
+                    val reopened = CollaborationResearchWorkspace(context).savedToolTests(access, "reopened")
+                    assertFalse(reopened.start(invalid).launch)
+                    assertEquals("record_kind_mismatch", reopened.read("generic-plan")!!.getJSONObject("result")
+                        .getJSONObject("error").getJSONObject(CollaborationRecordValidation.DETAIL).getString("code"))
+                }
                 assertTrue(journal.start(input).launch)
                 assertTrue(journal.running(suffix))
                 val result = AndroidCollaborationSavedToolTest.invokeNative(context, access, source, journal.key(suffix), input,
