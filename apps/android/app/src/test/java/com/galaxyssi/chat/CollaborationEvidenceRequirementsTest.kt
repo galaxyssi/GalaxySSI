@@ -6,6 +6,49 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationEvidenceRequirementsTest {
+    @Test fun desktopAdmissionUsesTheSameNamesAsTheAuthenticatedImporter() {
+        assertEquals(CollaborationRemoteEvidenceProtocol.RECORDED_TOOLS,
+            CollaborationRemoteEvidenceProtocol.TYPES.map(CollaborationRemoteEvidenceProtocol::recordedTool).toSet())
+        for (tool in CollaborationRemoteEvidenceProtocol.RECORDED_TOOLS)
+            CollaborationEvidenceRequirements.validateAdmission(JSONArray(), JSONArray().put(criterion(requirement(tool = tool))))
+        assertThrows(IllegalArgumentException::class.java) { CollaborationRemoteEvidenceProtocol.recordedTool("exec_command") }
+    }
+
+    @Test fun callableNamesAreRejectedBeforeFreezingWithoutRewritingTheDraft() {
+        for (tool in listOf("exec_command", "commandExecution", "codex.exec_command", "codex.commandExecution ")) {
+            val proposed = JSONArray().put(criterion(requirement(tool = tool)))
+            val original = proposed.toString()
+            val error = assertThrows(CollaborationAssessmentValidation.Failure::class.java) {
+                CollaborationEvidenceRequirements.validateAdmission(JSONArray(), proposed)
+            }
+            assertEquals("$.criteria[0].required_observations[0].tool", error.path)
+            assertEquals("unknown_recorded_tool", error.code)
+            assertTrue(error.expected.contains("codex.commandExecution"))
+            assertEquals(original, proposed.toString())
+        }
+    }
+
+    @Test fun savedUnknownBindingRemainsReadableAndDoesNotBecomeAnAlias() {
+        val saved = criterion(requirement(tool = "exec_command"))
+        val prior = JSONArray().put(saved)
+        CollaborationEvidenceRequirements.validateAdmission(prior, JSONArray(prior.toString()))
+        assertTrue(CollaborationEvidenceRequirements.required(saved).contains("desktop_codex_tool" to "exec_command"))
+        val actual = requirement(tool = "codex.commandExecution").put("status", "returned")
+            .put("observation_kind", "tool_output_recorded")
+        assertThrows(IllegalArgumentException::class.java) { CollaborationEvidenceRequirements.validate(saved, listOf(actual)) }
+        assertFalse(CollaborationEvidenceRequirements.preserved(saved, criterion(requirement(tool = "codex.commandExecution"))))
+    }
+
+    @Test fun newConstraintsAreCheckedWithoutRestrictingOtherEvidenceOrigins() {
+        val prior = JSONArray().put(criterion(requirement(tool = "codex.commandExecution")))
+        assertThrows(CollaborationAssessmentValidation.Failure::class.java) {
+            CollaborationEvidenceRequirements.validateAdmission(prior,
+                JSONArray().put(criterion(requirement(tool = "codex.commandExecution"), requirement(tool = "exec_command"))))
+        }
+        for (origin in listOf("android_cloud_tool", "android_native_tool"))
+            CollaborationEvidenceRequirements.validateAdmission(JSONArray(), JSONArray().put(criterion(requirement(origin, "exec_command"))))
+    }
+
     private fun requirement(origin: String = "desktop_codex_tool", tool: String = "commandExecution") =
         JSONObject().put("origin", origin).put("tool", tool)
     private fun criterion(vararg items: JSONObject) = JSONObject().put("id", "doc")

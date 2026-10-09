@@ -75,6 +75,21 @@ repeat an external side effect. See [publication retirement](../testing/COLLABOR
 
 ## User Experience
 
+### Evidence Binding Admission
+
+New Desktop observation constraints are checked against the authenticated evidence
+protocol's recorded event families before criteria or assignments are admitted.
+For example, a callable `exec_command` name is not the recorded
+`codex.commandExecution` family. Invalid drafts receive the exact field, valid
+recorded names and valid-JSON status while all proposed work remains unstarted.
+The coordinator can correct its draft without repeating a tool operation.
+
+Existing constraints remain byte-preserved and readable; this admission check
+does not reinterpret them as aliases, loosen receipt matching or certify content.
+Other evidence origins keep their own tool namespaces. This prevents a new
+unfulfillable binding, but does not repair an already-established wrong binding
+or settle the separate review-versus-delivery lifecycle issue.
+
 ### Shared Documentary Review Scope
 
 Authors, independent reviewers and the goal coordinator receive the same host

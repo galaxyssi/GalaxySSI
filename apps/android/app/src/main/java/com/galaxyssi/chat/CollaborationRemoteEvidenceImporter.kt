@@ -126,7 +126,7 @@ internal class CollaborationRemoteEvidenceImporter(
                         if (!authorized()) return false
                         val at = entry.getLong("recorded_at")
                         ledger.record(access, "desktop:${AgentNativeJsonCodec.sha256(key)}:${entry.getString("evidence_id")}",
-                            "codex.${entry.getString("item_type")}", "{}", original.toString(), at, at,
+                            CollaborationRemoteEvidenceProtocol.recordedTool(entry.getString("item_type")), "{}", original.toString(), at, at,
                             CollaborationEvidenceOrigin.DESKTOP_CODEX_TOOL)
                         // Ledger-first ordering is replay-safe if the process dies before the cursor commit.
                         store.advance(key, job, entry, imported = true)

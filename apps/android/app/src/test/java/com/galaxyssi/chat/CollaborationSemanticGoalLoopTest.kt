@@ -6,6 +6,38 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationSemanticGoalLoopTest {
+    @Test fun unknownRecordedToolDoesNotFreezeCriteriaOrStartWorkAndCanBeCorrected() {
+        val initial = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop_codex_tool").put("tool", "exec_command")))
+        val report = assessment(initial).put("work", JSONArray().put(job("measure")))
+        val rejected = advance(initial, report, "[]")
+        assertRepairOnly(rejected, "[]")
+        assertEquals(report.toString(), rejected.request.context[CollaborationGoalLoop.PREVIOUS])
+        val feedback = rejected.request.context.getValue(CollaborationGoalLoop.ACCEPTANCE_FEEDBACK).toString()
+        assertTrue(feedback.contains("\"json_syntax\":\"valid\""))
+        assertTrue(feedback.contains("initial_criteria_pending"))
+        assertTrue(feedback.contains("unknown_recorded_tool"))
+        assertTrue(feedback.contains("$.criteria[0].required_observations[0].tool"))
+        assertTrue(feedback.contains("codex.commandExecution"))
+        val corrected = JSONObject(report.toString())
+        corrected.getJSONArray("criteria").getJSONObject(0).getJSONArray("required_observations").getJSONObject(0)
+            .put("tool", "codex.commandExecution")
+        val next = requireNotNull(CollaborationGoalLoop.advance(complete(rejected, corrected),
+            rejected.definition.primaryMemberId, 100_000, false))
+        assertEquals("measure", next.definition.members.single { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+            .context[CollaborationGoalLoop.WORK_ID])
+        assertEquals("codex.commandExecution", JSONArray(next.request.context[CollaborationGoalLoop.CRITERIA].toString())
+            .getJSONObject(0).getJSONArray("required_observations").getJSONObject(0).getString("tool"))
+    }
+
+    @Test fun unknownNewSourceCannotBeDeclaredCompleteEvenWithAnAcceptanceFlag() {
+        val original = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop_codex_tool").put("tool", "exec_command")))
+            .put("status", "met").put("evidence", JSONArray().put("claimed-receipt"))
+        assertEquals("continue", CollaborationGoalLoop.disposition(assessment(original, "achieved").toString(),
+            previousCriteria = "[]", acceptanceVerified = true))
+    }
+
     @Test fun rejectedInitialDraftGetsTargetedFeedbackAndCorrectedPlanCanDispatch() {
         val initial = criterion().put("required_observations", JSONArray().put(
             JSONObject().put("origin", "desktop").put("tool", "exec_command")))
