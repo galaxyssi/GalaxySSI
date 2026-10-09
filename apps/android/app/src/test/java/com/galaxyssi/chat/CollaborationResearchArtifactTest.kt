@@ -6,6 +6,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchArtifactTest {
+    @Test fun instructionsUseExactRosterIdsWithoutRequiringUuidSyntax() {
+        CollaborationResearchStage.values().forEach { stage ->
+            val instructions = CollaborationResearchArtifact.instructions(stage)
+            assertFalse(instructions.contains("exact member UUID"))
+            if (stage == CollaborationResearchStage.DELIVER) {
+                assertTrue(instructions.contains("Return a concise public Markdown answer"))
+                assertFalse(instructions.contains("requests"))
+            } else {
+                assertTrue(instructions.contains("exact roster member ID"))
+                assertTrue(instructions.contains(CollaborationPeerExchangePolicy.RECIPIENT_INSTRUCTIONS))
+            }
+        }
+        for (id in listOf("turing", "member:primary-7", "f71e12a1-d4dc-4b53-9bfe-e69f081f7826")) {
+            val raw = artifact().put("requests", JSONArray().put(JSONObject()
+                .put("to", JSONArray(listOf(id))).put("question", "Check the measured alternative")))
+            val decoded = requireNotNull(CollaborationResearchArtifact.decode(raw.toString()))
+            assertEquals(id, decoded.getJSONArray("requests").getJSONObject(0).getJSONArray("to").getString(0))
+        }
+    }
+
     private fun artifact() = JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
         .put("summary", "A concise contribution; experimental verification is still pending.")
         .put("candidates", JSONArray((1..10).map {
