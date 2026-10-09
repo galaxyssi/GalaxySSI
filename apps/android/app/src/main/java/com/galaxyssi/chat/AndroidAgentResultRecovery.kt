@@ -25,6 +25,7 @@ internal object AndroidAgentResultRecovery {
             "agent_task_evidence" -> AndroidCollaborationRemoteEvidence.receive(context, payload, desktop)
             "collaboration_recall_request" -> AndroidCollaborationRemoteRecall.receive(context, payload, desktop)
             "collaboration_publish_request" -> AndroidCollaborationRemoteMilestone.receive(context, payload, desktop)
+            CollaborationSavedToolTest.REQUEST -> AndroidCollaborationSavedToolTest.receive(context, payload, desktop)
             else -> return false
         }
         return true

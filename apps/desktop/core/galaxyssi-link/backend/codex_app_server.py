@@ -198,7 +198,7 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, experiment_boundary=None) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, collaboration_test=None, experiment_boundary=None) -> None:
         self.executable = executable
         self.env = dict(env) if experiment_boundary is not None else env
         self.on_event = on_event
@@ -206,6 +206,7 @@ class CodexAppServer:
         self._collaboration_recall = collaboration_recall
         self._collaboration_publish = collaboration_publish
         self._collaboration_file = collaboration_file
+        self._collaboration_test = collaboration_test
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
         self._process_start_lock = threading.RLock()
@@ -226,6 +227,9 @@ class CodexAppServer:
         if collaboration_publish is not None:
             from collaboration_milestone_bridge import tool_spec
             self._dynamic_tools.append(tool_spec())
+        if collaboration_test is not None:
+            from collaboration_tool_test_bridge import tool_spec
+            self._dynamic_tools.append(tool_spec())
         if collaboration_recall is not None and collaboration_publish is not None:
             from collaboration_text_artifact import tool_spec
             self._dynamic_tools.append(tool_spec())
@@ -237,6 +241,7 @@ class CodexAppServer:
             self._collaboration_recall = None
             self._collaboration_publish = None
             self._collaboration_file = None
+            self._collaboration_test = None
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -2166,8 +2171,9 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact"}:
-                callback = (self._collaboration_file if tool_name == "collaboration_file_artifact" else
+            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool"}:
+                callback = (self._collaboration_test if tool_name == "collaboration_test_tool" else
+                            self._collaboration_file if tool_name == "collaboration_file_artifact" else
                             self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish)
                 with self._lock:
                     run = self._runs.get(task_id)
@@ -2180,7 +2186,15 @@ class CodexAppServer:
                         return (self._runs.get(task_id) is run and not run.finished
                                 and common.get("thread_id", run.thread_id) == run.thread_id
                                 and common.get("turn_id", run.turn_id) == run.turn_id)
-                if tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
+                if tool_name == "collaboration_test_tool":
+                    from collaboration_tool_test_bridge import validate_arguments
+                    arguments = validate_arguments(arguments)
+                    if (arguments["mode"] == "start" and (run.sandbox not in {"workspace-write", "danger-full-access"}
+                            or run.execution_policy.execution_mode.value == "plan_only"
+                            or "screen_analysis" in run.execution_policy.task_intent_signals)):
+                        raise ValueError("This task cannot execute saved collaboration tools")
+                    recalled = callback(task_id, arguments, active)
+                elif tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
                     if (self._collaboration_recall is None or self._collaboration_publish is None
                             or run.sandbox not in {"workspace-write", "danger-full-access"}
                             or run.execution_policy.execution_mode.value == "plan_only"
@@ -2234,7 +2248,7 @@ class CodexAppServer:
         except Exception as exc:
             log.exception("GalaxySSI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
             from collaboration_transport_feedback import model_failure_result
-            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact"} else None
+            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool"} else None
             result = structured or {
                 "success": False,
                 "contentItems": [{
@@ -2262,6 +2276,11 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
+        if tool_name == "collaboration_test_tool":
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Saved tool test status returned" if result.get("success") else "Saved tool test needs attention",
+                "trace_stage": "collaboration_tool_test_returned", "telemetry_only": True})
+            return
         if tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
             self.on_event(task_id, {**dict(common), "status": "running",
                 "current_step": "Collaboration file handoff returned" if result.get("success") else "Collaboration file handoff needs attention",

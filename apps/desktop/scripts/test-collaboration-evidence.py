@@ -10,6 +10,7 @@ import tempfile
 
 MODULES = (
     "test_collaboration_recall_bridge",
+    "test_collaboration_tool_test_bridge",
     "test_codex_tool_evidence",
     "test_agent_tool_evidence",
     "test_codex_conversation_threads",

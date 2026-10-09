@@ -71,6 +71,20 @@ internal class CollaborationResearchWorkspace(
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
+    fun savedToolTests(access: CollaborationWorkspaceAccess, process: String): CollaborationSavedToolTest {
+        requirePublicationActive(access)
+        // Deleting a group or removing its member must not let a late worker recreate its rows.
+        val scoped = object : CollaborationWorkspaceRows {
+            override fun read(key: String) = synchronized(LOCK) { checkAcceptanceAccess(access); rows.read(key) }
+            override fun commit(values: Map<String, String>) = synchronized(LOCK) { checkAcceptanceAccess(access); rows.commit(values) }
+            override fun page(prefix: String, after: String, limit: Int) = synchronized(LOCK) {
+                checkAcceptanceAccess(access)
+                rows.page(prefix, after, limit)
+            }
+        }
+        return CollaborationSavedToolTest(scoped, access, process)
+    }
+
     fun enrollPublication(access: CollaborationWorkspaceAccess, stage: CollaborationResearchStage,
                           candidateTask: JSONObject? = null) = synchronized(LOCK) {
         checkAcceptanceAccess(access)
