@@ -20,7 +20,8 @@ internal object CollaborationTrialDeviceBinding {
 internal class CollaborationAdaptivePilotPlan private constructor(
     val id: String, val deviceModel: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
     val goal: String, val timeoutMillis: Long, val maximumDispatches: Int, val members: List<CollaborationMember>,
-    val singleAgent: Boolean = false
+    val singleAgent: Boolean = false,
+    val continuity: CollaborationPilotContinuitySpec? = null
 ) : CollaborationTrialSelectionPolicy {
     val executionMode get() = if (singleAgent) "single_agent" else "adaptive_team"
     // Production normalizes assignment boundaries; keep the frozen request unchanged.
@@ -57,8 +58,11 @@ internal class CollaborationAdaptivePilotPlan private constructor(
         const val FORMAT = "galaxyssi.adaptive-collaboration-pilot.v2"
         const val SINGLE_FORMAT = "galaxyssi.single-agent-calibration.v1"
         fun from(value: JSONObject, authorizedDispatches: Int, authorizedMillis: Long): CollaborationAdaptivePilotPlan {
-            require(value.keys().asSequence().toSet() == setOf("format", "pilot_id", "target_id", "model_id", "reasoning_effort",
-                "tool_scope", "goal", "trial_timeout_ms", "maximum_dispatches", "members", "device_model")) { "Unexpected adaptive trial fields" }
+            val required = setOf("format", "pilot_id", "target_id", "model_id", "reasoning_effort",
+                "tool_scope", "goal", "trial_timeout_ms", "maximum_dispatches", "members", "device_model")
+            val keys = value.keys().asSequence().toSet()
+            require(keys == required || keys == required + "continuity") { "Unexpected adaptive trial fields" }
+            val continuity = if (value.has("continuity")) CollaborationPilotContinuitySpec.from(value.getJSONObject("continuity")) else null
             fun text(key: String) = (value.get(key) as? String)?.takeIf(String::isNotBlank) ?: error("Nonblank string required: $key")
             require(text("format") in setOf(FORMAT, SINGLE_FORMAT) && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
             val singleAgent = text("format") == SINGLE_FORMAT
@@ -83,7 +87,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     target, "Codex", role = field("role"), modelId = selection.modelId)
             }
             require(members.map { it.id }.distinct().size == members.size) { "Trial person IDs must be distinct" }
-            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members, singleAgent)
+            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members, singleAgent, continuity)
         }
     }
 }
