@@ -183,7 +183,7 @@ class CollaborationAdaptivePilotDeviceTest {
                     if (clean && report.optBoolean("milestone_archive_complete")) {
                         runtime?.close()
                         if (group.isNotBlank()) { groups.remove(group); transcripts.deleteConversation(group) }
-                        database.clear()
+                        store.clear()
                     }
                 } catch (failure: Exception) {
                     report.put("cleanup_confirmed", false).put("cleanup_failure", failure.message.orEmpty())

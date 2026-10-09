@@ -27,9 +27,7 @@ internal object CollaborationCoordinatorUpdates {
 
     private fun current(context: Context, access: CollaborationWorkspaceAccess): Pair<AgentTeamExecutionCheckpoint, AgentTeamMember> {
         require(CollaborationEvidenceLedger(context).authorizes(access)) { "An exact source binding is required" }
-        val store = EncryptedAgentTeamExecutionStore(context)
-        val checkpoint = requireNotNull(store.deliveryCheckpoint(access.runId)) { "Team checkpoint is unavailable" }
-        val snapshot = requireNotNull(store.snapshot(access.runId)) { "Team state is unavailable" }
+        val (checkpoint, snapshot) = AgentTeamExecutionLocations(context).state(access)
         return checkpoint to member(checkpoint, access, AgentTeamDurableControl(context).get(access.runId), snapshot.state.isTerminal)
     }
 
