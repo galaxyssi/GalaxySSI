@@ -181,15 +181,22 @@ def _is_user_visible_artifact(file_path: Path) -> bool:
     return not any(part.lower() == "__pycache__" for part in file_path.parts)
 
 
-def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) -> list[dict]:
+def select_reply_artifacts(
+    content: str, artifacts: list[dict], task_id: str, *, discover_unlisted: bool = False,
+) -> list[dict]:
     """Explicit final links select deliverables; unlinked replies keep all outputs."""
-    if not artifacts:
+    if not artifacts and not discover_unlisted:
         return artifacts
-    root = task_workspace(task_id).resolve()
+    if not _safe_component(task_id):
+        return artifacts
+    root = _task_directory(task_id)[1]
     references: dict[Path, int] = {}
     for match in MARKDOWN_TARGET.finditer(str(content or "")):
         value = unquote(match.group(1).strip().strip("<>"))
-        parsed = urlparse(value)
+        try:
+            parsed = urlparse(value)
+        except ValueError:
+            continue
         if parsed.scheme in {"http", "https"}:
             continue
         if parsed.scheme == "galaxyssi-artifact":
@@ -197,28 +204,69 @@ def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) ->
                 continue
             value = parsed.path.lstrip("/")
         elif parsed.scheme == "file":
+            if parsed.netloc not in {"", "localhost"}:
+                continue
             value = unquote(parsed.path)
         elif value.startswith("sandbox:"):
             value = value.removeprefix("sandbox:").lstrip("/")
+        elif parsed.scheme and not re.match(r"^[A-Za-z]:[\\/]", value):
+            continue
         if re.match(r"^/[A-Za-z]:[\\/]", value):
             value = value[1:]
         value = value.replace("\\", "/")
         if value.startswith(("/outputs/", "/downloads/", "/screenshots/")):
             value = value.lstrip("/")
         try:
-            candidate = (root / value).resolve()
+            candidate = root / value
+            if discover_unlisted:
+                relative = candidate.relative_to(root)
+                if ".." in relative.parts or any(
+                    (root / Path(*relative.parts[:index])).is_symlink()
+                    for index in range(1, len(relative.parts) + 1)
+                ):
+                    continue
+            candidate = candidate.resolve()
             candidate.relative_to(root)
             references.setdefault(candidate, len(references))
         except (OSError, ValueError):
             continue
-    selected = []
+    if not references:
+        return artifacts
+    selected: dict[Path, dict] = {}
     for item in artifacts:
         if not isinstance(item, dict):
             continue
         source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
         if source is not None and source.resolve() in references:
-            selected.append((references[source.resolve()], item))
-    return [item for _, item in sorted(selected, key=lambda entry: entry[0])] or artifacts
+            selected.setdefault(source.resolve(), item)
+    if discover_unlisted:
+        # Directory inventory is bounded; explicit final links are not inventory entries.
+        # Only delivery/persistence callers opt in, never the rich-output renderer.
+        for source in references:
+            if source in selected:
+                continue
+            descriptor = _reply_artifact_descriptor(root, source, task_id)
+            if descriptor is not None:
+                selected[source] = descriptor
+    return [selected[source] for source in references if source in selected] or artifacts
+
+
+def _reply_artifact_descriptor(root: Path, source: Path, task_id: str) -> dict | None:
+    try:
+        relative = source.relative_to(root)
+        parts = relative.parts
+        if len(parts) < 2 or parts[0].lower() not in {"outputs", "downloads", "screenshots"}:
+            return None
+        if parts[0].lower() == "downloads" and parts[1].lower() in {"input", "context"}:
+            return None
+        if any(part.startswith(".") for part in parts) or not _is_user_visible_artifact(source):
+            return None
+        if task_artifact_path(task_id, relative.as_posix()) != source:
+            return None
+        return {"name": source.name, "relative_path": relative.as_posix(),
+                "category": parts[0], "size": source.stat().st_size}
+    except (OSError, ValueError):
+        return None
 
 
 def referenced_task_artifact_paths(content: str, limit: int = 20) -> list[Path]:

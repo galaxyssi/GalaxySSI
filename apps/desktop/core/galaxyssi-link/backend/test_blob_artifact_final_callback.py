@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from agent_execution_harness import ArtifactFinalization
+from agent_execution_harness import AgentExecutionMode, ArtifactFinalization
 import artifact_delivery as delivery
 import mqtt_bridge
 import response_policy
@@ -26,6 +26,7 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
         module = ast.Module(body=[function], type_ignores=[])
         execution = execution if execution is not None else SimpleNamespace(accepts=lambda _task: True)
         namespace = {**mqtt_bridge.__dict__, "fast_chat_delivery": False, "plan_only": False,
+            "AgentExecutionMode": AgentExecutionMode,
             "read_only_screen_analysis": False, "execution_policy_prompt": policy_prompt,
             "managed_task_id": {"value": self.payload["task_id"], "execution": execution},
             "agent_id": "codex", "full_desktop_executor": False, "structured_connector_response": False,
@@ -96,7 +97,8 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
                 patch.object(mqtt_bridge, "_publish_or_queue_task_result", return_value=True), \
                 patch("agent_latency.record_task"):
             self.callback(policy_prompt=assignment, request=envelope)(task)
-        finalize.assert_called_once_with(task["task_id"], assignment, "codex", allow_device_install=False)
+        finalize.assert_called_once_with(task["task_id"], assignment, "codex", allow_device_install=False,
+                                        reply_content=task["result"])
 
 
 if __name__ == "__main__":
