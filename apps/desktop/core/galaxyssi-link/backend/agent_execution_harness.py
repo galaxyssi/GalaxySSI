@@ -1530,9 +1530,10 @@ def finalize_task_artifacts(
     agent_id: str,
     *,
     allow_device_install: bool = False,
+    reply_content: str = "",
 ) -> ArtifactFinalization:
     from artifact_request_policy import keep_office_outputs_separate
-    from task_workspace import task_artifacts, task_workspace
+    from task_workspace import select_reply_artifacts, task_artifacts, task_workspace
 
     policy = execution_policy_for(prompt)
     root = task_workspace(task_id, agent_id)
@@ -1571,6 +1572,7 @@ def finalize_task_artifacts(
                 current = [_artifact_descriptor(root, archive)]
                 packaged = True
 
+    current = select_reply_artifacts(reply_content, current, task_id, discover_unlisted=True)
     verification = _verify_outputs(
         root,
         current,

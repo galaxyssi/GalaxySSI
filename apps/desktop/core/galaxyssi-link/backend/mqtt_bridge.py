@@ -5419,6 +5419,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     execution_policy_prompt,
                     agent_id,
                     allow_device_install=full_desktop_executor,
+                    reply_content=raw_result,
                 )
             )
         from task_workspace import select_reply_artifacts
@@ -6270,6 +6271,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     execution_policy_prompt,
                     agent_id,
                     allow_device_install=full_desktop_executor,
+                    reply_content=str(event_result or ""),
                 )
                 if finalization.verification.get("status") != "passed":
                     if schedule_required_artifact_repair(finalization.verification):
@@ -9509,7 +9511,12 @@ def republish_agent_task_result(task_id: str) -> dict:
         by_path.update({item["relative_path"]: item for item in native_images})
         public_task["output_files"] = list(by_path.values())
     from artifact_delivery import prepare_artifacts, register_artifact_batch
+    from task_workspace import select_reply_artifacts
 
+    public_task["output_files"] = select_reply_artifacts(
+        public_task["result"], public_task["output_files"], task.task_id,
+        discover_unlisted=bool(public_task["output_files"]),
+    )
     artifacts = prepare_artifacts(task.task_id, public_task["output_files"])
     register_artifact_batch(
         artifacts,
