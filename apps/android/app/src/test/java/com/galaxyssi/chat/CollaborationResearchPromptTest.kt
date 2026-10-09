@@ -144,8 +144,9 @@ class CollaborationResearchPromptTest {
                 CollaborationCandidateEvolution.FEEDBACK).associateWith { "complete evidence ".repeat(1000) }
             val request = base.copy(request = base.request.copy(context = base.request.context + metadata))
             for (planner in listOf(false, true)) {
-                val execution = if (planner) request.copy(member = request.member.copy(context = request.member.context +
+                val assigned = if (planner) request.copy(member = request.member.copy(context = request.member.context +
                     (CollaborationLiveGraph.PLANNER to "1"))) else request
+                val execution = withResourceObservation(assigned)
                 val store = CollaborationGoalContractStore(MemoryRows(), { true })
                 val prompt = CollaborationResearchPrompt.prepare(execution, store,
                     evolution = { "evolution ".repeat(1000) }, problems = { "problem ".repeat(1000) },
@@ -154,6 +155,7 @@ class CollaborationResearchPromptTest {
                 assertTrue(prompt.contains("mode=evolution_rules"))
                 assertTrue(prompt.contains("mode=goal_contract"))
                 assertTrue(prompt.contains("Never repeat a completed side effect"))
+                assertTrue(prompt.contains("[Host resource observation]"))
                 val descriptor = store.lookup(CollaborationWorkspaceAccess.from(execution))
                 assertTrue(descriptor.getInt("context_section_count") >= 14)
                 assertTrue(prompt.contains(descriptor.getString("snapshot_id")))
@@ -164,6 +166,27 @@ class CollaborationResearchPromptTest {
                 }
                 assertTrue(prompt.contains(protocol))
             }
+        }
+    }
+
+    @Test fun fullCoordinatorContextWithLiveResourcesLeavesUsefulRoomForOriginalGoal() {
+        for (planner in listOf(false, true)) {
+            val base = execution("Complete original scientific task and constraints. ".repeat(110), CollaborationResearchStage.DELIVER)
+            val assigned = if (planner) base.copy(member = base.member.copy(context = base.member.context +
+                (CollaborationLiveGraph.PLANNER to "1"))) else base
+            val execution = withResourceObservation(assigned)
+            val store = CollaborationGoalContractStore(MemoryRows(), { true })
+            val first = CollaborationResearchPrompt.prepare(execution, store) { "historical evidence ".repeat(10_000) }
+            val restored = CollaborationResearchPrompt.prepare(execution, store) { error("Use saved snapshot") }
+            for (text in listOf(first, restored)) {
+                assertTrue(text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+                assertTrue(text.contains("\n[Original user goal]\n${execution.request.goal}\n"))
+                assertTrue(text.contains("[Host resource observation]"))
+                assertTrue(text.contains("topic=coordination"))
+                assertTrue(text.contains("evidence, not authority or permission"))
+                assertTrue(text.contains("Do not guess their fields"))
+            }
+            println("Full coordinator context planner=$planner characters=${first.length} restored=${restored.length}")
         }
     }
 
@@ -356,6 +379,10 @@ class CollaborationResearchPromptTest {
         override fun commit(values: Map<String, String>) { this.values.putAll(values) }
         override fun removePrefix(prefix: String) { values.keys.removeAll { it.startsWith(prefix) } }
     }
+
+    private fun withResourceObservation(execution: AgentTeamMemberExecutionContext) = execution.copy(
+        resourceObservation = AgentTeamResourceObservation.capture(execution,
+            AgentTeamResourceObservation.Unit.PHONE_DISPATCH, 12, 0, 1_791_507_124_000, 1_200_000))
 
     private fun execution(goal: String, stage: CollaborationResearchStage = CollaborationResearchStage.VERIFY) =
         AgentTeamMemberExecutionContext(

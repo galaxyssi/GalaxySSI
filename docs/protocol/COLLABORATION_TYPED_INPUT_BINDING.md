@@ -133,6 +133,42 @@ An omitted or wrongly specified resource constraint is not magically discovered
 by this protocol. Existing tool policies and resource controls remain responsible
 for execution authorization; downstream validation must test the chosen method.
 
+## On-demand coordination contracts
+
+The coordinator's initial prompt keeps core decision and authorization invariants,
+the response envelope, original goal references and current resource observation.
+Advanced input-binding, independent-review, candidate-cycle, organization and
+finite-case acceptance field guidance use the existing scoped rule channel:
+
+```json
+{"mode":"evolution_rules","topic":"coordination","offset":0}
+```
+
+Follow `next_offset` with the same topic until null. The catalog discovers this
+topic; `topic=all` still includes the full reference. The returned text retains
+the original detailed contracts without truncation. Cloud, native phone and
+Desktop adapters use the same phone-owned reference. This is a host schema, not
+a grant of execution authority. No dependency/acceptance validator is relaxed.
+
+This avoids making every new optional field increase every coordinator request.
+Prompt-budget tests must combine real resource observations, persisted descriptor
+directories, long goals/history and both coordinator modes, not test each in
+isolation. A request that truly cannot fit still fails before model dispatch;
+instructions are not silently clipped and a host failure is not a model answer.
+
+For changes to coordinator instructions or rule discovery, run the collaboration
+test family together rather than only the edited feature's tests:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest --tests 'com.galaxyssi.chat.Collaboration*Test' --tests 'com.galaxyssi.chat.AgentSubagentAdmissionOrderTest'
+```
+
+This includes `CollaborationExecutionResourcesTest`, the combined persisted
+directory/resource prompt cases, goal acceptance and dependency regressions.
+On-device `CollaborationEvolutionRuleTopicsDeviceTest` reconstructs every topic
+through both cloud and native scoped recall, rejects revoked readers, and checks
+coordinator prompt preparation against the encrypted goal store without models.
+
 ## Validation scope
 
 Unit coverage includes contract validation and persistence, immutable work
@@ -175,3 +211,20 @@ and controlled comparisons, outside the repository's regression fixtures.
 - Desktop recall bridge: 23 tests passed; Desktop UI/structure: 68 tests passed.
 - These are software-contract results with local synthetic workers, not an
   autonomous real-model dependency decision, science result or team advantage.
+
+### On-demand coordination validation, 2026-10-09
+
+- Android 1.4.115 / 1200 and Desktop source 1.4.39 include the complete
+  `coordination` rule topic and its scoped Desktop forwarding selector.
+- All 1,369 collaboration/admission-order JVM tests passed with zero failures,
+  errors or skips. Debug app and instrumentation APKs built successfully.
+- S20U (SM-G9880) passed three local device tests: complete cloud/native rule
+  pagination, invalid/revoked reader rejection, and preparation plus persisted
+  restoration of both coordinator modes with resources and the original goal.
+- The combined long-goal JVM case measured 30,305 characters for initial goal
+  assessment and 23,076 for incremental coordination, within the unchanged
+  32,000-character envelope. This does not imply that arbitrary inputs fit.
+- Desktop recall bridge: 23 tests passed; Desktop UI/structure: 68 tests passed.
+  Repository, file-size, Android native alignment and QNN checks also passed.
+- No real-model experiment has validated this revision yet. Test fixtures do
+  not establish model discovery of the rules, useful coordination or learning.

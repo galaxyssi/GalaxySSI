@@ -70,8 +70,7 @@ internal object CollaborationGoalLoop {
         ${AgentTeamGraphPlan.ADMISSION_INSTRUCTIONS}
         Use success for work requiring an actual artifact; terminal for diagnosing failed work. The default is success.
         An independent review must name its target work and use a different member from every target author.
-        ${CollaborationReviewTargets.instructions()}
-        ${CollaborationDataDependencies.instructions()}
+        ${CollaborationCoordinationProtocol.instructions()}
         Keep alternative candidates separate and plan their verification in parallel. A vote or ranking is not proof.
         Assign independently obtained evidence and cross-checks where useful; a text review is not an executed test.
         Recruit only when a distinct capability/workload gap justifies it, with concrete work assigned in this batch.
@@ -94,21 +93,10 @@ internal object CollaborationGoalLoop {
         The review must cite that delivery in parents. Copy host workspace receipts into delivery/review; current versions only, no invented IDs.
         Preserve any validator specification exactly, including its absence, through every continuation. Unsupported domains remain open.
         The host checks documentary integrity and qualified local computations, not general computational/scientific completion.
-        That fixture requires verification=computational and validator:{id:"exact_integer_sum.v1",operands:[canonical decimal strings]} in the first preserved criterion.
-        It accepts only the literal requirement "Compute the exact integer sum: 2 + 3." for operands ["2","3"] (substitute the actual operands).
-        Save body.computation:{validator_id:"exact_integer_sum.v1",result:"5"} alongside body.content; the host recomputes the sum.
-        Limits are 2..32 operands of at most 256 digits. Independent delivery review and goal coverage are still mandatory.
-        numeric_model_cases.v1 also replays a saved pure numeric expression against preserved input/expected/tolerance cases.
-        Its literal requirement is: "${CollaborationNumericModelValidator.REQUIREMENT}"
-        Recall mode=evolution_rules, topic=tools for its exact schema and execution envelope. Members can publish numeric_model_trial
-        before final acceptance to obtain host-computed errors and compare revised models; failed trials stay saved.
-        The host checks ALL supplied cases, not a model-written score; these local replay limits are not research step/round limits.
-        Supplied reference values are not certified true, held-out or independent. Keep provenance, oracle validity and generalization as separate requirements.
-        executable_tool_cases.v1 also qualifies actual generated Python tool execution on preserved JSON input/output cases,
-        using the existing native runtime, immutable source/test versions and independently reviewed original receipts.
-        Recall mode=evolution_rules, topic=tools before planning this route; establish its exact environment/cases contract early.
-        Code can be revised without weakening the suite. No code is executed by final acceptance; generic shell claims do not qualify.
-        This is finite-case execution evidence, not proof of oracle truth, unseen-task transfer or general/physical validity.
+        The qualified finite-case validators are exact_integer_sum.v1, numeric_model_cases.v1 and executable_tool_cases.v1.
+        Before establishing one, read mode=evolution_rules, topic=coordination for acceptance guidance and topic=tools for
+        numeric/generated-tool schemas. Copy exact contracts, never guess them or weaken preserved cases after seeing results.
+        Finite-case evidence does not establish oracle truth, unseen-task transfer, scientific validity or physical validation.
         Other computational/physical criteria still require unavailable qualified validators; keep them open and pursue useful work.
         Do not relabel them documentary or replace them with simulation.
         'blocked' requires NO executable work plus a concrete resource/permission blocker and resumption condition.
@@ -116,8 +104,7 @@ internal object CollaborationGoalLoop {
         If a tool/provider fails, revise the route or plan; do not convert an attempt limit or a timeout into goal completion.
         No goal-level step or round limit. Keep each batch small enough to inspect; later batches continue the same goal.
         Permission checks, user pause/stop, destructive-action approvals and scientific safety boundaries still apply.
-    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions() + "\n" + CollaborationCandidateEvolution.instructions() +
-        "\n" + CollaborationTeamOrganizationContext.instructions()
+    """.trimIndent() + "\n" + CollaborationSemanticGoalCoverage.instructions()
 
     fun decode(raw: String): JSONObject? = CollaborationAssessmentValidation.inspect(raw).assessment
 

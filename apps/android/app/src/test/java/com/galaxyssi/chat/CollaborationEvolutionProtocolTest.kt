@@ -11,7 +11,7 @@ class CollaborationEvolutionProtocolTest {
         val catalog = CollaborationEvolutionProtocol.rules("catalog")
         val entries = catalog.getJSONArray("topics")
         val ids = (0 until entries.length()).map { entries.getJSONObject(it).getString("id") }
-        assertEquals(11, ids.size)
+        assertEquals(12, ids.size)
         assertEquals(ids.size, ids.toSet().size)
         assertEquals(listOf("catalog", "all") + ids, CollaborationEvolutionProtocol.topicIds())
         assertFalse(catalog.getBoolean("grants_permissions"))
@@ -35,6 +35,22 @@ class CollaborationEvolutionProtocolTest {
         assertEquals(contracts.joinToString("\n"), all.getString("contract"))
         assertEquals(all.toString(), CollaborationEvolutionProtocol.rules("all").toString())
         assertTrue(contracts.all { it.isNotBlank() })
+    }
+
+    @Test fun coordinationRetainsExactAdvancedContractsWithoutDuplicatingThemInline() {
+        val original = listOf(CollaborationDataDependencies.instructions(), CollaborationReviewTargets.instructions(),
+            CollaborationReviewRebinding.instructions(), CollaborationCandidateEvolution.instructions(),
+            CollaborationTeamOrganizationContext.instructions(), CollaborationCoordinationProtocol.validatorExamples())
+        val recalled = CollaborationEvolutionProtocol.rules("coordination").getString("contract")
+        for (text in original) assertTrue(recalled.contains(text))
+        for (inline in listOf(CollaborationGoalLoop.instructions(), CollaborationLiveGraph.instructions())) {
+            assertTrue(inline.contains("topic=coordination"))
+            assertTrue(inline.contains("SAME topic"))
+            assertTrue(inline.contains("Independent review must retain a different known author"))
+            assertTrue(inline.contains("Default depends_on edges require producer completion"))
+            for (text in original) assertFalse(inline.contains(text))
+        }
+        assertTrue(recalled.contains("producer_work_ids"))
     }
 
     @Test fun individualTopicsReturnExactExistingSchemasWithoutUnrelatedContracts() {

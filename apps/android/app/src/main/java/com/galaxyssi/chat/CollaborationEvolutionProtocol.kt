@@ -53,7 +53,8 @@ internal object CollaborationEvolutionProtocol {
         Topic("tools", "Develop, test, review and reuse versioned tools", listOf("foundation"), CollaborationToolProtocol::rules, CollaborationToolProtocol::instructions),
         Topic("workflows", "Reuse and compare executable methods while preserving dependencies and independent checks", listOf("foundation"), CollaborationWorkflowProtocol::rules, CollaborationWorkflowProtocol::instructions),
         Topic("retention", "Check regressions and maintain capability versions and rollback channels", listOf("foundation", "procedures"), CollaborationRetentionProtocol::rules, CollaborationRetentionProtocol::instructions),
-        Topic("self_research", "Investigate and improve the system's own methods through evidence-linked studies", listOf("foundation", "workflows", "retention"), CollaborationSelfResearchProtocol::rules, CollaborationSelfResearchProtocol::instructions)
+        Topic("self_research", "Investigate and improve the system's own methods through evidence-linked studies", listOf("foundation", "workflows", "retention"), CollaborationSelfResearchProtocol::rules, CollaborationSelfResearchProtocol::instructions),
+        Topic("coordination", "Bind exact inputs, correct pending dependencies, retain independent reviews and manage candidate work", emptyList(), CollaborationCoordinationProtocol::rules)
     ) }
 
     fun topicIds(): List<String> = listOf("catalog", "all") + topics.map { it.id }

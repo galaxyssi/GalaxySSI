@@ -22,7 +22,7 @@ RETRY_INITIAL_SECONDS = 2.0
 RETRY_MAX_SECONDS = 8.0
 log = logging.getLogger(__name__)
 RULE_TOPICS = ("catalog", "all", "foundation", "learning", "procedures", "transfer", "innovation",
-               "team_invention", "prediction", "tools", "workflows", "retention", "self_research")
+               "team_invention", "prediction", "tools", "workflows", "retention", "self_research", "coordination")
 NUMERIC_CASE_FILTERS = ("failed", "all", "domain_error", "improved", "regressed", "error_reduced",
                         "error_increased", "domain_recovered", "domain_failed")
 

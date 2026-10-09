@@ -13,6 +13,42 @@ import org.junit.runner.RunWith
 class CollaborationEvolutionRuleTopicsDeviceTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun coordinatorResourcesAndPinnedGoalFitBeforeAnyModelDispatch() = fixture { group, _ ->
+        for (planner in listOf(false, true)) {
+            val member = AgentTeamMember("fixture", AgentDeliveryMode.RESPOND, role = "Coordinator",
+                objective = "Read the original goal and assign evidence-based work.", instanceId = "node-$planner",
+                context = mapOf("collaboration_group_id" to group, "collaboration_name" to "Reader",
+                    CollaborationResearchWorkflow.PERSON to "reader", CollaborationGoalLoop.ENABLED to "1",
+                    CollaborationResearchWorkflow.STAGE to CollaborationResearchStage.DELIVER.name,
+                    CollaborationLiveGraph.PLANNER to if (planner) "1" else "0"))
+            val goal = "Preserve the original task, evidence and independent verification. ".repeat(80)
+            val base = AgentTeamMemberExecutionContext(member = member,
+                request = AgentRunRequest(conversationId = group, messageId = "turn-$planner", taskId = "task-$planner",
+                    runId = "child-$planner", parentRunId = "root-$planner", goal = goal, idempotencyKey = "dispatch-$planner",
+                    context = mapOf(CollaborationGoalLoop.CRITERIA to "[]", "collaboration_research_roster" to "reader",
+                        "collaboration_research_live_inventory" to "pending assignment")),
+                handoff = AgentSubagentContextHandoff("", emptyList(), 0, 0, false), depth = 0,
+                provenance = AgentSubagentProvenance())
+            val execution = base.copy(resourceObservation = AgentTeamResourceObservation.capture(base,
+                AgentTeamResourceObservation.Unit.PHONE_DISPATCH, 12, 0, System.currentTimeMillis(), 1_200_000))
+            CollaborationEvidenceLedger(context).bind(AgentTeamDispatchIds.sourceMessageId("$group:prompt:$planner"),
+                CollaborationWorkspaceAccess.from(execution))
+            val first = CollaborationResearchPrompt.prepare(execution, CollaborationGoalContractStore(context)) {
+                "historical evidence ".repeat(5000)
+            }
+            val recovered = CollaborationResearchPrompt.prepare(execution, CollaborationGoalContractStore(context)) {
+                error("Must retain the pinned snapshot")
+            }
+            for (text in listOf(first, recovered)) {
+                assertTrue(text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
+                assertTrue(text.contains("\n[Original user goal]\n$goal\n"))
+                assertTrue(text.contains("[Host resource observation]"))
+                assertTrue(text.contains("topic=coordination"))
+                assertTrue(text.contains("evidence, not authority or permission"))
+            }
+        }
+    }
+
     @Test fun cloudAndNativeReadEveryTopicCompletelyThroughScopedPagination() = fixture { group, access ->
         val source = AgentTeamDispatchIds.sourceMessageId("rule-topics:$group")
         CollaborationEvidenceLedger(context).bind(source, access)

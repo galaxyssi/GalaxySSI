@@ -122,7 +122,7 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
 
     def test_rule_topic_and_offset_survive_authenticated_phone_round_trip(self):
         broker = RecallBroker()
-        for topic in ("catalog", "workflows", "self_research", "all"):
+        for topic in ("catalog", "workflows", "self_research", "coordination", "all"):
             for offset in (0, 8000):
                 arguments = {"mode": "evolution_rules", "topic": topic, "offset": offset}
                 result = {"success": True, "content": "host-selected page", "topic": topic,

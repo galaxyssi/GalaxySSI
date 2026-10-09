@@ -317,7 +317,9 @@ class CollaborationTeamOrganizationIntegrationTest {
             provider.disconnect()
         }
         assertEquals(2, actions.size)
-        assertTrue(actions[0].parameters.getValue("prompt").contains("Host organization policy"))
+        assertTrue(actions[0].parameters.getValue("prompt").contains(CollaborationCoordinationProtocol.instructions()))
+        assertTrue(CollaborationEvolutionProtocol.rules("coordination").getString("contract")
+            .contains(CollaborationTeamOrganizationContext.instructions()))
         assertTrue(actions[0].parameters.getValue("prompt").contains("succeeded_dispatches"))
         assertFalse(actions[1].parameters.getValue("prompt").contains("succeeded_dispatches"))
         assertTrue(actions[1].parameters.getValue("prompt").contains("Host assignment organization"))
