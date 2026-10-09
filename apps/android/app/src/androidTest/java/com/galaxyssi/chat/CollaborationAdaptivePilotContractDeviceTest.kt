@@ -2,6 +2,8 @@ package com.galaxyssi.chat
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.lang.reflect.Modifier
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,6 +12,22 @@ import org.junit.runner.RunWith
 /** Checks discovery without invoking the guarded real-model trial. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationAdaptivePilotContractDeviceTest {
+    @Test fun singleCalibrationUsesOneUnstagedMemberWithAndroidJson() {
+        val raw = JSONObject().put("format", CollaborationAdaptivePilotPlan.SINGLE_FORMAT)
+            .put("pilot_id", "single-device-contract").put("device_model", android.os.Build.MODEL)
+            .put("target_id", "fixture:codex").put("model_id", "selected-model").put("reasoning_effort", "high")
+            .put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE).put("goal", "Synthetic contract check only")
+            .put("trial_timeout_ms", 1_000).put("maximum_dispatches", 1)
+            .put("members", JSONArray().put(JSONObject().put("id", "solo").put("name", "Solo").put("role", "Researcher")))
+        val plan = CollaborationAdaptivePilotPlan.from(raw, 1, 1_000)
+        val definition = plan.definition("contract-fixture", "contract-run")
+        assertEquals(1, definition.members.size)
+        assertEquals(plan.goal, definition.members.single().objective)
+        assertTrue(plan.matchesExecution(definition.members.single(), definition))
+        assertTrue(!CollaborationLiveGraph.enabled(definition))
+        assertTrue(CollaborationResearchWorkflow.stage(definition.members.single()) == null)
+    }
+
     @Test fun productionCoordinatorPromptFitsWithAndroidJsonAndFullDirectory() {
         val rows = object : CollaborationGoalContractRows {
             val values = mutableMapOf<String, String>()
