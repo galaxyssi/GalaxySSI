@@ -9,6 +9,11 @@ import com.galaxyssi.chat.CollaborationExecutableTool.TEST
 internal object CollaborationToolComparison {
     const val KIND = "tool_test_comparison"
 
+    fun lineageReferences(host: JSONObject): List<Pair<String, JSONObject>> = listOf("baseline", "candidate").flatMap { name ->
+        val side = host.getJSONObject(name)
+        listOf(TEST, CollaborationExecutableTool.TOOL).map { kind -> kind to side.getJSONObject(kind) }
+    }
+
     fun evaluate(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
                  original: (JSONObject) -> JSONObject?, coverage: (JSONObject) -> Unit): JSONObject {
         require(value.keys().asSequence().toSet() == setOf("purpose", "baseline", "candidate", "interpretation", "limitations")) {

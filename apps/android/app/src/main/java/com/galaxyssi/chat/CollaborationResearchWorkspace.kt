@@ -661,12 +661,14 @@ internal class CollaborationResearchWorkspace(
                         if (saved.optJSONObject("host_candidate_event")?.optString("operation") == "review")
                             put("review_applicability", if (candidateReviewApplies(access, this)) "current" else "stale_or_isolated")
                         saved.optJSONObject(CollaborationEvolutionContract.HOST)?.let { evolution ->
-                            val current = listOf("innovation", "baseline", "plan", "result", "rollback", "gap", "diagnosis", "lesson", "transfer_study", "source").all { field ->
-                                evolution.optJSONObject(field)?.let { ref ->
-                                    val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
-                                    target != null && CollaborationResearchCandidates.same(target, ref) &&
-                                        isCurrent(access, target.getString("object_id"), target.getInt("revision"))
-                                } ?: true
+                            val lineage = if (saved.getString("kind") == CollaborationToolComparison.KIND)
+                                CollaborationToolComparison.lineageReferences(evolution).map { it.second }
+                            else listOf("innovation", "baseline", "plan", "result", "rollback", "gap", "diagnosis", "lesson", "transfer_study", "source")
+                                .mapNotNull(evolution::optJSONObject)
+                            val current = lineage.all { ref ->
+                                val target = read(access, ref.getString("object_id"), ref.getInt("revision"))
+                                target != null && CollaborationResearchCandidates.same(target, ref) &&
+                                    isCurrent(access, target.getString("object_id"), target.getInt("revision"))
                             } && evolution.optJSONArray("gaps")?.let { gaps -> (0 until gaps.length()).all { index ->
                                 val ref = gaps.getJSONObject(index)
                                 val target = read(access, ref.getString("object_id"), ref.getInt("revision"))

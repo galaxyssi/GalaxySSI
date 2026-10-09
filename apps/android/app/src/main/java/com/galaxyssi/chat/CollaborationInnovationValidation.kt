@@ -196,6 +196,10 @@ internal object CollaborationInnovationValidation {
             val saved = pending.removeFirst()
             if (!seen.add(saved.getString("object_id") + ":" + saved.getString("sha256"))) continue
             val host = saved.optJSONObject(HOST) ?: continue
+            if (saved.getString("kind") == CollaborationToolComparison.KIND) {
+                CollaborationToolComparison.lineageReferences(host).forEach { (kind, ref) -> enqueue(ref, setOf(kind)) }
+                continue
+            }
             links.forEach { (field, kinds) -> host.optJSONObject(field)?.let { enqueue(it, kinds) } }
             if (saved.getString("kind") == CollaborationSelfResearch.CYCLE) {
                 enqueue(host.getJSONObject("opportunity"), setOf(OPPORTUNITY))
