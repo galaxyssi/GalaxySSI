@@ -285,6 +285,41 @@ class CollaborationRemoteEvidenceDeviceTest {
         } finally { release.complete(Unit); groups.forEach { CollaborationGroupStore(context).remove(it) } }
     }
 
+    @Test fun lateIndexAndPageResumeIntoExactOriginalWithoutRepeatingQueries(): Unit = runBlocking {
+        val group = "remote-evidence-late-${UUID.randomUUID()}"
+        create(group)
+        try {
+            val identity = fields(group)
+            val fixture = Fixture(identity)
+            val store = CollaborationRemoteEvidenceStore(context)
+            val ledger = CollaborationEvidenceLedger(context)
+            val key = store.create("fixture-desktop", identity, access(group))
+            val client = CollaborationRemoteEvidenceClient()
+            var delayed: JSONObject? = null
+            val sent = mutableListOf<String>()
+            suspend fun run(delayMode: String?): Boolean = CollaborationRemoteEvidenceImporter(store, ledger)
+                .run(key, { true }) { desktop, fields, selection ->
+                    client.query(desktop, fields, selection, 20) { request ->
+                        sent.add("${request.getString("mode")}:${request.optInt("page_index", -1)}")
+                        if (request.getString("mode") == delayMode) { delayed = request; true }
+                        else client.receive(fixture.reply(request), desktop)
+                    }
+                }
+            assertFalse(run("index"))
+            assertTrue(client.receive(fixture.reply(requireNotNull(delayed)), "fixture-desktop"))
+            assertTrue(ledger.browse(access(group)).first.isEmpty())
+            assertFalse(run("page"))
+            assertTrue(client.receive(fixture.reply(requireNotNull(delayed)), "fixture-desktop"))
+            assertTrue(run(null))
+            assertEquals(sent.size, sent.distinct().size)
+            val ref = ledger.browse(access(group)).first.single()
+            val saved = JSONObject(CollaborationEvidenceLedger(context).read(access(group), ref.getString("evidence_id"))!!.getString("output_json"))
+            assertEquals(String(fixture.body, Charsets.UTF_8), saved.getString("original_json"))
+            assertEquals("imported", CollaborationRemoteEvidenceStore(context).read(key)!!.getString("status"))
+            assertEquals(0, client.lateCount)
+        } finally { CollaborationGroupStore(context).remove(group) }
+    }
+
     @Test fun processCheckpointPhase(): Unit = runBlocking {
         val args = InstrumentationRegistry.getArguments()
         val phase = args.getString("remoteEvidencePhase").orEmpty()

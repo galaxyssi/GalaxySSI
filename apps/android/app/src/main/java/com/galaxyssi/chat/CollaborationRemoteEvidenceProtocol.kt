@@ -2,52 +2,7 @@ package com.galaxyssi.chat
 
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
-
-/** Read-only, nonce-bound queries. No model dispatch, resume or effect operation is exposed here. */
-internal class CollaborationRemoteEvidenceClient {
-    private data class Pending(val desktop: String, val request: JSONObject,
-        val result: CompletableDeferred<JSONObject> = CompletableDeferred())
-    private val pending = ConcurrentHashMap<String, Pending>()
-
-    suspend fun query(desktop: String, fields: JSONObject, selection: JSONObject, timeoutMillis: Long = 8_000,
-        publish: (JSONObject) -> Boolean): JSONObject? {
-        require(CollaborationRemoteEvidenceProtocol.validScope(fields) && desktop.isNotBlank())
-        val nonce = UUID.randomUUID().toString()
-        val request = CollaborationRemoteEvidenceProtocol.scope(fields)
-            .put("type", "agent_task_evidence_request").put("desktop_id", desktop).put("request_id", nonce)
-        listOf("mode", "after_sequence", "evidence_id", "sha256", "page_index", "inline_page_bytes").forEach {
-            if (selection.has(it)) request.put(it, selection.get(it))
-        }
-        val waiter = Pending(desktop, request)
-        pending[nonce] = waiter
-        try {
-            if (!publish(request)) return null
-            return withTimeoutOrNull(timeoutMillis) { waiter.result.await() }
-        } finally { pending.remove(nonce, waiter); waiter.result.cancel() }
-    }
-
-    fun receive(payload: JSONObject, authenticatedDesktop: String, diagnostic: (String) -> Unit = {}): Boolean {
-        fun rejected(reason: String): Boolean { diagnostic(reason); return false }
-        val waiter = pending[payload.optString("request_id")] ?: return rejected("no_pending_request")
-        val request = waiter.request
-        if (authenticatedDesktop != waiter.desktop) return rejected("desktop_mismatch")
-        if (payload.opt("type") != "agent_task_evidence" || payload.opt("contract") != CollaborationRemoteEvidenceProtocol.CONTRACT)
-            return rejected("contract_mismatch")
-        if (!CollaborationRemoteEvidenceProtocol.sameScope(request, payload)) return rejected("scope_mismatch")
-        if (payload.opt("mode") != request.opt("mode")) return rejected("mode_mismatch")
-        if (payload.opt("status") !in setOf("ready", "unavailable")) return rejected("invalid_status")
-        if (payload.opt("status") == "ready" && request.opt("mode") == "page" &&
-            listOf("page_index", "sha256", "evidence_id").any { payload.opt(it) != request.opt(it) }) return rejected("page_mismatch")
-        return waiter.result.complete(JSONObject(payload.toString())).also { diagnostic(if (it) "accepted" else "already_completed") }
-    }
-
-    internal val pendingCount get() = pending.size
-}
 
 internal object CollaborationRemoteEvidenceProtocol {
     const val CONTRACT = "galaxyssi.desktop-tool-evidence/1"
