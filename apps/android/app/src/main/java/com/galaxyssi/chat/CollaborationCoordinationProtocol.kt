@@ -29,7 +29,11 @@ internal object CollaborationCoordinationProtocol {
     ).joinToString("\n")
 
     internal fun validatorExamples() = """
-        The exact-integer fixture requires verification=computational and validator:{id:"exact_integer_sum.v1",operands:[canonical decimal strings]} in the first preserved criterion.
+        Establish computational verification before claiming completion. A decision=continue assessment may add an absent qualified
+        validator to an unchanged open/observed criterion only while its evidence is empty and delivery/review are absent in both saved and new criteria.
+        It must match the validator's literal requirement; requirement, source obligations and already bound inputs cannot be changed.
+        Registration updates the persisted contract before new work; it is not acceptance, oracle certification or proof of preregistration before measurements.
+        The exact-integer fixture uses verification=computational and validator:{id:"exact_integer_sum.v1",operands:[canonical decimal strings]}.
         It accepts only the literal requirement "Compute the exact integer sum: 2 + 3." for operands ["2","3"] (substitute the actual operands).
         Save body.computation:{validator_id:"exact_integer_sum.v1",result:"5"} alongside body.content; the host recomputes the sum.
         Limits are 2..32 operands of at most 256 digits. Independent delivery review and goal coverage are still mandatory.

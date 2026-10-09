@@ -45,10 +45,14 @@ internal object CollaborationExecutableAcceptance : CollaborationQualifiedValida
         throw IllegalArgumentException("Executable verification requires host-resolved workspace and original runtime evidence")
     }
 
-    override fun validateRecorded(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence?) {
+    override fun validateRequirement(criterion: JSONObject) {
         require(criterion.opt("requirement") == REQUIREMENT) {
             "Executed cases cannot qualify broader generalization, scientific or physical claims"
         }
+    }
+
+    override fun validateRecorded(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence?) {
+        validateRequirement(criterion)
         val host = requireNotNull(evidence) { "Executable verification requires host evidence resolvers" }
         val specification = criterion.getJSONObject(CollaborationQualifiedValidation.FIELD)
         binding(specification)

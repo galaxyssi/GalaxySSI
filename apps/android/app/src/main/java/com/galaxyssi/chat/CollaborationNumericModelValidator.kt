@@ -26,10 +26,14 @@ internal object CollaborationNumericModelValidator : CollaborationQualifiedValid
         return listOf(id, fingerprint(spec))
     }
 
-    override fun validate(criterion: JSONObject, body: JSONObject) {
+    override fun validateRequirement(criterion: JSONObject) {
         require(criterion.opt("requirement") == REQUIREMENT) {
             "Numeric case verification cannot qualify a broader scientific, physical or generalization requirement"
         }
+    }
+
+    override fun validate(criterion: JSONObject, body: JSONObject) {
+        validateRequirement(criterion)
         val computation = requireNotNull(body.optJSONObject("computation")) { "Save body.computation with the numeric model" }
         val report = evaluate(criterion.getJSONObject(CollaborationQualifiedValidation.FIELD), computation)
         require(report.getBoolean("passed")) {
