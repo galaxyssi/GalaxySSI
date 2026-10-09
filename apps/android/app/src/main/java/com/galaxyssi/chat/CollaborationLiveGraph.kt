@@ -51,6 +51,7 @@ internal object CollaborationLiveGraph {
         ${CollaborationPeerExchangePolicy.INSTRUCTIONS}
         ${CollaborationCoordinationProtocol.instructions()}
         Do not repeat, replace or rename existing work to bypass deduplication. Never repeat a completed side effect.
+        ${CollaborationWorkGraph.REPAIR_INSTRUCTIONS}
         Keep competing candidates distinct and assign independent checks to a different author.
         Use only the existing authorized roster. Missing people/resources can be proposed in the later goal assessment;
         do not invent members, grant permissions or claim that a simulation is a physical experiment.
@@ -219,6 +220,7 @@ internal object CollaborationLiveGraph {
                     CollaborationCompletionBarriers.read(original) == CollaborationCompletionBarriers.read(item) &&
                     original.optString("dependency_policy", "success") == item.optString("dependency_policy", "success") &&
                     original.optBoolean("independent_review") == item.optBoolean("independent_review") &&
+                    CollaborationWorkGraph.sameRepair(original, item) &&
                     CollaborationPeerExchangePolicy.read(original) == CollaborationPeerExchangePolicy.read(item) &&
                     CollaborationReviewTargets.read(original) == CollaborationReviewTargets.read(item) &&
                     CollaborationReviewTargets.milestones(original) == CollaborationReviewTargets.milestones(item) &&
@@ -253,6 +255,7 @@ internal object CollaborationLiveGraph {
                     CollaborationWorkGraph.POLICY to item.optString("dependency_policy", "success"),
                     CollaborationWorkGraph.INDEPENDENT to item.optBoolean("independent_review").toString(),
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to JSONArray(CollaborationWorkGraph.dependencies(item).filter { it !in current && it in finished }).toString()) +
+                    CollaborationWorkGraph.repairContext(item) +
                     CollaborationReviewTargets.context(item) + CollaborationDataDependencies.context(item) + CollaborationPeerExchangePolicy.context(item) +
                     CollaborationLearningWork.context(selected.getValue(item.getString("id"))) +
                     CollaborationProcedureWork.context(selected.getValue(item.getString("id"))) +
@@ -283,13 +286,13 @@ internal object CollaborationLiveGraph {
     internal fun workItem(member: AgentTeamMember, all: List<AgentTeamMember>): JSONObject {
         val prior = strings(member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES])
         val ids = all.associate { it.memberId to it.context[CollaborationGoalLoop.WORK_ID] }
-        return CollaborationPeerExchangePolicy.restore(CollaborationDataDependencies.restore(CollaborationReviewTargets.restore(JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
+        return CollaborationWorkGraph.restoreRepair(CollaborationPeerExchangePolicy.restore(CollaborationDataDependencies.restore(CollaborationReviewTargets.restore(JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
             .put("member", member.context.getValue(CollaborationResearchWorkflow.PERSON))
             .put("stage", member.context.getValue(CollaborationResearchWorkflow.STAGE)).put("assignment", member.objective)
             .put("depends_on", JSONArray((member.dependsOnAgentIds.mapNotNull { ids[it] } + prior).distinct()))
             .put("dependency_policy", member.context[CollaborationWorkGraph.POLICY] ?: "success")
             .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.inputs(member).map { it.getString("token") }))
-            .put("independent_review", member.context[CollaborationWorkGraph.INDEPENDENT] == "true"), member.context), member.context), member)
+            .put("independent_review", member.context[CollaborationWorkGraph.INDEPENDENT] == "true"), member.context), member.context), member), member.context)
     }
 
     fun inventory(definition: AgentTeamDefinition, completed: Map<String, AgentSubagentChildResult>,
@@ -347,6 +350,7 @@ internal object CollaborationLiveGraph {
                 .put("review_targets", JSONArray(reviewTargets.sorted()))
                 .put(CollaborationReviewTargets.MILESTONES, JSONArray(CollaborationReviewTargets.milestones(member).sorted()))
                 .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.inputs(member).map { it.getString("token") }))
+            CollaborationWorkGraph.restoreRepair(item, member.context)
             val size = item.toString().length
             if (size > remaining) break
             items.put(item)

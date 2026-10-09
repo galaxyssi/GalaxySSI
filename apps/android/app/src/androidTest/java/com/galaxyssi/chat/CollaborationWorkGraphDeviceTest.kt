@@ -15,6 +15,32 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CollaborationWorkGraphDeviceTest {
+    @Test fun repairLineageSurvivesEncryptedDatabaseCloseAndReopen() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "repair-lineage-fixture-${UUID.randomUUID()}"
+        val database = AgentEncryptedDatabase(context, name)
+        val item = JSONObject().put("id", "repair-work").put("repair_of", "original-work")
+            .put("repair_reason", "Publish the preserved draft with the missing typed body")
+        val member = AgentTeamMember("fixture", AgentDeliveryMode.OBSERVE, instanceId = "repair-node",
+            objective = "Repair only the incomplete publication", context = CollaborationWorkGraph.repairContext(item) + mapOf(
+                CollaborationGoalLoop.WORK_ID to "repair-work", CollaborationResearchWorkflow.PERSON to "reviewer",
+                CollaborationResearchWorkflow.STAGE to "REVISE",
+                CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to JSONArray().put("original-work").toString()))
+        try {
+            EncryptedAgentTeamExecutionStore(database).create(AgentTeamDefinition(name, "fixture", listOf(member),
+                primaryInstanceId = "repair-node"), AgentRunRequest(name, "turn", "task", runId = name, goal = "Synthetic repair"))
+            database.close()
+            val reopened = AgentEncryptedDatabase(context, name)
+            try {
+                val checkpoint = requireNotNull(EncryptedAgentTeamExecutionStore(reopened).deliveryCheckpoint(name))
+                val restored = CollaborationLiveGraph.workItem(checkpoint.definition.members.single(), checkpoint.definition.members)
+                assertTrue(CollaborationWorkGraph.sameRepair(item, restored))
+                assertEquals(setOf("original-work"), CollaborationWorkGraph.dependencies(restored))
+                assertEquals("", CollaborationWorkGraph.compile(listOf(restored), setOf("original-work")).error)
+            } finally { reopened.clear(); reopened.close() }
+        } finally { database.close() }
+    }
+
     @Test fun savedDependencyGraphResumesAndReviewsBeforeUnrelatedSlowWorkCompletes(): Unit = runBlocking {
         withTimeout(30_000) {
             val context = ApplicationProvider.getApplicationContext<Context>()

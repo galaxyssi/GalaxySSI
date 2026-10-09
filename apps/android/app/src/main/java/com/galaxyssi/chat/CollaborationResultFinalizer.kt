@@ -84,7 +84,7 @@ internal class CollaborationResultFinalizer(
         if (delivery.status == "rejected") handoff.put("delivery_warning",
             "Execution ended, but delivery was not accepted: ${delivery.reason}. " +
                 (if (archiveId.isNotBlank()) "Original output is archived. " else "Original archive is unavailable. ") +
-                "Plan a targeted repair using a new work id and repair_of; do not repeat completed side effects.")
+                CollaborationWorkGraph.REPAIR_INSTRUCTIONS)
         return output.copy(content = CollaborationResearchArtifact.compactHandoff(handoff.toString(), archiveId),
             collaborationAcceptance = accepted, collaborationDelivery = delivery,
             collaborationDiscussionRouted = artifact != null && discussion != null)

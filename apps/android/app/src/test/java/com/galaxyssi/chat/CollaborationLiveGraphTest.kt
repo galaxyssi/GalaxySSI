@@ -344,6 +344,62 @@ class CollaborationLiveGraphTest {
         }
     }
 
+    @Test fun targetedRepairSurvivesCheckpointReconstructionAndDoesNotReplayOriginalWork() {
+        val first = planned()
+        val repair = item("repair-producer", AUTHOR, PRODUCER_WORK).put("repair_of", PRODUCER_WORK)
+            .put("repair_reason", "Reuse archived output and supply the missing typed publication body")
+        val returned = terminal(first, planners(first).single().memberId, expansion(repair).toString())
+        val updated = CollaborationLiveGraph.update(returned, terminalIds(returned), 120)
+        val restored = reopen(updated)
+        val node = work(restored, "repair-producer")
+        assertEquals(PRODUCER_WORK, node.context[CollaborationWorkGraph.REPAIR_OF])
+        assertEquals(repair.getString("repair_reason"), node.context[CollaborationWorkGraph.REPAIR_REASON])
+        assertEquals(setOf(PRODUCER), node.dependsOnAgentIds)
+        assertTrue(CollaborationWorkGraph.sameRepair(repair, CollaborationLiveGraph.workItem(node, restored.definition.members)))
+        val results = restored.events.mapNotNull { it.result }.associateBy { it.childId }
+        val inventory = JSONObject(CollaborationLiveGraph.inventory(restored.definition, results)).getJSONArray("items")
+        val saved = (0 until inventory.length()).map { inventory.getJSONObject(it) }.single { it.getString("id") == "repair-producer" }
+        assertEquals(repair.getString("repair_reason"), saved.getString("repair_reason"))
+        assertEquals(PRODUCER_WORK, saved.getString("repair_of"))
+        assertEquals(updated, CollaborationLiveGraph.update(restored, terminalIds(restored), 130))
+        assertEquals(1, updated.definition.members.count { it.context[CollaborationGoalLoop.WORK_ID] == PRODUCER_WORK })
+        assertPreserved(returned, updated)
+    }
+
+    @Test fun laterPlannerCannotRemoveOrRewriteRepairLineageOrReason() {
+        val first = planned()
+        val repair = item("repair-producer", AUTHOR, PRODUCER_WORK).put("repair_of", PRODUCER_WORK)
+            .put("repair_reason", "Fix the missing typed body without rerunning computation")
+        val returned = terminal(first, planners(first).single().memberId, expansion(repair).toString())
+        val updated = CollaborationLiveGraph.update(returned, terminalIds(returned), 120)
+        val ready = completed(updated, SOURCE_B)
+        val next = CollaborationLiveGraph.update(ready, terminalIds(ready), 130)
+        val planner = planners(next).single { it.memberId !in applied(next) }
+        val mutations = listOf(
+            JSONObject(repair.toString()).apply { remove("repair_reason") },
+            JSONObject(repair.toString()).put("repair_reason", "Different repair"),
+            JSONObject(repair.toString()).put("repair_of", HISTORICAL_WORK)
+        )
+        for (mutation in mutations) {
+            val response = terminal(next, planner.memberId, expansion(safeAddition(), mutation).toString())
+            val rejected = CollaborationLiveGraph.update(response, terminalIds(response), 140)
+            assertEquals(response.definition, rejected.definition)
+            assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("Cannot rewrite existing work"))
+            assertPreserved(response, rejected)
+        }
+        val duplicate = terminal(next, planner.memberId, expansion(JSONObject(repair.toString())).toString())
+        val replay = CollaborationLiveGraph.update(duplicate, terminalIds(duplicate), 140)
+        assertEquals(duplicate.definition, replay.definition)
+        assertEquals("", replay.request.context[CollaborationLiveGraph.FEEDBACK])
+    }
+
+    @Test fun incompleteRepairRejectsTheEntireExpansionWithFieldSpecificFeedback() {
+        assertRejected(expansion(safeAddition(), item("repair-producer", AUTHOR).put("repair_of", PRODUCER_WORK)),
+            "work_id=repair-producer field=repair_reason: expected a nonempty string; actual missing")
+        assertTrue(CollaborationLiveGraph.instructions().contains(CollaborationWorkGraph.REPAIR_INSTRUCTIONS))
+        assertTrue(CollaborationGoalLoop.instructions().contains(CollaborationWorkGraph.REPAIR_INSTRUCTIONS))
+    }
+
     private fun fixture(runId: String = RUN, round: String = "7"): AgentTeamExecutionRecord {
         val people = listOf(LEAD, AUTHOR, REVIEWER, SLOW_PERSON).map { person ->
             AgentTeamMember(PROVIDER, AgentDeliveryMode.IGNORE,
