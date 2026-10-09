@@ -305,6 +305,8 @@ durable_outbound_lock = threading.RLock()
 outbound_retry_stop_event = threading.Event()
 outbound_retry_wake_event = threading.Event()
 signal_receipt_replay_gate = ReceiptReplayGate()
+from mqtt_stored_receipt_publisher import StoredReceiptPublisher
+stored_receipt_publisher = StoredReceiptPublisher()
 outbound_retry_thread: threading.Thread | None = None
 outbound_retry_start_lock = threading.Lock()
 
@@ -2520,6 +2522,7 @@ def mqtt_bridge_status() -> dict[str, Any]:
     subscriptions = mqtt_subscription_status()
     status["subscriptions"] = subscriptions
     status["ingress"] = mqtt_ingress_status()
+    status["stored_receipts"] = stored_receipt_publisher.snapshot()
     status["receive_ready"] = bool(status["connected"] and subscriptions["ready"])
     status["paths"] = active_client.path_snapshot()["paths"] if isinstance(active_client, MqttPoolClient) else {}
     status["scheduling"] = active_client.policy.diagnostics() if isinstance(active_client, MqttPoolClient) else None
@@ -3133,6 +3136,7 @@ def _publish_phone_payload(
     *,
     durable: bool | None = None,
     observe=None,
+    expected_receipt_binding: str = "",
 ) -> bool:
     def observed(accepted, reason="unknown"):
         if observe is not None:
@@ -3176,6 +3180,13 @@ def _publish_phone_payload(
     from mqtt_query_delivery import needs_durable_outbox
     reliable = needs_durable_outbox(reply_payload.get("type")) if durable is None else bool(durable)
     with phone_publish_lock:
+        if expected_receipt_binding:
+            if reply_payload.get("type") != "delivery_ack":
+                raise ValueError("Receipt binding is only valid for stored acknowledgements")
+            paired_client = _wire_client(wire_payload)
+            if (not paired_client or paired_client.get("revoked_at")
+                    or _receipt_binding_for_client(paired_client) != expected_receipt_binding):
+                return observed(False, "receipt_pair_changed")
         info = _publish_to_registered_client(
             mqttc, paired_client, reply_payload, channel,
             durable=reliable,
@@ -7191,7 +7202,7 @@ def _publish_chunk_state(mqttc, paired, query, ingress, *, repeat_receipt=False,
         log.warning("Chunk state response deferred (%s)", type(exc).__name__)
 
 
-def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None, wire_hash=""):
+def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None, wire_hash="", paired_client=None):
     message_id = str(envelope["message_id"])
     route = str(wire_payload["_client_route_id"])
     from mqtt_delivery_envelope import stored_receipt
@@ -7224,8 +7235,16 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
     })
     try:
         # Keep confirmation after the sender's attempt window expires or restarts.
-        signal_receipt_replay_gate.publish((route, message_id, wire_hash),
-            lambda: _publish_phone_payload(mqttc, wire_payload, receipt), duplicate=duplicate)
+        if isinstance(mqttc, MqttPoolClient):
+            paired = paired_client or get_client(route)
+            if paired and not paired.get("revoked_at"):
+                admitted = stored_receipt_publisher.submit(sys.modules[__name__], mqttc, paired, receipt,
+                                                            duplicate=duplicate)
+                if admitted not in {"accepted", "coalesced"}:
+                    log.warning("Stored-message receipt deferred (%s); durable replay remains available", admitted)
+        else:
+            signal_receipt_replay_gate.publish((route, message_id, wire_hash),
+                lambda: _publish_phone_payload(mqttc, wire_payload, receipt), duplicate=duplicate)
     except Exception as exc:
         # Receipt delivery cannot prevent a durably received task from starting.
         log.warning("Stored-message receipt deferred (%s)", type(exc).__name__)
@@ -7248,7 +7267,8 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                     from mqtt_delivery_envelope import content_hash
                     bind_ciphertext(route, ciphertext_digest, message_id, receipt_hash=content_hash(wire_payload))
                 _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True,
-                                        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer)
+                                        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer,
+                                        paired_client=paired_client)
             return
         handler_started = False
         try:
@@ -7271,7 +7291,7 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                     record_task(identity["task_id"], stage, at_ns=at_ns, once=True)
                 record_task(identity["task_id"], "desktop_request_decrypted", once=True)
             _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, delivery_frame=delivery_frame,
-                                    chunk_transfer=chunk_transfer)
+                                    chunk_transfer=chunk_transfer, paired_client=paired_client)
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)
@@ -9810,9 +9830,11 @@ def _ensure_mqtt_supervisor() -> None:
 
 def start_background():
     """Start MQTT support and keep its broker worker supervised."""
-    global inbound_route_accepting
+    global inbound_route_accepting, stored_receipt_publisher
     with inbound_route_pool_lock:
         inbound_route_accepting = True
+        if stored_receipt_publisher.snapshot()["closed"]:
+            stored_receipt_publisher = StoredReceiptPublisher()
     _ensure_task_event_publisher()
     _ensure_delivery_ack_publisher()
     _ensure_presence_thread()
@@ -9851,6 +9873,7 @@ def stop():
     transport_probe_state.disconnected()
     _clear_transport_reconnect()
     _stop_inbound_route_workers()
+    stored_receipt_publisher.close(wait=False)
     _close_phone_tool_sessions(reason="Desktop MQTT bridge stopped")
     if client:
         client.disconnect()

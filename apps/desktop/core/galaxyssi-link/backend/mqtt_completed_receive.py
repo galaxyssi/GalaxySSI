@@ -16,4 +16,4 @@ def acknowledge_completed(bridge, mqttc, paired, wire, envelope, *, delivery_fra
     payload = dict(envelope["payload"])
     payload.setdefault("source_message_id", mid)
     bridge._ack_stored_application(mqttc, wire, envelope, payload, [], duplicate=True,
-        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer, wire_hash=wire_hash)
+        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer, wire_hash=wire_hash, paired_client=paired)
