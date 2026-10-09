@@ -165,7 +165,7 @@ internal object CollaborationLiveGraph {
                            workspace: (() -> CollaborationResearchWorkspace)?, planner: AgentTeamMember): AgentTeamExecutionRecord {
         val access = CollaborationMilestoneDispatch.access(record, planner)
         val availableMilestones = CollaborationMilestoneDispatch.inherited(record, planner)
-        val requested = CollaborationWorkflowInstantiation.expand(rawRequested, workspace, access)
+        val requested = CollaborationWorkflowInstantiation.expand(rawRequested, workspace, access, availableMilestones)
         val members = record.definition.members
         val people = members.filter { it.context[CollaborationGoalLoop.ROSTER] == "true" }
             .associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }

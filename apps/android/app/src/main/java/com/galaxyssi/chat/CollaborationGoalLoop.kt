@@ -236,10 +236,11 @@ internal object CollaborationGoalLoop {
         val round = (record.request.context[ROUND]?.toString()?.toLongOrNull() ?: 0L) + 1L
         val primaryMember = record.definition.members.first { it.memberId == expectedPrimary }
         val coordinatorPerson = primaryMember.context.getValue(CollaborationResearchWorkflow.PERSON)
+        val availableMilestones = CollaborationMilestoneDispatch.inherited(record, primaryMember)
         val expanded = runCatching {
             if (assessmentError.isBlank()) CollaborationWorkflowInstantiation.expand(requireNotNull(assessment).getJSONArray("work"), candidateWorkspace,
                 CollaborationWorkspaceAccess(primaryMember.context["collaboration_group_id"].orEmpty(), record.request.runId,
-                    record.request.messageId, round, personId = coordinatorPerson)) else JSONArray()
+                    record.request.messageId, round, personId = coordinatorPerson), availableMilestones) else JSONArray()
         }
         val contractError = assessmentError.ifBlank { expanded.exceptionOrNull()?.let {
             "${it.message ?: "Workflow instantiation failed"}. No assignments, recruitment or resource jobs were dispatched; repair the instance first."
@@ -304,7 +305,7 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.id(it) in requestedIds && CollaborationWorkflowWork.context(it).isEmpty()
                 }, finished)
                 if (admissionError.isNotBlank()) CollaborationWorkGraph.Plan(emptyList(), admissionError)
-                else CollaborationWorkGraph.compile(plan.work, finished, authors)
+                else CollaborationWorkGraph.compile(plan.work, finished, authors, availableMilestones.mapValues { it.value.getString("person_id") })
             },
                 { CollaborationWorkGraph.Plan(emptyList(), it.message ?: "Workflow admission failed; preserve the full graph") })
         val learning = runCatching { CollaborationLearningWork.plan(record, compiled.work, candidateWorkspace,
@@ -342,7 +343,8 @@ internal object CollaborationGoalLoop {
                     CollaborationWorkGraph.PREVIOUS_DEPENDENCIES to CollaborationWorkGraph.completedDependencies(item, finished),
                     CollaborationWorkGraph.REPAIR_OF to item.optString("repair_of"),
                     CollaborationResearchWorkflow.STAGE to item.getString("stage")) + CollaborationReviewTargets.context(item) + CollaborationCandidateEvolution.taskContext(item) +
-                    CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item) + CollaborationInnovationWork.context(item) + CollaborationPredictionWork.context(item) + CollaborationWorkflowWork.context(item) + CollaborationSelfResearchWork.context(item))
+                    CollaborationLearningWork.context(item) + CollaborationProcedureWork.context(item) + CollaborationInnovationWork.context(item) + CollaborationPredictionWork.context(item) + CollaborationWorkflowWork.context(item) + CollaborationSelfResearchWork.context(item) +
+                    CollaborationMilestoneDispatch.context(CollaborationMilestoneDispatch.uses(item).sorted().map { availableMilestones.getValue(it) }))
         }
         val primary = nodeId("assessment")
         val assessmentNode = coordinator.copy(instanceId = primary, deliveryMode = AgentDeliveryMode.RESPOND,

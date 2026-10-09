@@ -26,13 +26,17 @@ internal object CollaborationWorkflowWork {
         require(requested.none { it.has(BINDING) }) { "Workflow bindings are host-owned" }
         val people = record.definition.members.filter { it.context[CollaborationGoalLoop.ROSTER] == "true" }
             .mapTo(hashSetOf()) { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
+        val milestones = record.definition.members.flatMap {
+            CollaborationMilestoneDispatch.inputs(it) + CollaborationCoordinatorUpdates.offered(it)
+        }.associateBy { it.getString("token") }
         val bindings = hashMapOf<String, JSONObject>()
         selected.groupBy { it.getJSONObject(FIELD).getString("execution_id") }.forEach { (execution, work) ->
             require(execution.isNotBlank() && execution.length <= 160) { "Use a stable workflow execution ID" }
             val request = work.first().getJSONObject(FIELD)
             require(request.keys().asSequence().toSet() == setOf("execution_id", "method", "step_id", "inputs") +
                 (if (request.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet()) +
-                (if (request.has(CollaborationWorkflowSelection.FIELD)) setOf(CollaborationWorkflowSelection.FIELD) else emptySet())) { "Unexpected workflow dispatch field" }
+                (if (request.has(CollaborationWorkflowSelection.FIELD)) setOf(CollaborationWorkflowSelection.FIELD) else emptySet()) +
+                (if (request.has(CollaborationWorkflowObservations.FIELD)) setOf(CollaborationWorkflowObservations.FIELD) else emptySet())) { "Unexpected workflow dispatch field" }
             val ref = request.getJSONObject("method")
             require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Use exact integer method revision" }
             val method = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Workflow unavailable or isolated" }
@@ -45,8 +49,16 @@ internal object CollaborationWorkflowWork {
             val inputs = request.getJSONObject("inputs")
             val names = spec.getJSONArray("inputs").let { a -> (0 until a.length()).mapTo(hashSetOf()) { a.getString(it) } }
             require(inputs.keys().asSequence().toSet() == names && names.all { !inputs.isNull(it) }) { "Workflow inputs must match the saved contract" }
+            val observed = if (request.has(CollaborationWorkflowObservations.FIELD)) CollaborationWorkflowObservations.resolve(
+                request.getJSONObject(CollaborationWorkflowObservations.FIELD), workspace, access, milestones).also {
+                CollaborationWorkflowObservations.verifySnapshot(inputs, it)
+            } else null
             val selection = CollaborationWorkflowSelection.binding(request, method, workspace, access,
-                claims.has(execution))
+                claims.has(execution))?.apply { if (observed != null && observed.bindings.length() > 0) {
+                    put("input_evidence", if (observed.values.length() == inputs.length()) "host_bound_original_tool_observations"
+                        else "mixed_declared_and_host_bound_observations")
+                    put(CollaborationWorkflowObservations.BINDING, observed.bindings)
+                } }
             val members = hashMapOf<String, String>()
             val graph = work.map { item ->
                 val use = item.getJSONObject(FIELD)
@@ -54,6 +66,12 @@ internal object CollaborationWorkflowWork {
                     CollaborationResearchCandidates.same(use.getJSONObject("method"), method) && digest(use.getJSONObject("inputs")) == digest(inputs)) { "One workflow execution must use the same method and inputs" }
                 require(digest(use.opt(CollaborationWorkflowSelection.FIELD)) == digest(request.opt(CollaborationWorkflowSelection.FIELD))) {
                     "One workflow execution must preserve its selection rule"
+                }
+                require(digest(use.opt(CollaborationWorkflowObservations.FIELD)) == digest(request.opt(CollaborationWorkflowObservations.FIELD))) {
+                    "One workflow execution must preserve its exact observation selectors"
+                }
+                require(observed == null || CollaborationMilestoneDispatch.uses(item).containsAll(observed.milestones)) {
+                    "Workflow must retain the milestone grants needed by its observed inputs"
                 }
                 val step = steps.getValue(use.getString("step_id"))
                 val person = item.getString("member")
@@ -76,6 +94,8 @@ internal object CollaborationWorkflowWork {
                     .put("depends_on", JSONArray(expected.sorted())).put("dependency_policy", item.optString("dependency_policy", "success"))
                     .put("independent_review", item.optBoolean("independent_review")).put("quality_improved", false).put("grants_permissions", false)
                 if (step.has(CollaborationReviewTargets.FIELD)) binding.put(CollaborationReviewTargets.FIELD, JSONArray(targets.sorted()))
+                if (observed != null) binding.put(CollaborationWorkflowObservations.BINDING, observed.bindings)
+                    .put(CollaborationMilestoneDispatch.USES, JSONArray(CollaborationMilestoneDispatch.uses(item).sorted()))
                 bindings[id] = binding
                 selection?.let { binding.put(CollaborationWorkflowSelection.DECISION, it) }
                 CollaborationCapabilityChannel.binding(use, method, workspace, access, previouslyBound[id] == execution)?.let {
@@ -83,7 +103,7 @@ internal object CollaborationWorkflowWork {
                 }
                 item
             }
-            val checked = CollaborationWorkGraph.compile(graph, emptySet())
+            val checked = CollaborationWorkGraph.compile(graph, emptySet(), milestoneAuthors = milestones.mapValues { it.value.getString("person_id") })
             require(checked.error.isBlank()) { checked.error }
             val bound = JSONObject().put("steps", JSONArray(bindings.values.filter { it.getString("execution_id") == execution }.sortedBy { it.getString("step_id") }))
             val hash = digest(bound)

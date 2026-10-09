@@ -9,7 +9,7 @@ internal object CollaborationWorkflowInstantiation {
     const val FIELD = "workflow_instance"
 
     fun expand(requested: JSONArray, provider: (() -> CollaborationResearchWorkspace)?,
-               access: CollaborationWorkspaceAccess): JSONArray {
+               access: CollaborationWorkspaceAccess, milestones: Map<String, JSONObject> = emptyMap()): JSONArray {
         if ((0 until requested.length()).none { requested.optJSONObject(it)?.has(FIELD) == true }) return requested
         val workspace by lazy { requireNotNull(provider?.invoke()) { "Workflow workspace unavailable; retain the instance for recovery" } }
         val expanded = JSONArray()
@@ -25,13 +25,20 @@ internal object CollaborationWorkflowInstantiation {
             require(use.has("method") != use.has(CollaborationWorkflowSelection.FIELD)) { "Choose either method or selection_rule, not both" }
             val selector = if (use.has("method")) "method" else CollaborationWorkflowSelection.FIELD
             val fields = setOf("execution_id", selector, "inputs", "roles") +
-                if (use.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet()
-            require(use.keys().asSequence().toSet() == fields) { "workflow_instance requires execution_id, method or selection_rule, inputs and roles only" }
+                (if (use.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet()) +
+                (if (use.has(CollaborationWorkflowObservations.FIELD)) setOf(CollaborationWorkflowObservations.FIELD) else emptySet())
+            require(use.keys().asSequence().toSet() == fields) { "workflow_instance requires execution_id, method or selection_rule, inputs and roles; only capability_channel and observed_inputs are optional" }
             require(use.opt("execution_id") is String) { "workflow_instance.execution_id must be a string" }
             val execution = use.getString("execution_id")
             require(execution.isNotBlank() && execution.length <= 160 && executions.add(execution)) { "Use a distinct stable workflow execution ID" }
+            val observed = use.optJSONObject(CollaborationWorkflowObservations.FIELD)?.let {
+                CollaborationWorkflowObservations.resolve(it, workspace, access, milestones)
+            }
+            require(!use.has(CollaborationWorkflowObservations.FIELD) || observed != null) { "observed_inputs must be an object" }
+            val inputs = if (observed == null) use.getJSONObject("inputs") else
+                CollaborationWorkflowObservations.combine(use.getJSONObject("inputs"), observed)
             val ref = if (selector == "method") use.getJSONObject("method") else CollaborationWorkflowSelection.choose(
-                CollaborationWorkflowSelection.read(use.getJSONObject(selector), workspace, access), use.getJSONObject("inputs")).getJSONObject("method")
+                CollaborationWorkflowSelection.read(use.getJSONObject(selector), workspace, access), inputs).getJSONObject("method")
             require(ref.opt("revision") is Int && ref.getInt("revision") > 0) { "Use exact integer method revision" }
             val method = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) {
                 "Workflow unavailable or isolated"
@@ -39,7 +46,6 @@ internal object CollaborationWorkflowInstantiation {
             require(method.getString("kind") == CollaborationWorkflowMethod.KIND && CollaborationResearchCandidates.same(method, ref) &&
                 workspace.isCurrent(access, ref.getString("object_id"), ref.getInt("revision"))) { "Workflow version mismatch" }
             val spec = method.getJSONObject("body").getJSONObject(CollaborationWorkflowMethod.KIND)
-            val inputs = use.getJSONObject("inputs")
             val names = strings(spec.getJSONArray("inputs"))
             require(inputs.keys().asSequence().toSet() == names && names.all { !inputs.isNull(it) }) { "Workflow inputs must match the saved contract" }
             val roles = use.getJSONObject("roles")
@@ -58,6 +64,10 @@ internal object CollaborationWorkflowInstantiation {
                     JSONObject(use.getJSONObject(CollaborationCapabilityChannel.FIELD).toString()))
                 if (use.has(CollaborationWorkflowSelection.FIELD)) binding.put(CollaborationWorkflowSelection.FIELD,
                     JSONObject(use.getJSONObject(CollaborationWorkflowSelection.FIELD).toString()))
+                if (observed != null) {
+                    binding.put(CollaborationWorkflowObservations.FIELD, JSONObject(use.getJSONObject(CollaborationWorkflowObservations.FIELD).toString()))
+                    if (observed.milestones.isNotEmpty()) step.work.put(CollaborationMilestoneDispatch.USES, JSONArray(observed.milestones.sorted()))
+                }
                 // Inputs stay in their data field; never interpolate them into saved instructions.
                 expanded.put(step.work.put(CollaborationWorkflowWork.FIELD, binding))
             }

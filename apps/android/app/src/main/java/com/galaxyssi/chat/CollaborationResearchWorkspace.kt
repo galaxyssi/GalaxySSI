@@ -71,6 +71,16 @@ internal class CollaborationResearchWorkspace(
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
+    fun workflowObservation(access: CollaborationWorkspaceAccess, ref: JSONObject): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        require(ref.optString("evidence_id").matches(Regex("[a-f0-9]{64}")) &&
+            ref.optString("sha256").matches(Regex("[a-f0-9]{64}"))) { "Workflow observation requires an exact evidence ID and digest" }
+        val original = requireNotNull(evidenceOriginal?.invoke(access, ref)) { "Workflow observation is missing, changed or isolated" }
+        require(original.getString("evidence_id") == ref.getString("evidence_id") && original.getString("sha256") == ref.getString("sha256") &&
+            access.canRead(original)) { "Workflow observation identity or access mismatch" }
+        JSONObject(original.toString())
+    }
+
     fun savedToolTests(access: CollaborationWorkspaceAccess, process: String): CollaborationSavedToolTest {
         requirePublicationActive(access)
         // Deleting a group or removing its member must not let a late worker recreate its rows.

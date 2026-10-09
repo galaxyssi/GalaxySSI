@@ -6,7 +6,8 @@ adapter calls the same functions. There is no second research-only selector.
 
 ## Scope
 
-- Evaluate Agent-authored applicability and counterconditions against declared inputs.
+- Evaluate Agent-authored applicability and counterconditions against supplied inputs.
+- Project typed inputs from original tool reports without interpolating them into instructions.
 - Keep the baseline when data are unknown or an exclusion matches.
 - Materialize the selected method's actual assignments, dependencies and review subjects.
 - Preserve existing host work IDs and keep input data separate from instructions.
@@ -16,6 +17,11 @@ scientific evaluation suite. Android still validates exact workspace revisions,
 scope, lineage, author independence, admission, persistence and side effects.
 Replay does not bypass or simulate those checks and never executes a task.
 Matching a condition is not evidence that a method improved quality.
+
+Android can bind `observed_inputs` to exact persistent tool observations and JSON
+pointers before selecting a method. The host verifies source identity and access,
+pins the selected values, and forwards required same-round milestone grants to
+the ordinary scheduler. Provenance does not certify truth, freshness or causality.
 
 ## Standalone Tests and Replay
 
@@ -32,6 +38,12 @@ Dependencies must already be cached to add `--offline`.
 Replay emits a selection and projected work, with `execution_performed=false`,
 `host_admission_performed=false`, `quality_effect=null` and `causality_proven=false`.
 The example is a developer-authored synthetic fixture, not an Agent discovery.
+
+`src/test/resources/observation-replay.json` additionally exercises observation
+projection and conditional routing. Its `observations` map is supplied by the
+caller; matching its reference strings is **not** a ledger integrity check. Replay
+therefore emits `observation_ledger_verified=false`. Android's production ledger
+and admission tests, not this fixture adapter, verify identity, scope and grants.
 
 `org.json` is compile-only for the published core: Android provides its own
 implementation. Only the standalone replay and JVM tests include the Maven

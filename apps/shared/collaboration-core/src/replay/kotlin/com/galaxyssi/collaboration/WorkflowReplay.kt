@@ -7,7 +7,19 @@ import org.json.JSONObject
 object WorkflowReplay {
     fun evaluate(request: JSONObject): JSONObject {
         val rule = request.getJSONObject("rule")
-        val decision = ConditionalWorkflow.choose(rule.getJSONArray("when_all"), rule.getJSONArray("unless_any"), request.getJSONObject("inputs"))
+        val inputs = JSONObject(request.getJSONObject("inputs").toString())
+        request.optJSONObject("observed_inputs")?.let { selectors ->
+            selectors.keys().forEach { name ->
+                require(!inputs.has(name)) { "Input $name is both declared and observed" }
+                val selector = selectors.getJSONObject(name)
+                val ref = selector.getJSONObject("observation")
+                val fixture = request.getJSONObject("observations").getJSONObject(ref.getString("evidence_id"))
+                require(fixture.getString("sha256") == ref.getString("sha256")) { "Fixture observation digest differs" }
+                inputs.put(name, ObservationProjection.select(JSONObject(fixture.getString("output_json")),
+                    selector.optString("report_pointer"), selector.getString("pointer")))
+            }
+        }
+        val decision = ConditionalWorkflow.choose(rule.getJSONArray("when_all"), rule.getJSONArray("unless_any"), inputs)
         val method = request.getJSONObject("methods").getJSONObject(decision.variant)
         val steps = method.getJSONArray("steps")
         val work = WorkflowMaterializer.expand(request.getString("execution_id"),
@@ -20,6 +32,7 @@ object WorkflowReplay {
             .put("when_all", rows(decision.whenAll)).put("unless_any", rows(decision.unlessAny))
             .put("work", JSONArray(work.map { it.work }))
             .put("execution_performed", false).put("host_admission_performed", false)
+            .put("observation_ledger_verified", false)
             .put("quality_effect", JSONObject.NULL).put("causality_proven", false)
     }
 }
