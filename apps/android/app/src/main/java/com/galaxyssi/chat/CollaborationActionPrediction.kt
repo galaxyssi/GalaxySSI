@@ -127,5 +127,6 @@ internal object CollaborationActionPrediction {
             .put("utility_is_declared_not_measured", !qualitative).put("grants_permissions", false)
             .apply { if (qualitative) put(CollaborationQualitativePrediction.MODE, CollaborationQualitativePrediction.QUALITATIVE) }
             .apply { CollaborationHypothesisTest.forecast(value, exact)?.let { put(CollaborationHypothesisTest.FIELD, it) } }
+            .apply { CollaborationProbeContinuation.validate(value, exact)?.let { put(CollaborationProbeContinuation.METHODS, it) } }
     }
 }

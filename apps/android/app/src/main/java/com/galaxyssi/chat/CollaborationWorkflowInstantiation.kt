@@ -10,12 +10,20 @@ internal object CollaborationWorkflowInstantiation {
 
     fun expand(requested: JSONArray, provider: (() -> CollaborationResearchWorkspace)?,
                access: CollaborationWorkspaceAccess, milestones: Map<String, JSONObject> = emptyMap()): JSONArray {
-        if ((0 until requested.length()).none { requested.optJSONObject(it)?.has(FIELD) == true }) return requested
+        if ((0 until requested.length()).none { requested.optJSONObject(it)?.let { row ->
+            row.has(FIELD) || row.has(CollaborationProbeContinuation.FIELD)
+        } == true }) return requested
         val workspace by lazy { requireNotNull(provider?.invoke()) { "Workflow workspace unavailable; retain the instance for recovery" } }
+        val instances = JSONArray()
+        repeat(requested.length()) { index ->
+            val item = requested.getJSONObject(index)
+            if (item.has(CollaborationProbeContinuation.FIELD)) CollaborationProbeContinuation.expand(item, workspace, access, milestones).forEach(instances::put)
+            else instances.put(item)
+        }
         val expanded = JSONArray()
         val executions = hashSetOf<String>()
-        for (index in 0 until requested.length()) {
-            val item = requested.getJSONObject(index)
+        for (index in 0 until instances.length()) {
+            val item = instances.getJSONObject(index)
             if (!item.has(FIELD)) {
                 expanded.put(item)
                 continue
@@ -26,6 +34,7 @@ internal object CollaborationWorkflowInstantiation {
             val selector = if (use.has("method")) "method" else CollaborationWorkflowSelection.FIELD
             val fields = setOf("execution_id", selector, "inputs", "roles") +
                 (if (use.has(CollaborationCapabilityChannel.FIELD)) setOf(CollaborationCapabilityChannel.FIELD) else emptySet()) +
+                (if (use.has(CollaborationProbeContinuation.ORIGIN)) setOf(CollaborationProbeContinuation.ORIGIN) else emptySet()) +
                 (if (use.has(CollaborationWorkflowObservations.FIELD)) setOf(CollaborationWorkflowObservations.FIELD) else emptySet())
             require(use.keys().asSequence().toSet() == fields) { "workflow_instance requires execution_id, method or selection_rule, inputs and roles; only capability_channel and observed_inputs are optional" }
             require(use.opt("execution_id") is String) { "workflow_instance.execution_id must be a string" }
@@ -64,10 +73,15 @@ internal object CollaborationWorkflowInstantiation {
                     JSONObject(use.getJSONObject(CollaborationCapabilityChannel.FIELD).toString()))
                 if (use.has(CollaborationWorkflowSelection.FIELD)) binding.put(CollaborationWorkflowSelection.FIELD,
                     JSONObject(use.getJSONObject(CollaborationWorkflowSelection.FIELD).toString()))
+                if (use.has(CollaborationProbeContinuation.ORIGIN)) binding.put(CollaborationProbeContinuation.ORIGIN,
+                    JSONObject(use.getJSONObject(CollaborationProbeContinuation.ORIGIN).toString()))
+                val tokens = linkedSetOf<String>()
+                use.optJSONObject(CollaborationProbeContinuation.ORIGIN)?.optString("milestone")?.takeIf(String::isNotBlank)?.let(tokens::add)
                 if (observed != null) {
                     binding.put(CollaborationWorkflowObservations.FIELD, JSONObject(use.getJSONObject(CollaborationWorkflowObservations.FIELD).toString()))
-                    if (observed.milestones.isNotEmpty()) step.work.put(CollaborationMilestoneDispatch.USES, JSONArray(observed.milestones.sorted()))
+                    tokens += observed.milestones
                 }
+                if (tokens.isNotEmpty()) step.work.put(CollaborationMilestoneDispatch.USES, JSONArray(tokens.sorted()))
                 // Inputs stay in their data field; never interpolate them into saved instructions.
                 expanded.put(step.work.put(CollaborationWorkflowWork.FIELD, binding))
             }
