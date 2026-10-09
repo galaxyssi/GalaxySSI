@@ -37,9 +37,11 @@ internal class CollaborationAdaptivePilotAdmission(
             context.request.messageId == turn && context.request.goal == plan.goal &&
             context.request.runId == stableAgentTeamMemberRunId(run, member.memberId)) { "Adaptive assignment is not owned by the production graph" }
         check(member.deliveryMode != AgentDeliveryMode.IGNORE && member.agentId == plan.targetId && member.context["collaboration_model_id"] == plan.selection.modelId &&
-            member.context[CollaborationReasoningSelection.KEY] == plan.selection.reasoningEffort.wireValue &&
-            plan.matchesExecution(member, current.definition)) {
-            "Trial must retain its frozen execution mode and selected model"
+            member.context[CollaborationReasoningSelection.KEY] == plan.selection.reasoningEffort.wireValue) {
+            "Trial must retain its selected model, reasoning effort and delivery target"
+        }
+        check(plan.matchesExecution(member, current.definition)) {
+            "Trial execution mode or complete assignment changed"
         }
         check(!context.handoff.truncated && context.handoff.dependencies.none { it.outputTruncated }) { "Adaptive trial input was truncated" }
         val key = context.request.idempotencyKey
@@ -69,7 +71,7 @@ internal class CollaborationAdaptivePilotAdmission(
             "Adaptive trial dispatch identity or model changed"
         }
         val prompt = requireNotNull(action.managedTeamAssignmentPrompt())
-        if (plan.singleAgent) check(prompt.contains(plan.goal)) {
+        if (plan.singleAgent) check(prompt.contains(plan.executionObjective)) {
             "Single-agent production prompt omitted part of the original task; no silent truncation"
         }
         context.resourceObservation?.let {

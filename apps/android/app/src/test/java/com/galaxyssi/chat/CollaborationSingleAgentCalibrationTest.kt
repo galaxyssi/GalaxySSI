@@ -51,7 +51,7 @@ class CollaborationSingleAgentCalibrationTest {
     }
 
     @Test fun singleExecutionIsNotArtificiallySplitAndItsReturnIsNotGoalAcceptance() = runBlocking {
-        val p = plan()
+        val p = plan(input().put("goal", "\n  Solve the supplied task.\nPreserve every internal line.\n"))
         val store = InMemoryAgentTeamExecutionStore()
         val request = AgentRunRequest("group", "turn", "task", runId = "run", goal = p.goal, idempotencyKey = "run")
         val guard = CollaborationAdaptivePilotAdmission(p, "group", "run", "turn", 100, { 1 },
@@ -61,7 +61,8 @@ class CollaborationSingleAgentCalibrationTest {
             override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
                 guard.prepare(context)
                 calls++
-                assertEquals(p.goal, context.member.objective)
+                assertEquals(p.goal.trim(), context.member.objective)
+                assertEquals(p.goal, context.request.goal)
                 return AgentSubagentOutput("A synthetic delivered answer; not proof of scientific success")
             }
             override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) = Unit
@@ -75,7 +76,7 @@ class CollaborationSingleAgentCalibrationTest {
     }
 
     @Test fun singleAdmissionPreservesPromptButRejectsMissingTaskBeforeIo() {
-        val p = plan()
+        val p = plan(input().put("goal", "\n  Solve and verify the supplied task\n"))
         val definition = p.definition("group", "run")
         val member = definition.members.single()
         val request = AgentRunRequest("group", "turn", "task", runId = "run", goal = p.goal, idempotencyKey = "run")
@@ -95,10 +96,24 @@ class CollaborationSingleAgentCalibrationTest {
                 "_galaxyssi_task_id" to "task", "idempotency_key" to context.request.idempotencyKey, "prompt" to "missing task"))
         reject { guard.admit(action) }
         assertEquals(0, guard.count())
-        val complete = action.copy(parameters = action.parameters + ("prompt" to "Original task: ${p.goal}"))
+        val complete = action.copy(parameters = action.parameters + ("prompt" to "Original task: ${p.executionObjective}"))
         assertSame(complete, guard.admit(complete))
         assertEquals("single_agent", records.single().getString("execution_mode"))
         reject { guard.admit(complete) }
+    }
+
+    @Test fun onlyOuterWhitespaceIsNormalizedAndMissingOrChangedContentStillFails() {
+        val p = plan(input().put("goal", "\n  First requirement.\n\nSecond requirement.\r\n"))
+        val graph = p.definition("group", "run")
+        val member = graph.members.single()
+        assertEquals("First requirement.\n\nSecond requirement.", member.objective)
+        assertTrue(p.goal.endsWith("\r\n"))
+        assertTrue(p.matchesExecution(member, graph))
+        for (changed in listOf("First requirement.", "First requirement. Second requirement.",
+            member.objective.replace("Second", "Different"))) {
+            val modified = member.copy(objective = changed)
+            assertFalse(p.matchesExecution(modified, graph.copy(members = listOf(modified))))
+        }
     }
 
     private fun report(): JSONObject {

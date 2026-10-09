@@ -23,6 +23,8 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     val singleAgent: Boolean = false
 ) : CollaborationTrialSelectionPolicy {
     val executionMode get() = if (singleAgent) "single_agent" else "adaptive_team"
+    // Production normalizes assignment boundaries; keep the frozen request unchanged.
+    val executionObjective get() = goal.trim()
     fun requireDevice(actualModel: String, operatorModel: String?) {
         require(operatorModel == deviceModel && actualModel == deviceModel) {
             "Trial device mismatch: the frozen protocol, explicit operator target and connected model must agree"
@@ -37,7 +39,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     "collaboration_provider" to person.providerLabel, "collaboration_model_id" to selection.modelId,
                     CollaborationReasoningSelection.KEY to selection.reasoningEffort.wireValue))
         }
-        val nodes = if (singleAgent) listOf(people.single().copy(objective = goal,
+        val nodes = if (singleAgent) listOf(people.single().copy(objective = executionObjective,
             context = people.single().context + (CollaborationResearchWorkflow.PERSON to members.single().id)))
             else CollaborationResearchWorkflow.expand(people, goal)
         return AgentTeamDefinition(run, targetId, nodes,
@@ -45,7 +47,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     }
 
     fun matchesExecution(member: AgentTeamMember, definition: AgentTeamDefinition): Boolean = if (singleAgent) {
-        definition.members.size == 1 && member == definition.members.single() && member.objective == goal &&
+        definition.members.size == 1 && member == definition.members.single() && member.objective == executionObjective &&
             member.context[CollaborationResearchWorkflow.PERSON] == members.single().id &&
             member.context[CollaborationGoalLoop.ENABLED] == null && CollaborationResearchWorkflow.stage(member) == null &&
             member.context[CollaborationLiveGraph.ENABLED] == null && member.dependsOnAgentIds.isEmpty()

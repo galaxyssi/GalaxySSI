@@ -15,6 +15,14 @@ and final nodes, create a coordinator, impose a research-stage JSON response or
 replace the production prompt. Admission fails before I/O if the complete goal
 is missing from that prompt; long input is not silently truncated.
 
+The frozen request retains its exact original goal. The member objective uses
+the production runtime's outer-whitespace normalization; admission compares
+all remaining characters exactly, including internal newlines. Normalization
+does not authorize truncating or rewriting requirements. Model/target mismatch
+and execution/assignment mismatch have separate diagnostics. The local device
+contract exercises production dispatch and reopening the encrypted store with
+leading/trailing whitespace, without a model call.
+
 ## Outcome interpretation
 
 Reports record `execution_mode: single_agent` and
