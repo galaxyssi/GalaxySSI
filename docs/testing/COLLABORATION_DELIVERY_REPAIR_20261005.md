@@ -80,3 +80,32 @@ of the original research is authorized by these fixtures. The original group's
 end-to-end recovery, independent scientific acceptance, and long network/Doze/reboot
 campaigns still need separate observation. These changes fix delivery and planning
 feedback, not unavailable domain validators or laboratory resources.
+
+## Repair Contract Follow-up - 2026-10-09
+
+Android 1.4.121 (1206) unifies repair guidance across ordinary coordination,
+incremental coordination, reused-ID diagnostics and rejected-delivery warnings.
+All require a distinct work ID, a finished `repair_of` reference and a concrete
+`repair_reason`. Missing, blank, null, non-string, unknown and self-referencing
+values identify the work and field instead of implying invalid JSON syntax.
+
+Both repair fields now survive live admission, ordinary continuation, checkpoint
+reconstruction, compact inventory and full-original archival. Repeating an
+identical live assignment remains idempotent; changing its repair reference or
+reason is rejected as a rewrite. An invalid expansion remains atomic: no valid
+sibling is silently dispatched. A repair reference alone grants no input access.
+No new retry ceiling, goal-acceptance shortcut or domain-specific validator is
+introduced. Desktop, provider choices, authority and UI are unchanged.
+
+Focused tests cover malformed repair feedback, immutable live identities,
+checkpoint reconstruction, original-work deduplication, finalizer guidance,
+encrypted-store reopen and separate original/repair archival. The device fixtures
+use isolated local stores/groups, no model calls and no actual external actions.
+
+Follow-up validation passed 1,577 unit tests across 134 suites (zero failures,
+errors or skips), main/test APK assembly, five S20U SM-G9880 instrumentation tests,
+source-size policy and whitespace checks. The device confirms version 1.4.121,
+code 1206. Main APK SHA-256:
+`8dc7c33e2a031adb4cf8561e02dfed57b66e7bca53d99e20932ac7fbcb318cf4`.
+These are software recovery/contract checks, not evidence of scientific or team
+quality improvement. No real provider call or original research was restarted.

@@ -11,6 +11,12 @@ internal object CollaborationWorkGraph {
     const val INDEPENDENT = "collaboration_research_independent_review"
     const val PREVIOUS_DEPENDENCIES = "collaboration_research_previous_dependencies"
     const val REPAIR_OF = "collaboration_research_repair_of"
+    const val REPAIR_REASON = "collaboration_research_repair_reason"
+    const val REPAIR_INSTRUCTIONS = "For an incomplete/rejected delivery, use a NEW work id, repair_of=<finished original work ID>, " +
+        "and repair_reason=<nonempty concrete missing delivery or failed check>. Finished means execution ended, not goal acceptance. " +
+        "Preserve the original evidence and repair only the missing result; never replay completed side effects. " +
+        "Declare dependencies for original outputs you need to read; repair_of alone grants no access. " +
+        "Omit both repair fields for ordinary new work."
     data class Plan(val work: List<JSONObject>, val error: String = "")
 
     fun id(item: JSONObject): String = item.optString("id").ifBlank {
@@ -27,8 +33,7 @@ internal object CollaborationWorkGraph {
         val repeated = work.map(::id).toSet().intersect(finished)
         return if (repeated.isEmpty()) "" else
             "COMPLETED_DISPATCH_REUSED: ${repeated.joinToString()}. Execution ended; this does NOT prove delivery or goal acceptance. " +
-                "To repair an incomplete delivery, use a NEW work id with repair_of=<original work id> and repair_reason. " +
-                "Read the saved output and repair only the missing delivery; do not replay completed side effects. No work was dispatched."
+                "$REPAIR_INSTRUCTIONS No work was dispatched."
     }
 
     fun compile(work: List<JSONObject>, finished: Set<String>, finishedAuthors: Map<String, String> = emptyMap(),
@@ -38,13 +43,7 @@ internal object CollaborationWorkGraph {
         // Checkpoint graphs include ended nodes; only admission of new requests diagnoses reused IDs.
         val pending = byId.filterKeys { it !in finished }
         val edges = pending.mapValues { (id, item) ->
-            if (item.has("repair_of")) {
-                require(item.opt("repair_of") is String && item.getString("repair_of") in finished &&
-                    item.getString("repair_of") != id && item.opt("repair_reason") is String &&
-                    item.getString("repair_reason").isNotBlank()) {
-                    "Repair needs a completed original work id, a distinct new id and a concrete repair_reason"
-                }
-            }
+            validateRepair(item, id, finished)
             require(!item.has("depends_on") || item.optJSONArray("depends_on") != null) { "depends_on must be an array" }
             require(!item.has("dependency_policy") || item.optString("dependency_policy") in setOf("success", "terminal")) {
                 "dependency_policy must be success or terminal"
@@ -82,4 +81,40 @@ internal object CollaborationWorkGraph {
 
     fun completedDependencies(item: JSONObject, finished: Set<String>): String =
         JSONArray(dependencies(item).filter { it in finished }).toString()
+
+    fun repairContext(item: JSONObject): Map<String, String> = mapOf(
+        REPAIR_OF to item.optString("repair_of"), REPAIR_REASON to item.optString("repair_reason"))
+
+    fun restoreRepair(item: JSONObject, context: Map<String, String>): JSONObject = item.apply {
+        mapOf("repair_of" to REPAIR_OF, "repair_reason" to REPAIR_REASON).forEach { (field, key) ->
+            context[key]?.takeIf(String::isNotBlank)?.let { put(field, it) }
+        }
+    }
+
+    fun sameRepair(left: JSONObject, right: JSONObject): Boolean = listOf("repair_of", "repair_reason").all {
+        left.has(it) == right.has(it) && left.opt(it) == right.opt(it)
+    }
+
+    private fun validateRepair(item: JSONObject, id: String, finished: Set<String>) {
+        if (!item.has("repair_of") && !item.has("repair_reason")) return
+        fun fieldError(field: String, expected: String, actual: String): String =
+            "REPAIR_CONTRACT_INVALID work_id=$id field=$field: expected $expected; actual $actual. " +
+                "JSON syntax is valid. No work was dispatched. Preserve the original output and correct this field."
+        for (field in listOf("repair_of", "repair_reason")) {
+            val value = item.opt(field)
+            require(value is String && value.isNotBlank()) {
+                fieldError(field, "a nonempty string", when {
+                    !item.has(field) -> "missing"
+                    value == JSONObject.NULL -> "null"
+                    value is String -> "blank string"
+                    else -> "${value.javaClass.simpleName} (not a string)"
+                })
+            }
+        }
+        val original = item.getString("repair_of")
+        require(original != id) { fieldError("repair_of", "an original work ID distinct from the NEW repair ID", "self-reference") }
+        require(original in finished) {
+            fieldError("repair_of", "a finished original work ID", "$original is not in finished work")
+        }
+    }
 }

@@ -74,6 +74,7 @@ class CollaborationResultFinalizerTest {
         assertNull(output.collaborationAcceptance)
         assertTrue(workspace.browse(access).revisions.isEmpty())
         assertTrue(output.content.contains("repair_of"))
+        assertTrue(output.content.contains("repair_reason"))
     }
 
     @Test fun peerRequestsAreDurableBeforeCompactionAndRecoveryDoesNotDuplicateThem() {
@@ -171,7 +172,7 @@ class CollaborationResultFinalizerTest {
         assertEquals("rejected", projected.getJSONObject("delivery_receipt").getString("status"))
         assertTrue(projected.getString("recall_hint").contains("not confirmed"))
         assertFalse(projected.getString("recall_hint").contains("are also committed"))
-        assertTrue(projected.getString("delivery_warning").contains("new work id"))
+        assertTrue(projected.getString("delivery_warning").contains(CollaborationWorkGraph.REPAIR_INSTRUCTIONS))
         assertEquals("archive", projected.getString("archive_record_id"))
     }
 }

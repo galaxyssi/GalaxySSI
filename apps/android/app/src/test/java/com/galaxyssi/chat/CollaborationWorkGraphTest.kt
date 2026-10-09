@@ -137,6 +137,35 @@ class CollaborationWorkGraphTest {
         assertEquals(2049, plan.work.size)
     }
 
+    @Test fun repairFeedbackNamesTheWorkFieldAndActualFailureWithoutDiscardingSiblingsSilently() {
+        val cases = listOf(
+            work("repair").put("repair_of", "done") to "field=repair_reason: expected a nonempty string; actual missing",
+            work("repair").put("repair_of", "done").put("repair_reason", "  ") to "actual blank string",
+            work("repair").put("repair_of", "done").put("repair_reason", JSONObject.NULL) to "actual null",
+            work("repair").put("repair_of", "done").put("repair_reason", 12) to "not a string",
+            work("repair").put("repair_reason", "Fix the delivery") to "field=repair_of: expected a nonempty string; actual missing",
+            work("repair").put("repair_of", "running").put("repair_reason", "Missing result") to "running is not in finished work",
+            work("repair").put("repair_of", "repair").put("repair_reason", "Missing result") to "self-reference"
+        )
+        cases.forEach { (invalid, expected) ->
+            val plan = CollaborationWorkGraph.compile(listOf(work("valid-sibling"), invalid), setOf("done"))
+            assertTrue(plan.error, plan.error.contains("REPAIR_CONTRACT_INVALID work_id=repair"))
+            assertTrue(plan.error, plan.error.contains(expected))
+            assertTrue(plan.error.contains("JSON syntax is valid"))
+            assertTrue(plan.work.isEmpty())
+        }
+    }
+
+    @Test fun repairMetadataRoundTripsAndOrdinaryWorkClearsInheritedRepairContext() {
+        val repair = work("repair").put("repair_of", "done").put("repair_reason", "Correct the omitted typed body")
+        val context = CollaborationWorkGraph.repairContext(repair)
+        assertTrue(CollaborationWorkGraph.sameRepair(repair, CollaborationWorkGraph.restoreRepair(work("repair"), context)))
+        assertFalse(CollaborationWorkGraph.sameRepair(repair, work("repair").put("repair_of", "done")))
+        val cleared = context + CollaborationWorkGraph.repairContext(work("ordinary"))
+        assertFalse(CollaborationWorkGraph.restoreRepair(work("ordinary"), cleared).has("repair_of"))
+        assertFalse(CollaborationWorkGraph.restoreRepair(work("ordinary"), cleared).has("repair_reason"))
+    }
+
     @Test fun independentReviewUsesSavedAuthorRatherThanNewModelAttribution() {
         val review = work("review", "person-2", "done").put("independent_review", true)
         val authors = mapOf("done" to "person-1")
@@ -240,7 +269,10 @@ class CollaborationWorkGraphTest {
                 } else {
                     val id = execution.member.context.getValue(CollaborationGoalLoop.WORK_ID)
                     calls += id
-                    if (id == "report-repair") assertEquals("report", execution.member.context[CollaborationWorkGraph.REPAIR_OF])
+                    if (id == "report-repair") {
+                        assertEquals("report", execution.member.context[CollaborationWorkGraph.REPAIR_OF])
+                        assertEquals("Missing formal delivery", execution.member.context[CollaborationWorkGraph.REPAIR_REASON])
+                    }
                     AgentSubagentOutput("Saved partial result; not scientifically accepted")
                 }
             }
