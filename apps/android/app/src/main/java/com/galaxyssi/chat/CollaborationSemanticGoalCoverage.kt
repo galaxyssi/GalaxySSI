@@ -52,9 +52,18 @@ internal object CollaborationSemanticGoalCoverage {
         return value.getString(key)
     }
 
-    private fun ids(array: JSONArray): Set<String> {
+    private fun kind(segment: JSONObject): String {
+        val value = if (segment.has("coverage_kind")) requiredText(segment, "coverage_kind") else "outcome"
+        require(value in setOf("outcome", "constraint", "context")) { "coverage_kind must be outcome, constraint or context" }
+        return value
+    }
+
+    private fun keysMatch(segment: JSONObject, keys: Set<String>) =
+        segment.keys().asSequence().toSet().let { it == keys || it == keys + "coverage_kind" }
+
+    private fun ids(array: JSONArray, allowEmpty: Boolean = false): Set<String> {
         val result = linkedSetOf<String>()
-        require(array.length() > 0) { "Each source segment needs explicit criterion IDs" }
+        require(allowEmpty || array.length() > 0) { "Each outcome segment needs explicit criterion IDs" }
         repeat(array.length()) { index ->
             require(array.opt(index) is String && array.getString(index).isNotBlank() && result.add(array.getString(index))) {
                 "Criterion IDs must be nonblank, unique strings"
@@ -84,11 +93,11 @@ internal object CollaborationSemanticGoalCoverage {
         val seen = hashSetOf<String>()
         repeat(segments.length()) { index ->
             val segment = segments.getJSONObject(index)
-            require(segment.keys().asSequence().toSet() == setOf("id", "criterion_ids", "verdict", "rationale", "unresolved")) {
+            require(keysMatch(segment, setOf("id", "criterion_ids", "verdict", "rationale", "unresolved"))) {
                 "Review host source IDs with verdicts, not replacement source text or offsets"
             }
             require(seen.add(requiredText(segment, "id"))) { "Duplicate reviewed source segment" }
-            ids(segment.getJSONArray("criterion_ids"))
+            ids(segment.getJSONArray("criterion_ids"), allowEmpty = kind(segment) != "outcome")
             CollaborationReviewContract.validateVerdict(segment)
             require(review.getString("verdict") != "supported" || segment.getString("verdict") == "supported") {
                 "A supported coverage review cannot conceal a refuted or untested segment"
@@ -155,16 +164,17 @@ internal object CollaborationSemanticGoalCoverage {
                 val segment = segments.getJSONObject(index)
                 val id = requiredText(segment, "id")
                 require(seen.add(id)) { "Duplicate mapped source segment" }
-                require(id in sourceIds && segment.keys().asSequence().toSet() == setOf("id", "criterion_ids", "rationale")) {
+                require(id in sourceIds && keysMatch(segment, setOf("id", "criterion_ids", "rationale"))) {
                     "Map host source IDs only; invented IDs, replacement text and model-counted offsets are invalid"
                 }
                 requiredText(segment, "rationale")
-                val targets = ids(segment.getJSONArray("criterion_ids"))
+                val type = kind(segment)
+                val targets = ids(segment.getJSONArray("criterion_ids"), allowEmpty = type != "outcome")
                 require(expected.keys.containsAll(targets)) { "Source segment references an unknown criterion" }
                 val check = requireNotNull(byId[id]) { "A source segment has no independent semantic assessment" }
-                require(ids(check.getJSONArray("criterion_ids")) == targets && check.getString("verdict") == "supported" &&
+                require(kind(check) == type && ids(check.getJSONArray("criterion_ids"), allowEmpty = type != "outcome") == targets && check.getString("verdict") == "supported" &&
                     check.getJSONArray("unresolved").length() == 0) { "Segment review disagrees with the exact mapping or retains objections" }
-                mapped.addAll(targets)
+                if (type == "outcome") mapped.addAll(targets)
             }
             require(seen == byId.keys) {
                 "Coverage must include all host source IDs assigned to this part, with no extra or missing segment reviews"
@@ -191,25 +201,22 @@ internal object CollaborationSemanticGoalCoverage {
         validation.complete(listOf(validation.part(mapping, review)))
     }
 
-    fun instructions() = "Completion also requires goal_coverage:{mapping:{object_id,revision,sha256},review:{object_id,revision,sha256}}. " +
-        "After criteria are established, the host acceptance feedback supplies source IDs, exact source text, goal_sha256 and criteria_sha256. " +
-        "Publish the mapping as kind=artifact with body.semantic_goal_mapping:{format:'$FORMAT',goal_sha256:copy host hash," +
-        "criteria_sha256:copy host hash,segments:[{id:host source ID,criterion_ids:[exact IDs],rationale}]}. " +
-        "Use every host source ID exactly once. Do not count offsets, repeat original text/criteria, compute hashes or invent source IDs. " +
-        "Map constraints as well as desired outcomes; every criterion must be mapped. " +
-        "For long goals, split source IDs into non-overlapping work assignments and publish separate mapping artifacts; " +
-        "each part uses the same full host goal_sha256 and criteria_sha256 but contains only its assigned segments. " +
-        "Different members may author/review different parts. Return goal_coverage:{parts:[{mapping:exact reference,review:exact reference},...]} " +
-        "instead of the single mapping/review pair. Across all parts cover every host source ID exactly once and every criterion at least once. " +
-        "Do not replace the exact original with a summary, omit difficult constraints, reuse a review for another part, or count an ID twice. " +
+    fun instructions() = "Completion needs goal_coverage:{mapping:{object_id,revision,sha256},review:{object_id,revision,sha256}}. " +
+        "Copy source IDs and goal_sha256/criteria_sha256 from host acceptance feedback. Do not count offsets or invent hashes/source text. " +
+        "Publish kind=artifact, body.semantic_goal_mapping:{format:'$FORMAT',goal_sha256,criteria_sha256," +
+        "segments:[{id,coverage_kind:'outcome|constraint|context',criterion_ids:[],rationale}]}. " +
+        "Outcome means requested deliverable and needs criterion IDs; mixed segments remain outcome with qualifiers. " +
+        "Constraint means operating restriction; context means explanation. Their links may be empty, but explain continued applicability. " +
+        "This classification neither grants authority nor proves compliance, receipt or unobserved events. " +
+        "Cover every original source ID exactly once and every criterion through an outcome; omit no restrictions. " +
+        "Large mappings may split non-overlapping source IDs into parts sharing both complete host hashes: " +
+        "goal_coverage:{parts:[{mapping:exact reference,review:exact reference},...]}. Each part needs its own independent review. " +
         CollaborationGoalCoverageManifest.instructions() +
-        "A member different from the evaluating coordinator and every mapping contributor publishes kind=acceptance_review with body.semantic_coverage_review " +
-        "(instead of body.acceptance_review):{target:exact mapping reference,verdict,rationale,unresolved:[]," +
-        "segments:[{id,criterion_ids,verdict,rationale,unresolved:[]}]}, and cites the mapping in parents. " +
-        "Review whether the criteria faithfully cover each source segment, including qualifiers and prohibitions. " +
-        "For a two-person team, assign an EXECUTE mapping job to the coordinator/author, then an independent VERIFY job to the other member. " +
-        "The peer may review both the delivery and the mapping in separate workspace objects in one response; no third member is required. " +
-        "Do not ask the peer to author the mapping it must independently review. New or changed criteria need a new host binding and mapping review in a later round. " +
-        "Use supported/refuted/not_tested; preserve omissions and ambiguity as blockers, never silently narrow the goal. " +
-        "The host checks coverage and review integrity, not objective semantic or scientific truth. "
+        "A reviewer distinct from the coordinator and all mapping contributors publishes kind=acceptance_review with " +
+        "body.semantic_coverage_review:{target:exact mapping reference,verdict,rationale,unresolved:[]," +
+        "segments:[{id,coverage_kind,criterion_ids,verdict,rationale,unresolved:[]}]}, citing the mapping in parents. " +
+        "Independently check classifications, exact links and qualifiers. Reject a requested outcome misclassified as context/constraint. " +
+        "Use supported/refuted/not_tested; preserve omissions/ambiguity, never narrow the goal. " +
+        "A two-person team suffices: coordinator/author EXECUTE maps, peer VERIFY reviews delivery and mapping in separate objects. " +
+        "Changed criteria require a new host binding and mapping review. The host checks integrity, not semantic/scientific truth. "
 }

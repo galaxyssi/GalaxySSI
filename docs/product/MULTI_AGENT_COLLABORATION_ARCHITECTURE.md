@@ -75,6 +75,37 @@ repeat an external side effect. See [publication retirement](../testing/COLLABOR
 
 ## User Experience
 
+### Reviewable Final Delivery
+
+Goal coverage distinguishes requested `outcome` segments, operating `constraint`
+segments and explanatory `context` segments. Every original source segment still
+needs an independent coverage review. Outcomes require links to acceptance
+criteria; constraints/context may have empty criterion links and must retain an
+explanation of their applicability. The reviewer must check the classification,
+not merely copy it. Mixed outcome/constraint segments remain outcomes. Already
+established criteria cannot be removed, weakened or reclassified away.
+
+This avoids inventing a separate universal-compliance proof task from every
+restriction. It does not grant permissions, prove that no unseen action occurred,
+or remove original restrictions. Coverage remains a semantic reviewer judgment,
+not an oracle. An explicitly requested compliance audit is still a deliverable.
+
+A goal assessment may select `final_delivery: {object_id, revision, sha256}`.
+The reference must identify the current, in-scope substantive text of a met
+criterion. The result finalizer archives the complete model response, then
+projects that exact saved `body.content` into the public summary before the
+normal host acceptance checks. Independent reviews, dissent checks, evidence
+read coverage, computational qualification and unchanged-criteria checks still
+apply. The acceptance receipt binds the projected reply; the original archive
+hash continues to identify the unmodified model response. Recovery uses the
+same projection without another model request or workspace publication.
+
+Prepare the final text before reviewing it. Do not ask a reviewer to verify an
+as-yet-unwritten terminal response before it may be submitted. A requested
+post-delivery audit needs its own observable boundary; content acceptance,
+persistence and user/device receipt remain separate facts. This path does not
+claim that a user read the result or that a transport acknowledgment exists.
+
 Background teams expose only their aggregate status by default. The existing Recent Tasks page includes an Agent teams section. Opening a team now uses a full detail page rather than a text dialog. It shows the aggregate state, role-bound instances, member status, bounded team messages, and one team conclusion. While a Run is active, tapping a member opens a focused composer for constraints, questions, or new evidence.
 
 Internal orchestration and hidden reasoning never appear as separate assistant replies.

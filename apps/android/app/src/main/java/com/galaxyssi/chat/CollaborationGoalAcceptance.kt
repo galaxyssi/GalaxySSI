@@ -51,7 +51,8 @@ internal class CollaborationGoalAcceptance(
             if (failure != null) failure.message?.take(1200) ?: "Acceptance validation failed" else
                 "Host source-ID coverage and independent review integrity checked; " +
                     "computational qualification covers only the selected validator's preserved inputs and operations. " +
-                    "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation", now)
+                    "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation; " +
+                    "source classification is not a compliance audit or a user/device delivery receipt", now)
         return runCatching {
             val assessment = requireNotNull(CollaborationGoalLoop.decode(raw)) { "Invalid goal assessment" }
             require(!CollaborationCandidateEvolution.requested(assessment)) { "Candidate cycle work remains requested" }
@@ -85,6 +86,11 @@ internal class CollaborationGoalAcceptance(
                     CollaborationReviewContract.KIND, criterion.getString("id"), criterion.getString("requirement")))
             }
             val snapshot = workspace.acceptanceReviewSnapshot(scope, targets)
+            CollaborationFinalDelivery.content(assessment) { ref -> currentRevision(scope, ref) }?.let { text ->
+                require(assessment.getString("summary") == text) {
+                    "final_delivery must project the complete saved content unchanged before acceptance"
+                }
+            }
             // Resolution precedes the review snapshot; recheck directories inside its mutation fence.
             coverage.manifests.forEach { currentRevision(scope, it) }
             validateCoverage(scope, coverage.parts, current, goal, snapshot)
