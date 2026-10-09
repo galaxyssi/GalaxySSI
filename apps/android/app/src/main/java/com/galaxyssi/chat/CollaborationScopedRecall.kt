@@ -16,12 +16,17 @@ internal object CollaborationScopedRecall {
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Case filter is only supported for numeric feedback.")
         if (input.containsKey("section") && input["mode"] != "goal_contract")
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Section is only supported for goal/context recall.")
+        if (input.containsKey("work_id") && input["mode"] != CollaborationCoordinatorUpdates.MODE)
+            return AgentNativeToolExecutionResult.failure("invalid_arguments", "Work ID is only supported for coordinator updates.")
         return when (input["mode"]) {
             CollaborationCoordinatorUpdates.MODE -> {
-                if (input.keys.any { it !in setOf("mode", "cursor") } || input.containsKey("cursor") && input["cursor"] !is String)
-                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Team updates accept only mode and cursor.")
-                try { AgentNativeToolExecutionResult.success(CollaborationCoordinatorUpdates.read(context, access,
-                    input["cursor"] as? String ?: "").toNativeObject()) }
+                val work = input.containsKey("work_id")
+                val fields = if (work) setOf("mode", "work_id") else setOf("mode", "cursor")
+                if (input.keys.any { it !in fields } || input.containsKey("cursor") && input["cursor"] !is String ||
+                    work && input["work_id"] !is String)
+                    return AgentNativeToolExecutionResult.failure("invalid_arguments", "Team updates take cursor for publications OR work_id for the complete work contract.")
+                try { AgentNativeToolExecutionResult.success((if (work) CollaborationCoordinatorUpdates.work(context, access, input["work_id"] as String)
+                    else CollaborationCoordinatorUpdates.read(context, access, input["cursor"] as? String ?: "")).toNativeObject()) }
                 catch (invalid: IllegalArgumentException) {
                     AgentNativeToolExecutionResult.failure("updates_unavailable", invalid.message.orEmpty())
                 }

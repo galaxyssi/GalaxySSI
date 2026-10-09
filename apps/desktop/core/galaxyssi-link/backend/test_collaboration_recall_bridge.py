@@ -14,6 +14,29 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_complete_work_contract_uses_existing_phone_authority_not_a_task_override(self):
+        broker = RecallBroker()
+        arguments = {"mode": "team_updates", "work_id": "challenge-measurements"}
+        expected = {"success": True, "kind": "work_contract", "work": {"id": arguments["work_id"], "assignment": "Exact assignment"}, "input_revision": 2}
+        def publish(request):
+            self.assertEqual(arguments, request["arguments"])
+            self.assertEqual("group", request["conversation_id"])
+            self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": expected}, "other-phone"))
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": expected}, "phone"))
+            return True
+        self.assertEqual(expected, broker.query(task, arguments, publish))
+        self.assertEqual({}, broker._pending)
+        for invalid in (None, True, 1, "", " ", "x" * 161):
+            with self.assertRaises(ValueError):
+                validate_arguments({**arguments, "work_id": invalid})
+        for field in ("cursor", "offset", "group_id", "member_id", "task_id", "object_id", "revision"):
+            with self.assertRaises(ValueError):
+                validate_arguments({**arguments, field: "x"})
+        for mode in tool_spec()["inputSchema"]["properties"]["mode"]["enum"]:
+            if mode != "team_updates":
+                with self.assertRaises(ValueError):
+                    validate_arguments({**arguments, "mode": mode})
+
     def test_coordinator_updates_keep_phone_authority_and_cursor_without_auto_confirm(self):
         broker = RecallBroker()
         arguments = {"mode": "team_updates", "cursor": "a" * 64 + ":3"}

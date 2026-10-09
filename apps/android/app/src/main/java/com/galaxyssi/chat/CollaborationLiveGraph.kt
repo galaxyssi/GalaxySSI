@@ -23,7 +23,8 @@ internal object CollaborationLiveGraph {
         Your starting inventory is a snapshot. Use collaboration_recall(mode="team_updates", cursor="") to discover
         versions published while you are working. Follow next_cursor until an empty page; reuse that cursor later
         when prerequisites may have arrived. Read the exact workspace/evidence versions before judging sufficiency.
-        New tokens can be used in uses_milestones, rebind_inputs or rebind_reviews. They do not finish the producer or prove a claim.
+        New tokens can be used in uses_milestones, rebind_inputs, rebind_reviews or revise_input_dependencies.
+        They do not finish the producer or prove a claim.
         Return one JSON object: {"format":"$FORMAT","summary":"concise public progress in the user's language",
         "work":[{"id":"stable new work ID","member":"existing authorized person UUID",
         "stage":"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE","assignment":"concrete verification or improvement with evidence",
@@ -66,17 +67,18 @@ internal object CollaborationLiveGraph {
     fun decode(raw: String): JSONObject = JSONObject(raw.trim()).also { json ->
         require(json.keys().asSequence().toSet().let { keys -> keys.containsAll(setOf("format", "summary", "work")) &&
             keys.all { it in setOf("format", "summary", "work", CollaborationCandidateEvolution.REQUESTS,
-                CollaborationReviewRebinding.FIELD, CollaborationReviewRebinding.INPUT_FIELD) } }) {
-            "An incremental plan may only contain format, summary, work, candidate_cycles, rebind_reviews and rebind_inputs; it cannot change goal criteria or authority"
+                *CollaborationReviewRebinding.FIELDS.toTypedArray()) } }) {
+            "An incremental plan may only contain format, summary, work, candidate_cycles, rebind_reviews, rebind_inputs and revise_input_dependencies; it cannot change goal criteria or authority"
         }
         require(json.getString("format") == FORMAT && json.opt("summary") is String && json.getString("summary").isNotBlank()) {
             "Return the work-expansion JSON contract"
         }
         json.getJSONArray("work")
         require(!json.has(CollaborationCandidateEvolution.REQUESTS) || json.optJSONArray(CollaborationCandidateEvolution.REQUESTS) != null)
-        require(!json.has(CollaborationReviewRebinding.FIELD) || json.optJSONArray(CollaborationReviewRebinding.FIELD) != null)
-        require(!json.has(CollaborationReviewRebinding.INPUT_FIELD) || json.optJSONArray(CollaborationReviewRebinding.INPUT_FIELD) != null)
-        val rebound = listOf(CollaborationReviewRebinding.FIELD, CollaborationReviewRebinding.INPUT_FIELD).flatMap { field ->
+        CollaborationReviewRebinding.FIELDS.forEach { field ->
+            require(!json.has(field) || json.optJSONArray(field) != null) { "$field must be an array" }
+        }
+        val rebound = CollaborationReviewRebinding.FIELDS.flatMap { field ->
             json.optJSONArray(field)?.let { rows -> (0 until rows.length()).map { rows.getJSONObject(it).getString("work_id") } }.orEmpty()
         }
         require(rebound.distinct().size == rebound.size) { "One input revision per work item in each atomic expansion" }
@@ -103,7 +105,7 @@ internal object CollaborationLiveGraph {
             val result = results.getValue(member.memberId)
             if (control != AgentTeamUserControl.RUN && runCatching {
                 val decoded = decode(result.output)
-                listOf(CollaborationReviewRebinding.FIELD, CollaborationReviewRebinding.INPUT_FIELD).any {
+                CollaborationReviewRebinding.FIELDS.any {
                     (decoded.optJSONArray(it)?.length() ?: 0) > 0
                 }
             }.getOrDefault(false)) return@forEach
@@ -119,8 +121,10 @@ internal object CollaborationLiveGraph {
                 val rebound = CollaborationReviewRebinding.apply(observed, effectiveMember,
                     decoded.optJSONArray(CollaborationReviewRebinding.FIELD) ?: JSONArray(), admittedIds, now)
                 val inputsBound = CollaborationReviewRebinding.apply(rebound, effectiveMember,
-                    decoded.optJSONArray(CollaborationReviewRebinding.INPUT_FIELD) ?: JSONArray(), admittedIds, now, dataOnly = true)
-                CollaborationCandidateRuntime.update(appendWork(inputsBound, decoded.getJSONArray("work"), candidateWorkspace, effectiveMember), candidateWorkspace,
+                    decoded.optJSONArray(CollaborationReviewRebinding.INPUT_FIELD) ?: JSONArray(), admittedIds, now, CollaborationReviewRebinding.Mode.DATA)
+                val corrected = CollaborationReviewRebinding.apply(inputsBound, effectiveMember,
+                    decoded.optJSONArray(CollaborationReviewRebinding.CORRECTION_FIELD) ?: JSONArray(), admittedIds, now, CollaborationReviewRebinding.Mode.CORRECTION)
+                CollaborationCandidateRuntime.update(appendWork(corrected, decoded.getJSONArray("work"), candidateWorkspace, effectiveMember), candidateWorkspace,
                     completedIds, control, admissionLeft,
                     decoded.optJSONArray(CollaborationCandidateEvolution.REQUESTS) ?: JSONArray(), member.dependsOnAgentIds)
             }
@@ -207,6 +211,8 @@ internal object CollaborationLiveGraph {
                     CollaborationWorkGraph.dependencies(original) == CollaborationWorkGraph.dependencies(item) &&
                     original.has(CollaborationDataDependencies.FIELD) == item.has(CollaborationDataDependencies.FIELD) &&
                     CollaborationDataDependencies.read(original) == CollaborationDataDependencies.read(item) &&
+                    original.has(CollaborationCompletionBarriers.FIELD) == item.has(CollaborationCompletionBarriers.FIELD) &&
+                    CollaborationCompletionBarriers.read(original) == CollaborationCompletionBarriers.read(item) &&
                     original.optString("dependency_policy", "success") == item.optString("dependency_policy", "success") &&
                     original.optBoolean("independent_review") == item.optBoolean("independent_review") &&
                     CollaborationReviewTargets.read(original) == CollaborationReviewTargets.read(item) &&
@@ -269,7 +275,7 @@ internal object CollaborationLiveGraph {
         return append(updated, nodes).let { if (claims.isEmpty()) it else it.copy(request = it.request.copy(context = it.request.context + claims)) }
     }
 
-    private fun workItem(member: AgentTeamMember, all: List<AgentTeamMember>): JSONObject {
+    internal fun workItem(member: AgentTeamMember, all: List<AgentTeamMember>): JSONObject {
         val prior = strings(member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES])
         val ids = all.associate { it.memberId to it.context[CollaborationGoalLoop.WORK_ID] }
         return CollaborationDataDependencies.restore(CollaborationReviewTargets.restore(JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
@@ -302,6 +308,7 @@ internal object CollaborationLiveGraph {
             val requireSuccess = member.context[CollaborationWorkGraph.POLICY] == "success"
             val independent = member.context[CollaborationWorkGraph.INDEPENDENT] == "true"
             val dataDependencies = CollaborationDataDependencies.from(member)
+            val barriers = CollaborationCompletionBarriers.from(member)
             val reviewTargets = member.context[CollaborationReviewTargets.CONTEXT]?.takeIf(String::isNotBlank)?.let(::strings)
                 ?: if (independent) dependencies.map(::workId) + strings(member.context[CollaborationWorkGraph.PREVIOUS_DEPENDENCIES]) else emptyList()
             val item = JSONObject().put("id", member.context.getValue(CollaborationGoalLoop.WORK_ID))
@@ -313,6 +320,7 @@ internal object CollaborationLiveGraph {
                 .put("input_revision", CollaborationReviewRebinding.revision(member))
                 .put("input_scope", if (CollaborationReviewRebinding.revision(member) > 0) "pinned_versions_only" else "declared_inputs")
                 .put(CollaborationDataDependencies.FIELD, CollaborationDataDependencies.array(dataDependencies))
+                .put(CollaborationCompletionBarriers.FIELD, CollaborationCompletionBarriers.array(barriers))
                 .put("dependency_policy", if (requireSuccess) "success" else "terminal")
                 .put("dependency_state", when {
                     requireSuccess && unsuccessful.isNotEmpty() -> "failed"
@@ -323,6 +331,7 @@ internal object CollaborationLiveGraph {
                 .put("waiting_for", JSONArray(waiting.map { dependency ->
                     JSONObject().put("id", workId(dependency)).put("status", status(dependency))
                         .put("dependency_kind", if (workId(dependency) in dataDependencies) "data" else "completion")
+                        .put("completion_barrier", barriers[workId(dependency)])
                         .put("data_requirement", dataDependencies[workId(dependency)])
                         .put("input_role", if (workId(dependency) in reviewTargets) "review_subject" else "prerequisite")
                         .put("published_milestones", JSONArray(published[dependency].orEmpty().map { it.getString("token") }))

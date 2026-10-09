@@ -50,6 +50,7 @@ class CollaborationCoordinatorUpdatesDeviceTest {
                 context = people[0].context + mapOf(CollaborationGoalLoop.ROSTER to "false", CollaborationLiveGraph.PLANNER to "1",
                     CollaborationResearchWorkflow.STAGE to "BRIEF"))
             val producer = people[1].copy(instanceId = "producer", deliveryMode = AgentDeliveryMode.OBSERVE,
+                objective = "Original complete assignment: " + "retain all scientific requirements; ".repeat(20),
                 context = people[1].context + mapOf(CollaborationGoalLoop.ROSTER to "false", CollaborationGoalLoop.WORK_ID to "produce",
                     CollaborationResearchWorkflow.STAGE to "EXPLORE"))
             val final = people[0].copy(instanceId = "final", deliveryMode = AgentDeliveryMode.RESPOND,
@@ -82,6 +83,20 @@ class CollaborationCoordinatorUpdatesDeviceTest {
             assertEquals(1, updates.getJSONArray("milestones").length())
             val native = AgentPhoneNativeToolCatalog.defaultRegistry(context, { ScreenContext(foregroundApp = "", pageTitle = "") })
                 .subset { it.id == CollaborationRecallNativeTool.ID }
+            val workInput = JSONObject().put("mode", CollaborationCoordinatorUpdates.MODE).put("work_id", "produce")
+            val work = call(access, workInput)
+            assertEquals(work.toString(), "returned", work.getString("status"))
+            assertEquals("work_contract", work.getString("kind"))
+            assertEquals(producer.objective, work.getJSONObject("work").getString("assignment"))
+            assertEquals(0, work.getInt("input_revision"))
+            val workNative = native.invoke(CollaborationRecallNativeTool.ID, mapOf("mode" to CollaborationCoordinatorUpdates.MODE, "work_id" to "produce"),
+                AgentNativeToolInvocationContext(conversationId = id, turnId = "turn", collaborationSourceMessageId = source))
+            assertTrue(workNative.toJson(), workNative.isSuccess)
+            assertEquals(producer.objective, (workNative.output["work"] as Map<*, *>)["assignment"])
+            for (bad in listOf("missing", "", " ", "x".repeat(161)))
+                assertEquals("failed", call(access, JSONObject(workInput.toString()).put("work_id", bad)).getString("status"))
+            assertEquals("failed", call(access, JSONObject(workInput.toString()).put("cursor", "")).getString("status"))
+            assertEquals("failed", call(access, JSONObject(workInput.toString()).put("mode", "workspace")).getString("status"))
             val replay = native.invoke(CollaborationRecallNativeTool.ID, mapOf("mode" to CollaborationCoordinatorUpdates.MODE),
                 AgentNativeToolInvocationContext(conversationId = id, turnId = "turn", collaborationSourceMessageId = source))
             assertTrue(replay.toJson(), replay.isSuccess)
@@ -110,14 +125,18 @@ class CollaborationCoordinatorUpdatesDeviceTest {
             assertEquals("returned", call(access, JSONObject(read.toString()).put("revision", 2)).getString("status"))
             ledger.bind(source + 1, author)
             assertEquals("failed", call(author, input).getString("status"))
+            assertEquals("failed", call(author, workInput).getString("status"))
             val isolated = access.copy(nodeId = "independent", personId = "peer")
             assertEquals("failed", call(isolated, read).getString("status"))
             assertEquals("failed", call(isolated, input).getString("status"))
+            assertEquals("failed", call(isolated, workInput).getString("status"))
             AgentTeamDurableControl(context).set(run, AgentTeamUserControl.PAUSE)
             assertEquals("failed", call(access, input).getString("status"))
+            assertEquals("failed", call(access, workInput).getString("status"))
             assertEquals("failed", call(access, read).getString("status"))
             AgentTeamDurableControl(context).set(run, AgentTeamUserControl.RUN)
             assertEquals("returned", call(access, read).getString("status"))
+            assertEquals("returned", call(access, workInput).getString("status"))
             assertEquals(run, AgentTeamExecutionLocations(context).state(access).first.request.runId)
             assertEquals(originalGoal, CollaborationGoalContractStore(context).read(access).toString())
             assertEquals(access, ledger.binding(source, id, "turn"))

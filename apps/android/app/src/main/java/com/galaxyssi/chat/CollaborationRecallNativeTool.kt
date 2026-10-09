@@ -7,12 +7,13 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.5.0", title = context.getString(R.string.collaboration_recall_title),
+            id = ID, version = "1.6.0", title = context.getString(R.string.collaboration_recall_title),
             description = context.getString(R.string.collaboration_recall_description),
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
                 "query" to AgentNativeJsonSchema.string(maxLength = 1000),
                 "mode" to AgentNativeJsonSchema.string(maxLength = 16),
+                "work_id" to AgentNativeJsonSchema.string(maxLength = 160),
                 "topic" to AgentNativeJsonSchema.string(maxLength = 32),
                 "case_filter" to AgentNativeJsonSchema.string(maxLength = 32),
                 "cursor" to AgentNativeJsonSchema.string(maxLength = 512),
@@ -28,6 +29,8 @@ internal object CollaborationRecallNativeTool {
             risk = AgentNativeToolRisk.LOW, capabilities = setOf("collaboration.recall"),
             timeoutMillis = 20_000, idempotency = AgentNativeToolIdempotency.IDEMPOTENT),
         executor = AgentNativeToolExecutor { call ->
+            if (call.input.containsKey("work_id") && call.input["mode"] != CollaborationCoordinatorUpdates.MODE)
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Work ID is only supported for coordinator updates.")
             if (call.input.containsKey("section") && call.input["mode"] != "goal_contract")
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Section is only supported for goal/context recall.")
             if (call.input.containsKey("topic") && call.input["mode"] != "evolution_rules")

@@ -30,7 +30,7 @@ NUMERIC_CASE_FILTERS = ("failed", "all", "domain_error", "improved", "regressed"
 def tool_spec():
     return {"type": "function", "name": TOOL, "description": (
         "Read already saved collaboration goal/context, workspace versions or original evidence. "
-        "The host binds this to your current member assignment; never supply group/member/task IDs. "
+        "The host binds this to your current member assignment; never supply group/member/dispatch IDs. "
         "Use mode=goal_contract with optional section=goal, criteria, source or context:<exact section name> "
         "and cursor='' to recover omitted material directly. Keep section unchanged while following next_cursor until null; "
         "null ends that section, not the full snapshot. Omit section to browse all pinned material. "
@@ -50,11 +50,13 @@ def tool_spec():
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
         "Active incremental coordinators can use mode=team_updates/cursor to discover newly published exact versions. "
         "Follow next_cursor to an empty page and reuse that cursor later; read the versions before judging sufficiency. "
+        "Alternatively, mode=team_updates with work_id from the inventory (without cursor) reads the complete current work contract before a dependency revision. "
         "Other members cannot use team_updates. Original goal snapshots and independent research isolation are unchanged. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
             "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates"]},
             "query": {"type": "string", "maxLength": 1000},
+            "work_id": {"type": "string", "maxLength": 160},
             "case_filter": {"type": "string", "maxLength": 32, "enum": list(NUMERIC_CASE_FILTERS)},
             "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
             "record_id": {"type": "string", "maxLength": 64},
@@ -91,8 +93,14 @@ def validate_arguments(arguments):
                 raise ValueError("Use section=goal, criteria, source or context:<exact section name>")
     elif "section" in arguments:
         raise ValueError("Section is only supported for goal/context recall")
-    if arguments["mode"] in {"evolution", "problems", "team_updates"} and set(arguments) - {"mode", "cursor"}:
-        raise ValueError("Evolution/problem/team update recall accepts only mode and cursor")
+    if arguments["mode"] in {"evolution", "problems"} and set(arguments) - {"mode", "cursor"}:
+        raise ValueError("Evolution/problem recall accepts only mode and cursor")
+    if arguments["mode"] == "team_updates":
+        allowed = {"mode", "work_id"} if "work_id" in arguments else {"mode", "cursor"}
+        if set(arguments) - allowed or "work_id" in arguments and not arguments["work_id"].strip():
+            raise ValueError("Team updates take cursor for publications OR work_id for the complete work contract")
+    elif "work_id" in arguments:
+        raise ValueError("Work ID is only supported for coordinator updates")
     if arguments["mode"] == "capabilities":
         if set(arguments) - {"mode", "query", "cursor"} or not arguments.get("query", "").strip():
             raise ValueError("Capability search requires query and accepts optional cursor only")

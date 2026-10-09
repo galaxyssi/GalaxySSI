@@ -25,12 +25,14 @@ class CollaborationCloudRecallTest {
             assertTrue(function.getString("description").contains("only records this recall"))
             val schema = function.getJSONObject(if (provider == ModelStreamProvider.ANTHROPIC) "input_schema" else "parameters")
             val properties = schema.getJSONObject("properties")
-            assertEquals(setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter"),
+            assertEquals(setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id"),
                 properties.keys().asSequence().toSet())
             assertEquals(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates"), properties.getJSONObject("mode").getJSONArray("enum").let {
                 (0 until it.length()).map(it::getString) })
             assertEquals("string", properties.getJSONObject("query").getString("type"))
             assertEquals("string", properties.getJSONObject("section").getString("type"))
+            assertEquals("string", properties.getJSONObject("work_id").getString("type"))
+            assertTrue(function.getString("description").contains("complete current work contract"))
             assertTrue(function.getString("description").contains("context:<exact section name>"))
             assertEquals("string", properties.getJSONObject("topic").getString("type"))
             assertEquals("string", properties.getJSONObject("case_filter").getString("type"))

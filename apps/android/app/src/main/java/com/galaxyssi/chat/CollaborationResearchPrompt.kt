@@ -80,6 +80,7 @@ internal object CollaborationResearchPrompt {
         material("Version-bound input scope", CollaborationReviewRebinding.prompt(execution.member))
         material("Declared data requirements (other dependencies require completion)",
             execution.member.context[CollaborationDataDependencies.CONTEXT])
+        material("Protected completion barriers", execution.member.context[CollaborationCompletionBarriers.CONTEXT])
         material("Independent review input roles", CollaborationReviewTargets.prompt(execution.member))
         material("Recruitment feedback", context[CollaborationGoalRecruitment.FEEDBACK])
         material("Resource resolution feedback", context[CollaborationResourceRecovery.FEEDBACK])

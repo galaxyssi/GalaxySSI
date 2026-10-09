@@ -61,6 +61,9 @@ internal object CollaborationTeamOrganization {
                 if (item.has(CollaborationDataDependencies.FIELD))
                     put(JSONObject().put(CollaborationDataDependencies.FIELD,
                         CollaborationDataDependencies.array(CollaborationDataDependencies.read(item))))
+                if (item.has(CollaborationCompletionBarriers.FIELD))
+                    put(JSONObject().put(CollaborationCompletionBarriers.FIELD,
+                        CollaborationCompletionBarriers.array(CollaborationCompletionBarriers.read(item))))
                 // Preserve existing signatures when all dependencies remain review targets.
                 if (item.has(CollaborationReviewTargets.FIELD) &&
                     CollaborationReviewTargets.read(item) != CollaborationWorkGraph.dependencies(item))

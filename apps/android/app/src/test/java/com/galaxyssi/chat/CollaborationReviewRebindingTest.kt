@@ -425,4 +425,156 @@ class CollaborationReviewRebindingTest {
         assertEquals(changed.definition, rejected.definition)
         assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("Cannot rewrite"))
     }
+
+    private fun correction(record: AgentTeamExecutionRecord) = request(record).apply {
+        getJSONArray("inputs").getJSONObject(0)
+            .put("requirement", "Frozen measurements and candidate relation for the original challenge")
+            .put("completion_not_required_because", "The published measurements are immutable; this check does not touch the producer's apparatus")
+    }
+
+    private fun barrier(record: AgentTeamExecutionRecord, id: String) = record.copy(definition = record.definition.copy(
+        members = record.definition.members.map { member -> if (member.memberId != "review") member else
+            member.copy(context = member.context + (CollaborationCompletionBarriers.CONTEXT to
+                CollaborationCompletionBarriers.array(mapOf(id to "Release shared apparatus before verification")).toString())) }))
+
+    @Test fun coordinatorCorrectsSequentialPlanningMistakeAndKeepsResourceBarrier() {
+        val workspace = workspace(); val ref = publish(workspace)
+        val first = barrier(typed(prepared(workspace), independent = true, ids = emptySet()), "probe")
+        val changed = update(returned(first, correction(first), field = CollaborationReviewRebinding.CORRECTION_FIELD), workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        val member = review(changed)
+        assertEquals(setOf("probe"), member.dependsOnAgentIds)
+        assertEquals(review(first).objective, member.objective)
+        assertEquals(review(first).agentId, member.agentId)
+        assertEquals("true", member.context[CollaborationWorkGraph.INDEPENDENT])
+        assertEquals(CollaborationCompletionBarriers.from(review(first)), CollaborationCompletionBarriers.from(member))
+        assertEquals(first.request.goal, changed.request.goal)
+        assertEquals(first.request.context[CollaborationGoalLoop.CRITERIA], changed.request.context[CollaborationGoalLoop.CRITERIA])
+        assertEquals(first.definition.members.filter { it.memberId != "review" }, changed.definition.members.filter { it.memberId != "review" })
+        assertEquals(1L, AgentTeamGraphPlan.build(changed.definition, changed.request).children.single { it.childId == "review" }.dependencyRevision)
+        val history = JSONArray(member.context.getValue(CollaborationReviewRebinding.HISTORY)).getJSONObject(0)
+        assertEquals("corrected_completion_wait", history.getString("binding_kind"))
+        val diagnosis = history.getJSONArray("completion_corrections").getJSONObject(0)
+        assertEquals("completion", diagnosis.getString("previous_kind"))
+        assertEquals("coordinator_assertion_not_verification", diagnosis.getString("assessment"))
+        assertEquals("producer", diagnosis.getString("dependency"))
+        assertEquals(changed, update(changed, workspace))
+        val access = CollaborationMilestoneDispatch.access(changed, member)
+        assertNotNull(workspace.read(access, ref.getString("object_id"), 1))
+        publish(workspace, "v2", ref)
+        assertNull(workspace.read(access, ref.getString("object_id"), 2))
+    }
+
+    @Test fun correctionIsNotASilentFallbackForLegacyRebindingOrARequirementRewrite() {
+        val workspace = workspace(); publish(workspace)
+        val first = typed(prepared(workspace), ids = emptySet())
+        for (field in listOf(CollaborationReviewRebinding.FIELD, CollaborationReviewRebinding.INPUT_FIELD))
+            assertEquals(first.definition, update(returned(first, request(first), field = field), workspace).definition)
+        val changed = update(returned(first, correction(first), field = CollaborationReviewRebinding.CORRECTION_FIELD), workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        assertEquals("false", review(changed).context[CollaborationWorkGraph.INDEPENDENT])
+        val alreadyData = typed(prepared(workspace))
+        val rejected = update(returned(alreadyData, correction(alreadyData), field = CollaborationReviewRebinding.CORRECTION_FIELD), workspace)
+        assertEquals(alreadyData.definition, rejected.definition)
+        assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("already data-only"))
+    }
+
+    @Test fun everyBindingProtocolPreservesExplicitCompletionBarriers() {
+        val workspace = workspace(); publish(workspace)
+        val first = barrier(prepared(workspace), "producer")
+        for (field in CollaborationReviewRebinding.FIELDS) {
+            val input = if (field == CollaborationReviewRebinding.CORRECTION_FIELD) correction(first) else request(first)
+            val candidate = if (field == CollaborationReviewRebinding.INPUT_FIELD) typed(first) else first
+            val rejected = update(returned(candidate, input, field = field), workspace)
+            assertEquals(candidate.definition, rejected.definition)
+            assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("protected completion barrier"))
+        }
+    }
+
+    @Test fun correctionRequiresConcreteDiagnosisExactRevisionAndProducerEvidence() {
+        val workspace = workspace(); publish(workspace)
+        val first = typed(prepared(workspace), ids = emptySet())
+        val bad = listOf(request(first), correction(first).put("expected_revision", 1), correction(first).put("reason", "")) +
+            listOf("requirement", "completion_not_required_because").flatMap { key ->
+                listOf("", 1, "a".repeat(2001)).map { value -> correction(first).apply { getJSONArray("inputs").getJSONObject(0).put(key, value) } }
+            } + listOf(correction(first).apply { getJSONArray("inputs").getJSONObject(0).put("dependency", "probe") },
+                correction(first).apply { getJSONArray("inputs").getJSONObject(0).put("uses_milestones", JSONArray().put("f".repeat(64))) })
+        bad.forEach { input ->
+            val rejected = update(returned(first, input, field = CollaborationReviewRebinding.CORRECTION_FIELD), workspace)
+            assertEquals(first.definition, rejected.definition)
+            assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().isNotBlank())
+        }
+    }
+
+    @Test fun correctionCannotMutateAdmittedOrHostManagedWorkAndIsAtomicWithOtherAdditions() {
+        val workspace = workspace(); publish(workspace)
+        val first = typed(prepared(workspace), independent = true, ids = emptySet())
+        val response = returned(first, correction(first), field = CollaborationReviewRebinding.CORRECTION_FIELD)
+        for (admitted in listOf(null, setOf("review"))) assertEquals(first.definition, update(response, workspace, admitted).definition)
+        val invalid = JSONArray().put(JSONObject().put("id", "new").put("member", "missing").put("stage", "EXPLORE").put("assignment", "new"))
+        assertEquals(first.definition, update(returned(first, correction(first), field = CollaborationReviewRebinding.CORRECTION_FIELD, fresh = invalid), workspace).definition)
+        for (key in listOf(CollaborationResearchWorkflow.PERSON, CollaborationCandidateEvolution.TASK)) {
+            val protected = first.copy(definition = first.definition.copy(members = first.definition.members.map {
+                if (it.memberId != "review") it else it.copy(context = it.context + (key to "author"))
+            }))
+            assertEquals(protected.definition, update(returned(protected, correction(protected), field = CollaborationReviewRebinding.CORRECTION_FIELD), workspace).definition)
+        }
+        for (status in listOf(AgentSubagentStatus.RUNNING, AgentSubagentStatus.SUCCEEDED)) {
+            val running = response.copy(events = response.events + AgentSubagentEvent(2, "run", "review", AgentSubagentEventKinds.CHILD_RUNNING,
+                childStatus = status, timestampMillis = 2))
+            assertEquals(first.definition, update(running, workspace).definition)
+        }
+    }
+
+    @Test fun pausedCorrectionIsDeferredAndDuplicateProtocolsDoNotCommitPartialRevisions() {
+        val workspace = workspace(); publish(workspace)
+        val first = typed(prepared(workspace), ids = emptySet())
+        val response = returned(first, correction(first), field = CollaborationReviewRebinding.CORRECTION_FIELD)
+        for (control in listOf(AgentTeamUserControl.PAUSE, AgentTeamUserControl.STOP)) assertEquals(response, update(response, workspace, control = control))
+        val raw = JSONObject(response.events.last().result!!.output)
+        for (field in listOf(CollaborationReviewRebinding.FIELD, CollaborationReviewRebinding.INPUT_FIELD)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                CollaborationLiveGraph.decode(JSONObject(raw.toString()).put(field, JSONArray().put(request(first))).toString())
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) { CollaborationLiveGraph.decode(raw.put(CollaborationReviewRebinding.CORRECTION_FIELD, "invalid").toString()) }
+    }
+
+    @Test fun completionBarriersRoundTripRejectConflictsAndAffectWorkIdentity() {
+        val item = JSONObject().put("id", "check").put("member", "peer").put("stage", "VERIFY").put("assignment", "Original check")
+            .put("depends_on", JSONArray().put("producer").put("probe")).put(CollaborationDataDependencies.FIELD,
+                CollaborationDataDependencies.array(mapOf("producer" to "Measurements")))
+            .put(CollaborationCompletionBarriers.FIELD, CollaborationCompletionBarriers.array(mapOf("probe" to "Release apparatus")))
+        val context = CollaborationDataDependencies.context(item)
+        assertEquals(mapOf("probe" to "Release apparatus"), CollaborationCompletionBarriers.read(
+            CollaborationDataDependencies.restore(JSONObject().put("depends_on", item.getJSONArray("depends_on")), context)))
+        val before = CollaborationTeamOrganization.signature(item)
+        assertNotEquals(before, CollaborationTeamOrganization.signature(JSONObject(item.toString()).apply { remove(CollaborationCompletionBarriers.FIELD) }))
+        for (bad in listOf(JSONArray().put(JSONObject().put("work_id", "probe").put("reason", "")),
+            CollaborationCompletionBarriers.array(mapOf("producer" to "Conflicts with data")),
+            CollaborationCompletionBarriers.array(mapOf("missing" to "Unknown dependency")))) {
+            assertThrows(IllegalArgumentException::class.java) { CollaborationCompletionBarriers.read(JSONObject(item.toString()).put(CollaborationCompletionBarriers.FIELD, bad)) }
+            val graph = CollaborationWorkGraph.compile(listOf(JSONObject(item.toString()).put(CollaborationCompletionBarriers.FIELD, bad)), setOf("producer", "probe"))
+            assertTrue(graph.error.isNotBlank())
+        }
+    }
+
+    @Test fun newLiveWorkPreservesBarriersAndCannotRemoveThemByResubmittingWork() {
+        val workspace = workspace(); publish(workspace)
+        val first = prepared(workspace)
+        val item = JSONObject().put("id", "ordinary").put("member", "peer").put("stage", "CHALLENGE").put("assignment", "Challenge after restoration")
+            .put("depends_on", JSONArray().put("producer"))
+            .put(CollaborationCompletionBarriers.FIELD, CollaborationCompletionBarriers.array(mapOf("producer" to "Restore apparatus")))
+        val changed = update(returned(first, fresh = JSONArray().put(item)), workspace)
+        assertEquals("", changed.request.context[CollaborationLiveGraph.FEEDBACK])
+        val member = changed.definition.members.single { it.context[CollaborationGoalLoop.WORK_ID] == "ordinary" }
+        assertEquals(mapOf("producer" to "Restore apparatus"), CollaborationCompletionBarriers.from(member))
+        val inventory = JSONObject(CollaborationLiveGraph.inventory(changed.definition, emptyMap())).getJSONArray("items")
+        val row = (0 until inventory.length()).map(inventory::getJSONObject).single { it.getString("id") == "ordinary" }
+        assertEquals("Restore apparatus", row.getJSONArray("waiting_for").getJSONObject(0).getString("completion_barrier"))
+        val response = returned(changed, fresh = JSONArray().put(JSONObject(item.toString()).apply { remove(CollaborationCompletionBarriers.FIELD) }))
+        val rejected = update(response.copy(request = response.request.copy(context = response.request.context - CollaborationLiveGraph.APPLIED)), workspace)
+        assertEquals(changed.definition, rejected.definition)
+        assertTrue(rejected.request.context[CollaborationLiveGraph.FEEDBACK].toString().contains("Cannot rewrite"))
+    }
 }

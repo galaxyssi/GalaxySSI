@@ -39,6 +39,20 @@ internal object CollaborationCoordinatorUpdates {
         return CollaborationResearchWorkspace(context).coordinatorUpdates(access, cursor, covered, producers)
     }
 
+    fun work(context: Context, access: CollaborationWorkspaceAccess, workId: String): JSONObject {
+        require(workId.isNotBlank() && workId.length <= 160) { "A current work ID is required" }
+        val (checkpoint, _) = current(context, access)
+        val member = requireNotNull(checkpoint.definition.members.singleOrNull {
+            it.context[CollaborationGoalLoop.WORK_ID] == workId
+        }) { "Work is not in this coordinator's current team" }
+        return JSONObject().put("kind", "work_contract")
+            .put("work", CollaborationLiveGraph.workItem(member, checkpoint.definition.members))
+            .put("input_revision", CollaborationReviewRebinding.revision(member))
+            .put("execution_status", checkpoint.completed[member.memberId]?.status?.name ?: "not_committed_complete")
+            .put("note", "Complete assignment and current declared inputs, not evidence sufficiency or admission permission. " +
+                "Use the current input_revision when proposing a change; the host rechecks live admission and barriers.")
+    }
+
     fun readAccess(context: Context, access: CollaborationWorkspaceAccess): CollaborationWorkspaceAccess {
         if (access.nodeId.isBlank() || access.personId.isBlank()) return access
         val offered = CollaborationResearchWorkspace(context).coordinatorOffered(access)

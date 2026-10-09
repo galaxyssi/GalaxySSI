@@ -8,7 +8,7 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = CloudGoalPageProtocol.RECALL_TOOL
-    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter")
+    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
@@ -35,7 +35,8 @@ internal object CollaborationCloudRecall {
                 "mode=numeric_cases takes exact trial object_id/revision/sha256, case_filter and cursor to inspect host-computed counterexamples or regressions. " +
                 "Returned output is not proof of a claim.")
             .apply { put("description", getString("description") + " Active incremental coordinators may use mode=team_updates/cursor to discover newly published exact versions. " +
-                "Follow next_cursor to an empty page and reuse it later. Other members cannot use this mode; original goal snapshots remain unchanged.") }
+                "Follow next_cursor to an empty page and reuse it later. Alternatively, mode=team_updates with work_id (without cursor) reads one complete current work contract before a dependency revision. " +
+                "Other members cannot use this mode; original goal snapshots remain unchanged.") }
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
         when (prepared.provider) {
             ModelStreamProvider.OPENAI_COMPATIBLE -> tools.put(JSONObject().put("type", "function")
