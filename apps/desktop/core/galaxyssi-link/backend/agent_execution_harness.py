@@ -837,11 +837,6 @@ _BUILD_TERMS = (
     "\u5beb\u4e00\u500b\u7a0b\u5f0f", "\u505a\u4e00\u500b\u904a\u6232",
     "\u751f\u6210\u7a0b\u5f0f", "\u4fee\u5fa9 bug", "\u904b\u884c\u6e2c\u8a66",
 )
-_INSTALL_TERMS = (
-    "install", "install and open", "install apk", "deploy to phone", "launch the app",
-    "\u5b89\u88c5", "\u5b89\u88c5\u5e76\u6253\u5f00", "\u5b89\u88c5 apk",
-    "\u5b89\u88c5\u5230\u624b\u673a", "\u7f16\u8bd1\u5e76\u5b89\u88c5",
-)
 _ARTIFACT_TERMS = (
     "return the file", "send the file", "export", "generate image", "create file",
     "downloadable", "zip project", "apk",
@@ -924,6 +919,7 @@ def execution_policy_for(
     request_kind: str = "",
 ) -> AgentExecutionPolicy:
     from artifact_request_policy import office_artifact_requested, pdf_artifact_requested, positive_term
+    from installation_request_policy import installation_request
 
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
@@ -931,7 +927,7 @@ def execution_policy_for(
         normalized,
         has_attachments=has_attachment_context,
     )
-    has_install = _contains_any(normalized, _INSTALL_TERMS)
+    has_install, android_install = installation_request(str(prompt or ""))
     has_build = any(positive_term(str(prompt or ""), term) for term in _BUILD_TERMS)
     from video_generation_policy import video_creation_requested
     has_office_request = office_artifact_requested(str(prompt or ""))
@@ -949,6 +945,7 @@ def execution_policy_for(
         # Captured page text and historical operation words do not request an artifact.
         has_install = has_build = has_artifact_request = has_research = has_device = False
         has_office_request = False
+        android_install = False
         target_platform = ""
         intent = AgentTaskIntentClassification(AgentTaskIntent.CHAT, 100, ("screen_analysis",))
     execution_mode, _execution_mode_signal = resolve_execution_mode(
@@ -995,12 +992,13 @@ def execution_policy_for(
         max_same_failure_attempts=2,
         requires_artifact=execution_mode != AgentExecutionMode.PLAN_ONLY and (
             has_artifact_request
-            or kind in {AgentTaskKind.BUILD, AgentTaskKind.INSTALL}
+            or has_build
+            or android_install
         ),
         target_platform=target_platform,
         verify_installation=(
             execution_mode != AgentExecutionMode.PLAN_ONLY
-            and kind == AgentTaskKind.INSTALL
+            and android_install
         ),
         task_intent=intent.intent,
         task_intent_confidence=intent.confidence,
