@@ -159,7 +159,8 @@ export function buildRuntimeImage({
       architecture,
       capabilities: validated.capabilities,
     };
-    const descriptorPath = join(stagedRoot, 'galaxyssi-pack.json');
+    // Descriptor filename is part of the published guest API v1, not branding.
+    const descriptorPath = join(stagedRoot, 'signalasi-pack.json');
     writeFileSync(descriptorPath, `${JSON.stringify(descriptor)}\n`, { encoding: 'utf8', mode: 0o644 });
     normalizeTimestamps(stagedRoot, sourceDateEpoch);
 

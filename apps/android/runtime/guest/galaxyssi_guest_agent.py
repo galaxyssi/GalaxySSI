@@ -31,15 +31,17 @@ from galaxyssi_network_proxy import AllowlistedHttpProxy
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 1024 * 1024
 MAX_CLOCK_SKEW_MILLIS = 5 * 60_000
-CHANNEL_NAME = "org.galaxyssi.runtime"
+# Guest API v1 names match released signed images; branding cannot change this ABI.
+CHANNEL_NAME = "org.signalasi.runtime"
+WORKSPACE_MOUNT_TAG = "signalasi_workspaces"
 VIRTIO_PORT_CLASS_ROOT = Path("/sys/class/virtio-ports")
 DEVICE_ROOT = Path("/dev")
-SESSION_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.galaxyssi/runtime-session/raw")
-CONFIG_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.galaxyssi/runtime-config/raw")
+SESSION_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime-session/raw")
+CONFIG_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime-config/raw")
 WORKSPACE_ROOT = Path("/workspace")
 ISOLATED_WORKSPACE_ROOT = Path("/work")
-RUNTIME_CONTROL_DIRECTORY = ".galaxyssi-runtime"
-PERSISTENT_SYSTEM_ROOT = Path("/var/lib/galaxyssi")
+RUNTIME_CONTROL_DIRECTORY = ".signalasi-runtime"
+PERSISTENT_SYSTEM_ROOT = Path("/var/lib/signalasi")
 PERSISTENT_USERSPACE_ROOT = PERSISTENT_SYSTEM_ROOT / "rootfs"
 PERSISTENT_USERSPACE_ARCHIVE = Path("/usr/share/galaxyssi/debian-13-slim-arm64-rootfs.tar.gz")
 PERSISTENT_USERSPACE_DIGEST = "1b7200988f192e72703c70486d494e2457935ac9b0f031ac09eb115b01a12d45"
@@ -62,7 +64,7 @@ PERSISTENT_HOST_BINDINGS = (
 )
 PACK_ROOT = Path("/opt/galaxyssi/packs")
 PACK_NAMESPACE_ROOT = PACK_ROOT.parent
-PACK_DESCRIPTOR_NAME = "galaxyssi-pack.json"
+PACK_DESCRIPTOR_NAME = "signalasi-pack.json"
 LAUNCHER_PATH = Path("/usr/libexec/galaxyssi-runtime-launcher")
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_SEQUENCE_WINDOWS = 8192
@@ -893,7 +895,7 @@ def mount_runtime(config: dict[str, Any]) -> None:
     WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
     if not os.path.ismount(WORKSPACE_ROOT):
         subprocess.run(
-            ["mount", "-t", "9p", "-o", "trans=virtio,version=9p2000.L,msize=262144", "galaxyssi_workspaces", str(WORKSPACE_ROOT)],
+            ["mount", "-t", "9p", "-o", "trans=virtio,version=9p2000.L,msize=262144", WORKSPACE_MOUNT_TAG, str(WORKSPACE_ROOT)],
             check=True,
         )
     PACK_NAMESPACE_ROOT.mkdir(mode=0o755, parents=True, exist_ok=True)

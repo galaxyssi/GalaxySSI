@@ -98,7 +98,7 @@ test('runtime image builder emits a matching descriptor and signing config', () 
       license: 'GPL-2.0-or-later',
       platform: 'win32',
       squashfsBuilder: (stagedRoot, stagedImage) => {
-        descriptor = JSON.parse(readFileSync(join(stagedRoot, 'galaxyssi-pack.json'), 'utf8'));
+        descriptor = JSON.parse(readFileSync(join(stagedRoot, 'signalasi-pack.json'), 'utf8'));
         copyFileSync(join(stagedRoot, 'bin', 'ffmpeg'), stagedImage);
       },
     });

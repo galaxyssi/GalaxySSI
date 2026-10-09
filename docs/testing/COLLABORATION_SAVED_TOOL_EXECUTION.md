@@ -87,3 +87,9 @@ model innovation trial or a full MQTT end-to-end acceptance test.
 - No runtime was downloaded or replaced, no real model was called, and the
   running Desktop instance was not restarted. Full live Codex/MQTT execution and
   failing-to-repaired native acceptance remain pending.
+
+The later Android 1.4.106 verification restored the published guest ABI without
+replacing the signed image. The real native test and the other 17 device tests
+then passed; see [Android runtime guest ABI](ANDROID_RUNTIME_GUEST_ABI.md).
+The earlier failed run remains recorded above rather than being replaced by the
+successful result. Live remote Codex/MQTT acceptance is still pending.
