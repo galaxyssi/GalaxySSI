@@ -141,20 +141,41 @@ internal object AndroidCollaborationRemoteEvidence {
         })
     }
 
-    suspend fun await(context: Context, execution: AgentTeamMemberExecutionContext) {
+    fun pendingRequired(context: Context, execution: AgentTeamMemberExecutionContext, raw: String,
+                        source: Long = AgentTeamDispatchIds.sourceMessageId("member:${execution.request.idempotencyKey}")): Boolean =
+        requiredGate(context, execution, raw, source).invoke()
+
+    private fun requiredGate(context: Context, execution: AgentTeamMemberExecutionContext, raw: String,
+                             source: Long): () -> Boolean {
+        val group = execution.member.context["collaboration_group_id"].orEmpty()
+        val required = CollaborationResultEvidence.inspect(raw)
+        val ledger by lazy { CollaborationEvidenceLedger(context) }
+        val workspace by lazy { CollaborationResearchWorkspace(context) }
+        return {
+            val reads by lazy { workspace.peerReadAccess(CollaborationWorkspaceAccess.from(execution)) }
+            required.awaiting({ group.isNotBlank() && pending(context, group, source) }) { id ->
+                ledger.read(reads, id)
+            }
+        }
+    }
+
+    suspend fun await(context: Context, execution: AgentTeamMemberExecutionContext, raw: String) {
         val group = execution.member.context["collaboration_group_id"].orEmpty()
         if (group.isBlank()) return
         val source = AgentTeamDispatchIds.sourceMessageId("member:${execution.request.idempotencyKey}")
         if (!pending(context, group, source)) return
-        CollaborationProgressStore.evidenceWaiting(context, execution)
+        // The durable importer remains active after this result is released to downstream work.
         enqueue(context, wake = true)
+        val waiting = requiredGate(context, execution, raw, source)
+        if (!waiting()) return
+        CollaborationProgressStore.evidenceWaiting(context, execution)
         val started = android.os.SystemClock.elapsedRealtime()
         var settled = false
         Log.i("GalaxySSIEvidence", "Evidence wait started: source=$source")
         try {
             execution.suspendExecutionPermit {
                 val control = AgentTeamDurableControl(context)
-                while (pending(context, group, source)) {
+                while (waiting()) {
                     control.awaitDispatch(execution.request.parentRunId)
                     delay(1_000)
                 }

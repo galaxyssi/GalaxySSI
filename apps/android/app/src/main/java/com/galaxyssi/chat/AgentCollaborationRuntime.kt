@@ -1229,9 +1229,10 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         provider.prepare(registration.agentId, managedRequest, action, screenProvider())
         return try {
             val result = adapterWorker.execute(context.copy(request = managedRequest))
-            progressContext?.let { AndroidCollaborationRemoteEvidence.await(it, context) }
             if (groupId.isNotBlank() && progressContext != null)
-                return CollaborationResultFinalizer(progressContext).finish(context, result)
+                return CollaborationResultFinalizer(progressContext).finishWhenReady(context, result) {
+                    AndroidCollaborationRemoteEvidence.await(progressContext, context, result.content)
+                }
             if (CollaborationLiveGraph.planner(context.member)) return result
             CollaborationResearchWorkflow.stage(context.member)?.let { stage ->
                 result.copy(content = CollaborationResearchArtifact.handoff(result.content, stage))
@@ -1785,10 +1786,6 @@ class AgentProductionTeamController(
         try {
             if (closed.get()) return false
             if (activeHandles.containsKey(record.supervisorRunId)) return false
-            if (AndroidCollaborationRemoteEvidence.pending(evidenceContext, record.conversationId, record.sourceMessageId)) {
-                AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
-                return false
-            }
             val checkpoint = store.deliveryCheckpoint(record.supervisorRunId) ?: return false
             val execution = CollaborationLateResult.execution(checkpoint, record)
             if (checkpoint.definition.members.any { it.context["collaboration_group_id"].orEmpty().isNotBlank() } &&
@@ -1796,8 +1793,13 @@ class AgentProductionTeamController(
             val prepared = if (execution != null && record.response?.success == true &&
                 execution.member.context["collaboration_group_id"].orEmpty().isNotBlank() &&
                 checkpoint.completed[execution.member.memberId] == null)
-                CollaborationResultFinalizer(evidenceContext).finish(execution,
-                    AgentSubagentOutput(record.response.content.ifBlank { record.response.richOutputJson })) else null
+                CollaborationResultFinalizer(evidenceContext).finishIfReady(execution,
+                    AgentSubagentOutput(record.response.content.ifBlank { record.response.richOutputJson })) {
+                    if (AndroidCollaborationRemoteEvidence.pending(evidenceContext, record.conversationId, record.sourceMessageId))
+                        AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
+                    !AndroidCollaborationRemoteEvidence.pendingRequired(evidenceContext, execution,
+                        record.response.content.ifBlank { record.response.richOutputJson }, record.sourceMessageId)
+                } ?: return false else null
             val applied = store.applyLateResponse(record, prepared)
             if (applied) {
                 managedResponses.markApplied(record.ownerRunId)

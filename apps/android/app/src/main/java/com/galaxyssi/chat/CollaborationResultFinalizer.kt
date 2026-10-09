@@ -40,9 +40,30 @@ internal class CollaborationResultFinalizer(
         { execution, raw -> CollaborationDirectedDiscussion.persist(context, execution, raw) })
 
     fun finish(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput): AgentSubagentOutput {
+        return finish(execution, output, preserve(execution, output))
+    }
+
+    suspend fun finishWhenReady(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput,
+                                awaitEvidence: suspend () -> Unit): AgentSubagentOutput {
+        val archiveId = preserve(execution, output)
+        awaitEvidence()
+        return finish(execution, output, archiveId)
+    }
+
+    fun finishIfReady(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput,
+                      evidenceReady: () -> Boolean): AgentSubagentOutput? {
+        val archiveId = preserve(execution, output)
+        if (!evidenceReady()) return null
+        return finish(execution, output, archiveId)
+    }
+
+    private fun preserve(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput): String =
+        if (execution.member.context["collaboration_group_id"].isNullOrBlank()) "" else archive(execution, output.content)
+
+    private fun finish(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput,
+                       archiveId: String): AgentSubagentOutput {
         val group = execution.member.context["collaboration_group_id"].orEmpty()
         if (group.isBlank()) return output
-        val archiveId = archive(execution, output.content)
         val stage = CollaborationResearchWorkflow.stage(execution.member) ?: return output
         if (CollaborationLiveGraph.planner(execution.member)) return output
         val access = CollaborationWorkspaceAccess.from(execution)

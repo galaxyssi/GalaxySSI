@@ -124,6 +124,22 @@ class CollaborationUnifiedStateTest {
             progress["hopper"]).connectionState)
     }
 
+    @Test fun backgroundEvidenceCannotReviveCompletedMemberOrChangeItsReplyTime() {
+        val completed = member("hopper", status = AgentSubagentStatus.SUCCEEDED, end = 220)
+        val reviewer = member("reviewer", "Lovelace", start = 225)
+        val snapshot = team(completed, reviewer).copy(state = AgentTeamExecutionState.RUNNING)
+        val background = CollaborationMemberObservation(10_000, "Synced remaining history", "evidence_sync")
+        val metadata = CollaborationCurrentStatePolicy.metadata(snapshot, completed, background)
+        assertEquals(AgentSubagentStatus.SUCCEEDED, metadata.status)
+        assertEquals("", metadata.connectionState)
+        assertEquals("", metadata.summary)
+        assertEquals(220L, metadata.updatedAtMillis)
+        assertEquals(220L, metadata.completedAtMillis)
+        assertFalse(CollaborationReplyTiming.isTicking(metadata))
+        assertEquals(ConversationHubAgentStatus.RUNNING,
+            CollaborationCurrentStatePolicy.status(snapshot, mapOf("hopper" to background)))
+    }
+
     @Test fun activeTeamWithConnectionLossUsesTheSameRecoveringState() {
         val snapshot = team(member("hopper")).copy(state = AgentTeamExecutionState.RUNNING)
         assertEquals(ConversationHubAgentStatus.RECONNECTING, CollaborationCurrentStatePolicy.status(snapshot,
