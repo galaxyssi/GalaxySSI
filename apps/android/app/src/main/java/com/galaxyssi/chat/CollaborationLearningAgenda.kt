@@ -72,7 +72,7 @@ internal object CollaborationLearningAgenda {
     fun rules() = """
         learning_agenda: {goal_alignment,resource_reasoning,selection_reason,reconsider_when,options:[{id,
           gap:<exact capability_gap ref>,gap_option:"actual gap learning_options id",priority:<positive unique integer>,
-          decision:"select|defer",member:"authorized person UUID",stage:"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE",assignment,
+          decision:"select|defer",member:"exact authorized roster member ID",stage:"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE",assignment,
           current_goal_value,future_transfer_value,information_gain,uncertainty,tradeoff,verification,reconsider_when,
           resource_estimates:[{unit:"elapsed_ms|tokens|cost_micros|network_bytes|tool_calls",status:"estimated|unknown",
             value:<nonnegative number only when estimated>,basis}]}]}.

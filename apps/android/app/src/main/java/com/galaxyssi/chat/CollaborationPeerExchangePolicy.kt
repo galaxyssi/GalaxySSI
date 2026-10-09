@@ -7,10 +7,10 @@ import org.json.JSONObject
 internal object CollaborationPeerExchangePolicy {
     const val FIELD = "peer_updates_from"
     const val CONTEXT = "collaboration_research_peer_updates_from"
-    const val RECIPIENT_INSTRUCTIONS = "Address requests[].to using exact member IDs from the supplied roster. " +
-        "IDs are opaque strings, not necessarily UUIDs; copy them unchanged, never invent a UUID or substitute a display name. " +
-        "A coordination request asks the coordinator to assess work; it does not address a peer. " +
-        "To offer a result to a peer, publish requests with that recipient ID and the relevant exact workspace versions. "
+    const val MEMBER_ID_INSTRUCTIONS = "Member IDs are opaque roster strings, not necessarily UUIDs; copy them unchanged, never use display names. "
+    const val RECIPIENT_INSTRUCTIONS = MEMBER_ID_INSTRUCTIONS +
+        "Set requests[].to to the recipients' IDs and offer exact workspace versions. " +
+        "A coordination request asks the coordinator to assess work; it does not address a peer. "
     const val INSTRUCTIONS = "For useful communication during execution, a work item may set peer_updates_from:[exact roster member IDs]. " +
         "Only explicitly addressed interim publications from these peers can enter that assignment. Omitted/empty keeps it isolated; " +
         "independent_review assignments remain frozen and cannot opt in. Choose peers whose evidence can change an action, not all members by default. " +

@@ -29,7 +29,7 @@ internal object CollaborationLiveGraph {
         New tokens can be used in uses_milestones, rebind_inputs, rebind_reviews or revise_input_dependencies.
         They do not finish the producer or prove a claim.
         Return one JSON object: {"format":"$FORMAT","summary":"concise public progress in the user's language",
-        "work":[{"id":"stable new work ID","member":"existing authorized person UUID",
+        "work":[{"id":"stable new work ID","member":"exact authorized roster member ID",
         "stage":"EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE","assignment":"concrete verification or improvement with evidence",
         "depends_on":["stable work IDs"],"dependency_policy":"success|terminal","independent_review":false}]}.
         To consume a published interim version before its author finishes, add uses_milestones:["exact host token"]

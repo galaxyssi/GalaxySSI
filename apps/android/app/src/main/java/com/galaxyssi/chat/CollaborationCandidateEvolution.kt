@@ -253,7 +253,7 @@ internal object CollaborationCandidateEvolution {
     }
 
     fun instructions() = "Optional candidate_cycles enrolls exact existing workspace candidates without a fixed candidate-count limit: " +
-        "[{target:{object_id,revision,sha256},criterion_id:\"preserved goal criterion ID\",editor:\"person UUID\",reviewer:\"independent person UUID\"}]. " +
+        "[{target:{object_id,revision,sha256},criterion_id:\"preserved goal criterion ID\",editor:\"exact roster member ID\",reviewer:\"independent exact roster member ID\"}]. " +
         "Use only documentary criteria with required_observations and the exact requirement in candidate.criteria. " +
         "Every applicable refutation may lead to a repair and a fresh independent review, with no fixed repair or review count. " +
         "Candidate reviewers must read every original evidence page before publishing; a listed ID or summary does not count. " +
