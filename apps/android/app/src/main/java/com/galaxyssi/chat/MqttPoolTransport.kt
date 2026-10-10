@@ -186,7 +186,43 @@ internal class MqttPoolTransport(
     }
 
     fun publish(topic: String, message: MqttMessage, context: Any? = null, callback: IMqttActionListener? = null,
-                publication: Publication? = null): IMqttDeliveryToken {
+                publication: Publication? = null): IMqttDeliveryToken =
+        publishPacket(topic, message, context, callback, publication, notify = true)
+
+    /** One admitted physical token, not proof of peer receipt or task completion. */
+    fun publishTransientControl(topic: String, message: MqttMessage, context: Any? = null,
+                                callback: IMqttActionListener? = null, publication: Publication): IMqttDeliveryToken {
+        if (publication.traffic != MqttMultipathPolicy.Traffic.CONTROL || publication.bootstrap ||
+            publication.authorizedPaths == null ||
+            mqttPublishPacketBytes(topic, message.payload.size) > MqttBrokerCatalog.SMALL_PACKET_BYTES)
+            return publish(topic, message, context, callback, publication)
+        val paths = policy.plan(publication.peer, publication.messageId, publication.traffic,
+            mqttPublishPacketBytes(topic, message.payload.size).toInt(), publication.receiveTopics, now(),
+            attempted = publication.attemptedBrokers)
+            .filter { it.delayMs == 0L && publication.authorizedPaths[it.brokerId] == it.generation }
+            .map { it.brokerId to it.generation }.distinct()
+        if (paths.isEmpty()) return publish(topic, message, context, callback, publication)
+        var accepted: IMqttDeliveryToken? = null
+        var lastError: Exception? = null
+        for ((broker, generation) in paths) {
+            try {
+                val primary = accepted == null
+                val token = publishPacket(topic, message, if (primary) context else null,
+                    if (primary) callback else null,
+                    publication.copy(authorizedPaths = mapOf(broker to generation)), notify = primary)
+                if (token.exception == null) { if (accepted == null) accepted = token }
+                else lastError = token.exception
+            } catch (error: MqttException) {
+                lastError = error
+            } catch (error: IllegalArgumentException) {
+                lastError = error
+            }
+        }
+        return accepted ?: throw (lastError ?: MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED.toInt()))
+    }
+
+    private fun publishPacket(topic: String, message: MqttMessage, context: Any?, callback: IMqttActionListener?,
+                              publication: Publication?, notify: Boolean): IMqttDeliveryToken {
         require(message.qos == 1 && !message.isRetained)
         val payload = message.payload
         val size = mqttPublishPacketBytes(topic, payload.size)
@@ -211,7 +247,7 @@ internal class MqttPoolTransport(
                 policy.discardAttempt(attempt)
                 throw error
             }
-            synchronized(lock) { publications[attempt] = Pending(token, broker, generation, !descriptor.bootstrap) }
+            synchronized(lock) { publications[attempt] = Pending(token, broker, generation, notify && !descriptor.bootstrap) }
             descriptor.chunk?.let { policy.trackChunk(descriptor.peer, it, broker, generation, size.toInt(), at) }
             attemptedPhysicalPublish = true
             if (pool.publish(broker, generation, topic, payload, attempt) != null) return token

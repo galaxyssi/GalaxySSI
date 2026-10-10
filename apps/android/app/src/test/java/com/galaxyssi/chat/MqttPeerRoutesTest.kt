@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import org.json.JSONObject
+import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -52,6 +53,111 @@ class MqttPeerRoutesTest {
     private fun receive(payload: JSONObject, ours: MqttPeerRoutes.Binding = binding, broker: String = "hivemq") =
         routes.handleVerified(ours.scope, payload, rig.ingress(broker), ours.identity)
     private fun sentCount() = rig.clients.values.flatten().sumOf { it.sent.size }
+
+    @Test fun transientQueryRacesIdenticalCiphertextButRegistersOnlyOnePhysicalToken() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        val bytes = "already-encrypted-wire".toByteArray()
+        val descriptor = routes.transientPublication("outbox", bytes, binding.secret)!!
+        val before = sentCount()
+        rig.completed.clear()
+        val token = rig.transport.publishTransientControl("outbox", MqttMessage(bytes).apply { qos = 1 },
+            publication = descriptor)
+        assertEquals(before + 3, sentCount())
+        assertEquals(listOf(token.messageId to true), rig.completed.toList())
+        rig.clients.values.forEach { assertArrayEquals(bytes, it.last().sent.last().message.payload) }
+        assertEquals(0, rig.transport.policy.diagnostics().inflightPackets)
+    }
+
+    @Test fun transientQueryRequiresTheCurrentAuthenticatedRelationship() {
+        start()
+        assertNull(routes.transientPublication("outbox", byteArrayOf(1), binding.secret))
+        receive(ack())
+        assertNull(routes.transientPublication("outbox", byteArrayOf(1), "wrong-secret"))
+        val descriptor = routes.transientPublication("outbox", byteArrayOf(1), binding.secret)!!
+        val before = sentCount()
+        routes.replace(emptyList())
+        assertThrows(IllegalArgumentException::class.java) { descriptor.onPath!!("hivemq", 1L) }
+        assertEquals(before, sentCount())
+    }
+
+    @Test fun transientQueryDoesNotTriplicateTheCapacityBudget() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        rig.earlyAck = false
+        val message = MqttMessage("sealed-query".toByteArray()).apply { qos = 1 }
+        val descriptor = routes.transientPublication("outbox", message.payload, binding.secret)!!
+        repeat(MqttBrokerCatalog.INFLIGHT_PACKETS - MqttBrokerCatalog.CONTROL_RESERVE) {
+            rig.transport.publish("outbox", message,
+                publication = descriptor.copy(traffic = MqttMultipathPolicy.Traffic.MESSAGE))
+        }
+        val before = sentCount()
+        assertNotNull(rig.transport.publishTransientControl("outbox", message, publication = descriptor))
+        assertEquals(before + MqttBrokerCatalog.CONTROL_RESERVE, sentCount())
+        assertEquals(MqttBrokerCatalog.INFLIGHT_PACKETS, rig.transport.policy.diagnostics().inflightPackets)
+        assertThrows(MqttPoolTransport.BackpressureException::class.java) {
+            rig.transport.publishTransientControl("outbox", message, publication = descriptor)
+        }
+    }
+
+    @Test fun largeTransientResultRetainsOrdinarySinglePathAdmission() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        val bytes = ByteArray(MqttBrokerCatalog.SMALL_PACKET_BYTES)
+        val descriptor = routes.transientPublication("outbox", bytes, binding.secret)!!
+        assertEquals(MqttMultipathPolicy.Traffic.MESSAGE, descriptor.traffic)
+        val before = sentCount()
+        rig.transport.publishTransientControl("outbox", MqttMessage(bytes).apply { qos = 1 }, publication = descriptor)
+        assertEquals(before + 1, sentCount())
+    }
+
+    @Test fun oneChangedPathDoesNotAuthorizeItOrBlockOtherAuthorizedPaths() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        val bytes = "sealed-query".toByteArray()
+        val descriptor = routes.transientPublication("outbox", bytes, binding.secret)!!
+        val checked = mutableListOf<String>()
+        val before = sentCount()
+        val selected = descriptor.copy(onPath = { broker, generation ->
+            checked.add(broker)
+            require(broker != "emqx") { "Changed route" }
+            descriptor.onPath!!(broker, generation)
+        })
+        rig.transport.publishTransientControl("outbox", MqttMessage(bytes).apply { qos = 1 }, publication = selected)
+        assertEquals(MqttBrokerCatalog.brokers.keys, checked.toSet())
+        assertEquals(before + 2, sentCount())
+        assertEquals(0, rig.transport.policy.diagnostics().inflightPackets)
+    }
+
+    @Test fun revocationBetweenCopiesStopsTheRemainingPublications() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        val bytes = "sealed-query".toByteArray()
+        val descriptor = routes.transientPublication("outbox", bytes, binding.secret)!!
+        var checked = 0
+        val selected = descriptor.copy(onPath = { broker, generation ->
+            if (++checked == 2) routes.replace(emptyList())
+            descriptor.onPath!!(broker, generation)
+        })
+        val before = sentCount()
+        rig.transport.publishTransientControl("outbox", MqttMessage(bytes).apply { qos = 1 }, publication = selected)
+        assertEquals(before + 1, sentCount())
+        assertEquals(0, rig.transport.policy.diagnostics().inflightPackets)
+    }
+
+    @Test fun expiredTransientPublicationCannotSendOrRetainCapacity() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        val bytes = "sealed-query".toByteArray()
+        val descriptor = routes.transientPublication("outbox", bytes, binding.secret)!!
+        rig.wall.addAndGet(MqttBrokerCatalog.RESUME_TTL_MS + 1)
+        val before = sentCount()
+        assertThrows(IllegalArgumentException::class.java) {
+            rig.transport.publishTransientControl("outbox", MqttMessage(bytes).apply { qos = 1 }, publication = descriptor)
+        }
+        assertEquals(before, sentCount())
+        assertEquals(0, rig.transport.policy.diagnostics().inflightPackets)
+    }
 
     @Test fun queryReadinessRequiresTheRequestedPeerEvenWhenAnotherPeerIsReady() {
         val other = binding.copy(scope = "other", receiver = "d".repeat(64), secret = "e".repeat(43),
