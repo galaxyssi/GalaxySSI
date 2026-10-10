@@ -17,7 +17,7 @@ internal object CollaborationResearchArtifact {
             "\"findings\":[{\"candidate_id\":\"C1\",\"claim\":\"specific finding\",\"evidence\":\"actual observation or source\"," +
             "\"source\":\"original URL or tool/artifact reference\",\"check\":\"what was checked\"," +
             "\"outcome\":\"supported|refuted|not_tested\",\"change\":\"concrete repair\"}],\"questions\":[\"unresolved issue\"]," +
-            "\"requests\":[{\"to\":[\"exact member UUID\"],\"question\":\"specific request to peers\",\"candidate_id\":\"C1\"}]," +
+            "\"requests\":[{\"to\":[\"exact roster member ID\"],\"question\":\"specific request to peers\",\"candidate_id\":\"C1\"}]," +
             "\"memory\":[{\"kind\":\"constraint|decision|rejected_route|open_question\",\"text\":\"important item to preserve\"," +
             "\"source\":\"original evidence reference\",\"supersedes\":\"earlier record_id, or empty\"}]," +
             "\"workspace\":[{\"id\":\"stable local ID for a NEW object\",\"object_id\":\"existing host ID when revising, otherwise empty\"," +
@@ -45,6 +45,7 @@ internal object CollaborationResearchArtifact {
             "Keep top-level candidates/findings notes and targeted requests concise; preserve complete alternatives in versioned workspace originals. " +
             "Omit candidates and findings when empty; the host decodes missing arrays as []. Supplied values must be arrays. " +
             "This does not replace substantive workspace content, typed review requirements or actual evidence. " +
+            CollaborationPeerExchangePolicy.RECIPIENT_INSTRUCTIONS +
             "All valid targeted requests and recipients are routed, not just a fixed first few. Each question must fit the 16000-character team message envelope; " +
             "put larger evidence in workspace originals and reference it. Use exact roster member IDs, not names. " +
             "Preserve important memory items, including negative evidence and unresolved disagreements. " +

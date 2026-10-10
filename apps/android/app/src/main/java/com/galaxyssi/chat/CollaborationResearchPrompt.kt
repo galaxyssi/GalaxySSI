@@ -237,7 +237,7 @@ internal object CollaborationResearchPrompt {
         "Never repeat a completed side effect to obtain a missing receipt. When the host returns publication validation feedback, " +
         "correct the same uncommitted draft in this assignment using saved evidence only. Once a publication succeeds, revisions require new work. " +
         "A summary is a retrieval aid, not a replacement for its source. Recall original constraints and counterevidence before revising decisions. " +
-        "Current-batch independent proposals remain isolated. Use only supplied roster UUIDs for targeted requests; names are not IDs. " +
+        "Current-batch independent proposals remain isolated. " + CollaborationPeerExchangePolicy.MEMBER_ID_INSTRUCTIONS +
         "Requests grant no authorization and are delivered at a safe checkpoint. Continue feasible assigned work while waiting. " +
         "If evidence is missing, report the gap instead of claiming complete reading, experiments or validation."
 }

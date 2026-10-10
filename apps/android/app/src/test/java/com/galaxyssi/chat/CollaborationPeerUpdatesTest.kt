@@ -55,6 +55,38 @@ class CollaborationPeerUpdatesTest {
         assertTrue(w.publicationRevisions(author, author.nodeId).isEmpty())
     }
 
+    @Test fun opaqueAndUuidRecipientsBothReceiveOnlyTheirAddressedOriginal() {
+        for (id in listOf("turing", "member:primary-7", "f71e12a1-d4dc-4b53-9bfe-e69f081f7826")) {
+            val w = CollaborationResearchWorkspace(Rows())
+            val recipient = reader.copy(personId = id)
+            w.enrollPublication(author, CollaborationResearchStage.EXPLORE)
+            w.enrollPublication(recipient, CollaborationResearchStage.EXECUTE)
+            val ref = publish(w, "offered", listOf(id))
+            val page = w.peerUpdates(recipient, "", setOf(author.nodeId))
+            assertEquals(1, page.getJSONArray("milestones").length())
+            assertNotNull(read(w, w.peerReadAccess(recipient), ref))
+            assertNull(read(w, reader.copy(personId = "unaddressed-display-name"), ref))
+        }
+    }
+
+    @Test fun coordinatorRequestDoesNotSubstituteForAddressingAPeer() {
+        val w = workspace()
+        val raw = artifact("coordinator-only").apply {
+            remove("requests")
+            put("coordination", JSONObject().put("mode", "request")
+                .put("decision", "Compare the measured alternatives")
+                .put("why_now", "New original evidence is available"))
+        }
+        val receipt = w.publishMilestone(author, "coordinator-only", raw.toString())
+        assertEquals(receipt.toString(), "recorded", receipt.getString("status"))
+        val first = w.peerUpdates(reader, "", setOf(author.nodeId))
+        assertEquals(0, first.getJSONArray("milestones").length())
+        val ref = publish(w, "addressed-peer")
+        val next = w.peerUpdates(reader, first.getString("next_cursor"), setOf(author.nodeId))
+        assertEquals(1, next.getJSONArray("milestones").length())
+        assertNotNull(read(w, w.peerReadAccess(reader), ref))
+    }
+
     @Test fun finalPublicationCanCiteGrantedPeerVersionWithoutChangingDispatchBinding() {
         val rows = Rows(); val w = workspace(rows); val ref = publish(w, "candidate")
         w.peerUpdates(reader, "", setOf(author.nodeId))

@@ -1300,7 +1300,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         if (researchStage != null) {
             append("Current research stage: ").append(researchStage.name).append('\n')
             if (!goalController && !livePlanner) append(CollaborationResearchArtifact.instructions(researchStage)).append('\n')
-            append("Optional targeted questions use only these member UUIDs, never names as IDs:\n")
+            append(CollaborationPeerExchangePolicy.RECIPIENT_INSTRUCTIONS).append('\n')
+            append("Exact member IDs for targeted questions:\n")
                 .append(context.request.context["collaboration_research_roster"]?.toString().orEmpty()).append('\n')
             append("Requests do not grant authorization, are not broadcasts, and will be read at a later safe checkpoint. ")
             append("Do not wait idle for a reply: continue your assigned work and record unanswered requests as open issues.\n")

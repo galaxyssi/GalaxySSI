@@ -6,6 +6,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationResearchPromptTest {
+    @Test fun everyResearchRoleUsesOpaqueRosterIdsIncludingBudgetedPrompts() {
+        val misleading = Regex("(?:person|member|roster) UUID", RegexOption.IGNORE_CASE)
+        for (stage in CollaborationResearchStage.entries) {
+            for (planner in listOf(false, true)) {
+                val base = execution("goal ".repeat(10000), stage)
+                val current = base.copy(member = base.member.copy(context = base.member.context +
+                    (CollaborationLiveGraph.PLANNER to if (planner) "1" else "0")))
+                val text = CollaborationResearchPrompt.build(current, descriptor(), emptyMap()).text
+                assertTrue("Recipient guidance missing for $stage planner=$planner",
+                    text.contains(CollaborationPeerExchangePolicy.MEMBER_ID_INSTRUCTIONS))
+                assertFalse("UUID-only guidance for $stage planner=$planner", misleading.containsMatchIn(text))
+            }
+        }
+        for (instructions in listOf(CollaborationLiveGraph.instructions(), CollaborationGoalLoop.instructions(),
+            CollaborationLearningAgenda.rules(), CollaborationCandidateEvolution.instructions())) {
+            assertTrue(instructions.contains("roster member ID"))
+            assertFalse(misleading.containsMatchIn(instructions))
+        }
+    }
+
     @Test fun exactPeerContractIsVisibleAndRetainedAsRecoverablePromptMaterial() {
         val base = execution("Compare candidates")
         val selected = base.copy(member = base.member.copy(context = base.member.context +
