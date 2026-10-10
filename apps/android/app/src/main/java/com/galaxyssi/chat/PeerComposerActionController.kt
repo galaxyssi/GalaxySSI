@@ -75,12 +75,15 @@ internal fun MainActivity.handleChatCameraActivityResult(
         val contact = selectedContact?.takeIf { it.id == contactId }
             ?: buildChatContacts().firstOrNull { it.id == contactId }
         if (contact != null) {
-            previewPickedAttachments(listOf(uri), camera = true, contactId = contact.id)
+            val captured = PrivateCameraStorage.finish(this, uri, accepted = true)
+            if (captured != null) previewPickedAttachments(listOf(captured), camera = true, contactId = contact.id)
+            else android.widget.Toast.makeText(this, R.string.agent_attachment_camera_unavailable,
+                android.widget.Toast.LENGTH_SHORT).show()
         } else {
-            contentResolver.delete(uri, null, null)
+            PrivateCameraStorage.finish(this, uri, accepted = false)
         }
     } else if (uri != null) {
-        contentResolver.delete(uri, null, null)
+        PrivateCameraStorage.finish(this, uri, accepted = false)
     }
     return true
 }

@@ -699,14 +699,7 @@ internal fun MainActivity.openAgentCamera() {
         requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQUEST_AGENT_CAMERA_PERMISSION)
         return
     }
-    val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "galaxyssi_${System.currentTimeMillis()}.jpg")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/GalaxySSI")
-        }
-    }
-    val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+    val uri = runCatching { PrivateCameraStorage.createOutput(this) }.getOrNull()
     if (uri == null) {
         Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
         return
@@ -714,15 +707,20 @@ internal fun MainActivity.openAgentCamera() {
     pendingAgentCameraUri = uri
     val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
         putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        clipData = ClipData.newRawUri("photo", uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
     if (intent.resolveActivity(packageManager) == null) {
-        contentResolver.delete(uri, null, null)
+        PrivateCameraStorage.finish(this, uri, accepted = false)
         pendingAgentCameraUri = null
         Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
         return
     }
-    startActivityForResult(intent, REQUEST_AGENT_CAMERA)
+    runCatching { startActivityForResult(intent, REQUEST_AGENT_CAMERA) }.onFailure {
+        PrivateCameraStorage.finish(this, uri, accepted = false)
+        pendingAgentCameraUri = null
+        Toast.makeText(this, R.string.agent_attachment_camera_unavailable, Toast.LENGTH_SHORT).show()
+    }
 }
 
 internal fun MainActivity.openChatCamera() {
@@ -734,14 +732,7 @@ internal fun MainActivity.openChatCamera() {
         requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQUEST_CHAT_CAMERA_PERMISSION)
         return
     }
-    val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "galaxyssi_${System.currentTimeMillis()}.jpg")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/GalaxySSI")
-        }
-    }
-    val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+    val uri = runCatching { PrivateCameraStorage.createOutput(this) }.getOrNull()
     if (uri == null) {
         Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
         return
@@ -749,15 +740,20 @@ internal fun MainActivity.openChatCamera() {
     rememberPendingChatCamera(uri, contact.id)
     val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
         putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        clipData = ClipData.newRawUri("photo", uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
     if (intent.resolveActivity(packageManager) == null) {
-        contentResolver.delete(uri, null, null)
+        PrivateCameraStorage.finish(this, uri, accepted = false)
         clearPendingChatCamera()
         Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
         return
     }
-    startActivityForResult(intent, REQUEST_CHAT_CAMERA)
+    runCatching { startActivityForResult(intent, REQUEST_CHAT_CAMERA) }.onFailure {
+        PrivateCameraStorage.finish(this, uri, accepted = false)
+        clearPendingChatCamera()
+        Toast.makeText(this, R.string.agent_attachment_camera_unavailable, Toast.LENGTH_SHORT).show()
+    }
 }
 
 internal fun MainActivity.openChatAttachmentPicker() {

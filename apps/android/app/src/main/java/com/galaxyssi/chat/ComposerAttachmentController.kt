@@ -16,6 +16,7 @@ private const val ROUTE_AGENT = "agent"
 private const val ROUTE_PEER = "peer"
 private const val STATE_KEY = "composer_attachment_state"
 private val draftPersistence = Executors.newSingleThreadExecutor { Thread(it, "composer-draft-store").apply { isDaemon = true } }
+private val attachmentImports = Executors.newFixedThreadPool(2) { Thread(it, "composer-attachment-import").apply { isDaemon = true } }
 private data class ComposerAttachmentState(
     var route: String = "",
     var target: String = "",
@@ -46,19 +47,27 @@ internal fun MainActivity.previewPickedAttachments(uris: List<Uri>, camera: Bool
         else state.peers[target].orEmpty()
     val app = applicationContext
     val owner = java.lang.ref.WeakReference(this)
-    draftPersistence.execute {
+    attachmentImports.execute {
         val base = if (route == ROUTE_AGENT && !activeAgentTarget) {
             val activity = owner.get() ?: return@execute
             AgentWindowStateStore(app).load(activity.conversationWindow.key, target).attachments
                 .map { ComposerAttachmentItem.from(it.draftDescriptor()) }
         } else current
         val limit = if (route == ROUTE_AGENT) MAX_AGENT_ATTACHMENTS else 12
+        var importFailed = false
         val files = uris.distinct().take(limit).mapNotNull { uri ->
             runCatching { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            runCatching { owner.get()?.agentAttachmentMetadata(uri)?.let { ComposerAttachmentItem.from(it.descriptor()) } }.getOrNull()
+            runCatching {
+                owner.get()?.agentAttachmentMetadata(uri)?.let { metadata ->
+                    val retained = ComposerAttachmentImport.retain(app, metadata,
+                        if (route == ROUTE_AGENT) MAX_AGENT_ATTACHMENT_BYTES else Long.MAX_VALUE)
+                    ComposerAttachmentItem.from(retained.draftDescriptor())
+                }
+            }.onFailure { importFailed = true }.getOrNull()
         }
         owner.get()?.runOnUiThread {
             val activity = owner.get()?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@runOnUiThread
+            if (importFailed) Toast.makeText(activity, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
             if (files.isEmpty()) return@runOnUiThread
             val combined = (base + files).distinctBy { it.uri }.take(limit)
             if (combined.size < (base + files).distinctBy { it.uri }.size || uris.distinct().size > limit) {
