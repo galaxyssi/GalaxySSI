@@ -476,6 +476,9 @@ class AgentTaskBudgetExceeded(RuntimeError):
         super().__init__(decision.reason or "Task budget exhausted")
 
 
+COLLABORATION_WORKSPACE_RESULT = "galaxyssi.collaboration-workspace.v1"
+
+
 @dataclass(frozen=True)
 class AgentExecutionPolicy:
     task_kind: AgentTaskKind
@@ -491,6 +494,7 @@ class AgentExecutionPolicy:
     task_intent_signals: tuple[str, ...] = ()
     execution_mode: AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE
     task_budget: AgentTaskBudget = field(default_factory=AgentTaskBudget)
+    result_contract: str = ""
 
     def public(self) -> dict:
         return {
@@ -504,6 +508,7 @@ class AgentExecutionPolicy:
             "max_replans": self.max_replans,
             "max_same_failure_attempts": self.max_same_failure_attempts,
             "requires_artifact": self.requires_artifact,
+            "result_contract": self.result_contract,
             "target_platform": self.target_platform,
             "verify_installation": self.verify_installation,
             "absolute_timeout_seconds": None,
@@ -567,6 +572,8 @@ class AgentExecutionPolicy:
             )[:6],
             execution_mode=execution_mode,
             task_budget=AgentTaskBudget.from_public(value.get("task_budget")),
+            result_contract=(COLLABORATION_WORKSPACE_RESULT
+                             if value.get("result_contract") == COLLABORATION_WORKSPACE_RESULT else ""),
         )
 
 
@@ -917,6 +924,7 @@ def execution_policy_for(
     requested_execution_mode: str | AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE,
     requested_task_budget: Mapping[str, Any] | None = None,
     request_kind: str = "",
+    requested_result_contract: str = "",
 ) -> AgentExecutionPolicy:
     from artifact_request_policy import office_artifact_requested, pdf_artifact_requested, positive_term
     from installation_request_policy import installation_request
@@ -941,6 +949,8 @@ def execution_policy_for(
     has_device = _contains_any(normalized, _DEVICE_TERMS)
     target_platform = "android" if _contains_any(normalized, _ANDROID_TERMS) else ""
     read_only_analysis = request_kind == "screen_analysis"
+    result_contract = (COLLABORATION_WORKSPACE_RESULT
+                       if requested_result_contract == COLLABORATION_WORKSPACE_RESULT and not read_only_analysis else "")
     if read_only_analysis:
         # Captured page text and historical operation words do not request an artifact.
         has_install = has_build = has_artifact_request = has_research = has_device = False
@@ -992,7 +1002,7 @@ def execution_policy_for(
         max_same_failure_attempts=2,
         requires_artifact=execution_mode != AgentExecutionMode.PLAN_ONLY and (
             has_artifact_request
-            or has_build
+            or (has_build and not result_contract)
             or android_install
         ),
         target_platform=target_platform,
@@ -1004,6 +1014,7 @@ def execution_policy_for(
         task_intent_confidence=intent.confidence,
         task_intent_signals=intent.matched_signals + (("office_artifact",) if has_office_request else ()),
         execution_mode=execution_mode,
+        result_contract=result_contract,
         task_budget=AgentTaskBudget.from_public(requested_task_budget),
     )
 
@@ -1061,6 +1072,15 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         from office_authoring import office_authoring_contract
         if authoring_hint := office_authoring_contract():
             artifact_line += "\n" + authoring_hint
+    if policy.result_contract == COLLABORATION_WORKSPACE_RESULT:
+        artifact_line += (
+            "\n- This member returns a versioned collaboration workspace result to the originating App. "
+            "Publish complete source, tests, evidence and review records through the scoped collaboration tools, "
+            "then hand off exact immutable references and a concise summary. Recipients read the saved originals. "
+            "Do not create duplicate JSON/ZIP handoff files just because the assignment mentions build, implementation or tests. "
+            "Explicitly requested downloadable files still require actual files and normal verification/delivery. "
+            "Desktop task completion is not App goal acceptance; original evidence, independent reviews and final delivery remain required."
+        )
     install_line = (
         f"- The target is {target}. Build the native installable artifact, verify its format, "
         "and only claim installation or launch after an execution receipt confirms it."
@@ -1531,11 +1551,12 @@ def finalize_task_artifacts(
     *,
     allow_device_install: bool = False,
     reply_content: str = "",
+    execution_policy: AgentExecutionPolicy | None = None,
 ) -> ArtifactFinalization:
     from artifact_request_policy import keep_office_outputs_separate
     from task_workspace import select_reply_artifacts, task_artifacts, task_workspace
 
-    policy = execution_policy_for(prompt)
+    policy = execution_policy if execution_policy is not None else execution_policy_for(prompt)
     root = task_workspace(task_id, agent_id)
     output_root = root / "outputs"
     output_root.mkdir(parents=True, exist_ok=True)

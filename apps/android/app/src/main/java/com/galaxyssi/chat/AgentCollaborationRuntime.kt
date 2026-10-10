@@ -1215,7 +1215,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "_galaxyssi_task_id" to context.request.taskId,
                 "idempotency_key" to context.request.idempotencyKey,
                 MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
-            ) + reasoningParameters + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
+            ) + reasoningParameters + CollaborationResultContract.assignment(groupId) + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
                 mapOf("manual_target_locked" to "true",
                     EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to context.member.objective.ifBlank { context.request.goal },
                     "manual_model_id" to context.member.context["collaboration_model_id"].orEmpty())

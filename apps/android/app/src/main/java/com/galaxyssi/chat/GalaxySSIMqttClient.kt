@@ -532,7 +532,8 @@ object GalaxySSIMqttClient {
         teamId: String = "",
         agentTeamMessage: Boolean = false,
         trustedBackgroundCognition: Boolean = false,
-        requestKind: String = ""
+        requestKind: String = "",
+        resultContract: String = ""
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -553,7 +554,8 @@ object GalaxySSIMqttClient {
         teamId = teamId,
         agentTeamMessage = agentTeamMessage,
         trustedBackgroundCognition = trustedBackgroundCognition,
-        requestKind = requestKind
+        requestKind = requestKind,
+        resultContract = resultContract
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -576,7 +578,8 @@ object GalaxySSIMqttClient {
         teamId: String = "",
         agentTeamMessage: Boolean = false,
         trustedBackgroundCognition: Boolean = false,
-        requestKind: String = ""
+        requestKind: String = "",
+        resultContract: String = ""
     ): MqttPublishResult {
         val publishStartedAt = SystemClock.elapsedRealtime()
         val publishStartedNs = SystemClock.elapsedRealtimeNanos()
@@ -649,12 +652,7 @@ object GalaxySSIMqttClient {
         }
         recordPublishStage("payload_ready", "chars=${content.length}")
         runId.trim().takeIf(String::isNotBlank)?.let { payload.put("run_id", it) }
-        agentInstanceId.trim()
-            .takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,95}")) }
-            ?.let { payload.put("agent_instance_id", it) }
-        teamId.trim()
-            .takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
-            ?.let { payload.put("team_id", it) }
+        CollaborationResultContract.encode(payload, resultContract, teamId, agentInstanceId)
         if (agentTeamMessage) payload.put("agent_team_message", true)
         val resolvedTraceId = traceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
             .orEmpty()
