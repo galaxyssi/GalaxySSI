@@ -184,15 +184,46 @@ def _is_user_visible_artifact(file_path: Path) -> bool:
 def select_reply_artifacts(
     content: str, artifacts: list[dict], task_id: str, *, discover_unlisted: bool = False,
 ) -> list[dict]:
-    """Explicit final links select deliverables; unlinked replies keep all outputs."""
+    """Research summaries select exact files; ordinary unlinked replies keep outputs."""
+    from research_delivery import research_summary
+    summary = research_summary(content)
+    fallback = artifacts if summary is None else []
     if not artifacts and not discover_unlisted:
-        return artifacts
+        return fallback
     if not _safe_component(task_id):
-        return artifacts
+        return fallback
+    root = _task_directory(task_id)[1]
+    references = _reply_artifact_references(
+        content if summary is None else summary, task_id, discover_unlisted=discover_unlisted,
+    )
+    if not references:
+        return fallback
+    selected: dict[Path, dict] = {}
+    for item in artifacts:
+        if not isinstance(item, dict):
+            continue
+        source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
+        if source is not None and source.resolve() in references:
+            selected.setdefault(source.resolve(), item)
+    if discover_unlisted:
+        # Directory inventory is bounded; explicit final links are not inventory entries.
+        # Only delivery/persistence callers opt in, never the rich-output renderer.
+        for source in references:
+            if source in selected:
+                continue
+            descriptor = _reply_artifact_descriptor(root, source, task_id)
+            if descriptor is not None:
+                selected[source] = descriptor
+    return [selected[source] for source in references if source in selected] or fallback
+
+
+def _reply_artifact_references(content: str, task_id: str, *, discover_unlisted: bool) -> dict[Path, int]:
     root = _task_directory(task_id)[1]
     references: dict[Path, int] = {}
     for match in MARKDOWN_TARGET.finditer(str(content or "")):
         value = unquote(match.group(1).strip().strip("<>"))
+        if not value or value.startswith("#"):
+            continue
         try:
             parsed = urlparse(value)
         except ValueError:
@@ -230,25 +261,18 @@ def select_reply_artifacts(
             references.setdefault(candidate, len(references))
         except (OSError, ValueError):
             continue
-    if not references:
-        return artifacts
-    selected: dict[Path, dict] = {}
-    for item in artifacts:
-        if not isinstance(item, dict):
-            continue
-        source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
-        if source is not None and source.resolve() in references:
-            selected.setdefault(source.resolve(), item)
-    if discover_unlisted:
-        # Directory inventory is bounded; explicit final links are not inventory entries.
-        # Only delivery/persistence callers opt in, never the rich-output renderer.
-        for source in references:
-            if source in selected:
-                continue
-            descriptor = _reply_artifact_descriptor(root, source, task_id)
-            if descriptor is not None:
-                selected[source] = descriptor
-    return [selected[source] for source in references if source in selected] or artifacts
+    return references
+
+
+def missing_research_deliverables(content: str, selected: list[dict], task_id: str) -> list[str]:
+    from research_delivery import research_summary
+    summary = research_summary(content)
+    if summary is None or not _safe_component(task_id):
+        return []
+    root = _task_directory(task_id)[1]
+    references = _reply_artifact_references(summary, task_id, discover_unlisted=True)
+    delivered = {(root / item["relative_path"]).resolve() for item in selected}
+    return [source.relative_to(root).as_posix() for source in references if source not in delivered]
 
 
 def _reply_artifact_descriptor(root: Path, source: Path, task_id: str) -> dict | None:

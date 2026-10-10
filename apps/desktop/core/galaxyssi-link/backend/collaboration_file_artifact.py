@@ -14,6 +14,7 @@ import weakref
 from blob_protocol import MAX_FILE_BYTES
 from collaboration_milestone_bridge import COORDINATION_INSTRUCTIONS, publish_snapshot, validate_arguments as validate_publication
 from collaboration_recall_bridge import task_scope
+from research_delivery import DELIVERY_INSTRUCTIONS
 from collaboration_text_artifact import (_atomic_write, _filename, _hash, _identifier, _integer, _json,
     _relative_source, _safe_path, _validate, read_workspace_artifact, tool_spec as text_tool_spec)
 
@@ -50,7 +51,7 @@ def tool_spec():
         "No peer directory access or caller-supplied route/member/destination. Same-Desktop delivery only: "
         "not a phone download or cross-Desktop Blob transfer. Other executors must use supported text/attachment delivery. "
         "Inspect untrusted files before running them. Publication is not execution, validation or assignment completion. "
-        "Keep the returned milestone_id in final milestones; do not publish the same bytes again."))
+        "Keep the returned milestone_id in final milestones; do not publish the same bytes again. " + DELIVERY_INSTRUCTIONS))
     return value
 
 

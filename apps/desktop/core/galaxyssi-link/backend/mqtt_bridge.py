@@ -5362,9 +5362,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
         task_id = str(task.get("task_id") or "")
         raw_result = str(task.get("result") or "")
+        from research_delivery import research_summary
+        research_publication = research_summary(raw_result) is not None
         from remote_reply_images import PreparedReplyImages, prepare_reply_images
         remote_images = PreparedReplyImages(raw_result)
-        if not plan_only and not structured_connector_response and not read_only_screen_analysis:
+        if not plan_only and not structured_connector_response and not read_only_screen_analysis and not research_publication:
             remote_images = prepare_reply_images(task_id, raw_result, scope={
                 "task_id": task_id, "client_route_id": client_route_id,
                 "conversation_id": task.get("client_conversation_id") or client_conversation_id,
@@ -5447,12 +5449,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         # Only a failure notice is sent until explicit delivery retry succeeds.
         if preparation_error is not None:
             deliverable_output_files = output_files
-        retain_on_desktop = bool(
+        retain_on_desktop = research_publication or bool(
             not artifact_fast_path
             and full_desktop_executor
             and _requests_desktop_artifact_retention(current_user_request)
         )
-        if structured_connector_response:
+        if structured_connector_response or research_publication:
             reply = raw_result.strip()
             rich_output = None
         else:
@@ -9430,6 +9432,7 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     from rich_output import build_rich_output
     from response_policy import remove_unfulfilled_artifact_claims, sanitize_assistant_response
     from task_workspace import task_workspace
+    from research_delivery import research_summary
 
     agent_id = str(task.get("agent_id") or "")
     task_id = str(task.get("task_id") or "")
@@ -9441,15 +9444,18 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     ]
     from task_workspace import select_reply_artifacts
     output_files = select_reply_artifacts(raw_result, list(task.get("output_files") or []), task_id)
-    cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs)
-    cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
-    reply, rich_output = build_rich_output(
-        cleaned_reply,
-        output_files,
-        task_id,
-        inline_artifacts=False,
-        artifact_selection_content=raw_result,
-    )
+    if research_summary(raw_result) is not None:
+        reply, rich_output = raw_result.strip(), None
+    else:
+        cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs)
+        cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
+        reply, rich_output = build_rich_output(
+            cleaned_reply,
+            output_files,
+            task_id,
+            inline_artifacts=False,
+            artifact_selection_content=raw_result,
+        )
     trace = _desktop_trace(
         _trace_event("desktop_task_result_replay", task_id),
         _trace_event("agent_replied", f"{agent_id} chars={len(reply)}"),
@@ -9508,14 +9514,18 @@ def republish_agent_task_result(task_id: str) -> dict:
     resumed = resume_deferred_artifacts(sys.modules[__name__], task.public(), route_id)
     if resumed is not None:
         return resumed
-    from remote_reply_images import prepare_reply_images
+    from remote_reply_images import PreparedReplyImages, prepare_reply_images
+    from research_delivery import research_summary
     public_task = task.public()
-    remote_images = prepare_reply_images(public_task["task_id"], str(public_task.get("result") or ""), scope={
-        "task_id": public_task["task_id"], "client_route_id": route_id,
-        "conversation_id": public_task.get("client_conversation_id") or public_task.get("conversation_id"),
-        "turn_id": _client_task_turn_id(public_task), "source_message_id": str(public_task.get("source_message_id") or ""),
-        "execution_generation": public_task.get("execution_generation", 1),
-    })
+    raw_result = str(public_task.get("result") or "")
+    remote_images = PreparedReplyImages(raw_result)
+    if research_summary(raw_result) is None:
+        remote_images = prepare_reply_images(public_task["task_id"], raw_result, scope={
+            "task_id": public_task["task_id"], "client_route_id": route_id,
+            "conversation_id": public_task.get("client_conversation_id") or public_task.get("conversation_id"),
+            "turn_id": _client_task_turn_id(public_task), "source_message_id": str(public_task.get("source_message_id") or ""),
+            "execution_generation": public_task.get("execution_generation", 1),
+        })
     current = agent_task_manager.get(task.task_id)
     latest = current.public() if current is not None else {}
     if any(latest.get(key) != public_task.get(key) for key in (
@@ -9542,7 +9552,7 @@ def republish_agent_task_result(task_id: str) -> dict:
     register_artifact_batch(
         artifacts,
         client_route_id=route_id,
-        retain_on_desktop=False,
+        retain_on_desktop=research_summary(public_task["result"]) is not None,
     )
     payload = _build_republished_task_result(public_task, route_id)
     wire_payload = {"scheme": "signal", "_client_route_id": route_id}
