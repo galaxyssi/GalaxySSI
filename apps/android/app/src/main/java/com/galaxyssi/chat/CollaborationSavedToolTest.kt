@@ -23,7 +23,7 @@ internal class CollaborationSavedToolTest(
         val id = input.getString("execution_id")
         val digest = AgentNativeJsonCodec.sha256(input.toNativeObject())
         read(id)?.let {
-            require(it.getString("input_sha256") == digest) { "execution_id already names a different test; recover the original outcome first" }
+            require(it.getString("input_sha256") == digest) { "execution_id already names a different execution; recover the original outcome first" }
             return@synchronized Admission(it, false)
         }
         val record = JSONObject().put("execution_id", id).put("input_sha256", digest)
@@ -75,6 +75,7 @@ internal class CollaborationSavedToolTest(
     fun describe(record: JSONObject?): JSONObject = if (record == null) JSONObject().put("success", true).put("status", "not_recorded") else
         JSONObject().put("success", true).put("status", record.getString("state"))
             .put("execution_id", record.getString("execution_id")).put("input_sha256", record.getString("input_sha256"))
+            .put("execution_mode", executionMode(record.getJSONObject("input")))
             .put("updated_at", record.getLong("updated_at")).put("result", record.optJSONObject("result") ?: JSONObject.NULL)
             .put("retry_after_ms", if (record.getString("state") in ACTIVE) 2_000 else JSONObject.NULL)
             .put("reason", record.optString("reason")).put("automatically_reexecuted", false)
@@ -88,6 +89,7 @@ internal class CollaborationSavedToolTest(
         private val LOCK = Any()
         private val ACTIVE = setOf("queued", "running", "cancelling")
         private val HASH = Regex("[a-f0-9]{64}")
+        private val RUN_RECORDS = setOf(CollaborationExecutableTool.RELEASE, CollaborationCapabilityChannel.FIELD)
 
         fun validateId(id: String) = require(id.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))) {
             "execution_id must be a stable 1-128 character ASCII identifier"
@@ -98,8 +100,14 @@ internal class CollaborationSavedToolTest(
             val fields = input.keys().asSequence().toSet()
             when (input.getString("mode")) {
                 "start" -> {
-                    require(fields == setOf("mode", "execution_id", CollaborationExecutableTool.TEST, "timeout_ms")) { "Start requires an exact saved test plan and timeout_ms; code overrides are not allowed" }
-                    val ref = input.getJSONObject(CollaborationExecutableTool.TEST)
+                    val selected = fields.intersect(RUN_RECORDS)
+                    require(selected.size <= 1) { "Choose exactly one tool_release or capability_channel" }
+                    val record = selected.singleOrNull() ?: CollaborationExecutableTool.TEST
+                    val expected = setOf("mode", "execution_id", record, "timeout_ms") +
+                        if (selected.isEmpty()) emptySet() else setOf("parameters")
+                    require(fields == expected) { "Start requires an exact saved record, timeout_ms and parameters for reuse; code overrides are not allowed" }
+                    if (selected.isNotEmpty()) require(input.opt("parameters") is JSONObject) { "Run parameters must be a JSON object" }
+                    val ref = input.getJSONObject(record)
                     require(ref.keys().asSequence().toSet() == setOf("object_id", "revision", "sha256") &&
                         HASH.matches(ref.getString("object_id")) && HASH.matches(ref.getString("sha256")) &&
                         CollaborationRemoteEvidenceProtocol.integer(ref, "revision") in 1..Int.MAX_VALUE.toLong()) { "Use an exact object_id, integer revision and sha256" }
@@ -118,9 +126,15 @@ internal class CollaborationSavedToolTest(
                     request.opt("phase") == it.opt("mode") && runCatching { validate(it) }.isSuccess
                 } == true
 
-        fun nativeInput(input: JSONObject): Map<String, Any?> = mapOf(
-            CollaborationToolRuntime.INPUT to mapOf("mode" to "test", CollaborationExecutableTool.TEST to input.getJSONObject(CollaborationExecutableTool.TEST).toNativeObject()),
-            "timeout_ms" to input.getLong("timeout_ms"), "network_enabled" to false
-        )
+        fun executionMode(input: JSONObject) = if (RUN_RECORDS.any(input::has)) "run" else "test"
+
+        fun nativeInput(input: JSONObject): Map<String, Any?> {
+            validate(input)
+            require(input.getString("mode") == "start")
+            val record = RUN_RECORDS.singleOrNull(input::has) ?: CollaborationExecutableTool.TEST
+            val request = mutableMapOf<String, Any?>("mode" to executionMode(input), record to input.getJSONObject(record).toNativeObject())
+            if (record in RUN_RECORDS) request["parameters"] = input.getJSONObject("parameters").toNativeObject()
+            return mapOf(CollaborationToolRuntime.INPUT to request, "timeout_ms" to input.getLong("timeout_ms"), "network_enabled" to false)
+        }
     }
 }

@@ -52,6 +52,27 @@ class CollaborationSavedToolTestDeviceTest {
         assertEquals("cancelled", reopened.describe(reopened.read("fixture-test")).getString("status"))
     }
 
+    @Test fun encryptedReuseRetainsExactInputsAndDoesNotResumeUncertainEffects() = withJournal { workspace, access ->
+        for (record in listOf(CollaborationExecutableTool.RELEASE, CollaborationCapabilityChannel.FIELD)) {
+            val request = input().apply {
+                put(record, remove("tool_test_plan"))
+                put("execution_id", record)
+                put("parameters", JSONObject().put("samples", org.json.JSONArray(listOf(2, 0, -1))))
+            }
+            val before = workspace.savedToolTests(access, "before")
+            assertTrue(before.start(request).launch)
+            assertTrue(before.running(record))
+            val after = CollaborationResearchWorkspace(InstrumentationRegistry.getInstrumentation().targetContext)
+                .savedToolTests(access, "after")
+            val restored = after.read(record)!!
+            assertEquals(request.toString(), restored.getJSONObject("input").toString())
+            assertEquals("interrupted", restored.getString("state"))
+            assertEquals("run", after.describe(restored).getString("execution_mode"))
+            assertFalse(after.start(request).launch)
+            assertFalse(after.running(record))
+        }
+    }
+
     @Test fun nativeRuntimeAvailabilityProbeDoesNotDownloadOrStartGuest() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val status = AgentOnDeviceRuntimeManager(context).cachedStatus()

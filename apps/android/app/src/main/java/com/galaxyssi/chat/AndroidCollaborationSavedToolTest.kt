@@ -52,9 +52,9 @@ internal object AndroidCollaborationSavedToolTest {
                     CollaborationRemoteRecallProtocol.unavailable() else response
                 reply(app, request, desktop, safe)
             } catch (error: Exception) {
-                Log.w("GalaxySSIToolTest", "Saved test request rejected: ${error.javaClass.simpleName}")
+                Log.w("GalaxySSIToolTest", "Saved tool request rejected: ${error.javaClass.simpleName}")
                 runCatching { reply(app, request, desktop, JSONObject().put("success", false).put("status", "rejected")
-                    .put("error", error.message ?: "Saved test request could not be admitted")
+                    .put("error", error.message ?: "Saved tool request could not be admitted")
                     .put("do_not_reexecute", true)) }
             }
         }
@@ -118,6 +118,7 @@ internal object AndroidCollaborationSavedToolTest {
         // Full output stays in the evidence ledger; status replies remain small and recoverable.
         val receipt = full.getJSONObject("output").optJSONObject(CollaborationExecutableTool.RECEIPT)
         return JSONObject().put("native_status", result.status.wireValue).put("passed", receipt?.opt("passed") ?: JSONObject.NULL)
+            .put("execution_mode", CollaborationSavedToolTest.executionMode(input))
             .put("error", full.optJSONObject("error")?.let { error -> JSONObject()
                 .put("code", error.optString("code")).put("message", error.optString("message").take(500))
                 .put("details_in_original_evidence", true).apply {

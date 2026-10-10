@@ -125,21 +125,39 @@ class CollaborationSavedToolNativeDeviceTest {
         assertEquals(published.getJSONArray("revisions").getJSONObject(0).getString("sha256"), found.getString("sha256"))
         assertFalse(found.getBoolean("grants_permissions"))
         ledger.bind(source, future)
-        val registry = AgentNativeToolRegistry(replayStore = EncryptedAgentNativeToolReplayStore(context),
-            auditStore = EncryptedAgentNativeToolAuditStore(context), observationRecorder = CollaborationNativeEvidence(context))
-            .registerAll(AgentOnDeviceRuntimeTools.definitions(context))
-        val key = "capability-reuse-${original.groupId}"
-        val result = registry.invoke(AgentOnDeviceRuntimeTools.EXECUTE, mapOf(
-            CollaborationToolRuntime.INPUT to mapOf("mode" to "run", CollaborationExecutableTool.RELEASE to found.toNativeObject(),
-                "parameters" to mapOf("value" to 42)), "timeout_ms" to 120_000, "network_enabled" to false),
-            AgentNativeToolInvocationContext(invocationId = key, sessionId = future.runId, conversationId = future.groupId,
-                turnId = future.turnId, collaborationSourceMessageId = source, callerId = "galaxyssi.test.capability_reuse",
-                idempotencyKey = key, attributes = mapOf("workspace_id" to AgentNativeJsonCodec.sha256(key))))
-        assertTrue(result.toJson(), result.isSuccess)
-        val receipt = JSONObject(result.output).getJSONObject(CollaborationExecutableTool.RECEIPT)
+        val reference = JSONObject().put("object_id", found.getString("object_id"))
+            .put("revision", found.getInt("revision")).put("sha256", found.getString("sha256"))
+        val input = JSONObject().put("mode", "start").put("execution_id", "reuse-42")
+            .put(CollaborationExecutableTool.RELEASE, reference).put("parameters", JSONObject().put("value", 42))
+            .put("timeout_ms", 120_000)
+        val journal = CollaborationResearchWorkspace(context).savedToolTests(future, "reuse-fixture")
+        assertTrue(journal.start(input).launch)
+        assertTrue(journal.running("reuse-42"))
+        val result = AndroidCollaborationSavedToolTest.invokeNative(context, future, source, journal.key("reuse-42"), input,
+            AgentNativeToolCancellationToken.NONE)
+        assertEquals(result.toString(), "succeeded", result.getString("native_status"))
+        assertEquals("run", result.getString("execution_mode"))
+        assertTrue(result.getBoolean("passed"))
+        journal.finish("reuse-42", result)
+        val evidence = result.getJSONObject("galaxyssi_evidence_receipt")
+        val originalOutput = ledger.read(future, evidence.getString("evidence_id"), evidence.getString("sha256"))!!
+        val receipt = JSONObject(originalOutput.getString("output_json")).getJSONObject("output")
+            .getJSONObject(CollaborationExecutableTool.RECEIPT)
         assertEquals(tool.getString("sha256"), receipt.getJSONObject(CollaborationExecutableTool.TOOL).getString("sha256"))
         assertEquals(future.runId, receipt.getString("run_id"))
         assertEquals(42, receipt.getJSONObject("report").getJSONArray("results").getJSONObject(0).getInt("output"))
-        android.util.Log.i("GalaxySSITest", "capability_reuse native=true fresh_task=true output=42 model_calls=0")
+        val reopened = CollaborationResearchWorkspace(context).savedToolTests(future, "reopened-reuse")
+        assertFalse(reopened.start(input).launch)
+        val restored = reopened.describe(reopened.read("reuse-42"))
+        assertEquals("finished", restored.getString("status"))
+        assertEquals("run", restored.getString("execution_mode"))
+        assertFalse(restored.getBoolean("automatically_reexecuted"))
+        assertEquals(evidence.toString(), restored.getJSONObject("result").getJSONObject("galaxyssi_evidence_receipt").toString())
+        assertEquals("finished", reopened.cancel("reuse-42")!!.getString("state"))
+        val changed = JSONObject(input.toString()).put("parameters", JSONObject().put("value", 43))
+        assertTrue(runCatching { reopened.start(changed) }.exceptionOrNull() is IllegalArgumentException)
+        assertEquals(evidence.toString(), reopened.read("reuse-42")!!.getJSONObject("result")
+            .getJSONObject("galaxyssi_evidence_receipt").toString())
+        android.util.Log.i("GalaxySSITest", "capability_reuse native=true remote_adapter=true fresh_task=true output=42 recovered=true duplicate_launch=false model_calls=0")
     }
 }
