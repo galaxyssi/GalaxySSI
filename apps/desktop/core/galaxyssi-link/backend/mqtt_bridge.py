@@ -4679,6 +4679,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
     execution_policy = execution_policy_for(
         execution_policy_prompt,
+        requested_result_contract=payload.get("result_contract", ""),
         request_kind=payload.get("request_kind", ""),
         attachments=(
             str(item.get("name") or "")
@@ -5423,6 +5424,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     agent_id,
                     allow_device_install=full_desktop_executor,
                     reply_content=raw_result,
+                    execution_policy=execution_policy,
                 )
             )
         from task_workspace import select_reply_artifacts
@@ -6275,6 +6277,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     agent_id,
                     allow_device_install=full_desktop_executor,
                     reply_content=str(event_result or ""),
+                    execution_policy=execution_policy,
                 )
                 if finalization.verification.get("status") != "passed":
                     if schedule_required_artifact_repair(finalization.verification):

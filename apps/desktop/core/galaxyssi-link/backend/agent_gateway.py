@@ -893,6 +893,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                     request.run_id,
                     execution_prompt,
                     agent_id,
+                    execution_policy=harness.policy,
                     allow_device_install=(
                         str(request.checkpoint.get("desktop_access_profile") or "")
                         == "desktop_executor"

@@ -1203,6 +1203,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             ),
             connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
             executionPolicyPrompt = action.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER].orEmpty(),
+            resultContract = CollaborationResultContract.forAction(action),
             requestKind = action.parameters["request_kind"].orEmpty(),
             agentModelId = action.parameters["agent_model_id"].orEmpty(),
             agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(

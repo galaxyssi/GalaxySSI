@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from agent_execution_harness import AgentExecutionMode, ArtifactFinalization
+from agent_execution_harness import (
+    COLLABORATION_WORKSPACE_RESULT, AgentExecutionMode, ArtifactFinalization, execution_policy_for,
+)
 import artifact_delivery as delivery
 import mqtt_bridge
 import response_policy
@@ -17,7 +19,8 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
     stop = fixtures.BlobArtifactPeerTests.stop
     enable = fixtures.BlobArtifactPeerTests.enable
 
-    def callback(self, execution=None, policy_prompt="Return the generated file", request="Return the generated file"):
+    def callback(self, execution=None, policy_prompt="Return the generated file", request="Return the generated file",
+                 policy=None):
         # Compile the unchanged production callback body; only its surrounding
         # provider loop is omitted, so no external model or real phone is used.
         tree = ast.parse(inspect.getsource(mqtt_bridge._start_remote_agent_task))
@@ -28,6 +31,7 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
         namespace = {**mqtt_bridge.__dict__, "fast_chat_delivery": False, "plan_only": False,
             "AgentExecutionMode": AgentExecutionMode,
             "read_only_screen_analysis": False, "execution_policy_prompt": policy_prompt,
+            "execution_policy": policy if policy is not None else execution_policy_for(policy_prompt),
             "managed_task_id": {"value": self.payload["task_id"], "execution": execution},
             "agent_id": "codex", "full_desktop_executor": False, "structured_connector_response": False,
             "contact_id": self.payload["contact_id"], "source_message_id": self.payload["source_message_id"],
@@ -98,7 +102,20 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
                 patch("agent_latency.record_task"):
             self.callback(policy_prompt=assignment, request=envelope)(task)
         finalize.assert_called_once_with(task["task_id"], assignment, "codex", allow_device_install=False,
-                                        reply_content=task["result"])
+                                        reply_content=task["result"], execution_policy=execution_policy_for(assignment))
+
+    def test_finalization_preserves_admitted_workspace_handoff_contract(self):
+        assignment = "Review interval-build-native-test and publish exact workspace evidence"
+        policy = execution_policy_for(assignment, requested_result_contract=COLLABORATION_WORKSPACE_RESULT)
+        task = {**self.payload, "status": "completed", "result": "Reviewed saved workspace evidence.",
+                "client_conversation_id": self.payload["conversation_id"], "client_turn_id": self.payload["turn_id"]}
+        with patch("agent_execution_harness.finalize_task_artifacts",
+                   return_value=ArtifactFinalization((), {"status": "passed"})) as finalize, \
+                patch.object(mqtt_bridge, "_publish_or_queue_task_result", return_value=True), \
+                patch("agent_latency.record_task"):
+            self.callback(policy_prompt=assignment, request=assignment, policy=policy)(task)
+        self.assertIs(policy, finalize.call_args.kwargs["execution_policy"])
+        self.assertFalse(finalize.call_args.kwargs["execution_policy"].requires_artifact)
 
 
 if __name__ == "__main__":
