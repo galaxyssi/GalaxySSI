@@ -126,8 +126,9 @@ class CollaborationMilestoneBridgeTest(unittest.TestCase):
             if len(sent) == 2:
                 broker.receive({**request, "type": RESPONSE, "result": {"success": True, "status": "recorded"}}, "phone")
             return True
-        with patch("collaboration_recall_bridge.RETRY_INITIAL_SECONDS", .002):
-            self.assertTrue(broker.query(task, args(), publish, timeout=.03)["success"])
+        from test_collaboration_recall_retry import simulated_time
+        with simulated_time():
+            self.assertTrue(broker.query(task, args(), publish)["success"])
         self.assertEqual(sent[0], sent[1])
 
     def test_pause_stops_delivery_and_phone_rejection_is_preserved(self):
