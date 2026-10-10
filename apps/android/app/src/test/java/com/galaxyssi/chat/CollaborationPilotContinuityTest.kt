@@ -32,6 +32,24 @@ class CollaborationPilotContinuityTest {
         assertNull(F.plan(F.input().apply { remove("continuity") }).continuity)
     }
 
+    @Test fun independentlyFrozenIdentityPolicyKeepsTheOwnedGroupAndOriginalPeople() {
+        val first = seed()
+        val firstPlan = F.plan()
+        val nextInput = F.input(phase = 2).put("initial_identity_policy", "run_scoped")
+        val next = open(2, input = nextInput)
+        val nextPlan = F.plan(nextInput)
+        assertEquals(first.groupId, next.groupId)
+        assertEquals(firstPlan.members, nextPlan.members)
+        val initial = firstPlan.definition(first.groupId, "adaptive-pilot-${first.pilotId}")
+        val later = nextPlan.definition(next.groupId, "adaptive-pilot-${next.pilotId}")
+        assertEquals(initial.members.map { it.context[CollaborationResearchWorkflow.PERSON] },
+            later.members.map { it.context[CollaborationResearchWorkflow.PERSON] })
+        assertTrue(initial.members.map { it.memberId }.toSet().intersect(later.members.map { it.memberId }.toSet()).isEmpty())
+        assertFalse(next.descriptor().getBoolean("fresh_provider_thread_verified"))
+        assertFalse(next.descriptor().getBoolean("old_answers_injected_by_harness"))
+        assertFalse(next.descriptor().getBoolean("retained_learning_proven"))
+    }
+
     @Test fun malformedOwnershipAndImplicitDispositionAreRejected() {
         for (mutation in listOf<(JSONObject) -> Unit>(
             { it.put("study_id", "../user-group") }, { it.put("phase", 0) }, { it.put("phase", "1") },

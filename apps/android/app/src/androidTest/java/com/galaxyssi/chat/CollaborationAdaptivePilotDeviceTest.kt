@@ -64,6 +64,7 @@ class CollaborationAdaptivePilotDeviceTest {
             .put("model_selection", plan.selection.json()).put("phone_dispatch_limit", plan.maximumDispatches)
             .put("trial_timeout_ms", plan.timeoutMillis).put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE)
             .put("production_prompt_preserved", true).put("fixed_work_plan", false)
+            .put("initial_identity_policy", plan.initialIdentityPolicy).put("fresh_provider_thread_verified", false)
             .put("interim_publication_enabled", !plan.singleAgent).put("milestone_archive_complete", false)
             .put("full_ui_lifecycle_tested", false).put("process_restart_tested", false)
             .put("tool_isolation_verified", false).put("equal_budget_comparison", false)

@@ -43,6 +43,27 @@ incomplete archive blocks the next phase. Set `retain_history=false` on the fina
 phase to use the normal group cleanup after archiving. The ownership tombstone
 remains so the same study cannot accidentally run again.
 
+## Initial Execution Identity
+
+An optional top-level `initial_identity_policy` accepts `production` (the
+unchanged default) or `run_scoped`. The latter deterministically namespaces each
+initial execution node using the pilot, group, run and original node ID, before
+admission. Stable roster IDs, roles, assignments, group access, normal history
+retrieval and later production graph expansion are not replaced. Resuming the
+same frozen run yields the same node IDs; a new phase yields distinct IDs.
+
+This addresses one concrete confound: Desktop can key a native conversation by
+App conversation and execution-member identity, so changing only run and turn
+IDs may resume an initial coordinator's previous provider conversation. This
+option does not delete provider history or disable ordinary product memory.
+It also does not prove a fresh provider thread, skills-only transfer or process
+isolation. Audit actual provider thread IDs and injected context separately.
+
+Each phase freezes this option in its protocol hash. It is not part of the
+stable-roster signature, so a predeclared phase may change identity policy while
+retaining its own group. Report such a change as an experimental condition;
+do not silently mix conditions or change a protocol after dispatch.
+
 ## Interpretation
 
 The test harness does not add previous answers to the new goal. The **product's**
@@ -78,7 +99,9 @@ fresh `continuityToken` (lowercase letters, digits and hyphens, max 32). Launch
 these as two separate instrumentation processes on the explicitly selected
 device. The fixture saves an unverified synthetic workflow, checks retrieval
 and its failure condition under a fresh run/turn after process restart, then
-cleans only its dedicated test group. It makes no model calls.
+cleans only its dedicated test group. It also checks that run-scoped initial IDs
+change while stable people remain the same. It makes no model calls and cannot
+verify provider-thread identity or autonomous use of the saved method.
 
 ## Verification (2026-10-09)
 
