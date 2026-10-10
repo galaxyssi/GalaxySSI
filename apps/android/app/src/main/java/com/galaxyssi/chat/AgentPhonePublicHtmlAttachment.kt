@@ -40,7 +40,6 @@ internal object AgentPhonePublicHtmlAttachment {
     private const val MAX_URLS = 4
     private const val MAX_IMAGES = 40
     private const val MAX_LINKS = 200
-    private const val MAX_STAGED_FILES = 32
     private const val FETCH_TIMEOUT_MILLIS = 30_000L
     // Match RFC 3986 URI characters only. Raw CJK prose commonly follows a pasted URL
     // without whitespace and must remain part of the request instead of the URL path.
@@ -63,7 +62,7 @@ internal object AgentPhonePublicHtmlAttachment {
         context: Context,
         turnId: String,
         currentRequest: String,
-        saveRequested: Boolean = true
+        saveRequested: Boolean = false
     ): Result<AgentPhonePublicHtmlPreparation?> = prepareAll(
         context,
         turnId,
@@ -75,7 +74,7 @@ internal object AgentPhonePublicHtmlAttachment {
         context: Context,
         turnId: String,
         currentRequest: String,
-        saveRequested: Boolean = true
+        saveRequested: Boolean = false
     ): Result<List<AgentPhonePublicHtmlPreparation>> = runCatching {
         if (turnId.isBlank()) return@runCatching emptyList()
         val urls = explicitPublicUrls(currentRequest)
@@ -115,7 +114,6 @@ internal object AgentPhonePublicHtmlAttachment {
         val directory = File(context.filesDir, "agent-public-html").apply {
             check(mkdirs() || isDirectory) { "Phone web evidence storage is unavailable" }
         }
-        prune(directory)
         val stableId = UUID.nameUUIDFromBytes("$turnId\u001f${document.url}".toByteArray()).toString()
         val displayName = "${safeFileStem(document.title)}-${stableId.take(8)}.html"
         val file = File(directory, "$stableId.html")
@@ -334,12 +332,6 @@ internal object AgentPhonePublicHtmlAttachment {
         .trim('-', '.')
         .take(64)
         .ifBlank { "public-page" }
-
-    private fun prune(directory: File) {
-        directory.listFiles()?.filter { it.isFile && it.extension.equals("html", true) }
-            ?.sortedByDescending(File::lastModified)
-            ?.drop(MAX_STAGED_FILES - 1)?.forEach(File::delete)
-    }
 
     internal fun writePlaintextHtml(destination: File, html: String): Long {
         val directory = destination.parentFile ?: error("HTML destination has no parent directory")

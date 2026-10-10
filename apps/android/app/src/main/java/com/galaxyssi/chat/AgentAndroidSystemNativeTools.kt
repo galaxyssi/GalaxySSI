@@ -223,7 +223,12 @@ object AgentAndroidSystemNativeTools {
                 AgentNativeToolRisk.HIGH, setOf("download.remove"), emptyList(),
                 input(mapOf("download_id" to integer(1)), setOf("download_id")), listOf(CONSENT_DOWNLOAD)) { invocation ->
                 val id = invocation.long("download_id", 0L)
-                val removed = app.getSystemService(DownloadManager::class.java).remove(id)
+                val store = AgentAndroidDownloadStore(app)
+                val privateFile = store.completed(id)?.let { LocalAttachmentUris.resolve(app, it.uri) }
+                val removed = app.getSystemService(DownloadManager::class.java).remove(id) +
+                    if (privateFile?.delete() == true) 1 else 0
+                store.remove(id)
+                store.removeCompleted(id)
                 success(mapOf("download_id" to id, "removed" to removed), "Download remove completed")
             },
             readTool(app, BIOMETRIC_STATUS, "Read biometric capability", "Reads biometric hardware and enrollment capability without authenticating.",
@@ -608,7 +613,7 @@ object AgentAndroidSystemNativeTools {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "GalaxySSI/$fileName")
+            .setDestinationInExternalFilesDir(context, null, "agent-download-staging/$fileName")
             .setTitle(fileName)
         AgentDynamicArticleRequestPolicy.headers(url).forEach(request::addRequestHeader)
         invocation.text("description", 500).takeIf { it.isNotBlank() }?.let(request::setDescription)
@@ -627,6 +632,20 @@ object AgentAndroidSystemNativeTools {
 
     private fun downloadQuery(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {
         val id = invocation.long("download_id", 0L)
+        AgentAndroidDownloadStore(context).completed(id)?.let { attachment ->
+            val file = LocalAttachmentUris.resolve(context, attachment.uri)
+                ?: return failure("download_file_missing", "Downloaded private attachment is unavailable")
+            return success(mapOf(
+                "download_id" to id,
+                "status" to DownloadManager.STATUS_SUCCESSFUL,
+                "reason" to 0,
+                "bytes_downloaded" to file.length(),
+                "total_bytes" to file.length(),
+                "local_uri" to attachment.uri.toString(),
+                "media_type" to attachment.mimeType,
+                "storage" to "app_private"
+            ), "Download status read")
+        }
         context.getSystemService(DownloadManager::class.java).query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
             if (!cursor.moveToFirst()) return failure("download_not_found", "Download record was not found")
             return success(mapOf(

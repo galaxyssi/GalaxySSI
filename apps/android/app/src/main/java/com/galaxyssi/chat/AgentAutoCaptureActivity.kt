@@ -3,7 +3,6 @@ package com.galaxyssi.chat
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -16,15 +15,12 @@ import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.ImageReader
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
-import android.provider.MediaStore
 import android.util.Log
 import android.view.Gravity
 import android.view.Surface
@@ -33,8 +29,6 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
-import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AgentAutoCaptureActivity : Activity(), TextureView.SurfaceTextureListener {
@@ -325,25 +319,14 @@ class AgentAutoCaptureActivity : Activity(), TextureView.SurfaceTextureListener 
     }
 
     private fun savePhoto(bytes: ByteArray): Uri {
-        val name = "GalaxySSI_${System.currentTimeMillis()}.jpg"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/GalaxySSI")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                ?: error("MediaStore did not create the photo")
-            contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Could not open photo output")
-            contentResolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
-            return uri
+        val file = PrivateCameraStorage.createFile(filesDir)
+        return try {
+            AttachmentLocalStore.storeBytes(bytes, file)
+            LocalAttachmentUris.forFile(this, file, file.name, "image/jpeg")
+        } catch (error: Exception) {
+            file.delete()
+            throw error
         }
-        val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "GalaxySSI").apply { mkdirs() }
-        val file = File(directory, name)
-        FileOutputStream(file).use { it.write(bytes) }
-        MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/jpeg"), null)
-        return Uri.fromFile(file)
     }
 
     private fun failAndFinish(message: String, code: String = "camera_capture_failed") {

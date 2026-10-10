@@ -1938,10 +1938,12 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         if (requestCode == REQUEST_AGENT_CAMERA) {
             val uri = pendingAgentCameraUri
             pendingAgentCameraUri = null
-            if (resultCode == RESULT_OK && uri != null) {
-                previewPickedAttachments(listOf(uri), camera = true)
-            } else if (uri != null) {
-                contentResolver.delete(uri, null, null)
+            if (uri != null) {
+                val captured = PrivateCameraStorage.finish(this, uri, accepted = resultCode == RESULT_OK)
+                if (captured != null) previewPickedAttachments(listOf(captured), camera = true)
+                else if (resultCode == RESULT_OK) {
+                    Toast.makeText(this, R.string.agent_attachment_camera_unavailable, Toast.LENGTH_SHORT).show()
+                }
             }
             return
         }
