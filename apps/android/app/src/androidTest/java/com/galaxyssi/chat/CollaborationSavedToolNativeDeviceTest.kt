@@ -158,6 +158,28 @@ class CollaborationSavedToolNativeDeviceTest {
         assertTrue(runCatching { reopened.start(changed) }.exceptionOrNull() is IllegalArgumentException)
         assertEquals(evidence.toString(), reopened.read("reuse-42")!!.getJSONObject("result")
             .getJSONObject("galaxyssi_evidence_receipt").toString())
+        val invalid = JSONObject(input.toString()).put("execution_id", "invalid-parameters")
+            .put("parameters", JSONObject().put("value", "not-an-integer"))
+        val rejected = AndroidCollaborationSavedToolTest.invokeNative(context, future, source, journal.key("invalid-parameters"), invalid,
+            AgentNativeToolCancellationToken.NONE)
+        assertEquals("failed", rejected.getString("native_status"))
+        val later = future.copy(runId = "later-run", turnId = "later-turn", nodeId = "learn-from-history")
+        val historyQuery = found.getJSONObject("usage_recall")
+        val history = JSONObject(CollaborationCloudRecall.execute(context, later, historyQuery))
+        assertEquals("original_native_tool_observation", history.getString("record_kind"))
+        val uses = history.getJSONArray("records").let { rows -> (0 until rows.length()).map(rows::getJSONObject) }
+        assertEquals(2, uses.size)
+        val succeeded = uses.single { it.optBoolean("runtime_reported_passed") }
+        val failed = uses.single { it.getString("native_status") == "failed" }
+        assertEquals(evidence.getString("evidence_id"), succeeded.getString("evidence_id"))
+        assertFalse(failed.getBoolean("runtime_report_available"))
+        assertTrue(failed.isNull("runtime_reported_passed"))
+        assertTrue(history.isNull("quality_effect"))
+        val read = failed.getJSONObject("read_original")
+        val failedOriginal = JSONObject(CollaborationCloudRecall.execute(context, later, read))
+        assertTrue(failedOriginal.getString("content").contains("not-an-integer"))
+        assertEquals(2, CollaborationResearchWorkspace(context).methodHistory(later, reference).getJSONArray("records").length())
         android.util.Log.i("GalaxySSITest", "capability_reuse native=true remote_adapter=true fresh_task=true output=42 recovered=true duplicate_launch=false model_calls=0")
+        android.util.Log.i("GalaxySSITest", "tool_experience reopened=true observed_success=1 observed_rejection=1 quality_claim=false model_calls=0")
     }
 }

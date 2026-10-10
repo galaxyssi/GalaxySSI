@@ -7,7 +7,7 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.7.0", title = context.getString(R.string.collaboration_recall_title),
+            id = ID, version = "1.8.0", title = context.getString(R.string.collaboration_recall_title),
             description = context.getString(R.string.collaboration_recall_description) + " " + CollaborationPeerUpdates.INSTRUCTIONS,
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(

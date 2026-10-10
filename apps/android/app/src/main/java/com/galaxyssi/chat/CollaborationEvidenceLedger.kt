@@ -172,6 +172,11 @@ internal class CollaborationEvidenceLedger(
             selected.lastOrNull()?.takeIf { keys.size > selected.size }
     }
 
+    fun toolHistory(access: CollaborationWorkspaceAccess, release: JSONObject, cursor: String = ""): JSONObject = synchronized(LOCK) {
+        if (!authorized(access.groupId)) throw CollaborationEvidenceAccessRevoked()
+        CollaborationToolExperience.browse(rows, prefix(access.groupId) + "observation:", access, release, cursor) { id -> read(access, id) }
+    }
+
     /** Indexed original failures, not a scan of all successful calls or a generated diagnosis. */
     fun problems(access: CollaborationWorkspaceAccess, cursor: String = ""): Pair<List<JSONObject>, String?> = synchronized(LOCK) {
         if (!authorized(access.groupId)) return@synchronized emptyList<JSONObject>() to null

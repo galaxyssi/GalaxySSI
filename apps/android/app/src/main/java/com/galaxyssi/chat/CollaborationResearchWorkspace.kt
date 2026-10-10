@@ -52,7 +52,8 @@ internal class CollaborationResearchWorkspace(
     private val evidence: ((CollaborationWorkspaceAccess, JSONArray) -> JSONArray)? = null,
     private val accessAuthorized: (CollaborationWorkspaceAccess) -> Boolean = { true },
     private val evidenceReadCoverage: ((CollaborationWorkspaceAccess, JSONObject) -> Unit)? = null,
-    private val evidenceOriginal: ((CollaborationWorkspaceAccess, JSONObject) -> JSONObject?)? = null
+    private val evidenceOriginal: ((CollaborationWorkspaceAccess, JSONObject) -> JSONObject?)? = null,
+    private val toolExperience: ((CollaborationWorkspaceAccess, JSONObject, String) -> JSONObject)? = null
 ) {
     constructor(context: Context) : this(object : CollaborationWorkspaceRows {
         private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
@@ -67,7 +68,8 @@ internal class CollaborationResearchWorkspace(
             access.personId.isNotBlank() && group != null && group.conversationId == access.groupId &&
                 group.members.any { it.id == access.personId }
         }, { access, review -> CollaborationEvidenceLedger(context).requireReadCoverage(access, review) },
-        { access, ref -> CollaborationEvidenceLedger(context).read(access, ref.getString("evidence_id"), ref.getString("sha256")) })
+        { access, ref -> CollaborationEvidenceLedger(context).read(access, ref.getString("evidence_id"), ref.getString("sha256")) },
+        { access, ref, cursor -> CollaborationEvidenceLedger(context).toolHistory(access, ref, cursor) })
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
@@ -642,8 +644,12 @@ internal class CollaborationResearchWorkspace(
     fun methodHistory(access: CollaborationWorkspaceAccess, ref: JSONObject, cursor: String = ""): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         val method = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Method is missing or isolated" }
-        require(method.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL) &&
+        require(method.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL, CollaborationExecutableTool.RELEASE) &&
             CollaborationResearchCandidates.same(method, ref)) { "Method revision or digest changed" }
+        if (method.getString("kind") == CollaborationExecutableTool.RELEASE) {
+            return@synchronized requireNotNull(toolExperience) { "Native tool history is unavailable" }
+                .invoke(access, CollaborationResearchCandidates.reference(method), cursor)
+        }
         CollaborationMethodExperience(rows, access.groupId).browse(access, CollaborationResearchCandidates.reference(method), cursor)
     }
 
@@ -690,7 +696,7 @@ internal class CollaborationResearchWorkspace(
                     if (!linked.containsKey(id)) linked[id] = read(access, ref.getString("object_id"), ref.getInt("revision"))
                     linked[id]
                 }?.let { match ->
-                    if (original.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL))
+                    if (original.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL, CollaborationExecutableTool.RELEASE))
                         match.put("usage_recall", JSONObject().put("mode", "method_history").put("object_id", original.getString("object_id"))
                             .put("revision", original.getInt("revision")).put("sha256", original.getString("sha256")))
                     found.add(match)

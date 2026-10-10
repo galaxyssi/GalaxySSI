@@ -15,7 +15,7 @@ class CollaborationExecutableToolTest {
         val rows = CollaborationEvolutionTest.Rows()
         val ledger = CollaborationEvidenceLedger(CollaborationEvolutionTest.Rows())
         fun reopen() = CollaborationResearchWorkspace(rows, evidence = ledger::references, evidenceReadCoverage = ledger::requireReadCoverage,
-            evidenceOriginal = { a, r -> ledger.read(a, r.getString("evidence_id"), r.getString("sha256")) })
+            evidenceOriginal = { a, r -> ledger.read(a, r.getString("evidence_id"), r.getString("sha256")) }, toolExperience = ledger::toolHistory)
         val workspace = reopen()
         fun access(person: String = "reviewer", round: Long = 5, node: String = person) = CollaborationWorkspaceAccess("group", "run", "turn", round, node, person)
         val spec = JSONObject().put("name", "Stable integer sort").put("purpose", "Sort fixture integers").put("language", "python")

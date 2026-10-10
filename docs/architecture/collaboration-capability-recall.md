@@ -20,6 +20,31 @@ without paging through unrelated innovation records by hand.
    and capability-channel admission. Search does not install skills, start work,
    change permissions, mark goals complete or certify capability improvement.
 
+## Native tool experience
+
+`tool_release` search results also include a `usage_recall` selector. Calling
+`mode=method_history` with the exact release returns
+`record_kind=original_native_tool_observation`. These entries contain `read_original`
+selectors for the existing evidence endpoint, not workflow-history `record_id`s.
+Read the full evidence pages to inspect parameters, errors, runtime identity and
+outputs before deciding whether to use, adapt or reject the tool.
+
+The phone reads its original native runtime observations. Both successful runs and
+requests rejected before execution remain visible. `runtime_report_available=false`
+does not mean a tool ran and failed. Replayed receipts identify their original
+invocation and must not be counted as independent executions. Execution success is
+not a correctness or quality verdict; `quality_effect` and `causal_contribution`
+remain unknown. Channel-based requests require a matching runtime-resolved release;
+an unresolved channel failure cannot be attributed to a particular release here.
+
+Queries page through at most twenty original observations per call and include
+pre-existing records without a migration. Follow `next_cursor` even when a page
+has no matches. This live, scoped scan is not a frozen snapshot, global success
+rate, or exhaustive statement about all past executions. New records behind a
+cursor require a fresh scan. There is no startup scan, new background task,
+automatic retry, copied model memory or change to execution permissions. Reading
+history summaries does not satisfy full-evidence-read acceptance requirements.
+
 ## Retrieval and scope
 
 - Normalization and English/Chinese tokenization reuse `AgentKnowledgeTextAnalyzer`.
