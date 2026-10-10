@@ -60,6 +60,12 @@ internal object CollaborationToolProtocol {
         Recall mode=evolution + cursor to discover releases; page full source/contracts with mode=workspace. Same-group future tasks
         can reuse them; other groups and isolated current branches cannot. Receipt records retain version, member, run, turn, output
         and failure details. No second executor, scheduler, background polling or automatic global Skill activation is introduced.
+        Remote members with collaboration_run_tool can start the same saved-release execution on their originating phone using
+        {mode:"start",execution_id,tool_release:<exact ref>,parameters:{...},timeout_ms}. An exact capability_channel may replace
+        tool_release. Copy only object_id/revision/sha256 from the selected record. Read applicability before choosing reuse.
+        Query mode=status or cancel with the SAME execution_id; transport uncertainty never justifies repeating effects.
+        Changing parameters/version under that ID is rejected. Read the full returned evidence for outputs; execution_mode=run
+        and passed=true attest native execution, not task quality. Existing authorization, runtime and lineage checks still apply.
     """.trimIndent() + "\n" + CollaborationNumericModelTrial.rules() + "\n" + CollaborationExecutableAcceptance.rules() +
         "\n" + CollaborationToolComparison.rules()
 }

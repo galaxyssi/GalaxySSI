@@ -228,8 +228,8 @@ class CodexAppServer:
             from collaboration_milestone_bridge import tool_spec
             self._dynamic_tools.append(tool_spec())
         if collaboration_test is not None:
-            from collaboration_tool_test_bridge import tool_spec
-            self._dynamic_tools.append(tool_spec())
+            from collaboration_tool_test_bridge import tool_spec, run_tool_spec
+            self._dynamic_tools.extend([tool_spec(), run_tool_spec()])
         if collaboration_recall is not None and collaboration_publish is not None:
             from collaboration_text_artifact import tool_spec
             self._dynamic_tools.append(tool_spec())
@@ -2171,8 +2171,8 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool"}:
-                callback = (self._collaboration_test if tool_name == "collaboration_test_tool" else
+            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool", "collaboration_run_tool"}:
+                callback = (self._collaboration_test if tool_name in {"collaboration_test_tool", "collaboration_run_tool"} else
                             self._collaboration_file if tool_name == "collaboration_file_artifact" else
                             self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish)
                 with self._lock:
@@ -2186,9 +2186,9 @@ class CodexAppServer:
                         return (self._runs.get(task_id) is run and not run.finished
                                 and common.get("thread_id", run.thread_id) == run.thread_id
                                 and common.get("turn_id", run.turn_id) == run.turn_id)
-                if tool_name == "collaboration_test_tool":
+                if tool_name in {"collaboration_test_tool", "collaboration_run_tool"}:
                     from collaboration_tool_test_bridge import validate_arguments
-                    arguments = validate_arguments(arguments)
+                    arguments = validate_arguments(arguments, tool=tool_name)
                     if (arguments["mode"] == "start" and (run.sandbox not in {"workspace-write", "danger-full-access"}
                             or run.execution_policy.execution_mode.value == "plan_only"
                             or "screen_analysis" in run.execution_policy.task_intent_signals)):
@@ -2248,7 +2248,7 @@ class CodexAppServer:
         except Exception as exc:
             log.exception("GalaxySSI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
             from collaboration_transport_feedback import model_failure_result
-            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool"} else None
+            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool", "collaboration_run_tool"} else None
             result = structured or {
                 "success": False,
                 "contentItems": [{
@@ -2276,10 +2276,10 @@ class CodexAppServer:
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
         self._write_server_response(message.get("id"), result)
-        if tool_name == "collaboration_test_tool":
+        if tool_name in {"collaboration_test_tool", "collaboration_run_tool"}:
             self.on_event(task_id, {**dict(common), "status": "running",
-                "current_step": "Saved tool test status returned" if result.get("success") else "Saved tool test needs attention",
-                "trace_stage": "collaboration_tool_test_returned", "telemetry_only": True})
+                "current_step": "Saved tool execution status returned" if result.get("success") else "Saved tool execution needs attention",
+                "trace_stage": "collaboration_tool_run_returned" if tool_name == "collaboration_run_tool" else "collaboration_tool_test_returned", "telemetry_only": True})
             return
         if tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
             self.on_event(task_id, {**dict(common), "status": "running",
