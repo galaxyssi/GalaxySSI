@@ -16,8 +16,8 @@ internal class CollaborationEvolutionContract(
         val kind = revision.getString("kind")
         if (kind !in KINDS) return
         val body = revision.getJSONObject("body")
-        text(body, "content")
         val value = CollaborationRecordValidation.body(kind, body)
+        CollaborationRecordValidation.optionalContent(body)
         require(head == null || kind in setOf(GAP, IDEA, CollaborationCapabilityChannel.KIND)) {
             "$kind is immutable; register new work instead of changing an experiment or learning decision"
         }
