@@ -76,6 +76,11 @@ class CollaborationAdaptivePilotDeviceTest {
         val database = AgentEncryptedDatabase(context, run)
         check(database.keys().isEmpty()) { "Adaptive execution database already contains evidence; do not restart it" }
         val groups = CollaborationGroupStore(context)
+        val continuityDatabase = AgentEncryptedDatabase(context, CollaborationPilotContinuity.DATABASE)
+        val continuity = CollaborationPilotContinuity(
+            { continuityDatabase.readString(it, "").takeIf(String::isNotBlank) },
+            { key, value -> continuityDatabase.mutateStrings(mapOf(key to value)) })
+        var historyLease: CollaborationPilotContinuity.Lease? = null
         val control = AgentTeamDurableControl(context)
         val store = CollaborationAdaptivePilotMilestones.executionStore(context, database)
         var group = ""
@@ -85,6 +90,17 @@ class CollaborationAdaptivePilotDeviceTest {
         var runtime: AgentTeamExecutionRuntime? = null
         var clean = false
         var executionFailure: Exception? = null
+        fun archiveHistory(label: String) {
+            if (historyLease == null) return
+            val snapshot = CollaborationPilotHistorySnapshot.capture(CollaborationResearchWorkspace(context),
+                CollaborationWorkspaceAccess(group, "observer-$run", "observer-$turn", 0, "test-observer", plan.members.first().id))
+            val destination = File(context.getExternalFilesDir(null), "$run-history-$label.json")
+            check(!File(destination.path + ".bak").exists() && !File(destination.path + ".new").exists() && destination.createNewFile())
+            save(destination, snapshot)
+            report.put("history_$label", JSONObject().put("file", destination.name).put("bytes", destination.length())
+                .put("sha256", CollaborationRemotePilotDispatch.sha256(destination.readBytes()))
+                .put("capture_role", "test_observer_not_agent"))
+        }
         val started = SystemClock.elapsedRealtime()
         try {
             withTimeout(plan.timeoutMillis) {
@@ -92,9 +108,21 @@ class CollaborationAdaptivePilotDeviceTest {
                 while (!GalaxySSIMqttClient.isConnected() || !GalaxySSIMqttClient.isSecureReady()) delay(250)
                 GalaxySSIMqttClient.requestCapabilityManifestRefresh(force = true)
                 CollaborationRemotePilotWorker.requireTarget(context, plan)
-                group = transcripts.createAgentConversation("Adaptive pilot ${plan.id}").id
-                groups.update(group) { it.copy(members = plan.members, coordinatorId = plan.members.first().id,
-                    workflow = if (plan.singleAgent) CollaborationWorkflow.PARALLEL else CollaborationWorkflow.RESEARCH) }
+                fun createGroup(): String {
+                    group = transcripts.createAgentConversation("Adaptive pilot ${plan.id}").id
+                    groups.update(group) { it.copy(members = plan.members, coordinatorId = plan.members.first().id,
+                        workflow = if (plan.singleAgent) CollaborationWorkflow.PARALLEL else CollaborationWorkflow.RESEARCH) }
+                    return group
+                }
+                if (plan.continuity == null) createGroup() else {
+                    historyLease = continuity.open(plan, digest, ::createGroup,
+                        { groups.load(it) != null && transcripts.conversation(it) != null },
+                        { prior -> CollaborationRemotePilotDispatch.sha256(
+                            File(context.getExternalFilesDir(null), "adaptive-pilot-$prior-report.json").readBytes()) })
+                    group = requireNotNull(historyLease).groupId
+                    report.put("continuity", requireNotNull(historyLease).descriptor())
+                    archiveHistory("before")
+                }
                 milestoneArchive = CollaborationAdaptivePilotMilestones(group, run, turn, CollaborationResearchWorkspace(context)) { access, ref ->
                     CollaborationEvidenceLedger(context).read(access, ref.getString("evidence_id"), ref.getString("sha256"))
                 }
@@ -183,12 +211,15 @@ class CollaborationAdaptivePilotDeviceTest {
                     report.put("saved_execution_records", JSONArray(database.keys().map { key ->
                         JSONObject().put("key", key).put("value", database.readString(key, ""))
                     }))
+                    archiveHistory("after")
                     report.put("finished", true).put("ended_at", System.currentTimeMillis())
                     persist()
                     if (clean && report.optBoolean("milestone_archive_complete")) {
                         runtime?.close()
-                        if (group.isNotBlank()) { groups.remove(group); transcripts.deleteConversation(group) }
-                        store.clear()
+                        if (historyLease?.retainHistory != true) {
+                            if (group.isNotBlank()) { groups.remove(group); transcripts.deleteConversation(group) }
+                            store.clear()
+                        }
                     }
                 } catch (failure: Exception) {
                     report.put("cleanup_confirmed", false).put("cleanup_failure", failure.message.orEmpty())
@@ -202,6 +233,7 @@ class CollaborationAdaptivePilotDeviceTest {
         report.put("test_verdict", if (verdict.passed) "passed" else "failed")
             .put("test_failures", JSONArray(verdict.failures))
         persist()
+        historyLease?.let { continuity.finish(it, report, CollaborationRemotePilotDispatch.sha256(file.readBytes())) }
         verdict.requirePassed(executionFailure)
     }
 
