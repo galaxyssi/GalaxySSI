@@ -1,5 +1,7 @@
 package com.galaxyssi.chat
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -174,5 +176,76 @@ class CollaborationResultFinalizerTest {
         assertFalse(projected.getString("recall_hint").contains("are also committed"))
         assertTrue(projected.getString("delivery_warning").contains(CollaborationWorkGraph.REPAIR_INSTRUCTIONS))
         assertEquals("archive", projected.getString("archive_record_id"))
+    }
+
+    @Test fun liveWaitPreservesWholeOriginalBeforeSuspensionAndPublishesOnlyAfterReadiness(): Unit = runBlocking {
+        val workspace = CollaborationResearchWorkspace(Rows())
+        val execution = CollaborationLateResult.execution(store().deliveryCheckpoint("run")!!, managed)!!
+        val original = raw(text = "complete original ".repeat(2000))
+        val events = mutableListOf<String>()
+        val finalizer = CollaborationResultFinalizer(workspace, { _, text ->
+            assertEquals(original, text); events.add("archived"); "archive"
+        })
+        val output = finalizer.finishWhenReady(execution, AgentSubagentOutput(original)) {
+            assertEquals(listOf("archived"), events)
+            assertTrue(workspace.browse(CollaborationWorkspaceAccess.from(execution)).revisions.isEmpty())
+            events.add("evidence-ready")
+        }
+        assertEquals(listOf("archived", "evidence-ready"), events)
+        assertEquals("recorded", output.collaborationDelivery!!.status)
+        assertNull(output.collaborationAcceptance)
+    }
+
+    @Test fun cancelledEvidenceWaitRetainsOriginalAndLateRecoveryDoesNotRepeatPublication(): Unit = runBlocking {
+        val store = store()
+        val workspace = CollaborationResearchWorkspace(Rows())
+        val execution = CollaborationLateResult.execution(store.deliveryCheckpoint("run")!!, managed)!!
+        val original = raw()
+        val archived = mutableMapOf<String, String>()
+        val finalizer = CollaborationResultFinalizer(workspace, { _, text -> archived["archive"] = text; "archive" })
+        val failure = runCatching {
+            finalizer.finishWhenReady(execution, AgentSubagentOutput(original)) { throw CancellationException("process stopped") }
+        }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        assertEquals(original, archived["archive"])
+        assertTrue(workspace.browse(CollaborationWorkspaceAccess.from(execution)).revisions.isEmpty())
+        assertNull(finalizer.finishIfReady(execution, AgentSubagentOutput(original)) { false })
+        assertTrue(store.deliveryCheckpoint("run")!!.completed.isEmpty())
+        val recovered = finalizer.finishIfReady(execution, AgentSubagentOutput(original)) { true }!!
+        val response = managed.copy(response = AgentConnectorResponse(91L, "desktop", original))
+        assertTrue(store.applyLateResponse(response, recovered))
+        assertTrue(store.applyLateResponse(response, finalizer.finishIfReady(execution, AgentSubagentOutput(original)) { true }))
+        assertEquals(1, archived.size)
+        assertEquals(1, workspace.browse(CollaborationWorkspaceAccess.from(execution)).revisions.size)
+        assertEquals(1, store.records().single().events.count { it.result != null })
+    }
+
+    @Test fun pendingBackgroundArchiveIsHonestMetadataNotAWholeResultBarrier(): Unit = runBlocking {
+        val workspace = CollaborationResearchWorkspace(Rows())
+        val execution = CollaborationLateResult.execution(store().deliveryCheckpoint("run")!!, managed)!!
+        val original = raw()
+        val finalizer = CollaborationResultFinalizer(workspace, { _, _ -> "archive" }, evidence = {
+            JSONArray().put(JSONObject().put("status", "pending").put("imported_observations", 2)
+                .put("provider_history_complete", false))
+        })
+        val output = finalizer.finishWhenReady(execution, AgentSubagentOutput(original)) {
+            assertFalse(CollaborationResultEvidence.inspect(original).awaiting({ true }) { error("No references") })
+        }
+        assertEquals("recorded", output.collaborationDelivery!!.status)
+        assertNull(output.collaborationAcceptance)
+        assertEquals("pending", JSONObject(output.content).getJSONArray("remote_evidence_import").getJSONObject(0).getString("status"))
+    }
+
+    @Test fun archiveFailureNeverStartsWaitingOrPublishesUnpreservedResult(): Unit = runBlocking {
+        val workspace = CollaborationResearchWorkspace(Rows())
+        val execution = CollaborationLateResult.execution(store().deliveryCheckpoint("run")!!, managed)!!
+        var waited = false
+        val failure = runCatching {
+            CollaborationResultFinalizer(workspace, { _, _ -> error("archive disk unavailable") })
+                .finishWhenReady(execution, AgentSubagentOutput(raw())) { waited = true }
+        }.exceptionOrNull()
+        assertEquals("archive disk unavailable", failure?.message)
+        assertFalse(waited)
+        assertTrue(workspace.browse(CollaborationWorkspaceAccess.from(execution)).revisions.isEmpty())
     }
 }
