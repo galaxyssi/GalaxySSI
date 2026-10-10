@@ -10,6 +10,14 @@ from test_collaboration_recall_retry import simulated_time
 
 
 class CollaborationTransportFeedbackTest(unittest.TestCase):
+    def test_admission_reasons_reach_structured_feedback_without_raw_content(self):
+        for reason in ("invalid_attempt", "path_unavailable", "path_packet_limit", "duplicate_attempt",
+                       "tracking_limit", "message_content_conflict", "inflight_packet_limit",
+                       "inflight_byte_limit", "peer_byte_limit"):
+            code = "attempt_" + reason
+            self.assertEqual(code, PublishObservation(False, code).public()["reason_code"])
+        self.assertEqual("unknown", PublishObservation(False, "attempt_private-payload").public()["reason_code"])
+
     def details(self, error):
         return json.loads("{" + str(error).split("{", 1)[1])
 
