@@ -214,7 +214,7 @@ internal object CollaborationGoalLoop {
         // Validate the complete contract before recruitment or any executable work is planned.
         val prior = runCatching { preservedCriteria(priorCriteria) }.getOrNull()
         val merged = if (prior != null && assessment != null)
-            runCatching { mergeCriteria(prior, assessment.getJSONArray("criteria")) } else null
+            runCatching { mergeCriteria(prior, assessment.getJSONArray("criteria"), assessment.getString("decision") == "continue") } else null
         val assessmentError = when {
             dispatchFailure.isNotBlank() -> dispatchFailure
             prior == null -> "Preserved criteria are malformed; retained unchanged. Repair requires recovery of the original saved contract."
@@ -449,19 +449,24 @@ internal object CollaborationGoalLoop {
         }
     }
 
-    private fun criterionPreserved(before: JSONObject, after: JSONObject?): Boolean = after != null &&
+    private fun criterionPreserved(before: JSONObject, after: JSONObject?, establishRoute: Boolean = false): Boolean = after != null &&
         before.getString("requirement") == after.getString("requirement") &&
         (!before.has("verification") || before.optString("verification") == after.optString("verification")) &&
-        CollaborationEvidenceRequirements.preserved(before, after) && CollaborationQualifiedValidation.preserved(before, after)
+        CollaborationEvidenceRequirements.preserved(before, after) &&
+        (CollaborationQualifiedValidation.preserved(before, after) || establishRoute && CollaborationQualifiedValidation.canEstablish(before, after))
 
-    private fun mergeCriteria(prior: JSONArray, current: JSONArray): JSONArray {
+    private fun mergeCriteria(prior: JSONArray, current: JSONArray, establishRoute: Boolean): JSONArray {
         validateCriteria(current)
         val merged = linkedMapOf<String, JSONObject>()
         val byId = (0 until current.length()).associate { current.getJSONObject(it).let { item -> item.getString("id") to item } }
         repeat(prior.length()) { prior.getJSONObject(it).let { item ->
             val next = byId[item.getString("id")]
-            require(CollaborationQualifiedValidation.preserved(item, next)) { "Rejected validator binding change or dropped criterion." }
-            require(criterionPreserved(item, next)) { "Rejected preserved requirement, verification or source constraint change." }
+            require(CollaborationQualifiedValidation.preserved(item, next) ||
+                establishRoute && CollaborationQualifiedValidation.canEstablish(item, next)) {
+                "Rejected validator binding change or dropped criterion. Only decision=continue may establish an absent qualified route " +
+                    "for an unchanged, open, observed computational requirement without delivery, review or claimed evidence; bound inputs remain immutable."
+            }
+            require(criterionPreserved(item, next, establishRoute)) { "Rejected preserved requirement, verification or source constraint change." }
             merged[item.getString("id")] = item
         } }
         repeat(current.length()) {

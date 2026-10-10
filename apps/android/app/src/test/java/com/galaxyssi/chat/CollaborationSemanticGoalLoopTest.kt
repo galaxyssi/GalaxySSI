@@ -92,13 +92,19 @@ class CollaborationSemanticGoalLoopTest {
         return complete(AgentTeamExecutionRecord(AgentTeamDefinition("team", "fixture", people, primaryInstanceId = "lead"), request), report)
     }
 
-    private fun complete(record: AgentTeamExecutionRecord, report: JSONObject): AgentTeamExecutionRecord {
+    private fun complete(record: AgentTeamExecutionRecord, report: JSONObject, finishWorkers: Boolean = false): AgentTeamExecutionRecord {
         val primary = record.definition.primaryMemberId
-        return record.copy(events = listOf(AgentSubagentEvent(1, "run", primary, AgentSubagentEventKinds.CHILD_SUCCEEDED,
+        val workerEvents = if (finishWorkers) record.definition.members.filter { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+            .mapIndexed { index, member -> AgentSubagentEvent(index + 1L, "run", member.memberId, AgentSubagentEventKinds.CHILD_SUCCEEDED,
+                childStatus = AgentSubagentStatus.SUCCEEDED,
+                result = AgentSubagentChildResult("run", member.memberId, "run", 1, AgentSubagentStatus.SUCCEEDED, "Fixture work completed",
+                    provenance = AgentSubagentProvenance("agent-team", "team", "run",
+                        mapOf("instance_id" to member.memberId, "agent_id" to member.agentId)))) } else emptyList()
+        return record.copy(events = workerEvents + listOf(AgentSubagentEvent(workerEvents.size + 1L, "run", primary, AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = AgentSubagentStatus.SUCCEEDED,
             result = AgentSubagentChildResult("run", primary, "run", 1, AgentSubagentStatus.SUCCEEDED, report.toString(),
                 provenance = AgentSubagentProvenance("agent-team", "team", "run", mapOf("instance_id" to primary, "agent_id" to "fixture")))),
-            AgentSubagentEvent(2, "run", kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED)))
+            AgentSubagentEvent(workerEvents.size + 2L, "run", kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED)))
     }
 
     private fun job(id: String = "overwrite", member: String = "peer") = JSONObject().put("id", id).put("member", member)
@@ -152,7 +158,7 @@ class CollaborationSemanticGoalLoopTest {
         assertEquals("Independent source review", members.single { it.memberId == "peer" }.objective)
     }
 
-    @Test fun continuationCannotReplaceRemoveOrIntroduceValidatorBinding() {
+    @Test fun continuationCannotReplaceOrRemoveBindingButCanEstablishAnAbsentQualifiedRoute() {
         val prior = criterion()
         val mutations = listOf(
             criterion().apply { getJSONObject("validator").put("operands", JSONArray().put("1").put("4")) },
@@ -166,7 +172,48 @@ class CollaborationSemanticGoalLoopTest {
         }
         val absent = criterion().apply { remove("validator") }
         val next = advance(absent, assessment(criterion()))
-        assertFalse(JSONArray(next.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString()).getJSONObject(0).has("validator"))
+        assertEquals(CollaborationQualifiedValidation.binding(criterion()), CollaborationQualifiedValidation.binding(
+            JSONArray(next.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString()).getJSONObject(0)))
+        assertEquals(absent.getString("requirement"), JSONArray(next.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString())
+            .getJSONObject(0).getString("requirement"))
+    }
+
+    @Test fun establishedRoutePersistsBeforeWorkAndCannotBeReboundInALaterRound() {
+        val absent = criterion().apply { remove("validator") }
+        val first = advance(absent, assessment(criterion()).put("work", JSONArray().put(job("compute"))))
+        assertEquals("compute", first.definition.members.single { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+            .context[CollaborationGoalLoop.WORK_ID])
+        val saved = first.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString()
+        assertEquals("", CollaborationGoalLoop.preservedCriteriaError(saved))
+        assertEquals(CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(saved)), manifest(first).getString("criteria_sha256"))
+        val changed = criterion().apply { getJSONObject("validator").put("operands", JSONArray().put("1").put("4")) }
+        val nextReport = assessment(changed).put("work", JSONArray().put(job("replace")))
+        assertNull(CollaborationGoalLoop.advance(complete(first, nextReport), first.definition.primaryMemberId, 100_000, false))
+        val completed = complete(first, nextReport, finishWorkers = true)
+        assertTrue(CollaborationTeamOrganizationProjection.current(completed).settled)
+        val resumed = requireNotNull(CollaborationGoalLoop.advance(completed,
+            first.definition.primaryMemberId, 100_000, false))
+        assertRepairOnly(resumed, saved)
+    }
+
+    @Test fun routeCannotBeEstablishedInCompletionOrBlockedAssessment() {
+        val absent = criterion().apply { remove("validator") }
+        for (decision in listOf("achieved", "blocked")) {
+            val raw = assessment(criterion(), decision)
+            val next = advance(absent, raw)
+            assertRepairOnly(next, JSONArray().put(absent).toString())
+            assertEquals("continue", CollaborationGoalLoop.disposition(raw.toString(), JSONArray().put(absent).toString(), acceptanceVerified = true))
+        }
+    }
+
+    @Test fun oneInvalidRoutePreventsAllPlannedWorkAndPreservesOriginalContract() {
+        val first = criterion().apply { remove("validator") }
+        val second = JSONObject(first.toString()).put("id", "broader").put("requirement", "Prove a new scientific law")
+        val original = JSONArray().put(first).put(second).toString()
+        val invalid = JSONObject(second.toString()).put("validator", criterion().getJSONObject("validator"))
+        val report = assessment(criterion()).put("criteria", JSONArray().put(criterion()).put(invalid)).put("work", JSONArray().put(job()))
+        val next = advance(first, report, original)
+        assertRepairOnly(next, original)
     }
 
     @Test fun malformedSpecificationFailsDecodeAndCannotBeClaimedAchieved() {

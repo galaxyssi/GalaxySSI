@@ -8,6 +8,7 @@ internal sealed interface CollaborationQualifiedValidator {
     val id: String
     val verification: String
     fun binding(spec: JSONObject): List<String>
+    fun validateRequirement(criterion: JSONObject)
     fun validate(criterion: JSONObject, body: JSONObject)
     fun validateRecorded(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence?) = validate(criterion, body)
 }
@@ -46,11 +47,16 @@ internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedVa
 
     override fun binding(spec: JSONObject) = listOf(id) + operands(spec)
 
-    override fun validate(criterion: JSONObject, body: JSONObject) {
+    override fun validateRequirement(criterion: JSONObject) {
         val values = operands(criterion.getJSONObject(CollaborationQualifiedValidation.FIELD))
         require(criterion.opt("requirement") == requirement(values)) {
             "Exact integer sum cannot qualify a broader computational or scientific requirement"
         }
+    }
+
+    override fun validate(criterion: JSONObject, body: JSONObject) {
+        validateRequirement(criterion)
+        val values = operands(criterion.getJSONObject(CollaborationQualifiedValidation.FIELD))
         val result = requireNotNull(body.optJSONObject("computation")) { "Save body.computation with the exact result" }
         require(result.keys().asSequence().toSet() == setOf("validator_id", "result") && result.opt("validator_id") == id &&
             result.opt("result") is String) { "Invalid exact integer sum result" }
@@ -78,6 +84,22 @@ internal object CollaborationQualifiedValidation {
     fun preserved(before: JSONObject, after: JSONObject?): Boolean = after != null && runCatching {
         binding(before) == binding(after)
     }.getOrDefault(false)
+
+    /** Establishes a missing route before acceptance; never replaces a bound contract or certifies its oracle. */
+    fun canEstablish(before: JSONObject, after: JSONObject?): Boolean = after != null && runCatching {
+        require(!before.has(FIELD) && after.has(FIELD))
+        require(listOf("id", "requirement", "verification").all { before.get(it) == after.get(it) })
+        require(before.optString("verification") == "computational")
+        require(CollaborationEvidenceRequirements.preserved(before, after))
+        for (item in listOf(before, after)) {
+            require(item.optString("status") == "open" && item.optString("evidence_kind") == "observed")
+            require(item.getJSONArray("evidence").length() == 0 && !item.has("delivery") && !item.has("review"))
+        }
+        require(binding(after) != null)
+        val selected = validator(after.getJSONObject(FIELD))
+        require(selected.verification == "computational")
+        selected.validateRequirement(after)
+    }.isSuccess
 
     fun validate(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence? = null) {
         require(criterion.optString("evidence_kind") == "observed") {
