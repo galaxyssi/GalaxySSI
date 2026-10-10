@@ -136,6 +136,31 @@ post-delivery audit needs its own observable boundary; content acceptance,
 persistence and user/device receipt remain separate facts. This path does not
 claim that a user read the result or that a transport acknowledgment exists.
 
+### Decision Ownership During Execution
+
+A recorded successful result does not automatically start another incremental
+coordinator when an unfinished, declared downstream assignment already owns its
+handoff. The successor receives the unchanged result, including questions and
+negative evidence. This is structural dispatch ownership, not a host judgment
+that the content is sufficient, true or accepted.
+Ownership extends through completed successful dependency nodes: in A -> B -> C,
+pending C keeps both B and A covered after B finishes. The traversal visits each
+dependency once; it neither copies evidence nor erases completed predecessors.
+
+Failed, truncated, unstructured or unrecorded results still request a checkpoint.
+An explicit `coordination:{mode:"request",decision,why_now}` in the final artifact
+also requests intervention even when a successor exists. Intermediate publication
+requests retain their independent wake path. Candidate-cycle outcomes retain
+their existing coordination policy. A successor with a known unsuccessful input,
+an ignored/removed successor, or a result with no remaining successor does not
+hide the need for coordination.
+
+Deferral is derived from durable current dependencies and results; it never marks
+the result consumed or accepted. Recovery reevaluates the same facts. When the
+graph becomes quiescent, the normal final coordinator owns goal assessment.
+There is no new research-step limit, forced scientific strategy, shortened
+evidence, or exemption from independent review and final acceptance.
+
 ### Reviewed Interim Conversation Delivery
 
 A continuing assessment may request `interim_delivery: {criterion_id, target}`

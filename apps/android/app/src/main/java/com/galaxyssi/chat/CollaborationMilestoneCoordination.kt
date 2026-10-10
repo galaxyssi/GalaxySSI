@@ -9,7 +9,8 @@ internal object CollaborationMilestoneCoordination {
         "A request may include milestones:[your previously saved IDs] to share their exact versions without copying or republishing them. " +
         "Choose requests for evidence that affects a decision, a concrete uncertainty or a useful independent check, not every saved file. " +
         "Continue independent work; recording or requesting coordination does not pause your assignment or require approval for each action. " +
-        "Omitting coordination retains the existing notification behavior. "
+        "Final artifacts may request coordination too. Recorded completion follows its pending downstream assignment; " +
+        "explicitly request decisions that cannot wait for that assignment. Intermediate publications without coordination still notify. "
 
     fun read(envelope: JSONObject): JSONObject? {
         if (!envelope.has("coordination")) return null

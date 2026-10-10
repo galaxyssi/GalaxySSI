@@ -152,8 +152,10 @@ internal object CollaborationLiveGraph {
                 .filter { it.getString("phase") == "done" }.mapTo(hashSetOf()) { it.getString("node_id") }
         }.getOrDefault(emptySet())
         // The host already owns intermediate review/repair transitions; wake the coordinator on their outcome.
+        val pendingInputs = CollaborationCoordinationDemand.pendingInputs(work, results)
         val newResults = work.filter { it.memberId in results && it.memberId !in covered &&
-            (!it.context.containsKey(CollaborationCandidateEvolution.TASK) || it.memberId in settledCandidates) }
+            (!it.context.containsKey(CollaborationCandidateEvolution.TASK) || it.memberId in settledCandidates) &&
+            CollaborationCoordinationDemand.requiresCheckpoint(it, results.getValue(it.memberId), pendingInputs) }
         val final = members.single { it.memberId == primary }
         val coveredMilestones = members.filter(::planner).flatMap { CollaborationMilestoneDispatch.inputs(it) }
             .mapTo(hashSetOf()) { it.getString("token") }
