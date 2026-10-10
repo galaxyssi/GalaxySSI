@@ -71,6 +71,13 @@ internal class CollaborationResearchWorkspace(
 
     data class Page(val revisions: List<JSONObject>, val next: String?)
 
+    internal fun recordConversationDelivery(access: CollaborationWorkspaceAccess, target: JSONObject, text: String, now: Long,
+        persist: (String, String, Long) -> Unit,
+        observe: (CollaborationWorkspaceAccess, String, JSONObject, Long) -> JSONObject): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        CollaborationConversationDelivery(rows).record(access, target, text, now, persist, observe)
+    }
+
     fun workflowObservation(access: CollaborationWorkspaceAccess, ref: JSONObject): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         require(ref.optString("evidence_id").matches(Regex("[a-f0-9]{64}")) &&

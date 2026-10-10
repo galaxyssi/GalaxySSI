@@ -136,6 +136,40 @@ post-delivery audit needs its own observable boundary; content acceptance,
 persistence and user/device receipt remain separate facts. This path does not
 claim that a user read the result or that a transport acknowledgment exists.
 
+### Reviewed Interim Conversation Delivery
+
+A continuing assessment may request `interim_delivery: {criterion_id, target}`
+for an exact, current artifact of an already established criterion. An independent
+review may add `content_readiness: {verdict, rationale, unresolved}` inside its
+`acceptance_review`, distinct from the overall criterion verdict. This allows
+reviewed content to be presented before a user acknowledgement or another
+post-delivery condition exists. It must not erase an overall negative/untested
+verdict, weaken the criterion, or count as completed computation or experiments.
+
+The host checks exact versions, independent authorship, current review dissent,
+and read coverage for cited original evidence before interim release. Every
+current review must support content readiness; an incomplete review without a
+separate readiness judgment cannot release content. Final acceptance continues
+to require the original overall verdicts, all source requirements, coverage and
+qualified validation. Readiness does not replace those checks.
+
+The Android finalizer persists the text as a PROCESS entry in the originating
+collaboration conversation, not an ASSISTANT completion. A content-addressed
+intent, conversation write confirmation and evidence receipt make retry/recovery
+idempotent across coordinator dispatches. A confirmed message is not recreated
+if receipt recording retries after a user deletes it. Outer whitespace trimming
+is declared explicitly; the receipt binds the displayed text hash and saved
+artifact version. Group removal deletes the scoped journal with the workspace.
+
+The host records `android_native_tool/galaxyssi.collaboration.conversation_delivery`
+as a recallable observation. It means local conversation persistence, not visual
+rendering, user reading, remote acknowledgement or goal completion. The original
+model response remains archived, model-supplied receipts are discarded, and
+pause/stop/removal checks apply before writing. Failure is returned as an
+unconfirmed operation, not a fabricated delivery or successful goal. Agents can
+use the real receipt in later work without holding all content until the complete
+goal has passed. Real-model adoption is a separate acceptance requirement.
+
 Background teams expose only their aggregate status by default. The existing Recent Tasks page includes an Agent teams section. Opening a team now uses a full detail page rather than a text dialog. It shows the aggregate state, role-bound instances, member status, bounded team messages, and one team conclusion. While a Run is active, tapping a member opens a focused composer for constraints, questions, or new evidence.
 
 Internal orchestration and hidden reasoning never appear as separate assistant replies.

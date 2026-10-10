@@ -30,14 +30,16 @@ internal class CollaborationResultFinalizer(
     private val archive: (AgentTeamMemberExecutionContext, String) -> String,
     private val evidence: (AgentTeamMemberExecutionContext) -> JSONArray = { JSONArray() },
     private val acceptance: (CollaborationWorkspaceAccess, String, String, String) -> CollaborationAcceptanceReceipt? = { _, _, _, _ -> null },
-    private val discussion: ((AgentTeamMemberExecutionContext, String) -> Unit)? = null
+    private val discussion: ((AgentTeamMemberExecutionContext, String) -> Unit)? = null,
+    private val interimDelivery: ((AgentTeamMemberExecutionContext, String) -> JSONObject)? = null
 ) {
     constructor(context: Context) : this(CollaborationResearchWorkspace(context),
         { execution, raw -> CollaborationResearchArchive(context,
             execution.member.context["collaboration_group_id"].orEmpty()).record(execution, raw) },
         { execution -> AndroidCollaborationRemoteEvidence.summary(context, execution) },
         { access, raw, criteria, goal -> CollaborationGoalAcceptance(context).evaluate(access, raw, criteria, goal) },
-        { execution, raw -> CollaborationDirectedDiscussion.persist(context, execution, raw) })
+        { execution, raw -> CollaborationDirectedDiscussion.persist(context, execution, raw) },
+        { execution, raw -> CollaborationConversationDelivery.deliver(context, execution, raw) })
 
     fun finish(execution: AgentTeamMemberExecutionContext, output: AgentSubagentOutput): AgentSubagentOutput {
         return finish(execution, output, preserve(execution, output))
@@ -91,9 +93,26 @@ internal class CollaborationResultFinalizer(
                 else ""
             })
         // Retain the model original in the archive, but deliver the exact saved text, not a fresh paraphrase.
-        val deliveryContent = if (stage == CollaborationResearchStage.DELIVER)
+        var deliveryContent = if (stage == CollaborationResearchStage.DELIVER)
             runCatching { CollaborationFinalDelivery.prepare(workspace, access, output.content) }.getOrDefault(output.content)
             else output.content
+        if (stage == CollaborationResearchStage.DELIVER) {
+            val assessment = CollaborationGoalLoop.decode(deliveryContent)
+            // Model-supplied receipts are never trusted. Only the durable host operation can supply one.
+            assessment?.remove(CollaborationInterimDelivery.RECEIPT)
+            if (assessment?.has(CollaborationInterimDelivery.FIELD) == true) {
+                val result = try {
+                    requireNotNull(interimDelivery) { "Interim conversation delivery is unavailable" }.invoke(execution, assessment.toString())
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    JSONObject().put("success", false).put("status", "not_confirmed").put("error", error.message)
+                        .put("goal_acceptance", "not_implied")
+                }
+                assessment.put(CollaborationInterimDelivery.RECEIPT, result)
+            }
+            if (assessment != null) deliveryContent = assessment.toString()
+        }
         val accepted = if (stage == CollaborationResearchStage.DELIVER &&
             execution.member.context[CollaborationGoalLoop.ENABLED] == "1" &&
             CollaborationGoalLoop.decode(deliveryContent)?.optString("decision") == "achieved")
