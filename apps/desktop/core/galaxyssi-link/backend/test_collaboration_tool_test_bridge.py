@@ -61,8 +61,9 @@ class SavedToolTestBridgeTest(unittest.TestCase):
             if len(sent) == 2:
                 broker.receive({**request, "type": RESPONSE, "result": {"success": True, "status": "running"}}, "phone")
             return True
-        with patch("collaboration_recall_bridge.RETRY_INITIAL_SECONDS", .002):
-            self.assertEqual("running", broker.query(task, args(), publish, timeout=.03)["status"])
+        from test_collaboration_recall_retry import simulated_time
+        with simulated_time():
+            self.assertEqual("running", broker.query(task, args(), publish)["status"])
         self.assertEqual(sent[0], sent[1])
 
     def test_failed_native_diagnostic_is_preserved_without_retry_or_relabeling(self):

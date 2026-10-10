@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from agent_task_recovery_query import IDENTITY_FIELDS, TASK_FIELDS
 from collaboration_transport_feedback import ExchangeObservations, PublicationRejected, ResponseUnconfirmed
+from collaboration_retry_timing import ResponseRetryTiming
 
 TOOL = "collaboration_recall"
 REQUEST = "collaboration_recall_request"
@@ -176,6 +177,7 @@ class RecallBroker:
         self._lock = threading.Lock()
         self._pending: dict[str, Pending] = {}
         self._request_type, self._response_type, self._contract = request_type, response_type, contract
+        self._retry_timing = ResponseRetryTiming(RETRY_INITIAL_SECONDS, RETRY_MAX_SECONDS)
 
     def query(self, snapshot, arguments, publish, *, active=lambda: True, timeout=20.0):
         arguments = validate_arguments(arguments)
@@ -210,6 +212,7 @@ class RecallBroker:
         if delivery is not None:
             request["delivery"] = delivery
         pending = Pending(request, deadline)
+        pending.started_at = started
         with self._lock:
             if len(self._pending) >= 128 or sum(p.request["task_id"] == scope["task_id"] for p in self._pending.values()) >= 4:
                 raise ValueError("Recall capacity busy; retry after current reads finish")
@@ -220,7 +223,7 @@ class RecallBroker:
             with self._lock:
                 rejected = dict(pending.response_rejections)
             return observations.details(phase, attempts, accepted, response_rejections=rejected)
-        next_publish, retry_delay = started, RETRY_INITIAL_SECONDS
+        next_publish, retry_delay = started, self._retry_timing.delay(scope["client_route_id"], started)
         outcome = "aborted"
         try:
             while True:
@@ -240,7 +243,11 @@ class RecallBroker:
                     # Reuse the nonce and expiry: phone deduplication owns in-flight reads.
                     # Never create a durable outbox or restart the model to retry an observation.
                     attempts += 1
-                    accepted += observations.record(publish(json.loads(json.dumps(request))))
+                    published = observations.record(publish(json.loads(json.dumps(request))))
+                    accepted += published
+                    if attempts == 1 and not published:
+                        # No copy was admitted: do not wait for a learned slow reply.
+                        retry_delay = RETRY_INITIAL_SECONDS
                     next_publish = time.monotonic() + retry_delay
                     retry_delay = min(RETRY_MAX_SECONDS, retry_delay * 2)
                     continue
@@ -248,6 +255,11 @@ class RecallBroker:
         finally:
             with self._lock:
                 self._pending.pop(nonce, None)
+            finished = time.monotonic()
+            if outcome in {"returned", "phone_rejected"}:
+                self._retry_timing.completed(scope["client_route_id"], finished - started, finished)
+            elif outcome == "response_timeout":
+                self._retry_timing.timed_out(scope["client_route_id"], finished)
             try:
                 log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s publish_reasons=%s",
                          scope["task_id"], nonce, arguments["mode"], phase, attempts, accepted,
