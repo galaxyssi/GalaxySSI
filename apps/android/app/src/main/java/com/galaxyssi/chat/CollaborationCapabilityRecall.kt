@@ -106,7 +106,9 @@ internal object CollaborationCapabilityRecall {
             "Read exact workspace originals and their evidence, conditions and counterexamples before reuse. " +
             "Procedure matches can include their exact retained lesson; linked_sources identifies excerpt origins, not a full-read receipt. " +
             "Tool releases can include exact source metadata under tool_*; both source and review conditions apply, and code/tests require separate reads. " +
-            "For methods, follow usage_recall to inspect prior conditions, failures and delivery; execution success is not a quality gain. " +
+            "Follow usage_recall to inspect prior conditions, failures and delivery. Tool releases return original native observations with " +
+            "read_original selectors for inputs, runtime reports and errors; follow empty pages and distinguish replays from executions. " +
+            "Execution success is not a quality gain. " +
             "Check current lineage using the existing procedure/workflow/tool/channel admission; retrieval does not approve adoption.")
 
     fun context(workspace: CollaborationResearchWorkspace, execution: AgentTeamMemberExecutionContext): String {
