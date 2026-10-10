@@ -9,7 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Explicit opt-in device suite: two tiny Python executions, no model, network or downloads. */
+/** Explicit opt-in device suite: three tiny Python executions, no model, network or downloads. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationSavedToolNativeDeviceTest {
     @Test fun realNativeReportsDistinguishFailureFromRepairAndPersistReceipts() {
@@ -18,7 +18,8 @@ class CollaborationSavedToolNativeDeviceTest {
             AgentOnDeviceRuntimeManager(context).cachedStatus().backend != AgentOnDeviceRuntimeBackend.NONE)
         val group = "saved-tool-native-fixture-${UUID.randomUUID()}"
         val groups = CollaborationGroupStore(context)
-        groups.update(group) { it.copy(members = listOf(CollaborationMember("worker", "Fixture", "fixture", "Fixture")), coordinatorId = "worker") }
+        groups.update(group) { it.copy(members = listOf("worker", "reviewer").map {
+            id -> CollaborationMember(id, id, "fixture", "Fixture") }, coordinatorId = "worker") }
         try {
             val workspace = CollaborationResearchWorkspace(context)
             val ledger = CollaborationEvidenceLedger(context)
@@ -92,7 +93,53 @@ class CollaborationSavedToolNativeDeviceTest {
                 val reopened = CollaborationResearchWorkspace(context).savedToolTests(access, "reopened")
                 assertFalse(reopened.start(input).launch)
                 assertEquals(fixed, reopened.read(suffix)!!.getJSONObject("result").getBoolean("passed"))
+                if (fixed) verifyDiscoveredReuse(access, source + 1, tool, plan, receipt)
             }
         } finally { groups.remove(group) }
+    }
+
+    private fun verifyDiscoveredReuse(original: CollaborationWorkspaceAccess, source: Long,
+                                     tool: JSONObject, plan: JSONObject, observation: JSONObject) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val ledger = CollaborationEvidenceLedger(context)
+        val reviewer = original.copy(personId = "reviewer", nodeId = "release", round = 4)
+        var offset: Int? = 0
+        while (offset != null) offset = ledger.readPage(reviewer, observation.getString("evidence_id"),
+            observation.getString("sha256"), offset)!!.next
+        val spec = JSONObject().put(CollaborationExecutableTool.TEST, plan).put("observation", observation)
+            .put("review", "Developer-authored fixture with real Python test receipts, not model learning")
+            .put("applies_when", "Fixture integers only").put("avoid_when", "Production")
+            .put("limitations", "Two disclosed fixture cases").put("authorization_boundary", "Existing native runtime")
+            .put("unresolved", JSONArray())
+        val raw = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Scoped fixture release")
+            .put("workspace", JSONArray().put(JSONObject().put("id", "release").put("kind", CollaborationExecutableTool.RELEASE)
+                .put("title", "Reviewed fixture").put("body", JSONObject().put("content", "Synthetic validation")
+                    .put(CollaborationExecutableTool.RELEASE, spec)).put("observations", JSONArray().put(observation))))
+        val published = CollaborationResearchWorkspace(context).publish(reviewer, raw.toString())
+        assertEquals(published.toString(), "recorded", published.getString("status"))
+        val future = original.copy(runId = "future-run", turnId = "future-turn", round = 0, nodeId = "reuse")
+        val matches = JSONObject(CollaborationCloudRecall.execute(context, future,
+            JSONObject().put("mode", "capabilities").put("query", "echo"))).getJSONArray("records")
+        assertEquals(1, matches.length())
+        val found = matches.getJSONObject(0)
+        assertEquals(published.getJSONArray("revisions").getJSONObject(0).getString("sha256"), found.getString("sha256"))
+        assertFalse(found.getBoolean("grants_permissions"))
+        ledger.bind(source, future)
+        val registry = AgentNativeToolRegistry(replayStore = EncryptedAgentNativeToolReplayStore(context),
+            auditStore = EncryptedAgentNativeToolAuditStore(context), observationRecorder = CollaborationNativeEvidence(context))
+            .registerAll(AgentOnDeviceRuntimeTools.definitions(context))
+        val key = "capability-reuse-${original.groupId}"
+        val result = registry.invoke(AgentOnDeviceRuntimeTools.EXECUTE, mapOf(
+            CollaborationToolRuntime.INPUT to mapOf("mode" to "run", CollaborationExecutableTool.RELEASE to found.toNativeObject(),
+                "parameters" to mapOf("value" to 42)), "timeout_ms" to 120_000, "network_enabled" to false),
+            AgentNativeToolInvocationContext(invocationId = key, sessionId = future.runId, conversationId = future.groupId,
+                turnId = future.turnId, collaborationSourceMessageId = source, callerId = "galaxyssi.test.capability_reuse",
+                idempotencyKey = key, attributes = mapOf("workspace_id" to AgentNativeJsonCodec.sha256(key))))
+        assertTrue(result.toJson(), result.isSuccess)
+        val receipt = JSONObject(result.output).getJSONObject(CollaborationExecutableTool.RECEIPT)
+        assertEquals(tool.getString("sha256"), receipt.getJSONObject(CollaborationExecutableTool.TOOL).getString("sha256"))
+        assertEquals(future.runId, receipt.getString("run_id"))
+        assertEquals(42, receipt.getJSONObject("report").getJSONArray("results").getJSONObject(0).getInt("output"))
+        android.util.Log.i("GalaxySSITest", "capability_reuse native=true fresh_task=true output=42 model_calls=0")
     }
 }

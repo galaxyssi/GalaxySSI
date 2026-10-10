@@ -53,11 +53,29 @@ internal object CollaborationCapabilityRecall {
                 }
             }
         }
+        if (kind == CollaborationExecutableTool.RELEASE) {
+            val host = saved.optJSONObject(CollaborationEvolutionContract.HOST)
+            if (host?.optString("state") == "eligible_for_scoped_tool_execution") {
+                host.optJSONObject(CollaborationExecutableTool.TOOL)?.let { ref ->
+                    val tool = read(ref)?.takeIf { it.optString("kind") == CollaborationExecutableTool.TOOL &&
+                        CollaborationResearchCandidates.same(it, ref) &&
+                        host.optString("source_sha256").isNotBlank() &&
+                        it.optJSONObject(CollaborationEvolutionContract.HOST)?.optString("source_sha256") == host.optString("source_sha256") }
+                    tool?.getJSONObject("body")?.getJSONObject(CollaborationExecutableTool.TOOL)?.let { value ->
+                        // Preserve the reviewer's narrower conditions; code and test answers are not search excerpts.
+                        val names = listOf("name", "purpose", "environment", "dependencies", "applies_when", "avoid_when", "side_effects")
+                        names.forEach { field -> fields["tool_$field"] = value.getString(field) }
+                        sources.put(JSONObject().put("source", CollaborationResearchCandidates.reference(tool))
+                            .put("field_prefix", "tool_").put("fields", JSONArray(names)).put("complete_read", false))
+                    }
+                }
+            }
+        }
         val normalized = fields.mapValues { AgentKnowledgeTextAnalyzer.normalize(it.value) }
         val matches = query.terms.filter { term -> normalized.values.any { term in it } }
         if (matches.isEmpty()) return null
         val score = matches.fold(0) { total, term -> total + normalized.entries.fold(0) { value, (field, text) ->
-            value + if (term !in text) 0 else if (field in setOf("title", "name", "domain", "keywords")) 3 else 1
+            value + if (term !in text) 0 else if (field in setOf("title", "name", "domain", "keywords", "tool_name")) 3 else 1
         } }
         val snippets = JSONObject()
         fields.entries.sortedByDescending { (field, _) -> matches.any { it in normalized.getValue(field) } }.forEach { (field, text) ->
@@ -87,6 +105,7 @@ internal object CollaborationCapabilityRecall {
             "Search synonyms, other languages and alternative methods separately; no match is not proof no useful method exists. " +
             "Read exact workspace originals and their evidence, conditions and counterexamples before reuse. " +
             "Procedure matches can include their exact retained lesson; linked_sources identifies excerpt origins, not a full-read receipt. " +
+            "Tool releases can include exact source metadata under tool_*; both source and review conditions apply, and code/tests require separate reads. " +
             "For methods, follow usage_recall to inspect prior conditions, failures and delivery; execution success is not a quality gain. " +
             "Check current lineage using the existing procedure/workflow/tool/channel admission; retrieval does not approve adoption.")
 

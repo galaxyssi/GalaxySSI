@@ -87,8 +87,18 @@ class CollaborationExecutableToolDeviceTest {
             assertEquals(1, reopenedEvidence.problems(access("worker", 5)).first.size)
             assertNotNull(reopened.read(access("worker", 5).copy(runId = "future", turnId = "future"), release.getString("object_id"), 1))
             val nextBinding = binding + 1
-            ledger.bind(nextBinding, access("worker", 5).copy(runId = "future", turnId = "future"))
-            val run = JSONObject().put("mode", "run").put(RELEASE, release).put("parameters", JSONObject().put("value", 9))
+            val future = access("worker", 0).copy(runId = "future", turnId = "future")
+            ledger.bind(nextBinding, future)
+            val matches = JSONObject(CollaborationCloudRecall.execute(context, future,
+                JSONObject().put("mode", "capabilities").put("query", "echo"))).getJSONArray("records")
+            assertEquals(1, matches.length())
+            val found = matches.getJSONObject(0)
+            assertEquals(release.getString("sha256"), found.getString("sha256"))
+            assertEquals(tool.getString("sha256"), found.getJSONArray("linked_sources").getJSONObject(0)
+                .getJSONObject("source").getString("sha256"))
+            assertFalse(found.getJSONArray("linked_sources").getJSONObject(0).getBoolean("complete_read"))
+            assertFalse(found.getBoolean("grants_permissions"))
+            val run = JSONObject().put("mode", "run").put(RELEASE, found).put("parameters", JSONObject().put("value", 9))
             val restored = CollaborationToolRuntime.prepare(context, invocation(run, nextBinding, "future"))!!
             assertEquals(tool.getString("sha256"), restored.identity.getJSONObject(TOOL).getString("sha256"))
             assertNotNull(runCatching { CollaborationToolRuntime.prepare(context, invocation(run, null)) }.exceptionOrNull())
