@@ -240,6 +240,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         return
     }
     selectedContact = contact
+    loadPeerComposerAttachments(contact.id)
     setChatActionTrayRequested(false)
     AppForegroundTracker.onConversationVisible(this, contact.id)
     val isCloud = raw?.optString("delivery_mode") == "cloud_api"

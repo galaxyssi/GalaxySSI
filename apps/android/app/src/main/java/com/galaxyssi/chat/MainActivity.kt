@@ -871,6 +871,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         applyDeviceProfileWindowPolicy()
         configureSystemBars()
         setContentView(R.layout.activity_main)
+        restoreComposerAttachmentState(savedInstanceState)
         val startupConnectingView = findViewById<ConnectingStartupView>(R.id.startupConnectingView)
         traceStartup("content_view")
         AppStore.ensureInitialized(this)
@@ -1912,8 +1913,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         fileServerBaseUrl = "http://$ip:$port"
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        saveComposerAttachmentState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (handleComposerAttachmentResult(requestCode, resultCode, data)) return
         if (requestCode == REQUEST_VOICE_SCREEN_CAPTURE) {
             // A recreated activity must not adopt an ended call's projection permission.
             agentVoiceConversation?.onScreenCapturePermission(resultCode, data)
@@ -1932,7 +1939,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             val uri = pendingAgentCameraUri
             pendingAgentCameraUri = null
             if (resultCode == RESULT_OK && uri != null) {
-                addAgentInputUris(listOf(uri))
+                previewPickedAttachments(listOf(uri), camera = true)
             } else if (uri != null) {
                 contentResolver.delete(uri, null, null)
             }
@@ -1952,7 +1959,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                 }
-                addAgentInputUris(uris)
+                previewPickedAttachments(uris)
             }
             return
         }
@@ -2026,10 +2033,10 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             return
         }
         val contact = selectedContact
-        if (contact != null && (
+        if (hasPendingPeerAttachmentPicker() || (contact != null && (
                 AppStore.isDesktopDeviceContact(this, contact.id) ||
                     AppStore.isPersonContact(this, contact.id)
-            )
+            ))
         ) {
             val uris = buildList {
                 data?.clipData?.let { clips ->
@@ -2037,7 +2044,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                 }
                 data?.data?.let { if (it !in this) add(it) }
             }
-            sendPeerAttachments(contact, uris)
+            previewPickedAttachments(uris)
         } else {
             sendImage(data?.data ?: return)
         }

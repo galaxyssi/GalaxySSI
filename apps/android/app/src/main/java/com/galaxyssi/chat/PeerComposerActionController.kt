@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import java.util.WeakHashMap
@@ -48,6 +49,18 @@ internal fun MainActivity.clearPendingChatCamera(): Uri? {
     return uri
 }
 
+internal fun MainActivity.savePendingChatCamera(out: Bundle) {
+    val state = peerComposerActionState()
+    out.putString("chat_camera_uri", state.pendingCameraUri?.toString())
+    out.putString("chat_camera_contact", state.pendingCameraContactId)
+}
+
+internal fun MainActivity.restorePendingChatCamera(saved: Bundle?) {
+    val uri = saved?.getString("chat_camera_uri")?.let(Uri::parse) ?: return
+    val contactId = saved.getString("chat_camera_contact") ?: return
+    rememberPendingChatCamera(uri, contactId)
+}
+
 internal fun MainActivity.handleChatCameraActivityResult(
     requestCode: Int,
     resultCode: Int
@@ -62,7 +75,7 @@ internal fun MainActivity.handleChatCameraActivityResult(
         val contact = selectedContact?.takeIf { it.id == contactId }
             ?: buildChatContacts().firstOrNull { it.id == contactId }
         if (contact != null) {
-            sendImageForChatContact(contact, uri)
+            previewPickedAttachments(listOf(uri), camera = true, contactId = contact.id)
         } else {
             contentResolver.delete(uri, null, null)
         }

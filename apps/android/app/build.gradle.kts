@@ -153,8 +153,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1223
-        versionName = "1.4.138"
+        versionCode = 1224
+        versionName = "1.4.139"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -318,6 +318,7 @@ dependencies {
     implementation("androidx.sqlite:sqlite-bundled:2.6.2")
     implementation("com.github.jelmerk:hnswlib-core:1.2.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    implementation("com.vanniktech:android-image-cropper:4.7.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")

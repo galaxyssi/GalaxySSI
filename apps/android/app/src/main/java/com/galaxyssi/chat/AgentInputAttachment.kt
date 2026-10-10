@@ -10,7 +10,8 @@ data class AgentInputAttachment(
     val uri: Uri,
     val displayName: String,
     val mimeType: String,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val originalUri: String = ""
 ) {
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
 
@@ -34,6 +35,8 @@ data class AgentInputAttachment(
         .put("mime_type", mimeType)
         .put("size", sizeBytes)
         .put("uri", uri.toString())
+
+    fun draftDescriptor(): JSONObject = descriptor().put("original_uri", originalUri)
 
     companion object {
         fun humanSize(bytes: Long): String = when {

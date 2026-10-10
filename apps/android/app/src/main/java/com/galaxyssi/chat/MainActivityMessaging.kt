@@ -409,7 +409,7 @@ internal fun MainActivity.configureInput() {
 internal fun MainActivity.updateInputActions() {
     val hasText = !messageInput.text?.toString()?.trim().isNullOrEmpty()
     val composerState = AgentComposerUiPolicy.resolve(
-        hasInput = hasText,
+        hasInput = hasText || peerComposerAttachments().isNotEmpty(),
         textModeActive = chatComposerTextMode,
         actionTrayRequested = isChatActionTrayExpanded()
     )
@@ -493,10 +493,14 @@ internal fun MainActivity.ensureRecordPermission(): Boolean {
 
 internal fun MainActivity.sendText() {
     val content = messageInput.text?.toString()?.trim().orEmpty()
-    if (content.isEmpty()) return
     val contact = selectedContact ?: return
+    val attachments = peerComposerAttachments(contact.id)
+    if (content.isEmpty() && attachments.isEmpty()) return
     messageInput.text?.clear()
-    sendOutgoingText(contact, content)
+    if (attachments.isNotEmpty()) {
+        sendPeerAttachments(contact, emptyList(), content, attachments)
+        setPeerComposerAttachments(contact.id, emptyList())
+    } else sendOutgoingText(contact, content)
 }
 
 internal fun MainActivity.sendOutgoingText(contact: Contact, content: String, voiceTraceId: String = "") {
