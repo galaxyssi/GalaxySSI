@@ -5,6 +5,7 @@ import re
 
 from collaboration_recall_bridge import RecallBroker, task_scope
 from collaboration_transport_feedback import PublicationRejected, ResponseUnconfirmed
+from research_delivery import DELIVERY_INSTRUCTIONS
 
 TOOL = "collaboration_publish"
 REQUEST = "collaboration_publish_request"
@@ -41,7 +42,7 @@ def tool_spec():
         "For an actual local UTF-8 file, use collaboration_text_artifact when available instead of publishing only its path or a description. "
         "Specialized host candidate-transition assignments use their final publication contract. "
         "One request is limited to 131072 UTF-8 bytes. Split larger independent deliveries, never truncate evidence. "
-        "Do not supply group/member/task authority fields."),
+        "Do not supply group/member/task authority fields. " + DELIVERY_INSTRUCTIONS),
         "inputSchema": {"type": "object", "properties": {
             "mode": {"type": "string", "enum": ["publish", "list", "status", "receipt"]},
             "milestone_id": {"type": "string", "maxLength": 160},

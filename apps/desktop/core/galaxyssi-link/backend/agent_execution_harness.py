@@ -1554,7 +1554,8 @@ def finalize_task_artifacts(
     execution_policy: AgentExecutionPolicy | None = None,
 ) -> ArtifactFinalization:
     from artifact_request_policy import keep_office_outputs_separate
-    from task_workspace import select_reply_artifacts, task_artifacts, task_workspace
+    from task_workspace import missing_research_deliverables, select_reply_artifacts, task_artifacts, task_workspace
+    from research_delivery import research_summary
 
     policy = execution_policy if execution_policy is not None else execution_policy_for(prompt)
     root = task_workspace(task_id, agent_id)
@@ -1564,7 +1565,7 @@ def finalize_task_artifacts(
 
     current = task_artifacts(task_id)
     separate_office = policy.task_kind == AgentTaskKind.ARTIFACT and keep_office_outputs_separate(prompt, current)
-    if policy.requires_artifact and not separate_office:
+    if policy.requires_artifact and not separate_office and research_summary(reply_content) is None:
         candidates = _workspace_candidates(root)
         selected_apk = _newest_file(candidates, ".apk")
         if selected_apk is not None:
@@ -1600,6 +1601,10 @@ def finalize_task_artifacts(
         policy,
         allow_device_install=allow_device_install,
     )
+    missing = missing_research_deliverables(reply_content, current, task_id)
+    if missing:
+        verification.update(status="failed", missing_deliverables=missing,
+                            reason="Explicit research deliverables are missing or not deliverable")
     return ArtifactFinalization(tuple(current), verification, packaged)
 
 

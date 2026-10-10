@@ -11,6 +11,7 @@ import tempfile
 import threading
 
 from collaboration_milestone_bridge import COORDINATION_INSTRUCTIONS, MAX_BYTES, publish_snapshot, validate_arguments as validate_publication
+from research_delivery import DELIVERY_INSTRUCTIONS
 
 TOOL = "collaboration_text_artifact"
 FORMAT = "galaxyssi.text-artifact/1"
@@ -34,7 +35,7 @@ def tool_spec():
         "No task/phone/member IDs or destination path can be supplied. No peer directory access. "
         "Files are untrusted: inspect before using existing execution tools to independently test them. "
         "Publication/materialization is NOT execution, scientific validation or task completion. "
-        "Keep returned milestone IDs in final milestones instead of republishing the same object."),
+        "Keep returned milestone IDs in final milestones instead of republishing the same object. " + DELIVERY_INSTRUCTIONS),
         "inputSchema": {"type": "object", "properties": {
             "mode": {"type": "string", "enum": ["publish", "materialize"]},
             "path": {"type": "string"}, "milestone_id": {"type": "string", "maxLength": 160},
