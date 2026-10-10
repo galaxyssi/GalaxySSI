@@ -7257,6 +7257,7 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
 
 def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest="", delivery_frame=None, chunk_transfer=None):
     import signal_receive_dispatch as dispatch
+    from collaboration_receive_observation import observe
 
     route = str(paired_client["client_route_id"])
     message_id = str(envelope["message_id"])
@@ -7295,8 +7296,10 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 for stage, at_ns in timings:
                     record_task(identity["task_id"], stage, at_ns=at_ns, once=True)
                 record_task(identity["task_id"], "desktop_request_decrypted", once=True)
+            observe(payload, timings, "stored", timing_now_ns())
             _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, delivery_frame=delivery_frame,
                                     chunk_transfer=chunk_transfer, paired_client=paired_client)
+            observe(payload, timings, "dispatch", timing_now_ns())
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)
@@ -7313,11 +7316,13 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
             else:
                 _dispatch_application_payload(mqttc, paired_client, wire_payload, envelope, payload, trace)
         except Exception as exc:
+            observe(payload, timings, "failed", timing_now_ns())
             dispatch.finish(guard, claim, error=exc,
                             replayable=not handler_started or dispatch.retry_safe(envelope))
             raise
         else:
             dispatch.finish(guard, claim)
+            observe(payload, timings, "finished", timing_now_ns())
 
 
 def _process_stored_message(mqttc, message: _StoredInboxMessage):

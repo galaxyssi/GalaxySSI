@@ -8,6 +8,7 @@ import math
 import threading
 import time
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 
 from agent_task_recovery_query import IDENTITY_FIELDS, TASK_FIELDS
@@ -166,6 +167,8 @@ class Pending:
     deadline: float
     event: threading.Event = field(default_factory=threading.Event)
     response: dict | None = None
+    response_rejections: Counter = field(default_factory=Counter)
+    started_at: float = field(default_factory=time.monotonic)
 
 
 class RecallBroker:
@@ -213,6 +216,10 @@ class RecallBroker:
             self._pending[nonce] = pending
         attempts = accepted = 0
         observations = ExchangeObservations()
+        def failure_details():
+            with self._lock:
+                rejected = dict(pending.response_rejections)
+            return observations.details(phase, attempts, accepted, response_rejections=rejected)
         next_publish, retry_delay = started, RETRY_INITIAL_SECONDS
         outcome = "aborted"
         try:
@@ -226,9 +233,9 @@ class RecallBroker:
                 if now >= deadline:
                     if not accepted:
                         outcome = "publish_rejected"
-                        raise PublicationRejected(observations.details(phase, attempts, accepted))
+                        raise PublicationRejected(failure_details())
                     outcome = "response_timeout"
-                    raise ResponseUnconfirmed(observations.details(phase, attempts, accepted))
+                    raise ResponseUnconfirmed(failure_details())
                 if now >= next_publish:
                     # Reuse the nonce and expiry: phone deduplication owns in-flight reads.
                     # Never create a durable outbox or restart the model to retry an observation.
@@ -241,35 +248,64 @@ class RecallBroker:
         finally:
             with self._lock:
                 self._pending.pop(nonce, None)
-            log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s publish_reasons=%s",
-                     scope["task_id"], nonce, arguments["mode"], phase, attempts, accepted,
-                     int((time.monotonic() - started) * 1000), outcome,
-                     json.dumps(dict(sorted(observations.reasons.items())), separators=(",", ":")))
+            try:
+                log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s publish_reasons=%s",
+                         scope["task_id"], nonce, arguments["mode"], phase, attempts, accepted,
+                         int((time.monotonic() - started) * 1000), outcome,
+                         json.dumps(dict(sorted(observations.reasons.items())), separators=(",", ":")))
+            except Exception:
+                pass
 
     def receive(self, payload, authenticated_route):
-        if not isinstance(payload, dict) or not isinstance(payload.get("request_id"), str):
+        if (not isinstance(payload, dict) or not isinstance(payload.get("request_id"), str)
+                or not 1 <= len(payload["request_id"]) <= 128):
             return False
         with self._lock:
             pending = self._pending.get(payload.get("request_id"))
-            if pending is None or pending.response is not None or time.monotonic() >= pending.deadline:
-                return False
-            request = pending.request
-            if (authenticated_route != request["client_route_id"] or payload.get("type") != self._response_type
-                    or payload.get("contract") != self._contract
-                    or payload.get("phase") != request["phase"]
-                    or any(payload.get(key) != request[key] for key in (*IDENTITY_FIELDS, "execution_generation"))
-                    or not isinstance(payload.get("result"), dict)
-                    or type(payload["result"].get("success")) is not bool):
-                return False
-            try:
-                encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
-            except (TypeError, ValueError):
-                return False
-            if len(encoded.encode()) > 256 * 1024:
-                return False
-            pending.response = json.loads(encoded)
-            pending.event.set()
-            return True
+            now = time.monotonic()
+            reason = self._receive_locked(payload, authenticated_route, pending, now)
+            if (pending is not None and reason != "accepted"
+                    and authenticated_route == pending.request["client_route_id"]):
+                pending.response_rejections[reason] += 1
+            elapsed_ms = max(0, int((now - pending.started_at) * 1000)) if pending else -1
+        # Never log a body, identity value or remote exception. Diagnostics cannot
+        # reject an accepted reply, hold the broker lock, or start another request.
+        try:
+            token = hashlib.sha256(payload["request_id"].encode()).hexdigest()[:16]
+            log.info("Collaboration response rpc=%s outcome=%s elapsed_ms=%d", token, reason, elapsed_ms)
+        except Exception:
+            pass
+        return reason == "accepted"
+
+    def _receive_locked(self, payload, authenticated_route, pending, now):
+        if pending is None:
+            return "no_pending_request"
+        request = pending.request
+        if authenticated_route != request["client_route_id"]:
+            return "route_mismatch"
+        if pending.response is not None:
+            return "already_received"
+        if now >= pending.deadline:
+            return "deadline_elapsed"
+        for key, expected in (("type", self._response_type), ("contract", self._contract),
+                              ("phase", request["phase"]),
+                              *((key, request[key]) for key in (*IDENTITY_FIELDS, "execution_generation"))):
+            if payload.get(key) != expected:
+                return f"mismatch_{key}"
+        if not isinstance(payload.get("result"), dict):
+            return "result_not_object"
+        if type(payload["result"].get("success")) is not bool:
+            return "success_not_boolean"
+        try:
+            encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+            byte_count = len(encoded.encode())
+        except (TypeError, ValueError, RecursionError, UnicodeError):
+            return "result_not_json"
+        if byte_count > 256 * 1024:
+            return "response_too_large"
+        pending.response = json.loads(encoded)
+        pending.event.set()
+        return "accepted"
 
 
 broker = RecallBroker()

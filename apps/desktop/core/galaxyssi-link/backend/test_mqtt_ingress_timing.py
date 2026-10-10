@@ -152,6 +152,30 @@ class MqttIngressTimingTest(unittest.TestCase):
         self.assertEqual(1, self.metrics()['desktop_ingress_queue_ms']['count'])
         self.assertEqual(90, self.metrics()['desktop_ingress_queue_ms']['p95_ms'])
 
+    def test_collaboration_response_records_actual_receive_phases(self):
+        self.envelope['payload'].update(type='collaboration_recall_result', request_id='private-rpc')
+        with patch('collaboration_receive_observation.log.info') as log:
+            self.run_packet()
+        self.log.error.assert_not_called()
+        self.assertEqual(['stored', 'dispatch', 'finished'], [call.args[2] for call in log.call_args_list])
+        for call in log.call_args_list:
+            self.assertEqual((90.0, 13.0, 56.0), call.args[3:])
+            self.assertNotIn('private-', str(call))
+        self.publish.assert_called_once()
+
+    def test_collaboration_handler_failure_keeps_recovery_and_failed_phase(self):
+        self.envelope['payload'].update(type='collaboration_recall_result', request_id='private-rpc')
+        with patch('collaboration_receive_observation.log.info') as log, patch.object(
+                mqtt_bridge, '_dispatch_application_payload', side_effect=OSError('private-path')):
+            self.run_packet()
+        self.assertEqual(['stored', 'dispatch', 'failed'], [call.args[2] for call in log.call_args_list])
+        self.log.error.assert_called_once()
+        db = link_delivery._connect()
+        try:
+            self.assertEqual('retry', db.execute('SELECT dispatch_state FROM inbound_messages').fetchone()[0])
+        finally:
+            db.close()
+
 
 if __name__ == '__main__':
     unittest.main()

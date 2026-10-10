@@ -48,7 +48,7 @@ class ExchangeObservations:
         self.reasons[self.latest["reason_code"]] += 1
         return bool(observation)
 
-    def details(self, phase, attempts, accepted):
+    def details(self, phase, attempts, accepted, *, response_rejections=None):
         return {
             "format": "galaxyssi.collaboration-transport-observation/1",
             "phase": phase,
@@ -57,6 +57,8 @@ class ExchangeObservations:
             "reason_counts": dict(sorted(self.reasons.items())),
             "latest_transport_observation": self.latest,
             "authenticated_response_received": False,
+            "response_validation_counts": dict(sorted((response_rejections or {}).items())),
+            "response_observation_scope": "active_request_authenticated_peer_only",
             "remote_execution_state": "unknown",
             "interpretation": "local_observations_not_root_cause_or_remote_failure",
         }
@@ -83,7 +85,7 @@ class ResponseUnconfirmed(TimeoutError):
             raise TypeError("Transport observation must be a structured object")
         self.observation = observation
         self.explanation = (
-            "Collaboration exchange timed out without an authenticated response; publishing is not proof of delivery. "
+            "Collaboration exchange timed out without a valid scope-matched response; publishing is not proof of delivery. "
             "Preserve saved work and retry the exchange without repeating completed work."
         )
         if guidance is not None:
