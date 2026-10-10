@@ -320,6 +320,39 @@ class PeerRoutes:
             return Publication(peer.binding.scope, digest, digest, Traffic.MESSAGE, peer.binding.receive_topics,
                                authorized_paths=tuple(peer.local_generations.items()))
 
+    def transient_publication(self, topic, encoded, traffic, *, authenticated_identity):
+        """Small caller-retried queries/receipts may use existing control capacity."""
+        if traffic not in {Traffic.CONTROL, Traffic.RECEIPT}:
+            raise ValueError("Invalid transient priority")
+        with self._lock:
+            peer = self._outbound.get(topic)
+        if peer is None or not self.ready(peer.binding.scope):
+            if peer:
+                self.request(peer.binding.scope)
+            return None
+        with peer.lock:
+            binding = peer.binding
+            if not peer.active or binding.identity != authenticated_identity:
+                return None
+            paths = tuple(peer.local_generations.items())
+        # Large evidence pages must not consume the small control reserve.
+        if publish_packet_bytes(topic, len(encoded)) > self.client.policy.limits.small_packet_bytes:
+            traffic = Traffic.MESSAGE
+        digest = hashlib.sha256(encoded).hexdigest()
+
+        def authorize(broker, generation):
+            with peer.lock:
+                local = peer.local
+                if (not peer.active or peer.binding != binding or local is None
+                        or local.expires_at_ms <= self._wall() * 1000
+                        or peer.local_confirmed_epoch != local.epoch
+                        or peer.local_generations.get(broker) != generation
+                        or self.client.ready_path_generations(binding.receive_topics).get(broker) != generation):
+                    raise ValueError("Transient publication route changed")
+
+        return Publication(binding.scope, digest, digest, traffic, binding.receive_topics,
+                           authorized_paths=paths, on_path=authorize)
+
     def prepare_delivery(self, topic, wire, message_id, traffic):
         with self._lock:
             peer = self._outbound.get(topic)

@@ -8,3 +8,10 @@ QUERY_RESPONSES = frozenset({
 
 def needs_durable_outbox(payload_type):
     return payload_type != "delivery_ack" and payload_type not in QUERY_RESPONSES
+
+
+def transient_traffic(payload_type):
+    """Use trusted application metadata before encryption erases the message type."""
+    if payload_type == "delivery_ack":
+        return "receipt"
+    return "control" if payload_type in QUERY_RESPONSES else "message"

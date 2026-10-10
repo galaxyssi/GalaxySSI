@@ -2640,6 +2640,7 @@ def _publish_mqtt_wire_payload(
     link_secret: str,
     timing_scope: tuple[str, str] | None = None,
     transport_traffic: str = "message",
+    transient_identity: tuple[str, str, str, str] | None = None,
 ):
     raw_packets = encode_wire_payload(wire_payload)
     packets = [
@@ -2659,6 +2660,14 @@ def _publish_mqtt_wire_payload(
                     return _DeferredPublishInfo()
             if delivery is not None and delivery.size_bound <= mqttc.policy.limits.small_packet_bytes:
                 info = mqttc.publish_delivery(topic, delivery)
+            elif isinstance(mqttc, MqttPoolClient) and transient_identity is not None:
+                from mqtt_multipath_policy import Traffic
+                packet = packets[0].encode("utf-8") if isinstance(packets[0], str) else packets[0]
+                publication = mqttc.peer_routes.transient_publication(topic, packet, Traffic(transport_traffic),
+                                                                       authenticated_identity=transient_identity)
+                if publication is None:
+                    return _DeferredPublishInfo()
+                info = mqttc.publish(topic, packets[0], qos=MQTT_QOS, publication=publication)
             else:
                 info = mqttc.publish(topic, packets[0], qos=MQTT_QOS)
         except Exception:
@@ -3205,7 +3214,8 @@ def _publish_phone_payload(
         if deferred:
             log.debug("MQTT encrypted reply queued behind durable window topic=%s", target_topic)
         else:
-            log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
+            log.info("MQTT encrypted reply published mid=%s rc=%s reason=%s", info.mid, info.rc,
+                     getattr(info, "reason_code", "unknown"))
         return observed(info.rc == mqtt.MQTT_ERR_SUCCESS, getattr(info, "reason_code", "unknown"))
 
 
@@ -8533,11 +8543,15 @@ def _publish_to_registered_client(
         )
         wire_payload = json.dumps(encrypted, ensure_ascii=False)
         if not durable:
+            from mqtt_query_delivery import transient_traffic
+            traffic = transient_traffic(payload.get("type"))
             return _publish_mqtt_wire_payload(
                 mqttc,
                 topic,
                 wire_payload,
                 link_secret,
+                transport_traffic=traffic,
+                transient_identity=_chunk_peer_identity(paired_client) if traffic != "message" else None,
             )
         queue_outbound(
             client_route_id,
