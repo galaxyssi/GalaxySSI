@@ -12,6 +12,11 @@ internal object CollaborationRemoteEvidenceProtocol {
     const val MAX_BODY_BYTES = 8L * 1024 * 1024
     const val INLINE_PAGE_BYTES = 16_384L
     val TYPES = setOf("commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch")
+    val RECORDED_TOOLS = TYPES.mapTo(linkedSetOf()) { "codex.$it" }
+    fun recordedTool(type: String): String {
+        require(type in TYPES) { "Unsupported Desktop evidence event type" }
+        return "codex.$type"
+    }
     private val HASH = Regex("[a-f0-9]{64}")
     fun integer(value: JSONObject, key: String): Long? = when (val number = value.opt(key)) {
         is Int -> number.toLong()

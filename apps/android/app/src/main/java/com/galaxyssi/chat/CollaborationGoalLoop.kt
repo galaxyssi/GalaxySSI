@@ -120,6 +120,7 @@ internal object CollaborationGoalLoop {
         val json = decode(raw) ?: return "continue"
         if (CollaborationCandidateEvolution.requested(json) || CollaborationCandidateEvolution.pending(candidateState)) return "continue"
         val criteria = runCatching { validateCriteria(json.getJSONArray("criteria")) }.getOrNull() ?: return "continue"
+        if (runCatching { CollaborationEvidenceRequirements.validateAdmission(previous, criteria) }.isFailure) return "continue"
         val current = (0 until criteria.length()).map { criteria.getJSONObject(it) }.associateBy { it.getString("id") }
         if ((0 until previous.length()).any {
                 val prior = previous.getJSONObject(it)
@@ -217,7 +218,10 @@ internal object CollaborationGoalLoop {
             dispatchFailure.isNotBlank() -> dispatchFailure
             prior == null -> "Preserved criteria are malformed; retained unchanged. Repair requires recovery of the original saved contract."
             assessment == null -> validation.feedback(requireNotNull(prior))
-            merged?.isFailure == true -> "${merged.exceptionOrNull()?.message} The original criteria were retained unchanged."
+            merged?.isFailure == true -> when (val error = merged.exceptionOrNull()) {
+                is CollaborationAssessmentValidation.Failure -> CollaborationAssessmentValidation.Result(null, error, true).feedback(requireNotNull(prior))
+                else -> "${error?.message} The original criteria were retained unchanged."
+            }
             else -> ""
         }.let { if (it.isBlank() || dispatchFailure.isNotBlank()) it else "$it No assignments, recruitment or resource jobs were dispatched; repair the assessment first." }
         val round = (record.request.context[ROUND]?.toString()?.toLongOrNull() ?: 0L) + 1L
@@ -455,6 +459,7 @@ internal object CollaborationGoalLoop {
 
     private fun mergeCriteria(prior: JSONArray, current: JSONArray, establishRoute: Boolean): JSONArray {
         validateCriteria(current)
+        CollaborationEvidenceRequirements.validateAdmission(prior, current)
         val merged = linkedMapOf<String, JSONObject>()
         val byId = (0 until current.length()).associate { current.getJSONObject(it).let { item -> item.getString("id") to item } }
         repeat(prior.length()) { prior.getJSONObject(it).let { item ->
