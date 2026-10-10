@@ -12,7 +12,7 @@ import logging
 import secrets
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
 import paho.mqtt.client as mqtt
@@ -262,8 +262,9 @@ class MqttPoolClient:
             attempt_id = secrets.token_hex(16)
             attempt = Attempt(publication.peer, publication.message_id, publication.content_hash,
                               broker, generation, size, publication.traffic, now)
-            if not self.policy.reserve(attempt_id, attempt):
-                info.reason_code = "attempt_reservation_rejected"
+            refusal = self.policy.reserve_reason(attempt_id, attempt)
+            if refusal:
+                info.reason_code = "attempt_" + refusal
                 continue
             try:
                 if publication.on_path is not None:
@@ -289,6 +290,37 @@ class MqttPoolClient:
             self.policy.discard_attempt(attempt_id)
         info.rc = mqtt.MQTT_ERR_NO_CONN if not plans else mqtt.MQTT_ERR_QUEUE_SIZE
         return info
+
+    def publish_transient_control(self, topic, payload, *, publication):
+        """Race bounded query copies; return an admitted token, not a peer receipt."""
+        if publication is None:
+            raise ValueError("Transient control requires an authenticated publication")
+        encoded = payload.encode("utf-8") if isinstance(payload, str) else bytes(payload)
+        size = publish_packet_bytes(topic, len(encoded))
+        if (publication.traffic != Traffic.CONTROL or publication.bootstrap
+                or publication.authorized_paths is None or size > self.policy.limits.small_packet_bytes):
+            return self.publish(topic, encoded, publication=publication)
+        paths = tuple(dict.fromkeys((item.broker_id, item.generation) for item in self.policy.plan(
+            publication.peer, publication.message_id, publication.traffic, size, set(publication.receive_topics),
+            now=time.monotonic(), attempted=publication.attempted_brokers)
+            if item.delay == 0 and (item.broker_id, item.generation) in publication.authorized_paths))
+        if not paths:
+            return self.publish(topic, encoded, publication=publication)
+        results = []
+        authorization_error = None
+        for path in paths:
+            try:
+                # The normal publisher reserves global capacity and rechecks the pair
+                # immediately before each copy; no queue or second retry owner is added.
+                results.append(self.publish(topic, encoded, publication=replace(publication, authorized_paths=(path,))))
+            except ValueError as error:
+                authorization_error = error
+        accepted = next((item for item in results if item.rc == mqtt.MQTT_ERR_SUCCESS), None)
+        if accepted is not None:
+            return accepted
+        if authorization_error is not None:
+            raise authorization_error
+        return results[-1]
 
     def publish_delivery(self, topic, delivery):
         with self._lock:

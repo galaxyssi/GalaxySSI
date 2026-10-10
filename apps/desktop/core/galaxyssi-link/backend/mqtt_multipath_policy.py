@@ -275,35 +275,45 @@ class MultipathPolicy:
 
     def reserve(self, attempt_id: str, attempt: Attempt) -> bool:
         """Reserve before publish; congestion never grows the Paho queues unboundedly."""
+        return not self.reserve_reason(attempt_id, attempt)
+
+    def reserve_reason(self, attempt_id: str, attempt: Attempt) -> str:
+        """Atomically reserve, returning an empty string or a content-free refusal."""
         if (not attempt_id or not attempt.peer or not attempt.message_id
                 or len(attempt.content_hash) != 64
                 or any(char not in "0123456789abcdef" for char in attempt.content_hash)
                 or not 0 < attempt.wire_bytes <= self.limits.packet_bytes):
-            return False
+            return "invalid_attempt"
         with self._lock:
             path = self.paths.get(attempt.path)
             priority = attempt.traffic in {Traffic.CONTROL, Traffic.RECEIPT, Traffic.FINAL}
             tracking_limit = self.limits.max_attempts - (0 if priority else self.limits.control_reserve)
-            if (path is None or not path.connected or path.generation != attempt.generation
-                    or attempt.wire_bytes > path.packet_bytes
-                    or attempt_id in self._attempts or len(self._attempts) >= tracking_limit):
-                return False
+            if path is None or not path.connected or path.generation != attempt.generation:
+                return "path_unavailable"
+            if attempt.wire_bytes > path.packet_bytes:
+                return "path_packet_limit"
+            if attempt_id in self._attempts:
+                return "duplicate_attempt"
+            if len(self._attempts) >= tracking_limit:
+                return "tracking_limit"
             matching = [value for value in self._attempts.values()
                         if value.peer == attempt.peer and value.message_id == attempt.message_id]
             if any(value.content_hash != attempt.content_hash for value in matching):
-                return False
+                return "message_content_conflict"
             active = [value for value in self._attempts.values() if value.slot_held]
             packet_limit = self.limits.inflight_packets - (0 if priority else self.limits.control_reserve)
             byte_reserve = self.limits.control_reserve * self.limits.small_packet_bytes
             byte_limit = self.limits.inflight_bytes - (0 if priority else byte_reserve)
             peer_byte_limit = self.limits.peer_inflight_bytes - (0 if priority else byte_reserve)
-            if (len(active) >= packet_limit
-                    or sum(value.wire_bytes for value in active) + attempt.wire_bytes > byte_limit
-                    or sum(value.wire_bytes for value in active if value.peer == attempt.peer)
+            if len(active) >= packet_limit:
+                return "inflight_packet_limit"
+            if sum(value.wire_bytes for value in active) + attempt.wire_bytes > byte_limit:
+                return "inflight_byte_limit"
+            if (sum(value.wire_bytes for value in active if value.peer == attempt.peer)
                     + attempt.wire_bytes > peer_byte_limit):
-                return False
+                return "peer_byte_limit"
             self._attempts[attempt_id] = replace(attempt, broker_acked=False, slot_held=True, peer_accepted=False)
-            return True
+            return ""
 
     def broker_ack(self, attempt_id: str, broker: str, generation: int) -> bool:
         with self._lock:

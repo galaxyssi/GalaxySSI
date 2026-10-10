@@ -2667,7 +2667,7 @@ def _publish_mqtt_wire_payload(
                                                                        authenticated_identity=transient_identity)
                 if publication is None:
                     return _DeferredPublishInfo()
-                info = mqttc.publish(topic, packets[0], qos=MQTT_QOS, publication=publication)
+                info = mqttc.publish_transient_control(topic, packets[0], publication=publication)
             else:
                 info = mqttc.publish(topic, packets[0], qos=MQTT_QOS)
         except Exception:

@@ -61,8 +61,8 @@ class MqttPoolClientTest(unittest.TestCase):
         self.assertEqual("encoded_packet_too_large", self.client.publish("outbox", b"x" * 1048576).reason_code)
         self.assertEqual([], self.pool.sent)
         self.publication = Publication("pair", "message", "a" * 64, Traffic.MESSAGE, frozenset({"inbox"}))
-        with patch.object(self.client.policy, "reserve", return_value=False):
-            self.assertEqual("attempt_reservation_rejected", self.client.publish("outbox", b"ciphertext").reason_code)
+        with patch.object(self.client.policy, "reserve_reason", return_value="inflight_packet_limit"):
+            self.assertEqual("attempt_inflight_packet_limit", self.client.publish("outbox", b"ciphertext").reason_code)
         with patch.object(self.pool, "publish", return_value=None):
             self.assertEqual("physical_publish_rejected", self.client.publish("outbox", b"ciphertext").reason_code)
         self.assertEqual(0, self.client.policy.diagnostics()["inflight_packets"])

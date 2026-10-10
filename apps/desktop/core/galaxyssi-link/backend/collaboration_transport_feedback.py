@@ -8,6 +8,9 @@ REASONS = frozenset({
     "accepted", "unknown", "local_only_payload", "missing_recipient", "recipient_not_authorized",
     "encoded_packet_too_large", "publication_unclassified", "no_admitted_path",
     "attempt_reservation_rejected", "physical_publish_rejected", "broker_ack_failed",
+    "attempt_invalid_attempt", "attempt_path_unavailable", "attempt_path_packet_limit",
+    "attempt_duplicate_attempt", "attempt_tracking_limit", "attempt_message_content_conflict",
+    "attempt_inflight_packet_limit", "attempt_inflight_byte_limit", "attempt_peer_byte_limit",
 })
 ROUTE_STATES = frozenset({
     "not_observed", "ready", "missing_binding", "inactive_binding", "missing_local_advertisement",
