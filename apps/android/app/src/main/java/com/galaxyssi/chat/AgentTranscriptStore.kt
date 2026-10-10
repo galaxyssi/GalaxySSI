@@ -1447,6 +1447,25 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return true
     }
 
+    internal fun persistCollaborationDelivery(conversationId: String, taskId: String, turnId: String,
+        dedupeKey: String, text: String, at: Long, metadata: String) {
+        require(dedupeKey.startsWith("collaboration-delivery:") && text.isNotBlank())
+        require(conversationDatabase.read(conversationId) != null) { "Interim conversation no longer exists" }
+        val existing = synchronized(entryMutationLock) { entryDatabase.findByDedupeKey(conversationId, dedupeKey) }
+        if (existing == null) upsert(AgentTranscriptRole.PROCESS, text, dedupeKey, at, conversationId, turnId, taskId,
+            collaborationJson = metadata)
+        val saved = requireNotNull(synchronized(entryMutationLock) { entryDatabase.findByDedupeKey(conversationId, dedupeKey) }) {
+            "Interim conversation entry was not persisted"
+        }
+        require(saved.role == AgentTranscriptRole.PROCESS && saved.text == text && saved.turnId == turnId && saved.taskId == taskId) {
+            "An interim conversation entry cannot be replaced with different content or ownership"
+        }
+        if (conversationDatabase.read(conversationId) == null) {
+            entryDatabase.deleteById(saved.id)
+            throw IllegalStateException("Interim conversation was deleted during persistence")
+        }
+    }
+
     fun upsert(
         role: AgentTranscriptRole,
         text: String,

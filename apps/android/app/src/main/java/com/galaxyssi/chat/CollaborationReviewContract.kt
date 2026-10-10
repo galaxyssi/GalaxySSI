@@ -25,6 +25,15 @@ internal object CollaborationReviewContract {
         }
         validateReference(requireNotNull(review.optJSONObject("target")) { "An exact reviewed target is required" })
         validateVerdict(review)
+        if (review.has(CollaborationInterimDelivery.READINESS)) {
+            val readiness = requireNotNull(review.optJSONObject(CollaborationInterimDelivery.READINESS)) {
+                "content_readiness must be a separate verdict object"
+            }
+            validateVerdict(readiness)
+            require(review.getString("verdict") != "supported" || readiness.getString("verdict") == "supported") {
+                "An overall supported review cannot have unready content"
+            }
+        }
     }
 
     internal fun validateReference(target: JSONObject) {
@@ -63,5 +72,6 @@ internal object CollaborationReviewContract {
         "Read every original evidence page until next_offset is null before publishing a review. " +
         "The host binds page coverage to your dispatch at publication; another member's read or a later read cannot certify this review. " +
         CollaborationFinalDelivery.REVIEW_INSTRUCTIONS +
+        CollaborationInterimDelivery.REVIEW_INSTRUCTIONS +
         CollaborationSemanticGoalCoverage.instructions()
 }

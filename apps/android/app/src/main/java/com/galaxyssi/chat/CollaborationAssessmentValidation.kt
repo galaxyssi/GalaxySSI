@@ -76,6 +76,10 @@ internal object CollaborationAssessmentValidation {
                 throw Failure("$.final_delivery", "invalid_delivery_reference", "exact saved reference on a completion proposal",
                     describe(parsed.opt(CollaborationFinalDelivery.FIELD)), error.message.orEmpty())
             }
+            try { CollaborationInterimDelivery.reference(parsed) } catch (error: IllegalArgumentException) {
+                throw Failure("$.interim_delivery", "invalid_interim_reference", "exact criterion target on a continuing plan",
+                    describe(parsed.opt(CollaborationInterimDelivery.FIELD)), error.message.orEmpty())
+            }
             Result(parsed, null, true)
         } catch (failure: Failure) {
             Result(null, failure, true)
