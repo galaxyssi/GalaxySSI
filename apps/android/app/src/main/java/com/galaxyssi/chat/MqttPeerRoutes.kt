@@ -267,6 +267,31 @@ internal class MqttPeerRoutes(
     }
 
     fun readyForTopic(topic: String): Boolean = synchronized(lock) { outgoing[topic]?.binding?.scope }?.let(::ready) == true
+
+    fun transientPublication(topic: String, payload: ByteArray, secret: String): MqttPoolTransport.Publication? {
+        val peer = synchronized(lock) { outgoing[topic] } ?: return null
+        if (!ready(peer.binding.scope)) { request(peer.binding.scope); return null }
+        return peer.lock.withLock {
+            val binding = peer.binding
+            if (!peer.active || !binding.enabled || binding.secret != secret || topic !in binding.sendTopics) return null
+            val digest = MqttRouteAdvertisement.sha256(payload.toString(Charsets.UTF_8))
+            val traffic = if (mqttPublishPacketBytes(topic, payload.size) <= MqttBrokerCatalog.SMALL_PACKET_BYTES)
+                MqttMultipathPolicy.Traffic.CONTROL else MqttMultipathPolicy.Traffic.MESSAGE
+            MqttPoolTransport.Publication(binding.scope, digest, digest, traffic, binding.receiveTopics,
+                authorizedPaths = peer.generations.toMap(), onPath = { broker, generation ->
+                    peer.lock.withLock {
+                        val local = peer.local
+                        require(peer.active && peer.binding == binding && binding.enabled && local != null &&
+                            local.expiresAtMs > wall() && peer.confirmedEpoch == local.epoch &&
+                            peer.generations[broker] == generation &&
+                            transport.readyPathGenerations(binding.receiveTopics)[broker] == generation) {
+                            "Transient publication route changed"
+                        }
+                    }
+                })
+        }
+    }
+
     fun recoverBlockedSend(topic: String): Boolean {
         val peer = synchronized(lock) { outgoing[topic] } ?: return false
         if (ready(peer.binding.scope)) return false
