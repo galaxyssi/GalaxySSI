@@ -115,3 +115,17 @@ verify provider-thread identity or autonomous use of the saved method.
 
 No real model was called for this increment. A real longitudinal trial, provider
 context audit, controlled quality comparison and long-term retention remain open.
+
+## Initial Identity Verification (2026-10-10)
+
+- Rebased on main through PR #3494; Android 1.4.138 / 1223 main and test APKs built.
+- 40 focused JVM tests passed: adaptive admission/planning, continuity ownership,
+  and free-running single-agent calibration.
+- S20U seed/recover passed in separate processes. The original method and its
+  failure condition survived, stable people matched, and initial node IDs differed.
+- Repository checks and whitespace checks passed. Only test fixtures and their
+  documentation changed; no production version or routing policy was modified.
+
+These local checks made zero model calls. Fresh native provider context, actual
+Agent retrieval, future-task quality gains and longitudinal retention are still
+unverified by this increment.
