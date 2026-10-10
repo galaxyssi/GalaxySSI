@@ -1,6 +1,8 @@
 package com.galaxyssi.chat
 
+import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 internal object CollaborationTrialDeviceBinding {
     fun validate(model: String): String = model.also {
@@ -21,7 +23,8 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     val id: String, val deviceModel: String, override val targetId: String, override val selection: CollaborationLiveModelSelection,
     val goal: String, val timeoutMillis: Long, val maximumDispatches: Int, val members: List<CollaborationMember>,
     val singleAgent: Boolean = false,
-    val continuity: CollaborationPilotContinuitySpec? = null
+    val continuity: CollaborationPilotContinuitySpec? = null,
+    val initialIdentityPolicy: String = PRODUCTION_IDENTITIES
 ) : CollaborationTrialSelectionPolicy {
     val executionMode get() = if (singleAgent) "single_agent" else "adaptive_team"
     // Production normalizes assignment boundaries; keep the frozen request unchanged.
@@ -40,11 +43,16 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     "collaboration_provider" to person.providerLabel, "collaboration_model_id" to selection.modelId,
                     CollaborationReasoningSelection.KEY to selection.reasoningEffort.wireValue))
         }
-        val nodes = if (singleAgent) listOf(people.single().copy(objective = executionObjective,
+        val original = if (singleAgent) listOf(people.single().copy(objective = executionObjective,
             context = people.single().context + (CollaborationResearchWorkflow.PERSON to members.single().id)))
             else CollaborationResearchWorkflow.expand(people, goal)
+        // Keep people and saved memory stable; namespace only this trial's initial execution nodes.
+        val nodes = if (initialIdentityPolicy == RUN_SCOPED_IDENTITIES) original.map { member ->
+            member.copy(instanceId = UUID.nameUUIDFromBytes(JSONArray().put("pilot-initial-identity.v1")
+                .put(id).put(group).put(run).put(member.memberId).toString().toByteArray(Charsets.UTF_8)).toString())
+        } else original
         return AgentTeamDefinition(run, targetId, nodes,
-            primaryInstanceId = people.first().memberId, visibilityMode = AgentTeamVisibilityMode.VISIBLE)
+            primaryInstanceId = nodes.first().memberId, visibilityMode = AgentTeamVisibilityMode.VISIBLE)
     }
 
     fun matchesExecution(member: AgentTeamMember, definition: AgentTeamDefinition): Boolean = if (singleAgent) {
@@ -57,12 +65,19 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     companion object {
         const val FORMAT = "galaxyssi.adaptive-collaboration-pilot.v2"
         const val SINGLE_FORMAT = "galaxyssi.single-agent-calibration.v1"
+        const val PRODUCTION_IDENTITIES = "production"
+        const val RUN_SCOPED_IDENTITIES = "run_scoped"
         fun from(value: JSONObject, authorizedDispatches: Int, authorizedMillis: Long): CollaborationAdaptivePilotPlan {
             val required = setOf("format", "pilot_id", "target_id", "model_id", "reasoning_effort",
                 "tool_scope", "goal", "trial_timeout_ms", "maximum_dispatches", "members", "device_model")
             val keys = value.keys().asSequence().toSet()
-            require(keys == required || keys == required + "continuity") { "Unexpected adaptive trial fields" }
+            require(keys.containsAll(required) && keys.all { it in required + setOf("continuity", "initial_identity_policy") }) {
+                "Unexpected adaptive trial fields"
+            }
             val continuity = if (value.has("continuity")) CollaborationPilotContinuitySpec.from(value.getJSONObject("continuity")) else null
+            val identities = if (value.has("initial_identity_policy")) value.get("initial_identity_policy") as? String
+                ?: error("Initial identity policy must be a string") else PRODUCTION_IDENTITIES
+            require(identities in setOf(PRODUCTION_IDENTITIES, RUN_SCOPED_IDENTITIES)) { "Unknown initial identity policy" }
             fun text(key: String) = (value.get(key) as? String)?.takeIf(String::isNotBlank) ?: error("Nonblank string required: $key")
             require(text("format") in setOf(FORMAT, SINGLE_FORMAT) && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
             val singleAgent = text("format") == SINGLE_FORMAT
@@ -87,7 +102,7 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     target, "Codex", role = field("role"), modelId = selection.modelId)
             }
             require(members.map { it.id }.distinct().size == members.size) { "Trial person IDs must be distinct" }
-            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members, singleAgent, continuity)
+            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members, singleAgent, continuity, identities)
         }
     }
 }

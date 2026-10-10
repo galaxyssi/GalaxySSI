@@ -50,6 +50,71 @@ class CollaborationAdaptivePilotTest {
         reject { p.requireAppSelection(AgentModelSelection()) }
     }
 
+    @Test fun runScopedInitialIdsPreservePeopleMemoryScopeAndProductionAssignments() {
+        val production = plan().definition("group", "root")
+        val p = plan(input().put("initial_identity_policy", "run_scoped"))
+        val scoped = p.definition("group", "root")
+        assertEquals(scoped, p.definition("group", "root"))
+        assertEquals(scoped.members.first().memberId, scoped.primaryMemberId)
+        assertEquals(2, scoped.members.map { it.memberId }.toSet().size)
+        assertEquals(listOf("lead", "peer"), scoped.members.map { it.context[CollaborationResearchWorkflow.PERSON] })
+        scoped.members.zip(production.members).forEach { (a, b) ->
+            assertNotEquals(a.memberId, b.memberId)
+            assertEquals(b, a.copy(instanceId = b.instanceId))
+        }
+        for (other in listOf(p.definition("other", "root"), p.definition("group", "other"),
+            plan(input().put("pilot_id", "adaptive-2").put("initial_identity_policy", "run_scoped")).definition("group", "root"))) {
+            assertTrue(scoped.members.map { it.memberId }.toSet().intersect(other.members.map { it.memberId }.toSet()).isEmpty())
+        }
+        assertEquals("production", plan().initialIdentityPolicy)
+        assertEquals(production, plan(input().put("initial_identity_policy", "production")).definition("group", "root"))
+        for (invalid in listOf("fresh_thread_guaranteed", true, JSONObject.NULL, 1))
+            reject { plan(input().put("initial_identity_policy", invalid)) }
+    }
+
+    @Test fun runScopedSingleRemainsOneFreeRunningInvestigator() {
+        val value = input().put("format", CollaborationAdaptivePilotPlan.SINGLE_FORMAT).put("maximum_dispatches", 1)
+            .put("initial_identity_policy", "run_scoped")
+        value.getJSONArray("members").remove(1)
+        val p = plan(value); val graph = p.definition("group", "root")
+        val member = graph.members.single()
+        assertTrue(p.matchesExecution(member, graph))
+        assertEquals("lead", member.context[CollaborationResearchWorkflow.PERSON])
+        assertNotEquals("lead", member.memberId)
+        assertEquals(p.executionObjective, member.objective)
+        assertNull(CollaborationResearchWorkflow.stage(member))
+    }
+
+    @Test fun runScopedNodesPassUnmodifiedAdmissionAndDynamicProductionPlanning() = runBlocking {
+        val p = plan(input().put("initial_identity_policy", "run_scoped").put("maximum_dispatches", 3))
+        val s = InMemoryAgentTeamExecutionStore(); val entries = mutableListOf<JSONObject>()
+        val g = guard(p, s, persist = entries::add)
+        var coordinated = false
+        val worker = object : AgentTeamMemberWorker {
+            override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
+                g.prepare(context)
+                val original = action(context)
+                assertSame(original, g.admit(original))
+                val value = if (context.member.deliveryMode == AgentDeliveryMode.RESPOND) {
+                    val items = if (!coordinated) listOf(work("observe", "Read the synthetic observation")) else emptyList()
+                    coordinated = true
+                    assessment(items).toString()
+                } else "Synthetic observation only"
+                return AgentSubagentOutput(value)
+            }
+            override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) = Unit
+        }
+        AgentTeamExecutionRuntime(s, AgentSubagentLimits(maxConcurrency = 1)).use { runtime ->
+            assertEquals("phone_dispatch_envelope_reached", CollaborationAdaptivePilotRunner(s, runtime, g)
+                .run(p.definition("group", "root"), request(p), worker))
+        }
+        assertEquals(3, entries.size)
+        assertEquals(listOf("lead", "peer", "lead"), entries.map { it.getString("person_id") })
+        assertTrue(entries.none { it.getString("node_id") in setOf("lead", "peer") })
+        assertEquals(3, entries.map { it.getString("node_id") }.distinct().size)
+        assertTrue(entries.all { !it.getBoolean("prompt_replaced_by_harness") && it.getString("conversation_id") == "group" })
+    }
+
     @Test fun deviceSelectionRequiresFrozenProtocolOperatorAndActualModelAgreement() {
         for (model in listOf("SM-S9480", "SM-G9880", "Future Phone")) {
             val p = plan(input().put("device_model", model))

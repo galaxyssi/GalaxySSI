@@ -9,8 +9,10 @@ instead starts the production research coordinator with a goal and member
 roster. Production goal admission, live graph expansion, dependencies, goal
 acceptance and checkpoint advancement choose the executable work.
 
-The fixture does not invent assignments, replace prompts, rewrite member
-transport identities, force acceptance, or force past coordinator backoff.
+The fixture does not invent assignments, replace prompts, rewrite admitted
+transport requests, force acceptance, or force past coordinator backoff. An
+optional test-only policy can namespace initial execution nodes before the graph
+is created; stable people and production planning remain unchanged.
 It uses the existing Android -> paired Desktop -> Codex execution path and the
 explicit model/effort selected in an App conversation. These are trial inputs,
 not production defaults. New work is admitted only while that selection matches.
@@ -28,7 +30,7 @@ quality score; those outcomes must be evaluated separately.
 ## Private Protocol
 
 Keep goals, trial protocols, raw reports, rubrics and paper data outside Git.
-The input JSON has exactly these fields:
+The input JSON requires these fields:
 
 - `format`: `galaxyssi.adaptive-collaboration-pilot.v2`
 - `pilot_id`: fresh safe identifier, never reused after a trial starts
@@ -38,6 +40,13 @@ The input JSON has exactly these fields:
 - `goal`: complete user goal; oversized inputs are rejected, not shortened
 - `trial_timeout_ms`, `maximum_dispatches`: operator-authorized trial envelope
 - `members`: two or more distinct `id`, `name`, `role` objects
+
+Optional fields are `continuity` and `initial_identity_policy`, documented in
+[Cross-Task Capability Reuse Trials](COLLABORATION_LONGITUDINAL_PILOT.md).
+`initial_identity_policy` defaults to `production`; `run_scoped` namespaces
+initial node IDs by pilot, group, run and original execution node. It is not a
+provider reset or an isolation guarantee. Reports record the selected policy
+and leave `fresh_provider_thread_verified=false` pending an independent audit.
 
 No answer keys, scripted work graph, tool permissions or fixed research rounds
 are supplied by this schema. Arbitrary goal text is still operator-provided

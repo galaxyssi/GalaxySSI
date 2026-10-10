@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -26,7 +27,8 @@ class CollaborationPilotContinuityDeviceTest {
             { key, value -> database.mutateStrings(mapOf(key to value)) })
         val groups = CollaborationGroupStore(context)
         val transcripts = AgentTranscriptStore(context)
-        val plan = F.plan(F.input(token, if (phase == "seed") 1 else 2, retain = phase == "seed"))
+        val plan = F.plan(F.input(token, if (phase == "seed") 1 else 2, retain = phase == "seed")
+            .put("initial_identity_policy", "run_scoped"))
         val before = CollaborationPilotWindowSnapshot.read(context)
         val lease = journal.open(plan, F.protocolHash, {
             val id = transcripts.createAgentConversation("Continuity fixture $token").id
@@ -34,13 +36,21 @@ class CollaborationPilotContinuityDeviceTest {
             id
         }, { groups.load(it) != null }, { F.reportHash })
         val workspace = CollaborationResearchWorkspace(context)
-        val access = CollaborationWorkspaceAccess(lease.groupId, "adaptive-pilot-${plan.id}", "turn-adaptive-pilot-${plan.id}", 0, "node", "lead")
+        val run = "adaptive-pilot-${plan.id}"
+        val initial = plan.definition(lease.groupId, run)
+        val ids = initial.members.map { it.memberId }
+        assertEquals(listOf("lead", "peer"), initial.members.map { it.context[CollaborationResearchWorkflow.PERSON] })
+        assertTrue(ids.none { it in setOf("lead", "peer") })
+        val access = CollaborationWorkspaceAccess(lease.groupId, run, "turn-adaptive-pilot-${plan.id}", 0, initial.primaryMemberId, "lead")
         if (phase == "seed") {
             assertEquals("recorded", workspace.publish(access, F.workflow().toString()).getString("status"))
-            database.mutateStrings(mapOf("seed_pid" to android.os.Process.myPid().toString()))
+            database.mutateStrings(mapOf("seed_pid" to android.os.Process.myPid().toString(),
+                "seed_initial_ids" to JSONArray(ids).toString()))
             journal.finish(lease, F.report(lease), F.reportHash)
         } else try {
             assertNotEquals(database.readString("seed_pid", ""), android.os.Process.myPid().toString())
+            val priorIds = JSONArray(database.readString("seed_initial_ids", ""))
+            assertTrue(ids.toSet().intersect((0 until priorIds.length()).map(priorIds::getString).toSet()).isEmpty())
             val found = workspace.searchCapabilities(access, "immutable corpus").getJSONArray("records")
             assertEquals(1, found.length())
             val ref = found.getJSONObject(0)
@@ -63,6 +73,8 @@ class CollaborationPilotContinuityDeviceTest {
             putString("continuity_phase", phase)
             putString("fixture_pid", android.os.Process.myPid().toString())
             putString("model_dispatches", "0")
+            putString("initial_identity_policy", plan.initialIdentityPolicy)
+            putString("fresh_provider_thread_verified", "false")
             putString("autonomous_learning_proven", "false")
         })
     }
