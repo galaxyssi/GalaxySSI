@@ -764,9 +764,10 @@ class AgentTeamExecutionRuntime(
         val research = CollaborationResearchWorkflow.isResearch(normalizedMembers)
         if (research && CollaborationLiveGraph.enabled(normalizedDefinition)) {
             liveGraphs[request.runId] = { completed, admitted ->
-                val next = requireNotNull(store.expandResearchGraph(request.runId, normalizedDefinition.primaryMemberId,
+                val persisted = requireNotNull(store.expandResearchGraph(request.runId, normalizedDefinition.primaryMemberId,
                     completed, System.currentTimeMillis(), candidateAdmission, admitted)) { "The durable research graph was removed or superseded" }
-                validate(next.definition)
+                // Reopened and appended work needs the same projection as startup, without rewriting its evidence.
+                val next = persisted.copy(definition = persisted.definition.copy(members = validate(persisted.definition)))
                 currentGraph.set(next)
                 memberById.putAll(next.definition.members.associateBy(AgentTeamMember::memberId))
                 publishSnapshot(request.runId)
@@ -874,8 +875,8 @@ class AgentTeamExecutionRuntime(
             member.copy(
                 agentId = member.agentId.trim(),
                 instanceId = member.memberId.trim(),
-                role = member.role.trim().take(80),
-                objective = member.objective.trim().take(MAX_MEMBER_CONTEXT_CHARS),
+                role = member.role.trim().take(80).trimEnd(),
+                objective = member.objective.trim().take(MAX_MEMBER_CONTEXT_CHARS).trimEnd(),
                 dependsOnAgentIds = member.dependsOnAgentIds.map(String::trim).filter(String::isNotBlank).toSet()
             )
         }.distinctBy(AgentTeamMember::memberId)
