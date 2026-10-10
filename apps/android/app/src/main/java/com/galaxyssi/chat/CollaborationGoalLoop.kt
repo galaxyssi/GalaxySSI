@@ -39,6 +39,7 @@ internal object CollaborationGoalLoop {
 
     fun instructions(): String = """
         You are the goal controller, not merely the author of a final summary. A batch ending is NOT goal completion.
+        ${CollaborationAssessmentPreflight.INSTRUCTIONS}
         Return exactly one JSON object (no fences):
         {"format":"$FORMAT","summary":"concise public progress/result in the user's language",
          "decision":"continue|achieved|blocked",

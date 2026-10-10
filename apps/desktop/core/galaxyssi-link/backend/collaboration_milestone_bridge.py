@@ -41,10 +41,13 @@ def tool_spec():
         "This records authorship, not verification, peer consumption or task completion. "
         "For an actual local UTF-8 file, use collaboration_text_artifact when available instead of publishing only its path or a description. "
         "Specialized host candidate-transition assignments use their final publication contract. "
+        "mode=validate_assessment with artifact=<exact goal-assessment JSON string> checks JSON fields and qualified "
+        "validator specifications on the phone without publishing or ending this assignment. Repair reported fields in this turn. "
+        "This does NOT check preserved criteria, task graphs, permissions, evidence or goal acceptance; final admission still applies. "
         "One request is limited to 131072 UTF-8 bytes. Split larger independent deliveries, never truncate evidence. "
         "Do not supply group/member/task authority fields. " + DELIVERY_INSTRUCTIONS),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["publish", "list", "status", "receipt"]},
+            "mode": {"type": "string", "enum": ["publish", "list", "status", "receipt", "validate_assessment"]},
             "milestone_id": {"type": "string", "maxLength": 160},
             "artifact": {"type": "string"},
             "artifact_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
@@ -55,7 +58,11 @@ def tool_spec():
 def validate_arguments(arguments):
     if not isinstance(arguments, dict):
         raise ValueError("Publication arguments must be an object")
-    if arguments.get("mode") == "status":
+    if arguments.get("mode") == "validate_assessment":
+        if (set(arguments) != {"mode", "artifact"} or not isinstance(arguments.get("artifact"), str)
+                or not arguments["artifact"].strip()):
+            raise ValueError("Assessment preflight accepts only mode and a nonblank artifact JSON string; no authority fields")
+    elif arguments.get("mode") == "status":
         if set(arguments) != {"mode"}:
             raise ValueError("Status accepts only mode; authority comes from the host assignment")
     elif arguments.get("mode") == "publish":
@@ -76,7 +83,7 @@ def validate_arguments(arguments):
                 or len(arguments.get("cursor", "")) > 512):
             raise ValueError("List accepts only mode and an optional cursor")
     else:
-        raise ValueError("Publication mode must be publish, list, status or receipt")
+        raise ValueError("Publication mode must be publish, list, status, receipt or validate_assessment")
     if len(json.dumps(arguments, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > MAX_BYTES:
         raise ValueError("Publication exceeds 131072 UTF-8 bytes; split independent artifacts, do not truncate")
     return dict(arguments)
@@ -126,6 +133,9 @@ class MilestoneBroker(RecallBroker):
 
 
 def failure_guidance(mode):
+    if mode == "validate_assessment":
+        return ("Assessment preflight unavailable; no plan or artifact was submitted. Retry this check after reconnecting "
+                "or return the required assessment; final admission still applies.")
     if mode == "receipt":
         return ("Saved publication receipt unavailable; this read submitted no artifact. Retry the exact receipt lookup after reconnecting. "
                 "The original publication outcome remains uncertain; do not repeat completed effects.")

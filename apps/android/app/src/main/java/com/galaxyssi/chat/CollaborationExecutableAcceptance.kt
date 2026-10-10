@@ -107,6 +107,7 @@ internal object CollaborationExecutableAcceptance : CollaborationQualifiedValida
         In the preserved criterion set verification=computational, evidence_kind=observed, requirement exactly:
         "$REQUIREMENT"
         validator:{id:"$id",environment,purpose,oracle_basis,coverage_gaps,cases:[{id,purpose:"target|edge|regression",reason,input:{...},expected:<JSON>}]}.
+        Include at least one target case AND at least one regression case; edge cases alone do not replace either purpose.
         Establish this contract before completion. Cases and oracle metadata are immutable; code candidates may be revised.
         Publish executable_tool and tool_test_plan copying those preserved fields exactly, then execute the plan with
         galaxyssi.runtime.execute collaboration_tool mode=test, or remote Codex collaboration_test_tool mode=start with

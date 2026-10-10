@@ -167,6 +167,58 @@ class CollaborationMilestoneBridgeTest(unittest.TestCase):
             server._execute_dynamic_tool_call("task", {"id": 1}, {"tool": "collaboration_publish", "arguments": args()}, {"turn_id": "other"})
         self.assertFalse(reply.call_args.args[1]["success"]); self.assertEqual([], calls)
 
+    def test_assessment_preflight_preserves_exact_draft_and_phone_diagnostics(self):
+        draft = '{\n "format": "galaxyssi.goal-assessment.v1", "criteria": []\n}'
+        arguments = {"mode": "validate_assessment", "artifact": draft}
+        self.assertIn("validate_assessment", tool_spec()["inputSchema"]["properties"]["mode"]["enum"])
+        broker = MilestoneBroker()
+        result = {"success": True, "status": "returned", "schema_valid": False, "json_syntax": "valid",
+                  "failure": {"path": "$.criteria", "code": "invalid_type"}, "committed": False,
+                  "goal_accepted": False, "assignment_completed": False}
+        def publish(request):
+            self.assertEqual("validate_assessment", request["phase"])
+            self.assertEqual(arguments, request["arguments"])
+            reply = {**request, "type": RESPONSE, "result": result}
+            for changed in ({"phase": "publish"}, {"turn_id": "other"}, {"execution_generation": 2}):
+                self.assertFalse(broker.receive({**reply, **changed}, "phone"))
+            self.assertFalse(broker.receive(reply, "other-phone"))
+            return broker.receive(reply, "phone")
+        self.assertEqual(result, broker.query(task, arguments, publish))
+        with self.assertRaisesRegex(TimeoutError, "no plan or artifact was submitted"):
+            broker.query(task, arguments, lambda request: True, timeout=.005)
+        self.assertEqual({}, broker._pending)
+
+    def test_assessment_preflight_rejects_authority_and_malformed_arguments(self):
+        arguments = {"mode": "validate_assessment", "artifact": "{}"}
+        bad = [{**arguments, key: value} for key, value in (
+            ("member_id", "other"), ("milestone_id", "new"), ("execute", True),
+            ("artifact", {}), ("artifact", " "), ("artifact", "x" * 131072))]
+        for values in bad:
+            with self.subTest(values=str(values)[:100]):
+                sent = []
+                with self.assertRaises(ValueError):
+                    MilestoneBroker().query(task, values, sent.append)
+                self.assertEqual([], sent)
+
+    def test_assessment_preflight_never_marks_publication_or_assignment_complete(self):
+        for valid in (False, True, None):
+            events = []
+            server = CodexAppServer("codex", {}, lambda *event: events.append(event),
+                collaboration_publish=lambda *values: {"success": valid is not None, "schema_valid": valid})
+            run = CodexRun("task", thread_id="thread", turn_id="turn")
+            server._runs["task"] = run
+            with patch.object(server, "_write_server_response") as reply:
+                server._execute_dynamic_tool_call("task", {"id": 1}, {"tool": "collaboration_publish",
+                    "arguments": {"mode": "validate_assessment", "artifact": "{}"}}, {})
+            self.assertEqual(valid is not None, reply.call_args.args[1]["success"])
+            self.assertEqual("collaboration_assessment_preflight_returned", events[-1][1]["trace_stage"])
+            self.assertIn("not submitted", events[-1][1]["current_step"])
+            if valid is None:
+                self.assertIn("unavailable", events[-1][1]["current_step"])
+                self.assertNotIn("correction", events[-1][1]["current_step"])
+            self.assertFalse(run.finished)
+            self.assertFalse(run.research_observed)
+
 
 if __name__ == "__main__":
     unittest.main()

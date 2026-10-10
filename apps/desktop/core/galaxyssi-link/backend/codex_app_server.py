@@ -2287,6 +2287,17 @@ class CodexAppServer:
                 "trace_stage": tool_name + "_returned", "telemetry_only": True})
             return
         if tool_name == "collaboration_publish":
+            if arguments.get("mode") == "validate_assessment":
+                if result.get("success") is not True or not isinstance(result.get("schema_valid"), bool):
+                    preflight_step = "Assessment draft check unavailable; not submitted"
+                elif result["schema_valid"]:
+                    preflight_step = "Assessment draft schema checked; not submitted"
+                else:
+                    preflight_step = "Assessment draft needs correction; not submitted"
+                self.on_event(task_id, {**dict(common), "status": "running",
+                    "current_step": preflight_step,
+                    "trace_stage": "collaboration_assessment_preflight_returned", "telemetry_only": True})
+                return
             publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability",
                                 "receipt": "Recover exact publication receipt"}
             self.on_event(task_id, {**dict(common), "status": "running",
