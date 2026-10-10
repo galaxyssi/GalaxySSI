@@ -96,17 +96,7 @@ internal class PhonePairingDeliveryLedger(
         const val MAX_PENDING = 64
         const val MAX_ATTEMPTS = 20
 
-        fun payloadHash(payload: JSONObject): String = MqttRouteAdvertisement.sha256(canonical(payload))
-
-        private fun canonical(value: Any?): String = when (value) {
-            is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") {
-                JSONObject.quote(it) + ":" + canonical(value.get(it))
-            }
-            is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonical(value.get(it)) }
-            is String -> JSONObject.quote(value)
-            null, JSONObject.NULL -> "null"
-            else -> value.toString()
-        }
+        fun payloadHash(payload: JSONObject): String = PhonePairingControlReceipt.payloadHash(payload)
     }
 }
 

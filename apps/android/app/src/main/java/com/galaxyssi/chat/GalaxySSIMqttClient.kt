@@ -2077,6 +2077,9 @@ object GalaxySSIMqttClient {
             publishPhonePairingReceipt(context, payload, card)
             return
         }
+        val contactId = card.optString("galaxyssi_id")
+        val previousRequest = AppStore.friendRequestForGalaxySSIId(context, contactId)
+        val previouslyVerified = AppStore.canCommunicateWith(context, contactId)
         if (!AppStore.importPhoneContactRequest(
                 context,
                 payload,
@@ -2084,7 +2087,6 @@ object GalaxySSIMqttClient {
                 localRouteId
             )
         ) return
-        val contactId = card.optString("galaxyssi_id")
         if (rendezvous != null && AppStore.canCommunicateWith(context, contactId)) {
             AppStore.refreshTrustedPhoneRelationship(
                 context = context,
@@ -2097,7 +2099,10 @@ object GalaxySSIMqttClient {
             !AppStore.canCommunicateWith(context, contactId) &&
             !AppStore.approveFriendRequestForGalaxySSIId(context, contactId)
         ) return
-        if (type == PhoneContactCard.REJECTION_TYPE) {
+        val eventType = PhoneContactEventPolicy.eventType(
+            type, previousRequest, AppStore.friendRequestForGalaxySSIId(context, contactId), previouslyVerified
+        )
+        if (eventType == "phone_contact_request_rejected") {
             ChatHistoryStore.appendSystemNotification(
                 context,
                 context.getString(
@@ -2127,16 +2132,7 @@ object GalaxySSIMqttClient {
         publishPhonePairingReceipt(context, payload, card)
         notifyMessageListeners(
             JSONObject()
-                .put(
-                    "type",
-                    when (type) {
-                        PhoneContactCard.REQUEST_TYPE -> "phone_contact_request_received"
-                        PhoneContactCard.BUNDLE_REFRESH_TYPE -> "phone_contact_session_refreshed"
-                        PhoneContactCard.APPROVAL_TYPE -> "phone_contact_request_approved"
-                        PhoneContactCard.REJECTION_TYPE -> "phone_contact_request_rejected"
-                        else -> "phone_contact_session_ready"
-                    }
-                )
+                .put("type", eventType)
                 .put("contact_id", contactId)
                 .put("name", card.optString("name"))
         )
