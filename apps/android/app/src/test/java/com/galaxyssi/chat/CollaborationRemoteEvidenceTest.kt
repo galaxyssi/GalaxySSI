@@ -12,6 +12,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationRemoteEvidenceTest {
+    @Test fun diagnosticTokenIsBoundedAndContainsNoRequestIdentity() {
+        val value = JSONObject().put("request_id", "private-rpc")
+        assertEquals("5b49b080ab410f65", CollaborationRemoteEvidenceProtocol.diagnosticToken(value))
+        for (id in listOf("", "x".repeat(129), JSONObject.NULL, 12)) {
+            assertEquals("unavailable", CollaborationRemoteEvidenceProtocol.diagnosticToken(JSONObject().put("request_id", id)))
+        }
+    }
     private class Rows : CollaborationRemoteEvidenceRows, CollaborationWorkspaceRows {
         val data = sortedMapOf<String, String>()
         var failAdvance = false

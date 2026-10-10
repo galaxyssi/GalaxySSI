@@ -176,6 +176,15 @@ class MqttIngressTimingTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_evidence_request_records_actual_receive_phases(self):
+        self.envelope['payload'].update(type='agent_task_evidence_request', request_id='private-rpc')
+        with patch('collaboration_receive_observation.log.info') as log:
+            self.run_packet()
+        self.assertEqual(['stored', 'dispatch', 'finished'], [call.args[2] for call in log.call_args_list])
+        for call in log.call_args_list:
+            self.assertEqual((90.0, 13.0, 56.0), call.args[3:])
+            self.assertNotIn('private-', str(call))
+
 
 if __name__ == '__main__':
     unittest.main()

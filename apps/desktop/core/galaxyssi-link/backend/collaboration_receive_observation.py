@@ -4,6 +4,7 @@ import logging
 
 RESPONSE_TYPES = frozenset({
     "collaboration_recall_result", "collaboration_publish_result", "collaboration_tool_test_result",
+    "agent_task_evidence_request",
 })
 STAGES = frozenset({"stored", "dispatch", "finished", "failed"})
 log = logging.getLogger(__name__)
