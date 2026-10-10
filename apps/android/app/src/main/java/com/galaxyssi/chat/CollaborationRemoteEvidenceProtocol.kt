@@ -18,6 +18,11 @@ internal object CollaborationRemoteEvidenceProtocol {
         return "codex.$type"
     }
     private val HASH = Regex("[a-f0-9]{64}")
+    fun diagnosticToken(value: JSONObject): String {
+        val id = value.opt("request_id") as? String ?: return "unavailable"
+        if (id.length !in 1..128) return "unavailable"
+        return AgentResultRecoveryClient.sha256(id.toByteArray(Charsets.UTF_8)).take(16)
+    }
     fun integer(value: JSONObject, key: String): Long? = when (val number = value.opt(key)) {
         is Int -> number.toLong()
         is Long -> number

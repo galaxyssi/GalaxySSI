@@ -7661,10 +7661,10 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
         return
 
     if msg_type == "agent_task_evidence_request":
-        from codex_tool_evidence_bridge import query
+        from codex_tool_evidence_bridge import query, publish_response
         response = query(agent_task_manager, payload, client_route_id=client_route_id)
         if response is not None:
-            _publish_phone_payload(mqttc, wire_payload, response)
+            publish_response(payload, lambda: _publish_phone_payload(mqttc, wire_payload, response))
         return
 
     if msg_type == "agent_task_recovery_request":

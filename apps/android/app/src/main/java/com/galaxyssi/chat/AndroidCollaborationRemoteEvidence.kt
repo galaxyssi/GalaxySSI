@@ -61,12 +61,13 @@ internal object AndroidCollaborationRemoteEvidence {
     }
 
     fun receive(context: Context, payload: JSONObject, desktop: String) {
+        val token = CollaborationRemoteEvidenceProtocol.diagnosticToken(payload)
         if (!paired(context, desktop, payload)) {
-            Log.w("GalaxySSIEvidence", "Read-only evidence response rejected: paired_route_mismatch")
+            Log.w("GalaxySSIEvidence", "Evidence response rpc=$token outcome=paired_route_mismatch")
             return
         }
         client.receive(payload, desktop) { outcome ->
-            Log.i("GalaxySSIEvidence", "Read-only evidence response: $outcome")
+            Log.i("GalaxySSIEvidence", "Evidence response rpc=$token outcome=$outcome")
         }
     }
 
@@ -108,10 +109,17 @@ internal object AndroidCollaborationRemoteEvidence {
         onDiagnostic: (String) -> Unit = {}): JSONObject? {
         val started = android.os.SystemClock.elapsedRealtime()
         var published = false
+        var token = "cached"
         val response = client.query(desktop, fields, selection) { request ->
+            token = CollaborationRemoteEvidenceProtocol.diagnosticToken(request)
+            Log.i("GalaxySSIEvidence", "Evidence query rpc=$token stage=publish_started")
             (paired(context, desktop, request) && GalaxySSIMqttClient.publishJsonForTransport(request,
                 GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id")))
-                .also { published = it }
+                .also {
+                    published = it
+                    Log.i("GalaxySSIEvidence", "Evidence query rpc=$token stage=publish_finished accepted=$it " +
+                        "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started}")
+                }
         }
         val diagnostic = when {
             response != null -> "response_${response.optString("status")}"
@@ -119,7 +127,7 @@ internal object AndroidCollaborationRemoteEvidence {
             else -> "publish_rejected:${queryReadiness(context, desktop, fields)}"
         }
         onDiagnostic(diagnostic)
-        Log.i("GalaxySSIEvidence", "Evidence query: source=${fields.optString("source_message_id")} " +
+        Log.i("GalaxySSIEvidence", "Evidence query rpc=$token " +
             "mode=${selection.optString("mode")} outcome=$diagnostic " +
             "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started}")
         if (response == null) Log.w("GalaxySSIEvidence", "Read-only evidence query deferred: $diagnostic")

@@ -27,6 +27,8 @@ class CollaborationEvidenceTransportDeviceTest {
         val fields = fixture.getJSONObject("fields")
         val desktop = fixture.getString("desktop")
         val requireInline = args.getString("remoteEvidenceInline") == "true"
+        val observeLateMillis = args.getString("remoteEvidenceObserveLateMillis")?.toLongOrNull() ?: 0L
+        require(observeLateMillis in 0..60_000)
         require(CollaborationRemoteEvidenceProtocol.validScope(fields))
         val report = JSONObject().put("task_id", fields.getString("task_id")).put("model_calls", 0)
         val samples = JSONArray()
@@ -71,6 +73,12 @@ class CollaborationEvidenceTransportDeviceTest {
                     .put("inline_pages", response?.optJSONArray("inline_pages")?.length()))
                 report.put("queries", samples)
                 file.writeText(report.toString())
+                if (response == null && observeLateMillis > 0) {
+                    // Keep the receiver alive for diagnosis; the original deadline still failed.
+                    report.put("late_observation_ms", observeLateMillis).put("passed", false)
+                    file.writeText(report.toString())
+                    delay(observeLateMillis)
+                }
                 assertNotNull("Read-only index query must complete without another model call", response)
                 assertEquals("ready", response!!.getString("status"))
                 assertTrue(CollaborationRemoteEvidenceProtocol.sameScope(fields, response))
