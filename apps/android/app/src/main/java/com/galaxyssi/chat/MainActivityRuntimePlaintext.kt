@@ -28,6 +28,8 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
 
     agentAttachmentPreviewList.removeAllViews()
     agentAttachmentPreviewScroll.visibility = View.GONE
+    findViewById<android.widget.LinearLayout>(R.id.chatAttachmentPreviewList).removeAllViews()
+    findViewById<View>(R.id.chatAttachmentPreviewScroll).visibility = View.GONE
     agentRecordingTranscript.text = ""
     chatRecordingTranscript.text = ""
     wakeTranscriptText?.text = ""
@@ -55,6 +57,7 @@ internal fun MainActivity.restoreRuntimePlaintextAfterForeground(): Boolean {
         }
     resetAgentTranscriptRendering(runtimePlaintextConversationId)
     renderAgentInputAttachments()
+    renderPeerComposerAttachments()
     runtimePlaintextContactId = ""
     return true
 }

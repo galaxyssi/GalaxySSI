@@ -36,7 +36,7 @@ internal class AgentWindowStateStore(context: Context) {
     fun save(window: String, conversation: String, state: AgentWindowDraft) {
         database.writeString("draft:$window:$conversation", JSONObject()
             .put("text", state.text)
-            .put("attachments", JSONArray(state.attachments.map(AgentInputAttachment::descriptor)))
+            .put("attachments", JSONArray(state.attachments.map(AgentInputAttachment::draftDescriptor)))
             .put("entry", state.entryId).put("offset", state.topOffset)
             .put("follow", state.autoFollow).toString())
     }
@@ -48,7 +48,8 @@ internal class AgentWindowStateStore(context: Context) {
             for (index in 0 until files.length()) {
                 val file = files.getJSONObject(index)
                 add(AgentInputAttachment(file.getString("id"), Uri.parse(file.getString("uri")),
-                    file.getString("name"), file.getString("mime_type"), file.optLong("size")))
+                    file.getString("name"), file.getString("mime_type"), file.optLong("size"),
+                    file.optString("original_uri")))
             }
         }, json.optString("entry"), json.optInt("offset"), json.optBoolean("follow", true))
     }.getOrDefault(AgentWindowDraft())

@@ -1693,6 +1693,23 @@
                 </LinearLayout>
             </com.galaxyssi.chat.ui.AgentRecordingSurfaceView>
 
+            <HorizontalScrollView
+                android:id="@+id/chatAttachmentPreviewScroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:scrollbars="none"
+                android:visibility="gone">
+                <LinearLayout
+                    android:id="@+id/chatAttachmentPreviewList"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp" />
+            </HorizontalScrollView>
+
             <LinearLayout
                 android:id="@+id/chatComposerRow"
                 android:layout_width="match_parent"

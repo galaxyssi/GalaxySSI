@@ -692,6 +692,7 @@ internal fun MainActivity.showAgentAttachmentMenu() {
 }
 
 internal fun MainActivity.openAgentCamera() {
+    rememberAttachmentPickerTarget(agent = true)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
         checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
     ) {
@@ -726,6 +727,7 @@ internal fun MainActivity.openAgentCamera() {
 
 internal fun MainActivity.openChatCamera() {
     val contact = selectedContact ?: return
+    rememberAttachmentPickerTarget(agent = false)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
         checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
     ) {
@@ -760,6 +762,7 @@ internal fun MainActivity.openChatCamera() {
 
 internal fun MainActivity.openChatAttachmentPicker() {
     val contact = selectedContact ?: return
+    rememberAttachmentPickerTarget(agent = false)
     val peerChat = AppStore.isDesktopDeviceContact(this, contact.id) ||
         AppStore.isPersonContact(this, contact.id)
     val intent = Intent(if (peerChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
@@ -793,6 +796,7 @@ internal fun MainActivity.openAgentKnowledgeImportPicker() {
 }
 
 internal fun MainActivity.openAgentAttachmentPicker(imagesOnly: Boolean) {
+    rememberAttachmentPickerTarget(agent = true)
     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
         type = if (imagesOnly) "image/*" else "*/*"
         addCategory(Intent.CATEGORY_OPENABLE)
@@ -864,7 +868,15 @@ internal fun MainActivity.renderAgentInputAttachments() {
     }
 }
 
-internal fun MainActivity.agentInputAttachmentCard(attachment: AgentInputAttachment): View {
+internal fun MainActivity.agentInputAttachmentCard(
+    attachment: AgentInputAttachment,
+    onPreview: () -> Unit = { editAgentInputAttachment(attachment) },
+    onCrop: () -> Unit = { editAgentInputAttachment(attachment, cropImmediately = true) },
+    onRemove: () -> Unit = {
+        agentInputAttachments.removeAll { it.id == attachment.id }
+        renderAgentInputAttachments()
+    }
+): View {
     val cardBackground = GradientDrawable().apply {
         cornerRadius = dp(8).toFloat()
         setColor(Color.parseColor("#F4F6F8"))
@@ -873,6 +885,7 @@ internal fun MainActivity.agentInputAttachmentCard(attachment: AgentInputAttachm
     val container = FrameLayout(this).apply {
         background = cardBackground
         clipToOutline = true
+        setOnClickListener { onPreview() }
     }
     if (attachment.isImage) {
         container.addView(ImageView(this).apply {
@@ -907,6 +920,16 @@ internal fun MainActivity.agentInputAttachmentCard(attachment: AgentInputAttachm
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }, FrameLayout.LayoutParams(dp(190), dp(66)))
     }
+    if (attachment.isImage) {
+        container.addView(ImageButton(this).apply {
+            tag = "composer_crop"
+            setImageResource(R.drawable.ic_composer_crop)
+            setBackgroundColor(Color.parseColor("#EAF8F4"))
+            contentDescription = getString(R.string.composer_crop)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            setOnClickListener { onCrop() }
+        }, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.BOTTOM or Gravity.END))
+    }
     container.addView(ImageButton(this).apply {
         setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
         imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#59636E"))
@@ -914,8 +937,7 @@ internal fun MainActivity.agentInputAttachmentCard(attachment: AgentInputAttachm
         contentDescription = getString(R.string.agent_attachment_remove)
         setPadding(dp(5), dp(5), dp(5), dp(5))
         setOnClickListener {
-            agentInputAttachments.removeAll { it.id == attachment.id }
-            renderAgentInputAttachments()
+            onRemove()
         }
     }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END))
     val width = if (attachment.isImage) dp(70) else dp(190)

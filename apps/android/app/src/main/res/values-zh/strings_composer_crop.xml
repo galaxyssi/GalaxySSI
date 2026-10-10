@@ -1,0 +1,16 @@
+<resources>
+    <string name="composer_attachment_preview">附件预览</string>
+    <string name="composer_photo_preview">照片预览</string>
+    <string name="composer_crop">裁剪</string>
+    <string name="composer_crop_done">完成</string>
+    <string name="composer_crop_rotate">旋转</string>
+    <string name="composer_crop_flip">翻转</string>
+    <string name="composer_crop_reset">重置</string>
+    <string name="composer_crop_retake">重拍</string>
+    <string name="composer_crop_free">自由</string>
+    <string name="composer_crop_original">原图</string>
+    <string name="composer_crop_edited">已裁剪</string>
+    <string name="composer_crop_failed">图片编辑失败：%1$s</string>
+    <string name="composer_crop_loading">正在加载图片</string>
+    <string name="composer_crop_saving">正在保存图片</string>
+</resources>
