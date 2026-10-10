@@ -15,7 +15,8 @@ internal object CollaborationToolProtocol {
 
     fun rules() = """
         Publication envelope: {format:"galaxyssi.research-artifact.v1",summary,workspace:[{id,kind,title,
-          body:{content,<kind>:{...}},parents:[],observations:[]}]}.
+          body:{<kind>:{...}},parents:[],observations:[]}]}.
+        body.content is optional; when present it must be a nonempty string. The typed source, tests or review remain mandatory.
         Use kind="executable_tool" with body.executable_tool for source; kind="tool_test_plan" with body.tool_test_plan for tests;
         kind="tool_release" with body.tool_release for release review. These are distinct from experiment_plan and generic artifact.
         Publish the tool first, then register tests referencing its exact receipt. Copy object_id, integer revision and sha256.

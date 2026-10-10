@@ -15,7 +15,7 @@ internal object CollaborationWorkflowProtocol {
     """.trimIndent()
 
     fun rules() = """
-        workflow_method body: {content,workflow_method:{purpose,domain,bottleneck,change_rationale,applies_when,avoid_when,risks,
+        workflow_method body: {content?:nonempty string,workflow_method:{purpose,domain,bottleneck,change_rationale,applies_when,avoid_when,risks,
           expected_gain,falsifier,dimensions:[decomposition|retrieval|tool_use|collaboration|verification],roles:[distinct role names],
           inputs:[required input names],steps:[{id,role,stage:EXECUTE|EXPLORE|CHALLENGE|VERIFY|REVISE,assignment,
           depends_on:[step IDs],dependency_policy:success|terminal,independent_review:boolean,review_targets?:[reviewed step IDs]}],
@@ -43,7 +43,7 @@ internal object CollaborationWorkflowProtocol {
         Host workflow outcomes preserve member results/times/hashes across checkpoints. Inspect output evidence for correctness; missing timing is null,
         not zero, and task success is not goal success. Do not attribute network/provider delays to method quality without controlled trials.
 
-        workflow_selection_rule body: {content,workflow_selection_rule:{purpose,domain,lesson:exact independently retained capability_lessonRef,
+        workflow_selection_rule body: {content?:nonempty string,workflow_selection_rule:{purpose,domain,lesson:exact independently retained capability_lessonRef,
           condition_basis,limitations,prospective_test,when_all:[condition,...],unless_any:[condition,...]}}.
         condition: {id,input:saved input name,pointer:JSON pointer within that input (empty=root),operator:eq|neq|lt|lte|gt|gte,
           value:JSON scalar,rationale}. IDs are unique across both arrays; when_all is nonempty, unless_any may be empty.
