@@ -78,6 +78,23 @@ class CollaborationMilestoneDispatchTest {
         .put("summary", "Review measurement design").put("coordination", coordination("request"))
         .put("milestones", JSONArray(ids.toList())).toString()
 
+    @Test fun explicitMilestoneStillWakesWhenTheCompletedResultHasAPlannedSuccessor() {
+        val workspace = workspace()
+        workspace.publishMilestone(author, "decision", JSONObject(raw()).put("coordination", coordination("request")).toString())
+        val output = JSONObject(raw()).put("workspace_receipt", JSONObject().put("status", "recorded"))
+            .put("delivery_receipt", JSONObject().put("status", "recorded")).toString()
+        val result = AgentSubagentChildResult("run", "producer", "run", 1, AgentSubagentStatus.SUCCEEDED,
+            output = output, startedAtMillis = 1, completedAtMillis = 10)
+        val ready = fixture().copy(events = listOf(AgentSubagentEvent(1, "run", "producer",
+            AgentSubagentEventKinds.CHILD_SUCCEEDED, childStatus = result.status, result = result, timestampMillis = 10)))
+        val next = CollaborationLiveGraph.update(ready, setOf("producer"), 100, { workspace }, milestoneWorkspace = { workspace })
+        val node = planner(next)
+        assertEquals(0, JSONArray(node.context[CollaborationLiveGraph.SOURCES]).length())
+        assertEquals("decision", CollaborationMilestoneDispatch.inputs(node).single().getString("milestone_id"))
+        assertEquals(setOf("producer"), node.dependsOnAgentIds)
+        assertEquals(next, CollaborationLiveGraph.update(next, setOf("producer"), 101, { workspace }, milestoneWorkspace = { workspace }))
+    }
+
     @Test fun recordOnlyPersistsWithoutSignalOrPlannerAndCanBeEscalatedWithoutCopying() {
         val rows = Rows(); val workspace = workspace(rows); val signals = mutableListOf<String>()
         val saved = JSONObject(raw()).put("coordination", coordination("record_only")).toString()

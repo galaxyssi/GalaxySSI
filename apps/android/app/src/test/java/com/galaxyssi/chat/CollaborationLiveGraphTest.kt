@@ -6,6 +6,108 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationLiveGraphTest {
+    @Test fun recordedHandoffContinuesToItsDeclaredSuccessorWithoutAnotherPlanner() {
+        val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, recordedArtifact())
+        val next = CollaborationLiveGraph.update(ready, terminalIds(ready), 100)
+        assertEquals(ready, next)
+        assertTrue(planners(next).isEmpty())
+        assertEquals(next, CollaborationLiveGraph.update(reopen(next), terminalIds(next), 110))
+        assertEquals(recordedArtifact(), next.events.single { it.result != null }.result!!.output)
+        assertEquals(setOf(PRODUCER), member(next, SOURCE_B).dependsOnAgentIds)
+    }
+
+    @Test fun anUnfinishedConsumerDoesNotHideExplicitCoordinationOrDeliveryFailure() {
+        val outputs = listOf(
+            JSONObject(recordedArtifact()).put("coordination", JSONObject().put("mode", "request")
+                .put("decision", "Compare a conflicting hypothesis").put("why_now", "Changes both active branches")).toString(),
+            JSONObject(recordedArtifact()).put("workspace_receipt", JSONObject().put("status", "rejected")).toString(),
+            JSONObject(recordedArtifact()).put("delivery_receipt", JSONObject().put("status", "rejected")).toString(),
+            JSONObject(recordedArtifact()).apply { remove("delivery_receipt") }.toString(),
+            JSONObject(recordedArtifact()).put("unstructured", true).toString(),
+            JSONObject(recordedArtifact()).put("validation_warning", "Missing evidence").toString(),
+            "Malformed output"
+        )
+        for (output in outputs) {
+            val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, output)
+            val next = CollaborationLiveGraph.update(ready, terminalIds(ready), 100)
+            assertEquals(1, planners(next).size)
+            assertEquals(listOf(PRODUCER), strings(planners(next).single().context[CollaborationLiveGraph.SOURCES]))
+        }
+    }
+
+    @Test fun downstreamOwnerKeepsCompletedAncestorsUntilTheWholeHandoffChainFinishes() {
+        val chain = withConsumer(withConsumer(fixture(), SOURCE_B, PRODUCER), SOURCE_C, SOURCE_B)
+        val reviewed = terminal(terminal(chain, PRODUCER, recordedArtifact()), SOURCE_B, recordedArtifact())
+        assertEquals(reviewed, CollaborationLiveGraph.update(reviewed, terminalIds(reviewed), 100))
+        assertEquals(reviewed, CollaborationLiveGraph.update(reopen(reviewed), terminalIds(reviewed), 110))
+        val finished = terminal(reviewed, SOURCE_C, recordedArtifact())
+        val next = CollaborationLiveGraph.update(finished, terminalIds(finished), 120)
+        assertEquals(setOf(PRODUCER, SOURCE_B, SOURCE_C),
+            strings(planners(next).single().context[CollaborationLiveGraph.SOURCES]).toSet())
+    }
+
+    @Test fun failedOrTruncatedProducerStillWakesTheCoordinatorDespiteItsSuccessor() {
+        for ((status, truncated) in listOf(AgentSubagentStatus.FAILED to false, AgentSubagentStatus.SUCCEEDED to true)) {
+            val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, recordedArtifact(), status, truncated)
+            assertEquals(1, planners(CollaborationLiveGraph.update(ready, terminalIds(ready), 100)).size)
+        }
+    }
+
+    @Test fun successorFailureTransfersTheDecisionBackWithoutLosingTheOriginalResult() {
+        val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, recordedArtifact())
+        val waiting = CollaborationLiveGraph.update(ready, terminalIds(ready), 100)
+        val failed = terminal(waiting, SOURCE_B, "Review unavailable", AgentSubagentStatus.FAILED)
+        val next = CollaborationLiveGraph.update(reopen(failed), terminalIds(failed), 120)
+        assertEquals(setOf(PRODUCER, SOURCE_B), strings(planners(next).single().context[CollaborationLiveGraph.SOURCES]).toSet())
+        assertEquals(setOf(PRODUCER, SOURCE_B), planners(next).single().dependsOnAgentIds)
+    }
+
+    @Test fun removedIgnoredOrBlockedSuccessorDoesNotHideAnUnownedDecision() {
+        val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, recordedArtifact())
+        val variants = listOf(
+            ready.copy(definition = ready.definition.copy(members = ready.definition.members.map {
+                if (it.memberId == SOURCE_B) it.copy(dependsOnAgentIds = emptySet()) else it
+            })),
+            ready.copy(definition = ready.definition.copy(members = ready.definition.members.map {
+                if (it.memberId == SOURCE_B) it.copy(deliveryMode = AgentDeliveryMode.IGNORE) else it
+            })),
+            terminal(withConsumer(ready, SOURCE_B, PRODUCER, SOURCE_C), SOURCE_C, "Dependency failed", AgentSubagentStatus.FAILED)
+        )
+        for (record in variants) assertEquals(1, planners(CollaborationLiveGraph.update(record, terminalIds(record), 100)).size)
+    }
+
+    @Test fun aFinishedSuccessorReleasesItsDecisionFrontierWhileUnrelatedWorkContinues() {
+        val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, recordedArtifact())
+        val reviewed = terminal(ready, SOURCE_B, recordedArtifact())
+        val next = CollaborationLiveGraph.update(reviewed, terminalIds(reviewed), 100)
+        assertEquals(setOf(PRODUCER, SOURCE_B), strings(planners(next).single().context[CollaborationLiveGraph.SOURCES]).toSet())
+        assertEquals(member(reviewed, SLOW), member(next, SLOW))
+        val allDone = terminal(terminal(reviewed, SOURCE_C, recordedArtifact()), SLOW, recordedArtifact())
+        assertEquals(allDone, CollaborationLiveGraph.update(allDone, terminalIds(allDone), 120))
+        assertEquals(FINAL, allDone.definition.primaryMemberId)
+    }
+
+    @Test fun openQuestionsAndNegativeEvidenceRemainAvailableToThePlannedReviewer() {
+        val output = JSONObject(recordedArtifact()).put("questions", JSONArray().put("Needs independent verification"))
+            .put("findings", JSONArray().put(JSONObject().put("outcome", "refuted").put("claim", "Candidate failed"))).toString()
+        val ready = terminal(withConsumer(fixture(), SOURCE_B, PRODUCER), PRODUCER, output)
+        assertEquals(ready, CollaborationLiveGraph.update(ready, terminalIds(ready), 100))
+        assertEquals(output, ready.events.single { it.result != null }.result!!.output)
+        assertTrue(CollaborationResearchArtifact.instructions(CollaborationResearchStage.EXECUTE)
+            .contains("Final artifacts may request coordination too"))
+    }
+
+    private fun recordedArtifact() = JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+        .put("summary", "Preserve full evidence for the declared next assignment")
+        .put("workspace_receipt", JSONObject().put("status", "recorded"))
+        .put("delivery_receipt", JSONObject().put("status", "recorded")).toString()
+
+    private fun withConsumer(record: AgentTeamExecutionRecord, consumer: String, vararg dependencies: String) = record.copy(
+        definition = record.definition.copy(members = record.definition.members.map {
+            if (it.memberId == consumer) it.copy(dependsOnAgentIds = dependencies.toSet()) else it
+        }), events = record.events.map { if (it.childId == consumer && it.result == null) it.copy(
+            kind = AgentSubagentEventKinds.CHILD_QUEUED, childStatus = AgentSubagentStatus.QUEUED) else it })
+
     @Test fun requiresLiveOptInAndAnAuthorizedRoster() {
         val ready = completed(fixture(), PRODUCER)
         val disabled = ready.copy(definition = ready.definition.copy(members = ready.definition.members.map {
