@@ -90,13 +90,17 @@ internal class CollaborationResultFinalizer(
                     CollaborationResearchArtifact.validationError(output.content).ifBlank { "No versioned workspace delivery was recorded" }
                 else ""
             })
+        // Retain the model original in the archive, but deliver the exact saved text, not a fresh paraphrase.
+        val deliveryContent = if (stage == CollaborationResearchStage.DELIVER)
+            runCatching { CollaborationFinalDelivery.prepare(workspace, access, output.content) }.getOrDefault(output.content)
+            else output.content
         val accepted = if (stage == CollaborationResearchStage.DELIVER &&
             execution.member.context[CollaborationGoalLoop.ENABLED] == "1" &&
-            CollaborationGoalLoop.decode(output.content)?.optString("decision") == "achieved")
-            acceptance(access, output.content, execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]",
+            CollaborationGoalLoop.decode(deliveryContent)?.optString("decision") == "achieved")
+            acceptance(access, deliveryContent, execution.request.context[CollaborationGoalLoop.CRITERIA]?.toString() ?: "[]",
                 execution.request.goal) else null
         if (stage == CollaborationResearchStage.DELIVER)
-            return output.copy(collaborationAcceptance = accepted, collaborationDelivery = delivery)
+            return output.copy(content = deliveryContent, collaborationAcceptance = accepted, collaborationDelivery = delivery)
         // Route from the archived full original, before compact handoffs can omit request fields.
         if (artifact != null) discussion?.invoke(execution, output.content)
         val handoff = artifact ?: JSONObject(CollaborationResearchArtifact.handoff(output.content, stage))

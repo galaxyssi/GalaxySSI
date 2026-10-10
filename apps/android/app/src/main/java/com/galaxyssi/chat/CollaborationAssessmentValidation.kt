@@ -72,6 +72,10 @@ internal object CollaborationAssessmentValidation {
             array(parsed, "work", "$")
             array(parsed, "blockers", "$")
             if (parsed.has(CollaborationCandidateEvolution.REQUESTS)) array(parsed, CollaborationCandidateEvolution.REQUESTS, "$")
+            try { CollaborationFinalDelivery.reference(parsed) } catch (error: IllegalArgumentException) {
+                throw Failure("$.final_delivery", "invalid_delivery_reference", "exact saved reference on a completion proposal",
+                    describe(parsed.opt(CollaborationFinalDelivery.FIELD)), error.message.orEmpty())
+            }
             Result(parsed, null, true)
         } catch (failure: Failure) {
             Result(null, failure, true)

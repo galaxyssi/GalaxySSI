@@ -15,7 +15,7 @@ import java.util.UUID
 /** Dedicated local fixtures only; no providers, contacts, web requests or physical controls. */
 @RunWith(AndroidJUnit4::class)
 class CollaborationGoalAcceptanceDeviceTest {
-    private class Fixture(val token: String = UUID.randomUUID().toString(), val multipart: Boolean = false) {
+    private class Fixture(val token: String = UUID.randomUUID().toString(), val multipart: Boolean = false, val typed: Boolean = false) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val group = "acceptance-fixture-$token"
         val groups = CollaborationGroupStore(context)
@@ -47,6 +47,10 @@ class CollaborationGoalAcceptanceDeviceTest {
             fun segments(reviewing: Boolean, indices: List<Int>) = JSONArray(indices.map { index ->
                 JSONObject().put("id", sources.getJSONArray("segments").getJSONObject(index).getString("id"))
                     .put("criterion_ids", JSONArray().put("doc")).put("rationale", "The criterion covers this fixture source requirement")
+                    .apply { if (typed) {
+                        put("coverage_kind", listOf("outcome", "constraint", "context")[index])
+                        if (index > 0) put("criterion_ids", JSONArray())
+                    } }
                     .apply { if (reviewing) put("verdict", "supported").put("unresolved", JSONArray()) }
             })
             val indices = (0 until sources.getJSONArray("segments").length()).toList()
@@ -80,7 +84,8 @@ class CollaborationGoalAcceptanceDeviceTest {
         fun definition() = AgentTeamDefinition("fixture", "fixture", listOf(AgentTeamMember("fixture", AgentDeliveryMode.RESPOND,
             instanceId = "lead", context = mapOf(CollaborationGoalLoop.ENABLED to "1", CollaborationGoalLoop.ROSTER to "true",
                 CollaborationResearchWorkflow.PERSON to "lead", "collaboration_group_id" to group))), primaryInstanceId = "lead")
-        fun request() = AgentRunRequest(group, "turn", "task", runId = "root", goal = criterion.getString("requirement"),
+        fun request() = AgentRunRequest(group, "turn", "task", runId = "root", goal = criterion.getString("requirement") +
+            if (typed) ". Do not call a provider. This is a local fixture." else "",
             context = mapOf(CollaborationGoalLoop.CRITERIA to prior, CollaborationGoalLoop.ROUND to "3",
                 CollaborationGoalLoop.ACCEPTANCE_FEEDBACK to CollaborationGoalLoop.acceptanceContext(criterion.getString("requirement"), JSONArray(prior))))
         fun clear() { database.clear(); groups.remove(group) }
@@ -206,15 +211,45 @@ class CollaborationGoalAcceptanceDeviceTest {
         } finally { f.clear() }
     }
 
+    @Test fun exactReviewedFinalDeliveryWithTypedCoverageSurvivesEncryptedReopen() = runBlocking {
+        val f = Fixture(typed = true)
+        try {
+            val raw = JSONObject(f.seed()).apply {
+                put(CollaborationFinalDelivery.FIELD, getJSONArray("criteria").getJSONObject(0).getJSONObject("delivery"))
+                put("summary", "Unreviewed paraphrase is not the final delivery")
+            }.toString()
+            val definition = f.definition().let { it.copy(members = it.members.map { member ->
+                member.copy(context = member.context + (CollaborationResearchWorkflow.STAGE to "DELIVER")) }) }
+            AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
+                val result = runtime.start(definition, f.request()) { execution ->
+                    CollaborationResultFinalizer(f.context).finish(execution, AgentSubagentOutput(raw))
+                }.await()
+                assertEquals("achieved", result.snapshot.goalDisposition)
+                val output = result.subagentResult.results.single()
+                assertEquals("Two fixture alternatives and their documented limits", CollaborationGoalLoop.publicText(output.output))
+                assertEquals(AgentNativeJsonCodec.sha256(raw), output.collaborationDelivery!!.originalSha256)
+                assertTrue(output.collaborationAcceptance!!.accepted)
+            }
+            repeat(2) {
+                val store = EncryptedAgentTeamExecutionStore(f.database)
+                assertEquals("achieved", store.snapshot("root")?.goalDisposition)
+                assertFalse(store.advanceGoal("root", "lead", Long.MAX_VALUE))
+            }
+        } finally { f.clear() }
+    }
+
     @Test fun processCheckpointPhase() = runBlocking {
         val args = InstrumentationRegistry.getArguments()
         val phase = args.getString("acceptancePhase").orEmpty()
         org.junit.Assume.assumeTrue(phase in setOf("seed", "recover"))
         val token = args.getString("acceptanceToken").orEmpty()
         require(token.matches(Regex("[a-z0-9-]{1,80}")))
-        val f = Fixture(token)
+        val pinned = args.getString("acceptancePinned") == "true"
+        val f = Fixture(token, typed = pinned)
         if (phase == "seed") {
-            val raw = f.seed()
+            val original = JSONObject(f.seed()).apply { if (pinned)
+                put(CollaborationFinalDelivery.FIELD, getJSONArray("criteria").getJSONObject(0).getJSONObject("delivery")) }.toString()
+            val raw = CollaborationFinalDelivery.prepare(CollaborationResearchWorkspace(f.context), f.access, original)
             AgentTeamExecutionRuntime(EncryptedAgentTeamExecutionStore(f.database)).use { runtime ->
                 val receipt = CollaborationGoalAcceptance(f.context).evaluate(f.access, raw, f.prior, f.request().goal)
                 assertTrue(receipt.feedback, receipt.accepted)
@@ -225,6 +260,7 @@ class CollaborationGoalAcceptanceDeviceTest {
             val store = EncryptedAgentTeamExecutionStore(f.database)
             assertEquals("achieved", store.snapshot("root")?.goalDisposition)
             assertFalse(store.advanceGoal("root", "lead", Long.MAX_VALUE))
+            if (pinned) assertEquals("Two fixture alternatives and their documented limits", store.snapshot("root")?.finalOutput)
         } finally { f.clear() }
         InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
             putString("acceptance_phase", phase)

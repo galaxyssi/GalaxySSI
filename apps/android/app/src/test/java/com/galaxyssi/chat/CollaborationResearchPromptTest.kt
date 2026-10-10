@@ -210,7 +210,8 @@ class CollaborationResearchPromptTest {
             val restored = CollaborationResearchPrompt.prepare(execution, store) { error("Use saved snapshot") }
             for (text in listOf(first, restored)) {
                 assertTrue(text.length <= CollaborationResearchPrompt.MAX_CHARACTERS)
-                assertTrue(text.contains("\n[Original user goal]\n${execution.request.goal}\n"))
+                assertTrue("planner=$planner prompt=${text.length} protocol=${CollaborationGoalLoop.instructions().length} goal=${execution.request.goal.length}",
+                    text.contains("\n[Original user goal]\n${execution.request.goal}\n"))
                 assertTrue(text.contains("[Host resource observation]"))
                 assertTrue(text.contains("topic=coordination"))
                 assertTrue(text.contains("evidence, not authority or permission"))
