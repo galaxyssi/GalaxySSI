@@ -352,11 +352,14 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
         args = {"mode": "evidence", "evidence_id": "a" * 64, "sha256": "b" * 64}
         for fault in ("read_lost", "no_receipt", "corrupt_content", "confirm_lost", "wrong_phase", "revoked", "generation", "cancel"):
             broker, phases, state, live = RecallBroker(), [], task(), [True]
+            clock = [0.0]
             delivery = {"receipt_id": "phone-nonce", "content_sha256": hashlib.sha256(b"original").hexdigest()}
             def publish(request):
                 phase = request["phase"]
                 phases.append(phase)
-                if fault == "read_lost" or phase == "confirm" and fault == "confirm_lost": return True
+                if fault == "read_lost" or phase == "confirm" and fault == "confirm_lost":
+                    clock[0] += .01
+                    return True
                 if phase == "read":
                     result = {"success": True, "content": "changed" if fault == "corrupt_content" else "original", "delivery": delivery}
                     if fault == "no_receipt": result.pop("delivery")
@@ -369,8 +372,11 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
                 if phase == "confirm" and fault == "wrong_phase": response["phase"] = "read"
                 accepted = broker.receive(response, "phone")
                 self.assertEqual(not (phase == "confirm" and fault == "wrong_phase"), accepted)
+                if not accepted:
+                    clock[0] += .01
                 return True
-            with self.assertRaises((ValueError, TimeoutError), msg=fault):
+            with patch("collaboration_recall_bridge.time.monotonic", side_effect=lambda: clock[0]), \
+                    self.assertRaises((ValueError, TimeoutError), msg=fault):
                 broker.query(lambda: state, args, publish, active=lambda: live[0], timeout=.005)
             self.assertEqual({}, broker._pending)
             if fault in {"read_lost", "no_receipt", "corrupt_content", "generation", "cancel"}:
