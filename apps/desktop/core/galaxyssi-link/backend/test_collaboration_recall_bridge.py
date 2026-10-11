@@ -14,6 +14,46 @@ def task(**changes):
 
 
 class CollaborationRecallBridgeTest(unittest.TestCase):
+    def test_source_access_forwards_exact_scope_without_read_confirmation_or_new_models(self):
+        broker = RecallBroker()
+        arguments = {"mode": "source_access", "object_id": "a" * 64, "revision": 2, "sha256": "b" * 64,
+                     "cursor": "c" * 64 + ":20"}
+        expected = {"success": True, "references": [{"status": "missing_changed_or_out_of_scope"}],
+                    "availability_snapshot": False, "next_cursor": None}
+        calls = []
+        def publish(request):
+            calls.append(request)
+            self.assertEqual(arguments, request["arguments"])
+            for key, value in task_scope(task()).items():
+                self.assertEqual(value, request[key])
+            self.assertFalse(broker.receive({**request, "type": RESPONSE, "result": expected}, "other-phone"))
+            self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": expected}, "phone"))
+            return True
+        self.assertEqual(expected, broker.query(task, arguments, publish))
+        self.assertEqual(["read"], [call["phase"] for call in calls])
+        self.assertEqual({}, broker._pending)
+        self.assertIn("not read or verified", tool_spec()["description"])
+
+    def test_source_access_rejects_arbitrary_sources_and_scope_overrides(self):
+        arguments = {"mode": "source_access", "object_id": "a" * 64, "revision": 1, "sha256": "b" * 64}
+        self.assertEqual(arguments, validate_arguments(arguments))
+        for key in ("object_id", "revision", "sha256"):
+            with self.subTest(missing=key), self.assertRaises(ValueError):
+                validate_arguments({k: v for k, v in arguments.items() if k != key})
+        for key in ("group_id", "member_id", "inputs", "query", "offset", "evidence_id", "work_id", "topic", "record_id"):
+            with self.subTest(field=key), self.assertRaises(ValueError):
+                validate_arguments({**arguments, key: "x"})
+        for revision in (None, True, "1", 0, -1, 1.5, 2**31):
+            with self.subTest(revision=revision), self.assertRaises(ValueError):
+                validate_arguments({**arguments, "revision": revision})
+        for key in ("object_id", "sha256"):
+            for value in (None, 1, "", "../x", "a" * 63, "A" * 64):
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    validate_arguments({**arguments, key: value})
+        for value in (None, 1, True, "x" * 513):
+            with self.subTest(cursor=value), self.assertRaises(ValueError):
+                validate_arguments({**arguments, "cursor": value})
+
     def test_peer_updates_are_task_bound_and_do_not_claim_delivery_or_start_a_model(self):
         broker = RecallBroker()
         arguments = {"mode": "peer_updates", "cursor": "a" * 64 + ":2"}
