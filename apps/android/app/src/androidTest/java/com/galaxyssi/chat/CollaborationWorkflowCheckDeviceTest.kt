@@ -65,8 +65,14 @@ class CollaborationWorkflowCheckDeviceTest {
             assertFalse(unbound.isSuccess)
             val wrongMode = JSONObject(CollaborationCloudRecall.execute(context, access, JSONObject(args.toString()).put("mode", "workspace")))
             assertEquals("failed", wrongMode.getString("status"))
-            groups.update(group) { it.copy(members = it.members.filterNot { member -> member.id == "curator" }) }
+            groups.update(group) { it.copy(
+                members = it.members.filterNot { member -> member.id == "curator" },
+                coordinatorId = "author"
+            ) }
             assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, access, args)).getString("status"))
+            val revoked = registry.invoke(CollaborationRecallNativeTool.ID, completedArgs.toNativeObject(),
+                AgentNativeToolInvocationContext(conversationId = group, turnId = access.turnId, collaborationSourceMessageId = source))
+            assertFalse(revoked.toJson(), revoked.isSuccess)
         } finally {
             CollaborationResearchWorkspace.remove(context, group)
             CollaborationEvidenceLedger.remove(context, group)
