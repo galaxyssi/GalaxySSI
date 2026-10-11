@@ -51,6 +51,10 @@ def tool_spec():
         "to inspect host-computed counterexamples or regressions. Follow next_cursor using the same trial and case_filter; "
         "concatenate content pages before decoding cases. Use mode=workspace for the full model and original trial. "
         "These saved numeric checks are not independent reference truth or proof of generalization. "
+        "Use mode=workflow_check with exact rule object_id/revision/sha256 and inputs:{} to inspect applicability before dispatch. "
+        "Partial inputs are declared/unverified; keep inputs and reference unchanged while paging with offset. "
+        "Whole request must fit 4096 characters. Reports unknown reasons, known blockers and whether resolving unknowns may change selection, "
+        "not method quality or probe value. Choose evidence acquisition, method revision or alternatives yourself; neither method is certified. "
         "Use mode=problems/cursor for original failed tool observations; these are symptoms, not diagnosed causes. "
         "Active incremental coordinators can use mode=team_updates/cursor to discover newly published exact versions. "
         "Follow next_cursor to an empty page and reuse that cursor later; read the versions before judging sufficiency. "
@@ -62,7 +66,8 @@ def tool_spec():
         "all revisions and their observations in that milestone are shared with eligible recipients. No extra model is started. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates", "workflow_check"]},
+            "inputs": {"type": "object", "additionalProperties": True},
             "query": {"type": "string", "maxLength": 1000},
             "work_id": {"type": "string", "maxLength": 160},
             "case_filter": {"type": "string", "maxLength": 32, "enum": list(NUMERIC_CASE_FILTERS)},
@@ -89,6 +94,9 @@ def validate_arguments(arguments):
         if spec["type"] == "string":
             if not isinstance(value, str) or len(value) > spec.get("maxLength", 32):
                 raise ValueError("Invalid recall selector")
+        elif spec["type"] == "object":
+            if not isinstance(value, dict):
+                raise ValueError("Workflow inputs must be a JSON object, not encoded text")
         elif type(value) is not int or not spec["minimum"] <= value <= 2**31 - 1:
             raise ValueError("Invalid recall offset/revision")
     if arguments["mode"] == "goal_contract":
@@ -149,6 +157,29 @@ def validate_arguments(arguments):
         if any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
                for key in ("evidence_id", "sha256")):
             raise ValueError("Original evidence recall requires exact evidence_id and sha256 from browse")
+    if arguments["mode"] == "workflow_check":
+        required = {"mode", "object_id", "revision", "sha256", "inputs"}
+        if (not required <= set(arguments) or set(arguments) - (required | {"offset"})
+                or any(len(arguments[key]) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
+                       for key in ("object_id", "sha256"))):
+            raise ValueError("Workflow check requires exact rule identity, inputs and optional offset")
+        def json_value(value):
+            if isinstance(value, dict):
+                return all(isinstance(k, str) and json_value(v) for k, v in value.items())
+            if isinstance(value, list):
+                return all(json_value(v) for v in value)
+            return value is None or type(value) in (str, bool, int) or type(value) is float and math.isfinite(value)
+        try:
+            if not json_value(arguments["inputs"]):
+                raise ValueError("Workflow inputs must contain finite JSON values only")
+            wire = json.dumps(arguments, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+            if len(wire.encode("utf-16-le")) // 2 > 4096:
+                raise ValueError("Workflow check request exceeds 4096 characters; supply compact condition data")
+            return json.loads(wire)
+        except (TypeError, OverflowError, RecursionError, UnicodeError) as error:
+            raise ValueError("Invalid workflow check JSON") from error
+    elif "inputs" in arguments:
+        raise ValueError("Inputs are only supported for workflow checks")
     return dict(arguments)
 
 

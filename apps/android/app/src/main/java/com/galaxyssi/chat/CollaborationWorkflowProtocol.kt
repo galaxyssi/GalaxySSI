@@ -8,6 +8,7 @@ internal object CollaborationWorkflowProtocol {
         branches into the same workflow tasks. Read prediction rules for that prospective handoff; it does not certify the methods as better.
         After a retained method comparison, publish a workflow_selection_rule to use explicit input conditions in future method selection.
         Rules preserve a baseline for unknown/out-of-scope conditions. Their use changes actual work, not just the summary; read the contract first.
+        ${CollaborationWorkflowCheck.INSTRUCTIONS}
         Bind measured conditions with observed_inputs so original tool outcomes, not rewritten expectations, select the next method.
         Read evolution rules before use; workflow_step remains available for explicit whole-graph dispatch.
         Compare exact old/new versions on the same saved dataset with quality regression checks before calling a method better.
@@ -56,6 +57,11 @@ internal object CollaborationWorkflowProtocol {
         The host selects the candidate only if all when_all match, no unless_any matches, and all conditions are known.
         Otherwise it selects the preserved baseline and records outside_applicability, countercondition_matched or insufficient_condition_data.
         This fallback is not a claim the baseline is safe in a new domain; the coordinator must check both methods before choosing the rule.
+        ${CollaborationWorkflowCheck.INSTRUCTIONS}
+        workflow_check reports each condition's state, unknown_reason, actual_type and known_blockers. unknowns_may_change_selection is
+        conservative: false when any known prerequisite fails or countercondition matches, not an estimate of probe value or joint satisfiability.
+        A true value does not oblige a probe; consider acquisition cost, alternative methods and whether the declared conditions themselves need revision.
+        The check is not an original observation. Do not use its recall receipt as experimental evidence or rewrite missing fields with guessed values.
         To let an intervention change the next real graph, use observed_inputs instead of rewriting tool results as declared facts:
           {workflow_instance:{execution_id,selection_rule:exactRef,inputs:{otherDeclaredName:value},roles:{...},
            observed_inputs:{inputName:{observation:{evidence_id,sha256},report_pointer?:JSON pointer to an object or encoded JSON object,

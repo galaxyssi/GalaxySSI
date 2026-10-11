@@ -7,8 +7,8 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.8.0", title = context.getString(R.string.collaboration_recall_title),
-            description = context.getString(R.string.collaboration_recall_description) + " " + CollaborationPeerUpdates.INSTRUCTIONS,
+            id = ID, version = "1.9.0", title = context.getString(R.string.collaboration_recall_title),
+            description = context.getString(R.string.collaboration_recall_description) + " " + CollaborationPeerUpdates.INSTRUCTIONS + " " + CollaborationWorkflowCheck.INSTRUCTIONS,
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
                 "query" to AgentNativeJsonSchema.string(maxLength = 1000),
@@ -23,12 +23,15 @@ internal object CollaborationRecallNativeTool {
                 "evidence_id" to AgentNativeJsonSchema.string(maxLength = 64),
                 "sha256" to AgentNativeJsonSchema.string(maxLength = 64),
                 "revision" to AgentNativeJsonSchema.integer(minimum = 1),
+                "inputs" to AgentNativeJsonSchema.objectSchema(additionalProperties = true),
                 "offset" to AgentNativeJsonSchema.integer(minimum = 0)
             ), additionalProperties = false),
             outputSchema = AgentNativeJsonSchema.objectSchema(additionalProperties = true),
             risk = AgentNativeToolRisk.LOW, capabilities = setOf("collaboration.recall"),
             timeoutMillis = 20_000, idempotency = AgentNativeToolIdempotency.IDEMPOTENT),
         executor = AgentNativeToolExecutor { call ->
+            if (call.input.containsKey("inputs") && call.input["mode"] != CollaborationWorkflowCheck.MODE)
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Inputs are only supported for workflow checks.")
             if (call.input.containsKey("work_id") && call.input["mode"] != CollaborationCoordinatorUpdates.MODE)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Work ID is only supported for coordinator updates.")
             if (call.input.containsKey("section") && call.input["mode"] != "goal_contract")
@@ -41,10 +44,10 @@ internal object CollaborationRecallNativeTool {
             if (group.isBlank() || call.context.turnId.isBlank() || CollaborationGroupStore(context).load(group) == null)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("group_unavailable", "No group is authorized for this call.")
             val archive = CollaborationResearchArchive(context, group)
-            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE)) {
+            if (call.input["mode"] in setOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE, CollaborationWorkflowCheck.MODE)) {
                 val source = call.context.collaborationSourceMessageId
-                if (source == null && call.input["mode"] in setOf("goal_contract", "archive", "capabilities", "method_history", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE))
-                    return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "Goal contract recall requires an exact member binding.")
+                if (source == null && call.input["mode"] in setOf("goal_contract", "archive", "capabilities", "method_history", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE, CollaborationWorkflowCheck.MODE))
+                    return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "This recall mode requires an exact member binding.")
                 val access = if (source != null) CollaborationEvidenceLedger(context).binding(source, group, call.context.turnId)
                     ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("dispatch_unavailable", "No exact member binding.")
                 else EncryptedAgentTeamExecutionStore(context).workspaceReadAccess(group, call.context.turnId)

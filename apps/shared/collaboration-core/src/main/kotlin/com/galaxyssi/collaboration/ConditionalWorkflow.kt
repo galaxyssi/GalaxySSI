@@ -6,7 +6,8 @@ import org.json.JSONObject
 
 /** Deterministic applicability, not evidence of causality, improvement, or authorization. */
 object ConditionalWorkflow {
-    data class ConditionResult(val id: String, val state: String)
+    data class ConditionResult(val id: String, val state: String,
+                               val unknownReason: String? = null, val actualType: String? = null)
     data class Selection(
         val variant: String,
         val reason: String,
@@ -57,7 +58,25 @@ object ConditionalWorkflow {
                 "gte" -> comparison!! >= 0
                 else -> false
             }
-            ConditionResult(condition.getString("id"), if (!known) "unknown" else if (matched) "matched" else "not_matched")
+            val diagnostic = when {
+                !inputs.has(input) -> "input_missing"
+                selected.isFailure -> "pointer_unavailable"
+                actual is JSONObject || actual is JSONArray -> "non_scalar_value"
+                !typed -> "type_mismatch"
+                numeric && comparison == null -> "unsupported_numeric_value"
+                !known -> "non_numeric_ordering"
+                else -> null
+            }
+            ConditionResult(condition.getString("id"), if (!known) "unknown" else if (matched) "matched" else "not_matched",
+                diagnostic, if (selected.isFailure) null else when (actual) {
+                    JSONObject.NULL -> "null"
+                    is JSONObject -> "object"
+                    is JSONArray -> "array"
+                    is Number -> "number"
+                    is Boolean -> "boolean"
+                    is String -> "string"
+                    else -> "unsupported"
+                })
         }
 
     private fun decimal(value: Any): BigDecimal = BigDecimal(value.toString()).also {

@@ -73,4 +73,22 @@ class ConditionalWorkflowTest {
         repeat(3) { ConditionalWorkflow.choose(conditions, JSONArray(), inputs) }
         assertEquals(before, inputs.toString() to conditions.toString())
     }
+
+    @Test fun diagnosticsDistinguishMissingDataFromTypeAndPrecisionProblems() {
+        val missing = ConditionalWorkflow.choose(JSONArray().put(condition()), JSONArray(), JSONObject()).whenAll.single()
+        assertEquals("input_missing", missing.unknownReason)
+        assertNull(missing.actualType)
+        for ((value, reason, type) in listOf(
+            Triple("3", "type_mismatch", "string"), Triple(JSONObject(), "non_scalar_value", "object"),
+            Triple(JSONArray(), "non_scalar_value", "array"), Triple(BigDecimal("1e129"), "unsupported_numeric_value", "number"))) {
+            val row = choose(JSONObject().put("count", value)).whenAll.single()
+            assertEquals(reason, row.unknownReason)
+            assertEquals(type, row.actualType)
+        }
+        assertEquals("pointer_unavailable", choose(JSONObject()).whenAll.single().unknownReason)
+        val explicitNull = choose(JSONObject().put("count", JSONObject.NULL), JSONObject.NULL, "eq").whenAll.single()
+        assertEquals("null", explicitNull.actualType)
+        assertNull(explicitNull.unknownReason)
+        assertNull(choose(JSONObject().put("count", 0)).whenAll.single().unknownReason)
+    }
 }
