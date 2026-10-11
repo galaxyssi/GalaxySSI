@@ -13,6 +13,41 @@ import com.galaxyssi.chat.CollaborationEvolutionContract.Companion.text
 /** Recomputes preregistered comparisons from original tool output, not model-supplied scores. */
 internal object CollaborationEvolutionExperiment {
     const val FORMAT = "galaxyssi.experiment-measurements.v1"
+    const val RESULT_GUIDANCE = "experiment_result records a preregistered baseline/candidate comparison, not any tool or search result. " +
+        "Use an existing applicable experiment_plan and its original measurements when available. " +
+        "For observational findings, an artifact with original observations can preserve the report without claiming measured improvement. " +
+        "If the assignment demands an incompatible record, request coordinator assistance to correct the work specification while preserving the goal. " +
+        "Do not invent or backdate a plan, repeat completed operations merely to fill this type, or lower acceptance requirements. " +
+        "An observational artifact does not qualify as experiment_result or authorize capability retention."
+
+    private fun registeredPlan(value: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject {
+        fun reject(problem: JSONObject, message: String): Nothing {
+            val detail = JSONObject(problem.toString())
+                .put("component", problem.optString("component").ifBlank { "ExperimentResultValidator" })
+                .put("record_contract", JSONObject().put("kind", CollaborationEvolutionContract.RESULT)
+                    .put("purpose", "preregistered_baseline_candidate_comparison")
+                    .put("required_dependency_kind", PLAN).put("registration_before_measurements_required", true)
+                    .put("rules_topic", "foundation").put("automatic_conversion", false)
+                    .put("guidance", RESULT_GUIDANCE))
+            throw CollaborationToolFeedback.Invalid(detail, "$message $RESULT_GUIDANCE")
+        }
+        val ref = value.optJSONObject("plan")
+        if (ref == null) reject(CollaborationToolFeedback.problem(
+            if (value.has("plan")) "experiment_plan_reference_invalid" else "experiment_plan_reference_required",
+            "/body/experiment_result/plan", "exact saved experiment_plan reference: object_id, integer revision, sha256",
+            when {
+                !value.has("plan") -> "absent"
+                value.isNull("plan") -> "null"
+                else -> "not an object"
+            }), "experiment_result requires an applicable saved experiment_plan reference.")
+        return try { exact(ref, setOf(PLAN)) } catch (error: CollaborationToolFeedback.Invalid) {
+            val detail = JSONObject(error.problem.toString())
+            val path = detail.optString("path")
+            if (path == "/reference" || path.startsWith("/reference/"))
+                detail.put("path", "/body/experiment_result/plan" + path.removePrefix("/reference"))
+            reject(detail, error.message ?: "Experiment plan reference rejected.")
+        }
+    }
 
     fun plan(value: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject): JSONObject {
         val idea = exact(value.getJSONObject("innovation"), setOf(IDEA))
@@ -63,7 +98,7 @@ internal object CollaborationEvolutionExperiment {
 
     fun result(value: JSONObject, revision: JSONObject, exact: (JSONObject, Set<String>) -> JSONObject,
                original: (JSONObject) -> JSONObject?, coverage: (JSONObject) -> Unit): JSONObject {
-        val registered = exact(value.getJSONObject("plan"), setOf(PLAN))
+        val registered = registeredPlan(value, exact)
         val spec = registered.getJSONObject("body").getJSONObject(PLAN)
         val idea = exact(spec.getJSONObject("innovation"), setOf(IDEA))
         val baseline = exact(spec.getJSONObject("baseline"), setOf("proposal", "artifact", IDEA))

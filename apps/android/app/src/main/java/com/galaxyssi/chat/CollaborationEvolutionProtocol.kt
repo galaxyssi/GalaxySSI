@@ -137,6 +137,7 @@ internal object CollaborationEvolutionProtocol {
         Without an appropriate executable tool keep the plan untested and explore authorized alternatives; never fabricate reports.
 
         experiment_result: {plan:<exact plan ref>,interpretation,limitations} plus observations:[actual receipt refs].
+        ${CollaborationEvolutionExperiment.RESULT_GUIDANCE}
         Read all original observation pages first. Partial results are stored as incomplete, never discarded or called success.
         A target/transfer case passes only with positive gain >= minimum_gain. A regression passes if gain >= -tolerance.
         All planned repetitions must be present. Missing measurements, a failed target or regression prevent retention.
