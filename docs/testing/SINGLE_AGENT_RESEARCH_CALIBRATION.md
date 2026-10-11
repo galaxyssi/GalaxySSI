@@ -33,10 +33,11 @@ remain separate comparison requirements.
 
 ## Validation (2026-10-11)
 
-- 58 focused JVM tests passed across single-agent calibration, adaptive planning,
-  verdicts, milestone archival and method experience.
+- 67 focused JVM tests passed after rebasing onto the latest main, covering
+  single-agent calibration, adaptive planning, verdicts, milestone archival,
+  method experience, transcript ownership and collaboration follow-up policy.
 - Debug application and instrumentation APKs assembled successfully.
-- S20U (SM-G9880), Android app 1.4.150 (1235): five local device tests passed,
+- S20U (SM-G9880), Android app 1.4.151 (1236): five local device tests passed,
   covering the new one-member publication/next-task recall fixture, the existing
   single-agent contract, full coordinator context and workflow persistence.
 - No real model, original research task, contact or device operation was invoked
