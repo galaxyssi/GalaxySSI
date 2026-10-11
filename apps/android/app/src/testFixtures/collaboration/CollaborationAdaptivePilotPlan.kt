@@ -24,9 +24,15 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     val goal: String, val timeoutMillis: Long, val maximumDispatches: Int, val members: List<CollaborationMember>,
     val singleAgent: Boolean = false,
     val continuity: CollaborationPilotContinuitySpec? = null,
-    val initialIdentityPolicy: String = PRODUCTION_IDENTITIES
+    val initialIdentityPolicy: String = PRODUCTION_IDENTITIES,
+    val singleAgentPublication: Boolean = false
 ) : CollaborationTrialSelectionPolicy {
-    val executionMode get() = if (singleAgent) "single_agent" else "adaptive_team"
+    val executionMode get() = when {
+        singleAgentPublication -> "single_agent_research"
+        singleAgent -> "single_agent"
+        else -> "adaptive_team"
+    }
+    val publicationEnabled get() = !singleAgent || singleAgentPublication
     // Production normalizes assignment boundaries; keep the frozen request unchanged.
     val executionObjective get() = goal.trim()
     fun requireDevice(actualModel: String, operatorModel: String?) {
@@ -44,7 +50,9 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     CollaborationReasoningSelection.KEY to selection.reasoningEffort.wireValue))
         }
         val original = if (singleAgent) listOf(people.single().copy(objective = executionObjective,
-            context = people.single().context + (CollaborationResearchWorkflow.PERSON to members.single().id)))
+            context = people.single().context + (CollaborationResearchWorkflow.PERSON to members.single().id) +
+                if (singleAgentPublication) mapOf(CollaborationResearchWorkflow.STAGE to CollaborationResearchStage.EXECUTE.name)
+                else emptyMap()))
             else CollaborationResearchWorkflow.expand(people, goal)
         // Keep people and saved memory stable; namespace only this trial's initial execution nodes.
         val nodes = if (initialIdentityPolicy == RUN_SCOPED_IDENTITIES) original.map { member ->
@@ -58,13 +66,15 @@ internal class CollaborationAdaptivePilotPlan private constructor(
     fun matchesExecution(member: AgentTeamMember, definition: AgentTeamDefinition): Boolean = if (singleAgent) {
         definition.members.size == 1 && member == definition.members.single() && member.objective == executionObjective &&
             member.context[CollaborationResearchWorkflow.PERSON] == members.single().id &&
-            member.context[CollaborationGoalLoop.ENABLED] == null && CollaborationResearchWorkflow.stage(member) == null &&
+            member.context[CollaborationGoalLoop.ENABLED] == null && CollaborationResearchWorkflow.stage(member) ==
+                (if (singleAgentPublication) CollaborationResearchStage.EXECUTE else null) &&
             member.context[CollaborationLiveGraph.ENABLED] == null && member.dependsOnAgentIds.isEmpty()
     } else member.context[CollaborationGoalLoop.ENABLED] == "1" && CollaborationResearchWorkflow.stage(member) != null
 
     companion object {
         const val FORMAT = "galaxyssi.adaptive-collaboration-pilot.v2"
         const val SINGLE_FORMAT = "galaxyssi.single-agent-calibration.v1"
+        const val SINGLE_RESEARCH_FORMAT = "galaxyssi.single-agent-research-calibration.v1"
         const val PRODUCTION_IDENTITIES = "production"
         const val RUN_SCOPED_IDENTITIES = "run_scoped"
         fun from(value: JSONObject, authorizedDispatches: Int, authorizedMillis: Long): CollaborationAdaptivePilotPlan {
@@ -79,8 +89,9 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                 ?: error("Initial identity policy must be a string") else PRODUCTION_IDENTITIES
             require(identities in setOf(PRODUCTION_IDENTITIES, RUN_SCOPED_IDENTITIES)) { "Unknown initial identity policy" }
             fun text(key: String) = (value.get(key) as? String)?.takeIf(String::isNotBlank) ?: error("Nonblank string required: $key")
-            require(text("format") in setOf(FORMAT, SINGLE_FORMAT) && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
-            val singleAgent = text("format") == SINGLE_FORMAT
+            require(text("format") in setOf(FORMAT, SINGLE_FORMAT, SINGLE_RESEARCH_FORMAT) && text("tool_scope") == CollaborationRemotePilotPlan.TOOL_SCOPE)
+            val singleAgent = text("format") != FORMAT
+            val singleAgentPublication = text("format") == SINGLE_RESEARCH_FORMAT
             val id = text("pilot_id").also { require(it.matches(Regex("[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}"))) }
             val device = CollaborationTrialDeviceBinding.validate(text("device_model"))
             val target = text("target_id").also { require(it.length <= 256 && ':' in it && it.endsWith(":codex")) }
@@ -102,7 +113,8 @@ internal class CollaborationAdaptivePilotPlan private constructor(
                     target, "Codex", role = field("role"), modelId = selection.modelId)
             }
             require(members.map { it.id }.distinct().size == members.size) { "Trial person IDs must be distinct" }
-            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members, singleAgent, continuity, identities)
+            return CollaborationAdaptivePilotPlan(id, device, target, selection, goal, timeout, limit.toInt(), members,
+                singleAgent, continuity, identities, singleAgentPublication)
         }
     }
 }

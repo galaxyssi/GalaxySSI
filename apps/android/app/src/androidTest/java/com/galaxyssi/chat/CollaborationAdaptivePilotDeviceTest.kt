@@ -65,7 +65,7 @@ class CollaborationAdaptivePilotDeviceTest {
             .put("trial_timeout_ms", plan.timeoutMillis).put("tool_scope", CollaborationRemotePilotPlan.TOOL_SCOPE)
             .put("production_prompt_preserved", true).put("fixed_work_plan", false)
             .put("initial_identity_policy", plan.initialIdentityPolicy).put("fresh_provider_thread_verified", false)
-            .put("interim_publication_enabled", !plan.singleAgent).put("milestone_archive_complete", false)
+            .put("interim_publication_enabled", plan.publicationEnabled).put("milestone_archive_complete", false)
             .put("full_ui_lifecycle_tested", false).put("process_restart_tested", false)
             .put("tool_isolation_verified", false).put("equal_budget_comparison", false)
             .put("billed_cost", JSONObject.NULL).put("provider_request_count", JSONObject.NULL)
@@ -176,7 +176,7 @@ class CollaborationAdaptivePilotDeviceTest {
                                 .put("members", members(checkpoint)))
                             persist()
                         }
-                    }, singleAgent = plan.singleAgent)
+                    }, singleAgent = plan.singleAgent, singleAgentPublication = plan.singleAgentPublication)
                 val reason = requireNotNull(runner).run(plan.definition(group, run),
                     AgentRunRequest(group, turn, "task-$run", runId = run, goal = plan.goal, idempotencyKey = run), worker)
                 report.put("status", reason)

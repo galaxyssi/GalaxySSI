@@ -15,9 +15,12 @@ internal data class CollaborationAdaptivePilotVerdict(val failures: List<String>
     companion object {
         fun evaluate(report: JSONObject): CollaborationAdaptivePilotVerdict {
             val failures = mutableListOf<String>()
-            if (report.has("execution_mode") && report.optString("execution_mode") !in setOf("single_agent", "adaptive_team"))
+            if (report.has("execution_mode") && report.optString("execution_mode") !in setOf("single_agent", "single_agent_research", "adaptive_team"))
                 failures += "Unknown execution mode"
-            val singleAgent = report.optString("execution_mode") == "single_agent"
+            val researchSingle = report.optString("execution_mode") == "single_agent_research"
+            val singleAgent = report.optString("execution_mode") == "single_agent" || researchSingle
+            if (researchSingle && report.opt("interim_publication_enabled") != true)
+                failures += "Research single-agent publication capability was not recorded"
             if (singleAgent && (report.optString("test_scope") != "execution_delivery_only" ||
                     report.opt("goal_verified_by_external_evaluator") != false ||
                     report.opt("scientific_capability_gain_proven") != false)) {
