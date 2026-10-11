@@ -171,6 +171,8 @@ internal object CollaborationScopedRecall {
                         "source_reference" to source,
                         "citation_guidance" to "To cite the original observation in workspace.observations, copy source_reference.evidence_id and sha256. " +
                             "galaxyssi_evidence_receipt describes this recall operation, not the original source. " +
+                            "For a file digest, concatenate content pages exactly (no JSON reformatting) and hash their UTF-8 bytes; " +
+                            "compare host_read_coverage.content_utf8_sha256, not content_sha256 (JSON-string encoding) or source_reference.sha256 (citation identity). " +
                             "Follow next_offset until null before publishing a review. Missing pages cannot support formal acceptance; " +
                             "use host_read_coverage.first_missing_offset to resume gaps. Page coverage is not comprehension or verification."))
                 } else {

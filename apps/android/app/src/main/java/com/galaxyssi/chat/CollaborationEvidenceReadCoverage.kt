@@ -16,7 +16,7 @@ internal object CollaborationEvidenceReadCoverage {
     fun record(rows: CollaborationWorkspaceRows, prefix: String, reader: CollaborationWorkspaceAccess,
                source: JSONObject, content: String, start: Int, end: Int): JSONObject {
         require(start in 0..content.length && end in start..content.length)
-        if (!attributable(reader)) return summary(empty(reader, source, content)).put("mode", "unattributed")
+        if (!attributable(reader)) return summary(empty(reader, source, content), content).put("mode", "unattributed")
         val state = load(rows, prefix, reader, source, content)
         if (end > start) {
             val ranges = state.getJSONArray("ranges")
@@ -34,13 +34,14 @@ internal object CollaborationEvidenceReadCoverage {
             val key = key(prefix, reader, source)
             if (rows.read(key) != value) rows.commit(mapOf(key to value))
         }
-        return summary(state)
+        return summary(state, content)
     }
 
     fun snapshot(rows: CollaborationWorkspaceRows, prefix: String, reader: CollaborationWorkspaceAccess, source: JSONObject): JSONObject {
-        if (!attributable(reader)) return summary(empty(reader, source, source.toString())).put("mode", "unattributed")
-        val state = load(rows, prefix, reader, source, source.toString())
-        val result = summary(state)
+        val content = source.toString()
+        if (!attributable(reader)) return summary(empty(reader, source, content), content).put("mode", "unattributed")
+        val state = load(rows, prefix, reader, source, content)
+        val result = summary(state, content)
         // Ownership must not hide a separately confirmed full read from the next reviewer.
         return if (sameIdentity(identity(reader), source) && !result.getBoolean("complete"))
             result.put("mode", "same_dispatch_execution") else result
@@ -91,14 +92,19 @@ internal object CollaborationEvidenceReadCoverage {
         return saved
     }
 
-    private fun summary(state: JSONObject): JSONObject {
+    private fun summary(state: JSONObject, content: String): JSONObject {
         val result = JSONObject(state.toString())
         val ranges = result.getJSONArray("ranges")
         val covered = (0 until ranges.length()).sumOf { ranges.getJSONArray(it).let { range -> range.getInt(1) - range.getInt(0) } }
         val total = result.getInt("total_characters")
         val firstMissing = if (ranges.length() > 0 && ranges.getJSONArray(0).getInt(0) == 0) ranges.getJSONArray(0).getInt(1) else 0
         result.remove("ranges")
+        // Preserve ledger identities; byte-oriented consumers need a separately named digest.
         return result.put("mode", "scoped_pages").put("covered_characters", covered).put("complete", covered == total)
+            .put("content_sha256_encoding", "galaxyssi_json_string_utf8_v1")
+            .put("content_utf8_sha256", MqttImmutableContent.sha256(content))
+            .put("content_digest_scope", "complete_evidence_content")
+            .put("offset_unit", "utf16_code_units")
             .put("first_missing_offset", firstMissing.takeIf { it < total } ?: JSONObject.NULL)
             .put("trust", "host_served_pages_not_comprehension_or_claim_verification")
     }
