@@ -114,7 +114,16 @@ struct AgentLearningOutcome: Equatable {
 protocol AgentLearningProposalStoring: AnyObject {
   func loadProposals() -> [AgentLearningProposal]
   func saveProposals(_ proposals: [AgentLearningProposal])
+  func updateProposals(_ mutate: (inout [AgentLearningProposal]) -> Void)
   func clear()
+}
+
+extension AgentLearningProposalStoring {
+  func updateProposals(_ mutate: (inout [AgentLearningProposal]) -> Void) {
+    var proposals = loadProposals()
+    mutate(&proposals)
+    saveProposals(proposals)
+  }
 }
 
 final class InMemoryAgentLearningProposalStore: AgentLearningProposalStoring {
@@ -583,18 +592,21 @@ final class AgentLearningEngine {
   }
 
   private func review(_ id: String, status: AgentLearningProposalStatus) -> Bool {
-    var proposals = loadProposals()
-    guard let index = proposals.firstIndex(where: { $0.id == id && $0.status == .pending }) else {
-      return false
+    var changed = false
+    proposalStore.updateProposals { proposals in
+      guard let index = proposals.firstIndex(where: { $0.id == id && $0.status == .pending }) else { return }
+      proposals[index].status = status
+      proposals[index].reviewedAtMillis = nowMillis()
+      changed = true
     }
-    proposals[index].status = status
-    proposals[index].reviewedAtMillis = nowMillis()
-    saveProposals(proposals)
-    return true
+    return changed
   }
 
   private func appendProposal(_ proposal: AgentLearningProposal) {
-    saveProposals(Array((loadProposals() + [proposal]).suffix(Self.maxProposals)))
+    proposalStore.updateProposals { proposals in
+      guard !proposals.contains(where: { $0.id == proposal.id }) else { return }
+      proposals = Array((proposals + [proposal]).suffix(Self.maxProposals))
+    }
   }
 
   private func loadProposals() -> [AgentLearningProposal] {

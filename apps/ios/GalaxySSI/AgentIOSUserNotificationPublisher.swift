@@ -10,6 +10,17 @@ final class AgentIOSUserNotificationPublisher: AgentActionNotificationPublishing
 
   func publish(_ notification: AgentActionNotification) {
     let identifier = String(notification.notificationId)
+    switch Self.presentation(for: notification.phase) {
+    case .ignore:
+      return
+    case .dismiss:
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+      center.removeDeliveredNotifications(withIdentifiers: [identifier])
+      AgentIOSOwnedNotificationStore.shared.remove(identifier: identifier)
+      return
+    case .show:
+      break
+    }
     let content = UNMutableNotificationContent()
     content.title = notification.title
     content.body = notification.detail
@@ -41,6 +52,16 @@ final class AgentIOSUserNotificationPublisher: AgentActionNotificationPublishing
         trigger: nil
       )
     )
+  }
+
+  enum Presentation: Equatable { case ignore, dismiss, show }
+
+  static func presentation(for phase: AgentActionNotificationPhase) -> Presentation {
+    switch phase {
+    case .running: return .ignore
+    case .succeeded: return .dismiss
+    case .failed: return .show
+    }
   }
 
   private static func categoryIdentifier(for category: AgentActionNotificationCategory) -> String {

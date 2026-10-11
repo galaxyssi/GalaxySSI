@@ -89,6 +89,9 @@ enum GlobalConversationContextJournalPolicy {
       }
       return $0.id < $1.id
     }
+    var controlIndexDirty = true
+    var indexedRetractions = Set<String>()
+    var indexedExclusions = Set<String>()
     for event in sortedIncoming {
       let retractions = event.effectiveRetractions
       if !retractions.isEmpty {
@@ -105,12 +108,14 @@ enum GlobalConversationContextJournalPolicy {
           journal[stored.id] = stored
         }
         storeControlMarker(&journal, event: event)
+        controlIndexDirty = true
         continue
       }
       if isConversationLifecycleEvent(event) {
         guard storeConversationLifecycleMarker(&journal, event: event) else {
           continue
         }
+        controlIndexDirty = true
         if event.type == .conversationDeleted || excludesConversationFromGlobalModel(event) {
           journal = journal.filter { entry in
             let stored = entry.value
@@ -121,11 +126,18 @@ enum GlobalConversationContextJournalPolicy {
       }
       if !retractions.isEmpty {
         storeControlMarker(&journal, event: event)
+        controlIndexDirty = true
       }
-      if !event.evidenceRoots.isDisjoint(with: activeRetractions(Array(journal.values))) {
+      if controlIndexDirty {
+        let controls = journal.values.filter(isJournalControlMarker)
+        indexedRetractions = activeRetractions(controls)
+        indexedExclusions = excludedConversationIDs(controls)
+        controlIndexDirty = false
+      }
+      if !event.evidenceRoots.isDisjoint(with: indexedRetractions) {
         continue
       }
-      if conversationExcluded(Array(journal.values), conversationId: event.conversationId) {
+      if indexedExclusions.contains(event.conversationId) {
         continue
       }
       guard eligible(event) else {
@@ -221,11 +233,12 @@ enum GlobalConversationContextJournalPolicy {
         .suffix(maxControlMarkers)
     )
     let retractions = activeRetractions(controls)
+    let excludedConversations = excludedConversationIDs(controls)
     let semantic = distinctById(
       events
         .filter(eligible)
         .filter { $0.evidenceRoots.isDisjoint(with: retractions) }
-        .filter { !conversationExcluded(controls, conversationId: $0.conversationId) }
+        .filter { !excludedConversations.contains($0.conversationId) }
     )
     let perConversation = Dictionary(
       grouping: semantic.sorted {
@@ -315,32 +328,25 @@ enum GlobalConversationContextJournalPolicy {
       .reduce(into: Set<String>()) { result, value in result.insert(value) }
   }
 
-  private static func conversationExcluded(
-    _ events: [GlobalConversationEvent],
-    conversationId: String
-  ) -> Bool {
-    guard !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return false
-    }
-    let latestLifecycle = events
-      .filter(isJournalControlMarker)
-      .filter { isConversationLifecycleEvent($0) && $0.conversationId == conversationId }
-      .max {
-        if $0.timestampMillis != $1.timestampMillis {
-          return $0.timestampMillis < $1.timestampMillis
-        }
-        return $0.id < $1.id
+  private static func excludedConversationIDs(_ controls: [GlobalConversationEvent]) -> Set<String> {
+    var latest: [String: GlobalConversationEvent] = [:]
+    var excluded = Set<String>()
+    for control in controls {
+      if control.type == .conversationMerged {
+        let source = GlobalConversationMergeLifecycle.sourceConversationId(control)
+        if !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { excluded.insert(source) }
       }
-    if let latestLifecycle {
-      if latestLifecycle.type == .conversationDeleted ||
-        excludesConversationFromGlobalModel(latestLifecycle) {
-        return true
-      }
+      guard isConversationLifecycleEvent(control),
+            !control.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+      if let current = latest[control.conversationId],
+         current.timestampMillis > control.timestampMillis ||
+           (current.timestampMillis == control.timestampMillis && current.id >= control.id) { continue }
+      latest[control.conversationId] = control
     }
-    return events
-      .filter(isJournalControlMarker)
-      .filter { $0.type == .conversationMerged }
-      .contains { GlobalConversationMergeLifecycle.sourceConversationId($0) == conversationId }
+    for (id, control) in latest where control.type == .conversationDeleted || excludesConversationFromGlobalModel(control) {
+      excluded.insert(id)
+    }
+    return excluded
   }
 
   private static func isConversationLifecycleEvent(_ event: GlobalConversationEvent) -> Bool {

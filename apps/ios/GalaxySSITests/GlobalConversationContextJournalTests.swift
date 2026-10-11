@@ -2,6 +2,24 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalConversationContextJournalTests: XCTestCase {
+  func testControlIndexPreservesExclusionsAcrossBatchReplayAndPruning() {
+    let controls = (0..<256).map { index in
+      event("control-\(index)", "", Int64(index), conversationId: "conversation-\(index)")
+        .withType(.conversationUpdated)
+        .withActor(.system)
+        .withMetadata(["global_visibility": index.isMultiple(of: 2) ? "excluded" : "included"])
+    }
+    let state = GlobalConversationContextJournalPolicy.apply(existing: [], incoming: controls)
+    let messages = (0..<256).map { index in
+      event("message-\(index)", "Context", Int64(1000 + index), conversationId: "conversation-\(index)")
+    }
+    let replayed = GlobalConversationContextJournalPolicy.apply(existing: state, incoming: messages)
+    let pruned = GlobalConversationContextJournalPolicy.apply(existing: replayed, incoming: [])
+    let expected = Set((0..<256).filter { !$0.isMultiple(of: 2) }.map { "message-\($0)" })
+    XCTAssertEqual(Set(visible(replayed).map(\.id)), expected)
+    XCTAssertEqual(Set(visible(pruned).map(\.id)), expected)
+  }
+
   func testJournalKeepsOnlyAuthorizedSemanticEvents() {
     let stored = GlobalConversationContextJournalPolicy.apply(
       existing: [],
