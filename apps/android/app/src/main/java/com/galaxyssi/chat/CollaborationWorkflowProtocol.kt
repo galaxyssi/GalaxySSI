@@ -41,6 +41,10 @@ internal object CollaborationWorkflowProtocol {
         experiment_plan.workflow_comparison:{dataset:exact artifactRef,controlled_conditions,quality_oracle,cost_accounting,selection_bias}.
         Include target AND regression cases. Original measured reports also carry workflow_sha256 and dataset_sha256 on every measurement.
         Use existing experiment_result and independent capability_lesson review; a passing arithmetic report is not proof that model quality improved.
+        Before adopting or revising a saved workflow, inspect its evaluation_recall (method_history, view=evaluations) for exact-version
+        plans, measured outcomes and reviews, not just successful executions. Read original conditions and contrary results, including
+        inconclusive or regressed trials. Several records can describe one experiment; they are not independent votes. Decide whether
+        to reuse, adapt, test a discriminating uncertainty or reject the method; an absent comparison is unknown, not support.
         Host workflow outcomes preserve member results/times/hashes across checkpoints. Inspect output evidence for correctness; missing timing is null,
         not zero, and task success is not goal success. Do not attribute network/provider delays to method quality without controlled trials.
 

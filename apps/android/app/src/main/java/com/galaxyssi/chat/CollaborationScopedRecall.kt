@@ -20,6 +20,8 @@ internal object CollaborationScopedRecall {
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Work ID is only supported for coordinator updates.")
         if (input.containsKey("inputs") && input["mode"] != CollaborationWorkflowCheck.MODE)
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Inputs are only supported for workflow checks.")
+        if (input.containsKey("view") && (input["mode"] != "method_history" || input["view"] != CollaborationMethodEvaluations.VIEW))
+            return AgentNativeToolExecutionResult.failure("invalid_arguments", "View is only supported for method_history evaluations.")
         return when (input["mode"]) {
             CollaborationSourceAccess.MODE -> {
                 try {
@@ -87,14 +89,17 @@ internal object CollaborationScopedRecall {
                     page(saved, input, "host_execution_observation_not_method_effectiveness",
                         mapOf("record_id" to saved.getString("record_id"), "record_sha256" to saved.getString("sha256")))
                 } else {
-                    if (input.keys.any { it !in setOf("mode", "object_id", "revision", "sha256", "cursor") } ||
+                    if (input.keys.any { it !in setOf("mode", "object_id", "revision", "sha256", "cursor", "view") } ||
                         input["object_id"] !is String || input["sha256"] !is String || input["revision"] !is Number ||
                         (input["revision"] as Number).toDouble() != (input["revision"] as Number).toInt().toDouble() ||
                         (input["revision"] as Number).toInt() < 1 || input.containsKey("cursor") && input["cursor"] !is String)
                         return AgentNativeToolExecutionResult.failure("invalid_arguments", "Method history requires exact object_id, revision, sha256 and optional cursor.")
                     val ref = JSONObject().put("object_id", input["object_id"]).put("revision", (input["revision"] as Number).toInt())
                         .put("sha256", input["sha256"])
-                    AgentNativeToolExecutionResult.success(workspace.methodHistory(access, ref, input["cursor"] as? String ?: "").toNativeObject())
+                    val result = if (input["view"] == CollaborationMethodEvaluations.VIEW)
+                        workspace.methodEvaluations(access, ref, input["cursor"] as? String ?: "")
+                    else workspace.methodHistory(access, ref, input["cursor"] as? String ?: "")
+                    AgentNativeToolExecutionResult.success(result.toNativeObject())
                 }
             }
             "capabilities" -> {

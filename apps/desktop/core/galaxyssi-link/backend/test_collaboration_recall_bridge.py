@@ -150,7 +150,7 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
         listing = {"mode": "method_history", "object_id": "a" * 64, "revision": 1, "sha256": "b" * 64}
         reading = {"mode": "method_history", "record_id": "c" * 64, "offset": 8000}
         broker = RecallBroker()
-        for arguments in (listing, reading):
+        for arguments in (listing, reading, {**listing, "view": "evaluations", "cursor": ""}):
             self.assertEqual(arguments, validate_arguments(arguments))
             def publish(request):
                 self.assertEqual(arguments, request["arguments"])
@@ -161,7 +161,9 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
             self.assertIsNone(broker.query(task, arguments, publish)["quality_effect"])
         for invalid in ({"mode": "method_history"}, {**listing, "revision": True}, {**listing, "sha256": "wrong"},
                         {**listing, "offset": 0}, {**reading, "cursor": ""}, {**reading, "record_id": "../x"},
-                        {**listing, "group_id": "other"}, {**listing, "query": "anything"}):
+                        {**listing, "group_id": "other"}, {**listing, "query": "anything"},
+                        {**listing, "view": "success_only"}, {**reading, "view": "evaluations"},
+                        {"mode": "workspace", "view": "evaluations"}):
             with self.assertRaises(ValueError):
                 validate_arguments(invalid)
 

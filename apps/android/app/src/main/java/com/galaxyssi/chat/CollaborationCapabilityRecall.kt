@@ -125,6 +125,7 @@ internal object CollaborationCapabilityRecall {
             "Tool releases can include exact source metadata under tool_*; both source and review conditions apply, and code/tests require separate reads. " +
             "Unreleased tools/tests remain candidates; reported_state is publication-time, not a live verdict. " +
             "Inspect original tests before choosing repairs or alternatives; retrieval never releases a candidate. " +
+            "Follow evaluation_recall for registered workflow comparisons, including negative outcomes and reviews; read their original conditions before deciding reuse. " +
             "Follow usage_recall to inspect prior conditions, failures and delivery. Tool releases return original native observations with " +
             "read_original selectors for inputs, runtime reports and errors; candidates and test plans also expose test observations. " +
             "Follow empty pages and distinguish replays from executions. " +
